@@ -1,0 +1,376 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if not user %}
+<div class="card">
+  <h1>ホームを表示できません</h1>
+  <p>ユーザー情報を取得できませんでした。</p>
+  <p><a href="{{ url_for('login') }}">ログインへ</a></p>
+</div>
+{% else %}
+<div class="home-priority-stack">
+{% if show_beginner_mission %}
+<div class="panel beginner-mission-panel">
+  <div class="card">
+    <div class="beginner-mission-head">
+      <img class="beginner-mission-npc home-mission-robot" src="{{ url_for('static', filename=intro_npc_image) }}" alt="ナビロボ" loading="eager" decoding="async" width="40" height="40" />
+      <div>
+        <div><b>🚀 最初のミッション</b></div>
+        <div class="upgrade-cost">{{ beginner_mission_text|replace('\n', '<br />')|safe }}</div>
+      </div>
+    </div>
+    {% if beginner_mission_is_post %}
+    <form method="post" action="{{ beginner_mission_cta_url }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="layer_1" />
+      {% if explore_submission_id %}
+      <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+      {% endif %}
+      <button type="submit">{{ beginner_mission_cta_label }}</button>
+    </form>
+    {% else %}
+    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ beginner_mission_cta_url }}">{{ beginner_mission_cta_label }}</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if show_intro_modal %}
+<div id="intro-guide-modal" class="intro-guide-modal" role="dialog" aria-modal="true" aria-labelledby="intro-guide-title">
+  <div class="intro-guide-backdrop" data-intro-close="1"></div>
+  <div class="intro-guide-card">
+    <button type="button" class="intro-guide-close" aria-label="閉じる" data-intro-close="1">×</button>
+    <div class="intro-guide-head">
+      <img class="intro-guide-npc" src="{{ url_for('static', filename=intro_npc_image) }}" alt="案内役" loading="eager" decoding="async" width="56" height="56" />
+      <div>
+        <div id="intro-guide-title"><b>案内役</b> <span class="intro-guide-badge">案内役</span></div>
+        <div class="upgrade-cost">ロボらぼへようこそ。最初の流れだけ案内します。</div>
+      </div>
+    </div>
+    <div class="intro-guide-body">
+      <p>ホーム上部の <b>最初のミッション</b> から始めよう。</p>
+      <p><b>出撃</b> でパーツを集めて、強くなったらボスに挑戦！</p>
+    </div>
+    <div class="intro-guide-footer">
+      <form method="post" action="{{ url_for('explore') }}" class="inline-form">
+        <input type="hidden" name="area_key" value="layer_1" />
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        <button type="submit">出撃する</button>
+      </form>
+      <form id="intro-guide-dismiss-form" method="post" action="{{ url_for('home_intro_modal_dismiss') }}" class="inline-form">
+        <input type="hidden" name="dont_show_again" value="1" />
+        <button type="submit" class="btn-secondary">あとで</button>
+      </form>
+    </div>
+    <label class="intro-guide-checkbox">
+      <input id="intro-guide-no-show" type="checkbox" checked />
+      次回から表示しない
+    </label>
+  </div>
+</div>
+{% endif %}
+{% if research_unlock_banner %}
+<div class="panel research-unlock-banner">
+  <div class="card">
+    <div class="beginner-mission-head">
+      <img class="beginner-mission-npc" src="{{ url_for('static', filename=intro_npc_image) }}" alt="ナビロボ" loading="lazy" decoding="async" width="40" height="40" />
+      <div>
+        <div><b>ナビロボ案内</b></div>
+        <div class="upgrade-cost">{{ research_unlock_banner['line_1'] }}</div>
+        <div class="upgrade-cost">{{ research_unlock_banner['line_2'] }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if boss_alert_status %}
+<div class="panel priority-boss-alert">
+  <h2>ボス警報</h2>
+  {% for alert in boss_alert_status %}
+  <div class="card">
+    <div><b>{{ alert['area_label'] }}: {{ alert['enemy_name'] }}</b></div>
+    <div class="upgrade-cost">第{{ alert['layer_no'] }}層への鍵を守るボスが出現！</div>
+    <div class="attempt-dots" aria-label="挑戦回数">
+      {% for i in range(alert.get('attempts_max', 3)) %}
+      {% set filled = i < alert['attempts_left'] %}
+      <span class="attempt-dot {% if filled %}is-filled{% else %}is-empty{% endif %}{% if alert['attempts_left'] == 1 and i == 0 %} is-last{% endif %}">●</span>
+      {% endfor %}
+    </div>
+    <div class="upgrade-cost">挑戦権: 残り{{ alert['attempts_left'] }}回 / 有効期限: 約{{ alert['remain_minutes'] }}分</div>
+    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="{{ alert['area_key'] }}" />
+      {% if explore_submission_id %}
+      <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+      {% endif %}
+      <input type="hidden" name="boss_enter" value="1" />
+      <button type="submit">ボスに挑戦する</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="home-layout-grid priority-core">
+  <div class="home-main-stack">
+    <section class="panel home-current-robot">
+      <h1>出撃機体</h1>
+      {% if main_robot %}
+        <div class="main-robot-layout">
+          <div class="robot-top-row">
+            <a class="robot-top-visual robot-image-card" href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">
+              {% if main_robot.get('image_url') %}
+              <img class="robot-thumb main-robot-thumb" src="{{ main_robot['image_url'] }}" alt="main robot" loading="lazy" />
+              {% else %}
+              <div class="robot-thumb empty main-robot-thumb">no image</div>
+              {% endif %}
+            </a>
+            <div class="robot-info-row">
+              <div class="stat-card robot-name-card">
+                <div class="stat-label">ロボ名</div>
+                <div class="stat-value stat-small"><a href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">{{ main_robot['name'] or '無名ロボ' }}</a></div>
+                {% if idle_line %}
+                <div class="robot-idle-line">{{ idle_line }}</div>
+                {% endif %}
+              </div>
+              <div class="stat-card robot-personality-card">
+                <div class="stat-label">性格</div>
+                <div class="stat-value stat-small">
+                  {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'analyst' %}
+                  {{ personality_labels.get(p, p) }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="stat-grid main-robot-stat-grid robot-status-grid">
+            <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ main_robot_stats['stats']['hp'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ main_robot_stats['stats']['atk'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ main_robot_stats['stats']['def'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ main_robot_stats['stats']['spd'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
+          </div>
+          <div class="main-robot-meta-grid">
+            {% if style_achievements %}
+            <div class="stat-card stat-card-full main-robot-achievements">
+              <div><b>スタイル実績</b></div>
+              <div class="main-robot-achievement-grid">
+                {% for a in style_achievements %}
+                <div class="upgrade-cost">{{ a['style_label'] }}: {{ a['desc'] }} {{ a['value'] }}/{{ a['target'] }}{% if a['done'] %}（達成）{% endif %}</div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+            {% if main_robot_stats and main_robot_stats['set_bonus'] %}
+              <div class="upgrade-cost">セットボーナス: {{ main_robot_stats['set_bonus'] }}</div>
+            {% endif %}
+            <div class="upgrade-cost">型: {{ main_robot_style['style_label'] }} / {{ main_robot_style.get('style_description', '') }}</div>
+            <div class="upgrade-cost">総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</div>
+            {% if main_robot_weekly_fit %}
+              <div class="upgrade-cost"><span class="weekly-fit-badge">WEEK適合</span></div>
+            {% endif %}
+            <div class="upgrade-cost">所持コイン: {{ user['coins'] }} / 勝利数: {{ user['wins'] }}</div>
+            <div
+              class="upgrade-cost"
+              id="home-ct-status"
+              data-ct-ready-at="{{ ct_ready_at }}"
+              data-ct-remain="{{ ct_remain }}"
+              data-is-admin="{{ 1 if is_admin else 0 }}"
+            >{{ ct_text }}</div>
+            <div class="upgrade-cost">
+              保存枠: {{ slot_display_used }} / {{ limits['robot_slots'] }}
+              {% if slot_overflow > 0 %}
+                <span class="slot-overflow-badge">超過 +{{ slot_overflow }}</span>
+              {% endif %}
+            </div>
+            <div class="upgrade-cost">パーツ在庫: {{ part_count }} / {{ limits['part_inventory'] }}</div>
+          </div>
+        </div>
+      {% else %}
+        <div class="card">
+          <p>出撃機体が未設定です。</p>
+          {% if has_any_robot %}
+          <p><a href="{{ url_for('build') }}">ロボ編成へ</a></p>
+          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="panel home-mvp-panel">
+      <div class="world-env-card mvp-hero-card">
+        <div><b>今週のMVP</b></div>
+        {% if weekly_mvp %}
+        <div>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+        {% if weekly_mvp['robot_name'] %}<div>{{ weekly_mvp['robot_name'] }}</div>{% endif %}
+        {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
+        {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">詳細を見る</a></div>{% endif %}
+        {% else %}
+        <div>まだ集計対象がありません。</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="home-right-stack home-social-stack">
+    <section class="panel home-actions-panel">
+    <h2>アクション</h2>
+    <div class="upgrade-cost">現在解放層: 第{{ max_unlocked_layer }}層</div>
+    {% if has_any_robot %}
+      <form method="post" action="{{ url_for('explore') }}" class="inline-form">
+        <label>出撃先:</label>
+        <select id="explore-area-select" name="area_key" required>
+          {% for area in explore_areas %}
+          <option value="{{ area['key'] }}">{{ area['label'] }}</option>
+          {% endfor %}
+        </select>
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        <button
+          type="submit"
+          id="home-explore-submit"
+          data-explore-cta="1"
+          data-cta-ready-label="出撃する"
+          {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
+        >{{ ct_button_text }}</button>
+        <span id="home-explore-ct-label" class="upgrade-cost{% if not ct_status_text %} is-hidden{% endif %}">{{ ct_status_text }}</span>
+      </form>
+      <p class="link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
+      <div id="mist-area-hint" class="upgrade-cost is-hidden">
+        <div>霧が深く、命中差が勝敗に直結するエリアです。</div>
+        <div>高命中の敵ほど遭遇しやすく、短期決着が難しくなります。</div>
+        <div>命中重視のロボで挑むと安定しやすくなります。</div>
+      </div>
+      <div id="rush-area-hint" class="upgrade-cost is-hidden">
+        <div>短期決戦になりやすいルートです。</div>
+        <div>クリティカルで展開が大きく動きます。</div>
+        <div>攻めの機体で押し切る構成が有効です。</div>
+      </div>
+    {% endif %}
+    {% if has_any_robot %}
+      <div class="actions-grid home-actions-grid home-primary-actions-grid">
+        <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
+        <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
+        <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
+        <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
+      </div>
+      <div class="actions-grid home-actions-grid home-secondary-actions-grid">
+        {% if has_evolution_core %}
+        <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">進化コアで進化</div></a>
+        {% endif %}
+        {% if is_admin %}
+        <a class="action-card" href="{{ url_for('admin') }}"><div class="action-title">管理者メニュー</div><div class="action-desc">管理機能トップ</div></a>
+        <a class="action-card" href="{{ url_for('admin_parts') }}"><div class="action-title">管理: パーツ</div><div class="action-desc">パーツ登録/編集</div></a>
+        <a class="action-card" href="{{ url_for('admin_decor') }}"><div class="action-title">管理: 装飾</div><div class="action-desc">装飾アセット管理</div></a>
+        <a class="action-card" href="{{ url_for('admin_enemies') }}"><div class="action-title">管理: 敵</div><div class="action-desc">敵登録/調整</div></a>
+        <a class="action-card" href="{{ url_for('admin_balance') }}"><div class="action-title">管理: バランス</div><div class="action-desc">確率/コスト確認</div></a>
+        <a class="action-card" href="{{ url_for('admin_world') }}"><div class="action-title">管理: 週間環境</div><div class="action-desc">環境再抽選/カウンタ管理</div></a>
+        <a class="action-card" href="{{ url_for('admin_audit') }}"><div class="action-title">管理: 監査ログ</div><div class="action-desc">証跡を確認</div></a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+    <section class="panel home-weekly-panel">
+    {% if weekly_env %}
+      <div class="world-env-card">
+        <div><b>今週の戦況</b></div>
+        <div>{{ weekly_env['mode'] }}</div>
+        {% for effect_line in weekly_env_effect_lines %}
+        <div>{{ effect_line }}</div>
+        {% endfor %}
+        <div class="faction-row">
+          {% for key, emblem_path in faction_emblems.items() %}
+            <div class="faction-badge {% if key == weekly_faction_key %}is-active{% else %}is-inactive{% endif %}" title="{{ key }}">
+              <img src="{{ url_for('static', filename=emblem_path) }}" alt="{{ key }}" loading="lazy" />
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+    </section>
+
+    <section class="panel home-faction-panel">
+    <div class="world-env-card home-faction-card">
+      <div><b>陣営戦（{{ weekly_env['week_key'] if weekly_env else '-' }}）</b></div>
+      {% if faction_status['is_joined'] %}
+      <div>所属: {{ faction_labels.get(user_faction, user_faction) }}</div>
+      {% else %}
+      <div>所属: 未所属</div>
+      {% endif %}
+      {% if not faction_status['is_joined'] %}
+      <div>{{ faction_unlock_progress_line }}</div>
+      {% if faction_status['can_choose'] %}
+      <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
+      {% endif %}
+      {% else %}
+      <div>今週スコア: IG {{ faction_week_scores['ignis'] }} / VE {{ faction_week_scores['ventra'] }} / AU {{ faction_week_scores['aurix'] }}</div>
+      {% if prev_faction_result %}
+      <div>先週勝者: {{ faction_labels.get(prev_faction_result['winner_faction'], prev_faction_result['winner_faction']) }}（{{ prev_week_key }}）</div>
+      {% else %}
+      <div>先週勝者: 集計中（{{ prev_week_key }}）</div>
+      {% endif %}
+      {% if faction_buff_active %}
+      <div><span class="weekly-fit-badge">勝利陣営バフ: 勝利コイン +1</span></div>
+      {% elif faction_buff_winner %}
+      <div>今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}（勝利コイン +1）</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    </section>
+
+    <section class="panel home-nav-panel">
+      <h2>メニュー</h2>
+      <div class="home-nav-section-title">リンク</div>
+      <div class="home-nav-grid home-nav-links">
+        <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('ranking') }}"><div class="action-title">ランキング</div><div class="action-desc">勝利数を確認</div></a>
+      </div>
+      <div class="home-nav-section-title">進捗</div>
+      <div class="home-nav-grid home-nav-progress">
+        <a class="action-card home-nav-card" href="{{ url_for('progress_view') }}"><div class="action-title">今日の進捗</div><div class="action-desc">探索 {{ today_progress['explore_count'] }} / 勝利 {{ today_progress['win_count'] }}</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('research_view') }}"><div class="action-title">研究進捗</div><div class="action-desc">stage {{ research_summary['unlocked_stage'] }} / 4</div></a>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+<section class="panel home-mini-log-panel">
+  <h2>みんなのログ</h2>
+  <form method="post" action="{{ url_for('chat') }}" class="home-chat-form">
+    <input type="text" name="message" maxlength="120" placeholder="ひとこと投稿" required />
+    <button type="submit">投稿</button>
+  </form>
+  <ul class="log home-mini-log-list home-social-log-list">
+    {% for msg in chat_messages[:5] %}
+      <li class="home-mini-log-item">
+        <span class="user-chip mini">
+          <img class="avatar-48" src="{{ url_for('static', filename=msg['avatar_path']) }}" alt="avatar" loading="lazy" />
+          <span class="badge-overlay">
+            <img class="robot-badge-32" src="{{ url_for('static', filename=msg['badge_path']) }}" alt="badge" loading="lazy" />
+          </span>
+        </span>
+        <div class="home-mini-log-main">
+          <div class="home-mini-log-text">{{ msg['home_text'] }}</div>
+          <div class="home-mini-log-time">{{ msg['created_at'] }}</div>
+        </div>
+      </li>
+    {% else %}
+      <li class="home-mini-log-empty">まだログがありません。</li>
+    {% endfor %}
+  </ul>
+</section>
+<section class="panel home-invite-panel">
+  <div class="world-env-card">
+    <div><b>招待</b></div>
+    <div class="upgrade-cost">友だちに共有して、一緒にロボらぼを始めよう。</div>
+    <div class="home-invite-actions">
+      <a class="battle-home-link home-invite-x" href="https://x.com/intent/tweet?text={{ ('ロボらぼで出撃中！招待リンクはこちら: ' ~ invite_link)|urlencode }}" target="_blank" rel="noopener">Xで共有</a>
+      <button type="button" id="invite-copy-btn" data-copy-text="{{ invite_link }}">招待URLコピー</button>
+      <button type="button" class="btn-secondary" disabled>Discord共有（将来）</button>
+    </div>
+    <div class="upgrade-cost">pending: {{ referral_counts['pending'] }} / qualified: {{ referral_counts['qualified'] }}</div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}"></script>
+{% endblock %}

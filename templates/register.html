@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="auth">
+  <h1 class="auth-title">ユーザー登録</h1>
+  <p class="auth-lead">ロボらぼを始めるために、アカウントを作成しましょう。</p>
+  {% if ref_code %}
+  <div class="notice">招待コード: {{ ref_code }}</div>
+  {% endif %}
+  <form method="post" class="card auth-card">
+    {% if ref_code %}
+    <input type="hidden" name="ref" value="{{ ref_code }}" />
+    {% endif %}
+    <label for="register-username">ユーザー名</label>
+    <input id="register-username" type="text" name="username" autocomplete="username" required />
+    <label for="register-password">パスワード</label>
+    <input id="register-password" type="password" name="password" autocomplete="new-password" required />
+    <label for="register-password-confirm">パスワード（確認）</label>
+    <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
+    <button type="submit">登録</button>
+  </form>
+  <p class="link"><a href="{{ url_for('login') }}">ログインへ</a></p>
+</div>
+{% endblock %}

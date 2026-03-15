@@ -1,0 +1,333 @@
+{% extends 'base.html' %}
+{% block content %}
+{% set enemy_name = summary['enemy_name'] if summary and summary.get('enemy_name') else (state['enemy_name'] if state and state['enemy_name'] else '謎の敵') %}
+{% set player_name = active_robot['name'] if active_robot else 'あなた' %}
+{% set battle_bg_url = summary.get('battle_bg_url') if summary else None %}
+{% set boss_victory = summary and summary.get('is_area_boss') and summary.get('outcome') == '勝利' %}
+{% set show_battle_ritual_overlay = ui_effects_enabled and battle_ritual_overlay_enabled and boss_victory %}
+<div class="battle-scene{% if battle_bg_url %} has-boss-bg{% endif %}{% if boss_victory %} boss-victory-ritual{% endif %}"{% if battle_bg_url %} data-battle-bg-url="{{ battle_bg_url }}"{% endif %}>
+{% if show_battle_ritual_overlay %}
+<div id="battle-ritual-overlay" class="battle-ritual-overlay{% if summary.get('unlocked_layer') %} layer-theme-{{ summary['unlocked_layer'] }}{% endif %}" aria-hidden="true"></div>
+{% endif %}
+{% if boss_victory %}
+<div class="card layer-boss-victory-head{% if summary.get('unlocked_layer') %} layer-theme-{{ summary['unlocked_layer'] }}{% endif %}">
+  <div class="layer-boss-victory-main">🏆 層ボス撃破！</div>
+  {% if summary.get('unlocked_layer') %}
+  <div class="layer-boss-victory-sub">⚙ 第{{ summary['unlocked_layer'] }}層 解放</div>
+  {% endif %}
+</div>
+{% endif %}
+<h1 class="battle-title">{{ enemy_name }}が襲いかかってきた！！！</h1>
+{% if summary and summary.get('enemy_faction_label') %}
+  <div class="upgrade-cost">所属: {{ summary['enemy_faction_label'] }} / Tier {{ summary.get('enemy_tier', '-') }}</div>
+{% endif %}
+{% if summary and summary.get('is_area_boss') %}
+  <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>
+{% endif %}
+
+{% if message %}
+  <div class="notice">{{ message }}</div>
+{% endif %}
+
+{% if explore_mode and summary %}
+  {% set player_img = active_robot.get('image_url') if active_robot and active_robot.get('image_url') else url_for('static', filename='assets/placeholder_player.png') %}
+  {% set enemy_img = summary.get('enemy_image_url') if summary and summary.get('enemy_image_url') else url_for('static', filename='assets/placeholder_enemy.png') %}
+  {% if summary.get('enemy_image_url') %}
+  <div class="battle-section-title">敵情報</div>
+  <div class="card enemy-card">
+    <img class="battle-enemy-thumb" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
+    <div>
+      <div>
+        <b>{{ summary.get('enemy_name', enemy_name) }}</b>
+        {% if summary.get('is_area_boss') %}
+          <span class="weekly-fit-badge boss-badge-strong">BOSS</span>
+        {% endif %}
+      </div>
+      {% if summary.get('enemy_faction_label') or summary.get('enemy_tier') %}
+      <div class="upgrade-cost">
+        {% if summary.get('enemy_faction_label') %}{{ summary['enemy_faction_label'] }}{% endif %}
+        {% if summary.get('enemy_tier') %} / Tier {{ summary['enemy_tier'] }}{% endif %}
+      </div>
+      {% endif %}
+      {% if summary.get('enemy_tier') %}
+      <div class="upgrade-cost">危険度: Tier {{ summary.get('enemy_tier') }}</div>
+      {% endif %}
+      {% if summary.get('is_area_boss') and summary.get('boss_type_label') %}
+      <div class="upgrade-cost">BOSS TYPE: {{ summary.get('boss_type') }}（{{ summary.get('boss_type_icon', '') }}{{ summary.get('boss_type_label') }}）</div>
+      {% endif %}
+      {% if (not summary.get('is_area_boss')) and summary.get('enemy_tendency_tag') %}
+      <div class="upgrade-cost">敵の特徴: {{ summary.get('enemy_tendency_tag') }}</div>
+      {% endif %}
+      {% if summary.get('enemy_variant_label') %}
+      <div class="upgrade-cost">個体識別: {{ summary.get('enemy_variant_label') }}</div>
+      {% endif %}
+      {% if summary.get('enemy_trait_label') %}
+      <div class="upgrade-cost">特性: {{ summary.get('enemy_trait_label') }}{% if summary.get('enemy_trait_desc') %}（{{ summary.get('enemy_trait_desc') }}）{% endif %}</div>
+      {% endif %}
+      {% if summary.get('enemy_special_line') %}
+      <div class="upgrade-cost">{{ summary.get('enemy_special_line') }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if turn_logs %}
+  <div class="battle-section-title">戦闘ログ</div>
+  <details class="battle-log-fold" {% if battle_log_mode == 'expanded' %}open{% endif %}>
+    <summary>戦闘ログを見る</summary>
+    {% for t in turn_logs %}
+      {% if t.get('separator_line') %}
+      <div class="card battle-turn">
+        <div class="battle-turn-head">{% if t.get('battle_no') %}戦闘{{ t['battle_no'] }} 開始{% else %}探索継続{% endif %}</div>
+        <div class="battle-text">
+          <div class="battle-line"><strong>{{ t['separator_line'] }}</strong></div>
+        </div>
+      </div>
+      {% else %}
+      {% set p_max = t.get('player_max', t['player_before']) %}
+      {% set e_max = t.get('enemy_max', t['enemy_before']) %}
+      <div class="card battle-turn">
+        <div class="battle-turn-head">
+          {% if t.get('battle_no') %}戦闘{{ t['battle_no'] }} / {% endif %}{{ t['turn'] }}ターン
+        </div>
+        <div class="battle-row">
+          <div class="battle-side">
+            <div class="battle-side-top">
+              <img class="battle-avatar" src="{{ player_img }}" alt="player" loading="lazy" />
+              <div class="battle-name">{{ player_name }}</div>
+            </div>
+            <div class="hp-line">
+              <div class="hp-text">耐久: {{ t['player_after'] }} / {{ p_max }}</div>
+              <progress class="hpbar-meter" max="{{ p_max }}" value="{{ t['player_after'] }}"></progress>
+            </div>
+          </div>
+
+          <div class="battle-vs">VS</div>
+
+          <div class="battle-side enemy">
+            <div class="battle-side-top">
+              <img class="battle-avatar" src="{{ enemy_img }}" alt="enemy" loading="lazy" />
+              <div class="battle-name">{{ enemy_name }}</div>
+            </div>
+            <div class="hp-line">
+              <div class="hp-text">耐久: {{ t['enemy_after'] }} / {{ e_max }}</div>
+              <progress class="hpbar-meter" max="{{ e_max }}" value="{{ t['enemy_after'] }}"></progress>
+            </div>
+          </div>
+        </div>
+
+        <div class="battle-text">
+          {% if t.get('premonition_line') %}
+            <div class="battle-line">{{ t['premonition_line'] }}</div>
+          {% endif %}
+          {% if t.get('encounter_line') %}
+            <div class="battle-line"><strong>{{ t['encounter_line'] }}</strong></div>
+          {% endif %}
+          {% if t.get('enemy_tendency_line') %}
+            <div class="battle-line">{{ t['enemy_tendency_line'] }}</div>
+          {% endif %}
+          {% if t.get('enemy_variant_line') %}
+            <div class="battle-line drop">{{ t['enemy_variant_line'] }}</div>
+          {% endif %}
+          {% if t.get('enemy_trait_line') %}
+            <div class="battle-line">{{ t['enemy_trait_line'] }}</div>
+          {% endif %}
+          {% if t.get('archetype_line') %}
+            <div class="battle-line">{{ t['archetype_line'] }}</div>
+          {% endif %}
+          {% if t.get('build_profile_line') %}
+            <details class="battle-log-math">
+              <summary>計算詳細</summary>
+              <div class="battle-line">{{ t['build_profile_line'] }}</div>
+            </details>
+          {% endif %}
+          {% if t.get('stage_modifier_line') %}
+            <div class="battle-line">{{ t['stage_modifier_line'] }}</div>
+          {% endif %}
+          {% if t.get('boss_type_line') %}
+            <div class="battle-line drop">{{ t['boss_type_line'] }}</div>
+          {% endif %}
+          {% if t.get('mid_line') %}
+            <div class="battle-line">{{ t['mid_line'] }}</div>
+          {% endif %}
+          {% if t.get('enemy_trait_trigger_line') %}
+            <div class="battle-line drop">{{ t['enemy_trait_trigger_line'] }}</div>
+          {% endif %}
+          {% if t.get('player_skill') %}
+            <div class="battle-skill">「{{ t['player_skill'] }}」</div>
+          {% endif %}
+          <div class="battle-line">
+            <span class="who">{{ player_name }}</span>は
+            <span class="act">{{ t['player_action'] }}</span>
+            {% if t.get('player_damage') %}
+              <span class="dmg {% if t.get('critical') %}crit{% endif %}">{{ t['player_damage'] }}</span>
+              <span class="unit">のダメージ！</span>
+            {% endif %}
+            {% if t.get('player_attack_note') %}
+              <span class="battle-note">{{ t['player_attack_note'] }}</span>
+            {% endif %}
+          </div>
+          {% if t.get('player_relief_line') %}
+            <div class="battle-line drop">{{ t['player_relief_line'] }}</div>
+          {% endif %}
+          {% if t.get('player_berserk_line') %}
+            <div class="battle-line drop">{{ t['player_berserk_line'] }}</div>
+          {% endif %}
+          <div class="battle-line">
+            <span class="who">{{ enemy_name }}</span>は
+            <span class="act">{{ t['enemy_action'] }}</span>
+            {% if t.get('enemy_damage') %}
+              <span class="dmg">{{ t['enemy_damage'] }}</span>
+              <span class="unit">のダメージ！</span>
+            {% endif %}
+            {% if t.get('enemy_attack_note') %}
+              <span class="battle-note">{{ t['enemy_attack_note'] }}</span>
+            {% endif %}
+          </div>
+          {% if t.get('critical') %}
+            <div class="battle-flag">クリティカル！！</div>
+          {% endif %}
+          {% if t.get('result_line') %}
+            <div class="battle-line"><strong>{{ t['result_line'] }}</strong></div>
+          {% endif %}
+          {% if t.get('core_drop_line') %}
+            <div class="battle-line drop"><strong>{{ t['core_drop_line'] }}</strong></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </details>
+  {% endif %}
+
+  <div class="battle-section-title">結果</div>
+  <div class="card battle-outcome-banner {% if summary['outcome'] == '勝利' %}win{% else %}lose{% endif %}">
+    <div class="battle-outcome-label">{% if summary['outcome'] == '勝利' %}WIN{% else %}LOSE{% endif %}</div>
+    <div class="battle-outcome-sub">{{ summary['outcome'] }}</div>
+  </div>
+
+  <div class="battle-section-title">戦利品</div>
+  <div class="card battle-summary-upgraded">
+    {% if summary.get('highlight_core_drop') %}
+    <div class="core-drop-banner rare-glow-card">
+      <div class="core-drop-banner-head">✨ 進化コアを発見！ ✨</div>
+      <div class="core-drop-banner-body">
+        <img class="core-drop-icon" src="{{ summary.get('dropped_core_icon_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ summary.get('dropped_core_name', '進化コア') }}" loading="lazy" />
+        <div class="core-drop-meta">
+          <div class="core-drop-name">{{ summary.get('dropped_core_name', '進化コア') }}</div>
+          <div class="core-drop-sub">パーツをレア化できる貴重なコアです</div>
+        </div>
+        <div class="core-drop-count">所持数 +{{ summary.get('reward_core', 0) }}</div>
+      </div>
+    </div>
+    {% endif %}
+    {% set reward_front = summary.get('reward_front', {}) %}
+    <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ reward_front.get('coin', summary.get('reward_coin', 0)) }}</b></div>
+    {% if reward_front.get('part_rows') %}
+    <div class="battle-summary-row">ドロップ:</div>
+    <div class="battle-drop-list">
+      {% for row in reward_front.get('part_rows', []) %}
+      <div class="battle-drop-row">
+        <img class="battle-drop-mini" src="{{ row.get('image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ row.get('label', 'パーツ') }}" loading="lazy" />
+        <span class="battle-drop-name">{{ row.get('label', '不明パーツ') }}</span>
+        {% if (row.get('count') or 1) > 1 %}
+        <span class="battle-drop-count-mini">×{{ row.get('count') }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% elif summary.get('highlight_core_drop') %}
+    <div class="battle-summary-row">ドロップ: {{ summary.get('dropped_core_name', '進化コア') }} ×{{ summary.get('reward_core', 0) }}</div>
+    {% else %}
+    <div class="battle-summary-row">ドロップ: 戦利品なし</div>
+    {% endif %}
+    {% if summary.get('boss_reward_display') %}
+      <div class="battle-summary-row">
+        {% if summary['boss_reward_display'].get('image_url') %}
+          <img class="battle-drop-thumb" src="{{ summary['boss_reward_display']['image_url'] }}" alt="boss decor" loading="lazy" />
+        {% endif %}
+        エリアボス報酬:
+        <b>{{ summary['boss_reward_display']['name'] }}</b>
+        {% if summary['boss_reward_display'].get('granted') %}
+          （入手）
+        {% else %}
+          （既所持）
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if summary.get('is_area_boss') and summary.get('outcome') == '勝利' %}
+      <div class="card boss-defeated-card">
+        <div class="battle-outcome-label">BOSS DEFEATED</div>
+        <div class="battle-outcome-sub">ボス撃破！</div>
+        {% if summary.get('boss_reward_display') %}
+          <div class="battle-summary-row">
+            {% if summary['boss_reward_display'].get('image_url') %}
+              <img class="battle-drop-thumb" src="{{ summary['boss_reward_display']['image_url'] }}" alt="boss decor reward" loading="lazy" />
+            {% endif %}
+            報酬DECOR: <b>{{ summary['boss_reward_display']['name'] }}</b>
+          </div>
+        {% elif summary.get('boss_reward') and summary['boss_reward'].get('reward_missing') %}
+          <div class="battle-summary-row">報酬の表示に失敗しました（運営に連絡不要）。</div>
+        {% endif %}
+        {% if summary.get('npc_analysis_line') %}
+          <div class="battle-summary-row">{{ summary.get('npc_analysis_line') }}</div>
+        {% endif %}
+        <div class="battle-actions-top">
+          <a class="battle-home-link" href="{{ url_for('showcase') }}">ロボ展示へ</a>
+          <a class="battle-home-link" href="{{ url_for('feed') }}">世界ログへ</a>
+        </div>
+        <form method="post" action="{{ url_for('share_boss_defeat') }}" class="inline-form">
+          <input type="hidden" name="enemy_key" value="{{ summary.get('enemy_key') or '' }}" />
+          <input type="hidden" name="enemy_name" value="{{ summary.get('enemy_name') or '' }}" />
+          <input type="hidden" name="area_key" value="{{ explore_area_key or '' }}" />
+          <input type="hidden" name="area_label" value="{{ explore_area_label or '' }}" />
+          {% if active_robot %}
+          <input type="hidden" name="robot_id" value="{{ active_robot.get('id') or '' }}" />
+          <input type="hidden" name="robot_name" value="{{ active_robot.get('name') or '' }}" />
+          {% endif %}
+          <button type="submit">Xで共有</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="battle-section-title">次の行動</div>
+  <div class="battle-actions-top">
+    {% if summary.get('unlocked_layer') %}
+    <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
+    {% else %}
+    <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
+      <input type="hidden" name="area_key" value="{{ explore_area_key }}" />
+      {% if summary.get('explore_ct_is_admin') %}
+      <button type="submit" id="explore-return-btn" data-ct-remain="0" data-ct-admin="1" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
+      {% elif (summary.get('explore_ct_remain') or 0) > 0 %}
+      <button
+        type="submit"
+        id="explore-return-btn"
+        data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+        data-ct-admin="0"
+        data-cta-ready-label="もう一度出撃"
+        disabled
+      >{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
+      <span id="explore-return-ct-label" class="battle-return-ct">{{ summary.get('explore_ct_status_label', '') }}</span>
+      {% else %}
+      <button type="submit" id="explore-return-btn" data-ct-remain="0" data-ct-admin="0" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
+      <span id="explore-return-ct-label" class="battle-return-ct">{{ summary.get('explore_ct_status_label', '') }}</span>
+      {% endif %}
+    </form>
+    {% endif %}
+    <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
+  </div>
+{% else %}
+  <div class="card">
+    <p>探索結果がありません。行動メニューから探索してください。</p>
+  </div>
+{% endif %}
+{% if not (explore_mode and summary) %}
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
+{% endblock %}

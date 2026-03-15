@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボ個別ページ</h1>
+
+<div class="card">
+  <div class="robot-detail-card">
+    <div>
+      <div class="robot-id">{{ robot['name'] }} <span class="robot-part">#{{ robot['id'] }}</span></div>
+      <div class="robot-part">オーナー: {{ robot['owner_name'] }}</div>
+      <div class="robot-part">メイン称号: {{ primary_title }}</div>
+      <div class="robot-part">製造日: {{ robot['created_at'] | dt }}</div>
+      {% if weekly_env %}
+      <div class="robot-part">
+        WEEK {{ weekly_env['week_key'] }} / {{ weekly_env['element'] }} / {{ weekly_env['mode'] }}
+        {% if weekly_fit %}<span class="weekly-fit-badge">WEEK適合</span>{% endif %}
+      </div>
+      {% endif %}
+      {% if robot['set_bonus'] %}<div class="robot-part">セット: {{ robot['set_bonus'] }}</div>{% endif %}
+      {% if robot.get('archetype') %}<div class="robot-part">型: {{ robot['archetype']['name_ja'] }}</div>{% endif %}
+      <div class="robot-part">展示: {% if robot['is_public'] %}公開{% else %}非公開{% endif %}</div>
+      {% if can_share %}
+      <form method="post" action="{{ url_for('robot_toggle_public', instance_id=robot['id']) }}">
+        <button type="submit">{% if robot['is_public'] %}展示を非公開{% else %}展示を公開{% endif %}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if robot.get('image_url') %}
+      <img class="robot-thumb" src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
+    {% endif %}
+  </div>
+  {% if can_share %}
+    <form method="post" action="{{ url_for('robot_share', instance_id=robot['id']) }}">
+      <button type="submit">全体チャットへ共有</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>歩み</h2>
+  <div class="robot-part">戦闘: {{ history['battles_total'] }} / 勝利: {{ history['wins_total'] }} / 敗北: {{ history['losses_total'] }}</div>
+  <div class="robot-part">ボス遭遇: {{ history['boss_encounters_total'] }} / ボス撃破: {{ history['boss_defeats_total'] }}</div>
+  <div class="robot-part">今週勝利: {{ history['wins_this_week'] }}（{{ history['wins_this_week_key'] if history['wins_this_week_key'] else '-' }}）</div>
+</div>
+
+<div class="card">
+  <h2>勲章タイムライン</h2>
+  {% if achievements %}
+    <ul class="timeline-list">
+      {% for a in achievements %}
+        <li>
+          <div class="robot-id">{{ a['title'] }}</div>
+          <div class="robot-part">{{ a['body'] }}</div>
+          <div class="robot-time">{{ a['created_at'] | dt }}</div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="robot-part">まだ記録がありません。</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>称号</h2>
+  {% if titles %}
+    <div class="title-badge-list">
+      {% for t in titles %}
+        <span class="title-badge" title="{{ t['desc_ja'] }}">{{ t['name_ja'] }}</span>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="robot-part">未獲得</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>構成</h2>
+  {% for item in robot_composition %}
+  <div class="robot-part">
+    {{ item['slot_label'] }}: {{ item['part_name'] }}
+    {% if item.get('part_key') %}
+      <span class="robot-time">({{ item['part_key'] }})</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>ステータス</h2>
+  {% if robot['final_stats'] %}
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ robot['power'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ robot['final_stats']['hp'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ robot['final_stats']['atk'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ robot['final_stats']['def'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ robot['final_stats']['spd'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ robot['final_stats']['acc'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ robot['final_stats']['cri'] }}</div></div>
+  </div>
+  {% else %}
+  <div class="robot-part">ステータスを取得できません。</div>
+  {% endif %}
+</div>
+
+<p class="link"><a href="{{ url_for('robots') }}">所有ロボ一覧へ</a></p>
+{% endblock %}

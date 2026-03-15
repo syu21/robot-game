@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>運用メトリクス（直近7日）</h1>
+<form method="post" class="card inline-form">
+  <button type="submit">再集計</button>
+</form>
+<div class="card">
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>day_key</th>
+          <th>DAU</th>
+          <th>新規登録</th>
+          <th>探索回数</th>
+          <th>ボス遭遇</th>
+          <th>ボス撃破</th>
+          <th>合成回数</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r['day_key'] }}</td>
+          <td>{{ r['dau_count'] }}</td>
+          <td>{{ r['new_users'] }}</td>
+          <td>{{ r['explore_count'] }}</td>
+          <td>{{ r['boss_encounters'] }}</td>
+          <td>{{ r['boss_defeats'] }}</td>
+          <td>{{ r['fuse_count'] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">データがありません。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<h2>進化コア観測（実測）</h2>
+<form method="get" class="card inline-form">
+  <label>探索サンプル件数
+    <input type="number" min="50" max="5000" name="sample" value="{{ selected_sample_size }}" />
+  </label>
+  <label>user/day日数
+    <input type="number" min="1" max="90" name="core_days" value="{{ selected_core_days }}" />
+  </label>
+  <button type="submit">更新</button>
+</form>
+<div class="card">
+  <p>設定ドロップ率（戦闘勝利1回あたり）: {{ '%.2f'|format(100 * core_obs.configured_drop_rate) }}%</p>
+  <p>探索サンプル: {{ core_obs.explores }}件 / 勝利: {{ core_obs.wins }}件 / 総戦闘試行: {{ core_obs.battles_total }}回</p>
+  <p>実測（探索あたり）: {{ '%.2f'|format(100 * core_obs.core_per_explore) }}% （ヒット率 {{ '%.2f'|format(100 * core_obs.core_hit_rate_explore) }}%）</p>
+  <p>実測（戦闘試行あたり）: {{ '%.2f'|format(100 * core_obs.core_per_battle_trial) }}% / 推定探索ヒット率: {{ '%.2f'|format(100 * core_obs.expected_hit_per_explore) }}%</p>
+  <p>平均戦闘数/探索: {{ '%.3f'|format(core_obs.avg_battles_per_explore) }}</p>
+</div>
+<div class="card">
+  <h3>進化コア流入（user/day, 直近{{ core_obs.days }}日）</h3>
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>day</th>
+          <th>user_id</th>
+          <th>username</th>
+          <th>core_qty</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in core_obs.user_day %}
+        <tr>
+          <td>{{ r.day_key }}</td>
+          <td>{{ r.user_id }}</td>
+          <td>{{ r.username }}</td>
+          <td>{{ r.core_qty }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">データがありません。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>管理者メニュー</h1>
+<div class="card">
+  <p>管理者としてログインしています。バトルのクールタイムは無視されます。</p>
+  <form method="post">
+    <input type="hidden" name="action" value="grant_robots" />
+    <button type="submit">未所持ロボを全付与</button>
+  </form>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="grant_core" />
+    <input type="number" name="qty" min="1" value="5" />
+    <button type="submit">保護コア付与</button>
+  </form>
+  {% if message %}
+    <p>{{ message }}</p>
+  {% endif %}
+</div>
+<div class="card">
+  <p>画像登録</p>
+  <p><a href="{{ url_for('admin_parts') }}">パーツ登録</a></p>
+  <p><a href="{{ url_for('admin_parts_align') }}">パーツ位置調整</a></p>
+  <p><a href="{{ url_for('admin_decor') }}">装飾アセット管理</a></p>
+  <p><a href="{{ url_for('admin_enemies') }}">敵管理</a></p>
+  <p><a href="{{ url_for('admin_npc_bosses') }}">NPCボス管理</a></p>
+  <p><a href="{{ url_for('admin_users') }}">ユーザー管理（BAN/ログイン保護/完全削除）</a></p>
+  <p><a href="{{ url_for('admin_balance') }}">バランス設定確認</a></p>
+  <p><a href="{{ url_for('admin_seed_robots') }}">テストロボ一括生成</a></p>
+  <p><a href="{{ url_for('admin_world') }}">週間環境管理</a></p>
+  <p><a href="{{ url_for('admin_audit') }}">監査ログ</a></p>
+  <p><a href="{{ url_for('admin_metrics') }}">運用メトリクス</a></p>
+  <p><a href="{{ url_for('admin_backup') }}">DBバックアップ</a></p>
+</div>
+<div class="card">
+  <p>招待/共有（最小確認）</p>
+  <p>pending: {{ referral_counts['pending'] if referral_counts else 0 }}</p>
+  <p>qualified: {{ referral_counts['qualified'] if referral_counts else 0 }}</p>
+  <p>rewarded: {{ referral_counts['rewarded'] if referral_counts else 0 }}</p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.share.click') }}">監査: audit.share.click</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.referral.attach') }}">監査: audit.referral.attach</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.referral.qualified') }}">監査: audit.referral.qualified</a></p>
+</div>
+<div class="card">
+  <p>画像不足チェック</p>
+  <p>不足件数: {{ missing_assets['count'] if missing_assets else 0 }}</p>
+  {% if missing_assets and missing_assets['rows'] %}
+  <details>
+    <summary>不足一覧（先頭{{ missing_assets['rows']|length }}件）</summary>
+    <ul>
+      {% for r in missing_assets['rows'] %}
+      <li>[{{ r['type'] }}] {{ r['key'] }} : {{ r['path'] }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

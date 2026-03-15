@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営選択</h1>
+
+{% if user_faction %}
+<div class="card">
+  <p>所属済み: <b>{{ faction_labels.get(user_faction, user_faction) }}</b></p>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% elif not can_choose %}
+<div class="card">
+  <p>まだ陣営選択は解禁されていません。</p>
+  <p>{{ unlock_progress_line }}</p>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% else %}
+<div class="card">
+  <p>所属する陣営を選択してください。選択後は変更できません。</p>
+</div>
+<div class="showcase-grid">
+  {% for key in ('ignis', 'ventra', 'aurix') %}
+  <form method="post" class="card">
+    <input type="hidden" name="faction" value="{{ key }}" />
+    <div><b>{{ faction_labels.get(key, key) }}</b>{% if recommended_faction == key %} <span class="weekly-fit-badge">おすすめ</span>{% endif %}</div>
+    <div class="upgrade-cost">所属人数: {{ member_counts.get(key, 0) }}</div>
+    {% if key == 'ignis' %}<div class="upgrade-cost">高出力試験と突破を重視する陣営。</div>{% endif %}
+    {% if key == 'ventra' %}<div class="upgrade-cost">機動戦術と速度適応を重視する陣営。</div>{% endif %}
+    {% if key == 'aurix' %}<div class="upgrade-cost">防衛運用と安定収集を重視する陣営。</div>{% endif %}
+    <button type="submit">この陣営に所属</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

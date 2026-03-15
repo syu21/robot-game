@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>更新履歴</h1>
+  {% for e in entries %}
+    <div>
+      <h2>v{{ e['version'] }} - {{ e['date'] }}</h2>
+      <div><b>{{ e['title'] }}</b></div>
+      <ul>
+        {% for n in e['notes'] %}
+          <li>{{ n }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

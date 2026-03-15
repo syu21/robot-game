@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card error-box">
+  <h1>メンテナンス中</h1>
+  <p>現在メンテナンスのため、この操作は一時停止しています。</p>
+  <p>しばらくしてから再度お試しください。</p>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  <p class="link"><a href="{{ url_for('contact') }}">お問い合わせ</a></p>
+</div>
+{% endblock %}

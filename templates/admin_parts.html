@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>パーツ登録</h1>
+<form method="post" enctype="multipart/form-data" class="card">
+  {% if editing %}
+  <input type="hidden" name="edit_part_id" value="{{ editing['id'] }}" />
+  {% endif %}
+  <p>運用ルール: 128x128固定、トリミング禁止、位置込みPNGを登録してください。</p>
+  <p>HEADは「頭+胴体」を含む画像です。</p>
+  <label>パーツ種別</label>
+  <select name="part_type" required>
+    <option value="">選択</option>
+    <option value="HEAD" {% if editing and editing['part_type'] == 'HEAD' %}selected{% endif %}>HEAD</option>
+    <option value="RIGHT_ARM" {% if editing and editing['part_type'] == 'RIGHT_ARM' %}selected{% endif %}>RIGHT_ARM</option>
+    <option value="LEFT_ARM" {% if editing and editing['part_type'] == 'LEFT_ARM' %}selected{% endif %}>LEFT_ARM</option>
+    <option value="LEGS" {% if editing and editing['part_type'] == 'LEGS' %}selected{% endif %}>LEGS</option>
+  </select>
+  <label>キー（例: head_1）</label>
+  <input type="text" name="key" value="{{ editing['key'] if editing else '' }}" required />
+  <label>レアリティ</label>
+  <select name="rarity" required>
+    {% for rarity in rarity_options %}
+      <option value="{{ rarity }}" {% if editing and editing['rarity'] == rarity %}selected{% endif %}>{{ rarity }}</option>
+    {% endfor %}
+  </select>
+  <label>属性</label>
+  <select name="element" required>
+    {% for code, label in element_options %}
+      <option value="{{ code }}" {% if editing and editing['element'] == code %}selected{% endif %}>{{ label }} ({{ code }})</option>
+    {% endfor %}
+  </select>
+  <label>シリーズ（任意）</label>
+  <input type="text" name="series" value="{{ editing['series'] if editing else '' }}" placeholder="例: S1" />
+  <label>表示名（日本語・任意）</label>
+  <input type="text" name="display_name_ja" value="{{ editing['display_name_ja'] if editing and editing['display_name_ja'] else '' }}" placeholder="未入力なら自動生成" />
+  <label>オフセットX</label>
+  <input type="number" name="offset_x" value="{{ editing['offset_x'] if editing else 0 }}" />
+  <label>オフセットY</label>
+  <input type="number" name="offset_y" value="{{ editing['offset_y'] if editing else 0 }}" />
+  <label>PNG画像（128x128 / 透過必須）{% if editing %} ※変更時のみ選択{% endif %}</label>
+  <input type="file" name="image" accept="image/png" />
+  <button type="submit">{% if editing %}更新{% else %}登録{% endif %}</button>
+  {% if editing %}
+    <a class="button-link" href="{{ url_for('admin_parts', show_inactive=1 if show_inactive else 0) }}">編集を解除</a>
+  {% endif %}
+</form>
+
+<div class="card">
+  <p class="link"><a href="{{ url_for('admin_parts_align') }}">位置調整ページを開く</a></p>
+  <h2>登録済みパーツ</h2>
+  <p>
+    {% if show_inactive %}
+      <a href="{{ url_for('admin_parts') }}">有効のみ表示</a>
+    {% else %}
+      <a href="{{ url_for('admin_parts', show_inactive=1) }}">無効も表示</a>
+    {% endif %}
+  </p>
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>種別</th>
+          <th>表示名</th>
+          <th>part_key</th>
+          <th>rarity</th>
+          <th>element</th>
+          <th>series</th>
+          <th>サムネ</th>
+          <th>画像パス</th>
+          <th>登録日時</th>
+          <th>状態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>{{ r['id'] }}</td>
+            <td>{{ r['part_type'] }}</td>
+            <td>
+              {{ r['display_name_resolved'] }}
+              {% if r['display_name_is_fallback'] %}
+                <span class="upgrade-cost">（自動）</span>
+              {% endif %}
+            </td>
+            <td>{{ r['key'] }}</td>
+            <td>{{ r['rarity'] or '-' }}</td>
+            <td>{{ element_labels.get((r['element'] or '').upper(), r['element'] or '-') }}</td>
+            <td>{{ r['series'] or '-' }}</td>
+            <td>
+              {% if r['image_path'] %}
+                <a href="{{ url_for('static', filename='robot_assets/' ~ r['image_path']) }}" target="_blank" rel="noopener noreferrer">
+                  <img class="part-thumb admin-thumb" src="{{ url_for('static', filename='robot_assets/' ~ r['image_path']) }}" alt="{{ r['key'] }}" loading="lazy" />
+                </a>
+              {% else %}
+                <span>no image</span>
+              {% endif %}
+            </td>
+            <td><code>{{ r['image_path'] or '-' }}</code></td>
+            <td>{{ r['created_at'] | dt }}</td>
+            <td>{% if r['is_active'] == 1 %}有効{% else %}無効{% endif %}</td>
+            <td>
+              <p class="link">
+                <a href="{{ url_for('admin_parts', edit_id=r['id'], show_inactive=1 if show_inactive else 0) }}">編集</a>
+                /
+                <a href="{{ url_for('admin_parts_align', part_id=r['id']) }}">位置調整</a>
+              </p>
+              <form method="post" action="{{ url_for('admin_parts_purge_quick', part_id=r['id']) }}" class="inline-form" onsubmit="return confirm('開発用クイック削除を実行します。よろしいですか？');">
+                <button class="danger-btn danger-btn-small" type="submit">開発用: 即時一括削除</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_parts_toggle_active', part_id=r['id']) }}" class="inline-form">
+                <button type="submit">{% if r['is_active'] == 1 %}無効化{% else %}有効化{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

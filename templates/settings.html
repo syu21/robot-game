@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>設定</h1>
+<div class="card">
+  <h2>ユーザーアイコン</h2>
+  <div class="user-chip">
+    <img class="avatar-48" src="{{ url_for('static', filename=avatar_path) }}" alt="avatar" />
+    <span class="badge-overlay">
+      <img class="robot-badge-32" src="{{ url_for('static', filename=badge_path) }}" alt="badge" />
+    </span>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="post-form">
+    <input type="file" name="avatar" accept="image/png,image/*" required />
+    <button type="submit">アップロード</button>
+  </form>
+  <div class="upgrade-cost">PNG推奨 / 最大2MB / 正方形以外は中央クロップで48x48化</div>
+</div>
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

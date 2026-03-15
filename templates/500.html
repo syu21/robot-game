@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card error-box">
+  <h1>500 Internal Server Error</h1>
+  <p>サーバーで問題が発生しました。時間をおいて再試行してください。</p>
+  <p class="link"><a href="{{ url_for('contact') }}">お問い合わせ</a></p>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% endblock %}

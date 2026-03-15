@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>パーツ位置調整（合成プレビュー）</h1>
+
+<div class="card">
+  <div class="build-grid">
+    <section class="build-preview">
+      <h2>合成プレビュー</h2>
+      <div class="robot-preview build-preview-canvas">
+        {% set legs = preview_layers.get('LEGS') %}
+        {% set head = preview_layers.get('HEAD') %}
+        {% set rarm = preview_layers.get('RIGHT_ARM') %}
+        {% set larm = preview_layers.get('LEFT_ARM') %}
+        <img id="pv-legs" data-layer="LEGS" class="layer" src="{{ legs['image_url'] if legs else '' }}" alt="legs" style="transform: translate({{ legs['offset_x'] if legs else 0 }}px, {{ legs['offset_y'] if legs else 0 }}px); visibility: {{ 'visible' if legs else 'hidden' }};" />
+        <img id="pv-head" data-layer="HEAD" class="layer" src="{{ head['image_url'] if head else '' }}" alt="head" style="transform: translate({{ head['offset_x'] if head else 0 }}px, {{ head['offset_y'] if head else 0 }}px); visibility: {{ 'visible' if head else 'hidden' }};" />
+        <img id="pv-rarm" data-layer="RIGHT_ARM" class="layer" src="{{ rarm['image_url'] if rarm else '' }}" alt="right arm" style="transform: translate({{ rarm['offset_x'] if rarm else 0 }}px, {{ rarm['offset_y'] if rarm else 0 }}px); visibility: {{ 'visible' if rarm else 'hidden' }};" />
+        <img id="pv-larm" data-layer="LEFT_ARM" class="layer" src="{{ larm['image_url'] if larm else '' }}" alt="left arm" style="transform: translate({{ larm['offset_x'] if larm else 0 }}px, {{ larm['offset_y'] if larm else 0 }}px); visibility: {{ 'visible' if larm else 'hidden' }};" />
+      </div>
+      <p class="robot-time">レイヤー順: LEGS → HEAD → RIGHT_ARM → LEFT_ARM</p>
+    </section>
+
+    <section class="build-picker">
+      <h2>調整設定</h2>
+      <form method="post" id="align-form" class="card">
+        <label>調整対象パーツ</label>
+        <select name="target_part_key" id="align-part-key" required>
+          {% for ptype in ['HEAD', 'RIGHT_ARM', 'LEFT_ARM', 'LEGS'] %}
+            <optgroup label="{{ ptype }}">
+              {% for r in options[ptype] %}
+                <option value="{{ r['key'] }}" {% if selected_part and r['key'] == selected_part['key'] %}selected{% endif %}>
+                  {{ r['key'] }}{% if r['is_active'] != 1 %} (無効){% endif %}
+                </option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+
+        <h3>基準セット</h3>
+        <label>HEAD</label>
+        <select name="base_head" id="base-head">
+          <option value="">なし</option>
+          {% for r in options['HEAD'] %}
+            <option value="{{ r['key'] }}" {% if r['key'] == base_head_key %}selected{% endif %}>{{ r['key'] }}</option>
+          {% endfor %}
+        </select>
+        <label>RIGHT_ARM</label>
+        <select name="base_right" id="base-right">
+          <option value="">なし</option>
+          {% for r in options['RIGHT_ARM'] %}
+            <option value="{{ r['key'] }}" {% if r['key'] == base_r_arm_key %}selected{% endif %}>{{ r['key'] }}</option>
+          {% endfor %}
+        </select>
+        <label>LEFT_ARM</label>
+        <select name="base_left" id="base-left">
+          <option value="">なし</option>
+          {% for r in options['LEFT_ARM'] %}
+            <option value="{{ r['key'] }}" {% if r['key'] == base_l_arm_key %}selected{% endif %}>{{ r['key'] }}</option>
+          {% endfor %}
+        </select>
+        <label>LEGS</label>
+        <select name="base_legs" id="base-legs">
+          <option value="">なし</option>
+          {% for r in options['LEGS'] %}
+            <option value="{{ r['key'] }}" {% if r['key'] == base_legs_key %}selected{% endif %}>{{ r['key'] }}</option>
+          {% endfor %}
+        </select>
+
+        <h3>オフセット</h3>
+        <div class="inline-form">
+          <label>X</label>
+          <input type="number" name="offset_x" id="align-offset-x" value="{{ selected_part['offset_x'] if selected_part else 0 }}" />
+          <label>Y</label>
+          <input type="number" name="offset_y" id="align-offset-y" value="{{ selected_part['offset_y'] if selected_part else 0 }}" />
+        </div>
+        <div class="fuse-mode-tabs">
+          <button type="button" class="align-nudge" data-axis="x" data-step="-5">X -5</button>
+          <button type="button" class="align-nudge" data-axis="x" data-step="-1">X -1</button>
+          <button type="button" class="align-nudge" data-axis="x" data-step="1">X +1</button>
+          <button type="button" class="align-nudge" data-axis="x" data-step="5">X +5</button>
+        </div>
+        <div class="fuse-mode-tabs" style="margin-top: 8px;">
+          <button type="button" class="align-nudge" data-axis="y" data-step="-5">Y -5</button>
+          <button type="button" class="align-nudge" data-axis="y" data-step="-1">Y -1</button>
+          <button type="button" class="align-nudge" data-axis="y" data-step="1">Y +1</button>
+          <button type="button" class="align-nudge" data-axis="y" data-step="5">Y +5</button>
+        </div>
+
+        <div class="inline-form" style="margin-top: 10px;">
+          <button type="submit">保存</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('admin_parts', show_inactive=1) }}">パーツ管理へ戻る</a></p>
+{% endblock %}
+
+{% block scripts %}
+<script id="align-part-meta" type="application/json">{{ part_meta | tojson }}</script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const DEBUG_ALIGN = new URLSearchParams(window.location.search).get("debug_align") === "1";
+  const dlog = (...args) => { if (DEBUG_ALIGN) console.log("[align]", ...args); };
+  const dwarn = (...args) => { if (DEBUG_ALIGN) console.warn("[align]", ...args); };
+  const metaEl = document.getElementById("align-part-meta");
+  const meta = metaEl ? JSON.parse(metaEl.textContent || "{}") : {};
+  window.PART_IMAGE_MAP = {};
+  window.PART_OFFSET_MAP = {};
+  for (const [key, info] of Object.entries(meta)) {
+    window.PART_IMAGE_MAP[key] = info.image_url || "";
+    window.PART_OFFSET_MAP[key] = { x: Number(info.offset_x || 0), y: Number(info.offset_y || 0) };
+  }
+  const partSelect = document.querySelector('select[name="target_part_key"]');
+  const ox = document.getElementById("align-offset-x");
+  const oy = document.getElementById("align-offset-y");
+  const baseHead = document.querySelector('select[name="base_head"]');
+  const baseRarm = document.querySelector('select[name="base_right"]');
+  const baseLarm = document.querySelector('select[name="base_left"]');
+  const baseLegs = document.querySelector('select[name="base_legs"]');
+  if (!window.PART_IMAGE_MAP || !window.PART_OFFSET_MAP) {
+    dwarn("PART_IMAGE_MAP / PART_OFFSET_MAP が未定義です");
+  }
+  if (!partSelect || !baseHead || !baseRarm || !baseLarm || !baseLegs || !ox || !oy) {
+    dwarn("必要なフォーム要素が見つかりません", {
+      partSelect: !!partSelect, baseHead: !!baseHead, baseRarm: !!baseRarm, baseLarm: !!baseLarm, baseLegs: !!baseLegs, ox: !!ox, oy: !!oy
+    });
+    return;
+  }
+  const layerMap = {
+    HEAD: document.getElementById("pv-head"),
+    RIGHT_ARM: document.getElementById("pv-rarm"),
+    LEFT_ARM: document.getElementById("pv-larm"),
+    LEGS: document.getElementById("pv-legs")
+  };
+
+  function setLayer(slot, key, forceX, forceY) {
+    const el = layerMap[slot];
+    if (!el) return;
+    const cleanKey = (key || "").trim();
+    const p = cleanKey ? meta[cleanKey] : null;
+    if (!p || !window.PART_IMAGE_MAP[cleanKey]) {
+      if (cleanKey) dwarn("パーツキーに対応する画像がありません", { slot, key: cleanKey });
+      el.removeAttribute("src");
+      el.style.visibility = "hidden";
+      return;
+    }
+    const x = Number.isFinite(forceX) ? forceX : Number(p.offset_x || 0);
+    const y = Number.isFinite(forceY) ? forceY : Number(p.offset_y || 0);
+    el.src = window.PART_IMAGE_MAP[cleanKey];
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    el.style.visibility = "visible";
+    dlog("setLayer", { slot, key: cleanKey, x, y });
+  }
+
+  function syncOffsetInputsFromTarget() {
+    const key = (partSelect.value || "").trim();
+    const p = key ? meta[key] : null;
+    if (!p) {
+      dwarn("対象パーツが見つかりません", key);
+      return;
+    }
+    ox.value = Number(p.offset_x || 0);
+    oy.value = Number(p.offset_y || 0);
+    dlog("syncOffsetInputsFromTarget", { key, x: ox.value, y: oy.value });
+  }
+
+  function renderPreview() {
+    const targetKey = (partSelect.value || "").trim();
+    const target = targetKey ? meta[targetKey] : null;
+    const targetType = target ? target.part_type : "";
+    const slotKeys = {
+      HEAD: baseHead.value || "",
+      RIGHT_ARM: baseRarm.value || "",
+      LEFT_ARM: baseLarm.value || "",
+      LEGS: baseLegs.value || ""
+    };
+    if (targetType && targetKey) {
+      slotKeys[targetType] = targetKey;
+    }
+    dlog("renderPreview", { targetKey, targetType, slotKeys });
+    for (const slot of ["LEGS", "HEAD", "RIGHT_ARM", "LEFT_ARM"]) {
+      if (slot === targetType) {
+        setLayer(slot, slotKeys[slot], Number(ox.value || 0), Number(oy.value || 0));
+      } else {
+        setLayer(slot, slotKeys[slot]);
+      }
+    }
+  }
+
+  partSelect.addEventListener("change", function () {
+    dlog("target changed", partSelect.value);
+    syncOffsetInputsFromTarget();
+    renderPreview();
+  });
+  [baseHead, baseRarm, baseLarm, baseLegs, ox, oy].forEach((el) => {
+    el.addEventListener("change", function () {
+      dlog("base/offset changed", { name: el.name || el.id, value: el.value });
+      renderPreview();
+    });
+    el.addEventListener("input", function () {
+      renderPreview();
+    });
+  });
+  document.querySelectorAll(".align-nudge").forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const axis = btn.dataset.axis;
+      const step = Number(btn.dataset.step || "0");
+      if (axis === "x") {
+        ox.value = Number(ox.value || "0") + step;
+      } else if (axis === "y") {
+        oy.value = Number(oy.value || "0") + step;
+      }
+      renderPreview();
+    });
+  });
+  renderPreview();
+});
+</script>
+{% endblock %}

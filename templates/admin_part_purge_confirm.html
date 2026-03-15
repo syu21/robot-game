@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>危険な一括削除確認</h1>
+
+<div class="card danger-card">
+  <h2>対象パーツ</h2>
+  {% if part %}
+    <div>ID: {{ part['id'] }}</div>
+    <div>種別: {{ part['part_type'] }}</div>
+    <div>キー: {{ part['key'] }}</div>
+    <div>
+      {% if part['image_path'] %}
+        <a href="{{ url_for('static', filename='robot_assets/' ~ part['image_path']) }}" target="_blank" rel="noopener noreferrer">
+          <img class="part-thumb admin-thumb" src="{{ url_for('static', filename='robot_assets/' ~ part['image_path']) }}" alt="{{ part['key'] }}" loading="lazy" />
+        </a>
+      {% else %}
+        no image
+      {% endif %}
+    </div>
+  {% else %}
+    <div>対象 part_id={{ part_id }} は存在しません。</div>
+  {% endif %}
+</div>
+
+<div class="card danger-card">
+  <h2>影響件数</h2>
+  <ul class="log">
+    <li>個体(part_instances): {{ counts['part_instances'] }}</li>
+    <li>在庫(user_parts): {{ counts['inventory'] }}</li>
+    <li>所有ロボ(robots): {{ counts['instances'] }}</li>
+    <li>設計(builds): {{ counts['builds'] }}</li>
+    <li>報酬(rewards): {{ counts['milestones'] }}</li>
+    <li>その他互換(legacy user_robots): {{ counts['legacy_user_robots'] }}</li>
+  </ul>
+</div>
+
+<form method="post" action="{{ url_for('admin_parts_purge', part_id=part_id) }}" class="card danger-card">
+  <h2>実行確認</h2>
+  <label>part_id 手入力</label>
+  <input type="text" name="typed_part_id" required />
+  <label>確認ワード</label>
+  <input type="text" name="confirm_word" placeholder="I UNDERSTAND" required />
+  <label><input type="checkbox" name="acknowledged" value="1" required /> 削除内容を理解しました</label>
+  <button class="danger-btn" type="submit">危険: 関連データ込みで完全削除</button>
+</form>
+
+<p class="link"><a href="{{ url_for('admin_parts', show_inactive=1) }}">/admin/parts に戻る</a></p>
+{% endblock %}

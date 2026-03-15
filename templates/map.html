@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>探索マップ</h1>
+<div class="card">
+  <div>現在の勝利数: <b>{{ wins_total }}</b></div>
+  <div>現在解放層: <b>第{{ max_unlocked_layer }}層</b></div>
+</div>
+
+<div class="robot-grid">
+  {% for node in nodes %}
+  <div id="map-node-{{ node['key'] }}" class="card map-node unlocked" data-area-key="{{ node['key'] }}">
+    <h2>{{ node['label'] }}</h2>
+    {% for line in node['description_lines'] %}
+      <div class="robot-part">{{ line }}</div>
+    {% endfor %}
+    {% if stage_modifiers_enabled and node.get('tendency_line') %}
+    <div class="robot-part">{{ node['tendency_line'] }}</div>
+    {% endif %}
+    <div class="robot-part">所属層: 第{{ node['layer'] }}層</div>
+    <div class="robot-part">推奨称号: {{ node['recommended_archetype'] }}</div>
+    <div class="robot-part">連勝: {{ node['win_streak'] }}</div>
+    <form method="post" action="{{ url_for('explore') }}">
+      <input type="hidden" name="area_key" value="{{ node['key'] }}" />
+      <button type="submit">出撃</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% for line in locked_layers %}
+<div class="card map-node locked locked-layer-card">
+  <div class="locked-layer-icon">🔒</div>
+  <div class="locked-layer-main">未解放層</div>
+  <div class="locked-layer-sub">{{ line }}</div>
+</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ユーザー完全削除（確認）</h1>
+<div class="card">
+  <p><b>ユーザー名:</b> {{ target['username'] }}</p>
+  <p><b>user_id:</b> {{ target['id'] }}</p>
+  <p><b>ロボ数:</b> {{ summary['robot_count'] }}</p>
+  <p><b>パーツ数:</b> {{ summary['part_count'] }}</p>
+  <p><b>監査ログ件数:</b> {{ summary['audit_count'] }}</p>
+  <p><b>招待/紹介データ件数:</b> {{ summary['referral_count'] }}</p>
+  <p class="error">この操作は取り消せません。確認のため <b>DELETE</b> を入力してください。</p>
+  <form method="post">
+    <label for="confirm_token">確認トークン</label>
+    <input id="confirm_token" name="confirm_token" type="text" placeholder="DELETE" required />
+    <button type="submit">完全削除を実行</button>
+    <a class="battle-home-link" href="{{ url_for('admin_users') }}">キャンセル</a>
+  </form>
+</div>
+{% endblock %}

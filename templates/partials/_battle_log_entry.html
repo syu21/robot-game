@@ -1,0 +1,10 @@
+<div class="battle-log-entry">
+  <div class="battle-log-meta">
+    {{ entry.timestamp }} | 敵: {{ entry.enemy_name }} | 出撃: {{ entry.robot_name }}
+  </div>
+  <ul class="log">
+    {% for line in entry.lines %}
+      <li class="{% if '勝利' in line or '報酬' in line or 'ドロップ' in line or 'クリティカル' in line %}log-important{% endif %}">{{ line }}</li>
+    {% endfor %}
+  </ul>
+</div>

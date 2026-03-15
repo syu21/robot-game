@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボ展示</h1>
+
+<div class="card">
+  <h2>自分の展示設定</h2>
+  <div>現在枠: {{ limits['showcase_slots'] }} / 3</div>
+  <form method="post" action="{{ url_for('showcase_buy_slot') }}">
+    <button type="submit">枠を拡張（2枠目:5,000 / 3枠目:15,000 コイン）</button>
+  </form>
+  <div class="robot-grid">
+    {% for row in rows %}
+      <div class="robot-card">
+        <div class="robot-id">SLOT {{ row['slot_no'] }}</div>
+        {% if row.get('image_url') %}
+          <img class="robot-thumb" src="{{ row['image_url'] }}" alt="slot" loading="lazy" />
+          <div class="robot-part">{{ row['name'] }}</div>
+        {% else %}
+          <div class="robot-thumb empty">empty</div>
+        {% endif %}
+        <form method="post" action="{{ url_for('showcase_set') }}">
+          <input type="hidden" name="slot_no" value="{{ row['slot_no'] }}" />
+          <select name="robot_instance_id">
+            <option value="">未設定</option>
+            {% for r in robots %}
+              <option value="{{ r['id'] }}" {% if row['robot_instance_id'] == r['id'] %}selected{% endif %}>
+                #{{ r['id'] }} {{ r['name'] }} ({{ r['status'] }})
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit">設定</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>公開ロボ</h2>
+  <div class="showcase-sort-tabs">
+    <a href="{{ url_for('showcase', sort='new') }}" class="fuse-mode-tab {% if sort_key == 'new' %}is-active{% endif %}">新着</a>
+    <a href="{{ url_for('showcase', sort='week') }}" class="fuse-mode-tab {% if sort_key == 'week' %}is-active{% endif %}">今週</a>
+    <a href="{{ url_for('showcase', sort='boss') }}" class="fuse-mode-tab {% if sort_key == 'boss' %}is-active{% endif %}">ボス</a>
+    <a href="{{ url_for('showcase', sort='like') }}" class="fuse-mode-tab {% if sort_key == 'like' %}is-active{% endif %}">いいね</a>
+  </div>
+  <div class="robot-grid">
+    {% for r in public_rows %}
+      <div class="robot-card">
+        <div class="robot-id">{{ r['name'] }}</div>
+        <div class="robot-part">オーナー: {{ r['username'] }}</div>
+        <div class="robot-part">称号: {{ r['primary_title'] }}</div>
+        {% if r.get('image_url') %}
+          <img class="robot-thumb" src="{{ r['image_url'] }}" alt="{{ r['name'] }}" loading="lazy" />
+        {% else %}
+          <div class="robot-thumb empty">no image</div>
+        {% endif %}
+        <div class="robot-part">今週勝利 {{ r['wins_this_week'] }} / ボス撃破 {{ r['boss_defeats_total'] }}</div>
+        <form method="post" action="{{ url_for('showcase_like', robot_id=r['id']) }}">
+          <input type="hidden" name="sort" value="{{ sort_key }}" />
+          <button type="submit">{% if r['liked_by_me'] %}いいね解除{% else %}いいね{% endif %} ({{ r['vote_count'] }})</button>
+        </form>
+        <p class="link"><a href="{{ url_for('robot_detail', instance_id=r['id']) }}">個別ページ</a></p>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

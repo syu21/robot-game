@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>勝利数ランキング</h1>
+<div class="card">
+  <table>
+    <tr>
+      <th>順位</th>
+      <th>ユーザー</th>
+      <th>勝利数</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>
+        <span class="user-chip mini">
+          <img class="avatar-48" src="{{ url_for('static', filename=r['avatar_path']) }}" alt="avatar" />
+          <span class="badge-overlay">
+            <img class="robot-badge-32" src="{{ url_for('static', filename=r['badge_path']) }}" alt="badge" />
+          </span>
+        </span>
+        {{ r['username'] }}
+      </td>
+      <td>{{ r['wins'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

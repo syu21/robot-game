@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>NPCボステンプレ管理</h1>
+{% if message %}
+<div class="notice">{{ message }}</div>
+{% endif %}
+<div class="card">
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>敵名</th>
+      <th>source_user</th>
+      <th>source_robot</th>
+      <th>area</th>
+      <th>active</th>
+      <th>created</th>
+      <th>操作</th>
+    </tr>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row['id'] }}</td>
+      <td>{{ row['enemy_name_ja'] }}</td>
+      <td>{{ row['source_user_id'] }}</td>
+      <td>#{{ row['source_robot_instance_id'] }}</td>
+      <td>{{ row['boss_area_key'] }}</td>
+      <td>{{ 'ON' if row['is_active'] else 'OFF' }}</td>
+      <td>{{ row['created_at'] | dt }}</td>
+      <td>
+        <form method="post" class="inline-form">
+          <input type="hidden" name="template_id" value="{{ row['id'] }}" />
+          <input type="hidden" name="next_state" value="{{ 0 if row['is_active'] else 1 }}" />
+          <button type="submit">{{ '無効化' if row['is_active'] else '有効化' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">テンプレはまだありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% if state['active'] == 1 %}
+<div class="enemy-name">敵: {{ state['enemy_name'] }}</div>
+<div class="enemy-hp">
+  <span>敵HP: {{ state['enemy_hp'] }}</span>
+  <div class="hp-bar">
+    {% set hp_level = state['enemy_hp'] if state['enemy_hp'] >= 0 and state['enemy_hp'] <= 5 else 0 %}
+    <div class="hp-fill hp-fill-{{ hp_level }}"></div>
+  </div>
+</div>
+<div class="enemy-hp"><span>自機HP: --</span></div>
+{% else %}
+<div>探索待機中です。</div>
+{% endif %}

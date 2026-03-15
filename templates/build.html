@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボ編成</h1>
+{% if missing_part_types %}
+<div class="card">
+  <p><b>不足部位:</b> {{ missing_part_types | join(', ') }}</p>
+  <p>先に出撃でパーツを集めよう。</p>
+  <form method="post" action="{{ url_for('explore') }}" class="inline-form">
+    <input type="hidden" name="area_key" value="layer_1" />
+    <button type="submit">出撃へ（layer_1）</button>
+  </form>
+</div>
+{% endif %}
+<form method="post" action="{{ url_for('build_confirm') }}" id="build-form">
+  <div class="build-grid">
+    <section class="card build-preview build-preview-primary">
+      <h2>プレビュー</h2>
+      <div class="robot-preview build-preview-canvas">
+        {% set legs_default = selected_parts['LEGS'] %}
+        {% set larm_default = selected_parts['LEFT_ARM'] %}
+        {% set rarm_default = selected_parts['RIGHT_ARM'] %}
+        {% set head_default = selected_parts['HEAD'] %}
+        {% set decor_default = (decor_assets | selectattr('id', 'equalto', selected_decor_id) | list | first) if selected_decor_id else None %}
+        <img id="pv-legs" data-layer="LEGS" class="layer{% if not legs_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ legs_default['image_path']) if legs_default else '' }}" alt="legs preview" />
+        <img id="pv-head" data-layer="HEAD" class="layer{% if not head_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ head_default['image_path']) if head_default else '' }}" alt="head preview" />
+        <img id="pv-rarm" data-layer="RIGHT_ARM" class="layer{% if not rarm_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ rarm_default['image_path']) if rarm_default else '' }}" alt="right arm preview" />
+        <img id="pv-larm" data-layer="LEFT_ARM" class="layer{% if not larm_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ larm_default['image_path']) if larm_default else '' }}" alt="left arm preview" />
+        <img id="pv-decor" data-layer="DECORATION" class="layer{% if not decor_default %} is-hidden{% endif %}" src="{{ url_for('static', filename=decor_default['display_image_path']) if decor_default else '' }}" alt="decor preview" />
+      </div>
+      <div class="build-estimate card">
+        <h3>ステータス比較</h3>
+        <div class="upgrade-cost"><b>組み立て中（プレビュー）</b></div>
+        <div class="estimate-grid">
+          <div class="estimate-item">耐久 <b id="est-hp">{{ estimate['stats']['hp'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">攻撃 <b id="est-atk">{{ estimate['stats']['atk'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">防御 <b id="est-def">{{ estimate['stats']['def'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">素早さ <b id="est-spd">{{ estimate['stats']['spd'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">命中 <b id="est-acc">{{ estimate['stats']['acc'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">会心 <b id="est-cri">{{ estimate['stats']['cri'] if estimate else 0 }}</b></div>
+        </div>
+        <div class="upgrade-cost">総合: <b id="est-power">{{ estimate['power'] if estimate else 0 }}</b></div>
+        <div class="estimate-bonus" id="est-bonus">
+          {% if estimate and estimate['set_bonus'] %}
+            セットボーナス: {{ element_label_map.get(estimate['set_bonus'], estimate['set_bonus']) }} (+5%)
+          {% else %}
+            セットボーナス: なし
+          {% endif %}
+        </div>
+        <hr />
+        <div class="upgrade-cost"><b>現装備（起動中ロボ）</b></div>
+        <div class="estimate-grid">
+          <div class="estimate-item">耐久 <b id="cur-hp">{{ current_robot_stats['hp'] }}</b></div>
+          <div class="estimate-item">攻撃 <b id="cur-atk">{{ current_robot_stats['atk'] }}</b></div>
+          <div class="estimate-item">防御 <b id="cur-def">{{ current_robot_stats['def'] }}</b></div>
+          <div class="estimate-item">素早さ <b id="cur-spd">{{ current_robot_stats['spd'] }}</b></div>
+          <div class="estimate-item">命中 <b id="cur-acc">{{ current_robot_stats['acc'] }}</b></div>
+          <div class="estimate-item">会心 <b id="cur-cri">{{ current_robot_stats['cri'] }}</b></div>
+        </div>
+        <div class="upgrade-cost">総合: <b id="cur-power">{{ current_robot_stats['power'] }}</b></div>
+        <hr />
+        {% for row in stat_comparison_rows %}
+        <div class="upgrade-cost">
+          {{ row['label'] }} <span id="cmp-{{ row['key'] }}-current">{{ row['current'] }}</span> →
+          <span id="cmp-{{ row['key'] }}-candidate">{{ row['candidate'] }}</span>
+          (<span id="cmp-{{ row['key'] }}-delta">{{ row['delta_text'] }}</span>)
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="card build-picker">
+      <h2>所持パーツから選択</h2>
+
+      <details class="picker-section" data-picker-section="head" open>
+        <summary><b>HEAD（頭+胴体）</b></summary>
+        {% if part_groups['HEAD'] %}
+          <div class="picker-list">
+          {% for p in part_groups['HEAD'] %}
+            <label class="picker-item">
+              <input type="radio" name="head_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="head" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['head_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
+            </label>
+          {% endfor %}
+          </div>
+        {% else %}<p>未所持</p>{% endif %}
+      </details>
+
+      <details class="picker-section" data-picker-section="right_arm">
+        <summary><b>RIGHT_ARM</b></summary>
+        {% if part_groups['RIGHT_ARM'] %}
+          <div class="picker-list">
+          {% for p in part_groups['RIGHT_ARM'] %}
+            <label class="picker-item">
+              <input type="radio" name="r_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="rarm" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['r_arm_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
+            </label>
+          {% endfor %}
+          </div>
+        {% else %}<p>未所持</p>{% endif %}
+      </details>
+
+      <details class="picker-section" data-picker-section="left_arm">
+        <summary><b>LEFT_ARM</b></summary>
+        {% if part_groups['LEFT_ARM'] %}
+          <div class="picker-list">
+          {% for p in part_groups['LEFT_ARM'] %}
+            <label class="picker-item">
+              <input type="radio" name="l_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="larm" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['l_arm_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
+            </label>
+          {% endfor %}
+          </div>
+        {% else %}<p>未所持</p>{% endif %}
+      </details>
+
+      <details class="picker-section" data-picker-section="legs">
+        <summary><b>LEGS</b></summary>
+        {% if part_groups['LEGS'] %}
+          <div class="picker-list">
+          {% for p in part_groups['LEGS'] %}
+            <label class="picker-item">
+              <input type="radio" name="legs_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="legs" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['legs_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
+            </label>
+          {% endfor %}
+          </div>
+        {% else %}<p>未所持</p>{% endif %}
+      </details>
+
+      <details class="picker-section" data-picker-section="decor">
+        <summary><b>DECORATION（任意）</b></summary>
+        <label class="picker-item">
+          <input type="radio" name="decor_asset_id" value="" data-part-key="" data-preview-target="decor" data-img="" {% if not selected_decor_id %}checked{% endif %} />
+          <span>なし</span>
+        </label>
+        {% if decor_assets %}
+          <div class="picker-list">
+          {% for d in decor_assets %}
+            <label class="picker-item">
+              <input type="radio" name="decor_asset_id" value="{{ d['id'] }}" data-part-key="decor_{{ d['id'] }}" data-preview-target="decor" data-img="{{ url_for('static', filename=d['display_image_path']) }}" {% if selected_decor_id and d['id'] == selected_decor_id %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename=d['display_image_path']) }}" alt="{{ d['key'] }}" loading="lazy" decoding="async" />
+              <span>{{ d['name_ja'] }} ({{ d['key'] }})</span>
+            </label>
+          {% endfor %}
+          </div>
+        {% else %}<p>未所持（「なし」は選択可能）</p>{% endif %}
+      </details>
+      <div class="card build-submit-card">
+        <label>ロボ名（空欄なら自動命名）</label>
+        <input type="text" name="robot_name" maxlength="40" />
+        <button type="submit">完成登録</button>
+      </div>
+    </section>
+  </div>
+</form>
+<input type="hidden" id="build-set-bonus-table" value='{{ set_bonus_table | tojson }}' />
+<input type="hidden" id="build-current-hp" value="{{ current_robot_stats['hp'] }}" />
+<input type="hidden" id="build-current-atk" value="{{ current_robot_stats['atk'] }}" />
+<input type="hidden" id="build-current-def" value="{{ current_robot_stats['def'] }}" />
+<input type="hidden" id="build-current-spd" value="{{ current_robot_stats['spd'] }}" />
+<input type="hidden" id="build-current-acc" value="{{ current_robot_stats['acc'] }}" />
+<input type="hidden" id="build-current-cri" value="{{ current_robot_stats['cri'] }}" />
+<input type="hidden" id="build-current-power" value="{{ current_robot_stats['power'] }}" />
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='build_preview.js') }}"></script>
+{% endblock %}

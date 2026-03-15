@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>敵管理</h1>
+
+<div class="card">
+  <form method="get" class="inline-form">
+    <input type="text" name="q" value="{{ q }}" placeholder="key / 名前検索" />
+    <select name="tier">
+      <option value="">tier: すべて</option>
+      <option value="1" {% if tier == '1' %}selected{% endif %}>1</option>
+      <option value="2" {% if tier == '2' %}selected{% endif %}>2</option>
+      <option value="3" {% if tier == '3' %}selected{% endif %}>3</option>
+    </select>
+    <select name="element">
+      <option value="">属性: すべて</option>
+      {% for code, label in element_options %}
+      <option value="{{ code }}" {% if selected_element == code %}selected{% endif %}>{{ label }} ({{ code }})</option>
+      {% endfor %}
+    </select>
+    <select name="faction">
+      <option value="">所属: すべて</option>
+      {% for code, label in faction_options.items() %}
+      <option value="{{ code }}" {% if selected_faction == code %}selected{% endif %}>{{ label }} ({{ code }})</option>
+      {% endfor %}
+    </select>
+    <select name="is_active">
+      <option value="all" {% if selected_active == 'all' %}selected{% endif %}>状態: すべて</option>
+      <option value="1" {% if selected_active == '1' %}selected{% endif %}>有効</option>
+      <option value="0" {% if selected_active == '0' %}selected{% endif %}>無効</option>
+    </select>
+    <select name="is_boss">
+      <option value="all" {% if selected_boss == 'all' %}selected{% endif %}>ボス: すべて</option>
+      <option value="1" {% if selected_boss == '1' %}selected{% endif %}>ボスのみ</option>
+      <option value="0" {% if selected_boss == '0' %}selected{% endif %}>通常のみ</option>
+    </select>
+    <select name="boss_area_key">
+      <option value="">ボスエリア: すべて</option>
+      {% for area_key in boss_area_options %}
+      <option value="{{ area_key }}" {% if selected_boss_area == area_key %}selected{% endif %}>{{ area_key }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">絞り込み</button>
+    <a class="button-link" href="{{ url_for('admin_enemy_new') }}">新規作成</a>
+    <a class="button-link" href="{{ url_for('admin_enemies_import') }}">CSVインポート</a>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>画像</th>
+          <th>key</th>
+          <th>名前</th>
+          <th>tier</th>
+          <th>element</th>
+          <th>faction</th>
+          <th>boss</th>
+          <th>状態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for e in enemies %}
+        <tr>
+          <td><img class="part-thumb admin-thumb" src="{{ url_for('static', filename=e['display_image_path']) }}" alt="{{ e['key'] }}" loading="lazy" /></td>
+          <td>{{ e['key'] }}</td>
+          <td>{{ e['name_ja'] }}</td>
+          <td>{{ e['tier'] }}</td>
+          <td>{{ e['element'] }}</td>
+          <td>{{ faction_options.get(e['faction'], e['faction']) }}</td>
+          <td>
+            {% if e.get('is_boss', 0) == 1 %}
+              はい{% if e.get('boss_area_key') %} ({{ e['boss_area_key'] }}){% endif %}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>{% if e['is_active'] == 1 %}有効{% else %}無効{% endif %}</td>
+          <td>
+            <a href="{{ url_for('admin_enemy_edit', key=e['key']) }}">編集</a>
+            <form method="post" action="{{ url_for('admin_enemy_toggle_active', key=e['key']) }}" class="inline-form">
+              <button type="submit">{% if e['is_active'] == 1 %}無効化{% else %}有効化{% endif %}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

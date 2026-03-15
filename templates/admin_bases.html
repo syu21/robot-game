@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Base Body 登録</h1>
+<form method="post" enctype="multipart/form-data" class="card">
+  <label>キー（例: normal）</label>
+  <input type="text" name="key" required />
+  <label>PNG画像（128x128 / 透過必須）</label>
+  <input type="file" name="image" accept="image/png" required />
+  <button type="submit">登録</button>
+</form>
+
+<div class="card">
+  <h2>登録済み</h2>
+  <ul class="log">
+    {% for r in rows %}
+      <li>{{ r['key'] }} / {{ r['image_path'] }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

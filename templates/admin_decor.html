@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>装飾アセット管理</h1>
+{% if message %}
+<div class="notice">{{ message }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card">
+  <p>128x128透過PNG推奨（違反時は警告表示のみ）。</p>
+  <label>key</label>
+  <input type="text" name="key" required />
+  <label>表示名</label>
+  <input type="text" name="name_ja" required />
+  <label>画像</label>
+  <input type="file" name="image" accept="image/png" />
+  <button type="submit">追加/更新</button>
+</form>
+
+<div class="card">
+  <h2>登録済み装飾</h2>
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>key</th>
+          <th>名前</th>
+          <th>プレビュー</th>
+          <th>画像パス</th>
+          <th>状態</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r['id'] }}</td>
+          <td>{{ r['key'] }}</td>
+          <td>{{ r['name_ja'] }}</td>
+          <td>
+            <img class="part-thumb admin-thumb" src="{{ url_for('static', filename=r['display_image_path']) }}" alt="{{ r['key'] }}" loading="lazy" />
+          </td>
+          <td><code>{{ r['image_path'] or '-' }}</code></td>
+          <td>{% if r['is_active'] == 1 %}有効{% else %}無効{% endif %}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin_decor_toggle_active', decor_id=r['id']) }}">
+              <button type="submit">{% if r['is_active'] == 1 %}無効化{% else %}有効化{% endif %}</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

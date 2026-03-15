@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>DBバックアップ</h1>
+<div class="card">
+  <form method="post">
+    <button type="submit">バックアップ作成</button>
+  </form>
+  {% if message %}
+    <p>{{ message }}</p>
+  {% endif %}
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>ファイル名</th>
+          <th>サイズ(bytes)</th>
+          <th>更新時刻(JST)</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in files %}
+        <tr>
+          <td>{{ f['name'] }}</td>
+          <td>{{ f['size'] }}</td>
+          <td>{{ f['updated_at'] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3">バックアップはまだありません。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

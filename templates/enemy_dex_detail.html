@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>敵図鑑詳細</h1>
+<div class="card">
+  <div><b>{% if show_stats %}{{ enemy['name_ja'] }}{% else %}？？？{% endif %}</b></div>
+  <div class="robot-part">キー: {{ enemy['key'] }}</div>
+  <div class="robot-part">遭遇: {{ dex['seen_count'] }} / 撃破: {{ dex['defeat_count'] }}</div>
+  {% if enemy['is_boss'] %}<div class="robot-part">BOSS</div>{% endif %}
+  <img class="robot-thumb" src="{{ image_url }}" alt="{{ enemy['key'] }}" loading="lazy" decoding="async" />
+  {% if show_stats %}
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ enemy['hp'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ enemy['atk'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ enemy['def'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ enemy['spd'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ enemy['acc'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ enemy['cri'] }}</div></div>
+  </div>
+  {% else %}
+  <div class="upgrade-cost">撃破で能力詳細が解禁されます。</div>
+  {% endif %}
+</div>
+<p class="link"><a href="{{ url_for('enemy_dex') }}">敵図鑑へ戻る</a></p>
+{% endblock %}

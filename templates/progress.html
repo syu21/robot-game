@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>今日の進捗（JST）</h1>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">探索回数</div><div class="stat-value">{{ today_progress['explore_count'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ today_progress['win_count'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">獲得コイン</div><div class="stat-value">+{{ today_progress['coin_total'] }}</div></div>
+  </div>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>所持パーツ（個体）</h1>
+<div class="card">
+  <p>個体数: {{ total }} / 保護コア: {{ protect_core }}</p>
+  <p class="link"><a href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
+  <p class="link"><a href="{{ url_for('evolve_parts') }}">進化合成へ</a></p>
+  <p class="link">
+    <a href="{{ url_for('parts', tab='instances') }}">個体一覧</a> |
+    <a href="{{ url_for('parts', tab='legacy') }}">在庫(旧qty)</a>
+  </p>
+</div>
+
+{% if tab == 'instances' %}
+<form method="post" action="{{ url_for('parts_discard') }}" onsubmit="return confirm('選択した個体パーツを破棄します。よろしいですか？');">
+  <input type="hidden" name="confirm" value="yes" />
+  <div class="robot-grid">
+    {% for p in items %}
+      <label class="robot-card">
+        <input type="checkbox" name="instance_ids" value="{{ p['id'] }}" />
+        {% if p['image_url'] %}
+          <img class="robot-thumb" src="{{ p['image_url'] }}" alt="{{ p['part_key'] }}" loading="lazy" />
+        {% else %}
+          <div class="robot-thumb empty">no image</div>
+        {% endif %}
+        <div class="robot-id">#{{ p['id'] }} {{ p['part_type'] }} {{ p.get('display_name') or p['part_key'] }}</div>
+        <div class="robot-part">rarity: {{ p['rarity'] }} / element: {{ p['element'] }} / +{{ p['plus'] }}</div>
+        {% if p['extreme_title'] %}
+          <div class="robot-part"><span class="weekly-fit-badge">{{ p['extreme_title'] }}</span></div>
+        {% endif %}
+        <div class="robot-part">主要: {{ p['top_stats'][0][0]|upper }} {{ p['top_stats'][0][1] }} / {{ p['top_stats'][1][0]|upper }} {{ p['top_stats'][1][1] }}</div>
+        <div class="robot-time">{{ p['created_at'] | dt }}</div>
+      </label>
+    {% endfor %}
+  </div>
+  <button type="submit">選択した個体を破棄</button>
+</form>
+
+<div class="card">
+  {% if has_prev %}
+    <a href="{{ url_for('parts', page=page-1) }}">前へ</a>
+  {% endif %}
+  {% if has_next %}
+    <a href="{{ url_for('parts', page=page+1) }}">次へ</a>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p>旧在庫合計: {{ legacy_total }}</p>
+  <form method="post" action="{{ url_for('parts_discard') }}" onsubmit="return confirm('選択した旧在庫パーツを破棄します。よろしいですか？');">
+    <input type="hidden" name="confirm" value="yes" />
+    <button type="submit">選択した旧在庫を破棄</button>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>選択</th>
+          <th>種別</th>
+          <th>キー</th>
+          <th>画像</th>
+          <th>数量</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in legacy_items %}
+          <tr>
+            <td><input type="checkbox" name="part_keys" value="{{ p['part_key'] }}" /></td>
+            <td>{{ p['part_type'] }}</td>
+            <td>{{ p.get('display_name') or p['part_key'] }}</td>
+            <td>
+              {% if p['image_url'] %}
+                <img class="part-thumb admin-thumb" src="{{ p['image_url'] }}" alt="{{ p['part_key'] }}" loading="lazy" decoding="async" />
+              {% else %}
+                <span>no image</span>
+              {% endif %}
+            </td>
+            <td>{{ p['qty'] }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </form>
+</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

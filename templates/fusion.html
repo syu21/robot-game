@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボ合成</h1>
+<form method="post" class="card fusion-card">
+  <p>合成するロボを2体選択:</p>
+  <div class="fusion-grid">
+    {% for r in robots %}
+      <label class="fusion-item">
+        <input type="checkbox" name="robot_id" value="{{ r['id'] }}" />
+        <span class="fusion-id">#{{ r['id'] }}</span>
+        <span class="fusion-part">{{ r['head'] }}</span>
+        <span class="fusion-part">{{ r['right_arm'] }}</span>
+        <span class="fusion-part">{{ r['left_arm'] }}</span>
+        <span class="fusion-part">{{ r['legs'] }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <button type="submit">合成</button>
+</form>
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

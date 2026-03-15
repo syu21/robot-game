@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>週間環境管理</h1>
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <h2>現在の週: {{ week_key }}</h2>
+  {% if env_row %}
+    <p>属性: <b>{{ env_row['element'] }}</b> / 世界状態: <b>{{ env_row['mode'] }}</b></p>
+    <p>出現補正: +{{ (env_row['enemy_spawn_bonus'] * 100) | round(1) }}% / ドロップ補正: +{{ (env_row['drop_bonus'] * 100) | round(1) }}%</p>
+    <p>影響比率: {{ env_row['influence_ratio'] }}</p>
+    <p>理由: {{ env_row['reason'] }}</p>
+  {% else %}
+    <p>週環境データがありません。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>操作</h2>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="dry_run" />
+    <label>influence_ratio (0.0 - 1.0)</label>
+    <input type="text" name="influence_ratio" value="{{ env_row['influence_ratio'] if env_row else 0.30 }}" />
+    <button type="submit">次週予測（dry-run）</button>
+  </form>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="reroll" />
+    <label>influence_ratio (0.0 - 1.0)</label>
+    <input type="text" name="influence_ratio" value="{{ env_row['influence_ratio'] if env_row else 0.30 }}" />
+    <button type="submit">今週世界状態を確定再抽選</button>
+  </form>
+  <form method="post">
+    <input type="hidden" name="action" value="reset_counters" />
+    <button class="danger-btn-small" type="submit" onclick="return confirm('今週カウンタをリセットしますか？');">今週カウンタをリセット</button>
+  </form>
+  <form method="get" action="{{ url_for('admin_world_faction_war_recompute') }}" class="post-form">
+    <label>week_key</label>
+    <input type="text" name="week_key" value="{{ week_key }}" />
+    <button type="submit">陣営戦を再集計</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>陣営戦（{{ week_key }}）</h2>
+  <p>IGNIS: {{ faction_week_scores.get('ignis', 0) }} / VENTRA: {{ faction_week_scores.get('ventra', 0) }} / AURIX: {{ faction_week_scores.get('aurix', 0) }}</p>
+  {% if faction_week_result %}
+  <p>勝者: <b>{{ faction_week_result['winner_faction'] }}</b> / computed_at: {{ faction_week_result['computed_at'] }}</p>
+  {% else %}
+  <p>未集計です。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>研究ゲージ管理</h2>
+  <p>解禁順: {{ research_unlock_order | join(' → ') }}</p>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="research_add" />
+    <label>element</label>
+    <input type="text" name="element" placeholder="FIRE" />
+    <label>progress_add</label>
+    <input type="number" name="progress_add" value="50" min="1" />
+    <button type="submit">進捗加算</button>
+  </form>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="research_force_stage" />
+    <label>element</label>
+    <input type="text" name="element" placeholder="FIRE" />
+    <label>force_stage (0-4)</label>
+    <input type="number" name="force_stage" value="1" min="0" max="4" />
+    <button type="submit">stage強制進行</button>
+  </form>
+  <form method="post">
+    <input type="hidden" name="action" value="research_reset" />
+    <label>element</label>
+    <input type="text" name="element" placeholder="FIRE" />
+    <button class="danger-btn-small" type="submit" onclick="return confirm('研究状態をリセットしますか？');">研究リセット</button>
+  </form>
+</div>
+
+{% if dry_preview %}
+<div class="card">
+  <h2>次週予測（dry-run）</h2>
+  <p>週: {{ dry_preview['week_key'] }}</p>
+  <p>属性: <b>{{ dry_preview['element'] }}</b> / 世界状態: <b>{{ dry_preview['mode'] }}</b></p>
+  <p>出現補正: +{{ (dry_preview['enemy_spawn_bonus'] * 100) | round(1) }}% / ドロップ補正: +{{ (dry_preview['drop_bonus'] * 100) | round(1) }}%</p>
+  <p>理由草案: {{ dry_preview['reason'] }}</p>
+  <p>影響要因（kills上位）:
+    {% for kv in dry_preview['kills_top'] %}
+      {{ kv[0] }}={{ kv[1] }}{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </p>
+  <p>影響要因（builds上位）:
+    {% for kv in dry_preview['builds_top'] %}
+      {{ kv[0] }}={{ kv[1] }}{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>今週カウンタ</h2>
+  <table>
+    <tr><th>metric_key</th><th>value</th></tr>
+    {% for row in counters %}
+      <tr><td>{{ row['metric_key'] }}</td><td>{{ row['value'] }}</td></tr>
+    {% else %}
+      <tr><td colspan="2">データなし</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>研究進捗</h2>
+  <table>
+    <tr><th>element</th><th>progress</th><th>stage</th><th>next unlock</th><th>updated_at</th></tr>
+    {% for row in research_rows %}
+      <tr>
+        <td>{{ row['element'] }}</td>
+        <td>{{ row['progress'] }}</td>
+        <td>{{ row['unlocked_stage'] }}</td>
+        <td>{{ row['next_part_type'] or '-' }}</td>
+        <td>{{ row['updated_at'] }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5">データなし</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
+{% endblock %}

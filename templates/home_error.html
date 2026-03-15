@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card error-box">
+  <h1>ホーム描画エラー</h1>
+  <p>{{ error_text }}</p>
+  {% if traceback_text %}
+  <pre class="error-trace">{{ traceback_text }}</pre>
+  {% endif %}
+  <p class="link"><a href="{{ url_for('login') }}">ログイン画面へ</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{% if mode == 'edit' %}敵編集{% else %}敵新規作成{% endif %}</h1>
+
+{% if message %}
+<div class="notice">{{ message }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card">
+  <label>key</label>
+  {% if mode == 'edit' %}
+    <input type="text" value="{{ enemy['key'] }}" readonly />
+  {% else %}
+    <input type="text" name="key" placeholder="例: scrap_mite" required />
+  {% endif %}
+
+  <label>表示名</label>
+  <input type="text" name="name_ja" value="{{ enemy['name_ja'] if enemy else '' }}" required />
+
+  <label>tier</label>
+  <select name="tier" required>
+    <option value="1" {% if enemy and enemy['tier'] == 1 %}selected{% endif %}>1</option>
+    <option value="2" {% if enemy and enemy['tier'] == 2 %}selected{% endif %}>2</option>
+    <option value="3" {% if enemy and enemy['tier'] == 3 %}selected{% endif %}>3</option>
+  </select>
+
+  <label>element</label>
+  <select name="element" required>
+    {% for code, label in element_options %}
+    <option value="{{ code }}" {% if enemy and enemy['element'] == code %}selected{% endif %}>{{ label }} ({{ code }})</option>
+    {% endfor %}
+  </select>
+
+  <label>所属 (faction)</label>
+  <select name="faction" required>
+    {% for code, label in faction_options.items() %}
+    <option value="{{ code }}" {% if (enemy and enemy['faction'] == code) or (not enemy and code == 'neutral') %}selected{% endif %}>
+      {{ label }} ({{ code }})
+    </option>
+    {% endfor %}
+  </select>
+
+  <label>
+    <input type="checkbox" name="is_boss" value="1" {% if enemy and enemy.get('is_boss', 0) == 1 %}checked{% endif %} />
+    エリアボス候補として扱う
+  </label>
+
+  <label>ボス出現エリア（is_boss=ON時必須）</label>
+  <select name="boss_area_key">
+    <option value="">未設定</option>
+    {% for area_key in boss_area_options %}
+    <option value="{{ area_key }}" {% if enemy and enemy.get('boss_area_key') == area_key %}selected{% endif %}>{{ area_key }}</option>
+    {% endfor %}
+  </select>
+
+  <label>耐久</label><input type="number" name="hp" min="0" value="{{ enemy['hp'] if enemy else 20 }}" required />
+  <label>攻撃</label><input type="number" name="atk" min="0" value="{{ enemy['atk'] if enemy else 8 }}" required />
+  <label>防御</label><input type="number" name="def" min="0" value="{{ enemy['def'] if enemy else 6 }}" required />
+  <label>素早さ</label><input type="number" name="spd" min="0" value="{{ enemy['spd'] if enemy else 8 }}" required />
+  <label>命中</label><input type="number" name="acc" min="0" value="{{ enemy['acc'] if enemy else 8 }}" required />
+  <label>会心</label><input type="number" name="cri" min="0" value="{{ enemy['cri'] if enemy else 2 }}" required />
+
+  <label>
+    <input type="checkbox" name="is_active" value="1" {% if not enemy or enemy['is_active'] == 1 %}checked{% endif %} />
+    有効
+  </label>
+
+  {% if enemy %}
+  <label>現在画像</label>
+  <img class="robot-thumb" src="{{ url_for('static', filename=enemy['display_image_path']) }}" alt="{{ enemy['key'] }}" loading="lazy" />
+  {% endif %}
+  <label>画像アップロード（PNG/128x128/透過必須）</label>
+  <input type="file" name="image" accept="image/png" />
+
+  <button type="submit">{% if mode == 'edit' %}更新{% else %}作成{% endif %}</button>
+</form>
+
+<p class="link"><a href="{{ url_for('admin_enemies') }}">敵一覧へ戻る</a></p>
+{% endblock %}

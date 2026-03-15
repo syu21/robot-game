@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+<div id="robot-list-root">
+<h1>所有ロボ一覧</h1>
+
+<div class="card">
+  <h2>完成ロボ</h2>
+  <div>
+    保存枠: {{ used_display }} / {{ limits['robot_slots'] }}
+    {% if overflow > 0 %}<span class="robot-part">超過 +{{ overflow }}</span>{% endif %}
+  </div>
+  <p class="link">
+    {% if show_decomposed %}
+      <a href="{{ url_for('robots') }}">分解済みを隠す</a>
+    {% else %}
+      <a href="{{ url_for('robots', show_decomposed=1) }}">分解済みを表示</a>
+    {% endif %}
+  </p>
+  <div class="robot-grid">
+    {% for i in instances %}
+      <div class="robot-card">
+        <div class="robot-id">
+          {{ i['display_name'] }}
+          {% if i['set_bonus'] %}<span class="robot-part"> {{ i['set_bonus'] }}</span>{% endif %}
+          {% if i['weekly_fit'] %}<span class="weekly-fit-badge">WEEK適合</span>{% endif %}
+          {% if active_robot_id == i['id'] %}<span class="robot-part"> 出撃機体</span>{% endif %}
+        </div>
+        {% if i.get('image_url') %}
+          <img class="robot-thumb" src="{{ i['image_url'] }}" alt="{{ i['display_name'] }}" loading="lazy" />
+        {% else %}
+          <div class="robot-thumb empty">no image</div>
+        {% endif %}
+        <div class="robot-badge-preview">
+          <div class="robot-part">バッジ32x32</div>
+          {% if i['icon_32_path'] %}
+            <img class="robot-badge-32 preview" src="{{ url_for('static', filename=i['icon_32_path']) }}" alt="badge" loading="lazy" />
+          {% else %}
+            <div class="robot-badge-32 preview empty">--</div>
+          {% endif %}
+        </div>
+        <div class="robot-part">HEAD: {{ i['head_key'] }}</div>
+        <div class="robot-part">R_ARM: {{ i['r_arm_key'] }}</div>
+        <div class="robot-part">L_ARM: {{ i['l_arm_key'] }}</div>
+        <div class="robot-part">LEGS: {{ i['legs_key'] }}</div>
+        {% if i['final_stats'] %}
+          {% if i.get('archetype') %}
+            <div class="robot-part">称号: {{ i['archetype']['name_ja'] }}</div>
+          {% endif %}
+          <div class="robot-part">総合: {{ i['power'] }}</div>
+          <div class="robot-part">耐久 {{ i['final_stats']['hp'] }} / 攻撃 {{ i['final_stats']['atk'] }} / 防御 {{ i['final_stats']['def'] }}</div>
+          <div class="robot-part">素早さ {{ i['final_stats']['spd'] }} / 命中 {{ i['final_stats']['acc'] }} / 会心 {{ i['final_stats']['cri'] }}</div>
+        {% endif %}
+        <div class="robot-time">作成: {{ i['created_at'] | dt }}</div>
+        <p class="link"><a href="{{ url_for('robot_detail', instance_id=i['id']) }}">個別ページを見る</a></p>
+        {% if i['status'] != 'decomposed' %}
+          <form method="post" action="{{ url_for('robot_instance_activate', instance_id=i['id']) }}">
+            <button type="submit">出撃機体に設定</button>
+          </form>
+          <form method="post" action="{{ url_for('robot_instance_rename', instance_id=i['id']) }}" class="post-form">
+            <input type="text" name="robot_name" maxlength="40" placeholder="新しい名前" required />
+            <button type="submit">改名（500コイン）</button>
+          </form>
+          <form method="post" action="{{ url_for('robot_instance_decompose', instance_id=i['id']) }}">
+            <button type="submit">分解してパーツ化</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='robots_page.js') }}?v={{ app_version }}"></script>
+{% endblock %}

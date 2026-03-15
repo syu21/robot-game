@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>世界ログ</h1>
+
+<div class="card">
+  <form method="get" action="{{ url_for('feed') }}" class="inline-form">
+    <label>type:</label>
+    <select name="type">
+      <option value="" {% if not selected_type %}selected{% endif %}>all</option>
+      <option value="drop" {% if selected_type == 'drop' %}selected{% endif %}>drop</option>
+      <option value="fuse" {% if selected_type == 'fuse' %}selected{% endif %}>fuse</option>
+      <option value="build" {% if selected_type == 'build' %}selected{% endif %}>build</option>
+      {% if is_admin %}
+      <option value="weekly" {% if selected_type == 'weekly' %}selected{% endif %}>weekly</option>
+      {% endif %}
+    </select>
+    <label>user_id:</label>
+    <input type="number" name="user_id" min="1" value="{{ selected_user_id }}" />
+    <button type="submit">絞り込み</button>
+    <a href="{{ url_for('feed') }}">クリア</a>
+  </form>
+</div>
+
+{% for c in cards %}
+<div class="card feed-card">
+  <div class="feed-head">
+    <div class="feed-user">{{ c['user_label'] }}</div>
+    <div class="feed-time">{{ c['time_jst'] }} JST</div>
+  </div>
+  <div class="feed-body">
+    {% if c.get('image_url') %}
+      <img class="feed-thumb" src="{{ c['image_url'] }}" alt="event" loading="lazy" />
+    {% endif %}
+    <div>
+      <div class="feed-text">{{ c['text'] }}</div>
+      <div class="feed-type">{{ c['event_type'] }}</div>
+      {% if c.get('link_url') %}
+      <div><a href="{{ c['link_url'] }}">詳細を見る</a></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <p>表示できるイベントがありません。</p>
+</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

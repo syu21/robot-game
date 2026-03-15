@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>バランス設定確認</h1>
+
+<div class="card">
+  <h2>勝率シミュレーション</h2>
+  <form method="get" action="{{ url_for('admin_balance') }}">
+    <input type="hidden" name="run" value="1" />
+    <label>area_key</label>
+    <select name="area_key">
+      {% for area in explore_areas %}
+      <option value="{{ area['key'] }}" {% if params.area_key == area['key'] %}selected{% endif %}>{{ area['key'] }} / {{ area['label'] }}</option>
+      {% endfor %}
+    </select>
+    <label>N（100-5000）</label>
+    <input type="number" name="n" min="100" max="5000" value="{{ params.n }}" />
+    <label>sample_mode</label>
+    <select name="sample_mode">
+      <option value="all_robots" {% if params.sample_mode == 'all_robots' %}selected{% endif %}>all_robots</option>
+      <option value="active_only" {% if params.sample_mode == 'active_only' %}selected{% endif %}>active_only</option>
+      <option value="test_user_only" {% if params.sample_mode == 'test_user_only' %}selected{% endif %}>test_user_only</option>
+      <option value="user_id" {% if params.sample_mode == 'user_id' %}selected{% endif %}>user_id</option>
+    </select>
+    <label>sample_user_id（sample_mode=user_id のとき）</label>
+    <input type="number" name="sample_user_id" min="1" value="{{ params.sample_user_id }}" />
+    <label>seed（任意）</label>
+    <input type="number" name="seed" value="{{ params.seed }}" />
+    <label>scenario（任意）</label>
+    <input type="text" name="scenario" value="{{ params.scenario }}" />
+    <label>enable_archetype</label>
+    <input type="checkbox" name="enable_archetype" value="1" {% if params.enable_archetype %}checked{% endif %} />
+    <label>power_min（任意, int）</label>
+    <input type="number" name="power_min" min="0" value="{{ params.power_min }}" />
+    <label>power_percentile（任意, 0-100）</label>
+    <input type="number" name="power_percentile" min="0" max="100" value="{{ params.power_percentile }}" />
+    <div class="admin-balance-actions">
+      <button type="submit">シミュレーション実行</button>
+      <a href="{{ url_for('admin_balance') }}">初期化</a>
+    </div>
+  </form>
+  {% if message %}
+  <p>{{ message }}</p>
+  {% endif %}
+
+  {% if simulation_result %}
+  <p>対象ロボ: {{ players_count }} / 対象敵: {{ enemies_count }}</p>
+  <p>勝率: {{ '%.2f'|format(simulation_result.win_rate * 100) }}%</p>
+  <p>平均ターン: {{ '%.2f'|format(simulation_result.avg_turns) }}</p>
+  <p>タイムアウト率: {{ '%.2f'|format(simulation_result.timeout_rate * 100) }}%</p>
+  <p>集計: {{ simulation_result.wins }}勝 / {{ simulation_result.n }}戦, timeout {{ simulation_result.timeouts }}件</p>
+  {% if archetype_distribution %}
+  <p>称号分布（count）: {{ archetype_distribution.counts }}</p>
+  <p>称号分布（ratio）: {{ archetype_distribution.ratios }}</p>
+  {% endif %}
+
+  <h3>enemy別 勝率 上位10</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>key</th><th>name</th><th>勝率</th><th>勝利</th><th>試行</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in enemy_top_rows %}
+        <tr>
+          <td>{{ r.key }}</td>
+          <td>{{ r.name_ja }}</td>
+          <td>{{ '%.2f'|format(r.win_rate * 100) }}%</td>
+          <td>{{ r.wins }}</td>
+          <td>{{ r.battles }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h3>enemy別 勝率 下位10</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>key</th><th>name</th><th>勝率</th><th>勝利</th><th>試行</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in enemy_bottom_rows %}
+        <tr>
+          <td>{{ r.key }}</td>
+          <td>{{ r.name_ja }}</td>
+          <td>{{ '%.2f'|format(r.win_rate * 100) }}%</td>
+          <td>{{ r.wins }}</td>
+          <td>{{ r.battles }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>敵シード（初期6体）</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>key</th><th>name</th><th>tier</th><th>element</th><th>耐久</th><th>攻撃</th><th>防御</th><th>素早さ</th><th>命中</th><th>会心</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for key, e in enemy_seed_stats.items() %}
+        <tr>
+          <td>{{ key }}</td>
+          <td>{{ e['name_ja'] }}</td>
+          <td>{{ e['tier'] }}</td>
+          <td>{{ e['element'] }}</td>
+          <td>{{ e['hp'] }}</td>
+          <td>{{ e['atk'] }}</td>
+          <td>{{ e['def'] }}</td>
+          <td>{{ e['spd'] }}</td>
+          <td>{{ e['acc'] }}</td>
+          <td>{{ e['cri'] }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>探索報酬設定</h2>
+  <p>coins/tier: {{ coin_reward_by_tier }}</p>
+  <p>drop type weights: {{ drop_type_weights_by_tier }}</p>
+  <p>rarity weights: {{ rarity_weights_by_tier }}</p>
+  <p>plus weights: {{ plus_weights_by_tier }}</p>
+</div>
+
+<div class="card">
+  <h2>合成コイン消費</h2>
+  <p>{{ fuse_cost_by_plus }}</p>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

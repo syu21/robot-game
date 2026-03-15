@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ title or "ロボらぼ" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}" />
+</head>
+{% set js_diag = request.args.get('js_diag') == '1' %}
+{% set no_layout_js = request.args.get('no_layout_js') == '1' %}
+{% set no_base_cleanup = request.args.get('no_base_cleanup') == '1' %}
+{% set no_header_scroll = request.args.get('no_header_scroll') == '1' %}
+{% set no_js = request.args.get('no_js') == '1' %}
+{% set is_home = request.endpoint == 'home' %}
+{% set home_restore_header_scroll = request.args.get('restore_header_scroll') == '1' %}
+{% set home_restore_global_error_guard = request.args.get('restore_global_error_guard') == '1' %}
+{% set home_restore_base_cleanup = request.args.get('restore_base_cleanup') == '1' %}
+{% set home_restore_home_page = request.args.get('restore_home_page_js') == '1' %}
+<body
+  id="page-{{ (request.endpoint or 'unknown')|replace('.', '-')|replace('_', '-') }}"
+  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore') %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}"
+  data-page-name="{{ request.endpoint or 'unknown' }}"
+  data-page-template="{{ request.endpoint or 'unknown' }}"
+  data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"
+  data-js-diag="{{ '1' if js_diag else '0' }}"
+>
+  <header class="top topbar site-header" id="site-header">
+    <div class="logo">ロボらぼ</div>
+    {% if session.get('user_id') %}
+      <div class="user">
+        <span class="user-chip">
+          {% if header_user_visual %}
+          <img class="avatar-48" src="{{ url_for('static', filename=header_user_visual['avatar_path']) }}" alt="avatar" />
+          <span class="badge-overlay">
+            <img class="robot-badge-32" src="{{ url_for('static', filename=header_user_visual['badge_path']) }}" alt="badge" />
+          </span>
+          {% endif %}
+        </span>
+        {{ session.get('username') }} |
+        {% if safe_mode %}
+        <a href="{{ url_for('home', safe=0) }}">通常表示へ</a> |
+        {% else %}
+        <a href="{{ url_for('home', safe=1) }}">セーフモード</a> |
+        {% endif %}
+        <a href="{{ url_for('settings') }}">設定</a> |
+        <a href="{{ url_for('logout') }}">ログアウト</a>
+      </div>
+    {% endif %}
+  </header>
+  <main class="container">
+    {% if message %}<div class="notice">{{ message }}</div>{% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        {% for category, text in flashes %}
+          <div class="{% if category == 'error' %}error{% else %}notice{% endif %}">{{ text }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  {% if not no_js %}
+    {% set load_global_error_guard = (not is_home) or home_restore_global_error_guard %}
+    {% set load_base_cleanup = (not no_layout_js) and ((not is_home) or home_restore_base_cleanup) and (not no_base_cleanup) %}
+    {% set load_header_scroll = (not no_layout_js) and ((not is_home) or home_restore_header_scroll) and (not no_header_scroll) %}
+    {% set load_page_scripts = true %}
+    {% if not safe_mode and request.endpoint != 'robots' and not is_home %}
+    <script src="{{ url_for('static', filename='ui_probe.js') }}?v={{ app_version }}"></script>
+    {% endif %}
+    {% if load_global_error_guard %}
+    <script src="{{ url_for('static', filename='global_error_guard_v2.js') }}?v={{ app_version }}"></script>
+    {% endif %}
+    {% if load_base_cleanup %}
+      <script src="{{ url_for('static', filename='base_cleanup_v3.js') }}?v={{ app_version }}"></script>
+    {% endif %}
+    {% if load_header_scroll %}
+      <script src="{{ url_for('static', filename='header_scroll_v2.js') }}?v={{ app_version }}"></script>
+    {% endif %}
+    {% if load_page_scripts %}
+    {% block scripts %}{% endblock %}
+    {% endif %}
+  {% endif %}
+  <footer class="footer">
+    MECHA ENGINE v{{ app_version }}
+    | <a href="{{ url_for('terms') }}">利用規約</a>
+    | <a href="{{ url_for('privacy') }}">プライバシー</a>
+    | <a href="https://forms.gle/U32xj52oDhF8aE4c7" target="_blank" rel="noopener">お問い合わせ</a>
+    | <a href="{{ url_for('changelog') }}">更新履歴</a>
+  </footer>
+</body>
+</html>

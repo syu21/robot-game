@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>敵図鑑</h1>
+<div class="showcase-grid">
+  {% for c in cards %}
+  <a href="{{ url_for('enemy_dex_detail', enemy_key=c['enemy_key']) }}" class="robot-card">
+    <div class="robot-id">{{ c['name_ja'] }}</div>
+    <div class="robot-part">遭遇: {{ c['seen_count'] }} / 撃破: {{ c['defeat_count'] }}</div>
+    {% if c['is_boss'] %}<div class="robot-part">BOSS</div>{% endif %}
+    <img class="robot-thumb" src="{{ c['image_url'] }}" alt="{{ c['enemy_key'] }}" loading="lazy" decoding="async" />
+  </a>
+  {% else %}
+  <div class="card">まだ遭遇した敵がいません。</div>
+  {% endfor %}
+</div>
+{% endblock %}

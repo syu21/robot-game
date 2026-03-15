@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ユーザー管理</h1>
+{% if message %}
+<div class="notice">{{ message }}</div>
+{% endif %}
+<div class="card admin-users-table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>id</th>
+        <th>username</th>
+        <th>is_admin</th>
+        <th>is_banned</th>
+        <th>is_admin_protected</th>
+        <th>created_at</th>
+        <th>ban_info</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in rows %}
+      <tr>
+        <td>{{ u['id'] }}</td>
+        <td>{{ u['username'] }}</td>
+        <td>{{ u['is_admin'] }}</td>
+        <td>{{ u['is_banned'] }}</td>
+        <td>{{ u['is_admin_protected'] }}</td>
+        <td>{{ u['created_at'] }}</td>
+        <td>
+          {% if u['is_banned'] == 1 %}
+            at={{ u['banned_at'] or '-' }} by={{ u['banned_by_user_id'] or '-' }}<br/>
+            reason={{ u['banned_reason'] or '-' }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="ban" />
+            <input type="text" name="reason" placeholder="BAN理由" />
+            <button type="submit" {% if u['id'] == self_user_id %}disabled{% endif %}>BAN</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="unban" />
+            <button type="submit">BAN解除</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="protect_login" />
+            <button type="submit">管理者保護ON</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="unprotect_login" />
+            <button type="submit" {% if u['id'] == self_user_id %}disabled{% endif %}>管理者保護OFF</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="delete" />
+            <button type="submit" {% if u['id'] == self_user_id or (u['username'] or '')|lower == 'admin' %}disabled{% endif %}>完全削除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
+{% endblock %}

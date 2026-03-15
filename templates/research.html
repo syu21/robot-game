@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>研究進捗</h1>
+  <div class="research-card">
+    <div class="research-head">
+      {% if research_summary['icon_path'] %}
+      <img class="research-icon" src="{{ url_for('static', filename=research_summary['icon_path']) }}" alt="research icon" loading="lazy" />
+      {% endif %}
+      <div>
+        <div>勝利属性: <b>{{ research_summary['current_research_element'] or '-' }}</b></div>
+        <div>next unlock: {{ research_summary['next_part_type'] or '-' }}</div>
+      </div>
+    </div>
+    <div class="research-progress-line">
+      <span>{{ research_summary['progress'] }}/100</span>
+      <progress class="research-progress-meter" max="100" value="{{ research_summary['progress'] }}"></progress>
+    </div>
+    <div class="research-stage">
+      stage {{ research_summary['unlocked_stage'] }} / 4
+      <span class="research-stage-dots">
+        {% for i in range(4) %}{% if i < research_summary['unlocked_stage'] %}●{% else %}○{% endif %}{% endfor %}
+      </span>
+    </div>
+  </div>
+</div>
+<div class="panel">
+  <h2>今週の研究トレンド</h2>
+  <ul class="ranking-mini">
+    {% for t in weekly_trends %}
+      <li><span>{{ t['element'] }}</span><span>{{ t['value'] }} build</span></li>
+    {% else %}
+      <li>今週はまだ組み立てデータがありません。</li>
+    {% endfor %}
+  </ul>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+</div>
+{% endblock %}

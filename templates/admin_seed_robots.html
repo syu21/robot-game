@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>テストロボ一括生成</h1>
+
+<div class="card">
+  <p>対象ユーザー: {{ test_user.username }} (id={{ test_user.id }}, is_admin={{ test_user.is_admin }})</p>
+  <form method="post" action="{{ url_for('admin_seed_robots') }}">
+    <label>count</label>
+    <input type="number" name="count" min="1" max="300" value="{{ params.count }}" />
+    <label>strategy</label>
+    <select name="strategy">
+      <option value="random" {% if params.strategy == 'random' %}selected{% endif %}>random</option>
+    </select>
+    <div style="margin-top:8px;">
+      <button type="submit">生成</button>
+      <a href="{{ url_for('admin_seed_robots') }}">初期化</a>
+    </div>
+  </form>
+  {% if message %}
+  <p>{{ message }}</p>
+  {% endif %}
+</div>
+
+{% if result %}
+<div class="card">
+  <h2>生成結果</h2>
+  <p>作成数: {{ result.created }}</p>
+  <p>power min/avg/max:
+    {% if result.power_min is not none %}
+      {{ result.power_min }} / {{ '%.2f'|format(result.power_avg) }} / {{ result.power_max }}
+    {% else %}
+      n/a
+    {% endif %}
+  </p>
+  <p>power 上位10: {{ result.top10 }}</p>
+</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

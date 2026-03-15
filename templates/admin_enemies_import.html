@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>敵CSVインポート</h1>
+
+{% if message %}
+<div class="notice">{{ message }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card">
+  <label>CSVファイル（任意）</label>
+  <input type="file" name="csv_file" accept=".csv,text/csv" />
+  <label>CSV貼り付け（ファイル未指定時に使用）</label>
+  <textarea name="csv_text" rows="12" placeholder="key,name_ja,tier,element,hp,atk,def,spd,acc,cri,faction,is_boss,boss_area_key,image_path,is_active">{{ csv_text }}</textarea>
+  <div class="inline-form">
+    <button type="submit" name="action" value="dry_run">検証する（dry-run）</button>
+    <button type="submit" name="action" value="import">インポート実行</button>
+  </div>
+</form>
+
+{% if summary %}
+<div class="card">
+  <p>追加: {{ summary['create'] }} / 更新: {{ summary['update'] }} / スキップ: {{ summary['skip'] }} / エラー: {{ summary['error'] }}</p>
+</div>
+{% endif %}
+
+{% if preview %}
+<div class="card">
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>line</th>
+          <th>action</th>
+          <th>key</th>
+          <th>name</th>
+          <th>tier</th>
+          <th>element</th>
+          <th>faction</th>
+          <th>boss</th>
+          <th>stats</th>
+          <th>is_active</th>
+          <th>image_path</th>
+          <th>changes/errors</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in preview %}
+        <tr>
+          <td>{{ r['line_no'] }}</td>
+          <td>{{ r['action'] }}</td>
+          <td>{{ r.get('key','') }}</td>
+          <td>{{ r.get('data',{}).get('name_ja','') }}</td>
+          <td>{{ r.get('data',{}).get('tier','') }}</td>
+          <td>{{ r.get('data',{}).get('element','') }}</td>
+          <td>{{ r.get('data',{}).get('faction','') }}</td>
+          <td>{{ r.get('data',{}).get('is_boss','') }}{% if r.get('data',{}).get('boss_area_key') %} / {{ r.get('data',{}).get('boss_area_key') }}{% endif %}</td>
+          <td>
+            耐久 {{ r.get('data',{}).get('hp','') }} /
+            攻撃 {{ r.get('data',{}).get('atk','') }} /
+            防御 {{ r.get('data',{}).get('def','') }} /
+            素早さ {{ r.get('data',{}).get('spd','') }} /
+            命中 {{ r.get('data',{}).get('acc','') }} /
+            会心 {{ r.get('data',{}).get('cri','') }}
+          </td>
+          <td>{{ r.get('data',{}).get('is_active','') }}</td>
+          <td><code>{{ r.get('data',{}).get('image_path','') }}</code></td>
+          <td>
+            {% if r['errors'] %}
+              {% for e in r['errors'] %}<div>{{ e }}</div>{% endfor %}
+            {% else %}
+              {% for c in r['changes'] %}<div>{{ c }}</div>{% endfor %}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('admin_enemies') }}">敵一覧へ戻る</a></p>
+{% endblock %}

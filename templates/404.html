@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card error-box">
+  <h1>404 Not Found</h1>
+  <p>ページが見つかりませんでした。</p>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% endblock %}

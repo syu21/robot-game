@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>監査ログ</h1>
+
+<form method="get" class="card inline-form">
+  <label>user_id</label>
+  <input type="text" name="user_id" value="{{ selected_user_id }}" />
+  <label>event_type</label>
+  <input type="text" name="event_type" value="{{ selected_event_type }}" />
+  <label>request_id</label>
+  <input type="text" name="request_id" value="{{ selected_request_id }}" />
+  <label>after(ts)</label>
+  <input type="text" name="after" value="{{ selected_after }}" />
+  <label>before(ts)</label>
+  <input type="text" name="before" value="{{ selected_before }}" />
+  <label>limit</label>
+  <input type="number" name="limit" min="1" max="500" value="{{ selected_limit }}" />
+  <button type="submit">絞り込み</button>
+</form>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="admin-parts-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>created_at</th>
+          <th>event_type</th>
+          <th>user_id</th>
+          <th>request_id</th>
+          <th>action_key</th>
+          <th>entity</th>
+          <th>delta_coins</th>
+          <th>delta_count</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>{{ r['id'] }}</td>
+          <td>{{ r['created_at'] }}</td>
+          <td>{{ r['event_type'] }}</td>
+          <td>{{ r['user_id'] if r['user_id'] is not none else '-' }}</td>
+          <td><code>{{ r['request_id'] or '-' }}</code></td>
+          <td>{{ r['action_key'] or '-' }}</td>
+          <td>{{ (r['entity_type'] or '-') ~ ':' ~ (r['entity_id'] if r['entity_id'] is not none else '-') }}</td>
+          <td>{{ r['delta_coins'] if r['delta_coins'] is not none else '-' }}</td>
+          <td>{{ r['delta_count'] if r['delta_count'] is not none else '-' }}</td>
+        </tr>
+        <tr>
+          <td colspan="9"><pre style="white-space: pre-wrap;">{{ r['payload_json'] or '{}' }}</pre></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9">ログがありません。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
