@@ -11029,6 +11029,7 @@ def build():
         item["instance_id"] = int(item["instance_id"])
         item["display_name"] = _part_display_name_ja(item)
         item["display_name_with_plus"] = f"{item['display_name']} +{int(item.get('plus') or 0)}"
+        item["display_image_url"] = url_for("static", filename=_part_image_rel(item))
         preview_payload = {
             "part_type": item.get("part_type"),
             "key": item.get("key"),
@@ -14393,7 +14394,4 @@ def admin_parts_purge_quick(part_id):
 
 if __name__ == "__main__":
     app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+        host="12

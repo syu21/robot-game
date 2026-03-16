@@ -21,10 +21,10 @@
         {% set rarm_default = selected_parts['RIGHT_ARM'] %}
         {% set head_default = selected_parts['HEAD'] %}
         {% set decor_default = (decor_assets | selectattr('id', 'equalto', selected_decor_id) | list | first) if selected_decor_id else None %}
-        <img id="pv-legs" data-layer="LEGS" class="layer{% if not legs_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ legs_default['image_path']) if legs_default else '' }}" alt="legs preview" />
-        <img id="pv-head" data-layer="HEAD" class="layer{% if not head_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ head_default['image_path']) if head_default else '' }}" alt="head preview" />
-        <img id="pv-rarm" data-layer="RIGHT_ARM" class="layer{% if not rarm_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ rarm_default['image_path']) if rarm_default else '' }}" alt="right arm preview" />
-        <img id="pv-larm" data-layer="LEFT_ARM" class="layer{% if not larm_default %} is-hidden{% endif %}" src="{{ url_for('static', filename='robot_assets/' ~ larm_default['image_path']) if larm_default else '' }}" alt="left arm preview" />
+        <img id="pv-legs" data-layer="LEGS" class="layer{% if not legs_default %} is-hidden{% endif %}" src="{{ legs_default['display_image_url'] if legs_default else '' }}" alt="legs preview" />
+        <img id="pv-head" data-layer="HEAD" class="layer{% if not head_default %} is-hidden{% endif %}" src="{{ head_default['display_image_url'] if head_default else '' }}" alt="head preview" />
+        <img id="pv-rarm" data-layer="RIGHT_ARM" class="layer{% if not rarm_default %} is-hidden{% endif %}" src="{{ rarm_default['display_image_url'] if rarm_default else '' }}" alt="right arm preview" />
+        <img id="pv-larm" data-layer="LEFT_ARM" class="layer{% if not larm_default %} is-hidden{% endif %}" src="{{ larm_default['display_image_url'] if larm_default else '' }}" alt="left arm preview" />
         <img id="pv-decor" data-layer="DECORATION" class="layer{% if not decor_default %} is-hidden{% endif %}" src="{{ url_for('static', filename=decor_default['display_image_path']) if decor_default else '' }}" alt="decor preview" />
       </div>
       <div class="build-estimate card">
@@ -77,8 +77,8 @@
           <div class="picker-list">
           {% for p in part_groups['HEAD'] %}
             <label class="picker-item">
-              <input type="radio" name="head_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="head" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['head_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <input type="radio" name="head_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="head" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['head_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
               <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
             </label>
           {% endfor %}
@@ -92,8 +92,8 @@
           <div class="picker-list">
           {% for p in part_groups['RIGHT_ARM'] %}
             <label class="picker-item">
-              <input type="radio" name="r_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="rarm" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['r_arm_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <input type="radio" name="r_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="rarm" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['r_arm_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
               <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
             </label>
           {% endfor %}
@@ -107,8 +107,8 @@
           <div class="picker-list">
           {% for p in part_groups['LEFT_ARM'] %}
             <label class="picker-item">
-              <input type="radio" name="l_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="larm" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['l_arm_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <input type="radio" name="l_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="larm" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['l_arm_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
               <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
             </label>
           {% endfor %}
@@ -122,8 +122,8 @@
           <div class="picker-list">
           {% for p in part_groups['LEGS'] %}
             <label class="picker-item">
-              <input type="radio" name="legs_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="legs" data-img="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['legs_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ url_for('static', filename='robot_assets/' ~ p['image_path']) }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+              <input type="radio" name="legs_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="legs" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['legs_key'] %}checked{% endif %} />
+              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
               <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
             </label>
           {% endfor %}
@@ -168,5 +168,5 @@
 <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='build_preview.js') }}"></script>
+<script src="{{ url_for('static', filename='build_preview.js') }}?v={{ app_version }}"></script>
 {% endblock %}
