@@ -7803,6 +7803,9 @@ def add_security_headers(response):
         + "frame-ancestors 'self'"
     )
     response.headers["Content-Security-Policy"] = csp
+    if is_build_path:
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
     return response
 
 
@@ -11032,7 +11035,7 @@ def build():
         item["instance_id"] = int(item["instance_id"])
         item["display_name"] = _part_display_name_ja(item)
         item["display_name_with_plus"] = f"{item['display_name']} +{int(item.get('plus') or 0)}"
-        item["display_image_url"] = url_for("static", filename=_part_image_rel(item))
+        item["display_image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
         preview_payload = {
             "part_type": item.get("part_type"),
             "key": item.get("key"),
