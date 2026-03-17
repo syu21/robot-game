@@ -7786,8 +7786,11 @@ def block_maintenance_posts():
 @app.after_request
 def add_security_headers(response):
     is_admin_path = request.path.startswith("/admin/")
+    # Temporary: /build preview still relies on inline style/CSS variable updates.
+    # Once build preview stops mutating styles directly, remove this exception and restore strict CSP.
+    is_build_path = request.path.startswith("/build")
     script_src = "script-src 'self' 'unsafe-inline'; " if is_admin_path else "script-src 'self'; "
-    style_src = "style-src 'self' 'unsafe-inline'; " if is_admin_path else "style-src 'self'; "
+    style_src = "style-src 'self' 'unsafe-inline'; " if (is_admin_path or is_build_path) else "style-src 'self'; "
     csp = (
         "default-src 'self'; "
         + script_src
@@ -14394,4 +14397,7 @@ def admin_parts_purge_quick(part_id):
 
 if __name__ == "__main__":
     app.run(
-        host="12
+        host="127.0.0.1",
+        port=int(os.environ.get("PORT", "5050")),
+        debug=True,
+    )
