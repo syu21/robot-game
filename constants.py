@@ -178,5 +178,4 @@ AUDIT_EVENT_TYPES = {
     "ADMIN_USER_UNBAN": "audit.admin.user.unban",
     "ADMIN_USER_PROTECT_LOGIN": "audit.admin.user.protect_login",
     "ADMIN_USER_UNPROTECT_LOGIN": "audit.admin.user.unprotect_login",
-    "ADMIN_USER_DELETE": "audit.admin.user.delete",
-}
+ 

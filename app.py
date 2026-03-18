@@ -5409,8 +5409,12 @@ def _pick_enemy_for_area(db, area_key, weekly_env=None):
     if rows:
         return _pick_enemy_from_rows(rows, area_key, weekly_env=weekly_env, rng=random)
     return {
+        "key": "training_drone",
         "name_ja": "訓練ドローン",
         "image_path": "enemies/_placeholder.png",
+        "tier": int(tiers[0]) if tiers else 1,
+        "element": "NORMAL",
+        "faction": "neutral",
         "hp": 18,
         "atk": 8,
         "def": 6,
@@ -9562,7 +9566,7 @@ def explore():
                 ip=request.remote_addr,
             )
         enemy_hp = enemy_max_hp
-        if weekly_env and (enemy["element"] or "").upper() == (weekly_env["element"] or "").upper():
+        if weekly_env and (enemy.get("element") or "").upper() == (weekly_env.get("element") or "").upper():
             spawned_bonus_applied = True
         # 序盤救済Aは「通常のtier1戦のみ」で有効。
         # tier2以上とボス戦では絶対に発動させない。
