@@ -4469,6 +4469,8 @@ def get_db():
         _check_static_health()
         _seed_robot_parts(g.db)
         _seed_robot_assets_v2(g.db)
+        if _repair_legacy_starter_part_rows(g.db) > 0:
+            g.db.commit()
         _seed_milestones(g.db)
         if not PART_OFFSET_CACHE:
             refresh_part_offset_cache(g.db)
@@ -4653,6 +4655,56 @@ def _seed_robot_assets_v2(db):
         db.commit()
     if _backfill_part_display_names(db) > 0:
         db.commit()
+
+
+def _repair_legacy_starter_part_rows(db):
+    updates = [
+        ("head_1", "parts/head/head_normal.png", "HEAD"),
+        ("r_arm_1", "parts/right_arm/right_arm_normal.png", "RIGHT_ARM"),
+        ("l_arm_1", "parts/left_arm/left_arm_normal.png", "LEFT_ARM"),
+        ("legs_1", "parts/legs/legs_normal.png", "LEGS"),
+    ]
+    changed = 0
+    for key, image_path, part_type in updates:
+        row = db.execute(
+            """
+            SELECT id, image_path, rarity, element, series, part_type
+            FROM robot_parts
+            WHERE key = ?
+            LIMIT 1
+            """,
+            (key,),
+        ).fetchone()
+        if not row:
+            continue
+        next_values = (
+            image_path,
+            "N",
+            "NORMAL",
+            "n1",
+            part_type,
+            1,
+        )
+        current_values = (
+            row["image_path"],
+            (row["rarity"] or "").upper(),
+            (row["element"] or "").upper(),
+            row["series"] or "",
+            row["part_type"],
+            1,
+        )
+        if current_values == next_values:
+            continue
+        db.execute(
+            """
+            UPDATE robot_parts
+            SET image_path = ?, rarity = ?, element = ?, series = ?, part_type = ?, is_active = 1
+            WHERE key = ?
+            """,
+            (image_path, "N", "NORMAL", "n1", part_type, key),
+        )
+        changed += 1
+    return changed
 
 
 def _seed_milestones(db):
@@ -5227,7 +5279,8 @@ def _seed_enemies(db):
                 faction = excluded.faction,
                 trait = excluded.trait,
                 is_boss = excluded.is_boss,
-                boss_area_key = excluded.boss_area_key
+                boss_area_key = excluded.boss_area_key,
+                is_active = 1
             """,
             (
                 key,
