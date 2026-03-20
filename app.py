@@ -8357,6 +8357,15 @@ def home():
     max_unlocked_layer = _user_max_unlocked_layer(user)
     new_layer_badge = session.pop("home_new_layer_badge", None)
     unlocked_layer_recent = _home_recent_unlocked_layer(db, user["id"], now_ts=now)
+    next_action_card = _home_next_action_card(
+        db,
+        user,
+        boss_alert_status,
+        max_unlocked_layer,
+        new_layer_badge,
+        unlocked_layer_recent,
+        faction_status=faction_status,
+    )
     total_explores = int(
         db.execute(
             "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
@@ -8370,6 +8379,11 @@ def home():
     beginner_mission_cta_label = "出撃する"
     beginner_mission_is_post = True
     beginner_mission_cta_url = url_for("explore")
+    if not has_any_robot:
+        beginner_mission_text = "まずはロボを1体完成させよう！\nパーツを選んで出撃準備だ！"
+        beginner_mission_cta_label = "ロボを編成する"
+        beginner_mission_is_post = False
+        beginner_mission_cta_url = url_for("build")
     intro_modal_seen = int(user["has_seen_intro_modal"] or 0) == 1 if "has_seen_intro_modal" in user.keys() else False
     just_registered = bool(session.pop("just_registered", None))
     show_intro_modal = (not intro_modal_seen) and (just_registered or total_explores == 0)
@@ -8470,6 +8484,7 @@ def home():
             invite_link=invite_link,
             referral_counts=referral_counts,
             has_evolution_core=(int(evolution_core_qty or 0) >= 1),
+            next_action_card=next_action_card,
         )
     except Exception as exc:
         app.logger.exception("home rendering failed")
@@ -14403,61 +14418,4 @@ def admin_parts_purge(part_id):
         return abort(403)
     db = get_db()
     typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+    confirm_word = request.form.get("confirm_word

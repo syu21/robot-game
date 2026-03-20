@@ -186,9 +186,7 @@
       {% else %}
         <div class="card">
           <p>出撃機体が未設定です。</p>
-          {% if has_any_robot %}
           <p><a href="{{ url_for('build') }}">ロボ編成へ</a></p>
-          {% endif %}
         </div>
       {% endif %}
     </section>
@@ -212,6 +210,28 @@
     <section class="panel home-actions-panel">
     <h2>アクション</h2>
     <div class="upgrade-cost">現在解放層: 第{{ max_unlocked_layer }}層</div>
+    {% if next_action_card %}
+      <div class="card home-next-action-card">
+        <div><b>{{ next_action_card['title'] }}</b></div>
+        <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
+        {% if next_action_card['is_post'] %}
+        <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
+          {% if next_action_card['area_key'] %}
+          <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
+          {% endif %}
+          {% if explore_submission_id %}
+          <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+          {% endif %}
+          {% if next_action_card['boss_enter'] %}
+          <input type="hidden" name="boss_enter" value="1" />
+          {% endif %}
+          <button type="submit">{{ next_action_card['cta_label'] }}</button>
+        </form>
+        {% else %}
+        <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
+        {% endif %}
+      </div>
+    {% endif %}
     {% if has_any_robot %}
       <form method="post" action="{{ url_for('explore') }}" class="inline-form">
         <label>出撃先:</label>
@@ -244,13 +264,15 @@
         <div>攻めの機体で押し切る構成が有効です。</div>
       </div>
     {% endif %}
-    {% if has_any_robot %}
       <div class="actions-grid home-actions-grid home-primary-actions-grid">
+        {% if has_any_robot %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
         <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
+        {% endif %}
         <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
         <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
       </div>
+      {% if has_any_robot %}
       <div class="actions-grid home-actions-grid home-secondary-actions-grid">
         {% if has_evolution_core %}
         <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">進化コアで進化</div></a>
@@ -265,7 +287,7 @@
         <a class="action-card" href="{{ url_for('admin_audit') }}"><div class="action-title">管理: 監査ログ</div><div class="action-desc">証跡を確認</div></a>
         {% endif %}
       </div>
-    {% endif %}
+      {% endif %}
   </section>
 
     <section class="panel home-weekly-panel">
