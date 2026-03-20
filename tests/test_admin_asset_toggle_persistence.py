@@ -29,6 +29,17 @@ class AdminAssetTogglePersistenceTests(unittest.TestCase):
                 "SELECT id FROM users WHERE username = ?",
                 ("admin_asset_tester",),
             ).fetchone()["id"]
+            enemy_row = db.execute(
+                """
+                SELECT key
+                FROM enemies
+                WHERE COALESCE(is_boss, 0) = 0
+                ORDER BY tier ASC, key ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            self.assertIsNotNone(enemy_row)
+            self.enemy_key = enemy_row["key"]
 
     def tearDown(self):
         game_app.DB_PATH = self.old_db_path
@@ -45,18 +56,18 @@ class AdminAssetTogglePersistenceTests(unittest.TestCase):
     def test_admin_enemy_toggle_persists_after_redirect_and_reopen(self):
         client = self._client()
 
-        resp = client.post("/admin/enemies/enemy1/toggle_active", follow_redirects=True)
+        resp = client.post(f"/admin/enemies/{self.enemy_key}/toggle_active", follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            row = db.execute("SELECT is_active FROM enemies WHERE key = 'enemy1'").fetchone()
+            row = db.execute("SELECT is_active FROM enemies WHERE key = ?", (self.enemy_key,)).fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(int(row["is_active"]), 0)
 
         resp = client.get("/admin/enemies?is_active=0")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("enemy1", resp.get_data(as_text=True))
+        self.assertIn(self.enemy_key, resp.get_data(as_text=True))
 
     def test_admin_decor_toggle_persists_after_redirect_and_reopen(self):
         with game_app.app.app_context():
