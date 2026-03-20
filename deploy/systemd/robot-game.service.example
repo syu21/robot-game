@@ -1,0 +1,17 @@
+[Unit]
+Description=robot-game gunicorn service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/robot-game
+EnvironmentFile=/home/ubuntu/robot-game/.env.production
+ExecStart=/home/ubuntu/robot-game/venv/bin/gunicorn --workers 2 --threads 4 --bind 127.0.0.1:8000 --timeout 120 app:app
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

@@ -25,6 +25,7 @@
 - 運用チェック: `docs/OPERATIONS_CHECKLIST.md`
 - UGC方針: `docs/UGC_ROADMAP.md`
 - 監査状態レポート: `docs/STATE_AUDIT_REPORT.md`
+- VPS本番化: `docs/VPS_PRODUCTION_SETUP.md`
 
 ## 3. 起動手順
 ```bash
@@ -68,4 +69,3 @@ make dev
 2. 仕様ドキュメント更新
 3. テスト更新
 4. `python3 -m unittest discover -s tests -q` 緑確認
-

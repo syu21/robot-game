@@ -2923,8 +2923,7 @@ def _seed_default_decor_assets(db):
             VALUES (?, ?, ?, 1, ?)
             ON CONFLICT(key) DO UPDATE SET
                 name_ja = excluded.name_ja,
-                image_path = excluded.image_path,
-                is_active = 1
+                image_path = excluded.image_path
             """,
             (key, name_ja, (image_path or DECOR_PLACEHOLDER_REL), now_ts),
         )
@@ -2939,8 +2938,7 @@ def _seed_core_definitions(db):
         ON CONFLICT(core_key) DO UPDATE SET
             name_ja = excluded.name_ja,
             description = excluded.description,
-            icon_path = excluded.icon_path,
-            is_active = 1
+            icon_path = excluded.icon_path
         """,
         (
             EVOLUTION_CORE_KEY,
@@ -5279,8 +5277,7 @@ def _seed_enemies(db):
                 faction = excluded.faction,
                 trait = excluded.trait,
                 is_boss = excluded.is_boss,
-                boss_area_key = excluded.boss_area_key,
-                is_active = 1
+                boss_area_key = excluded.boss_area_key
             """,
             (
                 key,
@@ -12686,8 +12683,15 @@ def _admin_delete_user_hard(db, target_user_id):
             (target_user_id,),
         ).fetchall()
     ]
+    if "users" in existing_tables:
+        # Break soft references before hard delete so older DBs with extra refs do not fail mid-delete.
+        db.execute("UPDATE users SET active_robot_id = NULL WHERE id = ?", (target_user_id,))
+        if "banned_by_user_id" in {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}:
+            db.execute("UPDATE users SET banned_by_user_id = NULL WHERE banned_by_user_id = ?", (target_user_id,))
     if robot_ids:
         marks = ",".join("?" for _ in robot_ids)
+        if "users" in existing_tables:
+            db.execute(f"UPDATE users SET active_robot_id = NULL WHERE active_robot_id IN ({marks})", robot_ids)
         _safe_delete("robot_instance_parts", f"robot_instance_id IN ({marks})", robot_ids)
         _safe_delete("robot_history", f"robot_id IN ({marks})", robot_ids)
         _safe_delete("robot_title_unlocks", f"robot_id IN ({marks})", robot_ids)
@@ -12879,26 +12883,32 @@ def admin_user_delete_confirm(target_user_id):
             flash("確認トークンが不正です。DELETE を入力してください。", "error")
             return redirect(url_for("admin_user_delete_confirm", target_user_id=target_user_id))
         deleted_username = str(target["username"] or "")
-        _admin_delete_user_hard(db, target_user_id)
-        audit_log(
-            db,
-            AUDIT_EVENT_TYPES["ADMIN_USER_DELETE"],
-            user_id=actor_admin_id,
-            request_id=getattr(g, "request_id", None),
-            action_key="admin_user_delete",
-            entity_type="user",
-            entity_id=target_user_id,
-            payload={
-                "deleted_user_id": target_user_id,
-                "deleted_username": deleted_username,
-                "actor_admin_id": actor_admin_id,
-                "summary": summary,
-            },
-            ip=request.remote_addr,
-        )
-        db.commit()
-        flash(f"ユーザー #{target_user_id}（{deleted_username}）を完全削除しました。", "notice")
-        return redirect(url_for("admin_users"))
+        try:
+            _admin_delete_user_hard(db, target_user_id)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES.get("ADMIN_USER_DELETE", "audit.admin.user.delete"),
+                user_id=actor_admin_id,
+                request_id=getattr(g, "request_id", None),
+                action_key="admin_user_delete",
+                entity_type="user",
+                entity_id=target_user_id,
+                payload={
+                    "deleted_user_id": target_user_id,
+                    "deleted_username": deleted_username,
+                    "actor_admin_id": actor_admin_id,
+                    "summary": summary,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            flash(f"ユーザー #{target_user_id}（{deleted_username}）を完全削除しました。", "notice")
+            return redirect(url_for("admin_users"))
+        except Exception as exc:
+            db.rollback()
+            app.logger.exception("admin user hard delete failed target_user_id=%s", target_user_id)
+            flash(f"ユーザー削除に失敗しました: {exc}", "error")
+            return redirect(url_for("admin_user_delete_confirm", target_user_id=target_user_id))
     return render_template("admin_user_delete_confirm.html", target=target, summary=summary)
 
 

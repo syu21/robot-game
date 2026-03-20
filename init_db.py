@@ -938,8 +938,7 @@ def main():
             VALUES (?, ?, ?, 1, ?)
             ON CONFLICT(key) DO UPDATE SET
                 name_ja = excluded.name_ja,
-                image_path = excluded.image_path,
-                is_active = 1
+                image_path = excluded.image_path
             """,
             (key, name_ja, image_path, int(time.time())),
         )
@@ -950,8 +949,7 @@ def main():
         ON CONFLICT(core_key) DO UPDATE SET
             name_ja = excluded.name_ja,
             description = excluded.description,
-            icon_path = excluded.icon_path,
-            is_active = 1
+            icon_path = excluded.icon_path
         """,
         (
             EVOLUTION_CORE_KEY,
