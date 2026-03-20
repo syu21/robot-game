@@ -14418,4 +14418,61 @@ def admin_parts_purge(part_id):
         return abort(403)
     db = get_db()
     typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word
+    confirm_word = request.form.get("confirm_word", "").strip()
+    acknowledged = request.form.get("acknowledged") == "1"
+
+    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
+        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
+        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
+
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not part:
+        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+
+    try:
+        result = _purge_part_with_dependencies(db, part)
+        session["message"] = (
+            "危険一括削除を実行しました。"
+            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
+            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
+        )
+        return redirect(url_for("admin_parts", show_inactive=1))
+    except Exception as exc:
+        db.rollback()
+        session["message"] = f"危険一括削除に失敗しました: {exc}"
+        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
+
+
+@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
+@login_required
+def admin_parts_purge_quick(part_id):
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    if not DEV_MODE:
+        session["message"] = "開発環境のみ利用できます。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+    db = get_db()
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not part:
+        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+    try:
+        result = _purge_part_with_dependencies(db, part)
+        session["message"] = (
+            "開発用クイック削除を実行しました。"
+            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
+            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
+        )
+    except Exception as exc:
+        db.rollback()
+        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
+    return redirect(url_for("admin_parts", show_inactive=1))
+
+
+if __name__ == "__main__":
+    app.run(
+        host="127.0.0.1",
+        port=int(os.environ.get("PORT", "5050")),
+        debug=True,
+    )
