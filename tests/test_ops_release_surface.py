@@ -88,7 +88,9 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         client = game_app.app.test_client()
         resp = client.get("/terms")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(f"v{game_app.APP_VERSION}", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn(f"v{game_app.APP_VERSION}", html)
+        self.assertIn("/static/favicon.png", html)
 
     def test_healthz_is_public(self):
         client = game_app.app.test_client()

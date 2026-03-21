@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>{{ title or "ロボらぼ" }}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}" />
 </head>
 {% set js_diag = request.args.get('js_diag') == '1' %}
