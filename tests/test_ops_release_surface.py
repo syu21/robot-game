@@ -83,6 +83,12 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIn("portal_queue_pending", payload)
 
+    def test_home_loads_header_scroll_script(self):
+        client = self._client_with_user(self.user_id, "ops_user")
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("/static/header_scroll_v2.js", resp.get_data(as_text=True))
+
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
         old_public_game_url = game_app.PUBLIC_GAME_URL
