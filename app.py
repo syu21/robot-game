@@ -7903,7 +7903,8 @@ def contact():
 @app.route("/changelog")
 def changelog():
     entries = [
-        {"version": APP_VERSION, "date": "2026-02-27", "title": "初回リリース", "notes": ["運用開始", "探索/組立/合成/監査の基本機能を提供"]},
+        {"version": "0.1.11", "date": "2026-03-21", "title": "モバイル表示と本番運用の調整", "notes": ["VPS 本番化と独自ドメイン公開に対応", "ホームのモバイル表示順とヘッダー挙動を改善"]},
+        {"version": "0.1.10", "date": "2026-02-27", "title": "初回リリース", "notes": ["運用開始", "探索/組立/合成/監査の基本機能を提供"]},
     ]
     return render_template("changelog.html", title="更新履歴", entries=entries)
 

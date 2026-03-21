@@ -16,6 +16,7 @@
     markStep("header_scroll:skip-no-header");
     return;
   }
+  const mobileQuery = window.matchMedia("(max-width: 900px), (hover: none) and (pointer: coarse)");
   let lastY = window.scrollY || 0;
   const hideThreshold = 40;
   const showThreshold = 20;
@@ -23,18 +24,48 @@
   let hidden = false;
   let ticking = false;
 
+  function isCompactHeaderMode() {
+    const measured = [
+      window.innerWidth || 0,
+      document.documentElement ? document.documentElement.clientWidth : 0,
+    ].filter((v) => Number.isFinite(v) && v > 0);
+    if (window.visualViewport && Number.isFinite(window.visualViewport.width)) {
+      measured.push(Math.floor(window.visualViewport.width));
+    }
+    const minWidth = measured.length ? Math.min.apply(null, measured) : 9999;
+    return mobileQuery.matches || minWidth <= 900;
+  }
+
   function setHeaderOffset() {
+    if (isCompactHeaderMode()) {
+      header.classList.add("is-compact-static");
+      document.documentElement.style.setProperty("--site-header-height", "0px");
+      return;
+    }
+    header.classList.remove("is-compact-static");
     const h = Math.max(0, Math.round(header.getBoundingClientRect().height));
     document.documentElement.style.setProperty("--site-header-height", `${h}px`);
   }
 
   function setHidden(nextHidden) {
+    if (isCompactHeaderMode()) {
+      hidden = false;
+      header.classList.remove("is-hidden");
+      return;
+    }
     if (hidden === nextHidden) return;
     hidden = nextHidden;
     header.classList.toggle("is-hidden", hidden);
   }
 
   function update() {
+    if (isCompactHeaderMode()) {
+      setHeaderOffset();
+      setHidden(false);
+      lastY = window.scrollY || 0;
+      ticking = false;
+      return;
+    }
     const y = window.scrollY || 0;
     const dy = y - lastY;
     if (y <= showThreshold) {
@@ -58,6 +89,9 @@
 
   window.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", setHeaderOffset, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", setHeaderOffset, { passive: true });
+  }
   window.addEventListener("pageshow", () => {
     setHeaderOffset();
     lastY = window.scrollY || 0;

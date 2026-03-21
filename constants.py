@@ -1,5 +1,5 @@
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.10"
+APP_VERSION = "0.1.11"
 SUPPORT_EMAIL = "support@example.com"
 
 ELEMENTS = (
