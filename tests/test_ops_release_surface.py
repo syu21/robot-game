@@ -75,6 +75,31 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn(f"v{game_app.APP_VERSION}", resp.get_data(as_text=True))
 
+    def test_healthz_is_public(self):
+        client = game_app.app.test_client()
+        resp = client.get("/healthz")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("portal_queue_pending", payload)
+
+    def test_sitemap_xml_is_public(self):
+        client = game_app.app.test_client()
+        old_public_game_url = game_app.PUBLIC_GAME_URL
+        try:
+            with patch.dict(os.environ, {"PUBLIC_GAME_URL": "https://robolabo.site"}, clear=False):
+                game_app.PUBLIC_GAME_URL = "https://robolabo.site"
+                resp = client.get("/sitemap.xml")
+        finally:
+            game_app.PUBLIC_GAME_URL = old_public_game_url
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("application/xml", resp.content_type)
+        body = resp.get_data(as_text=True)
+        self.assertIn("<loc>https://robolabo.site/</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/login</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/register</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/home</loc>", body)
+
 
 if __name__ == "__main__":
     unittest.main()

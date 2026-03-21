@@ -1,6 +1,8 @@
+import os
+
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.11"
-SUPPORT_EMAIL = "support@example.com"
+APP_VERSION = "0.1.13"
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com").strip() or "support@example.com"
 
 ELEMENTS = (
     ("NORMAL", "無"),

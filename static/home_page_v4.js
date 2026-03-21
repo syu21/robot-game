@@ -16,7 +16,7 @@
       if (diag && typeof diag.error === "function") {
         diag.error("caught_exception", {
           message: err && err.message ? err.message : String(err || "caught_exception"),
-          source: "static/home_page_v3.js",
+          source: "static/home_page_v4.js",
           line: 0,
           column: 0,
           stack: err && err.stack ? err.stack : "",
@@ -41,7 +41,7 @@
       measured.push(Math.floor(window.visualViewport.width));
     }
     const minWidth = measured.length ? Math.min.apply(null, measured) : 9999;
-    document.body.classList.toggle("home-mobile", minWidth <= 900);
+    document.body.classList.toggle("home-mobile", minWidth <= 640);
   };
 
   const bindCooldownView = () => {

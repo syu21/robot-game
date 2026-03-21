@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import Flask, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
 from PIL import Image
 from balance_config import (
     COIN_REWARD_BY_TIER,
@@ -65,10 +65,13 @@ DEV_MODE = (
     or os.getenv("FLASK_DEBUG") == "1"
 )
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
-if DEV_MODE:
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = (os.getenv("SESSION_COOKIE_SAMESITE") or "Lax").strip() or "Lax"
+app.config["SESSION_COOKIE_SECURE"] = (
+    os.getenv("SESSION_COOKIE_SECURE", "0").strip().lower() in {"1", "true", "yes", "on"}
+)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+if DEV_MODE and "SESSION_COOKIE_SECURE" not in os.environ:
     app.config["SESSION_COOKIE_SECURE"] = False
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 CANVAS_SIZE = 128
 ALLOWED_EXT = {"png"}
@@ -604,37 +607,274 @@ def _portal_online_endpoint():
     return f"{normalized}/api/portal/online-count"
 
 
-def send_portal_online_count(db=None, now_ts=None, window_minutes=PORTAL_ONLINE_WINDOW_MINUTES):
+def _portal_online_config():
     game_key = (os.getenv("POCHI_PORTAL_GAME_KEY") or "").strip()
     api_key = (os.getenv("POCHI_PORTAL_API_KEY") or "").strip()
     endpoint = _portal_online_endpoint()
     if not game_key or not api_key or not endpoint:
+        return {"ok": False, "reason": "missing_config"}
+    return {"ok": True, "game_key": game_key, "api_key": api_key, "endpoint": endpoint}
+
+
+def _portal_online_send_value(online_count, endpoint, game_key, api_key):
+    query = urlencode(
+        {
+            "game_key": game_key,
+            "api_key": api_key,
+            "online_count": int(online_count),
+        }
+    )
+    url = f"{endpoint}/?{query}"
+    req = Request(url, method="GET")
+    with urlopen(req, timeout=float(PORTAL_ONLINE_TIMEOUT_SECONDS)) as resp:
+        status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
+    if status < 200 or status >= 300:
+        return {"ok": False, "reason": "http_error", "status": status, "url": url, "online_count": int(online_count)}
+    return {"ok": True, "status": status, "url": url, "online_count": int(online_count)}
+
+
+def _enqueue_portal_online_retry(db, online_count, window_minutes, reason, now_ts=None, response_status=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    cur = db.execute(
+        """
+        INSERT INTO portal_online_delivery_queue
+        (online_count, window_minutes, status, attempt_count, created_at, last_error, response_status)
+        VALUES (?, ?, 'pending', 0, ?, ?, ?)
+        """,
+        (
+            int(online_count),
+            max(1, int(window_minutes or PORTAL_ONLINE_WINDOW_MINUTES)),
+            now,
+            (str(reason or "")[:240] or "unknown"),
+            (int(response_status) if response_status is not None else None),
+        ),
+    )
+    db.commit()
+    queue_id = int(cur.lastrowid or 0)
+    app.logger.warning(
+        "portal.online_count_queued queue_id=%s online_count=%s reason=%s status=%s",
+        queue_id,
+        int(online_count),
+        str(reason or "unknown"),
+        response_status if response_status is not None else "-",
+    )
+    return queue_id
+
+
+def flush_portal_online_retry_queue(db=None, limit=12, now_ts=None):
+    config = _portal_online_config()
+    if not config["ok"]:
+        app.logger.warning("portal.online_queue_flush_skip missing_config")
+        return {"ok": False, "reason": "missing_config", "processed": 0, "sent": 0, "failed": 0}
+    if db is None:
+        db = get_db()
+    rows = db.execute(
+        """
+        SELECT id, online_count, window_minutes, attempt_count
+        FROM portal_online_delivery_queue
+        WHERE status = 'pending'
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+        """,
+        (max(1, int(limit or 1)),),
+    ).fetchall()
+    if not rows:
+        return {"ok": True, "processed": 0, "sent": 0, "failed": 0}
+    now = _now_ts() if now_ts is None else int(now_ts)
+    sent = 0
+    failed = 0
+    for row in rows:
+        queue_id = int(row["id"])
+        try:
+            result = _portal_online_send_value(
+                online_count=int(row["online_count"] or 0),
+                endpoint=config["endpoint"],
+                game_key=config["game_key"],
+                api_key=config["api_key"],
+            )
+        except Exception:
+            failed += 1
+            db.execute(
+                """
+                UPDATE portal_online_delivery_queue
+                SET attempt_count = attempt_count + 1,
+                    last_attempt_at = ?,
+                    last_error = ?,
+                    response_status = NULL
+                WHERE id = ?
+                """,
+                (now, "exception", queue_id),
+            )
+            db.commit()
+            app.logger.exception("portal.online_queue_flush_failed queue_id=%s", queue_id)
+            break
+        if result["ok"]:
+            sent += 1
+            db.execute(
+                """
+                UPDATE portal_online_delivery_queue
+                SET status = 'sent',
+                    attempt_count = attempt_count + 1,
+                    last_attempt_at = ?,
+                    delivered_at = ?,
+                    last_error = NULL,
+                    response_status = ?
+                WHERE id = ?
+                """,
+                (now, now, int(result["status"]), queue_id),
+            )
+            db.commit()
+            app.logger.info(
+                "portal.online_queue_flush_sent queue_id=%s online_count=%s status=%s",
+                queue_id,
+                int(row["online_count"] or 0),
+                int(result["status"]),
+            )
+            continue
+        failed += 1
+        db.execute(
+            """
+            UPDATE portal_online_delivery_queue
+            SET attempt_count = attempt_count + 1,
+                last_attempt_at = ?,
+                last_error = ?,
+                response_status = ?
+            WHERE id = ?
+            """,
+            (now, str(result.get("reason") or "http_error")[:240], int(result.get("status") or 0) or None, queue_id),
+        )
+        db.commit()
+        app.logger.warning(
+            "portal.online_queue_flush_non_2xx queue_id=%s status=%s online_count=%s",
+            queue_id,
+            result.get("status"),
+            int(row["online_count"] or 0),
+        )
+        break
+    return {"ok": failed == 0, "processed": sent + failed, "sent": sent, "failed": failed}
+
+
+def send_portal_online_count(db=None, now_ts=None, window_minutes=PORTAL_ONLINE_WINDOW_MINUTES, flush_limit=12):
+    config = _portal_online_config()
+    if not config["ok"]:
         app.logger.warning("portal.online_count_skip missing_config")
         return {"ok": False, "reason": "missing_config"}
+    flush_result = {"ok": True, "processed": 0, "sent": 0, "failed": 0}
     if db is None:
         db = get_db()
     try:
-        online_count = count_online_users(db, window_minutes=window_minutes, now_ts=now_ts)
-        query = urlencode(
-            {
-                "game_key": game_key,
-                "api_key": api_key,
-                "online_count": int(online_count),
-            }
-        )
-        url = f"{endpoint}/?{query}"
-        req = Request(url, method="GET")
-        with urlopen(req, timeout=float(PORTAL_ONLINE_TIMEOUT_SECONDS)) as resp:
-            status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
-        if status < 200 or status >= 300:
-            app.logger.warning("portal.online_count_send_non_2xx status=%s", status)
-            return {"ok": False, "reason": "http_error", "status": status, "online_count": int(online_count)}
-        return {"ok": True, "status": status, "online_count": int(online_count)}
+        flush_result = flush_portal_online_retry_queue(db=db, limit=flush_limit, now_ts=now_ts)
     except Exception:
+        app.logger.exception("portal.online_queue_flush_wrapper_failed")
+        flush_result = {"ok": False, "reason": "exception", "processed": 0, "sent": 0, "failed": 1}
+    try:
+        online_count = count_online_users(db, window_minutes=window_minutes, now_ts=now_ts)
+        result = _portal_online_send_value(
+            online_count=online_count,
+            endpoint=config["endpoint"],
+            game_key=config["game_key"],
+            api_key=config["api_key"],
+        )
+        if not result["ok"]:
+            queue_id = _enqueue_portal_online_retry(
+                db,
+                online_count=online_count,
+                window_minutes=window_minutes,
+                reason=result.get("reason") or "http_error",
+                now_ts=now_ts,
+                response_status=result.get("status"),
+            )
+            app.logger.warning("portal.online_count_send_non_2xx status=%s queue_id=%s", result.get("status"), queue_id)
+            return {
+                "ok": False,
+                "reason": result.get("reason") or "http_error",
+                "status": result.get("status"),
+                "online_count": int(online_count),
+                "queued": True,
+                "queue_id": queue_id,
+                "flush_result": flush_result,
+            }
+        return {
+            "ok": True,
+            "status": int(result["status"]),
+            "online_count": int(online_count),
+            "queued": False,
+            "flush_result": flush_result,
+        }
+    except Exception:
+        online_count = count_online_users(db, window_minutes=window_minutes, now_ts=now_ts)
+        queue_id = _enqueue_portal_online_retry(
+            db,
+            online_count=online_count,
+            window_minutes=window_minutes,
+            reason="exception",
+            now_ts=now_ts,
+        )
         app.logger.exception("portal.online_count_send_failed")
-        return {"ok": False, "reason": "exception"}
+        return {
+            "ok": False,
+            "reason": "exception",
+            "online_count": int(online_count),
+            "queued": True,
+            "queue_id": queue_id,
+            "flush_result": flush_result,
+        }
     finally:
         pass
+
+
+def create_db_backup(now_dt=None):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    stamp = (now_dt or datetime.now(JST)).strftime("%Y%m%d-%H%M%S")
+    backup_name = f"game-{stamp}.db"
+    backup_path = os.path.join(BACKUP_DIR, backup_name)
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(backup_path)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    stat = os.stat(backup_path)
+    return {
+        "name": backup_name,
+        "path": backup_path,
+        "size": int(stat.st_size),
+        "updated_at": datetime.fromtimestamp(int(stat.st_mtime), JST).strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def list_db_backups():
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    files = []
+    for name in sorted(os.listdir(BACKUP_DIR), reverse=True):
+        path = os.path.join(BACKUP_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        stat = os.stat(path)
+        files.append(
+            {
+                "name": name,
+                "path": path,
+                "size": int(stat.st_size),
+                "updated_at": datetime.fromtimestamp(int(stat.st_mtime), JST).strftime("%Y-%m-%d %H:%M:%S"),
+                "mtime": int(stat.st_mtime),
+            }
+        )
+    return files
+
+
+def prune_db_backups(keep_latest=7):
+    keep_latest = max(1, int(keep_latest or 1))
+    files = list_db_backups()
+    pruned = []
+    for item in files[keep_latest:]:
+        try:
+            os.remove(item["path"])
+            pruned.append(item)
+        except FileNotFoundError:
+            continue
+    return pruned
 
 
 def _is_maintenance_mode():
@@ -4063,6 +4303,22 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS portal_online_delivery_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            online_count INTEGER NOT NULL,
+            window_minutes INTEGER NOT NULL DEFAULT 5,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            last_attempt_at INTEGER,
+            delivered_at INTEGER,
+            last_error TEXT,
+            response_status INTEGER
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_enemy_dex (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -4350,6 +4606,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_core_inventory_user_core ON user_core_inventory(user_id, core_asset_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_referrals_referrer_status ON user_referrals(referrer_user_id, status)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_referrals_referred_status ON user_referrals(referred_user_id, status)")
@@ -5676,6 +5935,47 @@ def _check_static_health():
     if missing:
         _ensure_dirs()
         _ensure_default_images()
+
+
+def _health_snapshot():
+    db_ok = False
+    db_error = ""
+    pending_portal_queue = 0
+    db = None
+    try:
+        db = sqlite3.connect(DB_PATH)
+        db.execute("SELECT 1").fetchone()
+        queue_exists = db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'portal_online_delivery_queue'"
+        ).fetchone()
+        if queue_exists:
+            row = db.execute(
+                "SELECT COUNT(*) FROM portal_online_delivery_queue WHERE status = 'pending'"
+            ).fetchone()
+            pending_portal_queue = int((row[0] if row else 0) or 0)
+        db_ok = True
+    except Exception as exc:
+        db_error = str(exc)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    required = [
+        os.path.join(STATIC_ROOT, "style.css"),
+        os.path.join(STATIC_ROOT, DEFAULT_AVATAR_REL),
+        os.path.join(STATIC_ROOT, DEFAULT_BADGE_REL),
+    ]
+    missing_static = [os.path.relpath(path, BASE_DIR) for path in required if not os.path.exists(path)]
+    status_ok = db_ok and not missing_static
+    return {
+        "ok": status_ok,
+        "db": {"ok": db_ok, "error": db_error},
+        "static": {"ok": not missing_static, "missing": missing_static},
+        "portal_queue_pending": int(pending_portal_queue),
+        "app_version": APP_VERSION,
+        "timestamp": now_str(),
+    }
 
 
 def _collect_missing_assets(db, limit=200):
@@ -7897,12 +8197,47 @@ def privacy():
 
 @app.route("/contact", methods=["GET", "POST"])
 def contact():
-    return redirect("https://forms.gle/U32xj52oDhF8aE4c7")
+    sent = False
+    if request.method == "POST":
+        subject = (request.form.get("subject") or "").strip()
+        body = (request.form.get("body") or "").strip()
+        app.logger.info("contact.received subject=%s body_len=%s", subject[:80] or "-", len(body))
+        sent = True
+    return render_template("contact.html", title="お問い合わせ", sent=sent)
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    root_url = _public_game_root_url().rstrip("/")
+    urls = [
+        f"{root_url}/",
+        f"{root_url}/login",
+        f"{root_url}/register",
+        f"{root_url}/home",
+    ]
+    xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for loc in urls:
+        xml.append("  <url>")
+        xml.append(f"    <loc>{loc}</loc>")
+        xml.append("  </url>")
+    xml.append("</urlset>")
+    return Response("\n".join(xml), content_type="application/xml; charset=utf-8")
+
+
+@app.route("/healthz")
+def healthz():
+    snapshot = _health_snapshot()
+    return jsonify(snapshot), (200 if snapshot["ok"] else 503)
 
 
 @app.route("/changelog")
 def changelog():
     entries = [
+        {"version": "0.1.13", "date": "2026-03-21", "title": "ヘッダー挙動と sitemap を調整", "notes": ["PC でのヘッダー自動非表示判定を修正", "公開用の /sitemap.xml を追加"]},
+        {"version": "0.1.12", "date": "2026-03-21", "title": "公開運用の土台を強化", "notes": ["ポータル送信の再送キューと運用タイマー例を追加", "利用規約/プライバシー/問い合わせ/監視/バックアップ運用を整備", "初心者ホームの情報量を絞って初回導線を改善"]},
         {"version": "0.1.11", "date": "2026-03-21", "title": "モバイル表示と本番運用の調整", "notes": ["VPS 本番化と独自ドメイン公開に対応", "ホームのモバイル表示順とヘッダー挙動を改善"]},
         {"version": "0.1.10", "date": "2026-02-27", "title": "初回リリース", "notes": ["運用開始", "探索/組立/合成/監査の基本機能を提供"]},
     ]
@@ -8022,7 +8357,7 @@ def register():
         password_confirm = request.form.get("password_confirm", "").strip()
         if not username or not password:
             error = "ユーザー名とパスワードを入力してください。"
-        elif password_confirm != password:
+        elif password_confirm and password_confirm != password:
             error = "確認用パスワードが一致しません。"
         else:
             db = get_db()
@@ -8373,6 +8708,9 @@ def home():
     )
     layer1_boss_defeated = _has_fixed_boss_defeat_in_area(db, user["id"], "layer_1")
     show_beginner_mission = (user["is_admin"] != 1) and (not layer1_boss_defeated)
+    home_beginner_focus = bool((user["is_admin"] != 1) and (show_beginner_mission or total_explores < 3))
+    home_summary_line = "パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。"
+    home_beginner_hint = "最初は「ロボ編成」か「出撃」だけ見ればOKです。"
     beginner_mission_text = "出撃してパーツを集めよう！\n強くなったらボスに挑戦だ！"
     beginner_mission_cta_label = "出撃する"
     beginner_mission_is_post = True
@@ -8458,6 +8796,9 @@ def home():
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,
             total_explores=total_explores,
+            home_beginner_focus=home_beginner_focus,
+            home_summary_line=home_summary_line,
+            home_beginner_hint=home_beginner_hint,
             show_beginner_mission=show_beginner_mission,
             beginner_mission_text=beginner_mission_text,
             beginner_mission_cta_label=beginner_mission_cta_label,
@@ -12958,27 +13299,11 @@ def admin_metrics():
 def admin_backup():
     if not _is_admin_user(session["user_id"]):
         return abort(403)
-    os.makedirs(BACKUP_DIR, exist_ok=True)
     message = None
     if request.method == "POST":
-        stamp = datetime.now(JST).strftime("%Y%m%d-%H%M%S")
-        backup_name = f"game-{stamp}.db"
-        backup_path = os.path.join(BACKUP_DIR, backup_name)
-        shutil.copy2(DB_PATH, backup_path)
-        message = f"バックアップ作成: {backup_name}"
-    files = []
-    for name in sorted(os.listdir(BACKUP_DIR), reverse=True):
-        path = os.path.join(BACKUP_DIR, name)
-        if not os.path.isfile(path):
-            continue
-        stat = os.stat(path)
-        files.append(
-            {
-                "name": name,
-                "size": int(stat.st_size),
-                "updated_at": datetime.fromtimestamp(int(stat.st_mtime), JST).strftime("%Y-%m-%d %H:%M:%S"),
-            }
-        )
+        backup = create_db_backup()
+        message = f"バックアップ作成: {backup['name']}"
+    files = [{k: item[k] for k in ("name", "size", "updated_at")} for item in list_db_backups()]
     return render_template("admin_backup.html", files=files, message=message)
 
 

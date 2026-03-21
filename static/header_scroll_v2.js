@@ -16,7 +16,8 @@
     markStep("header_scroll:skip-no-header");
     return;
   }
-  const mobileQuery = window.matchMedia("(max-width: 900px), (hover: none) and (pointer: coarse)");
+  const narrowQuery = window.matchMedia("(max-width: 640px)");
+  const coarsePointerQuery = window.matchMedia("(hover: none) and (pointer: coarse)");
   let lastY = window.scrollY || 0;
   const hideThreshold = 40;
   const showThreshold = 20;
@@ -33,7 +34,7 @@
       measured.push(Math.floor(window.visualViewport.width));
     }
     const minWidth = measured.length ? Math.min.apply(null, measured) : 9999;
-    return mobileQuery.matches || minWidth <= 900;
+    return coarsePointerQuery.matches || narrowQuery.matches || minWidth <= 640;
   }
 
   function setHeaderOffset() {
@@ -95,9 +96,10 @@
   window.addEventListener("pageshow", () => {
     setHeaderOffset();
     lastY = window.scrollY || 0;
-    if (lastY <= showThreshold) setHidden(false);
+    setHidden(lastY > hideThreshold);
   });
   setHeaderOffset();
-  setHidden(false);
+  lastY = window.scrollY || 0;
+  setHidden(lastY > hideThreshold);
   markStep("header_scroll:done");
 })();
