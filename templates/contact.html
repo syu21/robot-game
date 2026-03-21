@@ -2,8 +2,9 @@
 {% block content %}
 <div class="card">
   <h1>お問い合わせ</h1>
-  <p>不具合報告・ご意見は以下までご連絡ください。</p>
+  <p>不具合報告・ご意見は以下までご連絡ください。個人開発のため、返信や対応には時間がかかる場合があります。</p>
   <p><a href="mailto:{{ support_email }}">{{ support_email }}</a></p>
+  <p><a href="https://forms.gle/mmjKJqX6QrPE9GkJ6" target="_blank" rel="noopener">Google フォームで送る</a></p>
   {% if sent %}
     <div class="notice">お問い合わせを受け付けました（運用連絡のみ）。</div>
   {% endif %}
