@@ -1,6 +1,6 @@
 # 監査状態レポート（STATE_AUDIT_REPORT）
 
-最終更新日: 2026-03-12
+最終更新日: 2026-03-20
 
 ## 1. サマリー
 - 監査基盤 `world_events_log` は継続運用可能
@@ -124,3 +124,43 @@
 - 配信不整合疑い時は:
   - 別名JS (`*_v2.js`) への切替を優先
   - まず `?no_js=1` で CSS/JS を1手で切り分け
+
+## 7. VPS 本番化メモ（2026-03-20）
+### 7.1 本番稼働状態
+- さくらVPS 上で `gunicorn + systemd + nginx` 構成へ移行済み
+- systemd service: `robot-game.service`
+- 公開確認先: `http://49.212.193.15/login`
+- `curl -I http://127.0.0.1:8000/login` -> `200`（gunicorn）
+- `curl -I http://127.0.0.1/login` -> `200`（nginx 経由）
+
+### 7.2 今回反映した修正
+- 管理画面で敵を無効化しても、起動時シードで `is_active=1` に戻る不具合を修正
+- 同系統で DECOR / core 定義の seed も既存 `is_active` を保持する形へ修正
+- 管理者ユーザー完全削除の監査イベント `audit.admin.user.delete` を定数へ追加
+- `ADMIN_USER_DELETE` 未定義時でも管理画面が 500 にならないよう防御コードを追加
+- `tests/test_admin_asset_toggle_persistence.py` を追加し、敵/装飾の有効化トグル保持を回帰確認
+
+### 7.3 VPS 反映時の実運用メモ
+- `git pull` 前に VPS 上の手修正 `app.py` は `git stash` が必要だった
+- 初回は nginx の `/static/` 直配信で `403` が発生
+- 対応として `location /static/ { alias ... }` を外し、静的ファイルも gunicorn 経由に統一
+- その後、`/static/style.css` と `avatar_default.png` の `200` を確認し、表示崩れは解消
+
+### 7.4 未完了 / 次アクション
+- HTTPS は未導入
+- 次の優先はドメイン取得 -> DNS `A` レコードを VPS へ向ける -> `PUBLIC_GAME_URL` をドメインへ更新 -> `certbot --nginx`
+- HTTPS 導入完了までは `.env.production` の `SESSION_COOKIE_SECURE=0` を維持
+- `SECRET_KEY` が仮値のままなら、本番用ランダム値へ差し替えて `sudo systemctl restart robot-game.service`
+
+### 7.5 2026-03-20 時点のローカル検証結果
+- `python3 -m py_compile app.py init_db.py constants.py` は通過
+- `python3 -m unittest discover -s tests -q` は `156` 件実行、`11` 件失敗
+- 失敗群は主に以下の未整合に残っている
+  - `base_cleanup_v2.js` を期待するテストと、実装が `base_cleanup_v3.js` を読む差分
+  - `home next action` の DOM / 導線期待値の差分
+  - newbie explore boost の CT 文言・表示期待値差分
+  - `register` の `password_confirm` 必須化に追従していない starter/referral 系期待値
+
+### 7.6 ローカル作業ツリー注意
+- ローカルには `balance_config.py` と静的アセット周辺に未整理差分が残っている
+- 本番化作業と無関係なため、別タスクとして整理・コミット方針を切り分けること
