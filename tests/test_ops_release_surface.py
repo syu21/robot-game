@@ -51,6 +51,21 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             resp = client.get(path)
             self.assertEqual(resp.status_code, 200)
 
+    def test_terms_and_privacy_share_single_legal_page(self):
+        client = game_app.app.test_client()
+        terms_resp = client.get("/terms")
+        privacy_resp = client.get("/privacy")
+        self.assertEqual(terms_resp.status_code, 200)
+        self.assertEqual(privacy_resp.status_code, 200)
+        terms_html = terms_resp.get_data(as_text=True)
+        privacy_html = privacy_resp.get_data(as_text=True)
+        for html in (terms_html, privacy_html):
+            self.assertIn("利用規約 / プライバシーポリシー", html)
+            self.assertIn('id="terms"', html)
+            self.assertIn('id="privacy"', html)
+            self.assertIn("/contact", html)
+            self.assertNotIn("mailto:", html)
+
     def test_maintenance_mode_blocks_explore_post_with_503(self):
         client = self._client_with_user(self.user_id, "ops_user")
         with patch.dict(os.environ, {"MAINTENANCE_MODE": "true"}):

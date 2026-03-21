@@ -8187,12 +8187,12 @@ def maintenance():
 
 @app.route("/terms")
 def terms():
-    return render_template("terms.html", title="利用規約")
+    return render_template("legal.html", title="利用規約 / プライバシーポリシー")
 
 
 @app.route("/privacy")
 def privacy():
-    return render_template("privacy.html", title="プライバシーポリシー")
+    return render_template("legal.html", title="利用規約 / プライバシーポリシー")
 
 
 @app.route("/contact", methods=["GET", "POST"])
