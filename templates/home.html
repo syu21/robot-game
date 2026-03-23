@@ -82,14 +82,6 @@
   </div>
 </div>
 {% endif %}
-<div class="panel home-summary-panel">
-  <div class="card">
-    <div class="home-summary-line"><b>ロボらぼ</b>は {{ home_summary_line }}</div>
-    {% if home_beginner_focus %}
-    <div class="upgrade-cost">{{ home_beginner_hint }}</div>
-    {% endif %}
-  </div>
-</div>
 {% if boss_alert_status %}
 <div class="panel priority-boss-alert">
   <h2>ボス警報</h2>
@@ -363,7 +355,6 @@
   </div>
 </div>
 </div>
-{% if not home_beginner_focus %}
 <section class="panel home-mini-log-panel">
   <h2>みんなのログ</h2>
   <form method="post" action="{{ url_for('chat') }}" class="home-chat-form">
@@ -401,6 +392,7 @@
     <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
   </div>
 </section>
+{% if not home_beginner_focus %}
 <section class="panel home-invite-panel">
   <div class="world-env-card">
     <div><b>招待</b></div>

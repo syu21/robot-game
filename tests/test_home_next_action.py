@@ -283,6 +283,23 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("今週のランキング", html)
         self.assertIn("まだランキングデータがありません。", html)
 
+    def test_home_beginner_focus_keeps_social_log_and_weekly_ranking(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0, faction = NULL WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("最初のミッション", html)
+        self.assertIn("みんなのログ", html)
+        self.assertIn("今週のランキング", html)
+        self.assertIn("今週の戦況", html)
+        self.assertIn("まだランキングデータがありません。", html)
+        self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
+        self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
+
     def test_explore_reuses_same_battle_id_on_post_resend(self):
         self._create_active_robot()
         client = self._new_client()
