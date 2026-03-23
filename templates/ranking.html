@@ -1,12 +1,26 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>勝利数ランキング</h1>
+<h1>ランキング</h1>
 <div class="card">
+  <div class="showcase-sort-tabs">
+    {% for item in metric_defs %}
+    <a href="{{ url_for('ranking', metric=item['key']) }}" class="fuse-mode-tab {% if metric_key == item['key'] %}is-active{% endif %}">{{ item['tab_label'] }}</a>
+    {% endfor %}
+  </div>
+  <div class="robot-part">{{ metric['description'] }}</div>
+  {% if metric['is_weekly'] %}
+  <div class="robot-part">対象週: {{ week_key }}</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>{{ metric['title'] }}</h2>
+  {% if rows %}
   <table>
     <tr>
       <th>順位</th>
       <th>ユーザー</th>
-      <th>勝利数</th>
+      <th>{{ metric['metric_label'] }}</th>
     </tr>
     {% for r in rows %}
     <tr>
@@ -20,10 +34,13 @@
         </span>
         {{ r['username'] }}
       </td>
-      <td>{{ r['wins'] }}</td>
+      <td>{{ r['metric_value'] }}</td>
     </tr>
     {% endfor %}
   </table>
+  {% else %}
+  <p>まだ記録がありません。</p>
+  {% endif %}
 </div>
 <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
 {% endblock %}

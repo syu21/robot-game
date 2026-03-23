@@ -7,6 +7,8 @@
     <label>type:</label>
     <select name="type">
       <option value="" {% if not selected_type %}selected{% endif %}>all</option>
+      <option value="boss" {% if selected_type == 'boss' %}selected{% endif %}>boss</option>
+      <option value="evolve" {% if selected_type == 'evolve' %}selected{% endif %}>evolve</option>
       <option value="drop" {% if selected_type == 'drop' %}selected{% endif %}>drop</option>
       <option value="fuse" {% if selected_type == 'fuse' %}selected{% endif %}>fuse</option>
       <option value="build" {% if selected_type == 'build' %}selected{% endif %}>build</option>

@@ -245,6 +245,41 @@ ROBOT_TITLE_DEFS = (
     {"key": "title_first_boss", "name_ja": "初撃破", "desc_ja": "ボス初撃破を達成", "sort_order": 30, "metric": "boss_defeats_total", "threshold": 1},
 )
 SHOWCASE_SORT_OPTIONS = ("new", "week", "boss", "like")
+RANKING_METRIC_DEFS = (
+    {
+        "key": "wins",
+        "tab_label": "勝利数",
+        "title": "勝利数ランキング",
+        "metric_label": "勝利数",
+        "description": "歴代の勝利数を表示します。",
+        "is_weekly": False,
+    },
+    {
+        "key": "explores",
+        "tab_label": "探索数",
+        "title": "探索数ランキング",
+        "metric_label": "探索回数",
+        "description": "累積の出撃回数を表示します。",
+        "is_weekly": False,
+    },
+    {
+        "key": "weekly_explores",
+        "tab_label": "今週探索",
+        "title": "今週探索数ランキング",
+        "metric_label": "今週探索",
+        "description": "今週どれだけ出撃したかを表示します。",
+        "is_weekly": True,
+    },
+    {
+        "key": "weekly_bosses",
+        "tab_label": "今週ボス",
+        "title": "今週ボス撃破ランキング",
+        "metric_label": "今週ボス撃破",
+        "description": "今週のボス討伐数を表示します。",
+        "is_weekly": True,
+    },
+)
+RANKING_METRIC_DEF_BY_KEY = {row["key"]: row for row in RANKING_METRIC_DEFS}
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 EXPLORE_AREAS = [
     {"key": "layer_1", "label": "第一層: 風化した整備通路", "layer": 1},
@@ -2551,6 +2586,84 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
         item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
         out.append(item)
     return out
+
+
+def _ranking_rows_from_event_log(db, *, event_type, limit=50, start_ts=None, end_ts=None):
+    where = ["event_type = ?", "user_id IS NOT NULL"]
+    params = [str(event_type)]
+    if start_ts is not None:
+        where.append("created_at >= ?")
+        params.append(int(start_ts))
+    if end_ts is not None:
+        where.append("created_at < ?")
+        params.append(int(end_ts))
+    rows = db.execute(
+        f"""
+        SELECT u.id, u.username, metrics.metric_value
+        FROM (
+            SELECT user_id, COUNT(*) AS metric_value
+            FROM world_events_log
+            WHERE {' AND '.join(where)}
+            GROUP BY user_id
+        ) metrics
+        JOIN users u ON u.id = metrics.user_id
+        ORDER BY metrics.metric_value DESC, u.username ASC
+        LIMIT ?
+        """,
+        [*params, int(limit)],
+    ).fetchall()
+    return rows
+
+
+def _ranking_rows(db, metric_key, limit=50, week_key=None):
+    metric = RANKING_METRIC_DEF_BY_KEY.get(metric_key) or RANKING_METRIC_DEF_BY_KEY["wins"]
+    wk = str(week_key or _world_week_key())
+    if metric["key"] == "wins":
+        rows = db.execute(
+            """
+            SELECT id, username, wins AS metric_value
+            FROM users
+            ORDER BY wins DESC, username ASC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        return rows, metric
+    if metric["key"] == "explores":
+        return (
+            _ranking_rows_from_event_log(
+                db,
+                event_type=AUDIT_EVENT_TYPES["EXPLORE_END"],
+                limit=limit,
+            ),
+            metric,
+        )
+    start_dt, end_dt = _world_week_bounds(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    if metric["key"] == "weekly_explores":
+        return (
+            _ranking_rows_from_event_log(
+                db,
+                event_type=AUDIT_EVENT_TYPES["EXPLORE_END"],
+                limit=limit,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            ),
+            metric,
+        )
+    if metric["key"] == "weekly_bosses":
+        return (
+            _ranking_rows_from_event_log(
+                db,
+                event_type=AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                limit=limit,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            ),
+            metric,
+        )
+    return _ranking_rows(db, "wins", limit=limit, week_key=wk)
 
 
 def _issue_explore_submission_id():
@@ -7372,6 +7485,8 @@ def _recent_drop_items(db, user_id, limit=5):
 
 
 FEED_EVENT_TYPES = {
+    "boss": {"audit.boss.defeat"},
+    "evolve": {"audit.part.evolve"},
     "drop": {"audit.drop"},
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
@@ -7400,6 +7515,25 @@ def _part_image_url(part_row):
     return url_for("static", filename=_part_image_rel(part_row))
 
 
+def _feed_enemy_row(db, row, payload):
+    enemy_key = str(payload.get("enemy_key") or "").strip()
+    if enemy_key:
+        enemy = db.execute(
+            "SELECT id, key, name_ja, image_path FROM enemies WHERE key = ?",
+            (enemy_key,),
+        ).fetchone()
+        if enemy:
+            return enemy
+    entity_type = str((row["entity_type"] if "entity_type" in row.keys() else "") or "").strip().lower()
+    entity_id = row["entity_id"] if "entity_id" in row.keys() else None
+    if entity_type == "enemy" and entity_id:
+        return db.execute(
+            "SELECT id, key, name_ja, image_path FROM enemies WHERE id = ?",
+            (int(entity_id),),
+        ).fetchone()
+    return None
+
+
 def _feed_card_from_event(db, row):
     payload_raw = row["payload_json"] if "payload_json" in row.keys() else None
     try:
@@ -7417,7 +7551,37 @@ def _feed_card_from_event(db, row):
         "image_url": None,
         "link_url": None,
     }
-    if event_type == "audit.drop":
+    if event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+        actor_label = card["user_label"]
+        boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
+        robot_name = str(payload.get("robot_name") or "").strip()
+        area_label = str(payload.get("area_label") or "").strip()
+        if not area_label and payload.get("area_key"):
+            area_label = _boss_area_label(payload.get("area_key"))
+        if robot_name:
+            card["text"] = f"ボス撃破: {actor_label} の {robot_name} が {boss_name} を討伐"
+        else:
+            card["text"] = f"ボス撃破: {actor_label} が {boss_name} を討伐"
+        if area_label:
+            card["text"] += f"（{area_label}）"
+        enemy_row = _feed_enemy_row(db, row, payload)
+        if enemy_row:
+            card["image_url"] = url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
+    elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+        actor_label = card["user_label"]
+        target_part_key = str(payload.get("target_part_key") or "").strip()
+        part_row = _get_part_by_key(db, target_part_key) if target_part_key else None
+        target_name = str(payload.get("target_part_name") or "").strip()
+        if not target_name and part_row:
+            target_name = _part_display_name_ja(part_row)
+        part_type = payload.get("part_type") or (part_row["part_type"] if part_row else "")
+        part_type_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), "パーツ")
+        target_name = target_name or "Rパーツ"
+        card["text"] = f"進化成功: {actor_label} が {part_type_label}『{target_name}』をR化"
+        if part_row:
+            card["image_url"] = _part_image_url(part_row)
+        card["link_url"] = url_for("evolve_parts")
+    elif event_type == "audit.drop":
         part_key = payload.get("part_key")
         part_type = payload.get("part_type") or "-"
         rarity = payload.get("rarity") or "-"
@@ -7488,6 +7652,8 @@ def _fetch_feed_cards(db, type_filter="", user_id_filter=None, limit=30, is_admi
         else:
             event_types = set(FEED_EVENT_TYPES[feed_type])
     else:
+        event_types.update(FEED_EVENT_TYPES["boss"])
+        event_types.update(FEED_EVENT_TYPES["evolve"])
         event_types.update(FEED_EVENT_TYPES["drop"])
         event_types.update(FEED_EVENT_TYPES["fuse"])
         event_types.update(FEED_EVENT_TYPES["build"])
@@ -10383,10 +10549,21 @@ def explore():
                     ),
                     payload={
                         "user_id": user_id,
+                        "week_key": _world_week_key(),
                         "area_key": area_key,
                         "enemy_key": enemy["key"] if "key" in enemy.keys() else None,
                         "is_boss": True,
                         "boss_kind": area_boss_kind,
+                        "robot_instance_id": (
+                            int(active["id"])
+                            if active and hasattr(active, "keys") and "id" in active.keys() and active["id"]
+                            else None
+                        ),
+                        "robot_name": (
+                            active["name"]
+                            if active and hasattr(active, "keys") and "name" in active.keys() and active["name"]
+                            else None
+                        ),
                         "npc_boss_template_id": area_boss_template_id,
                         "source_robot_instance_id": enemy.get("_source_robot_instance_id"),
                         "source_user_id": enemy.get("_source_user_id"),
@@ -12048,11 +12225,20 @@ def showcase_like(robot_id):
 @login_required
 def ranking():
     db = get_db()
-    rows = db.execute(
-        "SELECT id, username, wins FROM users ORDER BY wins DESC, username ASC LIMIT 50"
-    ).fetchall()
+    metric_key = (request.args.get("metric") or "wins").strip().lower()
+    if metric_key not in RANKING_METRIC_DEF_BY_KEY:
+        metric_key = "wins"
+    week_key = _world_week_key()
+    rows, metric = _ranking_rows(db, metric_key, limit=50, week_key=week_key)
     rows = _decorate_user_rows(db, rows, user_key="id")
-    return render_template("ranking.html", rows=rows)
+    return render_template(
+        "ranking.html",
+        rows=rows,
+        metric_key=metric_key,
+        metric=metric,
+        metric_defs=RANKING_METRIC_DEFS,
+        week_key=week_key,
+    )
 
 
 @app.route("/dex/enemies")
@@ -12323,6 +12509,7 @@ def evolve_parts():
                     "source_part_key": source_row["part_key"],
                     "source_part_name": source_name,
                     "source_plus": int(source_row["plus"] or 0),
+                    "part_type": target_part["part_type"] or source_row["part_type"],
                     "target_part_key": target_part["key"],
                     "target_part_name": target_name,
                     "target_plus": int(source_row["plus"] or 0),
