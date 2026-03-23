@@ -8837,9 +8837,13 @@ def home():
     chat_messages = _decorate_user_rows(db, _home_chat_messages(db, limit=5))
     for _row in chat_messages:
         _row["home_text"] = _home_humanize_log_message(_row)
-    ranking_rows = db.execute(
-        "SELECT username, wins FROM users ORDER BY wins DESC, id ASC LIMIT 10"
-    ).fetchall()
+    home_ranking_rows, home_ranking_metric = _ranking_rows(
+        db,
+        "weekly_explores",
+        limit=5,
+        week_key=week_key,
+    )
+    home_ranking_url = url_for("ranking", metric="weekly_explores")
     upgrade_cost = max(10, user["click_power"] * 10)
     message = session.pop("message", None)
     slot_display_used = min(instance_count, limits["robot_slots"])
@@ -8935,7 +8939,9 @@ def home():
             max_unlocked_layer=max_unlocked_layer,
             new_layer_badge=(int(new_layer_badge) if new_layer_badge else None),
             show_axis_hint=show_axis_hint,
-            ranking_rows=ranking_rows,
+            home_ranking_rows=home_ranking_rows,
+            home_ranking_metric=home_ranking_metric,
+            home_ranking_url=home_ranking_url,
             slot_display_used=slot_display_used,
             slot_overflow=slot_overflow,
             weekly_env=weekly_env,

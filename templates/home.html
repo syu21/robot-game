@@ -82,6 +82,14 @@
   </div>
 </div>
 {% endif %}
+<div class="panel home-summary-panel">
+  <div class="card">
+    <div class="home-summary-line"><b>ロボらぼ</b>は {{ home_summary_line }}</div>
+    {% if home_beginner_focus %}
+    <div class="upgrade-cost">{{ home_beginner_hint }}</div>
+    {% endif %}
+  </div>
+</div>
 {% if boss_alert_status %}
 <div class="panel priority-boss-alert">
   <h2>ボス警報</h2>
@@ -190,7 +198,6 @@
         </div>
       {% endif %}
     </section>
-
     <section class="panel home-mvp-panel">
       <div class="world-env-card mvp-hero-card">
         <div><b>今週のMVP</b></div>
@@ -211,7 +218,7 @@
     <h2>アクション</h2>
     <div class="upgrade-cost">現在解放層: 第{{ max_unlocked_layer }}層</div>
     {% if next_action_card %}
-      <div class="card home-next-action-card">
+      <div class="card next-action-card">
         <div><b>{{ next_action_card['title'] }}</b></div>
         <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
         {% if next_action_card['is_post'] %}
@@ -338,12 +345,13 @@
     </div>
     </section>
 
+    {% if not home_beginner_focus %}
     <section class="panel home-nav-panel">
       <h2>メニュー</h2>
       <div class="home-nav-section-title">リンク</div>
       <div class="home-nav-grid home-nav-links">
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('ranking') }}"><div class="action-title">ランキング</div><div class="action-desc">勝利数を確認</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('ranking') }}"><div class="action-title">ランキング</div><div class="action-desc">みんなの進行を見る</div></a>
       </div>
       <div class="home-nav-section-title">進捗</div>
       <div class="home-nav-grid home-nav-progress">
@@ -351,9 +359,11 @@
         <a class="action-card home-nav-card" href="{{ url_for('research_view') }}"><div class="action-title">研究進捗</div><div class="action-desc">stage {{ research_summary['unlocked_stage'] }} / 4</div></a>
       </div>
     </section>
+    {% endif %}
   </div>
 </div>
 </div>
+{% if not home_beginner_focus %}
 <section class="panel home-mini-log-panel">
   <h2>みんなのログ</h2>
   <form method="post" action="{{ url_for('chat') }}" class="home-chat-form">
@@ -379,6 +389,18 @@
     {% endfor %}
   </ul>
 </section>
+<section class="panel home-ranking-panel">
+  <div class="world-env-card">
+    <div><b>今週のランキング</b></div>
+    <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
+    {% for row in home_ranking_rows %}
+      <div class="robot-part">{{ loop.index }}位 {{ row['username'] }} <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span></div>
+    {% else %}
+      <div class="robot-part">まだランキングデータがありません。</div>
+    {% endfor %}
+    <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
+  </div>
+</section>
 <section class="panel home-invite-panel">
   <div class="world-env-card">
     <div><b>招待</b></div>
@@ -391,6 +413,7 @@
     <div class="upgrade-cost">pending: {{ referral_counts['pending'] }} / qualified: {{ referral_counts['qualified'] }}</div>
   </div>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}
 {% block scripts %}

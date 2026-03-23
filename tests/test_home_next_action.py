@@ -228,6 +228,61 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(html.count("同一ログ"), 1)
         self.assertNotIn("が新ロボ『GuideBot』を完成！", html)
 
+    def test_home_shows_weekly_explore_ranking_below_social_log(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 1, 0, 1)
+                """,
+                ("ranking_rival", "x", now),
+            )
+            rival_id = db.execute(
+                "SELECT id FROM users WHERE username = ?",
+                ("ranking_rival",),
+            ).fetchone()["id"]
+            current_week = game_app._world_week_key()
+            week_start, _ = game_app._world_week_bounds(current_week)
+            ts = int(week_start.timestamp()) + 3600
+            for _ in range(2):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, '{}', ?)
+                    """,
+                    (ts, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], self.user_id),
+                )
+            for _ in range(4):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, '{}', ?)
+                    """,
+                    (ts + 1, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], rival_id),
+                )
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("みんなのログ", html)
+        self.assertIn("今週のランキング", html)
+        self.assertIn("1位 ranking_rival", html)
+        self.assertIn("4回", html)
+        self.assertIn("2位 home_next_tester", html)
+        self.assertIn('/ranking?metric=weekly_explores', html)
+        self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
+
+    def test_home_weekly_explore_ranking_handles_empty_state(self):
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("今週のランキング", html)
+        self.assertIn("まだランキングデータがありません。", html)
+
     def test_explore_reuses_same_battle_id_on_post_resend(self):
         self._create_active_robot()
         client = self._new_client()
