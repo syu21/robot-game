@@ -143,6 +143,7 @@ def main():
             banned_by_user_id INTEGER,
             has_seen_intro_modal INTEGER NOT NULL DEFAULT 0,
             intro_guide_closed_at TEXT,
+            last_explore_area_key TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -557,6 +558,22 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS portal_online_delivery_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            online_count INTEGER NOT NULL,
+            window_minutes INTEGER NOT NULL DEFAULT 5,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            last_attempt_at INTEGER,
+            delivered_at INTEGER,
+            last_error TEXT,
+            response_status INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_enemy_dex (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -717,6 +734,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN has_seen_intro_modal INTEGER NOT NULL DEFAULT 0")
     if "intro_guide_closed_at" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
+    if "last_explore_area_key" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
     cur.execute(
         "UPDATE users SET faction = NULL WHERE faction IS NOT NULL AND LOWER(TRIM(faction)) NOT IN ('ignis','ventra','aurix')"
     )
@@ -726,6 +745,7 @@ def main():
     cur.execute("UPDATE users SET banned_reason = NULL WHERE banned_reason IS NOT NULL AND TRIM(banned_reason) = ''")
     cur.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     cur.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
+    cur.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     ri_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instances)").fetchall()}
     if "personality" not in ri_cols:
@@ -861,6 +881,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
+    )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")

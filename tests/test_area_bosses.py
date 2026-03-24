@@ -164,26 +164,42 @@ class AreaBossTests(unittest.TestCase):
             session["username"] = "area_boss_tester"
         return client
 
-    def _run_layer2_boss_defeat_once(self):
+    def _set_boss_progress_for_area(self, area_key):
+        pity_key = game_app._boss_area_key_for_route(area_key)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO user_boss_progress (user_id, area_key, no_boss_streak, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, area_key) DO UPDATE SET
+                    no_boss_streak = excluded.no_boss_streak,
+                    updated_at = excluded.updated_at
+                """,
+                (self.user_id, area_key, int(game_app.AREA_BOSS_PITY_MISSES[pity_key]) - 1, int(time.time())),
+            )
+            db.commit()
+
+    def _run_layer2_boss_defeat_once(self, area_key="layer_2"):
         client = self._new_client()
         with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
             game_app, "resolve_attack", side_effect=self._resolve_for_win
         ):
-            resp = client.post("/explore", data={"area_key": "layer_2", "boss_enter": "1"})
+            resp = client.post("/explore", data={"area_key": area_key, "boss_enter": "1"})
         return resp
 
-    def _run_layer2_boss_lose_once(self):
+    def _run_layer2_boss_lose_once(self, area_key="layer_2"):
         client = self._new_client()
         with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
             game_app, "resolve_attack", side_effect=self._resolve_for_lose
         ):
-            resp = client.post("/explore", data={"area_key": "layer_2", "boss_enter": "1"})
+            resp = client.post("/explore", data={"area_key": area_key, "boss_enter": "1"})
         return resp
 
-    def _trigger_layer2_boss_alert_once(self):
+    def _trigger_layer2_boss_alert_once(self, area_key="layer_2"):
         client = self._new_client()
         with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()):
-            resp = client.post("/explore", data={"area_key": "layer_2"}, follow_redirects=True)
+            resp = client.post("/explore", data={"area_key": area_key}, follow_redirects=True)
         return resp
 
     def test_encounter_only_does_not_post_system_chat(self):
@@ -329,6 +345,36 @@ class AreaBossTests(unittest.TestCase):
                 "SELECT COUNT(*) AS c FROM chat_messages WHERE username = 'SYSTEM'"
             ).fetchone()["c"]
             self.assertEqual(int(after_system) - int(before_system), 2)
+
+    def test_layer2_side_routes_grant_ventra_reward(self):
+        for area_key in ("layer_2_mist", "layer_2_rush"):
+            with self.subTest(area_key=area_key):
+                self._set_boss_progress_for_area(area_key)
+                alert = self._trigger_layer2_boss_alert_once(area_key=area_key)
+                self.assertEqual(alert.status_code, 200)
+                self.assertIn("ボス警報", alert.get_data(as_text=True))
+
+                resp = self._run_layer2_boss_defeat_once(area_key=area_key)
+                self.assertEqual(resp.status_code, 200)
+                html = resp.get_data(as_text=True)
+                self.assertIn("ヴェントラ紋章", html)
+
+                with game_app.app.app_context():
+                    db = game_app.get_db()
+                    payload_row = db.execute(
+                        """
+                        SELECT payload_json
+                        FROM world_events_log
+                        WHERE event_type = 'audit.boss.defeat' AND user_id = ?
+                          AND COALESCE(json_extract(payload_json, '$.area_key'), '') = ?
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        (self.user_id, area_key),
+                    ).fetchone()
+                    self.assertIsNotNone(payload_row)
+                    self.assertIn("boss_emblem_ventra", payload_row["payload_json"])
+                    self.assertIn('"reward_missing": false', payload_row["payload_json"].lower())
 
     def test_reward_missing_does_not_break_explore(self):
         with game_app.app.app_context():

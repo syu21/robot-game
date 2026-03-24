@@ -4,6 +4,7 @@ import time
 import unittest
 import json
 import re
+from unittest import mock
 
 import app as game_app
 import init_db
@@ -283,6 +284,42 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("今週のランキング", html)
         self.assertIn("まだランキングデータがありません。", html)
 
+    def test_home_defaults_explore_select_to_first_unlocked_area_when_unset(self):
+        self._create_active_robot()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertRegex(html, r'<option value="layer_1" selected>')
+
+    def test_home_uses_last_selected_explore_area_when_unlocked(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "UPDATE users SET max_unlocked_layer = 2, last_explore_area_key = 'layer_2_rush' WHERE id = ?",
+                (self.user_id,),
+            )
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertRegex(html, r'<option value="layer_2_rush" selected>')
+
+    def test_home_falls_back_when_saved_explore_area_is_locked(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET last_explore_area_key = 'layer_3' WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertRegex(html, r'<option value="layer_1" selected>')
+        self.assertNotIn('value="layer_3"', html)
+
     def test_home_beginner_focus_keeps_social_log_and_weekly_ranking(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -300,6 +337,17 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
         self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
 
+    def test_explore_persists_last_selected_area_key(self):
+        self._create_active_robot()
+        client = self._new_client()
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp = client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(resp.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT last_explore_area_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(user["last_explore_area_key"], "layer_1")
+
     def test_explore_reuses_same_battle_id_on_post_resend(self):
         self._create_active_robot()
         client = self._new_client()
@@ -310,7 +358,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIsNotNone(m)
         submission_id = m.group(1)
 
-        with unittest.mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
             resp1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
             self.assertEqual(resp1.status_code, 200)
             resp2 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})

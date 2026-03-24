@@ -1465,6 +1465,30 @@ def _is_area_unlocked(user_row, area_key):
     return _area_layer(area_key) <= _user_max_unlocked_layer(user_row)
 
 
+def _saved_explore_area_key(user_row, available_areas=None):
+    if not user_row or "last_explore_area_key" not in user_row.keys():
+        return None
+    area_key = str(user_row["last_explore_area_key"] or "").strip()
+    if not area_key or area_key not in EXPLORE_AREA_LAYER_BY_KEY:
+        return None
+    if not _is_area_unlocked(user_row, area_key):
+        return None
+    if available_areas is not None:
+        available_keys = {str(area.get("key") or "").strip() for area in available_areas}
+        if area_key not in available_keys:
+            return None
+    return area_key
+
+
+def _default_explore_area_key(user_row, available_areas):
+    saved = _saved_explore_area_key(user_row, available_areas)
+    if saved:
+        return saved
+    if not available_areas:
+        return None
+    return str(available_areas[0].get("key") or "").strip() or None
+
+
 def _locked_layer_lines(user_row):
     max_layer = _user_max_unlocked_layer(user_row)
     lines = []
@@ -1578,6 +1602,15 @@ def _boss_area_key_for_route(area_key):
     if layer in (1, 2, 3):
         return f"layer_{layer}"
     return area_key
+
+
+def _boss_reward_area_key(area_key):
+    key = str(area_key or "").strip()
+    if not key:
+        return ""
+    if key in AREA_BOSS_DECOR_REWARD_KEYS:
+        return key
+    return _boss_area_key_for_route(key)
 
 
 def _is_npc_boss_alert_id(enemy_id):
@@ -3209,7 +3242,8 @@ def _maybe_unlock_next_layer(db, user_id, user_row, area_key, enemy_row):
 
 
 def _grant_boss_decor_reward(db, user_id, area_key):
-    keys = AREA_BOSS_DECOR_REWARD_KEYS.get(area_key, [])
+    reward_area_key = _boss_reward_area_key(area_key)
+    keys = AREA_BOSS_DECOR_REWARD_KEYS.get(reward_area_key, [])
     if not keys:
         return {
             "reward_missing": True,
@@ -3900,6 +3934,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN has_seen_intro_modal INTEGER NOT NULL DEFAULT 0")
     if "intro_guide_closed_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
+    if "last_explore_area_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -3928,6 +3964,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET banned_reason = NULL WHERE banned_reason IS NOT NULL AND TRIM(banned_reason) = ''")
     db.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     db.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
+    db.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     user_rows = db.execute("SELECT id FROM users WHERE invite_code IS NULL OR TRIM(invite_code) = ''").fetchall()
     for user_row in user_rows:
@@ -8849,6 +8886,7 @@ def home():
     slot_display_used = min(instance_count, limits["robot_slots"])
     slot_overflow = max(0, instance_count - limits["robot_slots"])
     unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"])]
+    selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas)
     home_area_cards = []
     for area_row in unlocked_explore_areas:
         modifier = _stage_modifier_for_area(area_row["key"], is_admin=(user["is_admin"] == 1))
@@ -8933,6 +8971,7 @@ def home():
             ct_ready_at=int(ct_ready_at),
             personality_labels=PERSONALITY_LABELS,
             explore_areas=unlocked_explore_areas,
+            selected_explore_area_key=selected_explore_area_key,
             home_area_cards=home_area_cards,
             stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,
             locked_layer_lines=locked_layer_lines,
@@ -9819,7 +9858,8 @@ def explore():
     user = db.execute(
         """
         SELECT is_admin, click_power, wins, battle_log_mode,
-               boss_meter_explore_l1, boss_meter_win_l1, layer2_unlocked, max_unlocked_layer, created_at
+               boss_meter_explore_l1, boss_meter_win_l1, layer2_unlocked, max_unlocked_layer, created_at,
+               last_explore_area_key
         FROM users
         WHERE id = ?
         """,
@@ -9833,6 +9873,9 @@ def explore():
         else:
             session["message"] = f"その探索先は未解放です。第{area_layer - 1}層ボス撃破で解放"
         return redirect(url_for("home"))
+    if str(user["last_explore_area_key"] or "").strip() != area_key:
+        db.execute("UPDATE users SET last_explore_area_key = ? WHERE id = ?", (area_key, user_id))
+        db.commit()
     if _get_active_robot(db, user_id) is None:
         session["message"] = "先にロボを編成しよう。/build で完成登録できます。"
         return redirect(url_for("build"))

@@ -236,7 +236,7 @@
         <label>出撃先:</label>
         <select id="explore-area-select" name="area_key" required>
           {% for area in explore_areas %}
-          <option value="{{ area['key'] }}">{{ area['label'] }}</option>
+          <option value="{{ area['key'] }}" {% if selected_explore_area_key == area['key'] %}selected{% endif %}>{{ area['label'] }}</option>
           {% endfor %}
         </select>
         {% if explore_submission_id %}
