@@ -8886,7 +8886,17 @@ def home():
     slot_display_used = min(instance_count, limits["robot_slots"])
     slot_overflow = max(0, instance_count - limits["robot_slots"])
     unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"])]
+    saved_explore_area_key = _saved_explore_area_key(user, unlocked_explore_areas)
     selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas)
+    home_return_explore_cta = None
+    if has_any_robot and saved_explore_area_key:
+        saved_area = next((a for a in unlocked_explore_areas if a["key"] == saved_explore_area_key), None)
+        if saved_area:
+            home_return_explore_cta = {
+                "area_key": saved_area["key"],
+                "area_label": saved_area["label"],
+                "button_label": "前回の出撃先で出撃",
+            }
     home_area_cards = []
     for area_row in unlocked_explore_areas:
         modifier = _stage_modifier_for_area(area_row["key"], is_admin=(user["is_admin"] == 1))
@@ -8971,6 +8981,7 @@ def home():
             ct_ready_at=int(ct_ready_at),
             personality_labels=PERSONALITY_LABELS,
             explore_areas=unlocked_explore_areas,
+            home_return_explore_cta=home_return_explore_cta,
             selected_explore_area_key=selected_explore_area_key,
             home_area_cards=home_area_cards,
             stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,

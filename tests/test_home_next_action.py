@@ -291,6 +291,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertRegex(html, r'<option value="layer_1" selected>')
+        self.assertNotIn("前回の出撃先で出撃", html)
 
     def test_home_uses_last_selected_explore_area_when_unlocked(self):
         self._create_active_robot()
@@ -306,6 +307,10 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertRegex(html, r'<option value="layer_2_rush" selected>')
+        self.assertIn('class="panel home-return-explore-panel"', html)
+        self.assertIn("前回の出撃先で出撃", html)
+        self.assertIn('name="area_key" value="layer_2_rush"', html)
+        self.assertLess(html.index("前回の出撃先"), html.index("最初のミッション"))
 
     def test_home_falls_back_when_saved_explore_area_is_locked(self):
         self._create_active_robot()
@@ -319,6 +324,7 @@ class HomeNextActionTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertRegex(html, r'<option value="layer_1" selected>')
         self.assertNotIn('value="layer_3"', html)
+        self.assertNotIn("前回の出撃先で出撃", html)
 
     def test_home_beginner_focus_keeps_social_log_and_weekly_ranking(self):
         with game_app.app.app_context():

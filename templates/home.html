@@ -8,6 +8,22 @@
 </div>
 {% else %}
 <div class="home-priority-stack">
+{% if home_return_explore_cta %}
+<div class="panel home-return-explore-panel">
+  <div class="card">
+    <div><b>前回の出撃先</b></div>
+    <div class="upgrade-cost">{{ home_return_explore_cta['area_label'] }}</div>
+    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="{{ home_return_explore_cta['area_key'] }}" />
+      {% if explore_submission_id %}
+      <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+      {% endif %}
+      <button type="submit" {% if not is_admin and ct_remain > 0 %}disabled{% endif %}>{{ home_return_explore_cta['button_label'] }}</button>
+      <span class="upgrade-cost{% if not ct_status_text %} is-hidden{% endif %}">{{ ct_status_text }}</span>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% if show_beginner_mission %}
 <div class="panel beginner-mission-panel">
   <div class="card">
