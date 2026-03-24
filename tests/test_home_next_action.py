@@ -371,9 +371,9 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("たたまれています。", html)
         self.assertIn("Next Action を開く", html)
-        self.assertIn("開く", html)
+        self.assertNotIn("たたまれています。", html)
+        self.assertEqual(html.count("next-action-card"), 0)
 
         expand_resp = client.post("/home/next-action/expand", data={"next": "/home"})
         self.assertEqual(expand_resp.status_code, 302)

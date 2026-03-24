@@ -230,6 +230,13 @@ body.lightbox-open .lightbox-overlay {
   flex-direction: column;
   gap: 12px;
 }
+.home-summary-panel .card {
+  display: grid;
+  gap: 6px;
+}
+.home-summary-line {
+  line-height: 1.6;
+}
 .priority-next-action { order: 1; }
 .priority-core { order: 2; }
 .priority-boss-alert { order: 3; }
@@ -2105,6 +2112,18 @@ body.battle-page .layer-boss-victory-sub {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
+}
+.home-inline-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.home-inline-actions .inline-form-top,
+.home-inline-actions .link {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 .home-social-log-list {
   max-height: 280px;

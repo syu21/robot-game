@@ -38,21 +38,23 @@
         <div class="upgrade-cost">{{ beginner_mission_text|replace('\n', '<br />')|safe }}</div>
       </div>
     </div>
-    {% if beginner_mission_is_post %}
-    <form method="post" action="{{ beginner_mission_cta_url }}" class="inline-form inline-form-top">
-      <input type="hidden" name="area_key" value="layer_1" />
-      {% if explore_submission_id %}
-      <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+    <div class="home-inline-actions">
+      {% if beginner_mission_is_post %}
+      <form method="post" action="{{ beginner_mission_cta_url }}" class="inline-form inline-form-top">
+        <input type="hidden" name="area_key" value="layer_1" />
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        <button type="submit">{{ beginner_mission_cta_label }}</button>
+      </form>
+      {% else %}
+      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ beginner_mission_cta_url }}">{{ beginner_mission_cta_label }}</a></p>
       {% endif %}
-      <button type="submit">{{ beginner_mission_cta_label }}</button>
-    </form>
-    {% else %}
-    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ beginner_mission_cta_url }}">{{ beginner_mission_cta_label }}</a></p>
-    {% endif %}
-    <form method="post" action="{{ url_for('home_beginner_mission_hide') }}" class="inline-form inline-form-top">
-      <input type="hidden" name="next" value="{{ request.path }}" />
-      <button type="submit" class="btn-secondary">閉じる</button>
-    </form>
+      <form method="post" action="{{ url_for('home_beginner_mission_hide') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="next" value="{{ request.path }}" />
+        <button type="submit" class="btn-secondary">閉じる</button>
+      </form>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -240,37 +242,30 @@
         <div class="upgrade-cost">ボス警報中は自動表示されます。</div>
         {% endif %}
         <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
-        {% if next_action_card['is_post'] %}
-        <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
-          {% if next_action_card['area_key'] %}
-          <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
+        <div class="home-inline-actions">
+          {% if next_action_card['is_post'] %}
+          <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
+            {% if next_action_card['area_key'] %}
+            <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
+            {% endif %}
+            {% if explore_submission_id %}
+            <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+            {% endif %}
+            {% if next_action_card['boss_enter'] %}
+            <input type="hidden" name="boss_enter" value="1" />
+            {% endif %}
+            <button type="submit">{{ next_action_card['cta_label'] }}</button>
+          </form>
+          {% else %}
+          <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
           {% endif %}
-          {% if explore_submission_id %}
-          <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+          {% if not home_next_action_force_open %}
+          <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}" />
+            <button type="submit" class="btn-secondary">たたむ</button>
+          </form>
           {% endif %}
-          {% if next_action_card['boss_enter'] %}
-          <input type="hidden" name="boss_enter" value="1" />
-          {% endif %}
-          <button type="submit">{{ next_action_card['cta_label'] }}</button>
-        </form>
-        {% else %}
-        <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
-        {% endif %}
-        {% if not home_next_action_force_open %}
-        <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
-          <input type="hidden" name="next" value="{{ request.path }}" />
-          <button type="submit" class="btn-secondary">たたむ</button>
-        </form>
-        {% endif %}
-      </div>
-    {% elif next_action_card %}
-      <div class="card next-action-card">
-        <div><b>Next Action</b></div>
-        <div class="upgrade-cost">たたまれています。</div>
-        <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
-          <input type="hidden" name="next" value="{{ request.path }}" />
-          <button type="submit" class="btn-secondary">開く</button>
-        </form>
+        </div>
       </div>
     {% endif %}
     {% if has_any_robot %}
@@ -437,18 +432,20 @@
 <section class="panel home-visibility-panel">
   <div class="world-env-card">
     <div><b>表示調整</b></div>
-    {% if beginner_mission_available and not show_beginner_mission %}
-    <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
-      <input type="hidden" name="next" value="{{ request.path }}" />
-      <button type="submit" class="btn-secondary">最初のミッションを再表示</button>
-    </form>
-    {% endif %}
-    {% if next_action_card and home_next_action_collapsed and not home_next_action_force_open %}
-    <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
-      <input type="hidden" name="next" value="{{ request.path }}" />
-      <button type="submit" class="btn-secondary">Next Action を開く</button>
-    </form>
-    {% endif %}
+    <div class="home-inline-actions">
+      {% if beginner_mission_available and not show_beginner_mission %}
+      <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="next" value="{{ request.path }}" />
+        <button type="submit" class="btn-secondary">最初のミッションを再表示</button>
+      </form>
+      {% endif %}
+      {% if next_action_card and home_next_action_collapsed and not home_next_action_force_open %}
+      <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="next" value="{{ request.path }}" />
+        <button type="submit" class="btn-secondary">Next Action を開く</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </section>
 {% endif %}
