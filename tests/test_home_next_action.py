@@ -343,6 +343,60 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
         self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
 
+    def test_home_can_hide_and_restore_beginner_mission(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        hide_resp = client.post("/home/beginner-mission/hide", data={"next": "/home"})
+        self.assertEqual(hide_resp.status_code, 302)
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("🚀 最初のミッション", html)
+        self.assertIn("最初のミッションを再表示", html)
+
+        show_resp = client.post("/home/beginner-mission/show", data={"next": "/home"})
+        self.assertEqual(show_resp.status_code, 302)
+        resp = client.get("/home")
+        html = resp.get_data(as_text=True)
+        self.assertIn("🚀 最初のミッション", html)
+
+    def test_home_can_collapse_and_expand_next_action(self):
+        self._create_active_robot()
+        client = self._new_client()
+        collapse_resp = client.post("/home/next-action/collapse", data={"next": "/home"})
+        self.assertEqual(collapse_resp.status_code, 302)
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("たたまれています。", html)
+        self.assertIn("Next Action を開く", html)
+        self.assertIn("開く", html)
+
+        expand_resp = client.post("/home/next-action/expand", data={"next": "/home"})
+        self.assertEqual(expand_resp.status_code, 302)
+        resp = client.get("/home")
+        html = resp.get_data(as_text=True)
+        self.assertIn("next-action-card", html)
+        self.assertIn("たたむ", html)
+
+    def test_home_forces_next_action_open_when_boss_alert_active(self):
+        self._create_active_robot()
+        self._set_boss_alert(area_key="layer_2", attempts=2)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET home_next_action_collapsed = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ボスに挑戦（残り●●）", html)
+        self.assertIn("ボス警報中は自動表示されます。", html)
+        self.assertNotIn("Next Action を開く", html)
+
     def test_explore_persists_last_selected_area_key(self):
         self._create_active_robot()
         client = self._new_client()

@@ -49,6 +49,10 @@
     {% else %}
     <p class="link"><a class="battle-home-link battle-next-cta" href="{{ beginner_mission_cta_url }}">{{ beginner_mission_cta_label }}</a></p>
     {% endif %}
+    <form method="post" action="{{ url_for('home_beginner_mission_hide') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="next" value="{{ request.path }}" />
+      <button type="submit" class="btn-secondary">閉じる</button>
+    </form>
   </div>
 </div>
 {% endif %}
@@ -229,9 +233,12 @@
     <section class="panel home-actions-panel">
     <h2>アクション</h2>
     <div class="upgrade-cost">現在解放層: 第{{ max_unlocked_layer }}層</div>
-    {% if next_action_card %}
+    {% if show_next_action_card and next_action_card %}
       <div class="card next-action-card">
         <div><b>{{ next_action_card['title'] }}</b></div>
+        {% if home_next_action_force_open %}
+        <div class="upgrade-cost">ボス警報中は自動表示されます。</div>
+        {% endif %}
         <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
         {% if next_action_card['is_post'] %}
         <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
@@ -249,6 +256,21 @@
         {% else %}
         <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
         {% endif %}
+        {% if not home_next_action_force_open %}
+        <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="next" value="{{ request.path }}" />
+          <button type="submit" class="btn-secondary">たたむ</button>
+        </form>
+        {% endif %}
+      </div>
+    {% elif next_action_card %}
+      <div class="card next-action-card">
+        <div><b>Next Action</b></div>
+        <div class="upgrade-cost">たたまれています。</div>
+        <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="next" value="{{ request.path }}" />
+          <button type="submit" class="btn-secondary">開く</button>
+        </form>
       </div>
     {% endif %}
     {% if has_any_robot %}
@@ -411,6 +433,25 @@
     <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
   </div>
 </section>
+{% if show_home_visibility_controls %}
+<section class="panel home-visibility-panel">
+  <div class="world-env-card">
+    <div><b>表示調整</b></div>
+    {% if beginner_mission_available and not show_beginner_mission %}
+    <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="next" value="{{ request.path }}" />
+      <button type="submit" class="btn-secondary">最初のミッションを再表示</button>
+    </form>
+    {% endif %}
+    {% if next_action_card and home_next_action_collapsed and not home_next_action_force_open %}
+    <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="next" value="{{ request.path }}" />
+      <button type="submit" class="btn-secondary">Next Action を開く</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 {% if not home_beginner_focus %}
 <section class="panel home-invite-panel">
   <div class="world-env-card">

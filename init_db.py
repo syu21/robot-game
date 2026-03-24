@@ -144,6 +144,8 @@ def main():
             has_seen_intro_modal INTEGER NOT NULL DEFAULT 0,
             intro_guide_closed_at TEXT,
             last_explore_area_key TEXT,
+            home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
+            home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -736,6 +738,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
     if "last_explore_area_key" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
+    if "home_beginner_mission_hidden" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
+    if "home_next_action_collapsed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     cur.execute(
         "UPDATE users SET faction = NULL WHERE faction IS NOT NULL AND LOWER(TRIM(faction)) NOT IN ('ignis','ventra','aurix')"
     )
@@ -746,6 +752,8 @@ def main():
     cur.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     cur.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     cur.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
+    cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
+    cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     ri_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instances)").fetchall()}
     if "personality" not in ri_cols:

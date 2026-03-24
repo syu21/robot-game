@@ -3936,6 +3936,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
     if "last_explore_area_key" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
+    if "home_beginner_mission_hidden" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
+    if "home_next_action_collapsed" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -3965,6 +3969,8 @@ def ensure_schema(db):
     db.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     db.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     db.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
+    db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
+    db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     user_rows = db.execute("SELECT id FROM users WHERE invite_code IS NULL OR TRIM(invite_code) = ''").fetchall()
     for user_row in user_rows:
@@ -8925,8 +8931,25 @@ def home():
         or 0
     )
     layer1_boss_defeated = _has_fixed_boss_defeat_in_area(db, user["id"], "layer_1")
-    show_beginner_mission = (user["is_admin"] != 1) and (not layer1_boss_defeated)
+    beginner_mission_available = (user["is_admin"] != 1) and (not layer1_boss_defeated)
+    beginner_mission_hidden = (
+        int(user["home_beginner_mission_hidden"] or 0) == 1
+        if "home_beginner_mission_hidden" in user.keys()
+        else False
+    )
+    show_beginner_mission = bool(beginner_mission_available and (not beginner_mission_hidden))
     home_beginner_focus = bool((user["is_admin"] != 1) and (show_beginner_mission or total_explores < 3))
+    home_next_action_collapsed = (
+        int(user["home_next_action_collapsed"] or 0) == 1
+        if "home_next_action_collapsed" in user.keys()
+        else False
+    )
+    home_next_action_force_open = bool(home_next_action_collapsed and boss_alert_status)
+    show_next_action_card = bool(next_action_card) and (not home_next_action_collapsed or home_next_action_force_open)
+    show_home_visibility_controls = bool(
+        (beginner_mission_available and beginner_mission_hidden)
+        or (next_action_card and home_next_action_collapsed and not home_next_action_force_open)
+    )
     home_summary_line = "パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。"
     home_beginner_hint = "最初は「ロボ編成」か「出撃」だけ見ればOKです。"
     beginner_mission_text = "出撃してパーツを集めよう！\n強くなったらボスに挑戦だ！"
@@ -9021,11 +9044,16 @@ def home():
             home_beginner_focus=home_beginner_focus,
             home_summary_line=home_summary_line,
             home_beginner_hint=home_beginner_hint,
+            beginner_mission_available=beginner_mission_available,
             show_beginner_mission=show_beginner_mission,
             beginner_mission_text=beginner_mission_text,
             beginner_mission_cta_label=beginner_mission_cta_label,
             beginner_mission_is_post=beginner_mission_is_post,
             beginner_mission_cta_url=beginner_mission_cta_url,
+            show_next_action_card=show_next_action_card,
+            home_next_action_collapsed=home_next_action_collapsed,
+            home_next_action_force_open=home_next_action_force_open,
+            show_home_visibility_controls=show_home_visibility_controls,
             show_intro_modal=show_intro_modal,
             intro_npc_image=intro_npc_image,
             main_robot_weekly_fit=main_robot_weekly_fit,
@@ -9076,6 +9104,61 @@ def home_intro_modal_dismiss():
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return ("", 204)
     return redirect(url_for("home"))
+
+
+def _safe_home_next_redirect():
+    next_path = (request.form.get("next") or "").strip()
+    if next_path.startswith("/"):
+        return redirect(next_path)
+    return redirect(url_for("home"))
+
+
+@app.route("/home/beginner-mission/hide", methods=["POST"])
+@login_required
+def home_beginner_mission_hide():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_beginner_mission_hidden = 1 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/beginner-mission/show", methods=["POST"])
+@login_required
+def home_beginner_mission_show():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_beginner_mission_hidden = 0 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/next-action/collapse", methods=["POST"])
+@login_required
+def home_next_action_collapse():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_next_action_collapsed = 1 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/next-action/expand", methods=["POST"])
+@login_required
+def home_next_action_expand():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_next_action_collapsed = 0 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
 
 
 @app.route("/faction/choose", methods=["GET", "POST"])
