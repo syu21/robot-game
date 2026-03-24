@@ -354,7 +354,8 @@ class AreaBossTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn("放電帯ボス", html)
-            self.assertIn("報酬の表示に失敗しました（運営に連絡不要）。", html)
+            self.assertIn("エリアボス報酬は今回はありません。撃破記録は正常に反映されています。", html)
+            self.assertNotIn("報酬の表示に失敗しました", html)
 
             with game_app.app.app_context():
                 db = game_app.get_db()
