@@ -18,8 +18,12 @@
       {% if explore_submission_id %}
       <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
       {% endif %}
-      <button type="submit" {% if not is_admin and ct_remain > 0 %}disabled{% endif %}>{{ home_return_explore_cta['button_label'] }}</button>
-      <span class="upgrade-cost{% if not ct_status_text %} is-hidden{% endif %}">{{ ct_status_text }}</span>
+      <button
+        type="submit"
+        data-explore-cta="1"
+        data-cta-ready-label="{{ home_return_explore_cta['button_label'] }}"
+        {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
+      >{% if not is_admin and ct_remain > 0 %}あと{{ ct_remain }}秒{% else %}{{ home_return_explore_cta['button_label'] }}{% endif %}</button>
     </form>
   </div>
 </div>
@@ -265,7 +269,6 @@
           data-cta-ready-label="出撃する"
           {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
         >{{ ct_button_text }}</button>
-        <span id="home-explore-ct-label" class="upgrade-cost{% if not ct_status_text %} is-hidden{% endif %}">{{ ct_status_text }}</span>
       </form>
       <p class="link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
       <div id="mist-area-hint" class="upgrade-cost is-hidden">

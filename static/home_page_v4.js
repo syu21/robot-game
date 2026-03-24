@@ -50,7 +50,6 @@
 
     const isAdmin = String(ctStatus.dataset.isAdmin || "0") === "1";
     const ctaButtons = Array.from(document.querySelectorAll("[data-explore-cta='1']"));
-    const ctaStatus = document.getElementById("home-explore-ct-label");
 
     const setReady = () => {
       ctStatus.textContent = "出撃可能！";
@@ -58,10 +57,6 @@
         btn.disabled = false;
         btn.textContent = String(btn.dataset.ctaReadyLabel || "出撃する");
       });
-      if (ctaStatus) {
-        ctaStatus.textContent = "";
-        ctaStatus.classList.add("is-hidden");
-      }
     };
 
     const setCooling = (remain) => {
@@ -71,10 +66,6 @@
         btn.disabled = true;
         btn.textContent = `あと${sec}秒`;
       });
-      if (ctaStatus) {
-        ctaStatus.textContent = `あと${sec}秒`;
-        ctaStatus.classList.remove("is-hidden");
-      }
     };
 
     if (isAdmin) {
