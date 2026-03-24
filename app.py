@@ -8275,12 +8275,15 @@ def enforce_banned_user_logout():
         return None
     db = get_db()
     row = db.execute(
-        "SELECT id, is_banned FROM users WHERE id = ?",
+        "SELECT id, username, is_banned FROM users WHERE id = ?",
         (int(user_id),),
     ).fetchone()
     if not row:
         session.clear()
         return redirect(url_for("login", reason="expired"))
+    username = str(row["username"] or "").strip()
+    if username and session.get("username") != username:
+        session["username"] = username
     if int(row["is_banned"] or 0) != 1:
         return None
     session.clear()
@@ -13398,6 +13401,20 @@ def _admin_delete_user_hard(db, target_user_id):
     _safe_delete("users", "id = ?", (target_user_id,))
 
 
+def _admin_rename_user_account(db, target_user_id, new_username):
+    existing_tables = {
+        row["name"]
+        for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    db.execute("UPDATE users SET username = ? WHERE id = ?", (new_username, target_user_id))
+    for table_name in ("chat_messages", "posts", "login_logs"):
+        if table_name in existing_tables:
+            db.execute(
+                f"UPDATE {table_name} SET username = ? WHERE user_id = ?",
+                (new_username, target_user_id),
+            )
+
+
 @app.route("/admin/users", methods=["GET", "POST"])
 @login_required
 def admin_users():
@@ -13512,6 +13529,44 @@ def admin_users():
             )
             db.commit()
             message = f"ユーザー #{target_user_id} の通常ログイン保護をOFFにしました。"
+        elif action == "rename":
+            old_username = str(target["username"] or "").strip()
+            new_username = (request.form.get("new_username") or "").strip()
+            if not new_username:
+                flash("新しいユーザー名を入力してください。", "error")
+                return redirect(url_for("admin_users"))
+            if old_username.lower() == "admin":
+                flash("メイン管理者アカウントのユーザー名は変更できません。", "error")
+                return redirect(url_for("admin_users"))
+            if new_username.lower() == "admin":
+                flash("admin はユーザー名に設定できません。", "error")
+                return redirect(url_for("admin_users"))
+            if new_username == old_username:
+                message = f"ユーザー #{target_user_id} のユーザー名は変更済みです。"
+            else:
+                existing = db.execute(
+                    "SELECT id FROM users WHERE username = ? AND id != ?",
+                    (new_username, target_user_id),
+                ).fetchone()
+                if existing:
+                    flash("そのユーザー名は既に使われています。", "error")
+                    return redirect(url_for("admin_users"))
+                _admin_rename_user_account(db, target_user_id, new_username)
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES.get("ADMIN_USER_RENAME", "audit.admin.user.rename"),
+                    user_id=admin_user_id,
+                    request_id=getattr(g, "request_id", None),
+                    action_key="admin_user_rename",
+                    entity_type="user",
+                    entity_id=target_user_id,
+                    payload={"old_username": old_username, "new_username": new_username},
+                    ip=request.remote_addr,
+                )
+                db.commit()
+                if target_user_id == admin_user_id:
+                    session["username"] = new_username
+                message = f"ユーザー #{target_user_id} のユーザー名を『{old_username}』から『{new_username}』へ変更しました。"
         elif action == "delete":
             return redirect(url_for("admin_user_delete_confirm", target_user_id=target_user_id))
         else:

@@ -113,6 +113,112 @@ class AdminUserControlsTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertIn("自分自身をBANできません。", resp.get_data(as_text=True))
 
+    def test_admin_can_rename_user_and_related_username_rows(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, is_admin_protected)
+                VALUES (?, ?, ?, 1, 1)
+                """,
+                ("rename_admin", generate_password_hash("pw"), now),
+            )
+            admin_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("rename_admin",)).fetchone()["id"])
+            db.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("old_mail@example.com", generate_password_hash("pw"), now),
+            )
+            target_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("old_mail@example.com",)).fetchone()["id"]
+            )
+            db.execute(
+                "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
+                (target_id, "old_mail@example.com", "hello", "2026-03-25 10:00:00"),
+            )
+            db.execute(
+                "INSERT INTO posts (user_id, username, title, body, created_at) VALUES (?, ?, ?, ?, ?)",
+                (target_id, "old_mail@example.com", "t", "b", "2026-03-25 10:00:00"),
+            )
+            db.execute(
+                "INSERT INTO login_logs (user_id, username, created_at) VALUES (?, ?, ?)",
+                (target_id, "old_mail@example.com", "2026-03-25 10:00:00"),
+            )
+            db.commit()
+
+        with game_app.app.test_client() as client:
+            self._session_login(client, admin_id, "rename_admin")
+            resp = client.post(
+                "/admin/users",
+                data={"action": "rename", "target_user_id": str(target_id), "new_username": "める"},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_data(as_text=True)
+            self.assertIn("ユーザー名を『old_mail@example.com』から『める』へ変更しました。", body)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            renamed_user = db.execute("SELECT username FROM users WHERE id = ?", (target_id,)).fetchone()
+            self.assertEqual(renamed_user["username"], "める")
+            self.assertEqual(
+                db.execute("SELECT username FROM chat_messages WHERE user_id = ?", (target_id,)).fetchone()["username"],
+                "める",
+            )
+            self.assertEqual(
+                db.execute("SELECT username FROM posts WHERE user_id = ?", (target_id,)).fetchone()["username"],
+                "める",
+            )
+            self.assertEqual(
+                db.execute("SELECT username FROM login_logs WHERE user_id = ?", (target_id,)).fetchone()["username"],
+                "める",
+            )
+            rename_audit = db.execute(
+                "SELECT id FROM world_events_log WHERE event_type = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+                (game_app.AUDIT_EVENT_TYPES["ADMIN_USER_RENAME"], admin_id),
+            ).fetchone()
+            self.assertIsNotNone(rename_audit)
+
+    def test_admin_cannot_rename_user_to_existing_username(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, is_admin_protected)
+                VALUES (?, ?, ?, 1, 1)
+                """,
+                ("rename_admin_dup", generate_password_hash("pw"), now),
+            )
+            admin_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("rename_admin_dup",)).fetchone()["id"]
+            )
+            db.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("rename_target", generate_password_hash("pw"), now),
+            )
+            target_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("rename_target",)).fetchone()["id"])
+            db.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("taken_name", generate_password_hash("pw"), now),
+            )
+            db.commit()
+
+        with game_app.app.test_client() as client:
+            self._session_login(client, admin_id, "rename_admin_dup")
+            resp = client.post(
+                "/admin/users",
+                data={"action": "rename", "target_user_id": str(target_id), "new_username": "taken_name"},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("そのユーザー名は既に使われています。", resp.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            target_row = db.execute("SELECT username FROM users WHERE id = ?", (target_id,)).fetchone()
+            self.assertEqual(target_row["username"], "rename_target")
+
     def test_admin_can_hard_delete_user_and_related_rows(self):
         with game_app.app.app_context():
             db = game_app.get_db()

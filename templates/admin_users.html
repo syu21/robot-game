@@ -38,6 +38,12 @@
         <td>
           <form method="post" class="admin-inline-form">
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="rename" />
+            <input type="text" name="new_username" placeholder="新しいユーザー名" />
+            <button type="submit">改名</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="ban" />
             <input type="text" name="reason" placeholder="BAN理由" />
             <button type="submit" {% if u['id'] == self_user_id %}disabled{% endif %}>BAN</button>
