@@ -74,10 +74,11 @@ class BuildArchetypeUiTests(unittest.TestCase):
         home = client.get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("型:", home_html)
+        self.assertIn("思想:", home_html)
         self.assertIn("出撃機体", home_html)
         self.assertIn("スタイル実績", home_html)
-        self.assertRegex(home_html, "（長期戦向き|一撃型|速攻・リスク）")
+        self.assertRegex(home_html, "思想: .+")
+        self.assertRegex(home_html, "(耐久|攻撃|防御|素早さ|命中|会心) [0-9]+ / (耐久|攻撃|防御|素早さ|命中|会心) [0-9]+")
 
         build = client.get("/build")
         self.assertEqual(build.status_code, 200)

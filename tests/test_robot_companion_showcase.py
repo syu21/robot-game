@@ -47,6 +47,10 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
                 "SELECT active_robot_id FROM users WHERE id = ?",
                 (self.owner_id,),
             ).fetchone()["active_robot_id"]
+            self.liker_robot_id = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.liker_id,),
+            ).fetchone()["active_robot_id"]
             db.commit()
 
     def tearDown(self):
@@ -60,6 +64,34 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
             session["user_id"] = user_id
             session["username"] = username
         return client
+
+    def _set_robot_weights(self, robot_id, *, name, hp, atk, defe, spd, acc, cri):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE robot_instances SET name = ?, is_public = 1 WHERE id = ?", (name, int(robot_id)))
+            parts = db.execute(
+                """
+                SELECT head_part_instance_id, r_arm_part_instance_id, l_arm_part_instance_id, legs_part_instance_id
+                FROM robot_instance_parts
+                WHERE robot_instance_id = ?
+                """,
+                (int(robot_id),),
+            ).fetchone()
+            for part_instance_id in (
+                int(parts["head_part_instance_id"]),
+                int(parts["r_arm_part_instance_id"]),
+                int(parts["l_arm_part_instance_id"]),
+                int(parts["legs_part_instance_id"]),
+            ):
+                db.execute(
+                    """
+                    UPDATE part_instances
+                    SET w_hp = ?, w_atk = ?, w_def = ?, w_spd = ?, w_acc = ?, w_cri = ?
+                    WHERE id = ?
+                    """,
+                    (float(hp), float(atk), float(defe), float(spd), float(acc), float(cri), part_instance_id),
+                )
+            db.commit()
 
     def test_robot_history_updates_once_for_same_submission(self):
         with game_app.app.app_context():
@@ -122,6 +154,39 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
                 (int(self.owner_robot_id), int(self.liker_id)),
             ).fetchone()["c"]
             self.assertEqual(int(count2), 0)
+
+    def test_showcase_supports_robot_metric_sort_and_profile_text(self):
+        self._set_robot_weights(
+            self.owner_robot_id,
+            name="Bastion Owner",
+            hp=0.42,
+            atk=0.04,
+            defe=0.36,
+            spd=0.07,
+            acc=0.07,
+            cri=0.04,
+        )
+        self._set_robot_weights(
+            self.liker_robot_id,
+            name="Velocity Liker",
+            hp=0.04,
+            atk=0.12,
+            defe=0.05,
+            spd=0.58,
+            acc=0.13,
+            cri=0.08,
+        )
+        client = self._client_for(self.owner_id, "owner_user")
+        resp = client.get("/showcase?sort=fastest")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("最速", html)
+        self.assertIn("思想:", html)
+        self.assertIn("注目記録:", html)
+        self.assertIn("Velocity Liker", html)
+        self.assertIn("Bastion Owner", html)
+        public_section = html.split("公開ロボ", 1)[1]
+        self.assertLess(public_section.index("Velocity Liker"), public_section.index("Bastion Owner"))
 
 
 if __name__ == "__main__":

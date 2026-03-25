@@ -210,12 +210,12 @@
   <div class="card battle-summary-upgraded">
     {% if summary.get('highlight_core_drop') %}
     <div class="core-drop-banner rare-glow-card">
-      <div class="core-drop-banner-head">✨ 進化コアを発見！ ✨</div>
+      <div class="core-drop-banner-head">{{ summary.get('core_reward_headline') or '✨ 進化コア獲得！ ✨' }}</div>
       <div class="core-drop-banner-body">
         <img class="core-drop-icon" src="{{ summary.get('dropped_core_icon_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ summary.get('dropped_core_name', '進化コア') }}" loading="lazy" />
         <div class="core-drop-meta">
           <div class="core-drop-name">{{ summary.get('dropped_core_name', '進化コア') }}</div>
-          <div class="core-drop-sub">パーツをレア化できる貴重なコアです</div>
+          <div class="core-drop-sub">{{ summary.get('core_reward_subline') or 'パーツをレア化できる貴重なコアです' }}</div>
         </div>
         <div class="core-drop-count">所持数 +{{ summary.get('reward_core', 0) }}</div>
       </div>
@@ -237,7 +237,7 @@
       {% endfor %}
     </div>
     {% elif summary.get('highlight_core_drop') %}
-    <div class="battle-summary-row">ドロップ: {{ summary.get('dropped_core_name', '進化コア') }} ×{{ summary.get('reward_core', 0) }}</div>
+    <div class="battle-summary-row">{{ summary.get('core_reward_row_label', '獲得') }}: {{ summary.get('dropped_core_name', '進化コア') }} ×{{ summary.get('reward_core', 0) }}</div>
     {% else %}
     <div class="battle-summary-row">ドロップ: 戦利品なし</div>
     {% endif %}

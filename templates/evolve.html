@@ -1,12 +1,33 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>進化合成</h1>
-<div class="card">
-  <p>進化コア: {{ core_qty }}</p>
-  <p>同じパーツの進化先が存在するNパーツのみ進化できます。</p>
-  <p>Nパーツ + 進化コア×1 で対応するRパーツへ進化します。</p>
-  <p>+値と個体差は引き継がれます。</p>
-  <p class="robot-time">将来拡張: R→SR / SR→UR</p>
+<div class="card evolve-overview-card">
+  <div class="evolve-overview-head">
+    <div>
+      <div><b>今の進化状況</b></div>
+      <div class="upgrade-cost">同じNパーツをRへ進化できます。</div>
+    </div>
+    <div class="evolve-core-pill">進化コア {{ core_qty }}個</div>
+  </div>
+  <div class="evolve-overview-grid">
+    <div class="evolve-overview-item">
+      <div class="stat-label">進捗</div>
+      <div class="stat-value stat-small">{{ evolution_core_status['progress_label'] }}</div>
+    </div>
+    <div class="evolve-overview-item">
+      <div class="stat-label">次の保証</div>
+      <div class="stat-value stat-small">{{ evolution_core_status['remaining_label'] }}</div>
+    </div>
+    <div class="evolve-overview-item">
+      <div class="stat-label">候補</div>
+      <div class="stat-value stat-small">{{ items|length }}件</div>
+    </div>
+  </div>
+  <div class="evolve-help-list">
+    <div>Nパーツ + 進化コア×1 で対応するRパーツへ進化します。</div>
+    <div>+値と個体差は引き継がれます。</div>
+    <div class="robot-time">将来拡張: R→SR / SR→UR</div>
+  </div>
 </div>
 
 {% if selected_mode == 'result' and last_evolve_result %}
@@ -41,6 +62,7 @@
 
 {% if selected_mode == 'select' and items %}
 <form method="post">
+  <div class="upgrade-cost evolve-section-kicker">進化前と進化後を見比べて選べます。</div>
   <div class="robot-grid">
     {% for p in items %}
     <label class="robot-card compact-part-card">
@@ -75,6 +97,11 @@
 {% elif selected_mode == 'select' %}
 <div class="card">
   <p>進化可能なNパーツがありません。</p>
+  <p class="upgrade-cost">まずはNパーツを集めるか、今あるパーツを強化して周回を進めよう。</p>
+  <div class="home-inline-actions">
+    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('parts') }}">所持パーツを見る</a></p>
+  </div>
 </div>
 <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
 {% endif %}

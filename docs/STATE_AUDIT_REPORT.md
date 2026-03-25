@@ -1,17 +1,28 @@
 # 監査状態レポート（STATE_AUDIT_REPORT）
 
-最終更新日: 2026-03-20
+最終更新日: 2026-03-25
 
 ## 1. サマリー
 - 監査基盤 `world_events_log` は継続運用可能
 - 主要導線（出撃・育成・ボス・共有・招待・管理操作）で監査イベントが揃っている
 - request_id 付与で追跡性は良好
+- 監査ログは内部追跡だけでなく、世界ログ・ランキング・間接競争の土台として運用する
+
+## 1.1 関連方針
+- 中長期の運営思想は `docs/GAME_DIRECTION.md` を正本とする
+- 監査基盤は `努力値 -> 周回思想 -> 世界競争 -> PvP` のうち、特に `世界競争` を支える基盤として強化する
+- そのため、今後の監査追加は次も意識する
+  - 周回量の可視化
+  - 型/思想の可視化
+  - 間接競争に転換しやすい公開ログ構造
 
 ## 2. 現在の監査カバレッジ
 ### 2.1 コアループ
 - 出撃開始/終了: `audit.explore.start/end`
 - 報酬関連: `audit.drop`, `audit.inventory.delta`, `audit.coin.delta`
 - ボス: `audit.boss.encounter/defeat`
+- `audit.drop` には探索場所由来の `growth_tendency_key / growth_tendency_label` を保持
+  - どの周回先でどんな型が育ちやすいかを後追い分析しやすくした
 
 ### 2.2 育成
 - 強化: `audit.fuse`
@@ -43,6 +54,7 @@
 - 管理操作の理由入力の必須化（任意→必須）
 - `/admin/audit` の saved filter 機能
 - 監査payloadのスキーマ定義（JSON Schema化）
+- 型 / 思想ランキングを監査ログ側から再集計しやすい派生ビュー整理
 
 ## 6. 白化インシデント詳細記録（2026-03）
 ### 6.1 発生事象
@@ -147,9 +159,9 @@
 - その後、`/static/style.css` と `avatar_default.png` の `200` を確認し、表示崩れは解消
 
 ### 7.4 未完了 / 次アクション
-- HTTPS は未導入
-- 次の優先はドメイン取得 -> DNS `A` レコードを VPS へ向ける -> `PUBLIC_GAME_URL` をドメインへ更新 -> `certbot --nginx`
-- HTTPS 導入完了までは `.env.production` の `SESSION_COOKIE_SECURE=0` を維持
+- 2026-03-20 時点では HTTPS は未導入だった
+- 当時の次優先は ドメイン取得 -> DNS `A` レコードを VPS へ向ける -> `PUBLIC_GAME_URL` をドメインへ更新 -> `certbot --nginx`
+- HTTPS 導入完了までは `.env.production` の `SESSION_COOKIE_SECURE=0` を維持する想定だった
 - `SECRET_KEY` が仮値のままなら、本番用ランダム値へ差し替えて `sudo systemctl restart robot-game.service`
 
 ### 7.5 2026-03-20 時点のローカル検証結果
@@ -164,3 +176,105 @@
 ### 7.6 ローカル作業ツリー注意
 - ローカルには `balance_config.py` と静的アセット周辺に未整理差分が残っている
 - 本番化作業と無関係なため、別タスクとして整理・コミット方針を切り分けること
+
+## 8. ドメイン / HTTPS / UI 反映メモ（2026-03-21）
+### 8.1 公開URLと HTTPS
+- 独自ドメイン `https://robolabo.site` で公開確認済み
+- 本番確認先:
+  - `https://robolabo.site/login`
+  - `https://robolabo.site/home`
+- `.env.production` は以下へ更新済み
+  - `PUBLIC_GAME_URL=https://robolabo.site`
+  - `SESSION_COOKIE_SECURE=1`
+  - `HEALTHCHECK_URL=https://robolabo.site/healthz`
+- `robot-game.service` 再起動直後に一瞬 `502 Bad Gateway` が見えることがあるが、今回ログ上は即復旧し、恒常障害ではなかった
+
+### 8.2 sitemap.xml 追加
+- `Flask` 側に `/sitemap.xml` を追加済み
+- `Content-Type: application/xml; charset=utf-8` を返す簡易静的 XML 実装
+- 含めるURL:
+  - `https://robolabo.site/`
+  - `https://robolabo.site/login`
+  - `https://robolabo.site/register`
+  - `https://robolabo.site/home`
+- 確認結果:
+  - `curl http://127.0.0.1:8000/sitemap.xml` -> `200`
+  - `curl https://robolabo.site/sitemap.xml` -> `200`
+- 補足:
+  - ドメイン運用後は `Host: robolabo.site` 前提の nginx 振り分けになるため、`http://127.0.0.1/sitemap.xml` 直打ちは `404` でも不思議ではない
+
+### 8.3 モバイル UI 調整（本番反映済み）
+- スマホでヘッダーの黒帯が居残る問題を緩和
+- モバイル時はヘッダーを compact/static 扱いに寄せ、スクロール被りを減らした
+- ホームの優先順を調整し、`出撃機体` を `アクション` より上へ移動
+- キャッシュ切りのため `APP_VERSION` は `0.1.13` へ更新済み
+
+### 8.4 PC ホームのヘッダースクロール挙動
+- 通常ページではヘッダースクロールJSが動作している
+- `/home` だけ `header_scroll_v2.js` 読み込みが止まり、黒ヘッダーが消えない不具合を確認した
+- 現在のコードでは修正済み:
+  - ホームでも `header_scroll_v2.js` を常時読む
+  - `tests/test_ops_release_surface.py` に `/home` でスクリプトが載る回帰テストを追加
+- 再発時は `header_scroll_v2.js` の読み込み有無と `APP_VERSION` によるキャッシュ切り替えを優先確認する
+
+### 8.5 運用メモ
+- `SECRET_KEY` は現在短い暫定値になっているため、長いランダム文字列への差し替えが必要
+- `journalctl -u robot-game.service` では `asset.missing key=enemy:enemies/steel_scout.png` の warning を確認
+- `steel_scout.png` の実在確認・パス整合は別途実施すること
+
+### 8.6 公開後の追加反映
+- `favicon.png` を `static/` 直下へ配置し、`<head>` から参照するよう更新
+- `https://robolabo.site/sitemap.xml` は `https://robolabo.site/...` の `loc` を返すことを確認
+- `robot-game.service` 再起動後も `gunicorn` / `nginx` の両方で復旧確認済み
+
+### 8.7 法務/問い合わせ導線
+- `/terms` と `/privacy` は同一の法務ページへ統合済み
+- プライバシーポリシー内の問い合わせ先直接記載は外し、`/contact` 導線へ統一
+- Google フォーム問い合わせ先は `https://forms.gle/mmjKJqX6QrPE9GkJ6`
+
+### 8.8 ポチゲーポータル連絡
+- 2026-03-21 時点で、ポチゲーポータル側へ掲載相談の連絡を実施
+- 正式掲載依頼前の確認事項として、同時接続数送信ジョブ・監視・バックアップ運用の docs 整備を継続
+- 2026-03-22 にあるけみすと公式から返信あり
+  - 掲載方針は前向き
+  - 登録条件は「ゲーム側で測定した同時接続数を 5 分ごとに送信すること」
+  - `game_key` は `robolabo`
+  - `api_key` は発行済みの秘密情報として `.env.production` のみで管理し、repo へは保存しない
+  - ゲーム情報編集ページ: `https://pochi-games.com/pochi-game/portal/edit`
+  - 開発者 Discord: `https://discord.gg/HvJD7Jx5`
+  - 情報編集完了後に公式へ報告すると、宣伝ツイート対応予定
+
+## 9. ローカル未反映の追加作業（2026-03-21 時点）
+### 9.1 ポチゲーポータル / 運用補強
+- ローカル作業ツリーには以下の未反映差分あり
+  - `send_online_count.py`
+  - `manage_portal_online.py`
+  - `tests/test_portal_online_count.py`
+  - `deploy/systemd/robot-game.env.example`
+  - `deploy/nginx/robot-game.conf.example`
+  - `docs/VPS_PRODUCTION_SETUP.md`
+  - `docs/OPERATIONS_CHECKLIST.md`
+- 主目的:
+  - ポータル送信運用の補強
+  - VPS セットアップ / 運用手順の更新
+
+### 9.2 利用規約 / プライバシー / 問い合わせ導線
+- ローカル差分:
+  - `templates/contact.html`
+  - `templates/login.html`
+  - `templates/register.html`
+- 公開前の最低限法務・案内文言の整備候補として保持中
+
+### 9.3 バックアップ / 監視 / 補助スクリプト
+- 未追跡 / 未反映ファイル:
+  - `manage_backups.py`
+  - `manage_healthcheck.py`
+  - `docs/BACKUP_RESTORE.md`
+  - `docs/OPERATIONS_RUNBOOK.md`
+  - `deploy/systemd/robot-game-backup.service.example`
+  - `deploy/systemd/robot-game-backup.timer.example`
+  - `deploy/systemd/robot-game-healthcheck.service.example`
+  - `deploy/systemd/robot-game-healthcheck.timer.example`
+  - `deploy/systemd/robot-game-portal-online.service.example`
+  - `deploy/systemd/robot-game-portal-online.timer.example`
+- いずれも本番投入前に、既存の本番反映済み変更と分けてレビュー・コミットするのが安全

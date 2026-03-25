@@ -47,9 +47,19 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
 
     def test_public_policy_pages_are_available(self):
         client = game_app.app.test_client()
-        for path in ("/terms", "/privacy", "/contact", "/changelog"):
+        for path in ("/terms", "/privacy", "/contact", "/changelog", "/guide"):
             resp = client.get(path)
             self.assertEqual(resp.status_code, 200)
+
+    def test_guide_page_explains_core_terms(self):
+        client = game_app.app.test_client()
+        resp = client.get("/guide")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("用語", html)
+        self.assertIn("背水", html)
+        self.assertIn("進化コア", html)
+        self.assertIn("世界ログ", html)
 
     def test_terms_and_privacy_share_single_legal_page(self):
         client = game_app.app.test_client()
@@ -91,6 +101,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn(f"v{game_app.APP_VERSION}", html)
         self.assertIn("/static/favicon.png", html)
+        self.assertIn("/guide", html)
 
     def test_healthz_is_public(self):
         client = game_app.app.test_client()
@@ -104,7 +115,9 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         client = self._client_with_user(self.user_id, "ops_user")
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("/static/header_scroll_v2.js", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn("/static/header_scroll_v2.js", html)
+        self.assertIn("/guide", html)
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
@@ -122,6 +135,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("<loc>https://robolabo.site/login</loc>", body)
         self.assertIn("<loc>https://robolabo.site/register</loc>", body)
         self.assertIn("<loc>https://robolabo.site/home</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/guide</loc>", body)
 
 
 if __name__ == "__main__":

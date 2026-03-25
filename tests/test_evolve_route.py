@@ -212,6 +212,33 @@ class EvolveRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("このパーツは進化できません", resp.get_data(as_text=True))
 
+    def test_evolve_screen_shows_overview_after_unlock(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    '{"area_key":"layer_2","boss_kind":"fixed","unlocked_layer":3}',
+                    self.user_id,
+                ),
+            )
+            db.execute("UPDATE users SET evolution_core_progress = 12 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        client = self._client()
+        resp = client.get("/parts/evolve")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("今の進化状況", html)
+        self.assertIn("進化コア進捗 12/100", html)
+        self.assertIn("同じNパーツをRへ進化できます。", html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -144,6 +144,7 @@ def main():
             has_seen_intro_modal INTEGER NOT NULL DEFAULT 0,
             intro_guide_closed_at TEXT,
             last_explore_area_key TEXT,
+            evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
             last_seen_at INTEGER NOT NULL DEFAULT 0,

@@ -4,7 +4,9 @@
 <div class="card">
   <p>個体数: {{ total }} / 保護コア: {{ protect_core }}</p>
   <p class="link"><a href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
+  {% if show_evolution_actions %}
   <p class="link"><a href="{{ url_for('evolve_parts') }}">進化合成へ</a></p>
+  {% endif %}
   <p class="link">
     <a href="{{ url_for('parts', tab='instances') }}">個体一覧</a> |
     <a href="{{ url_for('parts', tab='legacy') }}">在庫(旧qty)</a>

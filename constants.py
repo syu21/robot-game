@@ -171,6 +171,8 @@ AUDIT_EVENT_TYPES = {
     "BOSS_DEFEAT": "audit.boss.defeat",
     "CORE_DROP": "audit.core.drop",
     "PART_EVOLVE": "audit.part.evolve",
+    "CORE_PROGRESS": "audit.core.progress",
+    "CORE_GUARANTEE": "audit.core.guarantee",
     "SHARE_CLICK": "audit.share.click",
     "REFERRAL_ATTACH": "audit.referral.attach",
     "REFERRAL_QUALIFIED": "audit.referral.qualified",

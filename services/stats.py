@@ -28,9 +28,14 @@ def _norm_type(part_type):
     return part_type
 
 
-def generate_weights(part_type, noise=0.08, min_floor=0.01):
+def generate_weights(part_type, noise=0.08, min_floor=0.01, bias=None):
     part_type = _norm_type(part_type)
-    base = WEIGHT_TEMPLATES[part_type]
+    base = dict(WEIGHT_TEMPLATES[part_type])
+    bias_map = bias or {}
+    for k, v in bias_map.items():
+        stat_key = str(k or "").strip().lower()
+        if stat_key in STATS:
+            base[stat_key] = max(min_floor, float(base.get(stat_key, min_floor)) + float(v or 0.0))
     raw = {}
     for k in STATS:
         v = base.get(k, 0.01) + random.uniform(-noise, noise)
@@ -44,8 +49,8 @@ def generate_weights(part_type, noise=0.08, min_floor=0.01):
     return {k: v / norm_total for k, v in normalized.items()}
 
 
-def generate_noisy_weights(part_type, noise=0.08, min_floor=0.01):
-    return generate_weights(part_type, noise=noise, min_floor=min_floor)
+def generate_noisy_weights(part_type, noise=0.08, min_floor=0.01, bias=None):
+    return generate_weights(part_type, noise=noise, min_floor=min_floor, bias=bias)
 
 
 def plus_common(plus):

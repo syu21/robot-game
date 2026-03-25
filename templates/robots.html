@@ -43,8 +43,11 @@
         <div class="robot-part">L_ARM: {{ i['l_arm_key'] }}</div>
         <div class="robot-part">LEGS: {{ i['legs_key'] }}</div>
         {% if i['final_stats'] %}
-          {% if i.get('archetype') %}
-            <div class="robot-part">称号: {{ i['archetype']['name_ja'] }}</div>
+          {% if i.get('robot_profile') and i['robot_profile'].get('signature_label') %}
+            <div class="robot-part">思想: {{ i['robot_profile']['signature_label'] }}</div>
+          {% endif %}
+          {% if i.get('robot_profile') and i['robot_profile'].get('focus_line') %}
+            <div class="robot-time">{{ i['robot_profile']['focus_line'] }}</div>
           {% endif %}
           <div class="robot-part">総合: {{ i['power'] }}</div>
           <div class="robot-part">耐久 {{ i['final_stats']['hp'] }} / 攻撃 {{ i['final_stats']['atk'] }} / 防御 {{ i['final_stats']['def'] }}</div>

@@ -97,23 +97,6 @@
     timerId = window.setInterval(tick, 1000);
   };
 
-  const bindAreaHints = () => {
-    const select = document.getElementById("explore-area-select");
-    const mistHint = document.getElementById("mist-area-hint");
-    const rushHint = document.getElementById("rush-area-hint");
-    if (!select || !mistHint || !rushHint) return;
-
-    const sync = () => {
-      const isMist = select.value === "layer_2_mist";
-      const isRush = select.value === "layer_2_rush";
-      mistHint.classList.toggle("is-hidden", !isMist);
-      rushHint.classList.toggle("is-hidden", !isRush);
-    };
-
-    select.addEventListener("change", sync);
-    sync();
-  };
-
   const bindInviteCopy = () => {
     const btn = document.getElementById("invite-copy-btn");
     if (!btn) return;
@@ -203,13 +186,6 @@
       markStep("home:init:cooldown-bind");
     } catch (err) {
       reportCaught("home:init:cooldown-bind", err);
-    }
-
-    try {
-      bindAreaHints();
-      markStep("home:init:area-hints-bind");
-    } catch (err) {
-      reportCaught("home:init:area-hints-bind", err);
     }
 
     try {

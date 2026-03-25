@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>🧠 ロボらぼの遊び方が分かる用語</h1>
+  <p>ロボらぼでは ロボを育てて → 周回して → 世界で競います。</p>
+  <p>ここでは、よく出てくる言葉をまとめています。</p>
+  <div class="link">
+    {% for section in sections %}
+    <a href="#{{ section['key'] }}">{{ section['title'] }}</a>{% if not loop.last %} | {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+{% for section in sections %}
+<div class="card" id="{{ section['key'] }}">
+  <h2>{{ section['title'] }}</h2>
+  <div class="guide-term-list">
+    {% for item in section['items'] %}
+    <div class="guide-term-item">
+      <div class="guide-term-name">{{ item['term'] }}</div>
+      <div class="guide-term-body">{{ item['body'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

@@ -16,7 +16,12 @@
       </div>
       {% endif %}
       {% if robot['set_bonus'] %}<div class="robot-part">セット: {{ robot['set_bonus'] }}</div>{% endif %}
-      {% if robot.get('archetype') %}<div class="robot-part">型: {{ robot['archetype']['name_ja'] }}</div>{% endif %}
+      {% if robot.get('robot_profile') and robot['robot_profile'].get('signature_label') %}
+      <div class="robot-part">思想: {{ robot['robot_profile']['signature_label'] }}</div>
+      {% endif %}
+      {% if robot.get('robot_profile') and robot['robot_profile'].get('focus_line') %}
+      <div class="robot-time">{{ robot['robot_profile']['focus_line'] }}</div>
+      {% endif %}
       <div class="robot-part">展示: {% if robot['is_public'] %}公開{% else %}非公開{% endif %}</div>
       {% if can_share %}
       <form method="post" action="{{ url_for('robot_toggle_public', instance_id=robot['id']) }}">

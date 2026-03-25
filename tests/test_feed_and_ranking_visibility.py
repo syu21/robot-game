@@ -126,11 +126,15 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
         resp = client.get("/feed")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
+        self.assertIn("BOSS DEFEATED", html)
         self.assertIn("ボス撃破:", html)
         self.assertIn("feed_rank_user", html)
         self.assertIn(self.boss_name, html)
+        self.assertIn("戦域: 第三層", html)
+        self.assertIn("進化成功", html)
         self.assertIn("進化成功:", html)
         self.assertIn(self.target_part_name, html)
+        self.assertIn("部位:", html)
 
     def test_feed_supports_boss_and_evolve_filters(self):
         with game_app.app.app_context():
@@ -215,6 +219,14 @@ class RankingVisibilityTests(unittest.TestCase):
             ).fetchone()["id"]
             game_app.initialize_new_user(db, self.alpha_id)
             game_app.initialize_new_user(db, self.beta_id)
+            self.alpha_robot_id = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.alpha_id,),
+            ).fetchone()["active_robot_id"]
+            self.beta_robot_id = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.beta_id,),
+            ).fetchone()["active_robot_id"]
 
             week_key = game_app._world_week_key()
             start_dt, end_dt = game_app._world_week_bounds(week_key)
@@ -271,6 +283,34 @@ class RankingVisibilityTests(unittest.TestCase):
             session["username"] = "rank_alpha"
         return client
 
+    def _set_robot_weights(self, robot_id, *, name, hp, atk, defe, spd, acc, cri):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE robot_instances SET name = ? WHERE id = ?", (name, int(robot_id)))
+            parts = db.execute(
+                """
+                SELECT head_part_instance_id, r_arm_part_instance_id, l_arm_part_instance_id, legs_part_instance_id
+                FROM robot_instance_parts
+                WHERE robot_instance_id = ?
+                """,
+                (int(robot_id),),
+            ).fetchone()
+            for part_instance_id in (
+                int(parts["head_part_instance_id"]),
+                int(parts["r_arm_part_instance_id"]),
+                int(parts["l_arm_part_instance_id"]),
+                int(parts["legs_part_instance_id"]),
+            ):
+                db.execute(
+                    """
+                    UPDATE part_instances
+                    SET w_hp = ?, w_atk = ?, w_def = ?, w_spd = ?, w_acc = ?, w_cri = ?
+                    WHERE id = ?
+                    """,
+                    (float(hp), float(atk), float(defe), float(spd), float(acc), float(cri), part_instance_id),
+                )
+            db.commit()
+
     def test_ranking_supports_explore_and_weekly_metrics(self):
         client = self._client()
 
@@ -297,6 +337,46 @@ class RankingVisibilityTests(unittest.TestCase):
         weekly_boss_html = weekly_boss_resp.get_data(as_text=True)
         self.assertIn("今週ボス撃破ランキング", weekly_boss_html)
         self.assertRegex(weekly_boss_html, re.compile(r"<td>1</td>.*?rank_beta.*?<td>2</td>", re.S))
+
+    def test_ranking_supports_robot_purpose_metrics(self):
+        self._set_robot_weights(
+            self.alpha_robot_id,
+            name="Bulwark Alpha",
+            hp=0.40,
+            atk=0.04,
+            defe=0.38,
+            spd=0.06,
+            acc=0.08,
+            cri=0.04,
+        )
+        self._set_robot_weights(
+            self.beta_robot_id,
+            name="Swift Beta",
+            hp=0.04,
+            atk=0.12,
+            defe=0.05,
+            spd=0.58,
+            acc=0.13,
+            cri=0.08,
+        )
+        client = self._client()
+
+        fastest_resp = client.get("/ranking?metric=fastest")
+        self.assertEqual(fastest_resp.status_code, 200)
+        fastest_html = fastest_resp.get_data(as_text=True)
+        self.assertIn("最速ロボランキング", fastest_html)
+        self.assertIn("Swift Beta", fastest_html)
+        self.assertIn("Bulwark Alpha", fastest_html)
+        self.assertIn("rank_beta", fastest_html)
+        self.assertLess(fastest_html.index("Swift Beta"), fastest_html.index("Bulwark Alpha"))
+
+        durable_resp = client.get("/ranking?metric=durable")
+        self.assertEqual(durable_resp.status_code, 200)
+        durable_html = durable_resp.get_data(as_text=True)
+        self.assertIn("耐久ロボランキング", durable_html)
+        self.assertIn("Bulwark Alpha", durable_html)
+        self.assertIn("Swift Beta", durable_html)
+        self.assertLess(durable_html.index("Bulwark Alpha"), durable_html.index("Swift Beta"))
 
 
 if __name__ == "__main__":

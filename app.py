@@ -96,6 +96,8 @@ MAX_PART_DROPS_CHAIN = 2
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
 EVOLUTION_CORE_KEY = "evolution_core"
 EVOLUTION_CORE_DROP_RATE = 0.02
+EVOLUTION_CORE_PROGRESS_PER_WIN = max(1, int(os.getenv("EVOLUTION_CORE_PROGRESS_PER_WIN", "1")))
+EVOLUTION_CORE_PROGRESS_TARGET = max(1, int(os.getenv("EVOLUTION_CORE_PROGRESS_TARGET", "100")))
 EVOLUTION_PATH = {"N": "R", "R": "SR", "SR": "UR"}
 FACTION_KEYS = ("ignis", "ventra", "aurix")
 FACTION_UNLOCK_REQUIREMENTS = {
@@ -139,6 +141,48 @@ ROBOT_STYLE_WEIGHTS = {
     "stable": {"def": 0.35, "hp": 0.25, "acc": 0.20, "spd": 0.10, "atk": 0.05, "inv_cri": 0.05},
     "burst": {"atk": 0.35, "cri": 0.35, "acc": 0.10, "spd": 0.10, "inv_def": 0.10},
     "desperate": {"atk": 0.30, "spd": 0.25, "cri": 0.15, "acc": 0.10, "inv_hp": 0.20},
+}
+AREA_GROWTH_TENDENCY_DEFS = {
+    "layer_1": {
+        "key": "durable",
+        "label": "基礎整備",
+        "short_label": "耐久・防御寄り",
+        "home_line": "育成傾向: 耐久・防御寄り",
+        "map_line": "耐久・防御寄りの基礎育成",
+        "weight_bias": {"hp": 0.10, "def": 0.08, "acc": 0.02},
+    },
+    "layer_2": {
+        "key": "control",
+        "label": "制圧育成",
+        "short_label": "命中・防御寄り",
+        "home_line": "育成傾向: 命中・防御寄り",
+        "map_line": "命中を伸ばして崩れにくくなる",
+        "weight_bias": {"acc": 0.08, "def": 0.06, "hp": 0.03},
+    },
+    "layer_2_mist": {
+        "key": "precision",
+        "label": "狙撃育成",
+        "short_label": "命中寄り",
+        "home_line": "育成傾向: 命中寄り",
+        "map_line": "命中の伸びで狙撃型が生まれやすい",
+        "weight_bias": {"acc": 0.12, "spd": 0.03},
+    },
+    "layer_2_rush": {
+        "key": "fastest",
+        "label": "速攻育成",
+        "short_label": "素早さ・会心寄り",
+        "home_line": "育成傾向: 素早さ・会心寄り",
+        "map_line": "速攻と会心で展開を押し切る",
+        "weight_bias": {"spd": 0.12, "atk": 0.05, "cri": 0.06},
+    },
+    "layer_3": {
+        "key": "burst",
+        "label": "突破育成",
+        "short_label": "攻撃・耐久寄り",
+        "home_line": "育成傾向: 攻撃・耐久寄り",
+        "map_line": "攻撃と耐久の両立で突破型が育つ",
+        "weight_bias": {"atk": 0.08, "hp": 0.06, "def": 0.03},
+    },
 }
 ENEMY_TENDENCY_TAGS = {
     "def": "硬い装甲",
@@ -205,6 +249,104 @@ PART_RARITY_SUFFIX_JA = {
     "SSR": "極",
     "UR": "神",
 }
+GUIDE_SECTIONS = (
+    {
+        "key": "build",
+        "title": "🔥① ロボの育て方",
+        "items": (
+            {
+                "term": "思想",
+                "body": "ロボの『戦い方のクセ』です。ホームでは 安定 / 背水 / 爆発 のどれかが表示されます。",
+            },
+            {
+                "term": "安定",
+                "body": "長く戦えるロボです。",
+            },
+            {
+                "term": "背水",
+                "body": "速攻で押し切るロボです。",
+            },
+            {
+                "term": "爆発",
+                "body": "一撃に賭けるロボです。",
+            },
+            {
+                "term": "型",
+                "body": "ロボ全体の能力バランスです。",
+            },
+            {
+                "term": "狙撃型",
+                "body": "命中が高い型です。",
+            },
+            {
+                "term": "疾風型",
+                "body": "素早さが高い型です。",
+            },
+            {
+                "term": "鉄壁型",
+                "body": "防御が高い型です。",
+            },
+        ),
+    },
+    {
+        "key": "growth",
+        "title": "⚙️② ロボを強くする",
+        "items": (
+            {
+                "term": "パーツ強化",
+                "body": "素材を使ってパーツの +値 を上げます。まずはここから始まります。",
+            },
+            {
+                "term": "進化合成",
+                "body": "同じ N パーツを R パーツに進化できます。第2層のボスを倒すと解放されます。",
+            },
+            {
+                "term": "進化コア",
+                "body": "進化に必要な素材です。探索や勝利数の達成で手に入ります。",
+            },
+            {
+                "term": "育成傾向",
+                "body": "探索場所によって伸びやすい能力が少し変わります。自分の作りたいロボに合わせて周回先を選べます。",
+            },
+        ),
+    },
+    {
+        "key": "world",
+        "title": "🌍③ 世界で競う",
+        "items": (
+            {
+                "term": "世界ログ",
+                "body": "みんなの進行や大きな出来事が流れる公開ログです。ボス撃破や進化成功などがここに出ます。",
+            },
+            {
+                "term": "ランキング",
+                "body": "勝利数・探索数・耐久・爆発など、いろいろな強さで競えます。",
+            },
+            {
+                "term": "ロボ展示",
+                "body": "他のプレイヤーのロボを見ることができます。強いロボの育て方のヒントになります。",
+            },
+            {
+                "term": "陣営戦",
+                "body": "所属ごとの進行競争です。探索したりボスを倒すとスコアが増えます。",
+            },
+        ),
+    },
+    {
+        "key": "pride",
+        "title": "🎖④ 見た目と誇り",
+        "items": (
+            {
+                "term": "DECOR",
+                "body": "ロボの見た目を変えられる装飾です。ボスを倒した証として残ります。",
+            },
+            {
+                "term": "WEEK適合",
+                "body": "今週の環境と相性がいいロボにつく目印です。ついていると活躍しやすくなります。",
+            },
+        ),
+    },
+)
 PART_OFFSET_CACHE = {}
 PART_OFFSET_CACHE_VERSION = 0
 COMPOSE_REV = 0
@@ -244,7 +386,17 @@ ROBOT_TITLE_DEFS = (
     {"key": "title_deployed", "name_ja": "実戦配備", "desc_ja": "勝利数10を達成", "sort_order": 20, "metric": "wins_total", "threshold": 10},
     {"key": "title_first_boss", "name_ja": "初撃破", "desc_ja": "ボス初撃破を達成", "sort_order": 30, "metric": "boss_defeats_total", "threshold": 1},
 )
-SHOWCASE_SORT_OPTIONS = ("new", "week", "boss", "like")
+SHOWCASE_SORT_DEFS = (
+    {"key": "new", "label": "新着"},
+    {"key": "week", "label": "今週"},
+    {"key": "boss", "label": "ボス"},
+    {"key": "like", "label": "いいね"},
+    {"key": "fastest", "label": "最速"},
+    {"key": "durable", "label": "耐久"},
+    {"key": "precision", "label": "命中"},
+    {"key": "burst", "label": "爆発"},
+)
+SHOWCASE_SORT_OPTIONS = tuple(item["key"] for item in SHOWCASE_SORT_DEFS)
 RANKING_METRIC_DEFS = (
     {
         "key": "wins",
@@ -253,6 +405,7 @@ RANKING_METRIC_DEFS = (
         "metric_label": "勝利数",
         "description": "歴代の勝利数を表示します。",
         "is_weekly": False,
+        "row_kind": "user",
     },
     {
         "key": "explores",
@@ -261,6 +414,7 @@ RANKING_METRIC_DEFS = (
         "metric_label": "探索回数",
         "description": "累積の出撃回数を表示します。",
         "is_weekly": False,
+        "row_kind": "user",
     },
     {
         "key": "weekly_explores",
@@ -269,6 +423,7 @@ RANKING_METRIC_DEFS = (
         "metric_label": "今週探索",
         "description": "今週どれだけ出撃したかを表示します。",
         "is_weekly": True,
+        "row_kind": "user",
     },
     {
         "key": "weekly_bosses",
@@ -277,6 +432,43 @@ RANKING_METRIC_DEFS = (
         "metric_label": "今週ボス撃破",
         "description": "今週のボス討伐数を表示します。",
         "is_weekly": True,
+        "row_kind": "user",
+    },
+    {
+        "key": "fastest",
+        "tab_label": "最速",
+        "title": "最速ロボランキング",
+        "metric_label": "素早さ",
+        "description": "各プレイヤーの代表機から、最も速いロボを表示します。",
+        "is_weekly": False,
+        "row_kind": "robot",
+    },
+    {
+        "key": "durable",
+        "tab_label": "耐久",
+        "title": "耐久ロボランキング",
+        "metric_label": "耐久指数",
+        "description": "耐久と防御が高い代表ロボを表示します。",
+        "is_weekly": False,
+        "row_kind": "robot",
+    },
+    {
+        "key": "precision",
+        "tab_label": "命中",
+        "title": "命中ロボランキング",
+        "metric_label": "命中",
+        "description": "命中が高い代表ロボを表示します。",
+        "is_weekly": False,
+        "row_kind": "robot",
+    },
+    {
+        "key": "burst",
+        "tab_label": "爆発",
+        "title": "爆発ロボランキング",
+        "metric_label": "爆発指数",
+        "description": "攻撃と会心が高い代表ロボを表示します。",
+        "is_weekly": False,
+        "row_kind": "robot",
     },
 )
 RANKING_METRIC_DEF_BY_KEY = {row["key"]: row for row in RANKING_METRIC_DEFS}
@@ -1519,7 +1711,15 @@ def _build_map_nodes(user_row, area_streaks=None):
             },
         )
         stage_modifier = _stage_modifier_for_area(key, is_admin=is_admin)
-        tendency_line = _stage_modifier_summary_line(stage_modifier)
+        tendency = _area_growth_tendency(key)
+        tendency_line = str(tendency.get("map_line") or _stage_modifier_summary_line(stage_modifier) or "")
+        archetype_label = str(info.get("recommended_archetype") or "自由")
+        if archetype_label in {"sniper", "swift", "fortress"}:
+            archetype_label = {
+                "sniper": "狙撃型",
+                "swift": "疾風型",
+                "fortress": "鉄壁型",
+            }.get(archetype_label, archetype_label)
         nodes.append(
             {
                 "key": key,
@@ -1527,7 +1727,7 @@ def _build_map_nodes(user_row, area_streaks=None):
                 "layer": layer,
                 "description_lines": info["desc"][:3],
                 "tendency_line": tendency_line,
-                "recommended_archetype": info.get("recommended_archetype") or "自由",
+                "recommended_archetype": archetype_label,
                 "win_streak": int(streaks.get(key, 0)),
             }
         )
@@ -2617,7 +2817,25 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
     for row in rows:
         item = dict(row)
         item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
+        stat_obj = _compute_robot_stats_for_instance(db, int(item["id"]))
+        item["profile"] = _robot_profile_view(stat_obj)
+        item["metric_fastest"] = _robot_metric_value("fastest", stat_obj["stats"] if stat_obj else None)
+        item["metric_durable"] = _robot_metric_value("durable", stat_obj["stats"] if stat_obj else None)
+        item["metric_precision"] = _robot_metric_value("precision", stat_obj["stats"] if stat_obj else None)
+        item["metric_burst"] = _robot_metric_value("burst", stat_obj["stats"] if stat_obj else None)
         out.append(item)
+    if sort_key in {"fastest", "durable", "precision", "burst"}:
+        value_key = f"metric_{sort_key}"
+        out.sort(
+            key=lambda item: (
+                -int(item.get(value_key) or 0),
+                -int(item.get("vote_count") or 0),
+                str(item.get("username") or ""),
+                str(item.get("name") or ""),
+            )
+        )
+    if len(out) > int(limit):
+        out = out[: int(limit)]
     return out
 
 
@@ -2651,6 +2869,8 @@ def _ranking_rows_from_event_log(db, *, event_type, limit=50, start_ts=None, end
 def _ranking_rows(db, metric_key, limit=50, week_key=None):
     metric = RANKING_METRIC_DEF_BY_KEY.get(metric_key) or RANKING_METRIC_DEF_BY_KEY["wins"]
     wk = str(week_key or _world_week_key())
+    if metric.get("row_kind") == "robot":
+        return _robot_metric_rows(db, metric["key"], limit=limit)
     if metric["key"] == "wins":
         rows = db.execute(
             """
@@ -2822,6 +3042,111 @@ def _robot_style_from_instance_key(style_key):
         "style_scores": {"stable": 0.0, "desperate": 0.0, "burst": 0.0},
         "legacy_build_type": ("STABLE" if key == "stable" else "BURST"),
     }
+
+
+def _area_growth_tendency(area_key):
+    return AREA_GROWTH_TENDENCY_DEFS.get(str(area_key or "").strip(), {})
+
+
+def _area_weight_bias(area_key):
+    tendency = _area_growth_tendency(area_key)
+    bias = tendency.get("weight_bias") or {}
+    return {str(k): float(v) for k, v in bias.items()}
+
+
+def _robot_focus_stat_rows(stats, limit=2):
+    stat_map = stats or {}
+    pairs = [
+        {"key": key, "label": _stat_label(key), "value": int(stat_map.get(key) or 0)}
+        for key in ("hp", "atk", "def", "spd", "acc", "cri")
+    ]
+    pairs.sort(key=lambda item: (-int(item["value"]), item["label"]))
+    return pairs[: max(1, int(limit or 2))]
+
+
+def _robot_profile_view(stat_obj):
+    stats = (stat_obj or {}).get("stats") or {}
+    archetype = (stat_obj or {}).get("archetype") or {"key": "none", "name_ja": "無印"}
+    robot_style = (
+        (stat_obj or {}).get("robot_style")
+        if stat_obj and (stat_obj or {}).get("robot_style")
+        else _robot_style_from_final_stats(stats)
+    )
+    focus_stats = _robot_focus_stat_rows(stats, limit=2)
+    signature_label = (
+        f"{archetype['name_ja']} / {robot_style['style_label']}"
+        if archetype.get("name_ja") and archetype.get("name_ja") != "無印"
+        else f"{robot_style['style_label']}寄り"
+    )
+    focus_line = " / ".join(f"{row['label']} {row['value']}" for row in focus_stats)
+    return {
+        "archetype_name": archetype.get("name_ja") or "無印",
+        "archetype_key": archetype.get("key") or "none",
+        "style_label": robot_style.get("style_label") or ROBOT_STYLE_LABELS["stable"],
+        "style_key": robot_style.get("style_key") or "stable",
+        "style_description": robot_style.get("style_description") or _robot_style_description("stable"),
+        "signature_label": signature_label,
+        "focus_stats": focus_stats,
+        "focus_line": focus_line,
+    }
+
+
+def _robot_metric_value(metric_key, stats):
+    data = stats or {}
+    key = str(metric_key or "").strip().lower()
+    if key == "fastest":
+        return int(data.get("spd") or 0)
+    if key == "durable":
+        return int(data.get("hp") or 0) + int(data.get("def") or 0)
+    if key == "precision":
+        return int(data.get("acc") or 0)
+    if key == "burst":
+        return int(data.get("atk") or 0) + int(data.get("cri") or 0)
+    return 0
+
+
+def _robot_metric_rows(db, metric_key, limit=50):
+    metric = RANKING_METRIC_DEF_BY_KEY.get(metric_key) or RANKING_METRIC_DEF_BY_KEY["wins"]
+    rows = db.execute(
+        """
+        SELECT ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.updated_at, u.username
+        FROM robot_instances ri
+        JOIN users u ON u.id = ri.user_id
+        WHERE ri.status = 'active'
+        ORDER BY ri.updated_at DESC, ri.id DESC
+        """
+    ).fetchall()
+    best_by_user = {}
+    for row in rows:
+        stat_obj = _compute_robot_stats_for_instance(db, int(row["id"]))
+        if not stat_obj:
+            continue
+        metric_value = _robot_metric_value(metric_key, stat_obj.get("stats"))
+        profile = _robot_profile_view(stat_obj)
+        item = {
+            "id": int(row["user_id"]),
+            "user_id": int(row["user_id"]),
+            "username": row["username"],
+            "robot_id": int(row["id"]),
+            "robot_name": (row["name"] or "無名ロボ"),
+            "metric_value": int(metric_value),
+            "image_url": _composed_image_url(row["composed_image_path"], row["updated_at"]),
+            "profile": profile,
+        }
+        existing = best_by_user.get(item["user_id"])
+        if existing is None or (
+            int(item["metric_value"]),
+            str(item["robot_name"]),
+            -int(item["robot_id"]),
+        ) > (
+            int(existing["metric_value"]),
+            str(existing["robot_name"]),
+            -int(existing["robot_id"]),
+        ):
+            best_by_user[item["user_id"]] = item
+    out = list(best_by_user.values())
+    out.sort(key=lambda item: (-int(item["metric_value"]), str(item["username"]), str(item["robot_name"])))
+    return out[: int(limit)], metric
 
 
 def _enemy_tendency_tag(enemy):
@@ -3936,6 +4261,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
     if "last_explore_area_key" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
+    if "evolution_core_progress" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in cols:
@@ -3969,6 +4296,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     db.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     db.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
+    db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
@@ -5242,7 +5570,8 @@ def _add_part_drop(
         part = _get_part_by_key(db, part_key)
 
     if as_instance and part:
-        pi_id = _create_part_instance_from_master(db, user_id, part, plus=int(plus))
+        pi_id = _create_part_instance_from_master(db, user_id, part, plus=int(plus), area_key=area_key)
+        tendency = _area_growth_tendency(area_key)
         if announce_username:
             pi_row = db.execute("SELECT * FROM part_instances WHERE id = ?", (pi_id,)).fetchone()
             if pi_row:
@@ -5254,6 +5583,8 @@ def _add_part_drop(
             "plus": int(plus),
             "part_instance_id": pi_id,
             "source": source,
+            "growth_tendency_key": (tendency.get("key") if tendency else None),
+            "growth_tendency_label": (tendency.get("label") if tendency else None),
         }
     db.execute(
         """
@@ -5347,6 +5678,159 @@ def _consume_player_core(db, user_id, core_key, qty=1):
     return True
 
 
+def _get_player_evolution_core_progress(db, user_id):
+    row = db.execute(
+        "SELECT evolution_core_progress FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    if not row:
+        return 0
+    return max(0, int(row["evolution_core_progress"] or 0))
+
+
+def _evolution_core_progress_status(progress, *, core_qty=0):
+    current = max(0, int(progress or 0))
+    target = max(1, int(EVOLUTION_CORE_PROGRESS_TARGET))
+    if current >= target:
+        current = current % target
+    remain = max(0, int(target - current))
+    if int(core_qty or 0) > 0:
+        home_label = f"進化コア {int(core_qty)}個 / 次 {current}/{target}"
+    else:
+        home_label = f"あと{remain}勝で進化コア"
+    return {
+        "current": int(current),
+        "target": int(target),
+        "remaining_wins": int(remain),
+        "progress_label": f"進化コア進捗 {int(current)}/{int(target)}",
+        "remaining_label": f"あと{int(remain)}勝で進化コア",
+        "home_label": home_label,
+    }
+
+
+def _advance_evolution_core_progress(
+    db,
+    user_id,
+    battle_wins,
+    *,
+    request_id=None,
+    action_key="explore",
+    area_key=None,
+    ip=None,
+):
+    wins = max(0, int(battle_wins or 0))
+    target = max(1, int(EVOLUTION_CORE_PROGRESS_TARGET))
+    progress_added = wins * int(EVOLUTION_CORE_PROGRESS_PER_WIN)
+    before = _get_player_evolution_core_progress(db, user_id)
+    if progress_added <= 0:
+        return {
+            "wins": wins,
+            "progress_added": 0,
+            "progress_before": before,
+            "progress_after": before,
+            "granted_core_qty": 0,
+            "target": target,
+        }
+
+    total_after_add = int(before + progress_added)
+    granted_core_qty = int(total_after_add // target)
+    progress_after = int(total_after_add % target)
+    db.execute(
+        "UPDATE users SET evolution_core_progress = ? WHERE id = ?",
+        (progress_after, int(user_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["CORE_PROGRESS"],
+        user_id=user_id,
+        request_id=request_id,
+        action_key=action_key,
+        entity_type="core",
+        entity_id=None,
+        delta_count=int(progress_added),
+        payload={
+            "core_key": EVOLUTION_CORE_KEY,
+            "battle_wins": int(wins),
+            "progress_before": int(before),
+            "progress_after": int(progress_after),
+            "progress_added": int(progress_added),
+            "target": int(target),
+            "area_key": area_key,
+            "granted_core_qty": int(granted_core_qty),
+        },
+        ip=ip,
+    )
+    if granted_core_qty > 0:
+        granted_core_qty = int(_grant_player_core(db, user_id, EVOLUTION_CORE_KEY, qty=granted_core_qty))
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key=action_key,
+            entity_type="core",
+            entity_id=None,
+            delta_count=int(granted_core_qty),
+            payload={
+                "core_key": EVOLUTION_CORE_KEY,
+                "quantity": int(granted_core_qty),
+                "battle_wins": int(wins),
+                "progress_before": int(before),
+                "progress_after_add": int(total_after_add),
+                "progress_after_reset": int(progress_after),
+                "target": int(target),
+                "area_key": area_key,
+            },
+            ip=ip,
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["CORE_DROP"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key=action_key,
+            entity_type="core",
+            entity_id=None,
+            delta_count=int(granted_core_qty),
+            payload={
+                "core_key": EVOLUTION_CORE_KEY,
+                "core_name": "進化コア",
+                "quantity": int(granted_core_qty),
+                "area_key": area_key,
+                "source": "progress_guarantee",
+                "battle_wins": int(wins),
+                "target": int(target),
+            },
+            ip=ip,
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key=action_key,
+            entity_type="core",
+            entity_id=None,
+            delta_count=int(granted_core_qty),
+            payload={
+                "reason": "core_progress_guarantee",
+                "core_key": EVOLUTION_CORE_KEY,
+                "quantity": int(granted_core_qty),
+                "area_key": area_key,
+                "battle_wins": int(wins),
+            },
+            ip=ip,
+        )
+    return {
+        "wins": int(wins),
+        "progress_added": int(progress_added),
+        "progress_before": int(before),
+        "progress_after": int(progress_after),
+        "granted_core_qty": int(granted_core_qty),
+        "target": int(target),
+    }
+
+
 def _next_rarity_for_evolution(rarity_code):
     rarity = str(rarity_code or "").upper().strip()
     return EVOLUTION_PATH.get(rarity)
@@ -5407,9 +5891,9 @@ def _norm_part_type(part_type):
     return part_type
 
 
-def _create_part_instance_from_master(db, user_id, part_row, plus=0):
+def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=None):
     ptype = _norm_part_type(part_row["part_type"])
-    weights = generate_noisy_weights(ptype)
+    weights = generate_noisy_weights(ptype, bias=_area_weight_bias(area_key))
     rarity = (part_row["rarity"] or "N").upper()
     element = (part_row["element"] or "NORMAL").upper()
     series = part_row["series"] or "S1"
@@ -6843,6 +7327,23 @@ def _has_fixed_boss_defeat_in_area(db, user_id, area_key):
     return bool(row)
 
 
+def _evolution_feature_unlocked(db, user=None, *, user_id=None, is_admin=None, max_unlocked_layer=None):
+    if user is not None:
+        if user_id is None:
+            user_id = int(user["id"])
+        if is_admin is None:
+            is_admin = bool(int(user["is_admin"] or 0)) if "is_admin" in user.keys() else False
+        if max_unlocked_layer is None:
+            max_unlocked_layer = int(user["max_unlocked_layer"] or 1) if "max_unlocked_layer" in user.keys() else 1
+    if user_id is None:
+        return False
+    if bool(is_admin):
+        return True
+    if int(max_unlocked_layer or 0) >= 3:
+        return True
+    return _has_fixed_boss_defeat_in_area(db, user_id, "layer_2")
+
+
 def _normalize_faction_key(faction):
     v = str(faction or "").strip().lower()
     return v if v in FACTION_KEYS else None
@@ -7593,6 +8094,9 @@ def _feed_card_from_event(db, row):
         "text": event_type,
         "image_url": None,
         "link_url": None,
+        "headline": "WORLD LOG",
+        "accent": "default",
+        "meta_lines": [],
     }
     if event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
         actor_label = card["user_label"]
@@ -7601,12 +8105,17 @@ def _feed_card_from_event(db, row):
         area_label = str(payload.get("area_label") or "").strip()
         if not area_label and payload.get("area_key"):
             area_label = _boss_area_label(payload.get("area_key"))
+        card["headline"] = "BOSS DEFEATED"
+        card["accent"] = "boss"
         if robot_name:
             card["text"] = f"ボス撃破: {actor_label} の {robot_name} が {boss_name} を討伐"
+            card["meta_lines"].append(f"機体: {robot_name}")
         else:
             card["text"] = f"ボス撃破: {actor_label} が {boss_name} を討伐"
+        card["meta_lines"].append(f"対象: {boss_name}")
         if area_label:
             card["text"] += f"（{area_label}）"
+            card["meta_lines"].append(f"戦域: {area_label}")
         enemy_row = _feed_enemy_row(db, row, payload)
         if enemy_row:
             card["image_url"] = url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
@@ -7620,11 +8129,15 @@ def _feed_card_from_event(db, row):
         part_type = payload.get("part_type") or (part_row["part_type"] if part_row else "")
         part_type_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), "パーツ")
         target_name = target_name or "Rパーツ"
+        card["headline"] = "進化成功"
+        card["accent"] = "evolve"
         card["text"] = f"進化成功: {actor_label} が {part_type_label}『{target_name}』をR化"
+        card["meta_lines"] = [f"部位: {part_type_label}", f"対象: {target_name}"]
         if part_row:
             card["image_url"] = _part_image_url(part_row)
         card["link_url"] = url_for("evolve_parts")
     elif event_type == "audit.drop":
+        card["headline"] = "パーツ入手"
         part_key = payload.get("part_key")
         part_type = payload.get("part_type") or "-"
         rarity = payload.get("rarity") or "-"
@@ -7635,6 +8148,7 @@ def _feed_card_from_event(db, row):
         card["image_url"] = _part_image_url(part_row)
         card["link_url"] = url_for("parts", tab="instances")
     elif event_type == "audit.fuse":
+        card["headline"] = "強化結果"
         outcome = payload.get("outcome") or "-"
         part_type = payload.get("part_type") or "-"
         rarity = payload.get("rarity") or "-"
@@ -7655,6 +8169,7 @@ def _feed_card_from_event(db, row):
             card["image_url"] = _part_image_url(pi)
         card["link_url"] = url_for("parts_strengthen")
     elif event_type == "audit.build.confirm":
+        card["headline"] = "ロボ完成"
         robot_name = payload.get("robot_name") or "新ロボ"
         card["text"] = f"ロボを完成: {robot_name}"
         rid = payload.get("robot_instance_id") or row["entity_id"]
@@ -7667,18 +8182,23 @@ def _feed_card_from_event(db, row):
                 card["image_url"] = _composed_image_url(ri["composed_image_path"], ri["updated_at"])
         card["link_url"] = url_for("robots")
     elif event_type == "week_rollover":
+        card["headline"] = "週次更新"
         wk = payload.get("week_key") or "-"
         card["text"] = f"週次更新: {wk} が開始"
     elif event_type == "admin_world_reroll":
+        card["headline"] = "世界再抽選"
         wk = payload.get("week_key") or "-"
         card["text"] = f"世界状態が再抽選されました（{wk}）"
     elif event_type == "admin_world_reset_counters":
+        card["headline"] = "週カウンタ再設定"
         wk = payload.get("week_key") or "-"
         card["text"] = f"週カウンタがリセットされました（{wk}）"
     elif event_type == "weekly_drop_promoted":
+        card["headline"] = "週ボーナス"
         wk = payload.get("week_key") or "-"
         card["text"] = f"週ボーナス発動: ドロップ昇格（{wk}）"
     elif event_type == "daily_title_posted":
+        card["headline"] = "本日の称号"
         title = payload.get("title") or "称号"
         card["text"] = f"本日の称号発見: {title}"
     return card
@@ -8418,6 +8938,11 @@ def contact():
     return render_template("contact.html", title="お問い合わせ", sent=sent)
 
 
+@app.route("/guide")
+def guide():
+    return render_template("guide.html", title="用語", sections=GUIDE_SECTIONS)
+
+
 @app.route("/sitemap.xml")
 def sitemap_xml():
     root_url = _public_game_root_url().rstrip("/")
@@ -8426,6 +8951,7 @@ def sitemap_xml():
         f"{root_url}/login",
         f"{root_url}/register",
         f"{root_url}/home",
+        f"{root_url}/guide",
     ]
     xml = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -8805,6 +9331,7 @@ def home():
     )
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
+    main_robot_profile = _robot_profile_view(main_robot_stats)
     style_achievements = _style_achievements_progress(main_robot)
     idle_line = None
     if main_robot:
@@ -8908,11 +9435,20 @@ def home():
             }
     home_area_cards = []
     for area_row in unlocked_explore_areas:
-        modifier = _stage_modifier_for_area(area_row["key"], is_admin=(user["is_admin"] == 1))
-        line = _stage_modifier_summary_line(modifier)
-        if not line:
-            continue
-        home_area_cards.append({"key": area_row["key"], "label": area_row["label"], "tendency_line": line})
+        area_info = EXPLORE_AREA_MAP_INFO.get(area_row["key"]) or {}
+        area_desc = area_info.get("desc") or []
+        tendency = _area_growth_tendency(area_row["key"])
+        line = str(tendency.get("home_line") or "")
+        home_area_cards.append(
+            {
+                "key": area_row["key"],
+                "label": area_row["label"],
+                "desc_line": str(area_desc[0]) if len(area_desc) >= 1 else "",
+                "recommend_line": str(area_desc[1]) if len(area_desc) >= 2 else "",
+                "warning_line": str(area_desc[2]) if len(area_desc) >= 3 else "",
+                "tendency_line": line,
+            }
+        )
     locked_layer_lines = _locked_layer_lines(user)
     max_unlocked_layer = _user_max_unlocked_layer(user)
     new_layer_badge = session.pop("home_new_layer_badge", None)
@@ -8972,6 +9508,16 @@ def home():
     referral_counts = _referral_counts_for_referrer(db, user["id"])
     invite_link = _invite_link_for_code(invite_code)
     evolution_core_qty = _get_player_core_qty(db, user["id"], EVOLUTION_CORE_KEY)
+    evolution_core_progress = (
+        int(user["evolution_core_progress"] or 0)
+        if "evolution_core_progress" in user.keys()
+        else 0
+    )
+    evolution_core_status = _evolution_core_progress_status(
+        evolution_core_progress,
+        core_qty=evolution_core_qty,
+    )
+    evolution_feature_unlocked = _evolution_feature_unlocked(db, user=user)
     debug_snapshot = {
         "user_id": user["id"] if user else None,
         "chat_messages": len(chat_messages),
@@ -8998,6 +9544,7 @@ def home():
             main_robot=main_robot,
             main_robot_stats=main_robot_stats,
             main_robot_style=main_robot_style,
+            main_robot_profile=main_robot_profile,
             style_achievements=style_achievements,
             idle_line=idle_line,
             ct_text=ct_text,
@@ -9076,6 +9623,8 @@ def home():
             invite_link=invite_link,
             referral_counts=referral_counts,
             has_evolution_core=(int(evolution_core_qty or 0) >= 1),
+            evolution_core_status=evolution_core_status,
+            show_evolution_actions=evolution_feature_unlocked,
             next_action_card=next_action_card,
         )
     except Exception as exc:
@@ -9976,6 +10525,7 @@ def explore():
     if _get_active_robot(db, user_id) is None:
         session["message"] = "先にロボを編成しよう。/build で完成登録できます。"
         return redirect(url_for("build"))
+    evolution_feature_unlocked = _evolution_feature_unlocked(db, user=user, user_id=user_id)
 
     now = _now_ts()
     ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
@@ -10034,6 +10584,7 @@ def explore():
     reward_coin = 0
     reward_exp = 0
     reward_core = 0
+    core_reward_sources = set()
     core_dropped_this_explore = False
     bonus_line = None
     drop_labels = []
@@ -10516,33 +11067,6 @@ def explore():
             if area_boss_active and battle_no == 1:
                 rewards = {"coin": 0, "drop_type": "boss_reward", "dropped_parts": [], "promotion_triggered": False}
                 if area_boss_kind == "npc":
-                    granted_core = _grant_player_core(db, user_id, EVOLUTION_CORE_KEY, qty=1)
-                    if granted_core > 0:
-                        core_dropped_this_explore = True
-                        reward_core += int(granted_core)
-                        world_bonus_notes.append("✨ NPCボス撃破報酬: 進化コア ×1")
-                        if battle_logs:
-                            battle_logs[-1]["core_drop_line"] = "✨ NPCボス撃破報酬: 進化コア ×1"
-                        audit_log(
-                            db,
-                            AUDIT_EVENT_TYPES["CORE_DROP"],
-                            user_id=user_id,
-                            request_id=request_id,
-                            action_key="explore",
-                            entity_type="core",
-                            entity_id=None,
-                            delta_count=int(granted_core),
-                            payload={
-                                "core_key": EVOLUTION_CORE_KEY,
-                                "core_name": "進化コア",
-                                "quantity": int(granted_core),
-                                "area_key": area_key,
-                                "enemy_key": (enemy.get("key") if isinstance(enemy, dict) else None),
-                                "source": "npc_boss",
-                                "npc_boss_template_id": area_boss_template_id,
-                            },
-                            ip=request.remote_addr,
-                        )
                     area_boss_reward = {
                         "reward_missing": False,
                         "decor_asset_id": None,
@@ -10550,8 +11074,37 @@ def explore():
                         "decor_name": None,
                         "decor_image_path": None,
                         "granted": False,
-                        "reward_type": "core",
+                        "reward_type": "core" if evolution_feature_unlocked else "locked",
                     }
+                    if evolution_feature_unlocked:
+                        granted_core = _grant_player_core(db, user_id, EVOLUTION_CORE_KEY, qty=1)
+                        if granted_core > 0:
+                            core_dropped_this_explore = True
+                            reward_core += int(granted_core)
+                            core_reward_sources.add("npc_boss")
+                            world_bonus_notes.append("✨ NPCボス撃破報酬: 進化コア ×1")
+                            if battle_logs:
+                                battle_logs[-1]["core_drop_line"] = "✨ NPCボス撃破報酬: 進化コア ×1"
+                            audit_log(
+                                db,
+                                AUDIT_EVENT_TYPES["CORE_DROP"],
+                                user_id=user_id,
+                                request_id=request_id,
+                                action_key="explore",
+                                entity_type="core",
+                                entity_id=None,
+                                delta_count=int(granted_core),
+                                payload={
+                                    "core_key": EVOLUTION_CORE_KEY,
+                                    "core_name": "進化コア",
+                                    "quantity": int(granted_core),
+                                    "area_key": area_key,
+                                    "enemy_key": (enemy.get("key") if isinstance(enemy, dict) else None),
+                                    "source": "npc_boss",
+                                    "npc_boss_template_id": area_boss_template_id,
+                                },
+                                ip=request.remote_addr,
+                            )
                 else:
                     area_boss_reward = _grant_boss_decor_reward(
                         db,
@@ -10605,6 +11158,8 @@ def explore():
                         "part_key": p.get("part_key"),
                         "rarity": p.get("rarity"),
                         "plus": p.get("plus"),
+                        "growth_tendency_key": p.get("growth_tendency_key"),
+                        "growth_tendency_label": p.get("growth_tendency_label"),
                     },
                     ip=request.remote_addr,
                 )
@@ -10622,12 +11177,14 @@ def explore():
                         "battle_no": battle_no,
                         "part_type": p.get("part_type"),
                         "part_key": p.get("part_key"),
+                        "growth_tendency_key": p.get("growth_tendency_key"),
                     },
                     ip=request.remote_addr,
                 )
             core_drop_rate = _evolution_core_drop_rate_for_area(area_key)
             if (
                 not (area_boss_active and battle_no == 1)
+                and evolution_feature_unlocked
                 and (not core_dropped_this_explore)
                 and core_drop_rate > 0.0
                 and _roll_evolution_core_drop(rng=random, drop_rate=core_drop_rate)
@@ -10636,6 +11193,7 @@ def explore():
                 if granted_core > 0:
                     core_dropped_this_explore = True
                     reward_core += int(granted_core)
+                    core_reward_sources.add("drop")
                     world_bonus_notes.append("✨ 進化コアを発見！")
                     if battle_logs:
                         battle_logs[-1]["core_drop_line"] = "✨ 進化コアを発見！"
@@ -10843,7 +11401,13 @@ def explore():
     if area_boss_reward and area_boss_reward.get("decor_name"):
         suffix = "入手" if area_boss_reward.get("granted") else "重複（既所持）"
         world_bonus_notes.append(f"エリアボス報酬: {area_boss_reward['decor_name']} ({suffix})")
-    elif area_boss_active and final_outcome == "win" and area_boss_kind == "npc":
+    elif (
+        area_boss_active
+        and final_outcome == "win"
+        and area_boss_kind == "npc"
+        and area_boss_reward
+        and area_boss_reward.get("reward_type") == "core"
+    ):
         world_bonus_notes.append("NPCボス報酬: 進化コア ×1")
     elif area_boss_active and final_outcome == "win":
         world_bonus_notes.append("エリアボス報酬: なし")
@@ -10907,6 +11471,32 @@ def explore():
             enemy_key=enemy_info.get("key"),
             is_defeat=bool(b.get("win")),
         )
+
+    if evolution_feature_unlocked:
+        evolution_core_progress_result = _advance_evolution_core_progress(
+            db,
+            user_id=user_id,
+            battle_wins=sum(1 for b in battle_results if b.get("win")),
+            request_id=request_id,
+            action_key="explore",
+            area_key=area_key,
+            ip=request.remote_addr,
+        )
+        if int(evolution_core_progress_result.get("granted_core_qty") or 0) > 0:
+            guaranteed_core_qty = int(evolution_core_progress_result["granted_core_qty"])
+            reward_core += guaranteed_core_qty
+            core_reward_sources.add("progress_guarantee")
+            world_bonus_notes.append(f"進化コアゲージ満了: 進化コア ×{guaranteed_core_qty}")
+    else:
+        current_core_progress = _get_player_evolution_core_progress(db, user_id)
+        evolution_core_progress_result = {
+            "wins": sum(1 for b in battle_results if b.get("win")),
+            "progress_added": 0,
+            "progress_before": current_core_progress,
+            "progress_after": current_core_progress,
+            "granted_core_qty": 0,
+            "target": int(EVOLUTION_CORE_PROGRESS_TARGET),
+        }
 
     stable_no_damage_inc = 1 if (final_outcome == "win" and _is_no_damage_victory(damage_taken_total)) else 0
     desperate_low_hp_inc = 1 if (final_outcome == "win" and player_hp <= max(1, int(math.floor(player_max_hp * 0.2)))) else 0
@@ -11033,6 +11623,12 @@ def explore():
             "rewards": {
                 "coins": int(reward_coin),
                 "cores": int(reward_core),
+                "core_progress": {
+                    "added": int(evolution_core_progress_result.get("progress_added") or 0),
+                    "current": int(evolution_core_progress_result.get("progress_after") or 0),
+                    "target": int(evolution_core_progress_result.get("target") or EVOLUTION_CORE_PROGRESS_TARGET),
+                    "guaranteed_cores": int(evolution_core_progress_result.get("granted_core_qty") or 0),
+                },
                 "drops": [
                     {
                         "kind": "part_instance",
@@ -11141,6 +11737,27 @@ def explore():
                 dropped_core_icon_url = url_for("static", filename=core_row["icon_path"])
         else:
             dropped_core_name = "進化コア"
+    battle_core_qty = _get_player_core_qty(db, user_id, EVOLUTION_CORE_KEY)
+    if core_reward_sources == {"drop"}:
+        core_reward_headline = "✨ 進化コアを発見！ ✨"
+        core_reward_subline = "パーツをレア化できる貴重なコアです"
+        core_reward_row_label = "ドロップ"
+    elif core_reward_sources == {"progress_guarantee"}:
+        core_reward_headline = "✨ 進化コア保証達成！ ✨"
+        core_reward_subline = "勝利ゲージが満了しました"
+        core_reward_row_label = "保証"
+    elif core_reward_sources == {"npc_boss"}:
+        core_reward_headline = "✨ 進化コア獲得！ ✨"
+        core_reward_subline = "NPCボス撃破報酬です"
+        core_reward_row_label = "報酬"
+    elif reward_core > 0:
+        core_reward_headline = "✨ 進化コア獲得！ ✨"
+        core_reward_subline = "直ドロップと保証がまとめて反映されました"
+        core_reward_row_label = "獲得"
+    else:
+        core_reward_headline = ""
+        core_reward_subline = ""
+        core_reward_row_label = "ドロップ"
     battle_bg_path = _boss_battle_bg_path(last_enemy, bool(area_boss_active))
     explore_ct_remain = int(_enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now))
     explore_ct_is_admin = bool(int(user["is_admin"] or 0) == 1)
@@ -11162,6 +11779,9 @@ def explore():
         "highlight_core_drop": bool(reward_core > 0),
         "dropped_core_name": dropped_core_name,
         "dropped_core_icon_url": dropped_core_icon_url,
+        "core_reward_headline": core_reward_headline,
+        "core_reward_subline": core_reward_subline,
+        "core_reward_row_label": core_reward_row_label,
         "dropped_parts": drop_labels,
         "player_final_hp": player_hp,
         "player_max_hp": player_max_hp,
@@ -11354,11 +11974,13 @@ def robots():
             inst["power"] = stat_obj["power"]
             inst["set_bonus"] = stat_obj["set_bonus"]
             inst["archetype"] = stat_obj.get("archetype")
+            inst["robot_profile"] = _robot_profile_view(stat_obj)
         else:
             inst["final_stats"] = None
             inst["power"] = None
             inst["set_bonus"] = None
             inst["archetype"] = None
+            inst["robot_profile"] = _robot_profile_view(None)
         inst["weekly_fit"] = _robot_weekly_fit(db, inst["id"], weekly_element) if weekly_element else False
     limits = _effective_limits(db, user)
     used_all = db.execute(
@@ -11428,6 +12050,7 @@ def robot_detail(instance_id):
     robot["power"] = stat_obj["power"] if stat_obj else None
     robot["set_bonus"] = stat_obj["set_bonus"] if stat_obj else None
     robot["archetype"] = stat_obj.get("archetype") if stat_obj else None
+    robot["robot_profile"] = _robot_profile_view(stat_obj)
     if robot.get("decor_asset_id"):
         decor_row = db.execute(
             "SELECT key, name_ja FROM robot_decor_assets WHERE id = ?",
@@ -12215,6 +12838,7 @@ def showcase():
         public_rows=public_rows,
         sort_key=sort_key,
         sort_options=tuple(SHOWCASE_SORT_OPTIONS),
+        sort_defs=SHOWCASE_SORT_DEFS,
     )
 
 
@@ -12376,7 +13000,9 @@ def ranking():
         metric_key = "wins"
     week_key = _world_week_key()
     rows, metric = _ranking_rows(db, metric_key, limit=50, week_key=week_key)
-    rows = _decorate_user_rows(db, rows, user_key="id")
+    row_kind = str(metric.get("row_kind") or "user")
+    if row_kind == "user":
+        rows = _decorate_user_rows(db, rows, user_key="id")
     return render_template(
         "ranking.html",
         rows=rows,
@@ -12384,6 +13010,7 @@ def ranking():
         metric=metric,
         metric_defs=RANKING_METRIC_DEFS,
         week_key=week_key,
+        row_kind=row_kind,
     )
 
 
@@ -12451,6 +13078,11 @@ def enemy_dex_detail(enemy_key):
 @login_required
 def parts():
     db = get_db()
+    user_id = int(session["user_id"])
+    user_row = db.execute(
+        "SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
     tab = request.args.get("tab", "legacy")
     if tab not in {"instances", "legacy"}:
         tab = "instances"
@@ -12466,11 +13098,11 @@ def parts():
         ORDER BY pi.plus DESC, pi.id DESC
         LIMIT ? OFFSET ?
         """,
-        (session["user_id"], per_page, offset),
+        (user_id, per_page, offset),
     ).fetchall()
     total = db.execute(
         "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
-        (session["user_id"],),
+        (user_id,),
     ).fetchone()["c"]
     items = []
     for r in rows:
@@ -12481,7 +13113,7 @@ def parts():
         d["extreme_title"] = _extract_part_extreme_title(d)
         d["image_url"] = url_for("static", filename=_part_image_rel(d))
         items.append(d)
-    protect_core = _get_user_item_qty(db, session["user_id"], "protect_core")
+    protect_core = _get_user_item_qty(db, user_id, "protect_core")
     legacy_rows = db.execute(
         """
         SELECT upi.part_type, upi.part_key, COUNT(*) AS qty, rp.image_path, rp.rarity, rp.element, rp.display_name_ja
@@ -12491,7 +13123,7 @@ def parts():
         GROUP BY upi.part_type, upi.part_key, rp.image_path
         ORDER BY upi.part_type, upi.part_key
         """,
-        (session["user_id"],),
+        (user_id,),
     ).fetchall()
     legacy_items = []
     legacy_total = 0
@@ -12517,6 +13149,7 @@ def parts():
         has_next=total > page * per_page,
         total=total,
         protect_core=protect_core,
+        show_evolution_actions=_evolution_feature_unlocked(db, user=user_row, user_id=user_id),
     )
 
 
@@ -12525,6 +13158,13 @@ def parts():
 def evolve_parts():
     db = get_db()
     user_id = int(session["user_id"])
+    user = db.execute(
+        "SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not _evolution_feature_unlocked(db, user=user, user_id=user_id):
+        flash("進化合成は第2層ボス撃破後に解放されます。", "error")
+        return redirect(url_for("home"))
     request_id = getattr(g, "request_id", None)
     selected_mode = (request.args.get("mode") or "select").strip().lower()
     if selected_mode not in {"select", "result"}:
@@ -12690,6 +13330,10 @@ def evolve_parts():
     if selected_mode == "result" and not last_evolve_result:
         selected_mode = "select"
     core_qty = _get_player_core_qty(db, user_id, EVOLUTION_CORE_KEY)
+    evolution_core_status = _evolution_core_progress_status(
+        _get_player_evolution_core_progress(db, user_id),
+        core_qty=core_qty,
+    )
     rows = db.execute(
         """
         SELECT
@@ -12730,6 +13374,7 @@ def evolve_parts():
         "evolve.html",
         core_key=EVOLUTION_CORE_KEY,
         core_qty=core_qty,
+        evolution_core_status=evolution_core_status,
         items=evolve_items,
         selected_mode=selected_mode,
         last_evolve_result=last_evolve_result,

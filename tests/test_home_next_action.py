@@ -111,6 +111,25 @@ class HomeNextActionTests(unittest.TestCase):
             )
             db.commit()
 
+    def _unlock_evolution_feature(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute("UPDATE users SET max_unlocked_layer = 3 WHERE id = ?", (self.user_id,))
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps({"area_key": "layer_2", "boss_kind": "fixed", "unlocked_layer": 3}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.commit()
+
     def test_home_next_action_boss_alert_has_highest_priority(self):
         self._create_active_robot()
         self._set_boss_alert(area_key="layer_2", attempts=2)
@@ -342,6 +361,52 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("まだランキングデータがありません。", html)
         self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
         self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
+
+    def test_home_shows_area_feature_cards_for_unlocked_areas(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 2 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("探索先メモ", html)
+        self.assertIn("旧整備通路。最も安定した探索ルート。", html)
+        self.assertIn("放電ノイズ帯。tier1/2が混在する中間層。", html)
+        self.assertIn("推奨: 基本ステ確認と初期ドロップ回収。", html)
+
+    def test_home_hides_evolution_actions_until_layer2_boss_defeat(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0 WHERE id = ?", (self.user_id,))
+            db.execute("UPDATE users SET evolution_core_progress = 72 WHERE id = ?", (self.user_id,))
+            game_app._grant_player_core(db, self.user_id, game_app.EVOLUTION_CORE_KEY, qty=1)
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("次の目標", html)
+        self.assertNotIn("進化合成", html)
+        self.assertNotIn("あと28勝で進化コア", html)
+
+    def test_home_shows_evolve_action_after_layer2_boss_defeat(self):
+        self._create_active_robot()
+        self._unlock_evolution_feature()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0 WHERE id = ?", (self.user_id,))
+            game_app._grant_player_core(db, self.user_id, game_app.EVOLUTION_CORE_KEY, qty=1)
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("進化合成", html)
+        self.assertIn("進化コア 1個 / 次 0/100", html)
 
     def test_home_can_hide_and_restore_beginner_mission(self):
         with game_app.app.app_context():

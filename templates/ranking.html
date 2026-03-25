@@ -19,12 +19,36 @@
   <table>
     <tr>
       <th>順位</th>
+      {% if row_kind == 'robot' %}
+      <th>ロボ</th>
+      <th>オーナー</th>
+      {% else %}
       <th>ユーザー</th>
+      {% endif %}
       <th>{{ metric['metric_label'] }}</th>
     </tr>
     {% for r in rows %}
     <tr>
       <td>{{ loop.index }}</td>
+      {% if row_kind == 'robot' %}
+      <td>
+        <div class="ranking-robot-cell">
+          {% if r.get('image_url') %}
+          <img class="ranking-robot-thumb" src="{{ r['image_url'] }}" alt="{{ r['robot_name'] }}" loading="lazy" />
+          {% endif %}
+          <div>
+            <div><b><a href="{{ url_for('robot_detail', instance_id=r['robot_id']) }}">{{ r['robot_name'] }}</a></b></div>
+            {% if r.get('profile') and r['profile'].get('signature_label') %}
+            <div class="robot-part">{{ r['profile']['signature_label'] }}</div>
+            {% endif %}
+            {% if r.get('profile') and r['profile'].get('focus_line') %}
+            <div class="robot-time">{{ r['profile']['focus_line'] }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </td>
+      <td>{{ r['username'] }}</td>
+      {% else %}
       <td>
         <span class="user-chip mini">
           <img class="avatar-48" src="{{ url_for('static', filename=r['avatar_path']) }}" alt="avatar" />
@@ -34,6 +58,7 @@
         </span>
         {{ r['username'] }}
       </td>
+      {% endif %}
       <td>{{ r['metric_value'] }}</td>
     </tr>
     {% endfor %}

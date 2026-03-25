@@ -38,10 +38,9 @@
 <div class="card">
   <h2>公開ロボ</h2>
   <div class="showcase-sort-tabs">
-    <a href="{{ url_for('showcase', sort='new') }}" class="fuse-mode-tab {% if sort_key == 'new' %}is-active{% endif %}">新着</a>
-    <a href="{{ url_for('showcase', sort='week') }}" class="fuse-mode-tab {% if sort_key == 'week' %}is-active{% endif %}">今週</a>
-    <a href="{{ url_for('showcase', sort='boss') }}" class="fuse-mode-tab {% if sort_key == 'boss' %}is-active{% endif %}">ボス</a>
-    <a href="{{ url_for('showcase', sort='like') }}" class="fuse-mode-tab {% if sort_key == 'like' %}is-active{% endif %}">いいね</a>
+    {% for item in sort_defs %}
+    <a href="{{ url_for('showcase', sort=item['key']) }}" class="fuse-mode-tab {% if sort_key == item['key'] %}is-active{% endif %}">{{ item['label'] }}</a>
+    {% endfor %}
   </div>
   <div class="robot-grid">
     {% for r in public_rows %}
@@ -49,12 +48,21 @@
         <div class="robot-id">{{ r['name'] }}</div>
         <div class="robot-part">オーナー: {{ r['username'] }}</div>
         <div class="robot-part">称号: {{ r['primary_title'] }}</div>
+        {% if r.get('profile') and r['profile'].get('signature_label') %}
+        <div class="robot-part">思想: {{ r['profile']['signature_label'] }}</div>
+        {% endif %}
+        {% if r.get('profile') and r['profile'].get('focus_line') %}
+        <div class="robot-time">{{ r['profile']['focus_line'] }}</div>
+        {% endif %}
         {% if r.get('image_url') %}
           <img class="robot-thumb" src="{{ r['image_url'] }}" alt="{{ r['name'] }}" loading="lazy" />
         {% else %}
           <div class="robot-thumb empty">no image</div>
         {% endif %}
         <div class="robot-part">今週勝利 {{ r['wins_this_week'] }} / ボス撃破 {{ r['boss_defeats_total'] }}</div>
+        {% if sort_key in ('fastest', 'durable', 'precision', 'burst') %}
+        <div class="robot-part">注目記録: {{ r['metric_' ~ sort_key] }}</div>
+        {% endif %}
         <form method="post" action="{{ url_for('showcase_like', robot_id=r['id']) }}">
           <input type="hidden" name="sort" value="{{ sort_key }}" />
           <button type="submit">{% if r['liked_by_me'] %}いいね解除{% else %}いいね{% endif %} ({{ r['vote_count'] }})</button>

@@ -187,7 +187,10 @@
             {% if main_robot_stats and main_robot_stats['set_bonus'] %}
               <div class="upgrade-cost">セットボーナス: {{ main_robot_stats['set_bonus'] }}</div>
             {% endif %}
-            <div class="upgrade-cost">型: {{ main_robot_style['style_label'] }} / {{ main_robot_style.get('style_description', '') }}</div>
+            <div class="upgrade-cost">思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</div>
+            {% if main_robot_profile and main_robot_profile.get('focus_line') %}
+            <div class="upgrade-cost">{{ main_robot_profile['focus_line'] }}</div>
+            {% endif %}
             <div class="upgrade-cost">総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</div>
             {% if main_robot_weekly_fit %}
               <div class="upgrade-cost"><span class="weekly-fit-badge">WEEK適合</span></div>
@@ -288,31 +291,41 @@
         >{{ ct_button_text }}</button>
       </form>
       <p class="link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
-      <div id="mist-area-hint" class="upgrade-cost is-hidden">
-        <div>霧が深く、命中差が勝敗に直結するエリアです。</div>
-        <div>高命中の敵ほど遭遇しやすく、短期決着が難しくなります。</div>
-        <div>命中重視のロボで挑むと安定しやすくなります。</div>
+      {% if home_area_cards %}
+      <div class="home-nav-section-title">探索先メモ</div>
+      <div class="home-area-card-grid">
+        {% for area_card in home_area_cards %}
+        <div class="card home-area-card{% if area_card['key'] == selected_explore_area_key %} is-selected{% endif %}">
+          <div><b>{{ area_card['label'] }}</b></div>
+          {% if area_card.get('desc_line') %}
+          <div class="upgrade-cost">{{ area_card['desc_line'] }}</div>
+          {% endif %}
+          {% if area_card.get('recommend_line') %}
+          <div class="robot-part">{{ area_card['recommend_line'] }}</div>
+          {% endif %}
+          {% if area_card.get('tendency_line') %}
+          <div class="robot-part">{{ area_card['tendency_line'] }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
-      <div id="rush-area-hint" class="upgrade-cost is-hidden">
-        <div>短期決戦になりやすいルートです。</div>
-        <div>クリティカルで展開が大きく動きます。</div>
-        <div>攻めの機体で押し切る構成が有効です。</div>
-      </div>
+      {% endif %}
     {% endif %}
+      <div class="home-nav-section-title">育成</div>
       <div class="actions-grid home-actions-grid home-primary-actions-grid">
         {% if has_any_robot %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
         <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
+        {% if show_evolution_actions %}
+        <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">{{ evolution_core_status['home_label'] }}</div></a>
+        {% endif %}
         {% endif %}
         <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
         <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
       </div>
-      {% if has_any_robot %}
+      {% if is_admin %}
+      <div class="home-nav-section-title">管理</div>
       <div class="actions-grid home-actions-grid home-secondary-actions-grid">
-        {% if has_evolution_core %}
-        <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">進化コアで進化</div></a>
-        {% endif %}
-        {% if is_admin %}
         <a class="action-card" href="{{ url_for('admin') }}"><div class="action-title">管理者メニュー</div><div class="action-desc">管理機能トップ</div></a>
         <a class="action-card" href="{{ url_for('admin_parts') }}"><div class="action-title">管理: パーツ</div><div class="action-desc">パーツ登録/編集</div></a>
         <a class="action-card" href="{{ url_for('admin_decor') }}"><div class="action-title">管理: 装飾</div><div class="action-desc">装飾アセット管理</div></a>
@@ -320,7 +333,6 @@
         <a class="action-card" href="{{ url_for('admin_balance') }}"><div class="action-title">管理: バランス</div><div class="action-desc">確率/コスト確認</div></a>
         <a class="action-card" href="{{ url_for('admin_world') }}"><div class="action-title">管理: 週間環境</div><div class="action-desc">環境再抽選/カウンタ管理</div></a>
         <a class="action-card" href="{{ url_for('admin_audit') }}"><div class="action-title">管理: 監査ログ</div><div class="action-desc">証跡を確認</div></a>
-        {% endif %}
       </div>
       {% endif %}
   </section>

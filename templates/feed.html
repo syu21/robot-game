@@ -24,10 +24,13 @@
 </div>
 
 {% for c in cards %}
-<div class="card feed-card">
+<div class="card feed-card{% if c.get('accent') %} feed-card-{{ c['accent'] }}{% endif %}">
+  <div class="feed-kicker-row">
+    <div class="feed-kicker">{{ c.get('headline') or 'WORLD LOG' }}</div>
+    <div class="feed-time">{{ c['time_jst'] }} JST</div>
+  </div>
   <div class="feed-head">
     <div class="feed-user">{{ c['user_label'] }}</div>
-    <div class="feed-time">{{ c['time_jst'] }} JST</div>
   </div>
   <div class="feed-body">
     {% if c.get('image_url') %}
@@ -35,6 +38,9 @@
     {% endif %}
     <div>
       <div class="feed-text">{{ c['text'] }}</div>
+      {% for line in c.get('meta_lines', []) %}
+      <div class="feed-meta">{{ line }}</div>
+      {% endfor %}
       <div class="feed-type">{{ c['event_type'] }}</div>
       {% if c.get('link_url') %}
       <div><a href="{{ c['link_url'] }}">詳細を見る</a></div>
