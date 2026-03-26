@@ -49,4 +49,10 @@ class HomeBeginnerFocusTests(unittest.TestCase):
         self.assertIn("表示調整", html)
         self.assertNotIn("?comm_tab=", html)
         self.assertIn('id="home-comms-panel"', html)
-        self.assertNotIn('class="home-
+        self.assertNotIn('class="home-lower-grid home-secondary-grid"', html)
+        self.assertNotIn("home-invite-panel", html)
+        self.assertIn("今週のランキング", html)
+        self.assertLess(html.index("今週のMVP"), html.index('id="home-comms-panel"'))
+        self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
+        self.assertNotIn("ロボ展示", html)
+        self.assertNotIn("メニュー", html)
