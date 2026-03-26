@@ -277,9 +277,11 @@ body.lightbox-open .lightbox-overlay {
   grid-auto-rows: min-content;
 }
 .home-social-stack .home-actions-panel { order: 1; }
-.home-social-stack .home-nav-panel { order: 2; }
-.home-social-stack .home-weekly-panel { order: 3; }
-.home-social-stack .home-faction-panel { order: 4; }
+.home-social-stack .home-weekly-panel { order: 2; }
+.home-social-stack .home-faction-panel { order: 3; }
+.home-social-stack .home-nav-panel { order: 4; }
+.home-social-stack .home-ranking-panel { order: 5; }
+.home-social-stack .home-visibility-panel { order: 6; }
 .home-right-stack > .panel {
   margin-bottom: 0;
 }
@@ -2957,7 +2959,11 @@ body.home-page .locked-layer-card {
 
   .home-main-stack { order: 1; }
   .home-social-stack { order: 2; }
+  .home-social-stack .home-weekly-panel { order: 2; }
+  .home-social-stack .home-faction-panel { order: 3; }
   .home-social-stack .home-nav-panel { order: 4; }
+  .home-social-stack .home-ranking-panel { order: 5; }
+  .home-social-stack .home-visibility-panel { order: 6; }
 
   .enemy-card {
     display: grid;
@@ -3076,7 +3082,11 @@ body.home-page .locked-layer-card {
 
   body.home-page .home-main-stack { order: 1; }
   body.home-page .home-social-stack { order: 2; }
+  body.home-page .home-social-stack .home-weekly-panel { order: 2; }
+  body.home-page .home-social-stack .home-faction-panel { order: 3; }
   body.home-page .home-social-stack .home-nav-panel { order: 4; }
+  body.home-page .home-social-stack .home-ranking-panel { order: 5; }
+  body.home-page .home-social-stack .home-visibility-panel { order: 6; }
 
   body.home-page .main-robot-layout {
     gap: 10px !important;
@@ -3166,7 +3176,11 @@ body.home-page.home-mobile .home-area-card-grid {
 
 body.home-page.home-mobile .home-main-stack { order: 1; }
 body.home-page.home-mobile .home-social-stack { order: 2; }
+body.home-page.home-mobile .home-social-stack .home-weekly-panel { order: 2; }
+body.home-page.home-mobile .home-social-stack .home-faction-panel { order: 3; }
 body.home-page.home-mobile .home-social-stack .home-nav-panel { order: 4; }
+body.home-page.home-mobile .home-social-stack .home-ranking-panel { order: 5; }
+body.home-page.home-mobile .home-social-stack .home-visibility-panel { order: 6; }
 
 body.home-page.home-mobile .main-robot-layout {
   gap: 10px !important;
