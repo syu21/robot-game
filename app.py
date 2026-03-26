@@ -138,6 +138,31 @@ FACTION_DOCTRINES = {
         "world_hint": "長期周回や積み上げで差を作るときに強い。",
     },
 }
+COMM_WORLD_ROOM_KEY = "world_public"
+COMM_WORLD_MAX_CHARS = 60
+COMM_WORLD_COOLDOWN_SECONDS = 30
+COMM_ROOM_MAX_CHARS = 120
+COMM_ROOM_COOLDOWN_SECONDS = 15
+COMM_WORLD_TIMELINE_LIMIT = 50
+COMM_ROOM_TIMELINE_LIMIT = 100
+COMM_PERSONAL_LOG_LIMIT = 30
+COMM_AUTO_REFRESH_SECONDS = 18
+HOME_COMM_PREVIEW_LIMIT = 12
+COMM_ROOM_DEFS = (
+    {
+        "key": "global_room",
+        "title": "全体会議室",
+        "summary": "攻略や発見、雑談をみんなで話せる部屋。",
+        "tone": "世界全体の流れを話せる部屋",
+    },
+    {
+        "key": "beginner_room",
+        "title": "初心者相談室",
+        "summary": "困ったことや育成の相談を気軽に聞ける部屋。",
+        "tone": "最初の壁を越えるための部屋",
+    },
+)
+COMM_ROOM_DEF_MAP = {item["key"]: item for item in COMM_ROOM_DEFS}
 EXPLORE_COOLDOWN_SECONDS = int(os.getenv("EXPLORE_COOLDOWN_SECONDS", "40"))
 NEWBIE_BOOST_ENABLED = os.getenv("NEWBIE_BOOST_ENABLED", "1") == "1"
 NEWBIE_BOOST_WINDOW_HOURS = int(os.getenv("NEWBIE_BOOST_WINDOW_HOURS", "72"))
@@ -297,20 +322,20 @@ GUIDE_SECTIONS = (
         "title": "🔥① ロボの育て方",
         "items": (
             {
-                "term": "思想",
-                "body": "ロボの『戦い方のクセ』です。ホームでは 安定 / 背水 / 爆発 のどれかが表示されます。",
+                "term": "性格",
+                "body": "ロボの育ち方の傾向を、ひとことで表した言葉です。どんな戦い方をしやすいかの目安になります。",
             },
             {
                 "term": "安定",
-                "body": "長く戦えるロボです。",
+                "body": "防御や命中が高く、長く戦いやすいタイプです。ミスが少なく、じっくり戦いたい人向けです。",
             },
             {
                 "term": "背水",
-                "body": "速攻で押し切るロボです。",
+                "body": "耐久は低いが素早く攻めるタイプです。短期決戦やギリギリの勝負が好きな人向けです。",
             },
             {
                 "term": "爆発",
-                "body": "一撃に賭けるロボです。",
+                "body": "攻撃力や会心が高く、一撃で流れを変えるタイプです。運や火力で突破したい人向けです。",
             },
             {
                 "term": "型",
@@ -358,7 +383,7 @@ GUIDE_SECTIONS = (
         "items": (
             {
                 "term": "世界ログ",
-                "body": "みんなの進行や大きな出来事が流れる公開ログです。ボス撃破や進化成功などがここに出ます。",
+                "body": "世界の大きな出来事や、他のロボ使いの声が流れる公開ログです。",
             },
             {
                 "term": "ランキング",
@@ -2486,15 +2511,187 @@ def _home_dedupe_rows(rows, text_key):
     return deduped
 
 
+def _chat_created_at_ts(created_at_text):
+    text = str(created_at_text or "").strip()
+    if not text:
+        return 0
+    try:
+        return int(time.mktime(time.strptime(text[:19], "%Y-%m-%d %H:%M:%S")))
+    except (OverflowError, TypeError, ValueError):
+        return 0
+
+
+def _chat_normalize_room_key(raw_value, *, allow_world=True):
+    key = str(raw_value or "").strip()
+    if allow_world and key == COMM_WORLD_ROOM_KEY:
+        return key
+    if key in COMM_ROOM_DEF_MAP:
+        return key
+    return ""
+
+
+def _chat_room_settings(room_key):
+    key = _chat_normalize_room_key(room_key)
+    if key == COMM_WORLD_ROOM_KEY:
+        return {
+            "key": COMM_WORLD_ROOM_KEY,
+            "title": "世界ログ",
+            "summary": "世界の動きや、他のロボ使いの声がここに流れます。",
+            "max_chars": COMM_WORLD_MAX_CHARS,
+            "cooldown_seconds": COMM_WORLD_COOLDOWN_SECONDS,
+            "timeline_limit": COMM_WORLD_TIMELINE_LIMIT,
+        }
+    room_def = COMM_ROOM_DEF_MAP.get(key)
+    if room_def:
+        return {
+            "key": room_def["key"],
+            "title": room_def["title"],
+            "summary": room_def["summary"],
+            "tone": room_def["tone"],
+            "max_chars": COMM_ROOM_MAX_CHARS,
+            "cooldown_seconds": COMM_ROOM_COOLDOWN_SECONDS,
+            "timeline_limit": COMM_ROOM_TIMELINE_LIMIT,
+        }
+    return None
+
+
+def _relative_redirect_target(raw_value, fallback):
+    text = str(raw_value or "").strip()
+    if text.startswith("/") and not text.startswith("//"):
+        return text
+    return fallback
+
+
+def _insert_chat_message(db, *, user_id, username, message, room_key=COMM_WORLD_ROOM_KEY, created_at_text=None):
+    room_value = _chat_normalize_room_key(room_key) or COMM_WORLD_ROOM_KEY
+    username_value = (str(username or "").strip() or "unknown")[:80]
+    message_value = str(message or "").strip()
+    created_text = str(created_at_text or now_str()).strip() or now_str()
+    cur = db.execute(
+        """
+        INSERT INTO chat_messages (user_id, username, room_key, message, created_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, NULL)
+        """,
+        (
+            (int(user_id) if user_id is not None else None),
+            username_value,
+            room_value,
+            message_value,
+            created_text,
+        ),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def _chat_room_rows(db, room_key, *, limit):
+    room_value = _chat_normalize_room_key(room_key) or COMM_WORLD_ROOM_KEY
+    return db.execute(
+        """
+        SELECT id, user_id, username, room_key, message, created_at
+        FROM chat_messages
+        WHERE COALESCE(room_key, ?) = ?
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (COMM_WORLD_ROOM_KEY, room_value, int(limit)),
+    ).fetchall()
+
+
+def _chat_room_cooldown_remaining(db, *, user_id, room_key, cooldown_seconds, now_ts=None):
+    room_value = _chat_normalize_room_key(room_key) or COMM_WORLD_ROOM_KEY
+    row = db.execute(
+        """
+        SELECT created_at
+        FROM chat_messages
+        WHERE user_id = ?
+          AND COALESCE(room_key, ?) = ?
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), COMM_WORLD_ROOM_KEY, room_value),
+    ).fetchone()
+    if not row:
+        return 0
+    last_ts = _chat_created_at_ts(row["created_at"])
+    if last_ts <= 0:
+        return 0
+    now_value = time.time() if now_ts is None else float(now_ts)
+    remaining = float(cooldown_seconds) - max(0.0, now_value - float(last_ts))
+    if remaining <= 0:
+        return 0
+    return int(math.ceil(remaining))
+
+
+def _chat_post_redirect(default_endpoint, *, room_key=None):
+    fallback = url_for(default_endpoint, room=room_key) if room_key else url_for(default_endpoint)
+    return _relative_redirect_target(request.form.get("next"), fallback)
+
+
+def _submit_chat_message(db, *, user_id, username, room_key, surface):
+    settings = _chat_room_settings(room_key)
+    if not settings:
+        abort(404)
+    redirect_target = _chat_post_redirect(
+        "comms_world" if settings["key"] == COMM_WORLD_ROOM_KEY else "comms_rooms",
+        room_key=(settings["key"] if settings["key"] != COMM_WORLD_ROOM_KEY else None),
+    )
+    text = str(request.form.get("message") or "").strip()
+    if not text:
+        session["message"] = "投稿内容を入力してください。"
+        return redirect(redirect_target)
+    if len(text) > int(settings["max_chars"]):
+        session["message"] = f"{int(settings['max_chars'])}文字以内で入力してください。"
+        return redirect(redirect_target)
+    remaining = _chat_room_cooldown_remaining(
+        db,
+        user_id=user_id,
+        room_key=settings["key"],
+        cooldown_seconds=int(settings["cooldown_seconds"]),
+    )
+    if remaining > 0:
+        session["message"] = f"連投はあと{int(remaining)}秒待ってください。"
+        return redirect(redirect_target)
+    message_id = _insert_chat_message(
+        db,
+        user_id=int(user_id),
+        username=username,
+        message=text,
+        room_key=settings["key"],
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["CHAT_POST"],
+        user_id=int(user_id),
+        request_id=getattr(g, "request_id", None),
+        action_key="chat_post",
+        entity_type="chat_message",
+        entity_id=int(message_id),
+        payload={
+            "room_key": settings["key"],
+            "surface": surface,
+            "message_length": len(text),
+            "preview": text[:60],
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return redirect(redirect_target)
+
+
 def _home_chat_messages(db, limit=50):
+    fetch_limit = max(int(limit) * 4, int(limit))
     rows = db.execute(
         """
-        SELECT id, user_id, username, message, created_at, 'chat' AS row_type, '' AS dedupe_extra
+        SELECT id, user_id, username, room_key, message, created_at, 'chat' AS row_type, '' AS dedupe_extra
         FROM chat_messages
+        WHERE COALESCE(room_key, ?) = ?
+          AND deleted_at IS NULL
         ORDER BY id DESC
         LIMIT ?
         """,
-        (int(limit),),
+        (COMM_WORLD_ROOM_KEY, COMM_WORLD_ROOM_KEY, int(fetch_limit)),
     ).fetchall()
     filtered = []
     for row in rows:
@@ -2503,7 +2700,7 @@ def _home_chat_messages(db, limit=50):
         if username == "SYSTEM" and HOME_BUILD_CHAT_PATTERN.search(message):
             continue
         filtered.append(row)
-    return list(reversed(_home_dedupe_rows(filtered, "message")))
+    return list(reversed(_home_dedupe_rows(filtered, "message")[: int(limit)]))
 
 
 def _home_post_messages(db, limit=20):
@@ -4433,8 +4630,10 @@ def ensure_schema(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             username TEXT,
+            room_key TEXT NOT NULL DEFAULT 'world_public',
             message TEXT,
-            created_at TEXT
+            created_at TEXT,
+            deleted_at TEXT
         )
         """
     )
@@ -5206,6 +5405,12 @@ def ensure_schema(db):
     db.execute("UPDATE world_weekly_environment SET mode = '暴走' WHERE LOWER(mode) = 'storm'")
     db.execute("UPDATE world_weekly_environment SET mode = '活性' WHERE LOWER(mode) = 'surge'")
     db.execute("UPDATE world_weekly_environment SET mode = '安定' WHERE LOWER(mode) = 'calm'")
+    chat_cols = {row["name"] for row in db.execute("PRAGMA table_info(chat_messages)").fetchall()}
+    if "room_key" not in chat_cols:
+        db.execute("ALTER TABLE chat_messages ADD COLUMN room_key TEXT NOT NULL DEFAULT 'world_public'")
+    if "deleted_at" not in chat_cols:
+        db.execute("ALTER TABLE chat_messages ADD COLUMN deleted_at TEXT")
+    db.execute("UPDATE chat_messages SET room_key = ? WHERE room_key IS NULL OR TRIM(room_key) = ''", (COMM_WORLD_ROOM_KEY,))
     wel_cols = {row["name"] for row in db.execute("PRAGMA table_info(world_events_log)").fetchall()}
     if "user_id" not in wel_cols:
         db.execute("ALTER TABLE world_events_log ADD COLUMN user_id INTEGER")
@@ -5226,6 +5431,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
@@ -8753,6 +8960,40 @@ FEED_EVENT_TYPES = {
 }
 FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
+WORLD_LOG_SYSTEM_EVENT_TYPES = {
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+    "week_rollover",
+    "FACTION_WAR_RESULT",
+    "daily_title_posted",
+    "RESEARCH_UNLOCK",
+}
+WORLD_LOG_RANKING_METRICS = (
+    {
+        "key": "weekly_explores",
+        "event_type": AUDIT_EVENT_TYPES["EXPLORE_END"],
+        "title": "探索ランキング速報",
+        "text_label": "探索周回",
+        "value_suffix": "回",
+    },
+    {
+        "key": "weekly_bosses",
+        "event_type": AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+        "title": "ボスランキング速報",
+        "text_label": "ボス撃破",
+        "value_suffix": "体",
+    },
+)
+PERSONAL_LOG_EVENT_TYPES = (
+    AUDIT_EVENT_TYPES["DROP"],
+    AUDIT_EVENT_TYPES["FUSE"],
+    AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+    AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+    AUDIT_EVENT_TYPES["EXPLORE_END"],
+    AUDIT_EVENT_TYPES["PART_EVOLVE"],
+    AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"],
+    AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
+)
 
 
 def _format_jst_ts(ts):
@@ -8815,6 +9056,7 @@ def _feed_card_from_event(db, row):
     event_type = row["event_type"]
     card = {
         "id": int(row["id"]),
+        "created_ts": int(row["created_at"] or 0),
         "event_type": event_type,
         "user_id": (int(row["user_id"]) if row["user_id"] is not None else None),
         "user_label": _feed_user_label(db, row["user_id"]) if "user_id" in row.keys() else "SYSTEM",
@@ -8958,6 +9200,619 @@ def _feed_card_from_event(db, row):
         title = payload.get("title") or "称号"
         card["text"] = f"本日の称号発見: {title}"
     return card
+
+
+def _world_system_card_item(card, *, item_id=None, sort_ts=None, sort_id=None):
+    base_id = int(item_id if item_id is not None else (card.get("id") or 0))
+    created_ts = int(sort_ts if sort_ts is not None else (card.get("created_ts") or 0))
+    order_id = int(sort_id if sort_id is not None else base_id)
+    return {
+        "timeline_type": "system",
+        "id": base_id,
+        "sort_ts": created_ts,
+        "sort_id": order_id,
+        "card": card,
+    }
+
+
+def _world_log_is_first_fixed_boss_defeat(db, row_id, area_key):
+    key = str(area_key or "").strip()
+    if not key:
+        return False
+    first_row = db.execute(
+        """
+        SELECT id
+        FROM world_events_log
+        WHERE event_type = ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') = ?
+          AND LOWER(COALESCE(json_extract(payload_json, '$.boss_kind'), 'fixed')) = 'fixed'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        """,
+        (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], key),
+    ).fetchone()
+    return bool(first_row and int(first_row["id"]) == int(row_id))
+
+
+def _world_first_boss_card(db, row, payload):
+    actor_label = _feed_user_label(db, row["user_id"])
+    boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
+    robot_name = str(payload.get("robot_name") or "").strip()
+    area_label = str(payload.get("area_label") or "").strip()
+    if not area_label and payload.get("area_key"):
+        area_label = _boss_area_label(payload.get("area_key"))
+    enemy_row = _feed_enemy_row(db, row, payload)
+    text = f"ボス初討伐: {actor_label} が {boss_name} を初めて討伐"
+    if area_label:
+        text += f"（{area_label}）"
+    meta_lines = [f"対象: {boss_name}"]
+    if robot_name:
+        meta_lines.append(f"機体: {robot_name}")
+    if area_label:
+        meta_lines.append(f"戦域: {area_label}")
+    return {
+        "id": int(row["id"]) * 10 + 1,
+        "created_ts": int(row["created_at"] or 0),
+        "event_type": "world.boss.first_defeat",
+        "user_id": (int(row["user_id"]) if row["user_id"] is not None else None),
+        "user_label": actor_label,
+        "time_jst": _format_jst_ts(row["created_at"]),
+        "text": text,
+        "image_url": (
+            url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
+            if enemy_row
+            else None
+        ),
+        "link_url": url_for("world_view"),
+        "headline": "BOSS FIRST",
+        "accent": "boss",
+        "meta_lines": meta_lines,
+    }
+
+
+def _world_layer_unlock_card(db, row, payload, unlocked_layer):
+    actor_label = _feed_user_label(db, row["user_id"])
+    boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
+    area_label = str(payload.get("area_label") or "").strip()
+    if not area_label and payload.get("area_key"):
+        area_label = _boss_area_label(payload.get("area_key"))
+    meta_lines = [f"解放先: 第{int(unlocked_layer)}層", f"契機: {boss_name}"]
+    if area_label:
+        meta_lines.append(f"戦域: {area_label}")
+    return {
+        "id": int(row["id"]) * 10 + 2,
+        "created_ts": int(row["created_at"] or 0),
+        "event_type": "world.layer.unlock",
+        "user_id": (int(row["user_id"]) if row["user_id"] is not None else None),
+        "user_label": actor_label,
+        "time_jst": _format_jst_ts(row["created_at"]),
+        "text": f"層解放: {actor_label} が第{int(unlocked_layer)}層へのルートを開いた",
+        "image_url": None,
+        "link_url": url_for("map_view"),
+        "headline": "LAYER OPEN",
+        "accent": "weekly",
+        "meta_lines": meta_lines,
+    }
+
+
+def _latest_world_event_ts(db, *, event_type, user_id=None, start_ts=None, end_ts=None):
+    where = ["event_type = ?"]
+    params = [str(event_type)]
+    if user_id is not None:
+        where.append("user_id = ?")
+        params.append(int(user_id))
+    if start_ts is not None:
+        where.append("created_at >= ?")
+        params.append(int(start_ts))
+    if end_ts is not None:
+        where.append("created_at < ?")
+        params.append(int(end_ts))
+    row = db.execute(
+        f"""
+        SELECT MAX(created_at) AS latest_created_at
+        FROM world_events_log
+        WHERE {' AND '.join(where)}
+        """,
+        params,
+    ).fetchone()
+    return int((row["latest_created_at"] if row else 0) or 0)
+
+
+def _world_ranking_timeline_items(db):
+    week_key = _world_week_key()
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    items = []
+    for index, metric in enumerate(WORLD_LOG_RANKING_METRICS):
+        rows = _ranking_rows_from_event_log(
+            db,
+            event_type=metric["event_type"],
+            limit=3,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        if not rows:
+            continue
+        leader = rows[0]
+        latest_ts = _latest_world_event_ts(
+            db,
+            event_type=metric["event_type"],
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        card = {
+            "id": 900000 + index,
+            "created_ts": int(latest_ts),
+            "event_type": f"world.ranking.{metric['key']}",
+            "user_id": int(leader["id"]),
+            "user_label": leader["username"],
+            "time_jst": _format_jst_ts(latest_ts),
+            "text": f"ランキング速報: {metric['text_label']}は {leader['username']} が {int(leader['metric_value'])}{metric['value_suffix']}で首位",
+            "image_url": None,
+            "link_url": url_for("ranking", metric=metric["key"]),
+            "headline": metric["title"],
+            "accent": "weekly",
+            "meta_lines": [
+                f"{rank}位 {row['username']} {int(row['metric_value'])}{metric['value_suffix']}"
+                for rank, row in enumerate(rows[:3], start=1)
+            ],
+        }
+        items.append(
+            _world_system_card_item(
+                card,
+                item_id=card["id"],
+                sort_ts=latest_ts,
+                sort_id=card["id"],
+            )
+        )
+    return items
+
+
+def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admin=False):
+    del is_admin
+    event_types = tuple(sorted(WORLD_LOG_SYSTEM_EVENT_TYPES))
+    fetch_limit = max(int(limit) * 12, 120)
+    rows = db.execute(
+        f"""
+        SELECT id, created_at, event_type, payload_json, user_id, action_key, entity_type, entity_id
+        FROM world_events_log
+        WHERE event_type IN ({",".join(["?"] * len(event_types))})
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (*event_types, fetch_limit),
+    ).fetchall()
+    items = []
+    for row in rows:
+        event_type = str(row["event_type"] or "")
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        created_ts = int(row["created_at"] or 0)
+        row_id = int(row["id"])
+        if event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+            boss_kind = str(payload.get("boss_kind") or "fixed").strip().lower()
+            if boss_kind == "fixed" and _world_log_is_first_fixed_boss_defeat(db, row_id, payload.get("area_key")):
+                boss_card = _world_first_boss_card(db, row, payload)
+                items.append(
+                    _world_system_card_item(
+                        boss_card,
+                        item_id=boss_card["id"],
+                        sort_ts=created_ts,
+                        sort_id=boss_card["id"],
+                    )
+                )
+            unlocked_layer = int(payload.get("unlocked_layer") or 0)
+            if unlocked_layer > 0:
+                unlock_card = _world_layer_unlock_card(db, row, payload, unlocked_layer)
+                items.append(
+                    _world_system_card_item(
+                        unlock_card,
+                        item_id=unlock_card["id"],
+                        sort_ts=created_ts,
+                        sort_id=unlock_card["id"],
+                    )
+                )
+            continue
+        card = _feed_card_from_event(db, row)
+        items.append(_world_system_card_item(card, item_id=row_id, sort_ts=created_ts, sort_id=row_id))
+    items.extend(_world_ranking_timeline_items(db))
+    items.sort(key=lambda item: (int(item.get("sort_ts") or 0), int(item.get("sort_id") or 0)), reverse=True)
+    return items[: int(limit)]
+
+
+def _world_user_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
+    rows = _decorate_user_rows(db, _chat_room_rows(db, COMM_WORLD_ROOM_KEY, limit=limit))
+    items = []
+    for row in rows:
+        username = str(row.get("username") or "").strip()
+        if username.upper() == "SYSTEM":
+            continue
+        created_ts = _chat_created_at_ts(row.get("created_at"))
+        items.append(
+            {
+                "timeline_type": "user",
+                "id": int(row["id"]),
+                "sort_ts": int(created_ts),
+                "sort_id": int(row["id"]),
+                "user_id": (int(row["user_id"]) if row.get("user_id") else None),
+                "user_label": username or _feed_user_label(db, row.get("user_id")),
+                "message": str(row.get("message") or "").strip(),
+                "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
+                "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+            }
+        )
+    return items
+
+
+def _world_legacy_system_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
+    rows = _chat_room_rows(db, COMM_WORLD_ROOM_KEY, limit=limit * 2)
+    items = []
+    for row in rows:
+        username = str(row["username"] or "").strip().upper()
+        message = str(row["message"] or "").strip()
+        if username != "SYSTEM" or not message:
+            continue
+        if HOME_BUILD_CHAT_PATTERN.search(message):
+            continue
+        if message.startswith("【BOSS撃破】"):
+            continue
+        if message.startswith("今週の戦況:"):
+            continue
+        if message.startswith("『") and "パーツが発見された！" in message:
+            continue
+        created_ts = _chat_created_at_ts(row["created_at"])
+        items.append(
+            {
+                "timeline_type": "legacy_system",
+                "id": int(row["id"]),
+                "sort_ts": int(created_ts),
+                "sort_id": int(row["id"]),
+                "headline": "SYSTEM NOTE",
+                "text": message,
+                "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row["created_at"] or "-")),
+            }
+        )
+    return items[: int(limit)]
+
+
+def _home_world_user_message_items(db, limit=HOME_COMM_PREVIEW_LIMIT):
+    rows = _decorate_user_rows(db, _home_chat_messages(db, limit=limit))
+    items = []
+    for row in rows:
+        username = str(row.get("username") or "").strip()
+        if username.upper() == "SYSTEM":
+            continue
+        created_ts = _chat_created_at_ts(row.get("created_at"))
+        items.append(
+            {
+                "timeline_type": "user",
+                "id": int(row["id"]),
+                "sort_ts": int(created_ts),
+                "sort_id": int(row["id"]),
+                "user_id": (int(row["user_id"]) if row.get("user_id") else None),
+                "user_label": username or _feed_user_label(db, row.get("user_id")),
+                "message": str(row.get("message") or "").strip(),
+                "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
+                "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+            }
+        )
+    return items
+
+
+def _home_world_timeline_items(db, *, limit=HOME_COMM_PREVIEW_LIMIT, is_admin=False):
+    system_items = _world_system_timeline_items(db, limit=limit, is_admin=is_admin)
+    items = system_items + _home_world_user_message_items(db, limit=limit)
+    items.sort(key=lambda item: (int(item.get("sort_ts") or 0), int(item.get("sort_id") or 0)), reverse=True)
+    return items[: int(limit)]
+
+
+def _world_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admin=False):
+    system_items = _world_system_timeline_items(db, limit=limit, is_admin=is_admin)
+    items = system_items + _world_user_message_items(db, limit=limit)
+    items.sort(key=lambda item: (int(item.get("sort_ts") or 0), int(item.get("sort_id") or 0)), reverse=True)
+    return items[: int(limit)]
+
+
+def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
+    room_value = _chat_normalize_room_key(room_key, allow_world=False)
+    if not room_value:
+        return []
+    rows = _decorate_user_rows(db, _chat_room_rows(db, room_value, limit=limit))
+    items = []
+    for row in rows:
+        created_ts = _chat_created_at_ts(row.get("created_at"))
+        items.append(
+            {
+                "id": int(row["id"]),
+                "user_id": (int(row["user_id"]) if row.get("user_id") else None),
+                "user_label": str(row.get("username") or "").strip() or _feed_user_label(db, row.get("user_id")),
+                "message": str(row.get("message") or "").strip(),
+                "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
+                "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+            }
+        )
+    return items
+
+
+def _personal_ranking_items(db, user_id):
+    week_key = _world_week_key()
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    total_users = int(db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"] or 0)
+    items = []
+    for metric in WORLD_LOG_RANKING_METRICS:
+        rows = _ranking_rows_from_event_log(
+            db,
+            event_type=metric["event_type"],
+            limit=max(1, total_users),
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        found_rank = None
+        found_value = 0
+        for rank, row in enumerate(rows, start=1):
+            if int(row["id"]) == int(user_id):
+                found_rank = rank
+                found_value = int(row["metric_value"])
+                break
+        if found_rank is None:
+            continue
+        latest_ts = _latest_world_event_ts(
+            db,
+            event_type=metric["event_type"],
+            user_id=user_id,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        items.append(
+            {
+                "title": "個人ランキング",
+                "text": f"今週の{metric['text_label']}で {found_rank}位 に入りました。",
+                "accent": "weekly",
+                "time_jst": _format_jst_ts(latest_ts),
+                "sort_ts": int(latest_ts),
+                "sort_id": 950000 + len(items),
+                "link_url": url_for("ranking", metric=metric["key"]),
+                "meta_lines": [f"記録: {found_value}{metric['value_suffix']}", f"対象週: {week_key}"],
+            }
+        )
+    return items
+
+
+def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
+    event_types = PERSONAL_LOG_EVENT_TYPES
+    rows = db.execute(
+        f"""
+        SELECT id, created_at, event_type, payload_json
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type IN ({",".join(["?"] * len(event_types))})
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user_id), *event_types, int(limit) * 5),
+    ).fetchall()
+    items = []
+    for row in rows:
+        event_type = str(row["event_type"] or "")
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        created_ts = int(row["created_at"] or 0)
+        base = {
+            "time_jst": _format_jst_ts(created_ts),
+            "sort_ts": created_ts,
+            "sort_id": int(row["id"]),
+            "link_url": None,
+            "meta_lines": [],
+            "accent": "default",
+        }
+        if event_type == AUDIT_EVENT_TYPES["DROP"]:
+            part_key = str(payload.get("part_key") or "").strip()
+            part_row = _get_part_by_key(db, part_key) if part_key else None
+            part_name = _part_display_name_ja(part_row) if part_row else (part_key or "パーツ")
+            part_type = payload.get("part_type") or (part_row["part_type"] if part_row else "")
+            part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), "パーツ")
+            rarity = str(payload.get("rarity") or "").strip() or "-"
+            plus = int(payload.get("plus") or 0)
+            item = dict(base)
+            item.update(
+                {
+                    "title": "パーツ入手",
+                    "text": f"{part_label}『{part_name}』を回収しました。",
+                    "accent": "evolve",
+                    "link_url": url_for("parts", tab="instances"),
+                    "meta_lines": [f"レア度: {rarity}", f"強化値: +{plus}"],
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["FUSE"]:
+            part_type = payload.get("part_type") or ""
+            part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), "パーツ")
+            from_plus = int(payload.get("from_plus") or 0)
+            to_plus = int(payload.get("to_plus") or from_plus)
+            success = bool(payload.get("success", True))
+            item = dict(base)
+            item.update(
+                {
+                    "title": ("強化成功" if success else "強化記録"),
+                    "text": (
+                        f"{part_label}を +{from_plus} から +{to_plus} へ強化しました。"
+                        if success
+                        else f"{part_label}の強化を試しました。"
+                    ),
+                    "accent": "evolve",
+                    "link_url": url_for("parts_strengthen"),
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
+            robot_name = str(payload.get("robot_name") or "").strip() or "新ロボ"
+            item = dict(base)
+            item.update(
+                {
+                    "title": "ロボ完成",
+                    "text": f"{robot_name} を完成させました。",
+                    "accent": "weekly",
+                    "link_url": url_for("robots"),
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]:
+            boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
+            area_label = str(payload.get("area_label") or "").strip()
+            if not area_label and payload.get("area_key"):
+                area_label = _boss_area_label(payload.get("area_key"))
+            attempts_left = int(payload.get("alert_attempts_left") or 0)
+            item = dict(base)
+            item.update(
+                {
+                    "title": "ボス遭遇",
+                    "text": (
+                        f"{area_label}で {boss_name} を検知しました。"
+                        if area_label
+                        else f"{boss_name} を検知しました。"
+                    ),
+                    "accent": "boss",
+                    "link_url": url_for("home"),
+                }
+            )
+            if attempts_left > 0:
+                item["meta_lines"].append(f"挑戦権: {attempts_left}回")
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+            boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
+            area_label = str(payload.get("area_label") or "").strip()
+            if not area_label and payload.get("area_key"):
+                area_label = _boss_area_label(payload.get("area_key"))
+            boss_item = dict(base)
+            boss_item.update(
+                {
+                    "title": "ボス撃破",
+                    "text": f"{boss_name} を討伐しました。",
+                    "accent": "boss",
+                    "link_url": url_for("world_view"),
+                }
+            )
+            if area_label:
+                boss_item["meta_lines"].append(f"戦域: {area_label}")
+            items.append(boss_item)
+            unlocked_layer = int(payload.get("unlocked_layer") or 0)
+            if unlocked_layer > 0:
+                unlock_item = dict(base)
+                unlock_item.update(
+                    {
+                        "title": "層解放",
+                        "text": f"第{unlocked_layer}層が解放されました。",
+                        "accent": "weekly",
+                        "link_url": url_for("map_view"),
+                    }
+                )
+                items.append(unlock_item)
+        elif event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+            result = payload.get("result") or {}
+            rewards = payload.get("rewards") or {}
+            battles = payload.get("battles") or []
+            boss = payload.get("boss") or {}
+            area_label = _boss_area_label(payload.get("area_key"))
+            last_enemy = (battles[-1].get("enemy") if battles else {}) or {}
+            enemy_name = str(last_enemy.get("name_ja") or "").strip()
+            is_win = bool(result.get("win"))
+            is_timeout = bool(result.get("timeout"))
+            is_boss = bool(result.get("is_area_boss")) or bool(boss.get("is_area_boss"))
+            if is_boss and enemy_name:
+                text = (
+                    f"{area_label}で {enemy_name} を突破しました。"
+                    if is_win
+                    else f"{area_label}で {enemy_name} に押し返されました。"
+                )
+            elif is_win:
+                text = f"{area_label} の探索を完了しました。"
+            elif is_timeout:
+                text = f"{area_label} の探索は時間切れで終了しました。"
+            else:
+                text = f"{area_label} の探索で撤退しました。"
+            item = dict(base)
+            item.update(
+                {
+                    "title": ("探索勝利" if is_win else "探索記録"),
+                    "text": text,
+                    "accent": ("boss" if is_boss else "default"),
+                    "link_url": url_for("explore"),
+                }
+            )
+            battle_count = int(result.get("battle_count") or len(battles) or 0)
+            if battle_count > 0:
+                item["meta_lines"].append(f"戦闘数: {battle_count}")
+            reward_parts = len(rewards.get("drops") or [])
+            reward_cores = int(rewards.get("cores") or 0)
+            reward_coins = int(rewards.get("coins") or 0)
+            reward_bits = []
+            if reward_parts > 0:
+                reward_bits.append(f"パーツ {reward_parts}件")
+            if reward_cores > 0:
+                reward_bits.append(f"進化コア {reward_cores}個")
+            if reward_coins > 0:
+                reward_bits.append(f"コイン {reward_coins}")
+            if reward_bits:
+                item["meta_lines"].append("報酬: " + " / ".join(reward_bits))
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+            target_part_key = str(payload.get("target_part_key") or "").strip()
+            part_row = _get_part_by_key(db, target_part_key) if target_part_key else None
+            target_name = str(payload.get("target_part_name") or "").strip()
+            if not target_name and part_row:
+                target_name = _part_display_name_ja(part_row)
+            part_type = payload.get("part_type") or (part_row["part_type"] if part_row else "")
+            part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), "パーツ")
+            item = dict(base)
+            item.update(
+                {
+                    "title": "進化成功",
+                    "text": f"{part_label}『{target_name or 'Rパーツ'}』を進化させました。",
+                    "accent": "evolve",
+                    "link_url": url_for("evolve_parts"),
+                    "meta_lines": [f"部位: {part_label}"],
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"]:
+            item = dict(base)
+            item.update(
+                {
+                    "title": "招待条件達成",
+                    "text": "招待条件を達成し、紹介進行が更新されました。",
+                    "accent": "weekly",
+                    "link_url": url_for("home"),
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["CORE_GUARANTEE"]:
+            qty = int(payload.get("quantity") or 0)
+            item = dict(base)
+            item.update(
+                {
+                    "title": "進化コア保証到達",
+                    "text": f"保証で進化コアを{max(1, qty)}個獲得しました。",
+                    "accent": "weekly",
+                    "link_url": url_for("evolve_parts"),
+                }
+            )
+            target = int(payload.get("target") or EVOLUTION_CORE_PROGRESS_TARGET)
+            progress_after_reset = int(payload.get("progress_after_reset") or 0)
+            item["meta_lines"] = [f"保証ライン: {int(target)}勝", f"次の進捗: {int(progress_after_reset)}/{int(target)}"]
+            items.append(item)
+    items.extend(_personal_ranking_items(db, user_id))
+    items.sort(key=lambda item: (int(item.get("sort_ts") or 0), int(item.get("sort_id") or 0)), reverse=True)
+    return items[: int(limit)]
 
 
 def _fetch_feed_cards(db, type_filter="", user_id_filter=None, limit=30, is_admin=False):
@@ -10290,6 +11145,19 @@ def healthz():
 @app.route("/changelog")
 def changelog():
     entries = [
+        {
+            "version": "0.1.14",
+            "date": "2026/03/26",
+            "title": "育成導線と表示整理を改善",
+            "notes": [
+                "探索場所ごとの育ち方の差を追加",
+                "ロボの性格表示（安定 / 背水 / 爆発）を追加",
+                "目的別ランキングと展示ソートを追加",
+                "用語ページを追加",
+                "ホームから前回の出撃先へすぐ出撃できるよう改善",
+                "Layer2ボス報酬未付与の不具合を修正",
+            ],
+        },
         {"version": "0.1.13", "date": "2026-03-21", "title": "ヘッダー挙動と sitemap を調整", "notes": ["PC でのヘッダー自動非表示判定を修正", "公開用の /sitemap.xml を追加"]},
         {"version": "0.1.12", "date": "2026-03-21", "title": "公開運用の土台を強化", "notes": ["ポータル送信の再送キューと運用タイマー例を追加", "利用規約/プライバシー/問い合わせ/監視/バックアップ運用を整備", "初心者ホームの情報量を絞って初回導線を改善"]},
         {"version": "0.1.11", "date": "2026-03-21", "title": "モバイル表示と本番運用の調整", "notes": ["VPS 本番化と独自ドメイン公開に対応", "ホームのモバイル表示順とヘッダー挙動を改善"]},
@@ -10730,9 +11598,31 @@ def home():
             "ct_seconds": int(explore_ct_seconds),
             "hours_left": _newbie_boost_hours_left(user, now_ts=now),
         }
-    chat_messages = _decorate_user_rows(db, _home_chat_messages(db, limit=5))
-    for _row in chat_messages:
-        _row["home_text"] = _home_humanize_log_message(_row)
+    home_comm_initial_tab = "world"
+    home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
+    home_comm_world_settings = _chat_room_settings(COMM_WORLD_ROOM_KEY)
+    home_comm_room_settings_by_key = {
+        room["key"]: _chat_room_settings(room["key"])
+        for room in COMM_ROOM_DEFS
+    }
+    home_comm_world_items = _home_world_timeline_items(
+        db,
+        limit=HOME_COMM_PREVIEW_LIMIT,
+        is_admin=bool(int(user["is_admin"] or 0) == 1),
+    )
+    home_comm_room_items_by_key = {
+        room["key"]: _room_message_items(
+            db,
+            room["key"],
+            limit=HOME_COMM_PREVIEW_LIMIT,
+        )
+        for room in COMM_ROOM_DEFS
+    }
+    home_comm_personal_items = _personal_log_items(
+        db,
+        int(user["id"]),
+        limit=HOME_COMM_PREVIEW_LIMIT,
+    )
     home_ranking_rows, home_ranking_metric = _ranking_rows(
         db,
         "weekly_explores",
@@ -10844,7 +11734,7 @@ def home():
     evolution_feature_unlocked = _evolution_feature_unlocked(db, user=user)
     debug_snapshot = {
         "user_id": user["id"] if user else None,
-        "chat_messages": len(chat_messages),
+        "chat_messages": len(home_comm_world_items),
         "posts": 0,
         "showcase_rows": len(showcase_rows),
     }
@@ -10853,7 +11743,6 @@ def home():
             "home.html",
             user=user,
             robot_count=robot_count,
-            chat_messages=chat_messages,
             posts=[],
             upgrade_cost=upgrade_cost,
             message=message,
@@ -10952,6 +11841,14 @@ def home():
             evolution_core_status=evolution_core_status,
             show_evolution_actions=evolution_feature_unlocked,
             next_action_card=next_action_card,
+            home_comm_room_defs=COMM_ROOM_DEFS,
+            home_comm_initial_tab=home_comm_initial_tab,
+            home_comm_initial_room_key=home_comm_initial_room_key,
+            home_comm_world_settings=home_comm_world_settings,
+            home_comm_room_settings_by_key=home_comm_room_settings_by_key,
+            home_comm_world_items=home_comm_world_items,
+            home_comm_room_items_by_key=home_comm_room_items_by_key,
+            home_comm_personal_items=home_comm_personal_items,
         )
     except Exception as exc:
         app.logger.exception("home rendering failed")
@@ -11250,6 +12147,125 @@ def records_view():
     )
 
 
+@app.route("/comms")
+@login_required
+def comms():
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    personal_items = _personal_log_items(db, int(user["id"]), limit=5)
+    sections = [
+        {
+            "title": "世界ログ",
+            "summary": "世界の動きや、他のロボ使いの声がここに流れます。",
+            "status": "稼働中",
+            "href": url_for("comms_world"),
+            "meta": f"直近 {COMM_WORLD_TIMELINE_LIMIT} 件 / {COMM_AUTO_REFRESH_SECONDS} 秒ごと自動更新",
+        },
+        {
+            "title": "会議室",
+            "summary": "ロボ使いたちが集まって話せる場所です。",
+            "status": "稼働中",
+            "href": url_for("comms_rooms"),
+            "meta": "全体会議室 / 初心者相談室",
+        },
+        {
+            "title": "陣営通信",
+            "summary": "同じ陣営の仲間と話せる通信です。いまは準備中です。",
+            "status": "準備中",
+            "href": url_for("comms_faction"),
+            "meta": "開放までのあいだは世界ログと会議室を利用",
+        },
+        {
+            "title": "個人ログ",
+            "summary": "あなたのロボの成長や出来事がここに残ります。",
+            "status": "稼働中",
+            "href": url_for("comms_personal"),
+            "meta": f"直近 {len(personal_items)} 件を表示中",
+        },
+    ]
+    return render_template("comms.html", sections=sections, message=session.pop("message", None))
+
+
+@app.route("/comms/world", methods=["GET", "POST"])
+@login_required
+def comms_world():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    if request.method == "POST":
+        return _submit_chat_message(
+            db,
+            user_id=int(user["id"]),
+            username=session.get("username", "unknown"),
+            room_key=COMM_WORLD_ROOM_KEY,
+            surface="comms_world",
+        )
+    items = _world_timeline_items(
+        db,
+        limit=COMM_WORLD_TIMELINE_LIMIT,
+        is_admin=bool(int(user["is_admin"] or 0) == 1),
+    )
+    return render_template(
+        "comms_world.html",
+        items=items,
+        world_settings=_chat_room_settings(COMM_WORLD_ROOM_KEY),
+        auto_refresh_seconds=COMM_AUTO_REFRESH_SECONDS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/comms/rooms", methods=["GET", "POST"])
+@login_required
+def comms_rooms():
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    selected_room_key = _chat_normalize_room_key(request.values.get("room"), allow_world=False) or COMM_ROOM_DEFS[0]["key"]
+    if request.method == "POST":
+        selected_room_key = _chat_normalize_room_key(request.form.get("room_key"), allow_world=False) or selected_room_key
+        return _submit_chat_message(
+            db,
+            user_id=int(user["id"]),
+            username=session.get("username", "unknown"),
+            room_key=selected_room_key,
+            surface="comms_room",
+        )
+    return render_template(
+        "comms_rooms.html",
+        room_defs=COMM_ROOM_DEFS,
+        selected_room_key=selected_room_key,
+        selected_room=COMM_ROOM_DEF_MAP[selected_room_key],
+        room_items=_room_message_items(db, selected_room_key, limit=COMM_ROOM_TIMELINE_LIMIT),
+        room_settings=_chat_room_settings(selected_room_key),
+        auto_refresh_seconds=COMM_AUTO_REFRESH_SECONDS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/comms/faction")
+@login_required
+def comms_faction():
+    return render_template("comms_faction.html", message=session.pop("message", None))
+
+
+@app.route("/comms/personal")
+@login_required
+def comms_personal():
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template(
+        "comms_personal.html",
+        items=_personal_log_items(db, int(user["id"]), limit=COMM_PERSONAL_LOG_LIMIT),
+        message=session.pop("message", None),
+    )
+
+
 @app.route("/map")
 @login_required
 def map_view():
@@ -11363,22 +12379,13 @@ def upgrade():
 @login_required
 def chat():
     db = get_db()
-    text = request.form.get("message", "").strip()
-    text = text[:200]
-    if not text:
-        return redirect(url_for("home"))
-    now = time.time()
-    last = session.get("last_chat_at", 0)
-    if now - last < 2:
-        session["message"] = "連投は少し待ってください。"
-        return redirect(url_for("home"))
-    session["last_chat_at"] = now
-    db.execute(
-        "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
-        (session["user_id"], session["username"], text, now_str()),
+    return _submit_chat_message(
+        db,
+        user_id=int(session["user_id"]),
+        username=session.get("username", "unknown"),
+        room_key=COMM_WORLD_ROOM_KEY,
+        surface="home_social_log",
     )
-    db.commit()
-    return redirect(url_for("home"))
 
 
 @app.route("/post", methods=["POST"])

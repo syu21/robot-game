@@ -512,3 +512,75 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("たたまれています。", html)
         self.assertEqual(html.count("next-action-card"), 0)
 
+        expand_resp = client.post("/home/next-action/expand", data={"next": "/home"})
+        self.assertEqual(expand_resp.status_code, 302)
+        resp = client.get("/home")
+        html = resp.get_data(as_text=True)
+        self.assertIn("next-action-card", html)
+        self.assertIn("たたむ", html)
+
+    def test_home_forces_next_action_open_when_boss_alert_active(self):
+        self._create_active_robot()
+        self._set_boss_alert(area_key="layer_2", attempts=2)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET home_next_action_collapsed = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ボスに挑戦（残り●●）", html)
+        self.assertIn("ボス警報中は自動表示されます。", html)
+        self.assertNotIn("Next Action を開く", html)
+
+    def test_explore_persists_last_selected_area_key(self):
+        self._create_active_robot()
+        client = self._new_client()
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp = client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(resp.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT last_explore_area_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(user["last_explore_area_key"], "layer_1")
+
+    def test_explore_reuses_same_battle_id_on_post_resend(self):
+        self._create_active_robot()
+        client = self._new_client()
+        home = client.get("/home")
+        self.assertEqual(home.status_code, 200)
+        html = home.get_data(as_text=True)
+        m = re.search(r'name="explore_submission_id" value="([^"]+)"', html)
+        self.assertIsNotNone(m)
+        submission_id = m.group(1)
+
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
+            self.assertEqual(resp1.status_code, 200)
+            resp2 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
+            self.assertEqual(resp2.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE event_type = 'audit.explore.end' AND user_id = ?
+                ORDER BY id DESC
+                LIMIT 2
+                """,
+                (self.user_id,),
+            ).fetchall()
+            self.assertGreaterEqual(len(rows), 2)
+            payload1 = json.loads(rows[0]["payload_json"] or "{}")
+            payload2 = json.loads(rows[1]["payload_json"] or "{}")
+            battle_id_1 = (((payload1.get("result") or {}).get("battle_id")) or "")
+            battle_id_2 = (((payload2.get("result") or {}).get("battle_id")) or "")
+            self.assertTrue(battle_id_1)
+            self.assertEqual(battle_id_1, battle_id_2)
+
+
+if __name__ == "__main__":
+    unittest.main()

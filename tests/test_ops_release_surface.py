@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -57,6 +58,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("用語", html)
+        self.assertIn("性格", html)
         self.assertIn("背水", html)
         self.assertIn("進化コア", html)
         self.assertIn("世界ログ", html)
@@ -110,9 +112,10 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn(f"v{game_app.APP_VERSION}", html)
         self.assertIn("/static/favicon.png", html)
-        self.assertIn("/guide", html)
         self.assertIn("/support", html)
         self.assertIn("/commerce", html)
+        self.assertNotIn('href="/guide"', html)
+        self.assertNotIn('href="/comms"', html)
 
     def test_healthz_is_public(self):
         client = game_app.app.test_client()
@@ -129,6 +132,21 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("/static/header_scroll_v2.js", html)
         self.assertIn("/guide", html)
+        self.assertIn("アイコン変更", html)
+        header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
+        self.assertIsNotNone(header_match)
+        header_html = header_match.group(0)
+        self.assertNotIn('href="/comms"', header_html)
+
+    def test_changelog_shows_latest_2026_03_26_entry(self):
+        client = game_app.app.test_client()
+        resp = client.get("/changelog")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("v0.1.14 - 2026/03/26", html)
+        self.assertIn("探索場所ごとの育ち方の差を追加", html)
+        self.assertIn("ロボの性格表示（安定 / 背水 / 爆発）を追加", html)
+        self.assertLess(html.index("v0.1.14 - 2026/03/26"), html.index("v0.1.13 - 2026-03-21"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

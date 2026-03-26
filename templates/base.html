@@ -44,7 +44,7 @@
         <a href="{{ url_for('home', safe=1) }}">セーフモード</a> |
         {% endif %}
         <a href="{{ url_for('guide') }}">用語</a> |
-        <a href="{{ url_for('settings') }}">設定</a> |
+        <a href="{{ url_for('settings') }}">アイコン変更</a> |
         <a href="{{ url_for('logout') }}">ログアウト</a>
       </div>
     {% endif %}
@@ -85,7 +85,6 @@
   <footer class="footer">
     MECHA ENGINE v{{ app_version }}
     | <a href="{{ url_for('support') }}">支援</a>
-    | <a href="{{ url_for('guide') }}">用語</a>
     | <a href="{{ url_for('terms') }}">利用規約</a>
     | <a href="{{ url_for('privacy') }}">プライバシー</a>
     | <a href="{{ url_for('commerce') }}">特商法表記</a>

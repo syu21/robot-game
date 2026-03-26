@@ -514,4 +514,158 @@
       <div class="actions-grid home-actions-grid home-primary-actions-grid">
         {% if has_any_robot %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
-      
+        <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
+        {% if show_evolution_actions %}
+        <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">{{ evolution_core_status['home_label'] }}</div></a>
+        {% endif %}
+        {% endif %}
+        <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
+        <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
+      </div>
+      {% if is_admin %}
+      <div class="home-nav-section-title">管理</div>
+      <div class="actions-grid home-actions-grid home-secondary-actions-grid">
+        <a class="action-card" href="{{ url_for('admin') }}"><div class="action-title">管理者メニュー</div><div class="action-desc">管理機能トップ</div></a>
+        <a class="action-card" href="{{ url_for('admin_parts') }}"><div class="action-title">管理: パーツ</div><div class="action-desc">パーツ登録/編集</div></a>
+        <a class="action-card" href="{{ url_for('admin_decor') }}"><div class="action-title">管理: 装飾</div><div class="action-desc">装飾アセット管理</div></a>
+        <a class="action-card" href="{{ url_for('admin_enemies') }}"><div class="action-title">管理: 敵</div><div class="action-desc">敵登録/調整</div></a>
+        <a class="action-card" href="{{ url_for('admin_balance') }}"><div class="action-title">管理: バランス</div><div class="action-desc">確率/コスト確認</div></a>
+        <a class="action-card" href="{{ url_for('admin_world') }}"><div class="action-title">管理: 週間環境</div><div class="action-desc">環境再抽選/カウンタ管理</div></a>
+        <a class="action-card" href="{{ url_for('admin_audit') }}"><div class="action-title">管理: 監査ログ</div><div class="action-desc">証跡を確認</div></a>
+      </div>
+      {% endif %}
+  </section>
+
+    <section class="panel home-weekly-panel">
+    {% if weekly_env %}
+      <div class="world-env-card">
+        <div><b>今週の戦況</b></div>
+        <div class="upgrade-cost">{{ weekly_env['week_key'] }}</div>
+        <div>{{ weekly_env['mode'] }}</div>
+        {% for effect_line in weekly_env_effect_lines %}
+        <div>{{ effect_line }}</div>
+        {% endfor %}
+        {% if weekly_recommendation %}
+        <div class="robot-part">{{ weekly_recommendation }}</div>
+        {% endif %}
+        {% if weekly_trends %}
+        <div class="robot-part">注目属性: {% for t in weekly_trends %}{{ t['element'] }} {{ t['value'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+        {% endif %}
+        {% if weekly_hot_areas %}
+        <div class="robot-part">盛り上がり: {% for area in weekly_hot_areas %}{{ area['area_label'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+        {% endif %}
+        <div class="faction-row">
+          {% for key, emblem_path in faction_emblems.items() %}
+            <div class="faction-badge {% if key == weekly_faction_key %}is-active{% else %}is-inactive{% endif %}" title="{{ key }}">
+              <img src="{{ url_for('static', filename=emblem_path) }}" alt="{{ key }}" loading="lazy" />
+            </div>
+          {% endfor %}
+        </div>
+        <div class="link"><a href="{{ url_for('world_view') }}">世界戦況を見る</a></div>
+      </div>
+    {% endif %}
+    </section>
+
+    <section class="panel home-faction-panel">
+    <div class="world-env-card home-faction-card">
+      <div><b>陣営戦（{{ weekly_env['week_key'] if weekly_env else '-' }}）</b></div>
+      {% if faction_status['is_joined'] %}
+      <div>所属: {{ faction_labels.get(user_faction, user_faction) }}</div>
+      {% else %}
+      <div>所属: 未所属</div>
+      {% endif %}
+      {% if not faction_status['is_joined'] %}
+      <div>{{ faction_unlock_progress_line }}</div>
+      {% if faction_status['can_choose'] %}
+      <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
+      {% endif %}
+      {% else %}
+      <div>今週スコア: IG {{ faction_week_scores['ignis'] }} / VE {{ faction_week_scores['ventra'] }} / AU {{ faction_week_scores['aurix'] }}</div>
+      {% if faction_score_rows %}
+      <div class="robot-part">首位: {{ faction_score_rows[0]['label'] }} {{ faction_score_rows[0]['points'] }}pt</div>
+      {% endif %}
+      {% if prev_faction_result %}
+      <div>先週勝者: {{ faction_labels.get(prev_faction_result['winner_faction'], prev_faction_result['winner_faction']) }}（{{ prev_week_key }}）</div>
+      {% else %}
+      <div>先週勝者: 集計中（{{ prev_week_key }}）</div>
+      {% endif %}
+      {% if faction_buff_active %}
+      <div><span class="weekly-fit-badge">勝利陣営バフ: 勝利コイン +1</span></div>
+      {% elif faction_buff_winner %}
+      <div>今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}（勝利コイン +1）</div>
+      {% endif %}
+      {% endif %}
+      <div class="link"><a href="{{ url_for('world_view') }}">陣営戦を見る</a> | <a href="{{ url_for('records_view') }}">記録を見る</a></div>
+    </div>
+    </section>
+
+    {% if not home_beginner_focus %}
+    <section class="panel home-nav-panel">
+      <h2>メニュー</h2>
+      <div class="home-nav-section-title">リンク</div>
+      <div class="home-nav-grid home-nav-links">
+        <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
+      </div>
+      <div class="home-nav-section-title">進捗</div>
+      <div class="home-nav-grid home-nav-progress">
+        <a class="action-card home-nav-card" href="{{ url_for('progress_view') }}"><div class="action-title">今日の進捗</div><div class="action-desc">探索 {{ today_progress['explore_count'] }} / 勝利 {{ today_progress['win_count'] }}</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('research_view') }}"><div class="action-title">研究進捗</div><div class="action-desc">stage {{ research_summary['unlocked_stage'] }} / 4</div></a>
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel home-ranking-panel">
+      <div class="world-env-card">
+        <div><b>今週のランキング</b></div>
+        <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
+        {% for row in home_ranking_rows %}
+          <div class="home-ranking-row">
+            <div class="presence-user-line">
+              <span class="user-chip mini">
+                <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+                <span class="badge-overlay">
+                  <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+                </span>
+              </span>
+              <span>{{ loop.index }}位 {{ row['username'] }}</span>
+            </div>
+            <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span>
+          </div>
+        {% else %}
+          <div class="robot-part">まだランキングデータがありません。</div>
+        {% endfor %}
+        <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
+      </div>
+    </section>
+    <section class="panel home-visibility-panel">
+      <div class="world-env-card">
+        <div><b>表示調整</b></div>
+        {% if show_home_visibility_controls %}
+        <div class="home-inline-actions">
+          {% if beginner_mission_available and not show_beginner_mission %}
+          <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}" />
+            <button type="submit" class="btn-secondary">最初のミッションを再表示</button>
+          </form>
+          {% endif %}
+          {% if next_action_card and home_next_action_collapsed and not home_next_action_force_open %}
+          <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}" />
+            <button type="submit" class="btn-secondary">Next Action を開く</button>
+          </form>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="upgrade-cost">いまは表示を戻せる項目がありません。</div>
+        {% endif %}
+      </div>
+    </section>
+</div>
+</div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}"></script>
+{% endblock %}

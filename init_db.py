@@ -524,8 +524,10 @@ def main():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             username TEXT,
+            room_key TEXT NOT NULL DEFAULT 'world_public',
             message TEXT,
-            created_at TEXT
+            created_at TEXT,
+            deleted_at TEXT
         )
         """
     )
@@ -934,6 +936,12 @@ def main():
     if "created_at" not in rda_cols:
         cur.execute("ALTER TABLE robot_decor_assets ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
     wel_cols = {row[1] for row in cur.execute("PRAGMA table_info(world_events_log)").fetchall()}
+    chat_cols = {row[1] for row in cur.execute("PRAGMA table_info(chat_messages)").fetchall()}
+    if "room_key" not in chat_cols:
+        cur.execute("ALTER TABLE chat_messages ADD COLUMN room_key TEXT NOT NULL DEFAULT 'world_public'")
+    if "deleted_at" not in chat_cols:
+        cur.execute("ALTER TABLE chat_messages ADD COLUMN deleted_at TEXT")
+    cur.execute("UPDATE chat_messages SET room_key = 'world_public' WHERE room_key IS NULL OR TRIM(room_key) = ''")
     if "user_id" not in wel_cols:
         cur.execute("ALTER TABLE world_events_log ADD COLUMN user_id INTEGER")
     if "request_id" not in wel_cols:
@@ -953,6 +961,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
     )
