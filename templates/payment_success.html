@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>支払い確認中</h1>
+  <p>決済は webhook で確認してから反映されます。少し待ってから基地を見直してください。</p>
+  {% if product %}
+    <p>対象: {{ product['display_name'] }}</p>
+  {% endif %}
+  {% if order %}
+    <p>状態: {{ payment_status_label(order['status']) }}</p>
+    <p>商品: {{ order['product_key'] }}</p>
+    <p>注文: {{ order['stripe_checkout_session_id'] }}</p>
+    {% if order['ends_at'] %}
+      <p>有効期限: {{ order['ends_at']|dt }}</p>
+    {% endif %}
+  {% elif session_id %}
+    <p>注文番号: {{ session_id }}</p>
+    <p>反映待ちです。数秒後にページを再読み込みしてください。</p>
+  {% endif %}
+</div>
+<p class="link"><a href="{{ return_url }}">戻る</a></p>
+{% endblock %}

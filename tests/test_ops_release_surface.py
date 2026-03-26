@@ -47,7 +47,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
 
     def test_public_policy_pages_are_available(self):
         client = game_app.app.test_client()
-        for path in ("/terms", "/privacy", "/contact", "/changelog", "/guide"):
+        for path in ("/terms", "/privacy", "/commerce", "/contact", "/changelog", "/guide", "/support", "/shop"):
             resp = client.get(path)
             self.assertEqual(resp.status_code, 200)
 
@@ -61,20 +61,29 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("進化コア", html)
         self.assertIn("世界ログ", html)
 
-    def test_terms_and_privacy_share_single_legal_page(self):
+    def test_terms_privacy_and_commerce_are_separate_legal_pages(self):
         client = game_app.app.test_client()
         terms_resp = client.get("/terms")
         privacy_resp = client.get("/privacy")
+        commerce_resp = client.get("/commerce")
         self.assertEqual(terms_resp.status_code, 200)
         self.assertEqual(privacy_resp.status_code, 200)
+        self.assertEqual(commerce_resp.status_code, 200)
         terms_html = terms_resp.get_data(as_text=True)
         privacy_html = privacy_resp.get_data(as_text=True)
-        for html in (terms_html, privacy_html):
-            self.assertIn("利用規約 / プライバシーポリシー", html)
-            self.assertIn('id="terms"', html)
-            self.assertIn('id="privacy"', html)
-            self.assertIn("/contact", html)
-            self.assertNotIn("mailto:", html)
+        commerce_html = commerce_resp.get_data(as_text=True)
+        self.assertIn("利用規約", terms_html)
+        self.assertIn("有償サービス", terms_html)
+        self.assertIn("/privacy", terms_html)
+        self.assertIn("/commerce", terms_html)
+        self.assertIn("プライバシーポリシー", privacy_html)
+        self.assertIn("Stripe", privacy_html)
+        self.assertIn("/terms", privacy_html)
+        self.assertIn("/commerce", privacy_html)
+        self.assertIn("特定商取引法に基づく表記", commerce_html)
+        self.assertIn("大谷周平", commerce_html)
+        self.assertIn("KAS Development", commerce_html)
+        self.assertIn("pochirobo021@gmail.com", commerce_html)
 
     def test_maintenance_mode_blocks_explore_post_with_503(self):
         client = self._client_with_user(self.user_id, "ops_user")
@@ -102,6 +111,8 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn(f"v{game_app.APP_VERSION}", html)
         self.assertIn("/static/favicon.png", html)
         self.assertIn("/guide", html)
+        self.assertIn("/support", html)
+        self.assertIn("/commerce", html)
 
     def test_healthz_is_public(self):
         client = game_app.app.test_client()
@@ -136,6 +147,10 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("<loc>https://robolabo.site/register</loc>", body)
         self.assertIn("<loc>https://robolabo.site/home</loc>", body)
         self.assertIn("<loc>https://robolabo.site/guide</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/terms</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/privacy</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/commerce</loc>", body)
+        self.assertIn("<loc>https://robolabo.site/support</loc>", body)
 
 
 if __name__ == "__main__":

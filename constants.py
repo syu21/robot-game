@@ -2,7 +2,13 @@ import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
 APP_VERSION = "0.1.13"
-SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com").strip() or "support@example.com"
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
+LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
+LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
+LEGAL_DISCLOSURE_POLICY = (
+    os.getenv("LEGAL_DISCLOSURE_POLICY", "所在地・電話番号は請求があった場合、遅滞なく開示いたします。").strip()
+    or "所在地・電話番号は請求があった場合、遅滞なく開示いたします。"
+)
 
 ELEMENTS = (
     ("NORMAL", "無"),
@@ -173,6 +179,15 @@ AUDIT_EVENT_TYPES = {
     "PART_EVOLVE": "audit.part.evolve",
     "CORE_PROGRESS": "audit.core.progress",
     "CORE_GUARANTEE": "audit.core.guarantee",
+    "PAYMENT_CHECKOUT_CREATE": "audit.payment.checkout.create",
+    "PAYMENT_WEBHOOK_RECEIVED": "audit.payment.webhook.received",
+    "PAYMENT_COMPLETED": "audit.payment.completed",
+    "PAYMENT_GRANT_SUCCESS": "audit.payment.grant.success",
+    "PAYMENT_GRANT_SKIP_DUPLICATE": "audit.payment.grant.skip_duplicate",
+    "PAYMENT_GRANT_FAILED": "audit.payment.grant.failed",
+    "EXPLORE_BOOST_GRANT_SUCCESS": "audit.explore_boost.grant.success",
+    "EXPLORE_BOOST_GRANT_SKIP_DUPLICATE": "audit.explore_boost.grant.skip_duplicate",
+    "EXPLORE_BOOST_GRANT_FAILED": "audit.explore_boost.grant.failed",
     "SHARE_CLICK": "audit.share.click",
     "REFERRAL_ATTACH": "audit.referral.attach",
     "REFERRAL_QUALIFIED": "audit.referral.qualified",

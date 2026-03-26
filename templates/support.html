@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>ロボらぼ支援</h1>
+  <p>開発応援ありがとうございます。戦力差はつきません。</p>
+  {% if product %}
+  <p>今回の支援パックでは、見た目用の特典を1つ受け取れます。</p>
+  <ul>
+    <li>商品: {{ product['display_name'] }}</li>
+    <li>特典: {{ product['grant_name'] }}</li>
+  </ul>
+  {% else %}
+  <p>支援パックはまだ準備中です。</p>
+  {% endif %}
+</div>
+
+{% if session.get('user_id') %}
+<div class="card">
+  <h2>支援パック</h2>
+  {% if reward_owned %}
+    <p>この特典は受け取り済みです。引き続き応援ありがとうございます。</p>
+  {% elif not checkout_ready %}
+    <p>現在、決済導線の準備中です。設定完了後に購入できます。</p>
+  {% else %}
+    <p>{{ product['description'] }}</p>
+    <form method="post" action="{{ url_for('support_checkout') }}">
+      <button type="submit">Stripeで支援する</button>
+    </form>
+  {% endif %}
+
+  {% if recent_order %}
+    <p>最近の状態: {{ payment_status_labels.get(recent_order['status'], recent_order['status']) }}</p>
+    <p>注文: {{ recent_order['stripe_checkout_session_id'] or '-' }}</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p>ログインすると支援パックの購入に進めます。</p>
+  <p class="link"><a href="{{ url_for('login', next='/support') }}">ログインして支援する</a></p>
+</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

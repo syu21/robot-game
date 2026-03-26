@@ -84,9 +84,11 @@
   {% endif %}
   <footer class="footer">
     MECHA ENGINE v{{ app_version }}
+    | <a href="{{ url_for('support') }}">支援</a>
     | <a href="{{ url_for('guide') }}">用語</a>
-    | <a href="{{ url_for('terms') }}#terms">利用規約</a>
-    | <a href="{{ url_for('terms') }}#privacy">プライバシー</a>
+    | <a href="{{ url_for('terms') }}">利用規約</a>
+    | <a href="{{ url_for('privacy') }}">プライバシー</a>
+    | <a href="{{ url_for('commerce') }}">特商法表記</a>
     | <a href="{{ url_for('contact') }}">お問い合わせ</a>
     | <a href="{{ url_for('changelog') }}">更新履歴</a>
   </footer>

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>ショップ</h1>
+  <p>サンドボックス決済の確認用です。戦力差はつきません。</p>
+</div>
+
+<div class="card">
+  {% if product %}
+  <h2>{{ product['display_name'] }}</h2>
+  <div class="shop-product">
+    <img class="shop-product-image" src="{{ url_for('static', filename=product['image_path']) }}" alt="{{ product['display_name'] }}" loading="lazy" />
+    <div>
+      <p>{{ product['description'] }}</p>
+      <ul>
+        <li>効果: {{ product['grant_name'] }}</li>
+        <li>期間: {{ product['boost_days'] }}日</li>
+        <li>CT: 通常40秒 → ブースト中20秒</li>
+      </ul>
+      {% if session.get('user_id') %}
+        {% if boost_status and boost_status['active'] %}
+          <p>ブースト中です。残り{{ boost_status['remain_days'] }}日 / 有効期限 {{ boost_status['ends_at']|dt }}</p>
+        {% elif boost_status and boost_status['has_ever_purchased'] %}
+          <p>このアカウントでは購入済みです。有効期限: {{ boost_status['ends_at']|dt }}</p>
+        {% elif pending_order %}
+          <p>支払い確認中です。Webhook 反映後に有効期限が表示されます。</p>
+        {% elif not checkout_ready %}
+          <p>決済設定がまだ完了していません。</p>
+        {% elif purchase_locked %}
+          <p>現在は購入できません。状態が落ち着いてからもう一度確認してください。</p>
+        {% else %}
+          <form method="post" action="{{ url_for('shop_explore_boost_checkout') }}">
+            <button type="submit">Stripeで購入する</button>
+          </form>
+        {% endif %}
+        {% if recent_order %}
+          <p>最近の状態: {{ payment_status_labels.get(recent_order['status'], recent_order['status']) }}</p>
+          <p>注文: {{ recent_order['stripe_checkout_session_id'] or '-' }}</p>
+        {% endif %}
+      {% else %}
+        <p>ログインするとテスト購入に進めます。</p>
+        <p class="link"><a href="{{ url_for('login', next='/shop') }}">ログインして購入する</a></p>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <h2>出撃ブースト</h2>
+  <p>現在はサンドボックス設定待ちです。`STRIPE_PRICE_ID_EXPLORE_BOOST` を設定すると購入導線が有効になります。</p>
+  {% endif %}
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

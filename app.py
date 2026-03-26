@@ -10,8 +10,9 @@ import io
 import json
 import uuid
 import math
+from importlib import import_module
 from collections import Counter
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -42,6 +43,9 @@ from constants import (
     MID_LOGS_FACTION,
     RARITIES,
     SET_BONUS_TABLE,
+    LEGAL_BRAND_NAME,
+    LEGAL_DISCLOSURE_POLICY,
+    LEGAL_OPERATOR_NAME,
     SUPPORT_EMAIL,
     VICTORY_LOGS,
 )
@@ -57,6 +61,9 @@ from services.stats import (
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
+stripe = None
+_stripe_api_module = None
+_stripe_api_import_error = None
 
 app = Flask(__name__)
 DEV_MODE = (
@@ -111,6 +118,26 @@ FACTION_WAR_POINTS = {
     "build_confirm": 2,
     "fuse": 1,
 }
+FACTION_DOCTRINES = {
+    "ignis": {
+        "title": "突破主義",
+        "summary": "高出力試験とボス突破を重視する陣営。",
+        "focus": "攻撃 / 撃破",
+        "world_hint": "ボス討伐や突破研究が盛り上がる週に存在感が出やすい。",
+    },
+    "ventra": {
+        "title": "速度適応",
+        "summary": "機動戦術と速度適応を重視する陣営。",
+        "focus": "素早さ / 命中",
+        "world_hint": "最速・命中系の研究や横道周回と相性がいい。",
+    },
+    "aurix": {
+        "title": "安定運用",
+        "summary": "防衛運用と安定収集を重視する陣営。",
+        "focus": "耐久 / 継続",
+        "world_hint": "長期周回や積み上げで差を作るときに強い。",
+    },
+}
 EXPLORE_COOLDOWN_SECONDS = int(os.getenv("EXPLORE_COOLDOWN_SECONDS", "40"))
 NEWBIE_BOOST_ENABLED = os.getenv("NEWBIE_BOOST_ENABLED", "1") == "1"
 NEWBIE_BOOST_WINDOW_HOURS = int(os.getenv("NEWBIE_BOOST_WINDOW_HOURS", "72"))
@@ -120,9 +147,24 @@ STAGE_MODIFIERS_ENABLED = os.getenv("STAGE_MODIFIERS_ENABLED", "1") == "1"
 BATTLE_RITUAL_OVERLAY_ENABLED = os.getenv("BATTLE_RITUAL_OVERLAY_ENABLED", "1") == "1"
 UI_EFFECTS_ENABLED = os.getenv("UI_EFFECTS_ENABLED", "1") == "1"
 PUBLIC_GAME_URL = (os.getenv("PUBLIC_GAME_URL") or "").strip()
+STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
+STRIPE_PUBLISHABLE_KEY = (os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()
+STRIPE_WEBHOOK_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+STRIPE_PRICE_ID_SUPPORT_PACK = (os.getenv("STRIPE_PRICE_ID_SUPPORT_PACK") or "").strip()
+STRIPE_PRICE_ID_EXPLORE_BOOST = (os.getenv("STRIPE_PRICE_ID_EXPLORE_BOOST") or "").strip()
 PORTAL_ONLINE_WINDOW_MINUTES = int(os.getenv("PORTAL_ONLINE_WINDOW_MINUTES", "5"))
 PORTAL_ONLINE_TIMEOUT_SECONDS = float(os.getenv("PORTAL_ONLINE_TIMEOUT_SECONDS", "5"))
 LAST_SEEN_TOUCH_INTERVAL_SECONDS = int(os.getenv("LAST_SEEN_TOUCH_INTERVAL_SECONDS", "60"))
+SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
+SUPPORT_PACK_DECOR_KEY = "supporter_emblem_001"
+EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
+EXPLORE_BOOST_DURATION_DAYS = 14
+EXPLORE_BOOST_CT_SECONDS = 20
+PAYMENT_STATUS_CREATED = "created"
+PAYMENT_STATUS_COMPLETED = "completed"
+PAYMENT_STATUS_GRANTED = "granted"
+PAYMENT_STATUS_FAILED = "failed"
+PAYMENT_STATUS_EXPIRED = "expired"
 BUILD_ARCHETYPE_PRIORITY = ("BERSERK", "BURST", "STABLE", "NONE")
 BUILD_ARCHETYPE_LABELS = {
     "BERSERK": "背水型",
@@ -347,6 +389,45 @@ GUIDE_SECTIONS = (
         ),
     },
 )
+
+
+def _payment_catalog():
+    return {
+        SUPPORT_PACK_PRODUCT_KEY: {
+            "product_key": SUPPORT_PACK_PRODUCT_KEY,
+            "display_name": "ロボらぼ支援パック",
+            "description": "開発応援ありがとうございます。戦力差はつきません。",
+            "price_id": STRIPE_PRICE_ID_SUPPORT_PACK,
+            "grant_type": "decor",
+            "grant_key": SUPPORT_PACK_DECOR_KEY,
+            "grant_name": "支援者トロフィー",
+            "image_path": "decor/aurix_trophy.png",
+            "return_endpoint": "support",
+        },
+        EXPLORE_BOOST_PRODUCT_KEY: {
+            "product_key": EXPLORE_BOOST_PRODUCT_KEY,
+            "display_name": "出撃ブースト",
+            "description": "2週間、出撃待機時間を短縮します。戦力差はつきません。",
+            "price_id": STRIPE_PRICE_ID_EXPLORE_BOOST,
+            "grant_type": "explore_boost",
+            "boost_days": EXPLORE_BOOST_DURATION_DAYS,
+            "grant_name": "出撃CT短縮（40秒 → 20秒）",
+            "image_path": "images/ui/robonavi.png",
+            "return_endpoint": "shop",
+        },
+    }
+
+
+def _payment_product(product_key):
+    return _payment_catalog().get(str(product_key or "").strip())
+
+
+def _support_payment_catalog():
+    return _payment_catalog()
+
+
+def _support_payment_product(product_key=SUPPORT_PACK_PRODUCT_KEY):
+    return _payment_product(product_key)
 PART_OFFSET_CACHE = {}
 PART_OFFSET_CACHE_VERSION = 0
 COMPOSE_REV = 0
@@ -3627,6 +3708,7 @@ def _seed_default_decor_assets(db):
         ("boss_emblem_aurix", "オリクス紋章", "decor/aurix.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "decor/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "decor/ignis.png"),
+        (SUPPORT_PACK_DECOR_KEY, "支援者トロフィー", "decor/aurix_trophy.png"),
     ]
     for key, name_ja, image_path in seeds:
         db.execute(
@@ -4261,6 +4343,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
     if "last_explore_area_key" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
+    if "explore_boost_until" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN explore_boost_until INTEGER NOT NULL DEFAULT 0")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -4296,6 +4380,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     db.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     db.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
+    db.execute("UPDATE users SET explore_boost_until = 0 WHERE explore_boost_until IS NULL")
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
@@ -4704,6 +4789,29 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS payment_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            product_key TEXT NOT NULL,
+            stripe_checkout_session_id TEXT UNIQUE,
+            stripe_payment_intent_id TEXT,
+            stripe_event_id TEXT UNIQUE,
+            amount_jpy INTEGER,
+            currency TEXT,
+            status TEXT NOT NULL DEFAULT 'created',
+            grant_type TEXT NOT NULL,
+            boost_days INTEGER NOT NULL DEFAULT 0,
+            starts_at INTEGER,
+            ends_at INTEGER,
+            granted_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_history (
             robot_id INTEGER PRIMARY KEY,
             battles_total INTEGER NOT NULL DEFAULT 0,
@@ -4847,6 +4955,42 @@ def ensure_schema(db):
         if "created_at" in udi_cols:
             db.execute("UPDATE user_decor_inventory SET acquired_at = created_at WHERE acquired_at IS NULL")
         db.execute("UPDATE user_decor_inventory SET acquired_at = ? WHERE acquired_at IS NULL", (int(time.time()),))
+    po_cols = {row["name"] for row in db.execute("PRAGMA table_info(payment_orders)").fetchall()}
+    if "user_id" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN user_id INTEGER")
+    if "product_key" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN product_key TEXT")
+    if "stripe_checkout_session_id" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN stripe_checkout_session_id TEXT")
+    if "stripe_payment_intent_id" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN stripe_payment_intent_id TEXT")
+    if "stripe_event_id" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN stripe_event_id TEXT")
+    if "amount_jpy" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN amount_jpy INTEGER")
+    if "currency" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN currency TEXT")
+    if "status" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN status TEXT NOT NULL DEFAULT 'created'")
+    if "grant_type" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN grant_type TEXT NOT NULL DEFAULT 'decor'")
+    if "boost_days" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN boost_days INTEGER NOT NULL DEFAULT 0")
+    if "starts_at" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN starts_at INTEGER")
+    if "ends_at" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN ends_at INTEGER")
+    if "granted_at" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN granted_at INTEGER")
+    if "created_at" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+    if "updated_at" not in po_cols:
+        db.execute("ALTER TABLE payment_orders ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+    db.execute("UPDATE payment_orders SET status = 'created' WHERE status IS NULL OR TRIM(status) = ''")
+    db.execute("UPDATE payment_orders SET grant_type = 'decor' WHERE grant_type IS NULL OR TRIM(grant_type) = ''")
+    db.execute("UPDATE payment_orders SET boost_days = 0 WHERE boost_days IS NULL")
+    db.execute("UPDATE payment_orders SET created_at = 0 WHERE created_at IS NULL")
+    db.execute("UPDATE payment_orders SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS user_area_streaks (
@@ -5112,6 +5256,10 @@ def ensure_schema(db):
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_enemies_boss_area_active ON enemies(is_boss, boss_area_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_decor_inventory_user_acquired ON user_decor_inventory(user_id, acquired_at)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_session_id ON payment_orders(stripe_checkout_session_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_event_id ON payment_orders(stripe_event_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_status_created ON payment_orders(status, created_at DESC)")
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
@@ -7385,6 +7533,337 @@ def _invite_link_for_code(code):
     return f"{_public_game_root_url()}{url_for('register')}?ref={code}"
 
 
+def _payment_checkout_ready(product_key=SUPPORT_PACK_PRODUCT_KEY):
+    product = _payment_product(product_key)
+    return bool(STRIPE_SECRET_KEY and product and product["price_id"])
+
+
+def _payment_webhook_ready():
+    return bool(STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)
+
+
+def _load_stripe_api():
+    global stripe, _stripe_api_module, _stripe_api_import_error
+    if stripe is not None:
+        return stripe
+    if _stripe_api_module is not None:
+        return _stripe_api_module
+    if _stripe_api_import_error is not None:
+        raise RuntimeError("Stripe SDK の読み込みに失敗しました。") from _stripe_api_import_error
+    try:
+        _stripe_api_module = import_module("stripe")
+        return _stripe_api_module
+    except ModuleNotFoundError as exc:
+        _stripe_api_import_error = exc
+        raise RuntimeError("Stripe SDK が未インストールです。") from exc
+    except Exception as exc:
+        _stripe_api_import_error = exc
+        raise RuntimeError("Stripe SDK の初期化に失敗しました。") from exc
+
+
+def _configure_stripe_api():
+    stripe_api = _load_stripe_api()
+    if not STRIPE_SECRET_KEY:
+        raise RuntimeError("STRIPE_SECRET_KEY が未設定です。")
+    stripe_api.api_key = STRIPE_SECRET_KEY
+    return stripe_api
+
+
+def _stripe_value(obj, key, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _get_decor_asset_by_key(db, decor_key):
+    key = str(decor_key or "").strip()
+    if not key:
+        return None
+    return db.execute("SELECT * FROM robot_decor_assets WHERE key = ?", (key,)).fetchone()
+
+
+def _user_has_decor_key(db, user_id, decor_key):
+    decor = _get_decor_asset_by_key(db, decor_key)
+    if not decor:
+        return False
+    row = db.execute(
+        """
+        SELECT 1
+        FROM user_decor_inventory
+        WHERE user_id = ? AND decor_asset_id = ?
+        LIMIT 1
+        """,
+        (int(user_id), int(decor["id"])),
+    ).fetchone()
+    return bool(row)
+
+
+def _grant_support_reward(db, user_id, product):
+    grant_type = str((product or {}).get("grant_type") or "").strip().lower()
+    if grant_type != "decor":
+        return {"ok": False, "granted": False, "duplicate_reason": "unsupported_grant_type", "decor_asset": None}
+    decor = _get_decor_asset_by_key(db, product.get("grant_key"))
+    if not decor:
+        return {"ok": False, "granted": False, "duplicate_reason": "missing_decor_asset", "decor_asset": None}
+    inserted = db.execute(
+        """
+        INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+        VALUES (?, ?, ?)
+        """,
+        (int(user_id), int(decor["id"]), _now_ts()),
+    ).rowcount > 0
+    return {
+        "ok": True,
+        "granted": bool(inserted),
+        "duplicate_reason": (None if inserted else "already_owned_decor"),
+        "decor_asset": decor,
+    }
+
+
+def _explore_boost_until_ts(user_row):
+    if not user_row or "explore_boost_until" not in user_row.keys():
+        return 0
+    return int(user_row["explore_boost_until"] or 0)
+
+
+def _is_paid_explore_boost_active(user_row, now_ts=None):
+    until_ts = _explore_boost_until_ts(user_row)
+    if until_ts <= 0:
+        return False
+    now = _now_ts() if now_ts is None else int(now_ts)
+    return until_ts > now
+
+
+def _explore_boost_status_for_user(user_row, now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    until_ts = _explore_boost_until_ts(user_row)
+    active = until_ts > now
+    remain_seconds = max(0, until_ts - now) if until_ts > 0 else 0
+    remain_days = int(math.ceil(remain_seconds / 86400.0)) if remain_seconds > 0 else 0
+    return {
+        "active": bool(active),
+        "has_ever_purchased": bool(until_ts > 0),
+        "ends_at": (until_ts if until_ts > 0 else None),
+        "remain_seconds": int(remain_seconds),
+        "remain_days": int(remain_days),
+    }
+
+
+def _grant_explore_boost_reward(db, user_id, product):
+    boost_days = max(1, int((product or {}).get("boost_days") or EXPLORE_BOOST_DURATION_DAYS))
+    user_row = db.execute(
+        "SELECT id, explore_boost_until FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    if not user_row:
+        return {
+            "ok": False,
+            "granted": False,
+            "duplicate_reason": "missing_user",
+            "boost_days": boost_days,
+            "starts_at": None,
+            "ends_at": None,
+        }
+    existing_until = _explore_boost_until_ts(user_row)
+    if existing_until > 0:
+        return {
+            "ok": True,
+            "granted": False,
+            "duplicate_reason": "already_purchased_boost",
+            "boost_days": boost_days,
+            "starts_at": None,
+            "ends_at": existing_until,
+        }
+    starts_at = _now_ts()
+    ends_at = starts_at + (boost_days * 86400)
+    db.execute("UPDATE users SET explore_boost_until = ? WHERE id = ?", (ends_at, int(user_id)))
+    return {
+        "ok": True,
+        "granted": True,
+        "duplicate_reason": None,
+        "boost_days": boost_days,
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+    }
+
+
+def _grant_payment_reward(db, user_id, product):
+    grant_type = str((product or {}).get("grant_type") or "").strip().lower()
+    if grant_type == "decor":
+        return _grant_support_reward(db, user_id, product)
+    if grant_type == "explore_boost":
+        return _grant_explore_boost_reward(db, user_id, product)
+    return {"ok": False, "granted": False, "duplicate_reason": "unsupported_grant_type"}
+
+
+def _payment_grant_audit_event_types(product):
+    grant_type = str((product or {}).get("grant_type") or "").strip().lower()
+    if grant_type == "explore_boost":
+        return {
+            "success": AUDIT_EVENT_TYPES["EXPLORE_BOOST_GRANT_SUCCESS"],
+            "skip": AUDIT_EVENT_TYPES["EXPLORE_BOOST_GRANT_SKIP_DUPLICATE"],
+            "failed": AUDIT_EVENT_TYPES["EXPLORE_BOOST_GRANT_FAILED"],
+        }
+    return {
+        "success": AUDIT_EVENT_TYPES["PAYMENT_GRANT_SUCCESS"],
+        "skip": AUDIT_EVENT_TYPES["PAYMENT_GRANT_SKIP_DUPLICATE"],
+        "failed": AUDIT_EVENT_TYPES["PAYMENT_GRANT_FAILED"],
+    }
+
+
+def _payment_status_label(status):
+    status_key = str(status or "").strip().lower()
+    return {
+        PAYMENT_STATUS_CREATED: "支払い待ち",
+        PAYMENT_STATUS_COMPLETED: "支払い完了",
+        PAYMENT_STATUS_GRANTED: "付与完了",
+        PAYMENT_STATUS_FAILED: "失敗",
+        PAYMENT_STATUS_EXPIRED: "期限切れ",
+    }.get(status_key, status_key or "-")
+
+
+def _payment_order_for_session(db, stripe_checkout_session_id):
+    session_id = str(stripe_checkout_session_id or "").strip()
+    if not session_id:
+        return None
+    return db.execute(
+        "SELECT * FROM payment_orders WHERE stripe_checkout_session_id = ?",
+        (session_id,),
+    ).fetchone()
+
+
+def _latest_payment_order_for_user_product(db, user_id, product_key):
+    return db.execute(
+        """
+        SELECT *
+        FROM payment_orders
+        WHERE user_id = ? AND product_key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user_id), str(product_key or "")),
+    ).fetchone()
+
+
+def _payment_return_endpoint_for_product(product_key):
+    product = _payment_product(product_key)
+    return str((product or {}).get("return_endpoint") or "support")
+
+
+def _payment_status_labels_map():
+    return {
+        PAYMENT_STATUS_CREATED: _payment_status_label(PAYMENT_STATUS_CREATED),
+        PAYMENT_STATUS_COMPLETED: _payment_status_label(PAYMENT_STATUS_COMPLETED),
+        PAYMENT_STATUS_GRANTED: _payment_status_label(PAYMENT_STATUS_GRANTED),
+        PAYMENT_STATUS_FAILED: _payment_status_label(PAYMENT_STATUS_FAILED),
+        PAYMENT_STATUS_EXPIRED: _payment_status_label(PAYMENT_STATUS_EXPIRED),
+    }
+
+
+def _create_checkout_session_for_product(db, *, user_id, product):
+    stripe_api = _configure_stripe_api()
+    success_query = (
+        f"product_key={quote(str(product['product_key']), safe='')}"
+        "&session_id={CHECKOUT_SESSION_ID}"
+    )
+    cancel_query = urlencode({"product_key": product["product_key"]})
+    metadata = {
+        "user_id": str(int(user_id)),
+        "product_key": product["product_key"],
+        "grant_type": product["grant_type"],
+    }
+    if product.get("boost_days"):
+        metadata["boost_days"] = str(int(product["boost_days"]))
+    checkout_session = stripe_api.checkout.Session.create(
+        mode="payment",
+        line_items=[{"price": product["price_id"], "quantity": 1}],
+        success_url=f"{_public_game_root_url()}{url_for('payment_success')}?{success_query}",
+        cancel_url=f"{_public_game_root_url()}{url_for('payment_cancel')}?{cancel_query}",
+        client_reference_id=str(int(user_id)),
+        metadata=metadata,
+    )
+    now_ts = _now_ts()
+    session_id = str(_stripe_value(checkout_session, "id", "") or "").strip()
+    payment_intent_id = str(_stripe_value(checkout_session, "payment_intent", "") or "").strip() or None
+    amount_jpy = _stripe_value(checkout_session, "amount_total", None)
+    try:
+        amount_jpy = int(amount_jpy) if amount_jpy is not None else None
+    except (TypeError, ValueError):
+        amount_jpy = None
+    currency = str(_stripe_value(checkout_session, "currency", "") or "").lower() or "jpy"
+    db.execute(
+        """
+        INSERT INTO payment_orders (
+            user_id,
+            product_key,
+            stripe_checkout_session_id,
+            stripe_payment_intent_id,
+            amount_jpy,
+            currency,
+            status,
+            grant_type,
+            boost_days,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            product["product_key"],
+            session_id,
+            payment_intent_id,
+            amount_jpy,
+            currency,
+            PAYMENT_STATUS_CREATED,
+            product["grant_type"],
+            int(product.get("boost_days") or 0),
+            now_ts,
+            now_ts,
+        ),
+    )
+    order_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["PAYMENT_CHECKOUT_CREATE"],
+        user_id=int(user_id),
+        request_id=getattr(g, "request_id", None),
+        action_key=product["product_key"],
+        entity_type="payment_order",
+        entity_id=order_id,
+        payload={
+            "product_key": product["product_key"],
+            "stripe_checkout_session_id": session_id,
+            "stripe_payment_intent_id": payment_intent_id,
+            "stripe_event_id": None,
+            "amount_jpy": amount_jpy,
+            "currency": currency,
+            "status": PAYMENT_STATUS_CREATED,
+            "grant_type": product["grant_type"],
+            "boost_days": int(product.get("boost_days") or 0),
+        },
+        ip=request.remote_addr,
+    )
+    checkout_url = str(_stripe_value(checkout_session, "url", "") or "").strip()
+    return {
+        "session_id": session_id,
+        "checkout_url": checkout_url,
+    }
+
+
+def _update_payment_order(db, order_id, **fields):
+    if not fields:
+        return
+    fields["updated_at"] = _now_ts()
+    columns = list(fields.keys())
+    assignments = ", ".join(f"{col} = ?" for col in columns)
+    params = [fields[col] for col in columns]
+    params.append(int(order_id))
+    db.execute(f"UPDATE payment_orders SET {assignments} WHERE id = ?", params)
+
+
 def _referral_counts_for_referrer(db, user_id):
     uid = int(user_id)
     rows = db.execute(
@@ -7811,6 +8290,214 @@ def _weekly_mvp_snapshot(db, week_key):
     }
 
 
+def _explore_area_label(area_key):
+    key = str(area_key or "").strip()
+    for area in EXPLORE_AREAS:
+        if area["key"] == key:
+            return area["label"]
+    return AREA_BOSS_LABELS.get(key, key or "-")
+
+
+def _world_week_remaining_line(week_key=None, now_ts=None):
+    current_week_key = str(week_key or _world_week_key())
+    _, end_dt = _world_week_bounds(current_week_key)
+    remain = max(0, int(end_dt.timestamp()) - int(now_ts or _now_ts()))
+    days = remain // 86400
+    hours = (remain % 86400) // 3600
+    minutes = (remain % 3600) // 60
+    if days > 0:
+        return f"切替まであと{days}日{hours}時間"
+    if hours > 0:
+        return f"切替まであと{hours}時間{minutes}分"
+    return f"切替まであと{minutes}分"
+
+
+def _world_hot_area_rows(db, week_key, limit=4):
+    start_dt, end_dt = _world_week_bounds(str(week_key or _world_week_key()))
+    rows = db.execute(
+        """
+        SELECT
+            COALESCE(json_extract(payload_json, '$.area_key'), '') AS area_key,
+            COUNT(*) AS c
+        FROM world_events_log
+        WHERE event_type = ?
+          AND created_at >= ?
+          AND created_at < ?
+        GROUP BY area_key
+        ORDER BY c DESC, area_key ASC
+        LIMIT ?
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            int(start_dt.timestamp()),
+            int(end_dt.timestamp()),
+            int(limit),
+        ),
+    ).fetchall()
+    out = []
+    for row in rows:
+        area_key = str(row["area_key"] or "").strip()
+        if not area_key:
+            continue
+        out.append(
+            {
+                "area_key": area_key,
+                "area_label": _explore_area_label(area_key),
+                "count": int(row["c"] or 0),
+            }
+        )
+    return out
+
+
+def _faction_score_rows(score_map, member_counts=None, *, user_faction=None, weekly_faction_key=None):
+    counts = member_counts or {}
+    rows = []
+    for key in FACTION_KEYS:
+        doctrine = FACTION_DOCTRINES.get(key, {})
+        rows.append(
+            {
+                "key": key,
+                "label": FACTION_LABELS.get(key, key),
+                "points": int((score_map or {}).get(key, 0) or 0),
+                "member_count": int(counts.get(key, 0) or 0),
+                "emblem_path": FACTION_EMBLEMS.get(key),
+                "doctrine_title": doctrine.get("title", ""),
+                "doctrine_summary": doctrine.get("summary", ""),
+                "focus": doctrine.get("focus", ""),
+                "world_hint": doctrine.get("world_hint", ""),
+                "is_user_faction": bool(user_faction and key == user_faction),
+                "is_weekly_tailwind": bool(weekly_faction_key and key == weekly_faction_key),
+            }
+        )
+    rows.sort(key=lambda item: (-int(item["points"]), item["label"]))
+    return rows
+
+
+def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
+    rows, metric = _ranking_rows(db, metric_key, limit=limit, week_key=week_key)
+    out = []
+    for idx, row in enumerate(rows, start=1):
+        if metric.get("row_kind") == "robot":
+            out.append(
+                {
+                    "rank": idx,
+                    "title": row["robot_name"],
+                    "subtitle": row["username"],
+                    "value": int(row["metric_value"] or 0),
+                    "value_label": metric["metric_label"],
+                    "robot_id": int(row["robot_id"]),
+                }
+            )
+        else:
+            out.append(
+                {
+                    "rank": idx,
+                    "title": row["username"],
+                    "subtitle": "",
+                    "value": int(row["metric_value"] or 0),
+                    "value_label": metric["metric_label"],
+                    "robot_id": None,
+                }
+            )
+    return {
+        "metric": metric,
+        "rows": out,
+    }
+
+
+def _first_boss_record_rows(db):
+    out = []
+    for area in EXPLORE_AREAS:
+        area_key = area["key"]
+        row = db.execute(
+            """
+            SELECT created_at, user_id, payload_json
+            FROM world_events_log
+            WHERE event_type = ?
+              AND COALESCE(json_extract(payload_json, '$.area_key'), '') = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], area_key),
+        ).fetchone()
+        if not row:
+            continue
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        out.append(
+            {
+                "title": f"{area['label']} 初撃破",
+                "username": _feed_user_label(db, row["user_id"]),
+                "detail": " / ".join(
+                    part
+                    for part in [
+                        str(payload.get("enemy_name") or "").strip(),
+                        str(payload.get("robot_name") or "").strip(),
+                    ]
+                    if part
+                ),
+                "time_jst": _format_jst_ts(row["created_at"]),
+            }
+        )
+    return out
+
+
+def _first_evolve_record_rows(db):
+    part_types = ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")
+    out = []
+    for part_type in part_types:
+        row = db.execute(
+            """
+            SELECT created_at, user_id, payload_json
+            FROM world_events_log
+            WHERE event_type = ?
+              AND UPPER(COALESCE(json_extract(payload_json, '$.part_type'), '')) = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (AUDIT_EVENT_TYPES["PART_EVOLVE"], part_type),
+        ).fetchone()
+        if not row:
+            continue
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), part_type)
+        target_name = str(payload.get("target_part_name") or "").strip() or "Rパーツ"
+        out.append(
+            {
+                "title": f"{part_label} 初R化",
+                "username": _feed_user_label(db, row["user_id"]),
+                "detail": target_name,
+                "time_jst": _format_jst_ts(row["created_at"]),
+            }
+        )
+    return out
+
+
+def _record_showcase_highlights(db, user_id):
+    highlights = []
+    for sort_key, title in (("week", "今週の話題ロボ"), ("boss", "ボス常連"), ("like", "注目展示")):
+        rows = _showcase_query_rows(db, user_id=int(user_id), sort_key=sort_key, limit=1)
+        if not rows:
+            continue
+        row = rows[0]
+        highlights.append(
+            {
+                "title": title,
+                "robot_id": int(row["id"]),
+                "robot_name": row["name"],
+                "username": row["username"],
+                "profile": row.get("profile"),
+                "sort_key": sort_key,
+            }
+        )
+    return highlights
+
+
 def _dex_upsert_enemy(db, *, user_id, enemy_key, is_defeat=False):
     if not enemy_key:
         return
@@ -8034,9 +8721,9 @@ FEED_EVENT_TYPES = {
     "drop": {"audit.drop"},
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted"},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted"}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 
 
@@ -8044,6 +8731,19 @@ def _format_jst_ts(ts):
     if not ts:
         return "-"
     return datetime.fromtimestamp(int(ts), JST).strftime("%Y-%m-%d %H:%M")
+
+
+def _parse_jst_day_filter(raw_value, *, end=False):
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    try:
+        base = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=JST)
+    except ValueError:
+        return None
+    if end:
+        base = base + timedelta(days=1)
+    return int(base.timestamp())
 
 
 def _feed_user_label(db, user_id):
@@ -8185,6 +8885,34 @@ def _feed_card_from_event(db, row):
         card["headline"] = "週次更新"
         wk = payload.get("week_key") or "-"
         card["text"] = f"週次更新: {wk} が開始"
+        if payload.get("chosen_element") or payload.get("mode"):
+            elem = ELEMENT_LABEL_MAP.get(str(payload.get("chosen_element") or "").upper(), payload.get("chosen_element") or "-")
+            mode = payload.get("mode") or "-"
+            card["meta_lines"].append(f"今週属性: {elem}")
+            card["meta_lines"].append(f"世界状態: {mode}")
+        card["accent"] = "weekly"
+    elif event_type == "FACTION_WAR_RESULT":
+        winner = _normalize_faction_key(payload.get("winner_faction"))
+        scores = payload.get("scores") or {}
+        wk = payload.get("week_key") or "-"
+        card["headline"] = "陣営戦決着"
+        card["accent"] = "weekly"
+        card["text"] = f"陣営戦決着: {wk} の勝者は {FACTION_LABELS.get(winner, winner or '未確定')}"
+        card["meta_lines"] = [
+            f"IGNIS {int(scores.get('ignis', 0) or 0)} / VENTRA {int(scores.get('ventra', 0) or 0)} / AURIX {int(scores.get('aurix', 0) or 0)}"
+        ]
+        card["link_url"] = url_for("world_view")
+    elif event_type == "RESEARCH_UNLOCK":
+        wk = payload.get("week_key") or "-"
+        element = str(payload.get("element") or "").upper()
+        part_type = str(payload.get("part_type") or "").strip().upper()
+        element_label = ELEMENT_LABEL_MAP.get(element, element or "-")
+        part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), RESEARCH_PART_TYPE_LABELS_JA.get(part_type, part_type or "パーツ"))
+        card["headline"] = "研究解禁"
+        card["accent"] = "weekly"
+        card["text"] = f"研究解禁: {element_label} 系の {part_label} が解放（{wk}）"
+        card["meta_lines"] = [f"属性: {element_label}", f"部位: {part_label}"]
+        card["link_url"] = url_for("world_view")
     elif event_type == "admin_world_reroll":
         card["headline"] = "世界再抽選"
         wk = payload.get("week_key") or "-"
@@ -8296,9 +9024,12 @@ def _is_newbie_boost_active(user_row, now_ts=None):
 def _explore_ct_seconds_for_user(user_row, now_ts=None):
     if user_row and int(user_row["is_admin"] or 0) == 1:
         return 0
+    ct_candidates = [int(EXPLORE_COOLDOWN_SECONDS)]
     if _is_newbie_boost_active(user_row, now_ts=now_ts):
-        return int(NEWBIE_EXPLORE_CT_SECONDS)
-    return int(EXPLORE_COOLDOWN_SECONDS)
+        ct_candidates.append(int(NEWBIE_EXPLORE_CT_SECONDS))
+    if _is_paid_explore_boost_active(user_row, now_ts=now_ts):
+        ct_candidates.append(int(EXPLORE_BOOST_CT_SECONDS))
+    return min(ct_candidates)
 
 
 def _remaining_cooldown_seconds(user_row, last_action_at, now_ts=None):
@@ -8771,6 +9502,9 @@ def inject_app_meta():
     return {
         "app_version": APP_VERSION,
         "support_email": SUPPORT_EMAIL,
+        "legal_operator_name": LEGAL_OPERATOR_NAME,
+        "legal_brand_name": LEGAL_BRAND_NAME,
+        "legal_disclosure_policy": LEGAL_DISCLOSURE_POLICY,
         "stat_ui_labels": STAT_UI_LABELS,
     }
 
@@ -8919,12 +9653,17 @@ def maintenance():
 
 @app.route("/terms")
 def terms():
-    return render_template("legal.html", title="利用規約 / プライバシーポリシー")
+    return render_template("terms.html", title="利用規約")
 
 
 @app.route("/privacy")
 def privacy():
-    return render_template("legal.html", title="利用規約 / プライバシーポリシー")
+    return render_template("privacy.html", title="プライバシーポリシー")
+
+
+@app.route("/commerce")
+def commerce():
+    return render_template("commerce.html", title="特定商取引法に基づく表記")
 
 
 @app.route("/contact", methods=["GET", "POST"])
@@ -8943,6 +9682,551 @@ def guide():
     return render_template("guide.html", title="用語", sections=GUIDE_SECTIONS)
 
 
+@app.route("/shop")
+def shop():
+    db = get_db()
+    product = _payment_product(EXPLORE_BOOST_PRODUCT_KEY)
+    user = None
+    recent_order = None
+    boost_status = None
+    purchase_locked = False
+    pending_order = False
+    if session.get("user_id"):
+        user = db.execute(
+            "SELECT id, username, is_admin, created_at, explore_boost_until FROM users WHERE id = ?",
+            (int(session["user_id"]),),
+        ).fetchone()
+        if user:
+            recent_order = _latest_payment_order_for_user_product(db, int(user["id"]), EXPLORE_BOOST_PRODUCT_KEY)
+            boost_status = _explore_boost_status_for_user(user)
+            pending_order = bool(
+                recent_order and str(recent_order["status"] or "") in {PAYMENT_STATUS_CREATED, PAYMENT_STATUS_COMPLETED}
+            )
+            purchase_locked = bool((boost_status and boost_status["has_ever_purchased"]) or pending_order)
+    return render_template(
+        "shop.html",
+        title="ショップ",
+        product=product,
+        checkout_ready=_payment_checkout_ready(EXPLORE_BOOST_PRODUCT_KEY),
+        recent_order=recent_order,
+        payment_status_labels=_payment_status_labels_map(),
+        boost_status=boost_status,
+        purchase_locked=purchase_locked,
+        pending_order=pending_order,
+    )
+
+
+@app.route("/support")
+def support():
+    db = get_db()
+    product = _payment_product(SUPPORT_PACK_PRODUCT_KEY)
+    user = None
+    reward_owned = False
+    recent_order = None
+    decor_asset = _get_decor_asset_by_key(db, product.get("grant_key")) if product else None
+    if session.get("user_id"):
+        user = db.execute(
+            "SELECT id, username FROM users WHERE id = ?",
+            (int(session["user_id"]),),
+        ).fetchone()
+        if user and product:
+            reward_owned = _user_has_decor_key(db, int(user["id"]), product["grant_key"])
+            recent_order = _latest_payment_order_for_user_product(db, int(user["id"]), product["product_key"])
+    return render_template(
+        "support.html",
+        title="支援",
+        product=product,
+        checkout_ready=_payment_checkout_ready(SUPPORT_PACK_PRODUCT_KEY),
+        reward_owned=reward_owned,
+        recent_order=recent_order,
+        payment_status_labels=_payment_status_labels_map(),
+        decor_asset=decor_asset,
+    )
+
+
+@app.route("/support/checkout", methods=["POST"])
+@login_required
+def support_checkout():
+    db = get_db()
+    user_id = int(session["user_id"])
+    product = _payment_product(SUPPORT_PACK_PRODUCT_KEY)
+    if not product or not product.get("price_id"):
+        flash("支援導線はまだ準備中です。", "error")
+        return redirect(url_for("support"))
+    if not _payment_checkout_ready(SUPPORT_PACK_PRODUCT_KEY):
+        flash("決済機能の準備が完了していません。", "error")
+        return redirect(url_for("support"))
+    if _user_has_decor_key(db, user_id, product["grant_key"]):
+        flash("この支援特典はすでに受け取り済みです。", "notice")
+        return redirect(url_for("support"))
+    try:
+        checkout_result = _create_checkout_session_for_product(db, user_id=user_id, product=product)
+    except Exception:
+        app.logger.exception("payment.checkout_create_failed user_id=%s product=%s", user_id, product["product_key"])
+        flash("決済画面の準備に失敗しました。時間を置いてもう一度お試しください。", "error")
+        return redirect(url_for("support"))
+    db.commit()
+    return redirect(
+        checkout_result["checkout_url"]
+        or url_for("payment_success", session_id=checkout_result["session_id"], product_key=product["product_key"]),
+        code=303,
+    )
+
+
+@app.route("/shop/explore-boost/checkout", methods=["POST"])
+@login_required
+def shop_explore_boost_checkout():
+    db = get_db()
+    user = db.execute(
+        "SELECT id, username, is_admin, created_at, explore_boost_until FROM users WHERE id = ?",
+        (int(session["user_id"]),),
+    ).fetchone()
+    product = _payment_product(EXPLORE_BOOST_PRODUCT_KEY)
+    if not user or not product or not product.get("price_id"):
+        flash("出撃ブーストはまだ準備中です。", "error")
+        return redirect(url_for("shop"))
+    if int(user["is_admin"] or 0) == 1:
+        flash("管理者アカウントでは出撃ブーストを購入できません。", "notice")
+        return redirect(url_for("shop"))
+    if not _payment_checkout_ready(EXPLORE_BOOST_PRODUCT_KEY):
+        flash("決済機能の準備が完了していません。", "error")
+        return redirect(url_for("shop"))
+    boost_status = _explore_boost_status_for_user(user)
+    if boost_status["has_ever_purchased"]:
+        flash("出撃ブーストは1回限りの購入です。", "notice")
+        return redirect(url_for("shop"))
+    recent_order = _latest_payment_order_for_user_product(db, int(user["id"]), EXPLORE_BOOST_PRODUCT_KEY)
+    if recent_order and str(recent_order["status"] or "") in {PAYMENT_STATUS_CREATED, PAYMENT_STATUS_COMPLETED}:
+        flash("前回の支払いを確認中です。少し待ってから状態を確認してください。", "notice")
+        return redirect(url_for("shop"))
+    try:
+        checkout_result = _create_checkout_session_for_product(db, user_id=int(user["id"]), product=product)
+    except Exception:
+        app.logger.exception("shop.explore_boost_checkout_failed user_id=%s", user["id"])
+        flash("決済画面の準備に失敗しました。時間を置いてもう一度お試しください。", "error")
+        return redirect(url_for("shop"))
+    db.commit()
+    return redirect(
+        checkout_result["checkout_url"]
+        or url_for("payment_success", session_id=checkout_result["session_id"], product_key=product["product_key"]),
+        code=303,
+    )
+
+
+@app.route("/payment/success")
+def payment_success():
+    db = get_db()
+    order = None
+    session_id = (request.args.get("session_id") or "").strip()
+    product_key = (request.args.get("product_key") or "").strip()
+    if session_id and session.get("user_id"):
+        order = db.execute(
+            """
+            SELECT po.*, u.username
+            FROM payment_orders po
+            JOIN users u ON u.id = po.user_id
+            WHERE po.stripe_checkout_session_id = ? AND po.user_id = ?
+            LIMIT 1
+            """,
+            (session_id, int(session["user_id"])),
+        ).fetchone()
+    resolved_product = _payment_product(order["product_key"] if order else product_key)
+    return_endpoint = _payment_return_endpoint_for_product(order["product_key"] if order else product_key)
+    return render_template(
+        "payment_success.html",
+        title="支払い確認中",
+        order=order,
+        session_id=session_id,
+        product=resolved_product,
+        return_url=url_for(return_endpoint),
+        payment_status_label=_payment_status_label,
+    )
+
+
+@app.route("/payment/cancel")
+def payment_cancel():
+    product_key = (request.args.get("product_key") or "").strip()
+    product = _payment_product(product_key)
+    return_endpoint = _payment_return_endpoint_for_product(product_key)
+    return render_template(
+        "payment_cancel.html",
+        title="購入を中断しました",
+        product=product,
+        return_url=url_for(return_endpoint),
+    )
+
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    if not _payment_webhook_ready():
+        return jsonify({"ok": False, "error": "stripe_not_configured"}), 503
+    stripe_api = _configure_stripe_api()
+    payload_raw = request.get_data(cache=False, as_text=False)
+    signature = request.headers.get("Stripe-Signature", "")
+    signature_error_types = [ValueError]
+    stripe_error_mod = getattr(stripe_api, "error", None)
+    if stripe_error_mod and hasattr(stripe_error_mod, "SignatureVerificationError"):
+        signature_error_types.append(stripe_error_mod.SignatureVerificationError)
+    try:
+        event = stripe_api.Webhook.construct_event(payload_raw, signature, STRIPE_WEBHOOK_SECRET)
+    except tuple(signature_error_types):
+        return jsonify({"ok": False, "error": "invalid_signature"}), 400
+
+    db = get_db()
+    event_type = str(_stripe_value(event, "type", "") or "").strip()
+    event_id = str(_stripe_value(event, "id", "") or "").strip() or None
+    data_container = _stripe_value(event, "data", {}) or {}
+    session_obj = _stripe_value(data_container, "object", {}) or {}
+    metadata = _stripe_value(session_obj, "metadata", {}) or {}
+    stripe_checkout_session_id = str(_stripe_value(session_obj, "id", "") or "").strip() or None
+    stripe_payment_intent_id = str(_stripe_value(session_obj, "payment_intent", "") or "").strip() or None
+    amount_jpy = _stripe_value(session_obj, "amount_total", None)
+    try:
+        amount_jpy = int(amount_jpy) if amount_jpy is not None else None
+    except (TypeError, ValueError):
+        amount_jpy = None
+    currency = str(_stripe_value(session_obj, "currency", "") or "").lower() or None
+    user_id = int(metadata["user_id"]) if str(metadata.get("user_id") or "").isdigit() else None
+    product_key = str(metadata.get("product_key") or "").strip() or None
+    grant_type = str(metadata.get("grant_type") or "").strip() or None
+    boost_days = int(metadata["boost_days"]) if str(metadata.get("boost_days") or "").isdigit() else 0
+    product = _payment_product(product_key)
+    grant_event_types = _payment_grant_audit_event_types(product)
+
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["PAYMENT_WEBHOOK_RECEIVED"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key=product_key or event_type or "stripe_webhook",
+        entity_type="payment_event",
+        entity_id=None,
+        payload={
+            "product_key": product_key,
+            "stripe_checkout_session_id": stripe_checkout_session_id,
+            "stripe_payment_intent_id": stripe_payment_intent_id,
+            "stripe_event_id": event_id,
+            "amount_jpy": amount_jpy,
+            "currency": currency,
+            "status": event_type,
+            "grant_type": grant_type,
+            "boost_days": int(boost_days or 0),
+        },
+        ip=request.remote_addr,
+    )
+
+    order = _payment_order_for_session(db, stripe_checkout_session_id)
+    if event_type == "checkout.session.expired":
+        if order:
+            _update_payment_order(
+                db,
+                int(order["id"]),
+                stripe_payment_intent_id=stripe_payment_intent_id,
+                stripe_event_id=event_id,
+                amount_jpy=amount_jpy,
+                currency=currency,
+                status=PAYMENT_STATUS_EXPIRED,
+            )
+            db.commit()
+        else:
+            db.commit()
+        return jsonify({"received": True})
+
+    if event_type != "checkout.session.completed":
+        db.commit()
+        return jsonify({"received": True})
+
+    if order and order["stripe_event_id"] and str(order["stripe_event_id"]) == str(event_id or ""):
+        audit_log(
+            db,
+            grant_event_types["skip"],
+            user_id=(int(order["user_id"]) if order["user_id"] is not None else user_id),
+            request_id=getattr(g, "request_id", None),
+            action_key=(order["product_key"] or product_key or "payment_duplicate"),
+            entity_type="payment_order",
+            entity_id=int(order["id"]),
+            payload={
+                "product_key": order["product_key"],
+                "stripe_checkout_session_id": stripe_checkout_session_id,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_event_id": event_id,
+                "amount_jpy": amount_jpy,
+                "currency": currency,
+                "status": str(order["status"] or ""),
+                "duplicate_reason": "event_already_processed",
+                "boost_days": int(order["boost_days"] or boost_days or 0),
+                "starts_at": (int(order["starts_at"]) if order["starts_at"] else None),
+                "ends_at": (int(order["ends_at"]) if order["ends_at"] else None),
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        return jsonify({"received": True})
+
+    if not product or not user_id or not stripe_checkout_session_id:
+        if order:
+            _update_payment_order(
+                db,
+                int(order["id"]),
+                stripe_payment_intent_id=stripe_payment_intent_id,
+                stripe_event_id=event_id,
+                amount_jpy=amount_jpy,
+                currency=currency,
+                status=PAYMENT_STATUS_FAILED,
+            )
+        audit_log(
+            db,
+            grant_event_types["failed"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key=product_key or "payment_invalid_metadata",
+            entity_type="payment_order",
+            entity_id=(int(order["id"]) if order else None),
+            payload={
+                "product_key": product_key,
+                "stripe_checkout_session_id": stripe_checkout_session_id,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_event_id": event_id,
+                "amount_jpy": amount_jpy,
+                "currency": currency,
+                "status": PAYMENT_STATUS_FAILED,
+                "duplicate_reason": "invalid_metadata",
+                "boost_days": int(boost_days or 0),
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        return jsonify({"received": True})
+
+    if order is None:
+        now_ts = _now_ts()
+        db.execute(
+            """
+            INSERT INTO payment_orders (
+                user_id,
+                product_key,
+                stripe_checkout_session_id,
+                stripe_payment_intent_id,
+                stripe_event_id,
+                amount_jpy,
+                currency,
+                status,
+                grant_type,
+                boost_days,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                product["product_key"],
+                stripe_checkout_session_id,
+                stripe_payment_intent_id,
+                event_id,
+                amount_jpy,
+                currency,
+                PAYMENT_STATUS_COMPLETED,
+                product["grant_type"],
+                int(product.get("boost_days") or 0),
+                now_ts,
+                now_ts,
+            ),
+        )
+        order = _payment_order_for_session(db, stripe_checkout_session_id)
+    else:
+        if int(order["user_id"]) != user_id or str(order["product_key"]) != product["product_key"]:
+            _update_payment_order(
+                db,
+                int(order["id"]),
+                stripe_payment_intent_id=stripe_payment_intent_id,
+                stripe_event_id=event_id,
+                amount_jpy=amount_jpy,
+                currency=currency,
+                status=PAYMENT_STATUS_FAILED,
+                boost_days=int(product.get("boost_days") or 0),
+            )
+            audit_log(
+                db,
+                grant_event_types["failed"],
+                user_id=user_id,
+                request_id=getattr(g, "request_id", None),
+                action_key=product["product_key"],
+                entity_type="payment_order",
+                entity_id=int(order["id"]),
+                payload={
+                    "product_key": product["product_key"],
+                    "stripe_checkout_session_id": stripe_checkout_session_id,
+                    "stripe_payment_intent_id": stripe_payment_intent_id,
+                    "stripe_event_id": event_id,
+                    "amount_jpy": amount_jpy,
+                    "currency": currency,
+                    "status": PAYMENT_STATUS_FAILED,
+                    "duplicate_reason": "order_mismatch",
+                    "boost_days": int(product.get("boost_days") or 0),
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            return jsonify({"received": True})
+        if str(order["status"] or "") in {PAYMENT_STATUS_COMPLETED, PAYMENT_STATUS_GRANTED}:
+            audit_log(
+                db,
+                grant_event_types["skip"],
+                user_id=user_id,
+                request_id=getattr(g, "request_id", None),
+                action_key=product["product_key"],
+                entity_type="payment_order",
+                entity_id=int(order["id"]),
+                payload={
+                    "product_key": product["product_key"],
+                    "stripe_checkout_session_id": stripe_checkout_session_id,
+                    "stripe_payment_intent_id": stripe_payment_intent_id,
+                    "stripe_event_id": event_id,
+                    "amount_jpy": amount_jpy,
+                    "currency": currency,
+                    "status": str(order["status"] or ""),
+                    "duplicate_reason": "session_already_completed",
+                    "boost_days": int(order["boost_days"] or product.get("boost_days") or 0),
+                    "starts_at": (int(order["starts_at"]) if order["starts_at"] else None),
+                    "ends_at": (int(order["ends_at"]) if order["ends_at"] else None),
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            return jsonify({"received": True})
+        _update_payment_order(
+            db,
+            int(order["id"]),
+            stripe_payment_intent_id=stripe_payment_intent_id,
+            stripe_event_id=event_id,
+            amount_jpy=amount_jpy,
+            currency=currency,
+            status=PAYMENT_STATUS_COMPLETED,
+            boost_days=int(product.get("boost_days") or 0),
+        )
+        order = _payment_order_for_session(db, stripe_checkout_session_id)
+
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["PAYMENT_COMPLETED"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key=product["product_key"],
+        entity_type="payment_order",
+        entity_id=(int(order["id"]) if order else None),
+        payload={
+            "product_key": product["product_key"],
+            "stripe_checkout_session_id": stripe_checkout_session_id,
+            "stripe_payment_intent_id": stripe_payment_intent_id,
+            "stripe_event_id": event_id,
+            "amount_jpy": amount_jpy,
+            "currency": currency,
+            "status": PAYMENT_STATUS_COMPLETED,
+            "grant_type": product["grant_type"],
+            "boost_days": int(product.get("boost_days") or 0),
+        },
+        ip=request.remote_addr,
+    )
+
+    grant_result = _grant_payment_reward(db, user_id, product)
+    if not grant_result["ok"]:
+        _update_payment_order(db, int(order["id"]), status=PAYMENT_STATUS_FAILED)
+        audit_log(
+            db,
+            grant_event_types["failed"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key=product["product_key"],
+            entity_type="payment_order",
+            entity_id=int(order["id"]),
+            payload={
+                "product_key": product["product_key"],
+                "stripe_checkout_session_id": stripe_checkout_session_id,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_event_id": event_id,
+                "amount_jpy": amount_jpy,
+                "currency": currency,
+                "status": PAYMENT_STATUS_FAILED,
+                "duplicate_reason": grant_result["duplicate_reason"],
+                "boost_days": int(grant_result.get("boost_days") or product.get("boost_days") or 0),
+                "starts_at": grant_result.get("starts_at"),
+                "ends_at": grant_result.get("ends_at"),
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        return jsonify({"received": True})
+
+    if grant_result["granted"]:
+        _update_payment_order(
+            db,
+            int(order["id"]),
+            status=PAYMENT_STATUS_GRANTED,
+            granted_at=_now_ts(),
+            boost_days=int(grant_result.get("boost_days") or product.get("boost_days") or 0),
+            starts_at=grant_result.get("starts_at"),
+            ends_at=grant_result.get("ends_at"),
+        )
+        audit_log(
+            db,
+            grant_event_types["success"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key=product["product_key"],
+            entity_type="payment_order",
+            entity_id=int(order["id"]),
+            payload={
+                "product_key": product["product_key"],
+                "stripe_checkout_session_id": stripe_checkout_session_id,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_event_id": event_id,
+                "amount_jpy": amount_jpy,
+                "currency": currency,
+                "status": PAYMENT_STATUS_GRANTED,
+                "grant_type": product["grant_type"],
+                "grant_key": product.get("grant_key"),
+                "boost_days": int(grant_result.get("boost_days") or product.get("boost_days") or 0),
+                "starts_at": grant_result.get("starts_at"),
+                "ends_at": grant_result.get("ends_at"),
+            },
+            ip=request.remote_addr,
+        )
+    else:
+        _update_payment_order(
+            db,
+            int(order["id"]),
+            boost_days=int(grant_result.get("boost_days") or product.get("boost_days") or 0),
+            starts_at=grant_result.get("starts_at"),
+            ends_at=grant_result.get("ends_at"),
+        )
+        audit_log(
+            db,
+            grant_event_types["skip"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key=product["product_key"],
+            entity_type="payment_order",
+            entity_id=int(order["id"]),
+            payload={
+                "product_key": product["product_key"],
+                "stripe_checkout_session_id": stripe_checkout_session_id,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_event_id": event_id,
+                "amount_jpy": amount_jpy,
+                "currency": currency,
+                "status": PAYMENT_STATUS_COMPLETED,
+                "duplicate_reason": grant_result["duplicate_reason"],
+                "boost_days": int(grant_result.get("boost_days") or product.get("boost_days") or 0),
+                "starts_at": grant_result.get("starts_at"),
+                "ends_at": grant_result.get("ends_at"),
+            },
+            ip=request.remote_addr,
+        )
+    db.commit()
+    return jsonify({"received": True})
+
+
 @app.route("/sitemap.xml")
 def sitemap_xml():
     root_url = _public_game_root_url().rstrip("/")
@@ -8952,6 +10236,10 @@ def sitemap_xml():
         f"{root_url}/register",
         f"{root_url}/home",
         f"{root_url}/guide",
+        f"{root_url}/terms",
+        f"{root_url}/privacy",
+        f"{root_url}/commerce",
+        f"{root_url}/support",
     ]
     xml = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -9351,6 +10639,7 @@ def home():
         f"kills_{(weekly_env['element'] if weekly_env else 'NORMAL')}",
     )
     weekly_trends = _world_weekly_trends(db, week_key, limit=3)
+    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=3)
     weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else "aurix"
     user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
     faction_unlock_counts = _faction_unlock_counts(db, user["id"])
@@ -9358,6 +10647,12 @@ def home():
     faction_member_counts = _faction_member_counts(db)
     faction_recommended = _faction_recommended_key(faction_member_counts) if faction_can_choose else None
     faction_week_scores = _faction_week_scores(db, week_key)
+    faction_score_rows = _faction_score_rows(
+        faction_week_scores,
+        faction_member_counts,
+        user_faction=user_faction,
+        weekly_faction_key=weekly_faction_key,
+    )
     prev_week_key = _faction_prev_week_key(week_key)
     prev_faction_result = _faction_week_result(db, prev_week_key)
     if not prev_faction_result:
@@ -9573,6 +10868,7 @@ def home():
             weekly_kills_total=weekly_kills_total,
             weekly_kills_attr=weekly_kills_attr,
             weekly_trends=weekly_trends,
+            weekly_hot_areas=weekly_hot_areas,
             faction_emblems=FACTION_EMBLEMS,
             faction_labels=FACTION_LABELS,
             weekly_faction_key=weekly_faction_key,
@@ -9582,6 +10878,7 @@ def home():
             faction_member_counts=faction_member_counts,
             faction_recommended=faction_recommended,
             faction_week_scores=faction_week_scores,
+            faction_score_rows=faction_score_rows,
             prev_week_key=prev_week_key,
             prev_faction_result=prev_faction_result,
             faction_buff_winner=faction_buff_winner,
@@ -9726,6 +11023,15 @@ def faction_choose():
     can_choose = bool((not user_faction) and _faction_unlock_ready(counts))
     member_counts = _faction_member_counts(db)
     recommended_faction = _faction_recommended_key(member_counts)
+    current_week_key = _world_week_key()
+    weekly_env = _world_current_environment(db)
+    weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else None
+    faction_score_rows = _faction_score_rows(
+        _faction_week_scores(db, current_week_key),
+        member_counts,
+        user_faction=user_faction,
+        weekly_faction_key=weekly_faction_key,
+    )
 
     if request.method == "POST":
         if user_faction:
@@ -9743,6 +11049,8 @@ def faction_choose():
                 faction_emblems=FACTION_EMBLEMS,
                 member_counts=member_counts,
                 recommended_faction=recommended_faction,
+                faction_score_rows=faction_score_rows,
+                current_week_key=current_week_key,
             ), 403
         chosen = _normalize_faction_key(request.form.get("faction"))
         if not chosen:
@@ -9790,6 +11098,8 @@ def faction_choose():
         faction_emblems=FACTION_EMBLEMS,
         member_counts=member_counts,
         recommended_faction=recommended_faction,
+        faction_score_rows=faction_score_rows,
+        current_week_key=current_week_key,
     ), status_code
 
 
@@ -9818,6 +11128,96 @@ def research_view():
         "research.html",
         research_summary=research_summary,
         weekly_trends=weekly_trends,
+    )
+
+
+@app.route("/world")
+@login_required
+def world_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    week_key = _world_week_key()
+    weekly_env = _world_current_environment(db)
+    weekly_env_effect_lines = _world_effect_summary_lines(weekly_env)
+    weekly_recommendation = (
+        _humanize_stat_text(_world_recommendation(weekly_env["element"], _normalize_world_mode(weekly_env["mode"])))
+        if weekly_env
+        else ""
+    )
+    weekly_trends = _world_weekly_trends(db, week_key, limit=5)
+    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=5)
+    weekly_remaining_line = _world_week_remaining_line(week_key)
+    weekly_mvp = _weekly_mvp_snapshot(db, week_key)
+    research_summary = _home_research_summary(db, week_key)
+    member_counts = _faction_member_counts(db)
+    user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    faction_unlock_counts = _faction_unlock_counts(db, user["id"])
+    faction_can_choose = bool((not user_faction) and _faction_unlock_ready(faction_unlock_counts))
+    faction_week_scores = _faction_week_scores(db, week_key)
+    weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else None
+    faction_score_rows = _faction_score_rows(
+        faction_week_scores,
+        member_counts,
+        user_faction=user_faction,
+        weekly_faction_key=weekly_faction_key,
+    )
+    prev_week_key = _faction_prev_week_key(week_key)
+    prev_faction_result = _faction_week_result(db, prev_week_key)
+    if not prev_faction_result:
+        _ensure_faction_war_auto_close(db, week_key)
+        prev_faction_result = _faction_week_result(db, prev_week_key)
+    faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
+    faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
+    return render_template(
+        "world.html",
+        week_key=week_key,
+        weekly_env=weekly_env,
+        weekly_env_effect_lines=weekly_env_effect_lines,
+        weekly_recommendation=weekly_recommendation,
+        weekly_trends=weekly_trends,
+        weekly_hot_areas=weekly_hot_areas,
+        weekly_remaining_line=weekly_remaining_line,
+        weekly_mvp=weekly_mvp,
+        research_summary=research_summary,
+        faction_labels=FACTION_LABELS,
+        faction_emblems=FACTION_EMBLEMS,
+        faction_score_rows=faction_score_rows,
+        prev_week_key=prev_week_key,
+        prev_faction_result=prev_faction_result,
+        user_faction=user_faction,
+        faction_can_choose=faction_can_choose,
+        faction_unlock_progress_line=_faction_unlock_progress_line(faction_unlock_counts),
+        faction_buff_winner=faction_buff_winner,
+        faction_buff_active=faction_buff_active,
+        weekly_faction_key=weekly_faction_key,
+        element_label_map=ELEMENT_LABEL_MAP,
+    )
+
+
+@app.route("/records")
+@login_required
+def records_view():
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    week_key = _world_week_key()
+    weekly_record_groups = (
+        _record_preview_rows(db, "weekly_explores", week_key=week_key, limit=3),
+        _record_preview_rows(db, "weekly_bosses", week_key=week_key, limit=3),
+        _record_preview_rows(db, "fastest", limit=3),
+        _record_preview_rows(db, "durable", limit=3),
+        _record_preview_rows(db, "burst", limit=3),
+    )
+    return render_template(
+        "records.html",
+        first_boss_records=_first_boss_record_rows(db),
+        first_evolve_records=_first_evolve_record_rows(db),
+        weekly_record_groups=weekly_record_groups,
+        showcase_highlights=_record_showcase_highlights(db, user["id"]),
+        week_key=week_key,
     )
 
 
@@ -10505,6 +11905,7 @@ def explore():
         """
         SELECT is_admin, click_power, wins, battle_log_mode,
                boss_meter_explore_l1, boss_meter_win_l1, layer2_unlocked, max_unlocked_layer, created_at,
+               explore_boost_until,
                last_explore_area_key
         FROM users
         WHERE id = ?
@@ -13978,11 +15379,19 @@ def _admin_user_delete_summary(db, target_user_id):
         ).fetchone()["c"]
         or 0
     )
+    payment_count = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM payment_orders WHERE user_id = ?",
+            (target_user_id,),
+        ).fetchone()["c"]
+        or 0
+    )
     return {
         "robot_count": robot_count,
         "part_count": part_count,
         "audit_count": audit_count,
         "referral_count": referral_count,
+        "payment_count": payment_count,
     }
 
 
@@ -14025,6 +15434,7 @@ def _admin_delete_user_hard(db, target_user_id):
     _safe_delete("fusion_audit_logs", "user_id = ?", (target_user_id,))
     _safe_delete("login_logs", "user_id = ?", (target_user_id,))
     _safe_delete("part_instances", "user_id = ?", (target_user_id,))
+    _safe_delete("payment_orders", "user_id = ?", (target_user_id,))
     _safe_delete("posts", "user_id = ?", (target_user_id,))
     _safe_delete("qol_entitlements", "user_id = ?", (target_user_id,))
     _safe_delete("robot_builds", "user_id = ?", (target_user_id,))
@@ -14226,6 +15636,84 @@ def admin_users():
         """
     ).fetchall()
     return render_template("admin_users.html", rows=rows, message=message, self_user_id=admin_user_id)
+
+
+@app.route("/admin/payments")
+@login_required
+def admin_payments():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+
+    user_id_raw = (request.args.get("user_id") or "").strip()
+    username = (request.args.get("username") or "").strip()
+    product_key = (request.args.get("product_key") or "").strip()
+    status = (request.args.get("status") or "").strip()
+    stripe_checkout_session_id = (request.args.get("stripe_checkout_session_id") or "").strip()
+    stripe_event_id = (request.args.get("stripe_event_id") or "").strip()
+    created_at = (request.args.get("created_at") or "").strip()
+    granted_at = (request.args.get("granted_at") or "").strip()
+
+    where = []
+    params = []
+    if user_id_raw.isdigit():
+        where.append("po.user_id = ?")
+        params.append(int(user_id_raw))
+    if username:
+        where.append("u.username LIKE ?")
+        params.append(f"%{username}%")
+    if product_key:
+        where.append("po.product_key = ?")
+        params.append(product_key)
+    if status:
+        where.append("po.status = ?")
+        params.append(status)
+    if stripe_checkout_session_id:
+        where.append("po.stripe_checkout_session_id = ?")
+        params.append(stripe_checkout_session_id)
+    if stripe_event_id:
+        where.append("po.stripe_event_id = ?")
+        params.append(stripe_event_id)
+    created_from = _parse_jst_day_filter(created_at)
+    created_to = _parse_jst_day_filter(created_at, end=True)
+    if created_from is not None and created_to is not None:
+        where.append("po.created_at >= ? AND po.created_at < ?")
+        params.extend([created_from, created_to])
+    granted_from = _parse_jst_day_filter(granted_at)
+    granted_to = _parse_jst_day_filter(granted_at, end=True)
+    if granted_from is not None and granted_to is not None:
+        where.append("po.granted_at IS NOT NULL AND po.granted_at >= ? AND po.granted_at < ?")
+        params.extend([granted_from, granted_to])
+
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    rows = db.execute(
+        f"""
+        SELECT
+            po.*,
+            u.username
+        FROM payment_orders po
+        JOIN users u ON u.id = po.user_id
+        {where_sql}
+        ORDER BY po.id DESC
+        LIMIT 200
+        """,
+        params,
+    ).fetchall()
+    return render_template(
+        "admin_payments.html",
+        rows=rows,
+        filters={
+            "user_id": user_id_raw,
+            "username": username,
+            "product_key": product_key,
+            "status": status,
+            "stripe_checkout_session_id": stripe_checkout_session_id,
+            "stripe_event_id": stripe_event_id,
+            "created_at": created_at,
+            "granted_at": granted_at,
+        },
+        payment_status_label=_payment_status_label,
+    )
 
 
 @app.route("/admin/users/<int:target_user_id>/delete", methods=["GET", "POST"])

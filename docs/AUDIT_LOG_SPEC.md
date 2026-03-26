@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-03-11
+最終更新日: 2026-03-26
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -60,7 +60,18 @@
 - `audit.referral.qualified`
 - `audit.faction.choose`
 
-### 4.6 管理者操作（追加）
+### 4.6 決済
+- `audit.payment.checkout.create`
+- `audit.payment.webhook.received`
+- `audit.payment.completed`
+- `audit.payment.grant.success`
+- `audit.payment.grant.skip_duplicate`
+- `audit.payment.grant.failed`
+- `audit.explore_boost.grant.success`
+- `audit.explore_boost.grant.skip_duplicate`
+- `audit.explore_boost.grant.failed`
+
+### 4.7 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -68,7 +79,7 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.7 システム
+### 4.8 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
@@ -76,6 +87,19 @@
 ## 5. payload方針
 - 表示用テキストだけでなく、再計算可能な値を保持
 - 追加は可、既存キーの意味変更は不可
+- 決済系 payload は可能な範囲で以下を保持する
+  - `user_id`
+  - `product_key`
+  - `stripe_checkout_session_id`
+  - `stripe_payment_intent_id`
+  - `stripe_event_id`
+  - `amount_jpy`
+  - `currency`
+  - `status`
+  - `boost_days`
+  - `starts_at`
+  - `ends_at`
+  - `duplicate_reason`
 
 ## 6. 管理UI
 - `/admin/audit` で検索

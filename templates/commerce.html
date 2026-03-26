@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>特定商取引法に基づく表記</h1>
+  <p>最終更新日: 2026年3月26日</p>
+  <div class="link">
+    <a href="{{ url_for('terms') }}">利用規約</a> |
+    <a href="{{ url_for('privacy') }}">プライバシーポリシー</a> |
+    <a href="{{ url_for('contact') }}">お問い合わせ</a>
+  </div>
+
+  <table>
+    <tbody>
+      <tr><th>販売事業者</th><td>{{ legal_operator_name }}（{{ legal_brand_name }}）</td></tr>
+      <tr><th>連絡先</th><td>メールアドレス: <a href="mailto:{{ support_email }}">{{ support_email }}</a></td></tr>
+      <tr><th>所在地・電話番号</th><td>{{ legal_disclosure_policy }}</td></tr>
+      <tr><th>販売価格</th><td>購入画面に表示された金額（税込）</td></tr>
+      <tr><th>支払方法</th><td>クレジットカード決済（Stripe 経由）</td></tr>
+      <tr><th>支払時期</th><td>商品購入時に即時決済</td></tr>
+      <tr><th>商品の引渡時期</th><td>決済完了後、Stripe webhook による確認が取れ次第、ゲーム内特典を付与します。</td></tr>
+      <tr><th>現在の主な販売対象</th><td>支援パック、出撃ブースト等の非戦力・利便性コンテンツ</td></tr>
+      <tr><th>返品・キャンセル</th><td>デジタルコンテンツの性質上、購入後の返品・返金・キャンセルは原則お受けできません。正常に付与されなかった場合はお問い合わせください。</td></tr>
+      <tr><th>動作環境</th><td>インターネット接続環境および最新の Web ブラウザ（Chrome、Safari、Edge、Firefox 等）</td></tr>
+      <tr><th>販売数量の制限</th><td>商品ごとに購入制限がある場合は、購入画面または商品説明に表示します。</td></tr>
+      <tr><th>特別条件</th><td>サービス終了時、未使用のデジタル特典・未消化期間の払い戻しは行いません。終了の際は相当の予告期間を設けてお知らせします。</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

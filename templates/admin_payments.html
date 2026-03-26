@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>支払い履歴</h1>
+<div class="card">
+  <form method="get" class="admin-inline-form">
+    <input type="text" name="user_id" value="{{ filters['user_id'] }}" placeholder="user_id" />
+    <input type="text" name="username" value="{{ filters['username'] }}" placeholder="username" />
+    <input type="text" name="product_key" value="{{ filters['product_key'] }}" placeholder="product_key" />
+    <input type="text" name="status" value="{{ filters['status'] }}" placeholder="status" />
+    <input type="text" name="created_at" value="{{ filters['created_at'] }}" placeholder="created_at YYYY-MM-DD" />
+    <input type="text" name="granted_at" value="{{ filters['granted_at'] }}" placeholder="granted_at YYYY-MM-DD" />
+    <input type="text" name="stripe_checkout_session_id" value="{{ filters['stripe_checkout_session_id'] }}" placeholder="session_id" />
+    <input type="text" name="stripe_event_id" value="{{ filters['stripe_event_id'] }}" placeholder="event_id" />
+    <button type="submit">検索</button>
+  </form>
+</div>
+<div class="card admin-users-table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>id</th>
+        <th>user_id</th>
+        <th>username</th>
+        <th>product_key</th>
+        <th>status</th>
+        <th>created_at</th>
+        <th>starts_at</th>
+        <th>ends_at</th>
+        <th>granted_at</th>
+        <th>session_id</th>
+        <th>event_id</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row['id'] }}</td>
+        <td>{{ row['user_id'] }}</td>
+        <td>{{ row['username'] }}</td>
+        <td>{{ row['product_key'] }}</td>
+        <td>{{ payment_status_label(row['status']) }}</td>
+        <td>{{ row['created_at']|dt }}</td>
+        <td>{{ row['starts_at']|dt }}</td>
+        <td>{{ row['ends_at']|dt }}</td>
+        <td>{{ row['granted_at']|dt }}</td>
+        <td>{{ row['stripe_checkout_session_id'] or '-' }}</td>
+        <td>{{ row['stripe_event_id'] or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="11">該当する支払い履歴はありません。</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
+{% endblock %}

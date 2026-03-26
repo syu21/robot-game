@@ -1,6 +1,6 @@
 # ロボらぼ ドキュメント入口
 
-最終更新日: 2026-03-25
+最終更新日: 2026-03-26
 
 このディレクトリは、`ロボらぼ` の実装仕様・運用仕様・監査仕様の正本です。
 実装変更時は、関連仕様を必ず同時更新してください。
@@ -17,6 +17,7 @@
 - 運営思想 / 中長期方針: `docs/GAME_DIRECTION.md`
 - 実装優先ロードマップ: `docs/IMPLEMENTATION_ROADMAP.md`
 - 実況 / 分析カテゴリ整理: `docs/ANALYSIS_TEMPLATE_CATEGORIES.md`
+- 決済基盤: `docs/PAYMENT_SPEC.md`
 - 全体: `docs/PROJECT_STATUS.md`
 - 出撃: `docs/EXPLORATION_SPEC.md`
 - 戦闘設計: `docs/BATTLE_DESIGN_SHEET.md`
@@ -25,6 +26,7 @@
 - 敵: `docs/ENEMY_SPEC.md`
 - 週間環境: `docs/WEEKLY_ENVIRONMENT_SPEC.md`
 - 監査: `docs/AUDIT_LOG_SPEC.md`
+- 決済/ショップ: `docs/PAYMENT_SPEC.md`
 - 運用チェック: `docs/OPERATIONS_CHECKLIST.md`
 - バックアップ/復元: `docs/BACKUP_RESTORE.md`
 - 公開後ランブック: `docs/OPERATIONS_RUNBOOK.md`
@@ -63,11 +65,18 @@ make dev
   - `/admin/login`（管理者保護アカウント用）
   - `/logout`
   - `/guide`
-  - `/terms`, `/privacy`（共通の法務ページ）
+  - `/shop`（サンドボックスの出撃ブースト購入）
+  - `/support`
+  - `/payment/success`, `/payment/cancel`
+  - `/terms`
+  - `/privacy`
+  - `/commerce`（特定商取引法に基づく表記）
   - `/contact`
 - 基地/進行:
   - `/home`
   - `/map`
+  - `/world`
+  - `/records`
 - 出撃:
   - `POST /explore`
 - 編成/育成:
@@ -77,6 +86,9 @@ make dev
 - 管理:
   - `/admin`
   - `/admin/users`（BAN/通常ログイン保護）
+  - `/admin/payments`
+- 決済受信:
+  - `/stripe/webhook`
 - 公開/運用:
   - `/healthz`
   - `/sitemap.xml`

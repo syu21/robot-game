@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h1>購入を中断しました</h1>
+  {% if product %}
+  <p>{{ product['display_name'] }} の決済は完了していません。必要になったら、また戻って再開できます。</p>
+  {% else %}
+  <p>決済は完了していません。必要になったら、また購入ページから再開できます。</p>
+  {% endif %}
+</div>
+<p class="link"><a href="{{ return_url }}">戻る</a></p>
+{% endblock %}

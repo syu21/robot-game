@@ -144,6 +144,7 @@ def main():
             has_seen_intro_modal INTEGER NOT NULL DEFAULT 0,
             intro_guide_closed_at TEXT,
             last_explore_area_key TEXT,
+            explore_boost_until INTEGER NOT NULL DEFAULT 0,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -640,6 +641,29 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS payment_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            product_key TEXT NOT NULL,
+            stripe_checkout_session_id TEXT UNIQUE,
+            stripe_payment_intent_id TEXT,
+            stripe_event_id TEXT UNIQUE,
+            amount_jpy INTEGER,
+            currency TEXT,
+            status TEXT NOT NULL DEFAULT 'created',
+            grant_type TEXT NOT NULL,
+            boost_days INTEGER NOT NULL DEFAULT 0,
+            starts_at INTEGER,
+            ends_at INTEGER,
+            granted_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_history (
             robot_id INTEGER PRIMARY KEY,
             battles_total INTEGER NOT NULL DEFAULT 0,
@@ -709,6 +733,42 @@ def main():
         if "created_at" in udi_cols:
             cur.execute("UPDATE user_decor_inventory SET acquired_at = created_at WHERE acquired_at IS NULL")
         cur.execute("UPDATE user_decor_inventory SET acquired_at = ? WHERE acquired_at IS NULL", (int(time.time()),))
+    po_cols = {row[1] for row in cur.execute("PRAGMA table_info(payment_orders)").fetchall()}
+    if "user_id" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN user_id INTEGER")
+    if "product_key" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN product_key TEXT")
+    if "stripe_checkout_session_id" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN stripe_checkout_session_id TEXT")
+    if "stripe_payment_intent_id" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN stripe_payment_intent_id TEXT")
+    if "stripe_event_id" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN stripe_event_id TEXT")
+    if "amount_jpy" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN amount_jpy INTEGER")
+    if "currency" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN currency TEXT")
+    if "status" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN status TEXT NOT NULL DEFAULT 'created'")
+    if "grant_type" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN grant_type TEXT NOT NULL DEFAULT 'decor'")
+    if "boost_days" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN boost_days INTEGER NOT NULL DEFAULT 0")
+    if "starts_at" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN starts_at INTEGER")
+    if "ends_at" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN ends_at INTEGER")
+    if "granted_at" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN granted_at INTEGER")
+    if "created_at" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+    if "updated_at" not in po_cols:
+        cur.execute("ALTER TABLE payment_orders ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+    cur.execute("UPDATE payment_orders SET status = 'created' WHERE status IS NULL OR TRIM(status) = ''")
+    cur.execute("UPDATE payment_orders SET grant_type = 'decor' WHERE grant_type IS NULL OR TRIM(grant_type) = ''")
+    cur.execute("UPDATE payment_orders SET boost_days = 0 WHERE boost_days IS NULL")
+    cur.execute("UPDATE payment_orders SET created_at = 0 WHERE created_at IS NULL")
+    cur.execute("UPDATE payment_orders SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
 
     users_cols = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
     if "avatar_path" not in users_cols:
@@ -739,6 +799,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN intro_guide_closed_at TEXT")
     if "last_explore_area_key" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
+    if "explore_boost_until" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN explore_boost_until INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -753,6 +815,7 @@ def main():
     cur.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
     cur.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     cur.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
+    cur.execute("UPDATE users SET explore_boost_until = 0 WHERE explore_boost_until IS NULL")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
@@ -900,6 +963,10 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_day_key ON daily_metrics(day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_enemies_boss_area_active ON enemies(is_boss, boss_area_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_decor_inventory_user_acquired ON user_decor_inventory(user_id, acquired_at)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_session_id ON payment_orders(stripe_checkout_session_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_event_id ON payment_orders(stripe_event_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_status_created ON payment_orders(status, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
@@ -962,6 +1029,7 @@ def main():
         ("boss_emblem_aurix", "オリクス紋章", "images/factions/aurix.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "images/factions/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "images/factions/ignis.png"),
+        ("supporter_emblem_001", "支援者トロフィー", "decor/aurix_trophy.png"),
     ]
     for key, name_ja, image_path in decor_seed:
         cur.execute(
