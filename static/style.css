@@ -931,6 +931,65 @@ body.lightbox-open .lightbox-overlay {
   object-fit: cover;
   flex: 0 0 auto;
 }
+.presence-user-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.presence-user-line .user-chip.mini {
+  margin-right: 0;
+  flex: 0 0 auto;
+}
+.home-ranking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+}
+.home-ranking-row + .home-ranking-row {
+  border-top: 1px dashed rgba(33, 28, 20, 0.12);
+}
+.record-ranking-item {
+  align-items: flex-start;
+}
+.record-ranking-main {
+  flex: 1;
+  min-width: 0;
+}
+.record-owner-line,
+.record-user-line {
+  margin-top: 4px;
+}
+.record-owner-line .user-chip.mini,
+.record-user-line .user-chip.mini {
+  width: 28px;
+  height: 28px;
+}
+.record-owner-line .avatar-48,
+.record-user-line .avatar-48 {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.record-owner-line .badge-overlay,
+.record-user-line .badge-overlay {
+  width: 14px;
+  height: 14px;
+  right: -3px;
+  bottom: -3px;
+}
+.record-owner-line .robot-badge-32,
+.record-user-line .robot-badge-32 {
+  width: 11px;
+  height: 11px;
+}
+.record-highlight-thumb,
+.world-mvp-thumb {
+  width: 96px;
+  height: 96px;
+}
 
 .fusion-card { margin-top: 12px; }
 .fusion-grid {
@@ -1670,6 +1729,10 @@ body.battle-page .layer-boss-victory-sub {
   border-left: 4px solid rgba(23, 104, 109, 0.55);
   background: linear-gradient(120deg, rgba(238, 251, 250, 0.96), rgba(248, 253, 253, 0.96));
 }
+.feed-card-weekly {
+  border-left: 4px solid rgba(116, 87, 26, 0.45);
+  background: linear-gradient(120deg, rgba(255, 249, 235, 0.96), rgba(255, 253, 247, 0.96));
+}
 .feed-kicker-row {
   display: flex;
   justify-content: space-between;
@@ -1727,6 +1790,52 @@ body.battle-page .layer-boss-victory-sub {
 .feed-type {
   font-size: 11px;
   opacity: 0.7;
+}
+
+.world-competition-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.world-score-list {
+  display: grid;
+  gap: 10px;
+}
+
+.world-score-card.is-user {
+  border-left: 4px solid rgba(26, 107, 103, 0.45);
+}
+
+.world-score-card.is-tailwind {
+  background: linear-gradient(120deg, rgba(244, 252, 248, 0.96), rgba(255, 253, 247, 0.96));
+}
+
+.world-score-head {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.world-score-title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.world-score-emblem {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(33, 28, 20, 0.18);
+  background: #fff;
+}
+
+.world-score-points {
+  font-weight: 900;
+  font-size: 18px;
 }
 
 .battle-summary-title {
@@ -2295,6 +2404,20 @@ body.home-page .locked-layer-card {
 .guide-term-body {
   font-size: 14px;
   line-height: 1.5;
+}
+.shop-product {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.shop-product-image {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 .invite-link-row {
   margin-top: 6px;

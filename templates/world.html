@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>世界戦況</h1>
+  <div class="world-env-card">
+    <div><b>{{ week_key }}</b></div>
+    {% if weekly_env %}
+    <div class="upgrade-cost">{{ weekly_remaining_line }}</div>
+    <div><b>{{ weekly_env['mode'] }}</b></div>
+    <div class="robot-part">今週属性: {{ element_label_map.get(weekly_env['element'], weekly_env['element']) }}</div>
+    {% for effect_line in weekly_env_effect_lines %}
+    <div class="robot-part">{{ effect_line }}</div>
+    {% endfor %}
+    {% if weekly_recommendation %}
+    <div class="upgrade-cost">{{ weekly_recommendation }}</div>
+    {% endif %}
+    {% else %}
+    <div class="upgrade-cost">今週の環境データはまだありません。</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="world-competition-grid">
+  <section class="panel">
+    <h2>今週の熱源</h2>
+    <div class="card">
+      <div><b>注目属性</b></div>
+      <ul class="ranking-mini">
+        {% for t in weekly_trends %}
+        <li><span>{{ element_label_map.get(t['element'], t['element']) }}</span><span>{{ t['value'] }} build</span></li>
+        {% else %}
+        <li>まだビルド傾向は出ていません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div><b>盛り上がっている出撃先</b></div>
+      <ul class="ranking-mini">
+        {% for area in weekly_hot_areas %}
+        <li><span>{{ area['area_label'] }}</span><span>{{ area['count'] }}回</span></li>
+        {% else %}
+        <li>まだ出撃データがありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div><b>今週のMVP</b></div>
+      {% if weekly_mvp %}
+      <div class="presence-user-line">
+        <span class="user-chip mini">
+          <img class="avatar-48" src="{{ url_for('static', filename=weekly_mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
+          <span class="badge-overlay">
+            <img class="robot-badge-32" src="{{ url_for('static', filename=weekly_mvp['badge_path']) }}" alt="badge" loading="lazy" />
+          </span>
+        </span>
+        <span>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</span>
+      </div>
+      {% if weekly_mvp['robot_name'] %}<div class="robot-part">{{ weekly_mvp['robot_name'] }}</div>{% endif %}
+      {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb world-mvp-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
+      {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">機体を見る</a></div>{% endif %}
+      {% else %}
+      <div class="upgrade-cost">まだ今週のMVPは決まっていません。</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>陣営戦</h2>
+    <div class="card">
+      {% if user_faction %}
+      <div><b>所属:</b> {{ faction_labels.get(user_faction, user_faction) }}</div>
+      {% else %}
+      <div><b>所属:</b> 未所属</div>
+      <div class="upgrade-cost">{{ faction_unlock_progress_line }}</div>
+      {% if faction_can_choose %}
+      <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
+      {% endif %}
+      {% endif %}
+      {% if prev_faction_result %}
+      <div class="robot-part">先週勝者: {{ faction_labels.get(prev_faction_result['winner_faction'], prev_faction_result['winner_faction']) }}（{{ prev_week_key }}）</div>
+      {% endif %}
+      {% if faction_buff_active %}
+      <div><span class="weekly-fit-badge">勝利陣営バフ発動中</span></div>
+      {% elif faction_buff_winner %}
+      <div class="robot-part">今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}</div>
+      {% endif %}
+    </div>
+    <div class="world-score-list">
+      {% for row in faction_score_rows %}
+      <div class="card world-score-card{% if row['is_user_faction'] %} is-user{% endif %}{% if row['is_weekly_tailwind'] %} is-tailwind{% endif %}">
+        <div class="world-score-head">
+          <div class="world-score-title">
+            {% if row['emblem_path'] %}
+            <img class="world-score-emblem" src="{{ url_for('static', filename=row['emblem_path']) }}" alt="{{ row['label'] }}" loading="lazy" />
+            {% endif %}
+            <div>
+              <div><b>{{ row['label'] }}</b></div>
+              <div class="upgrade-cost">{{ row['doctrine_title'] }}</div>
+            </div>
+          </div>
+          <div class="world-score-points">{{ row['points'] }} pt</div>
+        </div>
+        <div class="robot-part">{{ row['doctrine_summary'] }}</div>
+        <div class="upgrade-cost">軸: {{ row['focus'] }} / 所属 {{ row['member_count'] }}人</div>
+        <div class="upgrade-cost">{{ row['world_hint'] }}</div>
+        {% if row['is_weekly_tailwind'] %}
+        <div><span class="weekly-fit-badge">今週の追い風</span></div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>研究進捗</h2>
+  <div class="world-env-card">
+    <div><b>勝利属性:</b> {{ element_label_map.get(research_summary['current_research_element'], research_summary['current_research_element']) if research_summary['current_research_element'] else '-' }}</div>
+    <div class="upgrade-cost">stage {{ research_summary['unlocked_stage'] }} / 4</div>
+    <div class="upgrade-cost">next unlock: {{ research_summary['next_part_type'] or '-' }}</div>
+    <div class="link"><a href="{{ url_for('research_view') }}">研究進捗を見る</a></div>
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

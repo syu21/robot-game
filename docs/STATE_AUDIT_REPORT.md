@@ -1,12 +1,13 @@
 # 監査状態レポート（STATE_AUDIT_REPORT）
 
-最終更新日: 2026-03-25
+最終更新日: 2026-03-26
 
 ## 1. サマリー
 - 監査基盤 `world_events_log` は継続運用可能
 - 主要導線（出撃・育成・ボス・共有・招待・管理操作）で監査イベントが揃っている
 - request_id 付与で追跡性は良好
 - 監査ログは内部追跡だけでなく、世界ログ・ランキング・間接競争の土台として運用する
+- `audit.explore.end` / `audit.boss.defeat` / `audit.part.evolve` を、`/home` のランキング、`/world` のMVP、`/records` の記録面へ再利用できる状態にある
 
 ## 1.1 関連方針
 - 中長期の運営思想は `docs/GAME_DIRECTION.md` を正本とする
@@ -34,7 +35,15 @@
 - 招待紐付け: `audit.referral.attach`
 - 招待条件達成: `audit.referral.qualified`
 
-### 2.4 管理操作
+### 2.4 世界競争・週更新
+- 週更新: `week_rollover`
+- 研究解禁: `RESEARCH_UNLOCK`
+- 陣営戦決着: `FACTION_WAR_RESULT`
+- これらは `/feed?type=weekly`、`/world`、`/records` で再利用される
+- `audit.boss.defeat` と `audit.part.evolve` は `初達成記録` と `今週の記録` の再構成にも利用する
+- `audit.explore.end` は `ホームの今週ランキング` と `今週のMVP` の再集計にも利用する
+
+### 2.5 管理操作
 - ユーザーBAN/解除
 - 管理者保護ON/OFF
 - 監査イベント追加済み
@@ -228,8 +237,8 @@
 - `robot-game.service` 再起動後も `gunicorn` / `nginx` の両方で復旧確認済み
 
 ### 8.7 法務/問い合わせ導線
-- `/terms` と `/privacy` は同一の法務ページへ統合済み
-- プライバシーポリシー内の問い合わせ先直接記載は外し、`/contact` 導線へ統一
+- `/terms`, `/privacy`, `/commerce` を独立した法務ページとして公開
+- 問い合わせ先は `/contact` と `mailto:` の両方から辿れる
 - Google フォーム問い合わせ先は `https://forms.gle/mmjKJqX6QrPE9GkJ6`
 
 ### 8.8 ポチゲーポータル連絡

@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-03-11
+最終更新日: 2026-03-26
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -37,7 +37,8 @@
 - [ ] `/parts/evolve` が `N + 進化コア1 -> R` で動作
   - N個体消費 / 進化コア1消費 / R個体生成
   - `plus`, `w_hp..w_cri` 引き継ぎ
-- [ ] 進化コア未所持時は基地に進化合成カードが表示されない
+- [ ] 第2層固定ボス撃破前は基地や個体一覧に進化合成導線が表示されない
+- [ ] 第2層固定ボス撃破後は基地に進化合成カードが表示される
 
 ## 5. 認証/管理保護
 - [ ] BANユーザーは `/login` 不可
@@ -68,3 +69,32 @@
 ## 8. リリース前検証
 - [ ] `python3 -m py_compile app.py init_db.py services/stats.py services/fuse.py constants.py`
 - [ ] `python3 -m unittest discover -s tests -q`
+
+## 9. 世界競争UI
+- [ ] `/home` の `今週のランキング` に `アイコン+小ロボ` が出る
+- [ ] `/home` の `今週のMVP` に `アイコン+小ロボ` と機体画像が出る
+- [ ] `/world` の `今週のMVP` に `アイコン+小ロボ` と機体画像が出る
+- [ ] `/records` の `初達成記録 / 今週の記録 / 話題ロボ` にユーザー表示と機体表示が出る
+- [ ] `/ranking` の user系は `アイコン+小ロボ`、robot系は機体サムネで表示される
+
+## 10. 公開運用
+- [ ] `GET /healthz` が `200`
+- [ ] `GET /sitemap.xml` が `200` で `application/xml`
+- [ ] `https://robolabo.site/terms` が利用規約として表示される
+- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
+- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
+- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
+- [ ] favicon が配信される
+  - `GET /static/favicon.png` が `200`
+- [ ] `robot-game.service` が active
+- [ ] `robot-game-healthcheck.timer` が active
+- [ ] `robot-game-backup.timer` が active
+- [ ] `robot-game-portal-online.timer` が active
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
+- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
+- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
+- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
+- [ ] `backups/` に当日バックアップがある
+- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
+- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
+- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す

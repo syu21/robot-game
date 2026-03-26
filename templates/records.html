@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>記録庫</h1>
+  <div class="upgrade-cost">{{ week_key }} の記録と、世界に残った初達成を見返せます。</div>
+</div>
+
+<div class="world-competition-grid">
+  <section class="panel">
+    <h2>初達成記録</h2>
+    <div class="card">
+      <div><b>初ボス撃破</b></div>
+      <ul class="timeline-list">
+        {% for row in first_boss_records %}
+        <li>
+          <div><b>{{ row['title'] }}</b></div>
+          <div class="presence-user-line record-user-line">
+            <span class="user-chip mini">
+              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <span class="robot-part">{{ row['username'] }}{% if row['detail'] %} / {{ row['detail'] }}{% endif %}</span>
+          </div>
+          <div class="robot-time">{{ row['time_jst'] }} JST</div>
+        </li>
+        {% else %}
+        <li>まだ撃破記録はありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div><b>初R化</b></div>
+      <ul class="timeline-list">
+        {% for row in first_evolve_records %}
+        <li>
+          <div><b>{{ row['title'] }}</b></div>
+          <div class="presence-user-line record-user-line">
+            <span class="user-chip mini">
+              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <span class="robot-part">{{ row['username'] }}{% if row['detail'] %} / {{ row['detail'] }}{% endif %}</span>
+          </div>
+          <div class="robot-time">{{ row['time_jst'] }} JST</div>
+        </li>
+        {% else %}
+        <li>まだ進化記録はありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>今週の記録</h2>
+    {% for group in weekly_record_groups %}
+    <div class="card">
+      <div><b>{{ group['metric']['title'] }}</b></div>
+      <ul class="ranking-mini">
+        {% for row in group['rows'] %}
+        <li class="record-ranking-item{% if group['metric'].get('row_kind') == 'robot' %} is-robot{% endif %}">
+          <div class="record-ranking-main">
+            {% if group['metric'].get('row_kind') == 'robot' %}
+            <div class="ranking-robot-cell">
+              {% if row.get('image_url') %}
+              <img class="ranking-robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+              {% endif %}
+              <div>
+                <div><b>{{ row['rank'] }}位 {{ row['title'] }}</b></div>
+                <div class="presence-user-line record-owner-line">
+                  <span class="user-chip mini">
+                    <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+                    <span class="badge-overlay">
+                      <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+                    </span>
+                  </span>
+                  <span class="robot-part">{{ row['subtitle'] }}</span>
+                </div>
+                {% if row.get('profile') and row['profile'].get('signature_label') %}
+                <div class="robot-time">{{ row['profile']['signature_label'] }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <div class="presence-user-line">
+              <span class="user-chip mini">
+                <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+                <span class="badge-overlay">
+                  <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+                </span>
+              </span>
+              <span>{{ row['rank'] }}位 {{ row['title'] }}</span>
+            </div>
+            {% endif %}
+          </div>
+          <span>{{ row['value'] }} {{ group['metric']['metric_label'] }}</span>
+        </li>
+        {% else %}
+        <li>まだ記録がありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="panel">
+  <h2>話題ロボ</h2>
+  <div class="showcase-grid">
+    {% for row in showcase_highlights %}
+    <div class="card">
+      <div><b>{{ row['title'] }}</b></div>
+      {% if row.get('image_url') %}
+      <img class="robot-thumb record-highlight-thumb" src="{{ row['image_url'] }}" alt="{{ row['robot_name'] }}" loading="lazy" decoding="async" />
+      {% endif %}
+      <div>{{ row['robot_name'] }}</div>
+      <div class="presence-user-line record-user-line">
+        <span class="user-chip mini">
+          <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+          <span class="badge-overlay">
+            <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+          </span>
+        </span>
+        <span class="upgrade-cost">{{ row['username'] }}</span>
+      </div>
+      {% if row['profile'] and row['profile']['signature_label'] %}
+      <div class="robot-part">思想: {{ row['profile']['signature_label'] }}</div>
+      {% endif %}
+      {% if row['profile'] and row['profile']['focus_line'] %}
+      <div class="robot-part">{{ row['profile']['focus_line'] }}</div>
+      {% endif %}
+      <div class="link"><a href="{{ url_for('robot_detail', instance_id=row['robot_id']) }}">詳細を見る</a></div>
+    </div>
+    {% else %}
+    <div class="card">まだ話題ロボはありません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="world-env-card">
+    <div><b>見返す</b></div>
+    <div class="link"><a href="{{ url_for('feed') }}">世界ログを見る</a> | <a href="{{ url_for('ranking') }}">ランキングを見る</a> | <a href="{{ url_for('showcase') }}">ロボ展示を見る</a></div>
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

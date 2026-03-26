@@ -294,6 +294,12 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("2位 home_next_tester", html)
         self.assertIn('/ranking?metric=weekly_explores', html)
         self.assertLess(html.index("みんなのログ"), html.index("今週のランキング"))
+        m = re.search(r'<section class="panel home-ranking-panel">(.*?)</section>', html, re.DOTALL)
+        self.assertIsNotNone(m)
+        panel_html = m.group(1)
+        self.assertIn('class="user-chip mini"', panel_html)
+        self.assertIn("1位 ranking_rival", panel_html)
+        self.assertIn("robot-badge-32", panel_html)
 
     def test_home_weekly_explore_ranking_handles_empty_state(self):
         client = self._new_client()

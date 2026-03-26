@@ -223,7 +223,15 @@
       <div class="world-env-card mvp-hero-card">
         <div><b>今週のMVP</b></div>
         {% if weekly_mvp %}
-        <div>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+        <div class="presence-user-line">
+          <span class="user-chip mini">
+            <img class="avatar-48" src="{{ url_for('static', filename=weekly_mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
+            <span class="badge-overlay">
+              <img class="robot-badge-32" src="{{ url_for('static', filename=weekly_mvp['badge_path']) }}" alt="badge" loading="lazy" />
+            </span>
+          </span>
+          <span>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</span>
+        </div>
         {% if weekly_mvp['robot_name'] %}<div>{{ weekly_mvp['robot_name'] }}</div>{% endif %}
         {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
         {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">詳細を見る</a></div>{% endif %}
@@ -341,10 +349,20 @@
     {% if weekly_env %}
       <div class="world-env-card">
         <div><b>今週の戦況</b></div>
+        <div class="upgrade-cost">{{ weekly_env['week_key'] }}</div>
         <div>{{ weekly_env['mode'] }}</div>
         {% for effect_line in weekly_env_effect_lines %}
         <div>{{ effect_line }}</div>
         {% endfor %}
+        {% if weekly_recommendation %}
+        <div class="robot-part">{{ weekly_recommendation }}</div>
+        {% endif %}
+        {% if weekly_trends %}
+        <div class="robot-part">注目属性: {% for t in weekly_trends %}{{ t['element'] }} {{ t['value'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+        {% endif %}
+        {% if weekly_hot_areas %}
+        <div class="robot-part">盛り上がり: {% for area in weekly_hot_areas %}{{ area['area_label'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+        {% endif %}
         <div class="faction-row">
           {% for key, emblem_path in faction_emblems.items() %}
             <div class="faction-badge {% if key == weekly_faction_key %}is-active{% else %}is-inactive{% endif %}" title="{{ key }}">
@@ -352,6 +370,7 @@
             </div>
           {% endfor %}
         </div>
+        <div class="link"><a href="{{ url_for('world_view') }}">世界戦況を見る</a></div>
       </div>
     {% endif %}
     </section>
@@ -371,6 +390,9 @@
       {% endif %}
       {% else %}
       <div>今週スコア: IG {{ faction_week_scores['ignis'] }} / VE {{ faction_week_scores['ventra'] }} / AU {{ faction_week_scores['aurix'] }}</div>
+      {% if faction_score_rows %}
+      <div class="robot-part">首位: {{ faction_score_rows[0]['label'] }} {{ faction_score_rows[0]['points'] }}pt</div>
+      {% endif %}
       {% if prev_faction_result %}
       <div>先週勝者: {{ faction_labels.get(prev_faction_result['winner_faction'], prev_faction_result['winner_faction']) }}（{{ prev_week_key }}）</div>
       {% else %}
@@ -382,6 +404,7 @@
       <div>今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}（勝利コイン +1）</div>
       {% endif %}
       {% endif %}
+      <div class="link"><a href="{{ url_for('world_view') }}">陣営戦を見る</a> | <a href="{{ url_for('records_view') }}">記録を見る</a></div>
     </div>
     </section>
 
@@ -392,6 +415,8 @@
       <div class="home-nav-grid home-nav-links">
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('ranking') }}"><div class="action-title">ランキング</div><div class="action-desc">みんなの進行を見る</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('world_view') }}"><div class="action-title">世界戦況</div><div class="action-desc">今週の追い風と陣営戦</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
       </div>
       <div class="home-nav-section-title">進捗</div>
       <div class="home-nav-grid home-nav-progress">
@@ -433,7 +458,18 @@
     <div><b>今週のランキング</b></div>
     <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
     {% for row in home_ranking_rows %}
-      <div class="robot-part">{{ loop.index }}位 {{ row['username'] }} <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span></div>
+      <div class="home-ranking-row">
+        <div class="presence-user-line">
+          <span class="user-chip mini">
+            <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+            <span class="badge-overlay">
+              <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+            </span>
+          </span>
+          <span>{{ loop.index }}位 {{ row['username'] }}</span>
+        </div>
+        <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span>
+      </div>
     {% else %}
       <div class="robot-part">まだランキングデータがありません。</div>
     {% endfor %}

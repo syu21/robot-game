@@ -10,8 +10,9 @@
 - コアループ: `基地 -> 出撃 -> 戦利品 -> パーツ強化/進化合成 -> ロボ編成 -> 再出撃`
 - 主要方針:
   - 戦力販売をしない
-  - ボス報酬は DECOR 中心（戦力差を作らない）
+  - 固定ボス/エリアボス報酬は DECOR 中心、NPCボスは進化コア報酬あり
   - 監査ログ `audit.*` を常に残す
+  - `ホームの今週ランキング / 世界戦況のMVP / 記録庫 / ロボ展示` で他プレイヤーの存在感と研究導線を強める
 
 ## 2. 正本ドキュメント
 - 運営思想 / 中長期方針: `docs/GAME_DIRECTION.md`
@@ -36,11 +37,11 @@
 
 ## 3. 起動手順
 ```bash
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-make db-init
-make dev
+python3 init_db.py
+FLASK_APP=app.py FLASK_ENV=development flask run --host 127.0.0.1 --port 5050
 ```
 
 - 既定URL: `http://127.0.0.1:5050/home`
@@ -52,6 +53,7 @@ make dev
 - 探索・強化・進化・ボス・DECOR取得は基礎体験の提供段階
 - 先に作るのは `周回快感` と `型/思想の自然発生`
 - 競争はまず `世界ログ / ランキング / 陣営戦` などの間接競争で成立させる
+- `アイコン+小ロボ` と機体画像で「他プレイヤーがいる感じ」を出す
 - `PvP は入口ではなくゴール`
 - 今後の提案は次の3条件で判断する
   - 周回が気持ちよくなるか
@@ -77,6 +79,9 @@ make dev
   - `/map`
   - `/world`
   - `/records`
+  - `/ranking`
+  - `/showcase`
+  - `/feed`
 - 出撃:
   - `POST /explore`
 - 編成/育成:

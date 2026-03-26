@@ -1,6 +1,6 @@
 # 編成・強化・進化仕様
 
-最終更新日: 2026-03-08
+最終更新日: 2026-03-26
 
 ## 1. 範囲
 - ロボ編成: `/build`, `/build/confirm`
@@ -20,6 +20,15 @@
 ### 2.3 保存
 - `robot_instances` + `robot_instance_parts` に保存
 - 保存枠超過時は保存ブロック
+
+### 2.4 小型バッジ画像
+- `robot_instances.icon_32_path` に 32x32 の小型ロボ画像を保持する
+- 未生成時は `composed_image_path` からオンデマンドで生成する
+- 用途:
+  - `/ranking` の user系ランキング
+  - `/home` の `今週のランキング`
+  - `/world` の MVP 表示
+  - `/records` のユーザー表示
 
 ## 3. DECOR表示方針
 - DECORはバッジ的に小型表示（本体中心を隠さない）

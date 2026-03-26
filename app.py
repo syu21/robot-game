@@ -2905,6 +2905,7 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
         item["metric_precision"] = _robot_metric_value("precision", stat_obj["stats"] if stat_obj else None)
         item["metric_burst"] = _robot_metric_value("burst", stat_obj["stats"] if stat_obj else None)
         out.append(item)
+    out = _decorate_user_rows(db, out, user_key="user_id")
     if sort_key in {"fastest", "durable", "precision", "burst"}:
         value_key = f"metric_{sort_key}"
         out.sort(
@@ -8280,6 +8281,7 @@ def _weekly_mvp_snapshot(db, week_key):
     image_url = None
     if robot_dict and robot_dict.get("composed_image_path"):
         image_url = _composed_image_url(robot_dict.get("composed_image_path"), robot_dict.get("updated_at"))
+    visuals = _user_visuals(db, int(user_row["id"]), {})
     return {
         "user_id": int(user_row["id"]),
         "username": user_row["username"],
@@ -8287,6 +8289,8 @@ def _weekly_mvp_snapshot(db, week_key):
         "robot_id": int(robot_dict["id"]) if robot_dict else None,
         "robot_name": (robot_dict["name"] if robot_dict else None),
         "robot_image_url": image_url,
+        "avatar_path": visuals["avatar"],
+        "badge_path": visuals["badge"],
     }
 
 
@@ -8375,9 +8379,14 @@ def _faction_score_rows(score_map, member_counts=None, *, user_faction=None, wee
 
 def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
     rows, metric = _ranking_rows(db, metric_key, limit=limit, week_key=week_key)
+    row_kind = str(metric.get("row_kind") or "user")
+    if row_kind == "robot":
+        rows = _decorate_user_rows(db, rows, user_key="user_id")
+    else:
+        rows = _decorate_user_rows(db, rows, user_key="id")
     out = []
     for idx, row in enumerate(rows, start=1):
-        if metric.get("row_kind") == "robot":
+        if row_kind == "robot":
             out.append(
                 {
                     "rank": idx,
@@ -8386,6 +8395,11 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "value": int(row["metric_value"] or 0),
                     "value_label": metric["metric_label"],
                     "robot_id": int(row["robot_id"]),
+                    "user_id": int(row["user_id"]),
+                    "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                    "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                    "image_url": row.get("image_url"),
+                    "profile": row.get("profile"),
                 }
             )
         else:
@@ -8397,6 +8411,9 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "value": int(row["metric_value"] or 0),
                     "value_label": metric["metric_label"],
                     "robot_id": None,
+                    "user_id": int(row["id"]),
+                    "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                    "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
                 }
             )
     return {
@@ -8407,6 +8424,7 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
 
 def _first_boss_record_rows(db):
     out = []
+    cache = {}
     for area in EXPLORE_AREAS:
         area_key = area["key"]
         row = db.execute(
@@ -8422,6 +8440,7 @@ def _first_boss_record_rows(db):
         ).fetchone()
         if not row:
             continue
+        visuals = _user_visuals(db, int(row["user_id"]), cache) if row["user_id"] else {"avatar": DEFAULT_AVATAR_REL, "badge": DEFAULT_BADGE_REL}
         try:
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
@@ -8439,6 +8458,8 @@ def _first_boss_record_rows(db):
                     if part
                 ),
                 "time_jst": _format_jst_ts(row["created_at"]),
+                "avatar_path": visuals["avatar"],
+                "badge_path": visuals["badge"],
             }
         )
     return out
@@ -8447,6 +8468,7 @@ def _first_boss_record_rows(db):
 def _first_evolve_record_rows(db):
     part_types = ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")
     out = []
+    cache = {}
     for part_type in part_types:
         row = db.execute(
             """
@@ -8461,6 +8483,7 @@ def _first_evolve_record_rows(db):
         ).fetchone()
         if not row:
             continue
+        visuals = _user_visuals(db, int(row["user_id"]), cache) if row["user_id"] else {"avatar": DEFAULT_AVATAR_REL, "badge": DEFAULT_BADGE_REL}
         try:
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
@@ -8473,6 +8496,8 @@ def _first_evolve_record_rows(db):
                 "username": _feed_user_label(db, row["user_id"]),
                 "detail": target_name,
                 "time_jst": _format_jst_ts(row["created_at"]),
+                "avatar_path": visuals["avatar"],
+                "badge_path": visuals["badge"],
             }
         )
     return out
@@ -8493,6 +8518,9 @@ def _record_showcase_highlights(db, user_id):
                 "username": row["username"],
                 "profile": row.get("profile"),
                 "sort_key": sort_key,
+                "image_url": row.get("image_url"),
+                "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
             }
         )
     return highlights
@@ -10711,6 +10739,7 @@ def home():
         limit=5,
         week_key=week_key,
     )
+    home_ranking_rows = _decorate_user_rows(db, home_ranking_rows, user_key="id")
     home_ranking_url = url_for("ranking", metric="weekly_explores")
     upgrade_cost = max(10, user["click_power"] * 10)
     message = session.pop("message", None)
