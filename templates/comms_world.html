@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel comms-shell" data-comms-auto-refresh="1" data-auto-refresh-ms="{{ auto_refresh_seconds * 1000 }}">
+  <div class="comms-kicker">WORLD LOG</div>
+  <h1>世界ログ</h1>
+  <p class="comms-lead">世界の動きや、他のロボ使いの声がここに流れます。</p>
+  <nav class="comms-nav">
+    <a class="battle-home-link" href="{{ url_for('comms') }}">通信トップ</a>
+    <a class="battle-home-link active" href="{{ url_for('comms_world') }}">世界ログ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_rooms') }}">会議室</a>
+    <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
+    <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
+  </nav>
+  <div class="comms-toolbar">
+    <div class="comms-toolbar-copy">{{ world_settings['max_chars'] }}文字まで / 連投CT {{ world_settings['cooldown_seconds'] }}秒 / {{ auto_refresh_seconds }}秒ごと自動更新</div>
+    <a class="battle-home-link" href="{{ url_for('comms_world') }}">手動更新</a>
+  </div>
+  <form method="post" action="{{ url_for('comms_world') }}" class="home-chat-form comms-post-form" data-comms-compose="1">
+    <input type="hidden" name="next" value="{{ request.path }}" />
+    <input type="text" name="message" maxlength="{{ world_settings['max_chars'] }}" placeholder="世界にひとこと送る" required />
+    <button type="submit">送信</button>
+  </form>
+
+  {% for item in items %}
+    {% if item['timeline_type'] == 'system' %}
+      {% set c = item['card'] %}
+      <article class="card feed-card comms-timeline-item comms-timeline-item-system{% if c.get('accent') %} feed-card-{{ c['accent'] }}{% endif %}">
+        <div class="feed-kicker-row">
+          <div class="feed-kicker">SYSTEM LOG</div>
+          <div class="feed-time">{{ c['time_jst'] }} JST</div>
+        </div>
+        <div class="feed-head">
+          <div class="feed-user">{{ c['user_label'] }}</div>
+        </div>
+        <div class="feed-body">
+          {% if c.get('image_url') %}
+          <img class="feed-thumb" src="{{ c['image_url'] }}" alt="event" loading="lazy" />
+          {% endif %}
+          <div>
+            <div class="feed-text">{{ c['text'] }}</div>
+            {% for line in c.get('meta_lines', []) %}
+            <div class="feed-meta">{{ line }}</div>
+            {% endfor %}
+            {% if c.get('link_url') %}
+            <div><a href="{{ c['link_url'] }}">詳細を見る</a></div>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+    {% elif item['timeline_type'] == 'legacy_system' %}
+      <article class="card comms-timeline-item comms-legacy-system-card">
+        <div class="feed-kicker-row">
+          <div class="feed-kicker">{{ item['headline'] }}</div>
+          <div class="feed-time">{{ item['time_jst'] }} JST</div>
+        </div>
+        <div class="feed-text">{{ item['text'] }}</div>
+      </article>
+    {% else %}
+      <article class="card comms-timeline-item comms-message-card">
+        <div class="comms-message-head">
+          <div class="presence-user-line">
+            <span class="user-chip mini">
+              <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <div>
+              <div class="feed-user">{{ item['user_label'] }}</div>
+              <div class="feed-kicker">PUBLIC SIGNAL</div>
+            </div>
+          </div>
+          <div class="feed-time">{{ item['time_jst'] }} JST</div>
+        </div>
+        <div class="comms-message-body">{{ item['message'] }}</div>
+      </article>
+    {% endif %}
+  {% else %}
+  <div class="card comms-empty-card">
+    <p>まだ世界ログは静かです。最初の発言を送ってみましょう。</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='comms_refresh.js') }}?v={{ app_version }}"></script>
+{% endblock %}

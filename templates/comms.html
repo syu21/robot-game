@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel comms-shell">
+  <div class="comms-kicker">COMMUNICATION HUB</div>
+  <h1>通信</h1>
+  <p class="comms-lead">世界の動き、ロボ使いたちの会話、あなたの前進をここで見返せます。</p>
+  <nav class="comms-nav">
+    <a class="battle-home-link active" href="{{ url_for('comms') }}">通信トップ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_world') }}">世界ログ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_rooms') }}">会議室</a>
+    <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
+    <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
+  </nav>
+  <div class="comms-hub-grid">
+    {% for section in sections %}
+    <a class="action-card comms-hub-card{% if section['status'] == '準備中' %} comms-hub-card-muted{% endif %}" href="{{ section['href'] }}">
+      <div class="comms-card-topline">
+        <span class="comms-status-badge{% if section['status'] == '準備中' %} is-muted{% endif %}">{{ section['status'] }}</span>
+      </div>
+      <div class="action-title">{{ section['title'] }}</div>
+      <div class="action-desc">{{ section['summary'] }}</div>
+      <div class="comms-card-meta">{{ section['meta'] }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

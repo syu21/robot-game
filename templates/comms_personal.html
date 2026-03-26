@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel comms-shell">
+  <div class="comms-kicker">PERSONAL LOG</div>
+  <h1>個人ログ</h1>
+  <p class="comms-lead">あなたのロボの成長や出来事がここに残ります。</p>
+  <nav class="comms-nav">
+    <a class="battle-home-link" href="{{ url_for('comms') }}">通信トップ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_world') }}">世界ログ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_rooms') }}">会議室</a>
+    <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
+    <a class="battle-home-link active" href="{{ url_for('comms_personal') }}">個人ログ</a>
+  </nav>
+
+  {% for item in items %}
+  <article class="card feed-card comms-personal-card feed-card-{{ item['accent'] }}">
+    <div class="feed-kicker-row">
+      <div class="feed-kicker">{{ item['title'] }}</div>
+      <div class="feed-time">{{ item['time_jst'] }} JST</div>
+    </div>
+    <div class="feed-text">{{ item['text'] }}</div>
+    {% for line in item.get('meta_lines', []) %}
+    <div class="feed-meta">{{ line }}</div>
+    {% endfor %}
+    {% if item.get('link_url') %}
+    <div class="link"><a href="{{ item['link_url'] }}">関連画面へ</a></div>
+    {% endif %}
+  </article>
+  {% else %}
+  <div class="card comms-empty-card">
+    <p>まだ個人ログに表示できる出来事がありません。出撃や進化を進めるとここに積み上がります。</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

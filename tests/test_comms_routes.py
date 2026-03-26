@@ -274,4 +274,180 @@ class CommsRoutesTests(unittest.TestCase):
             db.execute(
                 """
                 INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
-                VALUES (?, 
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps(
+                        {
+                            "enemy_name": "整備層ガーディアン",
+                            "area_key": "layer_2",
+                            "unlocked_layer": 3,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 1,
+                    game_app.AUDIT_EVENT_TYPES["DROP"],
+                    json.dumps(
+                        {
+                            "part_key": "head_1",
+                            "part_type": "HEAD",
+                            "rarity": "N",
+                            "plus": 2,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 2,
+                    game_app.AUDIT_EVENT_TYPES["FUSE"],
+                    json.dumps(
+                        {
+                            "success": True,
+                            "part_type": "HEAD",
+                            "from_plus": 2,
+                            "to_plus": 3,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 3,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                    json.dumps(
+                        {
+                            "enemy_name": "整備層ガーディアン",
+                            "area_key": "layer_2",
+                            "area_label": "第二層",
+                            "alert_attempts_left": 2,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 4,
+                    game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                    json.dumps(
+                        {
+                            "area_key": "layer_2",
+                            "result": {"win": True, "battle_count": 3, "timeout": False, "is_area_boss": False},
+                            "battles": [{"enemy": {"name_ja": "整備ドローン"}}],
+                            "rewards": {"coins": 5, "cores": 0, "drops": [{"kind": "part_instance"}]},
+                            "boss": {"is_area_boss": False},
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 5,
+                    game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"],
+                    json.dumps(
+                        {
+                            "part_type": "HEAD",
+                            "target_part_name": "試作ヘッド",
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 6,
+                    game_app.AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"],
+                    json.dumps({"referrer_user_id": 99}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 7,
+                    game_app.AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
+                    json.dumps(
+                        {
+                            "quantity": 1,
+                            "target": game_app.EVOLUTION_CORE_PROGRESS_TARGET,
+                            "progress_after_reset": 0,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            for offset in range(3):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, '{}', ?)
+                    """,
+                    (now + 10 + offset, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], self.other_user_id),
+                )
+            db.commit()
+
+        client = self._client()
+        resp = client.get("/comms/personal")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
+        self.assertIn("パーツ入手", html)
+        self.assertIn("強化成功", html)
+        self.assertIn("ボス遭遇", html)
+        self.assertIn("探索勝利", html)
+        self.assertIn("ボス撃破", html)
+        self.assertIn("層解放", html)
+        self.assertIn("進化成功", html)
+        self.assertIn("招待条件達成", html)
+        self.assertIn("進化コア保証到達", html)
+        self.assertIn("個人ランキング", html)
+        self.assertIn("整備層ガーディアン", html)
+        self.assertIn("第3層が解放されました。", html)
+
+
+if __name__ == "__main__":
+    unittest.main()

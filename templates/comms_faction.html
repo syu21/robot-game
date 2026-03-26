@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel comms-shell">
+  <div class="comms-kicker">FACTION CHANNEL</div>
+  <h1>陣営通信</h1>
+  <p class="comms-lead">同じ陣営の仲間と話せる通信は、いま準備中です。</p>
+  <nav class="comms-nav">
+    <a class="battle-home-link" href="{{ url_for('comms') }}">通信トップ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_world') }}">世界ログ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_rooms') }}">会議室</a>
+    <a class="battle-home-link active" href="{{ url_for('comms_faction') }}">陣営通信</a>
+    <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
+  </nav>
+  <div class="card comms-placeholder-card">
+    <div class="comms-status-badge is-muted">準備中</div>
+    <h2>陣営ごとの通信は準備中です</h2>
+    <p>開放までのあいだは、世界ログと会議室から他のロボ使いたちと交流できます。</p>
+    <p class="link"><a href="{{ url_for('world_view') }}">今週の陣営戦を見る</a></p>
+  </div>
+</section>
+{% endblock %}

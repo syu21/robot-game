@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel comms-shell" data-comms-auto-refresh="1" data-auto-refresh-ms="{{ auto_refresh_seconds * 1000 }}">
+  <div class="comms-kicker">ROOMS</div>
+  <h1>会議室</h1>
+  <p class="comms-lead">ロボ使いたちが集まって話せる場所です。</p>
+  <nav class="comms-nav">
+    <a class="battle-home-link" href="{{ url_for('comms') }}">通信トップ</a>
+    <a class="battle-home-link" href="{{ url_for('comms_world') }}">世界ログ</a>
+    <a class="battle-home-link active" href="{{ url_for('comms_rooms') }}">会議室</a>
+    <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
+    <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
+  </nav>
+
+  <div class="comms-room-tabs">
+    {% for room in room_defs %}
+    <a class="battle-home-link{% if room['key'] == selected_room_key %} active{% endif %}" href="{{ url_for('comms_rooms', room=room['key']) }}">{{ room['title'] }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="comms-room-hero">
+    <div>
+      <div class="action-title">{{ selected_room['title'] }}</div>
+      <div class="action-desc">{{ selected_room['summary'] }}</div>
+      <div class="comms-card-meta">{{ selected_room['tone'] }}</div>
+    </div>
+    <div class="comms-toolbar-copy">{{ room_settings['max_chars'] }}文字まで / 連投CT {{ room_settings['cooldown_seconds'] }}秒 / {{ auto_refresh_seconds }}秒ごと自動更新</div>
+  </div>
+
+  <div class="comms-toolbar">
+    <div class="comms-toolbar-copy">{{ selected_room['tone'] }}</div>
+    <a class="battle-home-link" href="{{ url_for('comms_rooms', room=selected_room_key) }}">手動更新</a>
+  </div>
+
+  <form method="post" action="{{ url_for('comms_rooms', room=selected_room_key) }}" class="post-form comms-room-form" data-comms-compose="1">
+    <input type="hidden" name="next" value="{{ url_for('comms_rooms', room=selected_room_key) }}" />
+    <input type="hidden" name="room_key" value="{{ selected_room_key }}" />
+    <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="3" placeholder="{{ selected_room['title'] }} に投稿する" required></textarea>
+    <button type="submit">送信</button>
+  </form>
+
+  <div class="comms-room-list">
+    {% for item in room_items %}
+    <article class="card comms-timeline-item comms-message-card">
+      <div class="comms-message-head">
+        <div class="presence-user-line">
+          <span class="user-chip mini">
+            <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
+            <span class="badge-overlay">
+              <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
+            </span>
+          </span>
+          <div class="feed-user">{{ item['user_label'] }}</div>
+        </div>
+        <div class="feed-time">{{ item['time_jst'] }} JST</div>
+      </div>
+      <div class="comms-message-body">{{ item['message'] }}</div>
+    </article>
+    {% else %}
+    <div class="card comms-empty-card">
+      <p>まだ投稿がありません。最初の会話を始めてみましょう。</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='comms_refresh.js') }}?v={{ app_version }}"></script>
+{% endblock %}
