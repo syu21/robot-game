@@ -240,6 +240,197 @@
         {% endif %}
       </div>
     </section>
+    <section
+      class="panel home-mini-log-panel home-comms-panel"
+      id="home-comms-panel"
+      data-home-comms-root="1"
+      data-home-comms-initial-tab="{{ home_comm_initial_tab }}"
+      data-home-comms-initial-room="{{ home_comm_initial_room_key }}"
+    >
+      <h2>通信</h2>
+      <div class="home-comms-tabs" role="tablist" aria-label="通信タブ">
+        <button type="button" class="battle-home-link active" data-home-comms-tab-button="world" data-home-comms-hash="home-comms-world" aria-selected="true" aria-controls="home-comms-pane-world">世界ログ</button>
+        <button type="button" class="battle-home-link" data-home-comms-tab-button="rooms" data-home-comms-hash="home-comms-rooms-{{ home_comm_initial_room_key }}" aria-selected="false" aria-controls="home-comms-pane-rooms">会議室</button>
+        <button type="button" class="battle-home-link" data-home-comms-tab-button="faction" data-home-comms-hash="home-comms-faction" aria-selected="false" aria-controls="home-comms-pane-faction">陣営通信</button>
+        <button type="button" class="battle-home-link" data-home-comms-tab-button="personal" data-home-comms-hash="home-comms-personal" aria-selected="false" aria-controls="home-comms-pane-personal">個人ログ</button>
+      </div>
+
+      <div class="home-comms-panes">
+        <section
+          class="home-comms-pane is-active"
+          id="home-comms-pane-world"
+          data-home-comms-pane="world"
+          data-home-comms-hash="home-comms-world"
+          data-home-comms-source-url="{{ url_for('comms_world') }}"
+          data-home-comms-refresh-ms="{{ 18 * 1000 }}"
+          aria-hidden="false"
+        >
+          <div class="home-comms-toolbar">
+            <div class="home-mini-log-time">世界の動きや、他のロボ使いの声がここに流れます。</div>
+          </div>
+          <form method="post" action="{{ url_for('chat') }}" class="home-chat-form" data-home-comms-submit="1">
+            <input type="hidden" name="next" value="{{ url_for('home') }}#home-comms-world" />
+            <input type="text" name="message" maxlength="{{ home_comm_world_settings['max_chars'] }}" placeholder="世界ログへひとこと投稿" required />
+            <button type="submit">投稿</button>
+          </form>
+          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+            {% for item in home_comm_world_items %}
+              {% if item['timeline_type'] == 'system' %}
+                {% set c = item['card'] %}
+                <article class="card feed-card home-comms-item{% if c.get('accent') %} feed-card-{{ c['accent'] }}{% endif %}">
+                  <div class="feed-kicker-row">
+                    <div class="feed-kicker">SYSTEM LOG</div>
+                    <div class="feed-time">{{ c['time_jst'] }} JST</div>
+                  </div>
+                  <div class="feed-text">{{ c['text'] }}</div>
+                </article>
+              {% elif item['timeline_type'] == 'legacy_system' %}
+                <article class="card home-comms-item comms-legacy-system-card">
+                  <div class="feed-kicker-row">
+                    <div class="feed-kicker">{{ item['headline'] }}</div>
+                    <div class="feed-time">{{ item['time_jst'] }} JST</div>
+                  </div>
+                  <div class="feed-text">{{ item['text'] }}</div>
+                </article>
+              {% else %}
+                <article class="card home-comms-item comms-message-card">
+                  <div class="comms-message-head">
+                    <div class="presence-user-line">
+                      <span class="user-chip mini">
+                        <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
+                        <span class="badge-overlay">
+                          <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
+                        </span>
+                      </span>
+                      <div>
+                        <div class="feed-user">{{ item['user_label'] }}</div>
+                        <div class="feed-kicker">PUBLIC SIGNAL</div>
+                      </div>
+                    </div>
+                    <div class="feed-time">{{ item['time_jst'] }} JST</div>
+                  </div>
+                  <div class="comms-message-body">{{ item['message'] }}</div>
+                </article>
+              {% endif %}
+            {% else %}
+            <div class="home-mini-log-empty">まだ通信ログがありません。</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section
+          class="home-comms-pane"
+          id="home-comms-pane-rooms"
+          data-home-comms-pane="rooms"
+          data-home-comms-hash="home-comms-rooms-{{ home_comm_initial_room_key }}"
+          data-home-comms-source-url="{{ url_for('comms_rooms') }}"
+          aria-hidden="true"
+          hidden
+        >
+          <div class="home-comms-subtabs" role="tablist" aria-label="会議室タブ">
+            {% for room in home_comm_room_defs %}
+            <button
+              type="button"
+              class="battle-home-link{% if loop.first %} active{% endif %}"
+              data-home-comms-room-button="{{ room['key'] }}"
+              data-home-comms-hash="home-comms-rooms-{{ room['key'] }}"
+              aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
+              aria-controls="home-comms-room-pane-{{ room['key'] }}"
+            >{{ room['title'] }}</button>
+            {% endfor %}
+          </div>
+          {% for room in home_comm_room_defs %}
+          {% set room_settings = home_comm_room_settings_by_key[room['key']] %}
+          {% set room_items = home_comm_room_items_by_key[room['key']] %}
+          <div
+            class="home-comms-room-pane{% if loop.first %} is-active{% endif %}"
+            id="home-comms-room-pane-{{ room['key'] }}"
+            data-home-comms-room-pane="{{ room['key'] }}"
+            data-home-comms-source-url="{{ url_for('comms_rooms', room=room['key']) }}"
+            data-home-comms-refresh-ms="{{ 18 * 1000 }}"
+            aria-hidden="{% if loop.first %}false{% else %}true{% endif %}"
+            {% if not loop.first %}hidden{% endif %}
+          >
+            <div class="home-comms-toolbar">
+              <div class="home-mini-log-time">{{ room['summary'] }}</div>
+            </div>
+            <form method="post" action="{{ url_for('comms_rooms') }}" class="post-form comms-room-form home-room-form" data-home-comms-submit="1">
+              <input type="hidden" name="next" value="{{ url_for('home') }}#home-comms-rooms-{{ room['key'] }}" />
+              <input type="hidden" name="room_key" value="{{ room['key'] }}" />
+              <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="3" placeholder="{{ room['title'] }}に投稿する" required></textarea>
+              <button type="submit">投稿</button>
+            </form>
+            <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+              {% for item in room_items %}
+              <article class="card home-comms-item comms-message-card">
+                <div class="comms-message-head">
+                  <div class="presence-user-line">
+                    <span class="user-chip mini">
+                      <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
+                      <span class="badge-overlay">
+                        <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
+                      </span>
+                    </span>
+                    <div class="feed-user">{{ item['user_label'] }}</div>
+                  </div>
+                  <div class="feed-time">{{ item['time_jst'] }} JST</div>
+                </div>
+                <div class="comms-message-body">{{ item['message'] }}</div>
+              </article>
+              {% else %}
+              <div class="home-mini-log-empty">まだこの部屋には投稿がありません。</div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </section>
+
+        <section
+          class="home-comms-pane"
+          id="home-comms-pane-faction"
+          data-home-comms-pane="faction"
+          data-home-comms-hash="home-comms-faction"
+          data-home-comms-source-url="{{ url_for('comms_faction') }}"
+          aria-hidden="true"
+          hidden
+        >
+          <div class="card comms-placeholder-card">
+            <div class="comms-status-badge is-muted">準備中</div>
+            <div class="feed-text">陣営通信は次段階で開放します。いまは世界ログと会議室から交流できます。</div>
+          </div>
+        </section>
+
+        <section
+          class="home-comms-pane"
+          id="home-comms-pane-personal"
+          data-home-comms-pane="personal"
+          data-home-comms-hash="home-comms-personal"
+          data-home-comms-source-url="{{ url_for('comms_personal') }}"
+          aria-hidden="true"
+          hidden
+        >
+          <div class="home-comms-toolbar">
+            <div class="home-mini-log-time">あなたのロボの成長や出来事がここに残ります。</div>
+          </div>
+          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+            {% for item in home_comm_personal_items %}
+            <article class="card feed-card home-comms-item comms-personal-card feed-card-{{ item['accent'] }}">
+              <div class="feed-kicker-row">
+                <div class="feed-kicker">{{ item['title'] }}</div>
+                <div class="feed-time">{{ item['time_jst'] }} JST</div>
+              </div>
+              <div class="feed-text">{{ item['text'] }}</div>
+              {% for line in item.get('meta_lines', []) %}
+              <div class="feed-meta">{{ line }}</div>
+              {% endfor %}
+            </article>
+            {% else %}
+            <div class="home-mini-log-empty">まだ個人ログに表示できる出来事がありません。</div>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+    </section>
   </div>
 
   <div class="home-right-stack home-social-stack">
@@ -323,196 +514,4 @@
       <div class="actions-grid home-actions-grid home-primary-actions-grid">
         {% if has_any_robot %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
-        <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
-        {% if show_evolution_actions %}
-        <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">{{ evolution_core_status['home_label'] }}</div></a>
-        {% endif %}
-        {% endif %}
-        <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
-        <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
-      </div>
-      {% if is_admin %}
-      <div class="home-nav-section-title">管理</div>
-      <div class="actions-grid home-actions-grid home-secondary-actions-grid">
-        <a class="action-card" href="{{ url_for('admin') }}"><div class="action-title">管理者メニュー</div><div class="action-desc">管理機能トップ</div></a>
-        <a class="action-card" href="{{ url_for('admin_parts') }}"><div class="action-title">管理: パーツ</div><div class="action-desc">パーツ登録/編集</div></a>
-        <a class="action-card" href="{{ url_for('admin_decor') }}"><div class="action-title">管理: 装飾</div><div class="action-desc">装飾アセット管理</div></a>
-        <a class="action-card" href="{{ url_for('admin_enemies') }}"><div class="action-title">管理: 敵</div><div class="action-desc">敵登録/調整</div></a>
-        <a class="action-card" href="{{ url_for('admin_balance') }}"><div class="action-title">管理: バランス</div><div class="action-desc">確率/コスト確認</div></a>
-        <a class="action-card" href="{{ url_for('admin_world') }}"><div class="action-title">管理: 週間環境</div><div class="action-desc">環境再抽選/カウンタ管理</div></a>
-        <a class="action-card" href="{{ url_for('admin_audit') }}"><div class="action-title">管理: 監査ログ</div><div class="action-desc">証跡を確認</div></a>
-      </div>
-      {% endif %}
-  </section>
-
-    <section class="panel home-weekly-panel">
-    {% if weekly_env %}
-      <div class="world-env-card">
-        <div><b>今週の戦況</b></div>
-        <div class="upgrade-cost">{{ weekly_env['week_key'] }}</div>
-        <div>{{ weekly_env['mode'] }}</div>
-        {% for effect_line in weekly_env_effect_lines %}
-        <div>{{ effect_line }}</div>
-        {% endfor %}
-        {% if weekly_recommendation %}
-        <div class="robot-part">{{ weekly_recommendation }}</div>
-        {% endif %}
-        {% if weekly_trends %}
-        <div class="robot-part">注目属性: {% for t in weekly_trends %}{{ t['element'] }} {{ t['value'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
-        {% endif %}
-        {% if weekly_hot_areas %}
-        <div class="robot-part">盛り上がり: {% for area in weekly_hot_areas %}{{ area['area_label'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
-        {% endif %}
-        <div class="faction-row">
-          {% for key, emblem_path in faction_emblems.items() %}
-            <div class="faction-badge {% if key == weekly_faction_key %}is-active{% else %}is-inactive{% endif %}" title="{{ key }}">
-              <img src="{{ url_for('static', filename=emblem_path) }}" alt="{{ key }}" loading="lazy" />
-            </div>
-          {% endfor %}
-        </div>
-        <div class="link"><a href="{{ url_for('world_view') }}">世界戦況を見る</a></div>
-      </div>
-    {% endif %}
-    </section>
-
-    <section class="panel home-faction-panel">
-    <div class="world-env-card home-faction-card">
-      <div><b>陣営戦（{{ weekly_env['week_key'] if weekly_env else '-' }}）</b></div>
-      {% if faction_status['is_joined'] %}
-      <div>所属: {{ faction_labels.get(user_faction, user_faction) }}</div>
-      {% else %}
-      <div>所属: 未所属</div>
-      {% endif %}
-      {% if not faction_status['is_joined'] %}
-      <div>{{ faction_unlock_progress_line }}</div>
-      {% if faction_status['can_choose'] %}
-      <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
-      {% endif %}
-      {% else %}
-      <div>今週スコア: IG {{ faction_week_scores['ignis'] }} / VE {{ faction_week_scores['ventra'] }} / AU {{ faction_week_scores['aurix'] }}</div>
-      {% if faction_score_rows %}
-      <div class="robot-part">首位: {{ faction_score_rows[0]['label'] }} {{ faction_score_rows[0]['points'] }}pt</div>
-      {% endif %}
-      {% if prev_faction_result %}
-      <div>先週勝者: {{ faction_labels.get(prev_faction_result['winner_faction'], prev_faction_result['winner_faction']) }}（{{ prev_week_key }}）</div>
-      {% else %}
-      <div>先週勝者: 集計中（{{ prev_week_key }}）</div>
-      {% endif %}
-      {% if faction_buff_active %}
-      <div><span class="weekly-fit-badge">勝利陣営バフ: 勝利コイン +1</span></div>
-      {% elif faction_buff_winner %}
-      <div>今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}（勝利コイン +1）</div>
-      {% endif %}
-      {% endif %}
-      <div class="link"><a href="{{ url_for('world_view') }}">陣営戦を見る</a> | <a href="{{ url_for('records_view') }}">記録を見る</a></div>
-    </div>
-    </section>
-
-    {% if not home_beginner_focus %}
-    <section class="panel home-nav-panel">
-      <h2>メニュー</h2>
-      <div class="home-nav-section-title">リンク</div>
-      <div class="home-nav-grid home-nav-links">
-        <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('ranking') }}"><div class="action-title">ランキング</div><div class="action-desc">みんなの進行を見る</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('world_view') }}"><div class="action-title">世界戦況</div><div class="action-desc">今週の追い風と陣営戦</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
-      </div>
-      <div class="home-nav-section-title">進捗</div>
-      <div class="home-nav-grid home-nav-progress">
-        <a class="action-card home-nav-card" href="{{ url_for('progress_view') }}"><div class="action-title">今日の進捗</div><div class="action-desc">探索 {{ today_progress['explore_count'] }} / 勝利 {{ today_progress['win_count'] }}</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('research_view') }}"><div class="action-title">研究進捗</div><div class="action-desc">stage {{ research_summary['unlocked_stage'] }} / 4</div></a>
-      </div>
-    </section>
-    {% endif %}
-  </div>
-</div>
-</div>
-<section class="panel home-mini-log-panel">
-  <h2>みんなのログ</h2>
-  <form method="post" action="{{ url_for('chat') }}" class="home-chat-form">
-    <input type="text" name="message" maxlength="120" placeholder="ひとこと投稿" required />
-    <button type="submit">投稿</button>
-  </form>
-  <ul class="log home-mini-log-list home-social-log-list">
-    {% for msg in chat_messages[:5] %}
-      <li class="home-mini-log-item">
-        <span class="user-chip mini">
-          <img class="avatar-48" src="{{ url_for('static', filename=msg['avatar_path']) }}" alt="avatar" loading="lazy" />
-          <span class="badge-overlay">
-            <img class="robot-badge-32" src="{{ url_for('static', filename=msg['badge_path']) }}" alt="badge" loading="lazy" />
-          </span>
-        </span>
-        <div class="home-mini-log-main">
-          <div class="home-mini-log-text">{{ msg['home_text'] }}</div>
-          <div class="home-mini-log-time">{{ msg['created_at'] }}</div>
-        </div>
-      </li>
-    {% else %}
-      <li class="home-mini-log-empty">まだログがありません。</li>
-    {% endfor %}
-  </ul>
-</section>
-<section class="panel home-ranking-panel">
-  <div class="world-env-card">
-    <div><b>今週のランキング</b></div>
-    <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
-    {% for row in home_ranking_rows %}
-      <div class="home-ranking-row">
-        <div class="presence-user-line">
-          <span class="user-chip mini">
-            <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-            <span class="badge-overlay">
-              <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-            </span>
-          </span>
-          <span>{{ loop.index }}位 {{ row['username'] }}</span>
-        </div>
-        <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span>
-      </div>
-    {% else %}
-      <div class="robot-part">まだランキングデータがありません。</div>
-    {% endfor %}
-    <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
-  </div>
-</section>
-{% if show_home_visibility_controls %}
-<section class="panel home-visibility-panel">
-  <div class="world-env-card">
-    <div><b>表示調整</b></div>
-    <div class="home-inline-actions">
-      {% if beginner_mission_available and not show_beginner_mission %}
-      <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
-        <input type="hidden" name="next" value="{{ request.path }}" />
-        <button type="submit" class="btn-secondary">最初のミッションを再表示</button>
-      </form>
-      {% endif %}
-      {% if next_action_card and home_next_action_collapsed and not home_next_action_force_open %}
-      <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
-        <input type="hidden" name="next" value="{{ request.path }}" />
-        <button type="submit" class="btn-secondary">Next Action を開く</button>
-      </form>
-      {% endif %}
-    </div>
-  </div>
-</section>
-{% endif %}
-{% if not home_beginner_focus %}
-<section class="panel home-invite-panel">
-  <div class="world-env-card">
-    <div><b>招待</b></div>
-    <div class="upgrade-cost">友だちに共有して、一緒にロボらぼを始めよう。</div>
-    <div class="home-invite-actions">
-      <a class="battle-home-link home-invite-x" href="https://x.com/intent/tweet?text={{ ('ロボらぼで出撃中！招待リンクはこちら: ' ~ invite_link)|urlencode }}" target="_blank" rel="noopener">Xで共有</a>
-      <button type="button" id="invite-copy-btn" data-copy-text="{{ invite_link }}">招待URLコピー</button>
-      <button type="button" class="btn-secondary" disabled>Discord共有（将来）</button>
-    </div>
-    <div class="upgrade-cost">pending: {{ referral_counts['pending'] }} / qualified: {{ referral_counts['qualified'] }}</div>
-  </div>
-</section>
-{% endif %}
-{% endif %}
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+      
