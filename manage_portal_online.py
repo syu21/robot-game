@@ -1,15 +1,4 @@
-import json
-
-import app as game_app
-
-
-def main():
-    with game_app.app.app_context():
-        db = game_app.get_db()
-        result = game_app.send_portal_online_count(db=db)
-    print(json.dumps(result, ensure_ascii=False))
-    # Keep cron/job non-fatal for game operations.
-    return 0
+from send_online_count import main
 
 
 if __name__ == "__main__":
