@@ -1,0 +1,11 @@
+[Unit]
+Description=Run robot-game portal online count sender every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=robot-game-portal-online.service
+
+[Install]
+WantedBy=timers.target
+

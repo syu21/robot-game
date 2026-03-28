@@ -134,10 +134,17 @@ class BossTypeTests(unittest.TestCase):
             ensure_ascii=False,
         )
 
-    def test_boss_type_mapping_for_three_bosses(self):
+    def test_boss_type_mapping_for_bosses(self):
         self.assertEqual(game_app._boss_type_meta({"key": "boss_ignis_reaver"})["code"], "TANK")
         self.assertEqual(game_app._boss_type_meta({"key": "boss_ventra_sentinel"})["code"], "EVADE")
         self.assertEqual(game_app._boss_type_meta({"key": "boss_aurix_guardian"})["code"], "GLASS_CANNON")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_4_forge_elguard"})["code"], "TANK")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_4_haze_mirage"})["code"], "EVADE")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_4_burst_volterio"})["code"], "GLASS_CANNON")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_4_final_ark_zero"})["code"], "TACTICAL")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_5_labyrinth_nyx_array"})["code"], "EVADE")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_5_pinnacle_ignition_king"})["code"], "GLASS_CANNON")
+        self.assertEqual(game_app._boss_type_meta({"key": "boss_5_final_omega_frame"})["code"], "TACTICAL")
 
     def test_boss_type_stat_modifiers(self):
         tank = game_app._apply_boss_type_modifiers(

@@ -5,12 +5,6 @@ server {
 
     client_max_body_size 20M;
 
-    location /static/ {
-        alias /home/ubuntu/robot-game/static/;
-        access_log off;
-        expires 1h;
-    }
-
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;

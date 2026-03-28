@@ -285,6 +285,25 @@ class AdminUserControlsTests(unittest.TestCase):
                 "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, 'audit.explore.end', '{}', ?)",
                 (now, target_id),
             )
+            db.execute(
+                """
+                INSERT INTO payment_orders (
+                    user_id,
+                    product_key,
+                    stripe_checkout_session_id,
+                    stripe_payment_intent_id,
+                    stripe_event_id,
+                    amount_jpy,
+                    currency,
+                    status,
+                    grant_type,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, 'support_pack_001', 'cs_delete_case', 'pi_delete_case', 'evt_delete_case', 500, 'jpy', 'granted', 'decor', ?, ?)
+                """,
+                (target_id, now, now),
+            )
             db.commit()
 
         with game_app.app.test_client() as client:
@@ -314,6 +333,10 @@ class AdminUserControlsTests(unittest.TestCase):
             )
             self.assertEqual(
                 int(db.execute("SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ?", (target_id,)).fetchone()["c"] or 0),
+                0,
+            )
+            self.assertEqual(
+                int(db.execute("SELECT COUNT(*) AS c FROM payment_orders WHERE user_id = ?", (target_id,)).fetchone()["c"] or 0),
                 0,
             )
             deletion_audit = db.execute(

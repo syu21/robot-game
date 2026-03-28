@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>レース結果</h1>
+
+<div class="card">
+  <div><b>{{ course['label'] }}</b></div>
+  <div class="robot-part">Race #{{ race['id'] }}</div>
+  <p class="link"><a href="{{ url_for('lab_race_legacy_watch', race_id=race['id']) }}">観戦再生へ</a></p>
+</div>
+
+<div class="card">
+  <table>
+    <tr>
+      <th>順位</th>
+      <th>ロボ</th>
+      <th>所有者</th>
+      <th>完走</th>
+      <th>事故</th>
+      <th>ハイライト</th>
+    </tr>
+    {% for row in results %}
+    <tr>
+      <td>{{ row['final_rank'] }}</td>
+      <td>{{ row['display_name'] }}</td>
+      <td>{{ row['owner_label'] }}</td>
+      <td>{{ row['finish_text'] }}</td>
+      <td>{{ row['accident_count'] or 0 }}</td>
+      <td>{{ row['highlights']|join(' / ') if row['highlights'] else '-' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_race_legacy') }}">観戦レースへ</a></p>
+{% endblock %}

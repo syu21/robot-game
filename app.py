@@ -52,6 +52,28 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.archetype import compute_archetype
+from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
+from services.lab_race_service import (
+    LAB_CASINO_BET_AMOUNTS,
+    LAB_CASINO_COIN_CAP,
+    LAB_CASINO_CONDITIONS,
+    LAB_CASINO_COURSE,
+    LAB_CASINO_DAILY_GRANT,
+    LAB_CASINO_ENTRY_TARGET,
+    LAB_CASINO_ROLE_LABELS,
+    LAB_CASINO_STARTING_COINS,
+    LAB_CASINO_WATCH_BONUS,
+    build_casino_entries,
+    payout_amount as lab_casino_payout_amount,
+    simulate_casino_race,
+)
+from services.lab_race_engine import (
+    build_course as build_lab_race_course,
+    create_race as build_lab_race_bundle,
+    default_course_key as lab_default_course_key,
+    load_course as load_lab_race_course,
+    visible_course_defs as visible_lab_course_defs,
+)
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
     compute_part_stats,
@@ -86,6 +108,10 @@ ASSET_ROOT = os.path.join(BASE_DIR, "static", "robot_assets")
 COMPOSED_ROOT = os.path.join(BASE_DIR, "static", "robot_composed")
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 AVATAR_UPLOAD_ROOT = os.path.join(STATIC_ROOT, "uploads", "avatars")
+LAB_UPLOAD_ROOT = os.path.join(STATIC_ROOT, "user_lab_uploads")
+LAB_UPLOAD_ORIGINAL_ROOT = os.path.join(LAB_UPLOAD_ROOT, "originals")
+LAB_UPLOAD_THUMB_ROOT = os.path.join(LAB_UPLOAD_ROOT, "thumbs")
+LAB_SCENE_SPRITE_ROOT = os.path.join(STATIC_ROOT, "lab_scene_sprites")
 ROBOT_ICON_ROOT = os.path.join(STATIC_ROOT, "robot_icons")
 DEFAULT_ROOT = os.path.join(STATIC_ROOT, "defaults")
 DEFAULT_AVATAR_REL = "defaults/avatar_default.png"
@@ -94,6 +120,7 @@ AVATAR_OUTPUT_SIZE = 48
 BADGE_OUTPUT_SIZE = 32
 MAX_BADGE_INNER_SIZE = 28
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
+MAX_LAB_UPLOAD_BYTES = 1 * 1024 * 1024
 REQUIRE_ALPHA = os.getenv("REQUIRE_ALPHA", "1") == "1"
 HOME_OK_MODE = os.getenv("HOME_OK_MODE", "0") == "1"
 HOME_DEBUG_COMMENT = os.getenv("HOME_DEBUG_COMMENT", "1") == "1"
@@ -249,6 +276,62 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "home_line": "育成傾向: 攻撃・耐久寄り",
         "map_line": "攻撃と耐久の両立で突破型が育つ",
         "weight_bias": {"atk": 0.08, "hp": 0.06, "def": 0.03},
+    },
+    "layer_4_forge": {
+        "key": "fortress",
+        "label": "要塞育成",
+        "short_label": "耐久・防御寄り",
+        "home_line": "育成傾向: 耐久・防御が大きく伸びる",
+        "map_line": "長期戦向け。耐久と防御を明確に伸ばせる",
+        "weight_bias": {"hp": 0.20, "def": 0.18, "atk": 0.08, "acc": 0.03, "spd": -0.10, "cri": -0.08},
+    },
+    "layer_4_haze": {
+        "key": "precision_master",
+        "label": "霧界育成",
+        "short_label": "命中・安定寄り",
+        "home_line": "育成傾向: 命中・安定寄り",
+        "map_line": "命中と安定で高速機を捉える型が育つ",
+        "weight_bias": {"hp": 0.04, "def": 0.08, "atk": -0.04, "acc": 0.22, "spd": 0.12, "cri": -0.04},
+    },
+    "layer_4_burst": {
+        "key": "detonate",
+        "label": "暴走育成",
+        "short_label": "攻撃・会心寄り",
+        "home_line": "育成傾向: 攻撃・会心が大きく伸びる",
+        "map_line": "背水と爆発の王道。速攻で抜ける型が育つ",
+        "weight_bias": {"hp": -0.10, "def": -0.10, "atk": 0.20, "acc": 0.06, "spd": 0.08, "cri": 0.18},
+    },
+    "layer_4_final": {
+        "key": "judgement",
+        "label": "審判試験",
+        "short_label": "型理解試験",
+        "home_line": "育成傾向: 最終試験",
+        "map_line": "3ボス突破後に挑む、第4層の卒業試験",
+        "weight_bias": {"hp": 0.08, "atk": 0.08, "def": 0.08, "acc": 0.08, "spd": 0.04, "cri": 0.04},
+    },
+    "layer_5_labyrinth": {
+        "key": "labyrinth",
+        "label": "観測育成",
+        "short_label": "耐久・命中・安定寄り",
+        "home_line": "育成傾向: 耐久・命中・安定寄り",
+        "map_line": "事故を減らし、安定して勝ち切る型を仕上げる",
+        "weight_bias": {"hp": 0.12, "def": 0.12, "acc": 0.12, "spd": 0.04, "atk": 0.02, "cri": -0.06},
+    },
+    "layer_5_pinnacle": {
+        "key": "pinnacle",
+        "label": "競覇育成",
+        "short_label": "攻撃・会心・速攻寄り",
+        "home_line": "育成傾向: 攻撃・会心・速攻寄り",
+        "map_line": "背水と爆発を磨き、記録を取りにいく",
+        "weight_bias": {"atk": 0.14, "cri": 0.14, "spd": 0.08, "acc": 0.02, "hp": -0.06, "def": -0.08},
+    },
+    "layer_5_final": {
+        "key": "omega",
+        "label": "完成試験",
+        "short_label": "思想完成試験",
+        "home_line": "育成傾向: 第5層最終試験",
+        "map_line": "ニクスとイグニッションを越えた先にある総決算",
+        "weight_bias": {"hp": 0.06, "atk": 0.06, "def": 0.06, "acc": 0.06, "spd": 0.04, "cri": 0.04},
     },
 }
 ENEMY_TENDENCY_TAGS = {
@@ -457,6 +540,58 @@ PART_OFFSET_CACHE = {}
 PART_OFFSET_CACHE_VERSION = 0
 COMPOSE_REV = 0
 MISSING_ASSET_WARNED_GLOBAL = set()
+LAB_WORLD_EVENT_TYPES = {
+    "LAB_RACE_WIN",
+    "LAB_RACE_UPSET",
+    "LAB_RACE_POPULAR_ENTRY",
+}
+LAB_SUBMISSION_SORT_DEFS = (
+    {"key": "new", "label": "新着"},
+    {"key": "popular", "label": "人気"},
+    {"key": "talk", "label": "話題"},
+    {"key": "pick", "label": "おすすめ"},
+)
+LAB_SUBMISSION_SORT_OPTIONS = tuple(item["key"] for item in LAB_SUBMISSION_SORT_DEFS)
+LAB_REPORT_REASON_DEFS = (
+    ("inappropriate", "不適切"),
+    ("copyright", "著作権懸念"),
+    ("spam", "スパム"),
+    ("other", "その他"),
+)
+LAB_CASINO_PRIZE_SEEDS = (
+    {
+        "prize_key": "lab_title_hot_streak",
+        "name": "称号: ヒートストリーク",
+        "description": "実験室プロフィールに飾る想定のレース予想称号。",
+        "cost_lab_coin": 500,
+        "prize_type": "title",
+        "grant_key": "lab_title_hot_streak",
+    },
+    {
+        "prize_key": "lab_frame_checker",
+        "name": "観戦フレーム: チェッカー",
+        "description": "観戦気分を盛り上げるエネミーレース限定フレーム。",
+        "cost_lab_coin": 1200,
+        "prize_type": "frame",
+        "grant_key": "lab_frame_checker",
+    },
+    {
+        "prize_key": "lab_badge_jackpot",
+        "name": "プロフィールバッジ: JACKPOT",
+        "description": "実験室での大当たり記念バッジ。",
+        "cost_lab_coin": 1800,
+        "prize_type": "badge",
+        "grant_key": "lab_badge_jackpot",
+    },
+    {
+        "prize_key": "lab_skin_flash",
+        "name": "観戦演出スキン: フラッシュライン",
+        "description": "レース観戦の加速演出をイメージした景品。",
+        "cost_lab_coin": 2600,
+        "prize_type": "effect",
+        "grant_key": "lab_skin_flash",
+    },
+)
 STYLE_ACHIEVEMENT_DEFS = (
     {
         "key": "stable_no_damage_wins",
@@ -585,19 +720,60 @@ EXPLORE_AREAS = [
     {"key": "layer_2_mist", "label": "第二層横道: 霧の谷", "layer": 2},
     {"key": "layer_2_rush", "label": "第二層横道: 火花回廊", "layer": 2},
     {"key": "layer_3", "label": "第三層: 旧防衛区画", "layer": 3},
+    {"key": "layer_4_forge", "label": "第四層: 機構深部フォージ", "layer": 4},
+    {"key": "layer_4_haze", "label": "第四層: 戦術試験ヘイズ", "layer": 4},
+    {"key": "layer_4_burst", "label": "第四層: 暴走試験バースト", "layer": 4},
+    {"key": "layer_4_final", "label": "第四層最終試験: 審判域ゼロ", "layer": 4},
+    {"key": "layer_5_labyrinth", "label": "第五層: 観測圏ラビリンス", "layer": 5},
+    {"key": "layer_5_pinnacle", "label": "第五層: 競覇圏ピナクル", "layer": 5},
+    {"key": "layer_5_final", "label": "第五層最終試験: 完成域オメガ", "layer": 5},
 ]
-MAX_UNLOCKABLE_LAYER = 3
+MAX_UNLOCKABLE_LAYER = 5
+RELEASE_FLAG_DEFS = (
+    {
+        "key": "lab",
+        "label": "実験室",
+        "summary": "実験室トップ、エネミーレース、投稿、展示を一般公開します。",
+    },
+    {
+        "key": "layer4",
+        "label": "第4層",
+        "summary": "第4層3エリアと第4層最終試験を一般公開します。",
+    },
+    {
+        "key": "layer5",
+        "label": "第5層",
+        "summary": "第5層2エリアと第5層最終試験を一般公開します。",
+    },
+)
+RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
+PUBLIC_RELEASED_BASE_LAYER = 3
+MAIN_ADMIN_USERNAME = "admin（管理人）"
+MAIN_ADMIN_USERNAME_ALIASES = ("admin", MAIN_ADMIN_USERNAME)
+MAIN_ADMIN_FIRE_LOADOUT = {
+    "head": "head_r_fire",
+    "r_arm": "right_arm_r_fire",
+    "l_arm": "left_arm_r_fire",
+    "legs": "legs_r_fire",
+}
 EXPLORE_AREA_LAYER_BY_KEY = {a["key"]: int(a.get("layer") or 1) for a in EXPLORE_AREAS}
 HOME_PRIMARY_AREA_BY_LAYER = {
     1: "layer_1",
     2: "layer_2",
     3: "layer_3",
+    4: "layer_4_forge",
+    5: "layer_5_labyrinth",
 }
 LAYER_BOSS_KEY_BY_LAYER = {
     1: "boss_aurix_guardian",
     2: "boss_ventra_sentinel",
     3: "boss_ignis_reaver",
 }
+LAYER4_SUBAREA_KEYS = ("layer_4_forge", "layer_4_haze", "layer_4_burst")
+LAYER4_FINAL_AREA_KEY = "layer_4_final"
+LAYER5_SUBAREA_KEYS = ("layer_5_labyrinth", "layer_5_pinnacle")
+LAYER5_FINAL_AREA_KEY = "layer_5_final"
+SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
 NPC_BOSS_ALLOWED_AREAS = ("layer_2", "layer_3")
 NPC_BOSS_PICK_RATE = float(os.getenv("NPC_BOSS_PICK_RATE", "0.25"))
 NPC_BOSS_ALERT_ID_OFFSET = 1_000_000
@@ -637,6 +813,41 @@ STAGE_MODIFIERS_BY_AREA = {
         "player_mult": {"atk": 0.96, "def": 1.08, "acc": 1.00},
         "enemy_mult": {"atk": 1.00, "def": 1.00, "acc": 1.00, "hp": 1.00},
     },
+    "layer_4_forge": {
+        "tendency": "重装向き",
+        "player_mult": {"atk": 0.96, "def": 1.08, "acc": 1.00},
+        "enemy_mult": {"atk": 1.02, "def": 1.12, "acc": 1.00, "hp": 1.14},
+    },
+    "layer_4_haze": {
+        "tendency": "命中向き",
+        "player_mult": {"atk": 0.98, "def": 1.02, "acc": 1.10},
+        "enemy_mult": {"atk": 1.04, "def": 1.00, "acc": 1.10, "spd": 1.12, "cri": 1.00, "hp": 1.00},
+    },
+    "layer_4_burst": {
+        "tendency": "爆発向き",
+        "player_mult": {"atk": 1.10, "def": 0.94, "acc": 1.02},
+        "enemy_mult": {"atk": 1.14, "def": 0.98, "acc": 1.00, "spd": 1.04, "cri": 1.10, "hp": 0.98},
+    },
+    "layer_4_final": {
+        "tendency": "複合試験",
+        "player_mult": {"atk": 1.00, "def": 1.00, "acc": 1.00},
+        "enemy_mult": {"atk": 1.08, "def": 1.08, "acc": 1.08, "spd": 1.05, "cri": 1.05, "hp": 1.08},
+    },
+    "layer_5_labyrinth": {
+        "tendency": "観測向き",
+        "player_mult": {"atk": 1.00, "def": 1.08, "acc": 1.08},
+        "enemy_mult": {"atk": 1.10, "def": 1.10, "acc": 1.08, "spd": 1.10, "cri": 1.02, "hp": 1.12},
+    },
+    "layer_5_pinnacle": {
+        "tendency": "覇走向き",
+        "player_mult": {"atk": 1.10, "def": 0.95, "acc": 1.02},
+        "enemy_mult": {"atk": 1.18, "def": 1.00, "acc": 1.04, "spd": 1.08, "cri": 1.14, "hp": 1.02},
+    },
+    "layer_5_final": {
+        "tendency": "完成試験",
+        "player_mult": {"atk": 1.02, "def": 1.02, "acc": 1.02},
+        "enemy_mult": {"atk": 1.14, "def": 1.12, "acc": 1.10, "spd": 1.08, "cri": 1.08, "hp": 1.14},
+    },
 }
 EXPLORE_AREA_TIERS = {
     "layer_1": (1,),
@@ -644,6 +855,13 @@ EXPLORE_AREA_TIERS = {
     "layer_2_mist": (1, 2),
     "layer_2_rush": (1, 2),
     "layer_3": (2, 3),
+    "layer_4_forge": (4,),
+    "layer_4_haze": (4,),
+    "layer_4_burst": (4,),
+    "layer_4_final": (4,),
+    "layer_5_labyrinth": (5,),
+    "layer_5_pinnacle": (5,),
+    "layer_5_final": (5,),
 }
 EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_1": {1: 1.0},
@@ -651,6 +869,20 @@ EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_2_mist": {2: 1.0},
     "layer_2_rush": {2: 0.85, 3: 0.15},
     "layer_3": {2: 0.20, 3: 0.80},
+    "layer_4_forge": {4: 1.0},
+    "layer_4_haze": {4: 1.0},
+    "layer_4_burst": {4: 1.0},
+    "layer_4_final": {4: 1.0},
+    "layer_5_labyrinth": {5: 1.0},
+    "layer_5_pinnacle": {5: 1.0},
+    "layer_5_final": {5: 1.0},
+}
+EXPLORE_AREA_ENEMY_KEYS = {
+    "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye"),
+    "layer_4_haze": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone"),
+    "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear"),
+    "layer_5_labyrinth": ("lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"),
+    "layer_5_pinnacle": ("pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"),
 }
 EXPLORE_DROP_PROFILE_BY_AREA = {
     # Tier1: 基本系中心。例外は少量だけ混ぜる。
@@ -733,6 +965,111 @@ EXPLORE_DROP_PROFILE_BY_AREA = {
         },
         "exception_bias": 0.25,
     },
+    "layer_4_forge": {
+        "rarity_weights": None,
+        "element_weights": {
+            "STEEL": 1.8,
+            "ORE": 1.6,
+            "MACHINE": 1.2,
+            "ICE": 1.0,
+            "THUNDER": 0.9,
+            "FIRE": 0.8,
+            "WIND": 0.8,
+            "WATER": 0.8,
+            "NORMAL": 0.7,
+        },
+        "exception_bias": 0.28,
+    },
+    "layer_4_haze": {
+        "rarity_weights": None,
+        "element_weights": {
+            "WIND": 1.8,
+            "MACHINE": 1.5,
+            "WATER": 1.4,
+            "THUNDER": 1.3,
+            "ICE": 1.2,
+            "STEEL": 0.9,
+            "ORE": 0.9,
+            "FIRE": 0.8,
+            "NORMAL": 0.8,
+        },
+        "exception_bias": 0.26,
+    },
+    "layer_4_burst": {
+        "rarity_weights": None,
+        "element_weights": {
+            "FIRE": 1.9,
+            "THUNDER": 1.6,
+            "ORE": 1.2,
+            "MACHINE": 1.1,
+            "STEEL": 1.0,
+            "WIND": 0.9,
+            "ICE": 0.9,
+            "WATER": 0.8,
+            "NORMAL": 0.8,
+        },
+        "exception_bias": 0.30,
+    },
+    "layer_4_final": {
+        "rarity_weights": None,
+        "element_weights": {
+            "MACHINE": 1.6,
+            "STEEL": 1.3,
+            "ORE": 1.2,
+            "FIRE": 1.1,
+            "WIND": 1.1,
+            "THUNDER": 1.1,
+            "ICE": 1.0,
+            "WATER": 1.0,
+            "NORMAL": 0.9,
+        },
+        "exception_bias": 0.32,
+    },
+    "layer_5_labyrinth": {
+        "rarity_weights": None,
+        "element_weights": {
+            "MACHINE": 1.7,
+            "STEEL": 1.5,
+            "WIND": 1.5,
+            "WATER": 1.2,
+            "ICE": 1.2,
+            "THUNDER": 1.1,
+            "ORE": 1.0,
+            "FIRE": 0.8,
+            "NORMAL": 0.8,
+        },
+        "exception_bias": 0.34,
+    },
+    "layer_5_pinnacle": {
+        "rarity_weights": None,
+        "element_weights": {
+            "FIRE": 1.9,
+            "THUNDER": 1.6,
+            "ORE": 1.3,
+            "MACHINE": 1.2,
+            "STEEL": 1.0,
+            "WIND": 0.9,
+            "ICE": 0.8,
+            "WATER": 0.8,
+            "NORMAL": 0.8,
+        },
+        "exception_bias": 0.36,
+    },
+    "layer_5_final": {
+        "rarity_weights": None,
+        "element_weights": {
+            "MACHINE": 1.7,
+            "STEEL": 1.4,
+            "FIRE": 1.2,
+            "WIND": 1.2,
+            "THUNDER": 1.2,
+            "ORE": 1.1,
+            "ICE": 1.0,
+            "WATER": 1.0,
+            "NORMAL": 0.9,
+        },
+        "exception_bias": 0.38,
+    },
 }
 EVOLUTION_CORE_DROP_RATE_BY_AREA = {
     "layer_1": 0.0,
@@ -740,6 +1077,13 @@ EVOLUTION_CORE_DROP_RATE_BY_AREA = {
     "layer_2_mist": 0.0,
     "layer_2_rush": 0.0,
     "layer_3": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER3", "0.012")),
+    "layer_4_forge": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER4", "0.018")),
+    "layer_4_haze": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER4", "0.018")),
+    "layer_4_burst": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER4", "0.018")),
+    "layer_4_final": 0.0,
+    "layer_5_labyrinth": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
+    "layer_5_pinnacle": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
+    "layer_5_final": 0.0,
 }
 EXPLORE_AREA_UNLOCK_WINS = {
     "layer_1": 0,
@@ -757,14 +1101,45 @@ L1_BOSS_PREMONITION_LINES = [
     "奥から重い振動が響く…",
     "警告音のようなノイズが混じる…",
 ]
-AREA_BOSS_KEYS = ("layer_1", "layer_2", "layer_3")
-AREA_BOSS_ALERT_AREAS = ("layer_1", "layer_2", "layer_2_mist", "layer_2_rush", "layer_3")
+AREA_BOSS_KEYS = (
+    "layer_1",
+    "layer_2",
+    "layer_3",
+    "layer_4_forge",
+    "layer_4_haze",
+    "layer_4_burst",
+    "layer_4_final",
+    "layer_5_labyrinth",
+    "layer_5_pinnacle",
+    "layer_5_final",
+)
+AREA_BOSS_ALERT_AREAS = (
+    "layer_1",
+    "layer_2",
+    "layer_2_mist",
+    "layer_2_rush",
+    "layer_3",
+    "layer_4_forge",
+    "layer_4_haze",
+    "layer_4_burst",
+    "layer_4_final",
+    "layer_5_labyrinth",
+    "layer_5_pinnacle",
+    "layer_5_final",
+)
 AREA_BOSS_SPAWN_RATES = {
     "layer_1": 0.005,
     "layer_2": 0.002,
     "layer_2_mist": 0.003,
     "layer_2_rush": 0.005,
     "layer_3": 0.005,
+    "layer_4_forge": 0.005,
+    "layer_4_haze": 0.005,
+    "layer_4_burst": 0.005,
+    "layer_4_final": 1.0,
+    "layer_5_labyrinth": 0.005,
+    "layer_5_pinnacle": 0.005,
+    "layer_5_final": 1.0,
 }
 AREA_BOSS_PITY_MISSES = {
     # UI要件により天井表示は撤去。内部ロジック互換のため列は維持しつつ、
@@ -772,6 +1147,13 @@ AREA_BOSS_PITY_MISSES = {
     "layer_1": 1_000_000,
     "layer_2": 1_000_000,
     "layer_3": 1_000_000,
+    "layer_4_forge": 1_000_000,
+    "layer_4_haze": 1_000_000,
+    "layer_4_burst": 1_000_000,
+    "layer_4_final": 1,
+    "layer_5_labyrinth": 1_000_000,
+    "layer_5_pinnacle": 1_000_000,
+    "layer_5_final": 1,
 }
 AREA_BOSS_ALERT_ATTEMPTS = int(os.getenv("AREA_BOSS_ALERT_ATTEMPTS", "3"))
 AREA_BOSS_ALERT_MINUTES = int(os.getenv("AREA_BOSS_ALERT_MINUTES", "45"))
@@ -781,6 +1163,15 @@ AREA_BOSS_LABELS = {
     "layer_2_mist": "第二層横道: 霧の谷",
     "layer_2_rush": "第二層横道: 火花回廊",
     "layer_3": "第三層",
+    "layer_4": "第四層",
+    "layer_4_forge": "第四層: 機構深部フォージ",
+    "layer_4_haze": "第四層: 戦術試験ヘイズ",
+    "layer_4_burst": "第四層: 暴走試験バースト",
+    "layer_4_final": "第四層最終試験",
+    "layer_5": "第五層",
+    "layer_5_labyrinth": "第五層: 観測圏ラビリンス",
+    "layer_5_pinnacle": "第五層: 競覇圏ピナクル",
+    "layer_5_final": "第五層最終試験",
 }
 LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED = int(os.getenv("LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED", "40"))
 LAYER2_FAMILY_AREA_KEYS = ("layer_2", "layer_2_mist", "layer_2_rush")
@@ -792,16 +1183,32 @@ LAYER_UNLOCK_ICON_BY_LAYER = {
     1: "⚙",
     2: "⚡",
     3: "🔥",
+    4: "🧪",
+    5: "👑",
 }
 AREA_BOSS_DECOR_REWARD_KEYS = {
     "layer_1": ["boss_emblem_aurix"],
     "layer_2": ["boss_emblem_ventra"],
     "layer_3": ["boss_emblem_ignis"],
+    "layer_4_forge": ["fortress_badge_001"],
+    "layer_4_haze": ["mist_scope_001"],
+    "layer_4_burst": ["burst_reactor_001"],
+    "layer_4_final": ["judge_halo_001"],
+    "layer_5_labyrinth": ["nyx_array_crest_001"],
+    "layer_5_pinnacle": ["ignition_crown_001"],
+    "layer_5_final": ["omega_frame_halo_001"],
 }
 AREA_BOSS_TYPE_BY_KEY = {
     "boss_ignis_reaver": "TANK",
     "boss_ventra_sentinel": "EVADE",
     "boss_aurix_guardian": "GLASS_CANNON",
+    "boss_4_forge_elguard": "TANK",
+    "boss_4_haze_mirage": "EVADE",
+    "boss_4_burst_volterio": "GLASS_CANNON",
+    "boss_4_final_ark_zero": "TACTICAL",
+    "boss_5_labyrinth_nyx_array": "EVADE",
+    "boss_5_pinnacle_ignition_king": "GLASS_CANNON",
+    "boss_5_final_omega_frame": "TACTICAL",
 }
 AREA_BOSS_TYPE_PROFILES = {
     "TANK": {
@@ -822,11 +1229,18 @@ AREA_BOSS_TYPE_PROFILES = {
         "icon": "🔥",
         "mult": {"hp": 0.95, "def": 0.95, "atk": 1.25, "acc": 1.00},
     },
+    "TACTICAL": {
+        "label_ja": "複合",
+        "recommend_build": "バランス型",
+        "icon": "🧠",
+        "mult": {"hp": 1.10, "def": 1.08, "atk": 1.08, "acc": 1.08},
+    },
 }
 BOSS_TYPE_RECOMMENDED_BUILD = {
     "TANK": {"build": "BURST", "label_ja": "爆発型", "text": "おすすめ：爆発型（上振れで突破）"},
     "EVADE": {"build": "STABLE", "label_ja": "安定型", "text": "おすすめ：安定型（当てる）"},
     "GLASS_CANNON": {"build": "BERSERK", "label_ja": "背水型", "text": "おすすめ：背水型（削られて火力UP）"},
+    "TACTICAL": {"build": "STABLE", "label_ja": "バランス型", "text": "おすすめ：バランス型（型理解で突破）"},
 }
 DECOR_PLACEHOLDER_REL = "assets/placeholder_enemy.png"
 BOSS_DECOR_WARNING_EMITTED = False
@@ -870,6 +1284,62 @@ EXPLORE_AREA_MAP_INFO = {
             "注意: タイムアウト負けの管理が重要。",
         ],
         "recommended_archetype": "fortress",
+    },
+    "layer_4_forge": {
+        "desc": [
+            "重装機が多い。長く戦える機体向き。",
+            "推奨: 耐久・防御寄りの型で押し切る。",
+            "注意: 短期火力だけでは抜けきりにくい。",
+        ],
+        "recommended_archetype": "fortress",
+    },
+    "layer_4_haze": {
+        "desc": [
+            "霧機が多い。命中と安定が重要。",
+            "推奨: ACC重視の安定構成で崩れを防ぐ。",
+            "注意: MISSが続くと一気にテンポを失う。",
+        ],
+        "recommended_archetype": "sniper",
+    },
+    "layer_4_burst": {
+        "desc": [
+            "暴走機が多い。速攻と爆発力が活きる。",
+            "推奨: 背水・爆発寄りで短期決着を狙う。",
+            "注意: もたつくと事故が連鎖しやすい。",
+        ],
+        "recommended_archetype": "swift",
+    },
+    "layer_4_final": {
+        "desc": [
+            "3領域の試験を越えた機体だけが挑める審判域。",
+            "推奨: 単一特化よりも、型理解のある構成。",
+            "注意: 3ボス撃破後にのみ挑戦可能。",
+        ],
+        "recommended_archetype": "自由",
+    },
+    "layer_5_labyrinth": {
+        "desc": [
+            "観測と防衛が混ざる深部。事故らない機体が強い。",
+            "推奨: 耐久・命中・バランス型で安定勝利を狙う。",
+            "注意: MISSと長期戦の両方を咎められる。",
+        ],
+        "recommended_archetype": "sniper",
+    },
+    "layer_5_pinnacle": {
+        "desc": [
+            "記録を奪い合う競覇圏。速攻と爆発力が評価される。",
+            "推奨: 背水・爆発・速攻寄りで最速突破を狙う。",
+            "注意: 上振れは強いが、崩れると一気に脆い。",
+        ],
+        "recommended_archetype": "swift",
+    },
+    "layer_5_final": {
+        "desc": [
+            "観測と競覇を越えた先の完成域。",
+            "推奨: 耐久も火力も命中も捨て切らない思想完成型。",
+            "注意: ニクスとイグニッション撃破後にのみ挑戦可能。",
+        ],
+        "recommended_archetype": "自由",
     },
 }
 ENEMY_IMPORT_MAX_BYTES = 1_000_000
@@ -1759,17 +2229,201 @@ def _user_max_unlocked_layer(user_row):
     return max(1, min(MAX_UNLOCKABLE_LAYER, current))
 
 
-def _is_area_unlocked(user_row, area_key):
-    return _area_layer(area_key) <= _user_max_unlocked_layer(user_row)
+def _seed_release_flags(db):
+    for item in RELEASE_FLAG_DEFS:
+        db.execute(
+            """
+            INSERT INTO release_flags (key, is_public, updated_at)
+            VALUES (?, 0, 0)
+            ON CONFLICT(key) DO NOTHING
+            """,
+            (item["key"],),
+        )
 
 
-def _saved_explore_area_key(user_row, available_areas=None):
+def _release_flag_is_public(db, feature_key):
+    key = str(feature_key or "").strip().lower()
+    if not key:
+        return True
+    row = db.execute("SELECT is_public FROM release_flags WHERE key = ? LIMIT 1", (key,)).fetchone()
+    return bool(row and int(row["is_public"] or 0) == 1)
+
+
+def _release_gate_testing_bypass_enabled():
+    return bool(app.config.get("TESTING")) and bool(app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True))
+
+
+def _viewer_is_admin_for_release(db, *, user_row=None, user_id=None, is_admin=None):
+    if is_admin is not None:
+        return bool(is_admin)
+    if user_row is not None and "is_admin" in user_row.keys():
+        return bool(int(user_row["is_admin"] or 0) == 1)
+    uid = int(user_id or 0)
+    if uid <= 0 or not db:
+        return False
+    row = db.execute("SELECT is_admin FROM users WHERE id = ?", (uid,)).fetchone()
+    return bool(row and int(row["is_admin"] or 0) == 1)
+
+
+def _release_open_for_viewer(db, feature_key, *, user_row=None, user_id=None, is_admin=None):
+    key = str(feature_key or "").strip().lower()
+    if not key:
+        return True
+    if _release_gate_testing_bypass_enabled():
+        return True
+    if _viewer_is_admin_for_release(db, user_row=user_row, user_id=user_id, is_admin=is_admin):
+        return True
+    return _release_flag_is_public(db, key)
+
+
+def _release_feature_for_area(area_key):
+    key = str(area_key or "").strip()
+    if key in {*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY}:
+        return "layer4"
+    if key in {*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY}:
+        return "layer5"
+    return None
+
+
+def _area_visible_for_viewer(db, area_key, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        _release_feature_for_area(area_key),
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
+def _release_layer_cap_for_viewer(db, *, user_row=None, user_id=None, is_admin=None):
+    if _release_gate_testing_bypass_enabled():
+        return MAX_UNLOCKABLE_LAYER
+    if _viewer_is_admin_for_release(db, user_row=user_row, user_id=user_id, is_admin=is_admin):
+        return MAX_UNLOCKABLE_LAYER
+    if _release_flag_is_public(db, "layer5"):
+        return MAX_UNLOCKABLE_LAYER
+    if _release_flag_is_public(db, "layer4"):
+        return 4
+    return PUBLIC_RELEASED_BASE_LAYER
+
+
+def _visible_user_max_unlocked_layer(user_row, db=None):
+    actual = _user_max_unlocked_layer(user_row)
+    if not db or not user_row:
+        return actual
+    return max(1, min(actual, _release_layer_cap_for_viewer(db, user_row=user_row)))
+
+
+def _event_release_feature(event_type, payload):
+    text = str(event_type or "").strip()
+    if text.startswith("audit.lab.") or text in {"LAB_RACE_WIN", "LAB_RACE_UPSET", "LAB_RACE_POPULAR_ENTRY"}:
+        return "lab"
+    unlocked_layer = int((payload or {}).get("unlocked_layer") or 0)
+    if unlocked_layer >= 5:
+        return "layer5"
+    if unlocked_layer >= 4:
+        return "layer4"
+    area_key = str((payload or {}).get("area_key") or "").strip()
+    return _release_feature_for_area(area_key)
+
+
+def _event_visible_for_viewer(db, event_type, payload, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        _event_release_feature(event_type, payload),
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
+def _release_gate_redirect(db, feature_key, *, user_row=None, user_id=None, is_admin=None, next_endpoint="home"):
+    if _release_open_for_viewer(db, feature_key, user_row=user_row, user_id=user_id, is_admin=is_admin):
+        return None
+    flash("まだ公開準備中です。公開まで少し待ってください。", "notice")
+    return redirect(url_for(next_endpoint))
+
+
+def _release_flag_rows(db):
+    _seed_release_flags(db)
+    rows = {
+        row["key"]: row
+        for row in db.execute("SELECT key, is_public, updated_at FROM release_flags").fetchall()
+    }
+    items = []
+    for item in RELEASE_FLAG_DEFS:
+        row = rows.get(item["key"])
+        items.append(
+            {
+                "key": item["key"],
+                "label": item["label"],
+                "summary": item["summary"],
+                "is_public": bool(row and int(row["is_public"] or 0) == 1),
+                "updated_at": int(row["updated_at"] or 0) if row else 0,
+                "updated_text": (_format_jst_ts(row["updated_at"]) if row and int(row["updated_at"] or 0) > 0 else "未変更"),
+            }
+        )
+    return items
+
+
+def _layer4_trial_bosses_cleared(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return False
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER4_SUBAREA_KEYS)
+
+
+def _layer5_trial_bosses_cleared(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return False
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_SUBAREA_KEYS)
+
+
+def _special_area_unlock_reason(area_key):
+    key = str(area_key or "").strip()
+    if key == LAYER4_FINAL_AREA_KEY:
+        return "第4層3ボス撃破で解放"
+    if key == LAYER5_FINAL_AREA_KEY:
+        return "第5層2ボス撃破で解放"
+    layer = _area_layer(key)
+    if layer <= 1:
+        return "未解放"
+    return f"第{layer - 1}層ボス撃破で解放"
+
+
+def _is_special_area_unlocked(db, user_id, area_key):
+    if db and _is_main_admin_user_id(db, user_id):
+        return True
+    key = str(area_key or "").strip()
+    if key == LAYER4_FINAL_AREA_KEY:
+        return _layer4_trial_bosses_cleared(db, user_id)
+    if key == LAYER5_FINAL_AREA_KEY:
+        return _layer5_trial_bosses_cleared(db, user_id)
+    return True
+
+
+def _is_area_unlocked(user_row, area_key, db=None):
+    if db and not _area_visible_for_viewer(db, area_key, user_row=user_row):
+        return False
+    visible_max = _visible_user_max_unlocked_layer(user_row, db=db)
+    if _area_layer(area_key) > visible_max:
+        return False
+    key = str(area_key or "").strip()
+    if key not in SPECIAL_EXPLORE_AREA_KEYS:
+        return True
+    if not db or not user_row or "id" not in user_row.keys():
+        return False
+    return _is_special_area_unlocked(db, int(user_row["id"]), key)
+
+
+def _saved_explore_area_key(user_row, available_areas=None, db=None):
     if not user_row or "last_explore_area_key" not in user_row.keys():
         return None
     area_key = str(user_row["last_explore_area_key"] or "").strip()
     if not area_key or area_key not in EXPLORE_AREA_LAYER_BY_KEY:
         return None
-    if not _is_area_unlocked(user_row, area_key):
+    if not _is_area_unlocked(user_row, area_key, db=db):
         return None
     if available_areas is not None:
         available_keys = {str(area.get("key") or "").strip() for area in available_areas}
@@ -1778,8 +2432,8 @@ def _saved_explore_area_key(user_row, available_areas=None):
     return area_key
 
 
-def _default_explore_area_key(user_row, available_areas):
-    saved = _saved_explore_area_key(user_row, available_areas)
+def _default_explore_area_key(user_row, available_areas, db=None):
+    saved = _saved_explore_area_key(user_row, available_areas, db=db)
     if saved:
         return saved
     if not available_areas:
@@ -1787,23 +2441,36 @@ def _default_explore_area_key(user_row, available_areas):
     return str(available_areas[0].get("key") or "").strip() or None
 
 
-def _locked_layer_lines(user_row):
-    max_layer = _user_max_unlocked_layer(user_row)
+def _locked_layer_lines(user_row, db=None):
+    max_layer = _visible_user_max_unlocked_layer(user_row, db=db)
+    release_cap = _release_layer_cap_for_viewer(db, user_row=user_row) if db and user_row else MAX_UNLOCKABLE_LAYER
     lines = []
-    for layer in range(max_layer + 1, MAX_UNLOCKABLE_LAYER + 1):
+    for layer in range(max_layer + 1, min(MAX_UNLOCKABLE_LAYER, release_cap) + 1):
         lines.append(f"🔒 第{layer}層（第{layer - 1}層ボス撃破で解放）")
+    if (
+        release_cap >= 4
+        and max_layer >= 4
+        and (not db or not user_row or "id" not in user_row.keys() or not _is_special_area_unlocked(db, int(user_row["id"]), LAYER4_FINAL_AREA_KEY))
+    ):
+        lines.append("🔒 第4層最終試験（Forge / Haze / Burst の3ボス撃破で解放）")
+    if (
+        release_cap >= 5
+        and max_layer >= 5
+        and (not db or not user_row or "id" not in user_row.keys() or not _is_special_area_unlocked(db, int(user_row["id"]), LAYER5_FINAL_AREA_KEY))
+    ):
+        lines.append("🔒 第5層最終試験（Labyrinth / Pinnacle の2ボス撃破で解放）")
     return lines
 
 
-def _build_map_nodes(user_row, area_streaks=None):
+def _build_map_nodes(user_row, area_streaks=None, db=None):
     nodes = []
-    max_layer = _user_max_unlocked_layer(user_row)
+    max_layer = _visible_user_max_unlocked_layer(user_row, db=db)
     streaks = area_streaks or {}
     is_admin = bool(user_row and "is_admin" in user_row.keys() and int(user_row["is_admin"] or 0) == 1)
     for area in EXPLORE_AREAS:
         key = area["key"]
         layer = _area_layer(key)
-        if layer > max_layer:
+        if layer > max_layer or (db and not _is_area_unlocked(user_row, key, db=db)):
             continue
         info = EXPLORE_AREA_MAP_INFO.get(
             key,
@@ -3827,8 +4494,12 @@ def _maybe_unlock_next_layer(db, user_id, user_row, area_key, enemy_row):
     max_layer = _user_max_unlocked_layer(user_row)
     if current_layer != max_layer or max_layer >= MAX_UNLOCKABLE_LAYER:
         return None
-    expected_boss_key = LAYER_BOSS_KEY_BY_LAYER.get(current_layer)
     enemy_key = ((enemy_row.get("key") if isinstance(enemy_row, dict) else enemy_row["key"]) or "").strip()
+    expected_boss_key = None
+    if area_key == LAYER4_FINAL_AREA_KEY:
+        expected_boss_key = "boss_4_final_ark_zero"
+    else:
+        expected_boss_key = LAYER_BOSS_KEY_BY_LAYER.get(current_layer)
     if not expected_boss_key or enemy_key != expected_boss_key:
         return None
     if current_layer == 2:
@@ -3906,6 +4577,13 @@ def _seed_default_decor_assets(db):
         ("boss_emblem_aurix", "オリクス紋章", "decor/aurix.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "decor/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "decor/ignis.png"),
+        ("fortress_badge_001", "要塞勲章", "decor/fortress_badge_001.png"),
+        ("mist_scope_001", "霧界スコープ", "decor/mist_scope_001.png"),
+        ("burst_reactor_001", "暴核リアクター", "decor/burst_reactor_001.png"),
+        ("judge_halo_001", "審判ハロー", "decor/judge_halo_001.png"),
+        ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
+        ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
+        ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
         (SUPPORT_PACK_DECOR_KEY, "支援者トロフィー", "decor/aurix_trophy.png"),
     ]
     for key, name_ja, image_path in seeds:
@@ -3940,6 +4618,36 @@ def _seed_core_definitions(db):
             now_ts,
         ),
     )
+
+
+def _seed_lab_casino_prizes(db):
+    now_ts = int(time.time())
+    for seed in LAB_CASINO_PRIZE_SEEDS:
+        db.execute(
+            """
+            INSERT INTO lab_casino_prizes
+            (prize_key, name, description, cost_lab_coin, prize_type, grant_key, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(prize_key) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                cost_lab_coin = excluded.cost_lab_coin,
+                prize_type = excluded.prize_type,
+                grant_key = excluded.grant_key,
+                is_active = 1,
+                updated_at = excluded.updated_at
+            """,
+            (
+                seed["prize_key"],
+                seed["name"],
+                seed.get("description"),
+                int(seed["cost_lab_coin"]),
+                seed["prize_type"],
+                seed.get("grant_key"),
+                now_ts,
+                now_ts,
+            ),
+        )
 
 
 def _warn_missing_boss_decor_keys(db):
@@ -4484,6 +5192,15 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS release_flags (
+            key TEXT PRIMARY KEY,
+            is_public INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     if "is_admin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
@@ -4549,6 +5266,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "lab_coin" not in cols:
+        db.execute(f"ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT {LAB_CASINO_STARTING_COINS}")
+    if "lab_coin_last_daily_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -4582,6 +5303,8 @@ def ensure_schema(db):
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
+    db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_STARTING_COINS} WHERE lab_coin IS NULL OR lab_coin < 0")
+    db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_COIN_CAP} WHERE lab_coin > {LAB_CASINO_COIN_CAP}")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     user_rows = db.execute("SELECT id FROM users WHERE invite_code IS NULL OR TRIM(invite_code) = ''").fetchall()
     for user_row in user_rows:
@@ -4799,7 +5522,11 @@ def ensure_schema(db):
     db.execute("UPDATE enemies SET faction = 'neutral' WHERE faction IS NULL OR faction = ''")
     db.execute("UPDATE enemies SET trait = NULL WHERE COALESCE(trait, '') NOT IN ('', 'heavy', 'fast', 'berserk', 'unstable')")
     db.execute("UPDATE enemies SET is_boss = 0 WHERE is_boss IS NULL")
-    db.execute("UPDATE enemies SET boss_area_key = NULL WHERE boss_area_key NOT IN ('layer_1', 'layer_2', 'layer_3')")
+    boss_area_placeholders = ",".join(["?"] * len(AREA_BOSS_KEYS))
+    db.execute(
+        f"UPDATE enemies SET boss_area_key = NULL WHERE boss_area_key IS NOT NULL AND boss_area_key NOT IN ({boss_area_placeholders})",
+        list(AREA_BOSS_KEYS),
+    )
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_milestones (
@@ -5080,6 +5807,241 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_robot_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            image_path TEXT NOT NULL,
+            thumb_path TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            moderation_note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            approved_at INTEGER,
+            approved_by_user_id INTEGER,
+            disabled_at INTEGER,
+            disabled_by_user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(submission_id, user_id),
+            FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_races (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL DEFAULT 'entry_open',
+            course_key TEXT NOT NULL,
+            course_payload_json TEXT,
+            seed INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            user_id INTEGER,
+            source_type TEXT NOT NULL,
+            robot_instance_id INTEGER,
+            submission_id INTEGER,
+            display_name TEXT NOT NULL,
+            icon_path TEXT,
+            hp INTEGER NOT NULL,
+            atk INTEGER NOT NULL,
+            def INTEGER NOT NULL,
+            spd INTEGER NOT NULL,
+            acc INTEGER NOT NULL,
+            cri INTEGER NOT NULL,
+            entry_order INTEGER NOT NULL,
+            final_rank INTEGER,
+            finish_time_ms INTEGER,
+            dnf_reason TEXT,
+            UNIQUE(race_id, entry_order),
+            UNIQUE(race_id, user_id),
+            FOREIGN KEY (race_id) REFERENCES lab_races(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_frames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            frame_no INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, frame_no),
+            FOREIGN KEY (race_id) REFERENCES lab_races(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL,
+            user_id INTEGER,
+            robot_label TEXT NOT NULL,
+            final_rank INTEGER NOT NULL,
+            finish_time_ms INTEGER,
+            accident_count INTEGER NOT NULL DEFAULT 0,
+            comeback_flag INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, entry_id),
+            FOREIGN KEY (race_id) REFERENCES lab_races(id),
+            FOREIGN KEY (entry_id) REFERENCES lab_race_entries(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_races (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_key TEXT NOT NULL,
+            course_payload_json TEXT,
+            status TEXT NOT NULL DEFAULT 'betting',
+            seed INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            bot_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            role_type TEXT NOT NULL,
+            condition_key TEXT NOT NULL,
+            icon_path TEXT,
+            description TEXT,
+            spd INTEGER NOT NULL,
+            def INTEGER NOT NULL,
+            acc INTEGER NOT NULL,
+            cri INTEGER NOT NULL,
+            luck INTEGER NOT NULL,
+            odds REAL NOT NULL,
+            lane_index INTEGER NOT NULL,
+            entry_order INTEGER NOT NULL,
+            final_rank INTEGER,
+            finish_time_ms INTEGER,
+            accident_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, bot_key),
+            UNIQUE(race_id, lane_index),
+            UNIQUE(race_id, entry_order),
+            FOREIGN KEY (race_id) REFERENCES lab_casino_races(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            race_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            payout_amount INTEGER NOT NULL DEFAULT 0,
+            is_hit INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            resolved_at INTEGER,
+            UNIQUE(user_id, race_id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (race_id) REFERENCES lab_casino_races(id),
+            FOREIGN KEY (entry_id) REFERENCES lab_casino_entries(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_frames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            frame_no INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, frame_no),
+            FOREIGN KEY (race_id) REFERENCES lab_casino_races(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_prizes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prize_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            cost_lab_coin INTEGER NOT NULL,
+            prize_type TEXT NOT NULL,
+            grant_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_prize_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            prize_id INTEGER NOT NULL,
+            cost_lab_coin INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (prize_id) REFERENCES lab_casino_prizes(id)
+        )
+        """
+    )
+    lab_race_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_races)").fetchall()}
+    if "course_payload_json" not in lab_race_cols:
+        db.execute("ALTER TABLE lab_races ADD COLUMN course_payload_json TEXT")
+    lab_casino_race_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_casino_races)").fetchall()}
+    if "course_payload_json" not in lab_casino_race_cols:
+        db.execute("ALTER TABLE lab_casino_races ADD COLUMN course_payload_json TEXT")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_metrics (
@@ -5442,6 +6404,21 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_user_created ON lab_robot_submissions(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_likes_submission ON lab_submission_likes(submission_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_reports_submission ON lab_submission_reports(submission_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_races_status_created ON lab_races(status, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_race ON lab_casino_bets(race_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_frames_race_frame ON lab_casino_frames(race_id, frame_no)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_prizes_active_cost ON lab_casino_prizes(is_active, cost_lab_coin ASC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_claims_user_created ON lab_casino_prize_claims(user_id, created_at DESC)")
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
     )
@@ -5472,7 +6449,9 @@ def ensure_schema(db):
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
     _seed_core_definitions(db)
+    _seed_release_flags(db)
     _warn_missing_boss_decor_keys(db)
+    _seed_lab_casino_prizes(db)
     _ensure_world_research_rows(db)
     _ensure_world_week_environment(db)
     db.commit()
@@ -5569,6 +6548,7 @@ def get_db():
         if _repair_legacy_starter_part_rows(g.db) > 0:
             g.db.commit()
         _seed_milestones(g.db)
+        _ensure_main_admin_account_ready(g.db)
         if not PART_OFFSET_CACHE:
             refresh_part_offset_cache(g.db)
     return g.db
@@ -5607,9 +6587,9 @@ def _starter_part_rows(db):
     return out
 
 
-def initialize_new_user(db, user_id):
+def initialize_new_user(db, user_id, *, apply_admin_setup=True):
     user = db.execute(
-        "SELECT id, active_robot_id, max_unlocked_layer FROM users WHERE id = ?",
+        "SELECT id, username, is_admin, active_robot_id, max_unlocked_layer FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -5691,12 +6671,20 @@ def initialize_new_user(db, user_id):
             _create_part_instance_from_master(db, user_id, starter_parts[ptype], plus=0)
             created_inventory_set = True
 
-    return {
+    result = {
         "ok": True,
         "created_robot": bool(created_robot),
         "created_inventory_set": bool(created_inventory_set),
         "active_robot_id": (int(active_robot_id) if active_robot_id else None),
     }
+    if apply_admin_setup and _is_main_admin_user_row(user):
+        admin_state = _apply_main_admin_account_state(db, int(user_id))
+        result["main_admin_bootstrap"] = {
+            "granted_parts": int(admin_state.get("granted_parts") or 0),
+            "equipped_fire_loadout": bool(admin_state.get("equipped_fire_loadout")),
+            "changed": bool(admin_state.get("changed")),
+        }
+    return result
 
 
 def _seed_robot_parts(db):
@@ -5950,6 +6938,21 @@ def _add_part_drop(
         (user_id, part_type, part_key, int(time.time()), source, robot_instance_id),
     )
     return {"part_type": part_type, "part_key": part_key, "source": source}
+
+
+def _drop_audit_payload(area_key, battle_no, dropped_part):
+    row = dropped_part or {}
+    return {
+        "area_key": area_key,
+        "battle_no": battle_no,
+        "drop_type": row.get("drop_type"),
+        "part_type": row.get("part_type"),
+        "part_key": row.get("part_key"),
+        "rarity": row.get("rarity"),
+        "plus": row.get("plus"),
+        "growth_tendency_key": row.get("growth_tendency_key"),
+        "growth_tendency_label": row.get("growth_tendency_label"),
+    }
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -6702,15 +7705,29 @@ def _pick_enemy_from_rows(rows, area_key, weekly_env=None, rng=None):
 def _pick_enemy_for_area(db, area_key, weekly_env=None):
     tiers = EXPLORE_AREA_TIERS.get(area_key, (1,))
     placeholders = ",".join(["?"] * len(tiers))
-    rows = db.execute(
-        f"""
-        SELECT * FROM enemies
-        WHERE is_active = 1
-          AND COALESCE(is_boss, 0) = 0
-          AND tier IN ({placeholders})
-        """,
-        list(tiers),
-    ).fetchall()
+    allowed_keys = tuple(EXPLORE_AREA_ENEMY_KEYS.get(str(area_key or "").strip(), ()))
+    if allowed_keys:
+        key_placeholders = ",".join(["?"] * len(allowed_keys))
+        rows = db.execute(
+            f"""
+            SELECT * FROM enemies
+            WHERE is_active = 1
+              AND COALESCE(is_boss, 0) = 0
+              AND tier IN ({placeholders})
+              AND key IN ({key_placeholders})
+            """,
+            [*list(tiers), *list(allowed_keys)],
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""
+            SELECT * FROM enemies
+            WHERE is_active = 1
+              AND COALESCE(is_boss, 0) = 0
+              AND tier IN ({placeholders})
+            """,
+            list(tiers),
+        ).fetchall()
     if rows:
         return _pick_enemy_from_rows(rows, area_key, weekly_env=weekly_env, rng=random)
     return {
@@ -6892,6 +7909,9 @@ def _ensure_dirs():
     os.makedirs(COMPOSED_ROOT, exist_ok=True)
     os.makedirs(os.path.join(STATIC_ROOT, "enemies"), exist_ok=True)
     os.makedirs(AVATAR_UPLOAD_ROOT, exist_ok=True)
+    os.makedirs(LAB_UPLOAD_ORIGINAL_ROOT, exist_ok=True)
+    os.makedirs(LAB_UPLOAD_THUMB_ROOT, exist_ok=True)
+    os.makedirs(LAB_SCENE_SPRITE_ROOT, exist_ok=True)
     os.makedirs(ROBOT_ICON_ROOT, exist_ok=True)
     os.makedirs(DEFAULT_ROOT, exist_ok=True)
 
@@ -7285,6 +8305,1268 @@ def _save_user_avatar(file_storage, user_id):
     return True, None, rel_path
 
 
+def _lab_default_course_key():
+    return lab_default_course_key(mode="standard")
+
+
+def _lab_course_meta(course_key):
+    key = str(course_key or "").strip().lower()
+    if key == "scrapyard_dash":
+        key = "scrapyard_sprint"
+    return dict(LAB_RACE_COURSES.get(key) or LAB_RACE_COURSES[_lab_default_course_key()])
+
+
+def _lab_course_payload_from_race(race, *, mode="standard"):
+    if not race:
+        return build_lab_race_course(0, mode=mode, course_key=lab_default_course_key(mode=mode))
+    course_key = race.get("course_key") or race.get("race_key") or lab_default_course_key(mode=mode)
+    return load_lab_race_course(
+        race.get("course_payload_json"),
+        seed=int(race.get("seed") or 0),
+        mode=mode,
+        course_key=course_key,
+    )
+
+
+def _lab_format_time_ms(value):
+    if value is None:
+        return "-"
+    total_ms = max(0, int(value))
+    seconds = total_ms / 1000.0
+    return f"{seconds:.2f}秒"
+
+
+def _lab_submission_status_label(status):
+    return {
+        "draft": "下書き",
+        "pending": "審査待ち",
+        "approved": "公開中",
+        "rejected": "差し戻し",
+        "disabled": "停止",
+    }.get(str(status or "").strip().lower(), str(status or "-"))
+
+
+def _lab_report_reason_label(reason):
+    reason_key = str(reason or "").strip().lower()
+    for key, label in LAB_REPORT_REASON_DEFS:
+        if key == reason_key:
+            return label
+    return "その他"
+
+
+def _lab_world_event_log(db, event_type, payload):
+    db.execute(
+        """
+        INSERT INTO world_events_log (created_at, event_type, payload_json)
+        VALUES (?, ?, ?)
+        """,
+        (
+            int(time.time()),
+            str(event_type),
+            json.dumps(payload or {}, ensure_ascii=False),
+        ),
+    )
+
+
+def _lab_validate_submission_image(file_storage):
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return False, "PNG画像を選択してください。", None
+    filename = str(file_storage.filename or "")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext != "png":
+        return False, "投稿画像はPNGのみ対応です。", None
+    if str(file_storage.mimetype or "").lower() not in {"image/png", "image/x-png", ""}:
+        return False, "投稿画像はPNGのみ対応です。", None
+    raw = file_storage.read(MAX_LAB_UPLOAD_BYTES + 1)
+    file_storage.stream.seek(0)
+    if not raw:
+        return False, "画像データを読み取れませんでした。", None
+    if len(raw) > MAX_LAB_UPLOAD_BYTES:
+        return False, f"画像サイズは最大 {MAX_LAB_UPLOAD_BYTES // (1024 * 1024)}MB です。", None
+    try:
+        img = Image.open(file_storage.stream)
+        if img.format != "PNG":
+            return False, "投稿画像はPNGのみ対応です。", None
+        width, height = img.size
+        if width != height or width < 96 or width > 512:
+            return False, "画像は正方形で 96px 以上 512px 以下にしてください。", None
+        rgba = img.convert("RGBA")
+        alpha = rgba.getchannel("A")
+        extrema = alpha.getextrema() or (255, 255)
+        if int(extrema[0]) >= 255:
+            return False, "透過付きPNGのみ投稿できます。背景を透過してください。", None
+    except Exception:
+        return False, "投稿画像の読み込みに失敗しました。", None
+    finally:
+        file_storage.stream.seek(0)
+    return True, None, rgba
+
+
+def _lab_save_submission_image(file_storage):
+    ok, message, rgba = _lab_validate_submission_image(file_storage)
+    if not ok:
+        return False, message, None, None
+    _ensure_dirs()
+    token = uuid.uuid4().hex
+    original_rel = f"user_lab_uploads/originals/{token}.png"
+    thumb_rel = f"user_lab_uploads/thumbs/{token}.png"
+    original_abs = _static_abs(original_rel)
+    thumb_abs = _static_abs(thumb_rel)
+    os.makedirs(os.path.dirname(original_abs), exist_ok=True)
+    os.makedirs(os.path.dirname(thumb_abs), exist_ok=True)
+    rgba.save(original_abs, format="PNG")
+    thumb = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
+    resized = rgba.copy()
+    resized.thumbnail((128, 128), Image.NEAREST)
+    paste_x = (128 - resized.width) // 2
+    paste_y = (128 - resized.height) // 2
+    thumb.alpha_composite(resized, (paste_x, paste_y))
+    thumb.save(thumb_abs, format="PNG")
+    file_storage.stream.seek(0)
+    return True, None, original_rel, thumb_rel
+
+
+def _lab_recent_world_items(db, *, limit=6):
+    rows = db.execute(
+        f"""
+        SELECT id, created_at, event_type, payload_json, user_id, action_key, entity_type, entity_id
+        FROM world_events_log
+        WHERE event_type IN ({",".join(["?"] * len(LAB_WORLD_EVENT_TYPES))})
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (*sorted(LAB_WORLD_EVENT_TYPES), int(limit)),
+    ).fetchall()
+    return [_feed_card_from_event(db, row) for row in rows]
+
+
+def _lab_submission_recent_rows(db, user_id, *, limit=12):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM lab_robot_submissions
+        WHERE user_id = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user_id), int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["status_label"] = _lab_submission_status_label(item.get("status"))
+        item["image_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
+        out.append(item)
+    return out
+
+
+def _lab_showcase_query_rows(db, *, viewer_user_id, sort_key="new", limit=48):
+    current_sort = (sort_key or "new").strip().lower()
+    if current_sort not in LAB_SUBMISSION_SORT_OPTIONS:
+        current_sort = "new"
+    order_by = {
+        "new": "s.approved_at DESC, s.id DESC",
+        "popular": "COALESCE(l.likes_count, 0) DESC, s.approved_at DESC, s.id DESC",
+        "talk": "COALESCE(l.recent_likes, 0) DESC, COALESCE(l.likes_count, 0) DESC, s.approved_at DESC, s.id DESC",
+        "pick": "CASE WHEN LOWER(COALESCE(s.moderation_note, '')) LIKE '%[pick]%' THEN 0 ELSE 1 END, s.approved_at DESC, s.id DESC",
+    }[current_sort]
+    recent_cutoff = int(time.time()) - 7 * 86400
+    rows = db.execute(
+        f"""
+        SELECT
+            s.*,
+            u.username,
+            COALESCE(l.likes_count, 0) AS likes_count,
+            COALESCE(l.recent_likes, 0) AS recent_likes,
+            COALESCE(r.report_count, 0) AS report_count,
+            CASE WHEN my_like.id IS NULL THEN 0 ELSE 1 END AS liked_by_me
+        FROM lab_robot_submissions s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN (
+            SELECT
+                submission_id,
+                COUNT(*) AS likes_count,
+                SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS recent_likes
+            FROM lab_submission_likes
+            GROUP BY submission_id
+        ) l ON l.submission_id = s.id
+        LEFT JOIN (
+            SELECT submission_id, COUNT(*) AS report_count
+            FROM lab_submission_reports
+            GROUP BY submission_id
+        ) r ON r.submission_id = s.id
+        LEFT JOIN lab_submission_likes my_like
+          ON my_like.submission_id = s.id
+         AND my_like.user_id = ?
+        WHERE s.status = 'approved'
+        ORDER BY {order_by}
+        LIMIT ?
+        """,
+        (recent_cutoff, int(viewer_user_id), int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
+        item["image_url"] = url_for("static", filename=item["image_path"]) if item.get("image_path") else None
+        item["status_label"] = _lab_submission_status_label(item.get("status"))
+        out.append(item)
+    return _decorate_user_rows(db, out, user_key="user_id")
+
+
+def _lab_submission_detail_row(db, submission_id, *, viewer_user_id=None, is_admin=False):
+    row = db.execute(
+        """
+        SELECT
+            s.*,
+            u.username,
+            COALESCE(l.likes_count, 0) AS likes_count,
+            COALESCE(r.report_count, 0) AS report_count,
+            CASE WHEN my_like.id IS NULL THEN 0 ELSE 1 END AS liked_by_me
+        FROM lab_robot_submissions s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN (
+            SELECT submission_id, COUNT(*) AS likes_count
+            FROM lab_submission_likes
+            GROUP BY submission_id
+        ) l ON l.submission_id = s.id
+        LEFT JOIN (
+            SELECT submission_id, COUNT(*) AS report_count
+            FROM lab_submission_reports
+            GROUP BY submission_id
+        ) r ON r.submission_id = s.id
+        LEFT JOIN lab_submission_likes my_like
+          ON my_like.submission_id = s.id
+         AND my_like.user_id = ?
+        WHERE s.id = ?
+        LIMIT 1
+        """,
+        (int(viewer_user_id or 0), int(submission_id)),
+    ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    can_view = item["status"] == "approved" or bool(is_admin) or (viewer_user_id and int(item["user_id"]) == int(viewer_user_id))
+    if not can_view:
+        return None
+    item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
+    item["image_url"] = url_for("static", filename=item["image_path"]) if item.get("image_path") else None
+    item["status_label"] = _lab_submission_status_label(item.get("status"))
+    item = _decorate_user_rows(db, [item], user_key="user_id")[0]
+    return item
+
+
+def _lab_submission_pending_rows(db, *, status_filter="pending", limit=80):
+    current_status = (status_filter or "pending").strip().lower()
+    rows = db.execute(
+        """
+        SELECT
+            s.*,
+            u.username,
+            COALESCE(r.report_count, 0) AS report_count,
+            COALESCE(l.likes_count, 0) AS likes_count
+        FROM lab_robot_submissions s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN (
+            SELECT submission_id, COUNT(*) AS report_count
+            FROM lab_submission_reports
+            GROUP BY submission_id
+        ) r ON r.submission_id = s.id
+        LEFT JOIN (
+            SELECT submission_id, COUNT(*) AS likes_count
+            FROM lab_submission_likes
+            GROUP BY submission_id
+        ) l ON l.submission_id = s.id
+        WHERE s.status = ?
+        ORDER BY s.created_at ASC, s.id ASC
+        LIMIT ?
+        """,
+        (current_status, int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
+        item["status_label"] = _lab_submission_status_label(item.get("status"))
+        out.append(item)
+    return _decorate_user_rows(db, out, user_key="user_id")
+
+
+def _lab_user_robot_choices(db, user_id):
+    rows = db.execute(
+        """
+        SELECT id, name, composed_image_path, icon_32_path, updated_at
+        FROM robot_instances
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    out = []
+    for row in rows:
+        row = _refresh_robot_instance_render_assets(db, row, log_label="lab_user_robot_choices")
+        if not row:
+            continue
+        stat_obj = _compute_robot_stats_for_instance(db, int(row["id"]))
+        if not stat_obj:
+            continue
+        icon_rel = _safe_static_rel(row["icon_32_path"]) if row["icon_32_path"] else None
+        thumb_rel = _safe_static_rel(row["composed_image_path"]) if row["composed_image_path"] else None
+        out.append(
+            {
+                "id": int(row["id"]),
+                "name": row["name"],
+                "icon_url": url_for("static", filename=icon_rel or DEFAULT_BADGE_REL),
+                "thumb_url": url_for("static", filename=thumb_rel) if thumb_rel else None,
+                "stats": stat_obj["stats"],
+                "power": stat_obj["power"],
+            }
+        )
+    return out
+
+
+def _lab_entry_snapshot_from_robot(db, user_id, robot_instance_id):
+    robot = db.execute(
+        """
+        SELECT id, name, icon_32_path, composed_image_path, updated_at
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        LIMIT 1
+        """,
+        (int(robot_instance_id), int(user_id)),
+    ).fetchone()
+    if not robot:
+        return None
+    robot = _refresh_robot_instance_render_assets(db, robot, log_label="lab_entry_snapshot")
+    if not robot:
+        return None
+    stat_obj = _compute_robot_stats_for_instance(db, int(robot["id"]))
+    if not stat_obj:
+        return None
+    icon_rel = _safe_static_rel(robot["icon_32_path"]) if robot["icon_32_path"] else None
+    if not icon_rel and robot["composed_image_path"]:
+        icon_rel = _ensure_robot_instance_badge(db, int(robot["id"]), robot["composed_image_path"])
+    icon_rel = icon_rel or DEFAULT_BADGE_REL
+    stats = stat_obj["stats"]
+    return {
+        "source_type": "robot_instance",
+        "robot_instance_id": int(robot["id"]),
+        "submission_id": None,
+        "display_name": str(robot["name"] or f"Robot#{robot['id']}"),
+        "icon_path": icon_rel,
+        "hp": int(stats["hp"]),
+        "atk": int(stats["atk"]),
+        "def": int(stats["def"]),
+        "spd": int(stats["spd"]),
+        "acc": int(stats["acc"]),
+        "cri": int(stats["cri"]),
+    }
+
+
+def _lab_latest_race(db):
+    row = db.execute(
+        """
+        SELECT *
+        FROM lab_races
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _lab_fetch_race(db, race_id):
+    row = db.execute("SELECT * FROM lab_races WHERE id = ? LIMIT 1", (int(race_id),)).fetchone()
+    return dict(row) if row else None
+
+
+def _lab_race_entries(db, race_id):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM lab_race_entries
+        WHERE race_id = ?
+        ORDER BY entry_order ASC, id ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    out = []
+    robot_scene_cache = {}
+    submission_scene_cache = {}
+    for lane_index, row in enumerate(rows):
+        item = dict(row)
+        item["lane_index"] = int(lane_index)
+        item["lane_no"] = int(lane_index) + 1
+        item["owner_label"] = _feed_user_label(db, item["user_id"]) if item.get("user_id") else "LAB ENEMY"
+        icon_rel = _safe_static_rel(item["icon_path"]) if item.get("icon_path") else None
+        item["icon_url"] = url_for("static", filename=icon_rel or DEFAULT_BADGE_REL)
+        track_rel = icon_rel
+        scene_rel = icon_rel or DEFAULT_BADGE_REL
+        scene_updated_at = item.get("updated_at")
+        if item.get("source_type") == "robot_instance" and item.get("robot_instance_id"):
+            robot_instance_id = int(item["robot_instance_id"])
+            source_row = robot_scene_cache.get(robot_instance_id)
+            if source_row is None:
+                source_row = db.execute(
+                    "SELECT composed_image_path, updated_at FROM robot_instances WHERE id = ? LIMIT 1",
+                    (robot_instance_id,),
+                ).fetchone()
+                robot_scene_cache[robot_instance_id] = source_row
+            if source_row and source_row["composed_image_path"]:
+                source_rel = _safe_static_rel(source_row["composed_image_path"])
+                scene_rel = source_rel or scene_rel
+                if not track_rel:
+                    track_rel = _lab_scene_sprite_rel(source_rel) or source_rel or track_rel
+                scene_updated_at = source_row["updated_at"]
+        elif item.get("source_type") == "submission" and item.get("submission_id"):
+            submission_id = int(item["submission_id"])
+            source_row = submission_scene_cache.get(submission_id)
+            if source_row is None:
+                source_row = db.execute(
+                    "SELECT image_path, updated_at FROM lab_robot_submissions WHERE id = ? LIMIT 1",
+                    (submission_id,),
+                ).fetchone()
+                submission_scene_cache[submission_id] = source_row
+            if source_row and source_row["image_path"]:
+                source_rel = _safe_static_rel(source_row["image_path"])
+                scene_rel = source_rel or scene_rel
+                if not track_rel:
+                    track_rel = _lab_scene_sprite_rel(source_rel) or source_rel or track_rel
+                scene_updated_at = source_row["updated_at"]
+        scene_sprite_rel = _lab_scene_sprite_rel(scene_rel) or scene_rel or DEFAULT_BADGE_REL
+        item["scene_url"] = _composed_image_url(scene_sprite_rel, scene_updated_at)
+        item["track_icon_url"] = url_for("static", filename=track_rel or DEFAULT_BADGE_REL)
+        out.append(item)
+    return _decorate_user_rows(db, out, user_key="user_id")
+
+
+def _lab_race_results(db, race_id):
+    rows = db.execute(
+        """
+        SELECT
+            e.*,
+            r.accident_count,
+            r.comeback_flag
+        FROM lab_race_entries e
+        LEFT JOIN lab_race_records r ON r.entry_id = e.id
+        WHERE e.race_id = ?
+        ORDER BY COALESCE(e.final_rank, 9999) ASC, e.entry_order ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    out = []
+    max_accidents = max((int(row["accident_count"] or 0) for row in rows), default=0)
+    for row in rows:
+        item = dict(row)
+        item["owner_label"] = _feed_user_label(db, item["user_id"]) if item.get("user_id") else "LAB ENEMY"
+        icon_rel = _safe_static_rel(item["icon_path"]) if item.get("icon_path") else None
+        item["icon_url"] = url_for("static", filename=icon_rel or DEFAULT_BADGE_REL)
+        item["finish_text"] = _lab_format_time_ms(item.get("finish_time_ms"))
+        highlights = []
+        if int(item.get("comeback_flag") or 0) == 1:
+            highlights.append("大逆転")
+        if int(item.get("accident_count") or 0) == int(max_accidents) and int(max_accidents) >= 3:
+            highlights.append("転倒王")
+        item["highlights"] = highlights
+        out.append(item)
+    return _decorate_user_rows(db, out, user_key="user_id")
+
+
+def _lab_race_frames(db, race_id):
+    rows = db.execute(
+        """
+        SELECT frame_no, payload_json
+        FROM lab_race_frames
+        WHERE race_id = ?
+        ORDER BY frame_no ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    out = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        payload["frame_no"] = int(row["frame_no"])
+        out.append(payload)
+    return out
+
+
+def _lab_race_rankings(db, *, limit=20):
+    wins_rows = db.execute(
+        """
+        SELECT user_id, COUNT(*) AS metric_value
+        FROM lab_race_records
+        WHERE user_id IS NOT NULL AND final_rank = 1
+        GROUP BY user_id
+        ORDER BY metric_value DESC, user_id ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    wins_rows = _decorate_user_rows(
+        db,
+        [
+            {
+                "id": int(row["user_id"]),
+                "metric_value": int(row["metric_value"]),
+                "username": _feed_user_label(db, row["user_id"]),
+            }
+            for row in wins_rows
+        ],
+        user_key="id",
+    )
+    fastest_rows = db.execute(
+        """
+        SELECT robot_label, user_id, MIN(finish_time_ms) AS metric_value
+        FROM lab_race_records
+        WHERE finish_time_ms IS NOT NULL AND user_id IS NOT NULL
+        GROUP BY robot_label, user_id
+        ORDER BY metric_value ASC, robot_label ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    fastest = _decorate_user_rows(
+        db,
+        [
+            {
+                "robot_label": row["robot_label"],
+                "user_id": int(row["user_id"]),
+                "username": _feed_user_label(db, row["user_id"]),
+                "metric_value": int(row["metric_value"]),
+            }
+            for row in fastest_rows
+        ],
+        user_key="user_id",
+    )
+    accident_rows = db.execute(
+        """
+        SELECT user_id, SUM(accident_count) AS metric_value
+        FROM lab_race_records
+        WHERE user_id IS NOT NULL
+        GROUP BY user_id
+        ORDER BY metric_value DESC, user_id ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    accident_rows = _decorate_user_rows(
+        db,
+        [
+            {
+                "id": int(row["user_id"]),
+                "metric_value": int(row["metric_value"] or 0),
+                "username": _feed_user_label(db, row["user_id"]),
+            }
+            for row in accident_rows
+        ],
+        user_key="id",
+    )
+    comeback_rows = db.execute(
+        """
+        SELECT user_id, SUM(CASE WHEN comeback_flag = 1 THEN 1 ELSE 0 END) AS metric_value
+        FROM lab_race_records
+        WHERE user_id IS NOT NULL
+        GROUP BY user_id
+        HAVING metric_value > 0
+        ORDER BY metric_value DESC, user_id ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    comeback_rows = _decorate_user_rows(
+        db,
+        [
+            {
+                "id": int(row["user_id"]),
+                "metric_value": int(row["metric_value"]),
+                "username": _feed_user_label(db, row["user_id"]),
+            }
+            for row in comeback_rows
+        ],
+        user_key="id",
+    )
+    return {
+        "wins": wins_rows,
+        "fastest": fastest,
+        "accident": accident_rows,
+        "comeback": comeback_rows,
+    }
+
+
+def _lab_create_race(db, *, course_key=None, seed=None):
+    now_ts = int(time.time())
+    race_seed = int(seed or random.randint(100_000, 999_999))
+    course = build_lab_race_course(race_seed, mode="standard", course_key=course_key or _lab_default_course_key())
+    cur = db.execute(
+        """
+        INSERT INTO lab_races (status, course_key, course_payload_json, seed, created_at)
+        VALUES ('entry_open', ?, ?, ?, ?)
+        """,
+        (course["key"], json.dumps(course, ensure_ascii=False), race_seed, now_ts),
+    )
+    return int(cur.lastrowid)
+
+
+def _lab_start_race(db, race_id, *, actor_user_id=None):
+    race = _lab_fetch_race(db, race_id)
+    if not race or race["status"] != "entry_open":
+        return race
+    entries = _lab_race_entries(db, race_id)
+    if not entries:
+        return race
+    seed = int(race["seed"] or random.randint(100_000, 999_999))
+    course = _lab_course_payload_from_race(race, mode="standard")
+    filled = fill_npc_entries(entries, seed, target=LAB_RACE_ENTRY_TARGET)
+    existing_orders = {int(item["entry_order"]) for item in entries}
+    now_ts = int(time.time())
+    for item in filled:
+        if int(item["entry_order"]) in existing_orders:
+            continue
+        db.execute(
+            """
+            INSERT INTO lab_race_entries
+            (
+                race_id, user_id, source_type, robot_instance_id, submission_id,
+                display_name, icon_path, hp, atk, def, spd, acc, cri, entry_order
+            )
+            VALUES (?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(race_id),
+                "npc",
+                item["display_name"],
+                item.get("icon_path") or DEFAULT_BADGE_REL,
+                int(item["hp"]),
+                int(item["atk"]),
+                int(item["def"]),
+                int(item["spd"]),
+                int(item["acc"]),
+                int(item["cri"]),
+                int(item["entry_order"]),
+            ),
+        )
+    full_rows = db.execute(
+        """
+        SELECT *
+        FROM lab_race_entries
+        WHERE race_id = ?
+        ORDER BY entry_order ASC, id ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    full_entries = [dict(item) for item in sorted(filled, key=lambda row: int(row["entry_order"]))]
+    db.execute(
+        "UPDATE lab_races SET status = 'running', started_at = ? WHERE id = ?",
+        (now_ts, int(race_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_RACE_START"],
+        user_id=(int(actor_user_id) if actor_user_id else None),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_race_start",
+        entity_type="lab_race",
+        entity_id=int(race_id),
+        payload={
+            "race_id": int(race_id),
+            "course_key": race["course_key"],
+            "seed": seed,
+            "entry_count": len(full_entries),
+            "special_count": int(course.get("special_count") or 0),
+            "features": [item["feature_key"] for item in course.get("selected_features", ())],
+        },
+        ip=request.remote_addr,
+    )
+    simulated = simulate_race(full_entries, seed, course)
+    db.execute("DELETE FROM lab_race_frames WHERE race_id = ?", (int(race_id),))
+    db.execute("DELETE FROM lab_race_records WHERE race_id = ?", (int(race_id),))
+    entry_id_by_order = {int(row["entry_order"]): int(row["id"]) for row in full_rows}
+    for frame in simulated["frames"]:
+        db.execute(
+            """
+            INSERT INTO lab_race_frames (race_id, frame_no, payload_json, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                int(race_id),
+                int(frame["frame_no"]),
+                json.dumps(frame, ensure_ascii=False),
+                now_ts,
+            ),
+        )
+    winner_payload = None
+    upset_payload = None
+    for record in simulated["results"]:
+        entry_id = entry_id_by_order[int(record["entry_order"])]
+        db.execute(
+            """
+            UPDATE lab_race_entries
+            SET final_rank = ?, finish_time_ms = ?, dnf_reason = NULL
+            WHERE id = ?
+            """,
+            (int(record["final_rank"]), int(record["finish_time_ms"]), int(entry_id)),
+        )
+        db.execute(
+            """
+            INSERT INTO lab_race_records
+            (race_id, entry_id, user_id, robot_label, final_rank, finish_time_ms, accident_count, comeback_flag, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(race_id),
+                int(entry_id),
+                (int(record["user_id"]) if record.get("user_id") is not None else None),
+                record["display_name"],
+                int(record["final_rank"]),
+                int(record["finish_time_ms"]),
+                int(record["accident_count"]),
+                (1 if record.get("comeback_flag") else 0),
+                now_ts,
+            ),
+        )
+        if int(record["final_rank"]) == 1:
+            winner_payload = {
+                "race_id": int(race_id),
+                "course_key": race["course_key"],
+                "robot_name": record["display_name"],
+                "user_id": record.get("user_id"),
+                "username": (_feed_user_label(db, record["user_id"]) if record.get("user_id") else "LAB ENEMY"),
+                "finish_time_ms": int(record["finish_time_ms"]),
+                "watch_url": f"/lab/race/watch/{int(race_id)}",
+                "features": [item["feature_key"] for item in course.get("selected_features", ())],
+            }
+            if record.get("comeback_flag"):
+                upset_payload = {
+                    **winner_payload,
+                    "worst_rank": int(record.get("worst_rank") or 0),
+                }
+    db.execute(
+        "UPDATE lab_races SET status = 'finished', finished_at = ? WHERE id = ?",
+        (now_ts, int(race_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_RACE_FINISH"],
+        user_id=(int(actor_user_id) if actor_user_id else None),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_race_finish",
+        entity_type="lab_race",
+        entity_id=int(race_id),
+        payload={
+            "race_id": int(race_id),
+            "course_key": race["course_key"],
+            "winner": winner_payload,
+            "entry_count": len(full_entries),
+        },
+        ip=request.remote_addr,
+    )
+    if winner_payload:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAB_RACE_RESULT"],
+            user_id=(int(winner_payload["user_id"]) if winner_payload.get("user_id") else None),
+            request_id=getattr(g, "request_id", None),
+            action_key="lab_race_result",
+            entity_type="lab_race",
+            entity_id=int(race_id),
+            payload=winner_payload,
+            ip=request.remote_addr,
+        )
+        _lab_world_event_log(db, "LAB_RACE_WIN", winner_payload)
+    if upset_payload:
+        _lab_world_event_log(db, "LAB_RACE_UPSET", upset_payload)
+    return _lab_fetch_race(db, race_id)
+
+
+def _lab_casino_day_key():
+    return datetime.now(JST).strftime("%Y-%m-%d")
+
+
+def _lab_casino_wallet_row(db, user_id):
+    row = db.execute(
+        """
+        SELECT id, username, COALESCE(lab_coin, ?) AS lab_coin, lab_coin_last_daily_at
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(LAB_CASINO_STARTING_COINS), int(user_id)),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _lab_casino_adjust_coins(db, user_id, delta, *, cap=LAB_CASINO_COIN_CAP):
+    wallet = _lab_casino_wallet_row(db, user_id)
+    before = int(wallet["lab_coin"] or 0) if wallet else 0
+    after = max(0, before + int(delta))
+    if cap is not None:
+        after = min(int(cap), after)
+    db.execute("UPDATE users SET lab_coin = ? WHERE id = ?", (int(after), int(user_id)))
+    return before, after
+
+
+def _lab_casino_apply_daily_grant_if_needed(db, user_id):
+    wallet = _lab_casino_wallet_row(db, user_id)
+    if not wallet:
+        return {"granted_amount": 0, "already_received": True, "lab_coin_before": 0, "lab_coin_after": 0, "day_key": None}
+    day_key = _lab_casino_day_key()
+    last_daily_at = str(wallet.get("lab_coin_last_daily_at") or "").strip()
+    before_coin = int(wallet.get("lab_coin") or 0)
+    if last_daily_at == day_key:
+        return {
+            "granted_amount": 0,
+            "already_received": True,
+            "lab_coin_before": before_coin,
+            "lab_coin_after": before_coin,
+            "day_key": day_key,
+        }
+    grant_amount = min(int(LAB_CASINO_DAILY_GRANT), max(0, int(LAB_CASINO_COIN_CAP) - before_coin))
+    before, after = _lab_casino_adjust_coins(db, user_id, grant_amount)
+    db.execute("UPDATE users SET lab_coin_last_daily_at = ? WHERE id = ?", (day_key, int(user_id)))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_CASINO_DAILY_GRANT"],
+        user_id=int(user_id),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_casino_daily_grant",
+        entity_type="user",
+        entity_id=int(user_id),
+        delta_coins=int(grant_amount),
+        payload={
+            "day_key": day_key,
+            "grant_amount": int(grant_amount),
+            "lab_coin_before": int(before),
+            "lab_coin_after": int(after),
+            "cap": int(LAB_CASINO_COIN_CAP),
+        },
+        ip=request.remote_addr,
+    )
+    return {
+        "granted_amount": int(grant_amount),
+        "already_received": False,
+        "lab_coin_before": int(before),
+        "lab_coin_after": int(after),
+        "day_key": day_key,
+    }
+
+
+def _lab_casino_latest_race(db, *, status=None):
+    if status:
+        row = db.execute(
+            """
+            SELECT *
+            FROM lab_casino_races
+            WHERE status = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (str(status),),
+        ).fetchone()
+    else:
+        row = db.execute(
+            """
+            SELECT *
+            FROM lab_casino_races
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _lab_casino_fetch_race(db, race_id):
+    row = db.execute("SELECT * FROM lab_casino_races WHERE id = ? LIMIT 1", (int(race_id),)).fetchone()
+    return dict(row) if row else None
+
+
+def _lab_casino_create_race(db, *, seed=None):
+    now_ts = int(time.time())
+    race_seed = int(seed or random.randint(100_000, 999_999))
+    bundle = build_lab_race_bundle(mode="casino", seed=race_seed, course_key="casino_scrapyard_cup", simulate=False)
+    course = bundle["course"]
+    cur = db.execute(
+        """
+        INSERT INTO lab_casino_races (race_key, course_payload_json, status, seed, created_at)
+        VALUES (?, ?, 'betting', ?, ?)
+        """,
+        (course["key"], json.dumps(course, ensure_ascii=False), race_seed, now_ts),
+    )
+    race_id = int(cur.lastrowid)
+    for entry in bundle["entries"]:
+        db.execute(
+            """
+            INSERT INTO lab_casino_entries
+            (
+                race_id, bot_key, display_name, role_type, condition_key,
+                icon_path, description, spd, def, acc, cri, luck, odds,
+                lane_index, entry_order, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(race_id),
+                entry["bot_key"],
+                entry["display_name"],
+                entry["role_type"],
+                entry["condition_key"],
+                entry.get("icon_path") or DEFAULT_BADGE_REL,
+                entry.get("description"),
+                int(entry["spd"]),
+                int(entry["def"]),
+                int(entry["acc"]),
+                int(entry["cri"]),
+                int(entry["luck"]),
+                float(entry["odds"]),
+                int(entry["lane_index"]),
+                int(entry["entry_order"]),
+                now_ts,
+            ),
+        )
+    return _lab_casino_fetch_race(db, race_id)
+
+
+def _lab_casino_ensure_open_race(db):
+    race = _lab_casino_latest_race(db, status="betting")
+    if race:
+        return race
+    return _lab_casino_create_race(db)
+
+
+def _lab_casino_entries(db, race_id):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM lab_casino_entries
+        WHERE race_id = ?
+        ORDER BY lane_index ASC, entry_order ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        icon_rel = _safe_static_rel(item.get("icon_path"), warn_key=f"lab_casino:{item.get('bot_key')}") or DEFAULT_BADGE_REL
+        item["icon_url"] = url_for("static", filename=icon_rel)
+        item["track_icon_url"] = item["icon_url"]
+        item["owner_label"] = "LAB ENEMY"
+        item["role_label"] = LAB_CASINO_ROLE_LABELS.get(str(item.get("role_type") or ""), "実験機")
+        item["condition_label"] = LAB_CASINO_CONDITIONS.get(str(item.get("condition_key") or ""), {}).get(
+            "label",
+            str(item.get("condition_key") or "-"),
+        )
+        item["odds_text"] = f"{float(item.get('odds') or 0):.1f}倍"
+        item["lane_no"] = int(item.get("lane_index") or 0) + 1
+        item["finish_text"] = _lab_format_time_ms(item.get("finish_time_ms"))
+        out.append(item)
+    return out
+
+
+def _lab_casino_frames(db, race_id):
+    rows = db.execute(
+        """
+        SELECT frame_no, payload_json
+        FROM lab_casino_frames
+        WHERE race_id = ?
+        ORDER BY frame_no ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    out = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        payload["frame_no"] = int(row["frame_no"])
+        out.append(payload)
+    return out
+
+
+def _lab_casino_results(db, race_id):
+    rows = _lab_casino_entries(db, race_id)
+    return sorted(rows, key=lambda item: (int(item.get("final_rank") or 9999), int(item.get("lane_index") or 0)))
+
+
+def _lab_casino_user_bet(db, race_id, user_id):
+    row = db.execute(
+        """
+        SELECT
+            b.*,
+            e.display_name,
+            e.bot_key,
+            e.icon_path,
+            e.odds,
+            e.final_rank
+        FROM lab_casino_bets b
+        JOIN lab_casino_entries e ON e.id = b.entry_id
+        WHERE b.race_id = ? AND b.user_id = ?
+        LIMIT 1
+        """,
+        (int(race_id), int(user_id)),
+    ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    icon_rel = _safe_static_rel(item.get("icon_path")) or DEFAULT_BADGE_REL
+    item["icon_url"] = url_for("static", filename=icon_rel)
+    item["odds_text"] = f"{float(item.get('odds') or 0):.1f}倍"
+    item["watch_bonus"] = int(LAB_CASINO_WATCH_BONUS)
+    item["net_delta"] = int(item.get("payout_amount") or 0) + int(LAB_CASINO_WATCH_BONUS) - int(item.get("amount") or 0)
+    return item
+
+
+def _lab_casino_history_rows(db, user_id, *, limit=30):
+    rows = db.execute(
+        """
+        SELECT
+            b.*,
+            r.status AS race_status,
+            r.created_at AS race_created_at,
+            e.display_name,
+            e.bot_key,
+            e.icon_path,
+            e.odds,
+            e.final_rank
+        FROM lab_casino_bets b
+        JOIN lab_casino_races r ON r.id = b.race_id
+        JOIN lab_casino_entries e ON e.id = b.entry_id
+        WHERE b.user_id = ?
+        ORDER BY b.created_at DESC, b.id DESC
+        LIMIT ?
+        """,
+        (int(user_id), int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        icon_rel = _safe_static_rel(item.get("icon_path")) or DEFAULT_BADGE_REL
+        item["icon_url"] = url_for("static", filename=icon_rel)
+        item["odds_text"] = f"{float(item.get('odds') or 0):.1f}倍"
+        item["created_text"] = _format_jst_ts(item.get("created_at"))
+        item["resolved_text"] = _format_jst_ts(item.get("resolved_at"))
+        item["race_url"] = url_for("lab_race_watch", race_id=int(item["race_id"]))
+        item["result_url"] = url_for("lab_race_result", race_id=int(item["race_id"]))
+        item["net_delta"] = int(item.get("payout_amount") or 0) + int(LAB_CASINO_WATCH_BONUS) - int(item.get("amount") or 0)
+        out.append(item)
+    return out
+
+
+def _lab_casino_recent_big_hits(db, *, limit=6):
+    since = int(time.time()) - 7 * 86400
+    rows = db.execute(
+        """
+        SELECT
+            b.user_id,
+            b.race_id,
+            b.amount,
+            b.payout_amount,
+            b.resolved_at,
+            e.display_name,
+            e.odds
+        FROM lab_casino_bets b
+        JOIN lab_casino_entries e ON e.id = b.entry_id
+        WHERE b.is_hit = 1
+          AND b.payout_amount > 0
+          AND COALESCE(b.resolved_at, 0) >= ?
+        ORDER BY b.payout_amount DESC, b.resolved_at DESC, b.id DESC
+        LIMIT ?
+        """,
+        (since, int(limit)),
+    ).fetchall()
+    return [
+        {
+            "username": _feed_user_label(db, row["user_id"]),
+            "race_id": int(row["race_id"]),
+            "display_name": row["display_name"],
+            "amount": int(row["amount"]),
+            "payout_amount": int(row["payout_amount"]),
+            "resolved_text": _format_jst_ts(row["resolved_at"]),
+            "odds_text": f"{float(row['odds'] or 0):.1f}倍",
+        }
+        for row in rows
+    ]
+
+
+def _lab_casino_prize_rows(db, *, user_id):
+    rows = db.execute(
+        """
+        SELECT
+            p.*,
+            CASE WHEN my_claim.id IS NULL THEN 0 ELSE 1 END AS claimed_by_me,
+            COALESCE(claims.claim_count, 0) AS claim_count
+        FROM lab_casino_prizes p
+        LEFT JOIN (
+            SELECT prize_id, COUNT(*) AS claim_count
+            FROM lab_casino_prize_claims
+            GROUP BY prize_id
+        ) claims ON claims.prize_id = p.id
+        LEFT JOIN lab_casino_prize_claims my_claim
+          ON my_claim.prize_id = p.id
+         AND my_claim.user_id = ?
+        WHERE p.is_active = 1
+        ORDER BY p.cost_lab_coin ASC, p.id ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _lab_casino_resolve_race(db, race_id, *, actor_user_id=None):
+    race = _lab_casino_fetch_race(db, race_id)
+    if not race:
+        return None
+    if race["status"] == "finished":
+        return race
+    entries = _lab_casino_entries(db, race_id)
+    if not entries:
+        return race
+    course = _lab_course_payload_from_race(race, mode="casino")
+    now_ts = int(time.time())
+    if race["status"] != "running":
+        db.execute(
+            "UPDATE lab_casino_races SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?",
+            (now_ts, int(race_id)),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAB_CASINO_RACE_START"],
+            user_id=(int(actor_user_id) if actor_user_id else None),
+            request_id=getattr(g, "request_id", None),
+            action_key="lab_casino_race_start",
+            entity_type="lab_casino_race",
+            entity_id=int(race_id),
+            payload={
+                "race_id": int(race_id),
+                "race_key": race["race_key"],
+                "seed": int(race["seed"]),
+                "entry_count": len(entries),
+                "special_count": int(course.get("special_count") or 0),
+                "features": [item["feature_key"] for item in course.get("selected_features", ())],
+            },
+            ip=request.remote_addr,
+        )
+    simulated = simulate_casino_race(entries, int(race["seed"]), course)
+    db.execute("DELETE FROM lab_casino_frames WHERE race_id = ?", (int(race_id),))
+    result_by_order = {int(item["entry_order"]): item for item in simulated["results"]}
+    for frame in simulated["frames"]:
+        db.execute(
+            """
+            INSERT INTO lab_casino_frames (race_id, frame_no, payload_json, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                int(race_id),
+                int(frame["frame_no"]),
+                json.dumps(frame, ensure_ascii=False),
+                now_ts,
+            ),
+        )
+    winner_entry_id = None
+    winner_payload = None
+    for entry in entries:
+        result = result_by_order.get(int(entry["entry_order"]))
+        if not result:
+            continue
+        db.execute(
+            """
+            UPDATE lab_casino_entries
+            SET final_rank = ?, finish_time_ms = ?, accident_count = ?
+            WHERE id = ?
+            """,
+            (
+                int(result["final_rank"]),
+                int(result["finish_time_ms"]),
+                int(result["accident_count"]),
+                int(entry["id"]),
+            ),
+        )
+        if int(result["final_rank"]) == 1:
+            winner_entry_id = int(entry["id"])
+            winner_payload = {
+                "race_id": int(race_id),
+                "bot_key": result["bot_key"],
+                "display_name": result["display_name"],
+                "odds": float(result["odds"]),
+                "finish_time_ms": int(result["finish_time_ms"]),
+                "features": [item["feature_key"] for item in course.get("selected_features", ())],
+            }
+    bet_rows = db.execute(
+        """
+        SELECT
+            b.*,
+            e.bot_key,
+            e.display_name,
+            e.odds
+        FROM lab_casino_bets b
+        JOIN lab_casino_entries e ON e.id = b.entry_id
+        WHERE b.race_id = ?
+        ORDER BY b.id ASC
+        """,
+        (int(race_id),),
+    ).fetchall()
+    for bet in bet_rows:
+        is_hit = int(bet["entry_id"]) == int(winner_entry_id or 0)
+        payout = lab_casino_payout_amount(int(bet["amount"]), float(bet["odds"])) if is_hit else 0
+        delta = int(payout) + int(LAB_CASINO_WATCH_BONUS)
+        before_coin, after_coin = _lab_casino_adjust_coins(db, int(bet["user_id"]), delta)
+        db.execute(
+            """
+            UPDATE lab_casino_bets
+            SET payout_amount = ?, is_hit = ?, resolved_at = ?
+            WHERE id = ?
+            """,
+            (int(payout), 1 if is_hit else 0, now_ts, int(bet["id"])),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAB_CASINO_BET_RESOLVE"],
+            user_id=int(bet["user_id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="lab_casino_bet_resolve",
+            entity_type="lab_casino_bet",
+            entity_id=int(bet["id"]),
+            delta_coins=int(delta),
+            payload={
+                "race_id": int(race_id),
+                "entry_id": int(bet["entry_id"]),
+                "bot_key": bet["bot_key"],
+                "amount": int(bet["amount"]),
+                "odds": float(bet["odds"]),
+                "is_hit": bool(is_hit),
+                "payout": int(payout),
+                "watch_bonus": int(LAB_CASINO_WATCH_BONUS),
+                "lab_coin_before": int(before_coin),
+                "lab_coin_after": int(after_coin),
+                "winner_entry_id": int(winner_entry_id or 0),
+            },
+            ip=request.remote_addr,
+        )
+    db.execute(
+        "UPDATE lab_casino_races SET status = 'finished', finished_at = ? WHERE id = ?",
+        (now_ts, int(race_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_CASINO_RACE_FINISH"],
+        user_id=(int(actor_user_id) if actor_user_id else None),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_casino_race_finish",
+        entity_type="lab_casino_race",
+        entity_id=int(race_id),
+        payload={
+            "race_id": int(race_id),
+            "race_key": race["race_key"],
+            "winner": winner_payload,
+            "entry_count": len(entries),
+            "special_count": int(course.get("special_count") or 0),
+        },
+        ip=request.remote_addr,
+    )
+    return _lab_casino_fetch_race(db, race_id)
+
 def _asset_abs(rel_path):
     return os.path.join(ASSET_ROOT, rel_path)
 
@@ -7336,6 +9618,100 @@ def _safe_static_rel(path_value, *, warn_key=None):
     if warn_key:
         _warn_missing_asset_once(warn_key, detail=rel)
     return None
+
+
+def _expand_image_bbox(bbox, width, height, pad=4):
+    if not bbox:
+        return None
+    left = max(0, int(bbox[0]) - int(pad))
+    top = max(0, int(bbox[1]) - int(pad))
+    right = min(int(width), int(bbox[2]) + int(pad))
+    bottom = min(int(height), int(bbox[3]) + int(pad))
+    if right <= left or bottom <= top:
+        return None
+    return (left, top, right, bottom)
+
+
+def _remove_corner_matte(image):
+    if image.width < 2 or image.height < 2:
+        return image
+    corners = [
+        image.getpixel((0, 0)),
+        image.getpixel((image.width - 1, 0)),
+        image.getpixel((0, image.height - 1)),
+        image.getpixel((image.width - 1, image.height - 1)),
+    ]
+    if any(int(pixel[3]) < 240 for pixel in corners):
+        return image
+    base = corners[0]
+    if any(max(abs(int(pixel[idx]) - int(base[idx])) for idx in range(3)) > 18 for pixel in corners[1:]):
+        return image
+    updated = []
+    changed = False
+    for pixel in image.getdata():
+        rgba = tuple(int(v) for v in pixel)
+        if rgba[3] < 16:
+            updated.append(rgba)
+            continue
+        dist = max(abs(rgba[idx] - int(base[idx])) for idx in range(3))
+        if dist <= 10 and rgba[3] >= 240:
+            updated.append((rgba[0], rgba[1], rgba[2], 0))
+            changed = True
+        elif dist <= 26 and rgba[3] >= 240:
+            alpha = max(0, min(255, int(round(((dist - 10) / 16.0) * 255))))
+            updated.append((rgba[0], rgba[1], rgba[2], alpha))
+            changed = True
+        else:
+            updated.append(rgba)
+    if not changed:
+        return image
+    matte_removed = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    matte_removed.putdata(updated)
+    return matte_removed
+
+
+def _lab_scene_sprite_rel(rel_path):
+    safe_rel = _safe_static_rel(rel_path)
+    if not safe_rel:
+        return None
+    src_abs = _static_abs(safe_rel)
+    if not os.path.exists(src_abs):
+        return safe_rel
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", safe_rel)
+    if not safe_name.lower().endswith(".png"):
+        safe_name += ".png"
+    out_rel = f"lab_scene_sprites/{safe_name}"
+    out_abs = _static_abs(out_rel)
+    src_mtime = int(os.path.getmtime(src_abs) or 0)
+    if os.path.exists(out_abs) and int(os.path.getmtime(out_abs) or 0) >= src_mtime:
+        return out_rel
+    try:
+        image = Image.open(src_abs).convert("RGBA")
+        alpha = image.getchannel("A")
+        bbox = alpha.getbbox()
+        if not bbox or bbox == (0, 0, image.width, image.height):
+            image = _remove_corner_matte(image)
+            alpha = image.getchannel("A")
+            bbox = alpha.getbbox()
+        expanded = _expand_image_bbox(bbox, image.width, image.height, pad=6)
+        if expanded:
+            image = image.crop(expanded)
+        if image.width > CANVAS_SIZE or image.height > CANVAS_SIZE:
+            scale = min(float(CANVAS_SIZE) / float(image.width), float(CANVAS_SIZE) / float(image.height))
+            image = image.resize(
+                (
+                    max(1, int(round(float(image.width) * scale))),
+                    max(1, int(round(float(image.height) * scale))),
+                ),
+                Image.NEAREST,
+            )
+        os.makedirs(os.path.dirname(out_abs), exist_ok=True)
+        image.save(out_abs, format="PNG")
+        if src_mtime > 0:
+            os.utime(out_abs, (src_mtime, src_mtime))
+        return out_rel
+    except Exception:
+        return safe_rel
 
 
 def _enemy_image_rel(image_path):
@@ -7416,6 +9792,66 @@ def _ensure_robot_instance_badge(db, instance_id, composed_rel_path=None):
     )
     db.commit()
     return badge_rel
+
+
+def _robot_render_revision():
+    return max(int(PART_OFFSET_CACHE_VERSION or 0), int(COMPOSE_REV or 0))
+
+
+def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_render"):
+    if not robot_row:
+        return None
+    data = dict(robot_row)
+    robot_id = int(data["id"])
+    render_rev = _robot_render_revision()
+    updated_at = int(data.get("updated_at") or 0)
+    composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
+    icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
+    composed_missing = not composed_rel or not os.path.exists(_static_abs(composed_rel))
+    icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
+    render_stale = updated_at < render_rev
+
+    if composed_missing or render_stale:
+        parts = db.execute(
+            "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+            (robot_id,),
+        ).fetchone()
+        if parts:
+            try:
+                data["composed_image_path"] = _compose_instance_image(db, {"id": robot_id}, parts)
+                latest = db.execute(
+                    "SELECT composed_image_path, icon_32_path, updated_at FROM robot_instances WHERE id = ?",
+                    (robot_id,),
+                ).fetchone()
+                if latest:
+                    data["composed_image_path"] = latest["composed_image_path"]
+                    data["icon_32_path"] = latest["icon_32_path"]
+                    data["updated_at"] = int(latest["updated_at"] or 0)
+                    composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
+                    icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
+                    icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
+            except Exception:
+                app.logger.warning("%s compose skipped id=%s", log_label, robot_id, exc_info=True)
+                data["composed_image_path"] = None
+
+    if data.get("composed_image_path") and (icon_missing or render_stale):
+        try:
+            data["icon_32_path"] = _ensure_robot_instance_badge(db, robot_id, data.get("composed_image_path"))
+            latest = db.execute(
+                "SELECT icon_32_path, updated_at FROM robot_instances WHERE id = ?",
+                (robot_id,),
+            ).fetchone()
+            if latest:
+                data["icon_32_path"] = latest["icon_32_path"]
+                data["updated_at"] = int(latest["updated_at"] or 0)
+        except Exception:
+            app.logger.warning("%s badge skipped id=%s", log_label, robot_id, exc_info=True)
+
+    if has_request_context():
+        data["image_url"] = _composed_image_url(data.get("composed_image_path"), data.get("updated_at"))
+    else:
+        data["image_url"] = None
+    return data
 
 
 def _user_avatar_rel(row):
@@ -7546,6 +9982,8 @@ def _home_boss_pity_status(db, user_id):
     by_area = {row["area_key"]: int(row["no_boss_streak"] or 0) for row in rows}
     out = []
     for area_key in AREA_BOSS_KEYS:
+        if area_key in SPECIAL_EXPLORE_AREA_KEYS:
+            continue
         pity = int(AREA_BOSS_PITY_MISSES.get(area_key, 15))
         streak = int(by_area.get(area_key, 0))
         out.append(
@@ -8523,7 +10961,7 @@ def _world_week_remaining_line(week_key=None, now_ts=None):
     return f"切替まであと{minutes}分"
 
 
-def _world_hot_area_rows(db, week_key, limit=4):
+def _world_hot_area_rows(db, week_key, limit=4, *, user_row=None, user_id=None, is_admin=None):
     start_dt, end_dt = _world_week_bounds(str(week_key or _world_week_key()))
     rows = db.execute(
         """
@@ -8549,6 +10987,8 @@ def _world_hot_area_rows(db, week_key, limit=4):
     for row in rows:
         area_key = str(row["area_key"] or "").strip()
         if not area_key:
+            continue
+        if not _area_visible_for_viewer(db, area_key, user_row=user_row, user_id=user_id, is_admin=is_admin):
             continue
         out.append(
             {
@@ -8629,11 +11069,13 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
     }
 
 
-def _first_boss_record_rows(db):
+def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
     out = []
     cache = {}
     for area in EXPLORE_AREAS:
         area_key = area["key"]
+        if not _area_visible_for_viewer(db, area_key, user_row=user_row, user_id=user_id, is_admin=is_admin):
+            continue
         row = db.execute(
             """
             SELECT created_at, user_id, payload_json
@@ -8664,6 +11106,45 @@ def _first_boss_record_rows(db):
                     ]
                     if part
                 ),
+                "time_jst": _format_jst_ts(row["created_at"]),
+                "avatar_path": visuals["avatar"],
+                "badge_path": visuals["badge"],
+            }
+        )
+    return out
+
+
+def _first_explore_record_rows(db, area_keys=None, *, user_row=None, user_id=None, is_admin=None):
+    wanted = {str(k).strip() for k in (area_keys or ()) if str(k).strip()}
+    if not wanted:
+        return []
+    out = []
+    cache = {}
+    for area in EXPLORE_AREAS:
+        area_key = area["key"]
+        if area_key not in wanted:
+            continue
+        if not _area_visible_for_viewer(db, area_key, user_row=user_row, user_id=user_id, is_admin=is_admin):
+            continue
+        row = db.execute(
+            """
+            SELECT created_at, user_id, payload_json
+            FROM world_events_log
+            WHERE event_type = ?
+              AND COALESCE(json_extract(payload_json, '$.area_key'), '') = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_END"], area_key),
+        ).fetchone()
+        if not row:
+            continue
+        visuals = _user_visuals(db, int(row["user_id"]), cache) if row["user_id"] else {"avatar": DEFAULT_AVATAR_REL, "badge": DEFAULT_BADGE_REL}
+        out.append(
+            {
+                "title": f"{area['label']} 初到達",
+                "username": _feed_user_label(db, row["user_id"]),
+                "detail": "",
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
                 "badge_path": visuals["badge"],
@@ -8864,6 +11345,34 @@ def _home_next_action_card(
             "area_key": area_key,
             "boss_enter": False,
         }
+    if (
+        current_layer >= 4
+        and _is_special_area_unlocked(db, int(user["id"]), LAYER4_FINAL_AREA_KEY)
+        and not _has_fixed_boss_defeat_in_area(db, int(user["id"]), LAYER4_FINAL_AREA_KEY)
+    ):
+        return {
+            "title": "Next Action",
+            "desc": "第4層最終試験が解放中",
+            "cta_label": "アーク=ゼロに挑む",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": LAYER4_FINAL_AREA_KEY,
+            "boss_enter": False,
+        }
+    if (
+        current_layer >= 5
+        and _is_special_area_unlocked(db, int(user["id"]), LAYER5_FINAL_AREA_KEY)
+        and not _has_fixed_boss_defeat_in_area(db, int(user["id"]), LAYER5_FINAL_AREA_KEY)
+    ):
+        return {
+            "title": "Next Action",
+            "desc": "第5層最終試験が解放中",
+            "cta_label": "オメガフレームに挑む",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": LAYER5_FINAL_AREA_KEY,
+            "boss_enter": False,
+        }
     if current_layer < MAX_UNLOCKABLE_LAYER:
         return {
             "title": "Next Action",
@@ -8956,6 +11465,7 @@ FEED_EVENT_TYPES = {
     "drop": {"audit.drop"},
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
+    "lab": set(LAB_WORLD_EVENT_TYPES),
     "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"},
 }
 FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"}
@@ -8966,6 +11476,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "FACTION_WAR_RESULT",
     "daily_title_posted",
     "RESEARCH_UNLOCK",
+    *LAB_WORLD_EVENT_TYPES,
 }
 WORLD_LOG_RANKING_METRICS = (
     {
@@ -9018,9 +11529,9 @@ def _parse_jst_day_filter(raw_value, *, end=False):
 def _feed_user_label(db, user_id):
     if user_id is None:
         return "SYSTEM"
-    row = db.execute("SELECT username FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    row = db.execute("SELECT username, is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
     if row and row["username"]:
-        return row["username"]
+        return _display_username(row["username"], is_admin=bool(int(row["is_admin"] or 0)))
     return f"User#{int(user_id)}"
 
 
@@ -9089,6 +11600,38 @@ def _feed_card_from_event(db, row):
         enemy_row = _feed_enemy_row(db, row, payload)
         if enemy_row:
             card["image_url"] = url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
+    elif event_type == "LAB_RACE_WIN":
+        username = str(payload.get("username") or "LAB ENEMY").strip() or "LAB ENEMY"
+        robot_name = str(payload.get("robot_name") or "実験機").strip() or "実験機"
+        card["headline"] = "LAB RACE"
+        card["accent"] = "weekly"
+        card["text"] = f"実験室レース優勝: {username} の 『{robot_name}』 が1着"
+        card["meta_lines"] = [
+            f"コース: {_lab_course_meta(payload.get('course_key')).get('label')}",
+            f"完走: {_lab_format_time_ms(payload.get('finish_time_ms'))}",
+        ]
+        if payload.get("race_id"):
+            card["link_url"] = url_for("lab_race_legacy_watch", race_id=int(payload["race_id"]))
+    elif event_type == "LAB_RACE_UPSET":
+        username = str(payload.get("username") or "LAB ENEMY").strip() or "LAB ENEMY"
+        robot_name = str(payload.get("robot_name") or "実験機").strip() or "実験機"
+        card["headline"] = "LAB UPSET"
+        card["accent"] = "drop"
+        card["text"] = f"大逆転: {username} の 『{robot_name}』 が実験室で1着"
+        if payload.get("worst_rank"):
+            card["meta_lines"] = [f"一時順位: {int(payload['worst_rank'])}位付近"]
+        if payload.get("race_id"):
+            card["link_url"] = url_for("lab_race_legacy_watch", race_id=int(payload["race_id"]))
+    elif event_type == "LAB_RACE_POPULAR_ENTRY":
+        title = str(payload.get("title") or "投稿ロボ").strip() or "投稿ロボ"
+        username = str(payload.get("username") or "unknown").strip() or "unknown"
+        likes_count = int(payload.get("likes_count") or 0)
+        card["headline"] = "LAB SHOWCASE"
+        card["accent"] = "build"
+        card["text"] = f"投稿ロボ『{title}』が実験室で話題に浮上"
+        card["meta_lines"] = [f"投稿者: {username}", f"いいね: {likes_count}"]
+        if payload.get("submission_id"):
+            card["link_url"] = url_for("lab_submission_detail", submission_id=int(payload["submission_id"]))
     elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
         actor_label = card["user_label"]
         target_part_key = str(payload.get("target_part_key") or "").strip()
@@ -9370,7 +11913,6 @@ def _world_ranking_timeline_items(db):
 
 
 def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admin=False):
-    del is_admin
     event_types = tuple(sorted(WORLD_LOG_SYSTEM_EVENT_TYPES))
     fetch_limit = max(int(limit) * 12, 120)
     rows = db.execute(
@@ -9390,6 +11932,8 @@ def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admi
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
             payload = {}
+        if not _event_visible_for_viewer(db, event_type, payload, is_admin=is_admin):
+            continue
         created_ts = int(row["created_at"] or 0)
         row_id = int(row["id"])
         if event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
@@ -9840,7 +12384,7 @@ def _fetch_feed_cards(db, type_filter="", user_id_filter=None, limit=30, is_admi
     if user_id_filter is not None:
         where.append("user_id = ?")
         params.append(int(user_id_filter))
-    params.append(int(limit))
+    params.append(max(int(limit) * 4, int(limit)))
     rows = db.execute(
         f"""
         SELECT id, created_at, event_type, payload_json, user_id, action_key, entity_type, entity_id
@@ -9851,7 +12395,18 @@ def _fetch_feed_cards(db, type_filter="", user_id_filter=None, limit=30, is_admi
         """,
         params,
     ).fetchall()
-    return [_feed_card_from_event(db, r) for r in rows]
+    cards = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if not _event_visible_for_viewer(db, row["event_type"], payload, is_admin=is_admin):
+            continue
+        cards.append(_feed_card_from_event(db, row))
+        if len(cards) >= int(limit):
+            break
+    return cards
 
 
 def _get_decor_asset_by_id(db, decor_asset_id):
@@ -9892,6 +12447,340 @@ def _is_admin_user(user_id):
     db = get_db()
     row = db.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
     return bool(row and row["is_admin"] == 1)
+
+
+def _normalize_main_admin_username(username):
+    text = str(username or "").strip()
+    if not text:
+        return ""
+    if text == MAIN_ADMIN_USERNAME:
+        return MAIN_ADMIN_USERNAME
+    if text.lower() == "admin":
+        return MAIN_ADMIN_USERNAME
+    return text
+
+
+def _is_main_admin_username(username):
+    text = str(username or "").strip()
+    if not text:
+        return False
+    return text == MAIN_ADMIN_USERNAME or text.lower() == "admin"
+
+
+def _display_username(username, *, is_admin=False):
+    text = str(username or "").strip()
+    if not text:
+        return ""
+    if bool(is_admin) and _is_main_admin_username(text):
+        return MAIN_ADMIN_USERNAME
+    return text
+
+
+def _is_main_admin_user_row(user_row):
+    if not user_row or not hasattr(user_row, "keys"):
+        return False
+    username = user_row["username"] if "username" in user_row.keys() else None
+    return _is_main_admin_username(username)
+
+
+def _is_main_admin_user_id(db, user_id):
+    row = db.execute("SELECT username, is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    return _is_main_admin_user_row(row)
+
+
+def _find_user_for_login(db, username):
+    text = str(username or "").strip()
+    if not text:
+        return None
+    if _is_main_admin_username(text):
+        return db.execute(
+            """
+            SELECT *
+            FROM users
+            WHERE username IN (?, ?)
+            ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, id ASC
+            LIMIT 1
+            """,
+            (MAIN_ADMIN_USERNAME, "admin", MAIN_ADMIN_USERNAME),
+        ).fetchone()
+    return db.execute("SELECT * FROM users WHERE username = ?", (text,)).fetchone()
+
+
+def _ensure_main_admin_fire_part_rows(db):
+    now = int(time.time())
+    rows = [
+        ("HEAD", "head_r_fire", "parts/head/head_r_fire.png"),
+        ("RIGHT_ARM", "right_arm_r_fire", "parts/right_arm/right_arm_r_fire.png"),
+        ("LEFT_ARM", "left_arm_r_fire", "parts/left_arm/left_arm_r_fire.png"),
+        ("LEGS", "legs_r_fire", "parts/legs/legs_r_fire.png"),
+    ]
+    changed = 0
+    for part_type, key, image_path in rows:
+        display_name = generate_part_display_name_ja(key, rarity="R", element="FIRE", part_type=part_type)
+        existing = db.execute(
+            """
+            SELECT part_type, image_path, rarity, element, series, display_name_ja, is_active
+            FROM robot_parts
+            WHERE key = ?
+            LIMIT 1
+            """,
+            (key,),
+        ).fetchone()
+        if existing:
+            current = (
+                str(existing["part_type"] or ""),
+                str(existing["image_path"] or ""),
+                str(existing["rarity"] or "").upper(),
+                str(existing["element"] or "").upper(),
+                str(existing["series"] or ""),
+                str(existing["display_name_ja"] or ""),
+                int(existing["is_active"] or 0),
+            )
+            target = (part_type, image_path, "R", "FIRE", "S1", display_name, 1)
+            if current == target:
+                continue
+            db.execute(
+                """
+                UPDATE robot_parts
+                SET part_type = ?,
+                    image_path = ?,
+                    rarity = 'R',
+                    element = 'FIRE',
+                    series = 'S1',
+                    display_name_ja = ?,
+                    is_active = 1
+                WHERE key = ?
+                """,
+                (part_type, image_path, display_name, key),
+            )
+        else:
+            db.execute(
+                """
+                INSERT INTO robot_parts
+                (part_type, key, image_path, rarity, element, series, display_name_ja, offset_x, offset_y, is_active, is_unlocked, created_at)
+                VALUES (?, ?, ?, 'R', 'FIRE', 'S1', ?, 0, 0, 1, 0, ?)
+                """,
+                (part_type, key, image_path, display_name, now),
+            )
+        changed += 1
+    return changed
+
+
+def _grant_all_robot_parts_to_user(db, user_id):
+    owned_keys = {
+        str(row["key"])
+        for row in db.execute(
+            """
+            SELECT DISTINCT rp.key
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.user_id = ?
+            """,
+            (int(user_id),),
+        ).fetchall()
+    }
+    granted = 0
+    rows = db.execute(
+        """
+        SELECT *
+        FROM robot_parts
+        WHERE is_active = 1
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    for row in rows:
+        key = str(row["key"] or "").strip()
+        if not key or key in owned_keys:
+            continue
+        _create_part_instance_from_master(db, int(user_id), row, plus=0)
+        owned_keys.add(key)
+        granted += 1
+    return granted
+
+
+def _select_owned_part_instance_id(db, user_id, part_key):
+    row = db.execute(
+        """
+        SELECT pi.id
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND rp.key = ?
+        ORDER BY CASE WHEN pi.status = 'inventory' THEN 0 ELSE 1 END, pi.plus DESC, pi.id ASC
+        LIMIT 1
+        """,
+        (int(user_id), str(part_key)),
+    ).fetchone()
+    return int(row["id"]) if row else None
+
+
+def _equip_main_admin_fire_loadout(db, user_id, robot_id):
+    parts = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(robot_id),),
+    ).fetchone()
+    if not parts:
+        return False
+    desired_keys = {
+        "head_key": MAIN_ADMIN_FIRE_LOADOUT["head"],
+        "r_arm_key": MAIN_ADMIN_FIRE_LOADOUT["r_arm"],
+        "l_arm_key": MAIN_ADMIN_FIRE_LOADOUT["l_arm"],
+        "legs_key": MAIN_ADMIN_FIRE_LOADOUT["legs"],
+    }
+    current_keys = {
+        "head_key": str(parts["head_key"] or "").strip(),
+        "r_arm_key": str(parts["r_arm_key"] or "").strip(),
+        "l_arm_key": str(parts["l_arm_key"] or "").strip(),
+        "legs_key": str(parts["legs_key"] or "").strip(),
+    }
+    if current_keys == desired_keys:
+        return False
+    current_ids = [
+        int(parts[col])
+        for col in ("head_part_instance_id", "r_arm_part_instance_id", "l_arm_part_instance_id", "legs_part_instance_id")
+        if col in parts.keys() and parts[col]
+    ]
+    if current_ids:
+        placeholders = ",".join(["?"] * len(current_ids))
+        db.execute(
+            f"UPDATE part_instances SET status = 'inventory', updated_at = datetime('now') WHERE id IN ({placeholders})",
+            current_ids,
+        )
+    selected = {
+        "head": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["head"]),
+        "r_arm": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["r_arm"]),
+        "l_arm": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["l_arm"]),
+        "legs": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["legs"]),
+    }
+    if not all(selected.values()):
+        return False
+    db.execute(
+        """
+        UPDATE robot_instance_parts
+        SET head_key = ?,
+            r_arm_key = ?,
+            l_arm_key = ?,
+            legs_key = ?
+        WHERE robot_instance_id = ?
+        """,
+        (
+            desired_keys["head_key"],
+            desired_keys["r_arm_key"],
+            desired_keys["l_arm_key"],
+            desired_keys["legs_key"],
+            int(robot_id),
+        ),
+    )
+    _equip_part_instances_on_robot(db, int(robot_id), selected)
+    _compose_instance_assets_no_commit(
+        db,
+        int(robot_id),
+        {
+            "head_key": desired_keys["head_key"],
+            "r_arm_key": desired_keys["r_arm_key"],
+            "l_arm_key": desired_keys["l_arm_key"],
+            "legs_key": desired_keys["legs_key"],
+            "decor_asset_id": (parts["decor_asset_id"] if "decor_asset_id" in parts.keys() else None),
+        },
+    )
+    return True
+
+
+def _apply_main_admin_account_state(db, user_id):
+    user = db.execute(
+        """
+        SELECT id, username, is_admin, is_admin_protected, layer2_unlocked, max_unlocked_layer, active_robot_id
+        FROM users
+        WHERE id = ?
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if not _is_main_admin_user_row(user):
+        return {"changed": False, "granted_parts": 0, "equipped_fire_loadout": False}
+
+    changed = False
+    granted_parts = 0
+    equipped_fire_loadout = False
+    normalized_username = _normalize_main_admin_username(user["username"])
+    next_max_layer = max(int(user["max_unlocked_layer"] or 1), MAX_UNLOCKABLE_LAYER)
+    if (
+        str(user["username"] or "") != normalized_username
+        or int(user["is_admin"] or 0) != 1
+        or int(user["is_admin_protected"] or 0) != 1
+        or int(user["layer2_unlocked"] or 0) != 1
+        or int(user["max_unlocked_layer"] or 1) != next_max_layer
+    ):
+        db.execute(
+            """
+            UPDATE users
+            SET username = ?,
+                is_admin = 1,
+                is_admin_protected = 1,
+                layer2_unlocked = 1,
+                max_unlocked_layer = ?
+            WHERE id = ?
+            """,
+            (normalized_username, int(next_max_layer), int(user_id)),
+        )
+        changed = True
+
+    active_robot = db.execute(
+        """
+        SELECT *
+        FROM robot_instances
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if active_robot is None:
+        init_result = initialize_new_user(db, int(user_id), apply_admin_setup=False)
+        changed = changed or bool(init_result.get("created_robot")) or bool(init_result.get("created_inventory_set"))
+        active_robot = db.execute(
+            """
+            SELECT *
+            FROM robot_instances
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(user_id),),
+        ).fetchone()
+
+    part_rows_changed = _ensure_main_admin_fire_part_rows(db)
+    changed = changed or bool(part_rows_changed)
+    granted_parts = _grant_all_robot_parts_to_user(db, int(user_id))
+    changed = changed or (granted_parts > 0)
+
+    if active_robot and (part_rows_changed or granted_parts > 0):
+        equipped_fire_loadout = _equip_main_admin_fire_loadout(db, int(user_id), int(active_robot["id"]))
+        changed = changed or bool(equipped_fire_loadout)
+        db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (int(active_robot["id"]), int(user_id)))
+
+    _ensure_qol_entitlement(db, int(user_id))
+    return {
+        "changed": bool(changed),
+        "granted_parts": int(granted_parts),
+        "equipped_fire_loadout": bool(equipped_fire_loadout),
+    }
+
+
+def _ensure_main_admin_account_ready(db):
+    display_row = db.execute(
+        "SELECT id, username, is_admin, is_admin_protected FROM users WHERE username = ? LIMIT 1",
+        (MAIN_ADMIN_USERNAME,),
+    ).fetchone()
+    legacy_row = db.execute(
+        "SELECT id, username, is_admin, is_admin_protected FROM users WHERE username = ? LIMIT 1",
+        ("admin",),
+    ).fetchone()
+    target = display_row or legacy_row
+    if not target:
+        return None
+    result = _apply_main_admin_account_state(db, int(target["id"]))
+    if result.get("changed"):
+        db.commit()
+    return result
 
 
 def _is_newbie_boost_active(user_row, now_ts=None):
@@ -10412,13 +13301,13 @@ def enforce_banned_user_logout():
         return None
     db = get_db()
     row = db.execute(
-        "SELECT id, username, is_banned FROM users WHERE id = ?",
+        "SELECT id, username, is_admin, is_banned FROM users WHERE id = ?",
         (int(user_id),),
     ).fetchone()
     if not row:
         session.clear()
         return redirect(url_for("login", reason="expired"))
-    username = str(row["username"] or "").strip()
+    username = _display_username(row["username"], is_admin=bool(int(row["is_admin"] or 0)))
     if username and session.get("username") != username:
         session["username"] = username
     if int(row["is_banned"] or 0) != 1:
@@ -10447,6 +13336,22 @@ def touch_user_last_seen():
     except Exception:
         app.logger.exception("user.last_seen_touch_failed user_id=%s", user_id)
     return None
+
+
+@app.before_request
+def enforce_release_gates():
+    if request.endpoint == "static" or request.path.startswith("/static/"):
+        return None
+    if not request.path.startswith("/lab"):
+        return None
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not user:
+        return None
+    return _release_gate_redirect(db, "lab", user_row=user)
 
 
 @app.before_request
@@ -11118,6 +14023,10 @@ def sitemap_xml():
         f"{root_url}/login",
         f"{root_url}/register",
         f"{root_url}/home",
+        f"{root_url}/lab",
+        f"{root_url}/lab/race",
+        f"{root_url}/lab/upload",
+        f"{root_url}/lab/showcase",
         f"{root_url}/guide",
         f"{root_url}/terms",
         f"{root_url}/privacy",
@@ -11263,7 +14172,10 @@ def client_error_js():
 def _login_user_session(db, user_row):
     session.clear()
     session["user_id"] = int(user_row["id"])
-    session["username"] = str(user_row["username"])
+    session["username"] = _display_username(
+        user_row["username"],
+        is_admin=bool(int(user_row["is_admin"] or 0)) if "is_admin" in user_row.keys() else False,
+    )
     session["battle_log"] = []
     db.execute("UPDATE users SET last_seen_at = ? WHERE id = ?", (int(time.time()), int(user_row["id"])))
     db.commit()
@@ -11274,7 +14186,7 @@ def register():
     error = None
     ref_code = (request.values.get("ref") or "").strip().upper()
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        username = _normalize_main_admin_username(request.form.get("username", "").strip())
         password = request.form.get("password", "").strip()
         password_confirm = request.form.get("password_confirm", "").strip()
         if not username or not password:
@@ -11284,7 +14196,7 @@ def register():
         else:
             db = get_db()
             try:
-                is_admin = 1 if username == "admin" else 0
+                is_admin = 1 if _is_main_admin_username(username) else 0
                 cur = db.execute(
                     """
                     INSERT INTO users
@@ -11334,7 +14246,7 @@ def login():
         password = request.form.get("password", "").strip()
         next_path = request.form.get("next", "").strip()
         db = get_db()
-        user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        user = _find_user_for_login(db, username)
         if user and check_password_hash(user["password_hash"], password):
             if int(user["is_banned"] or 0) == 1:
                 error = "このアカウントは利用停止されています。"
@@ -11342,9 +14254,10 @@ def login():
             if int(user["is_admin_protected"] or 0) == 1:
                 error = "このアカウントは通常ログインできません。"
                 return render_template("login.html", error=error, message=message, next_path=next_path)
-            if username == "admin" and user["is_admin"] == 0:
+            if _is_main_admin_username(username) and user["is_admin"] == 0:
                 db.execute("UPDATE users SET is_admin = 1, is_admin_protected = 1 WHERE id = ?", (user["id"],))
                 db.commit()
+                user = db.execute("SELECT * FROM users WHERE id = ?", (int(user["id"]),)).fetchone()
             _login_user_session(db, user)
             if next_path and next_path.startswith("/") and not next_path.startswith("//"):
                 return redirect(next_path)
@@ -11362,7 +14275,7 @@ def admin_login():
         password = request.form.get("password", "").strip()
         next_path = request.form.get("next", "").strip()
         db = get_db()
-        user = db.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        user = _find_user_for_login(db, username)
         if user and check_password_hash(user["password_hash"], password):
             if int(user["is_banned"] or 0) == 1:
                 error = "このアカウントは利用停止されています。"
@@ -11535,7 +14448,7 @@ def home():
         f"kills_{(weekly_env['element'] if weekly_env else 'NORMAL')}",
     )
     weekly_trends = _world_weekly_trends(db, week_key, limit=3)
-    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=3)
+    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=3, user_row=user)
     weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else "aurix"
     user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
     faction_unlock_counts = _faction_unlock_counts(db, user["id"])
@@ -11635,9 +14548,9 @@ def home():
     message = session.pop("message", None)
     slot_display_used = min(instance_count, limits["robot_slots"])
     slot_overflow = max(0, instance_count - limits["robot_slots"])
-    unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"])]
-    saved_explore_area_key = _saved_explore_area_key(user, unlocked_explore_areas)
-    selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas)
+    unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
+    saved_explore_area_key = _saved_explore_area_key(user, unlocked_explore_areas, db=db)
+    selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas, db=db)
     home_return_explore_cta = None
     if has_any_robot and saved_explore_area_key:
         saved_area = next((a for a in unlocked_explore_areas if a["key"] == saved_explore_area_key), None)
@@ -11663,10 +14576,15 @@ def home():
                 "tendency_line": line,
             }
         )
-    locked_layer_lines = _locked_layer_lines(user)
-    max_unlocked_layer = _user_max_unlocked_layer(user)
+    locked_layer_lines = _locked_layer_lines(user, db=db)
+    max_unlocked_layer = _visible_user_max_unlocked_layer(user, db=db)
     new_layer_badge = session.pop("home_new_layer_badge", None)
     unlocked_layer_recent = _home_recent_unlocked_layer(db, user["id"], now_ts=now)
+    release_cap = _release_layer_cap_for_viewer(db, user_row=user)
+    if int(new_layer_badge or 0) > int(release_cap):
+        new_layer_badge = None
+    if int(unlocked_layer_recent or 0) > int(release_cap):
+        unlocked_layer_recent = None
     next_action_card = _home_next_action_card(
         db,
         user,
@@ -11738,6 +14656,8 @@ def home():
         "posts": 0,
         "showcase_rows": len(showcase_rows),
     }
+    is_main_admin = _is_main_admin_user_row(user)
+    show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
     try:
         return render_template(
             "home.html",
@@ -11748,6 +14668,7 @@ def home():
             message=message,
             combo=session.get("combo", 0),
             is_admin=user["is_admin"] == 1,
+            is_main_admin=is_main_admin,
             limits=limits,
             instance_count=instance_count,
             has_any_robot=has_any_robot,
@@ -11829,6 +14750,7 @@ def home():
             boss_type=boss_alert_hint["boss_type"],
             recommended_build=boss_alert_hint["recommended_build"],
             recommended_text=boss_alert_hint["recommended_text"],
+            show_lab_menu=show_lab_menu,
             recent_drop_items=recent_drop_items,
             newbie_boost=newbie_boost,
             debug_snapshot=debug_snapshot,
@@ -12073,7 +14995,7 @@ def world_view():
         else ""
     )
     weekly_trends = _world_weekly_trends(db, week_key, limit=5)
-    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=5)
+    weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=5, user_row=user)
     weekly_remaining_line = _world_week_remaining_line(week_key)
     weekly_mvp = _weekly_mvp_snapshot(db, week_key)
     research_summary = _home_research_summary(db, week_key)
@@ -12126,7 +15048,7 @@ def world_view():
 @login_required
 def records_view():
     db = get_db()
-    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     if not user:
         return redirect(url_for("login"))
     week_key = _world_week_key()
@@ -12139,7 +15061,17 @@ def records_view():
     )
     return render_template(
         "records.html",
-        first_boss_records=_first_boss_record_rows(db),
+        first_layer4_records=_first_explore_record_rows(
+            db,
+            [*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY],
+            user_row=user,
+        ),
+        first_layer5_records=_first_explore_record_rows(
+            db,
+            [*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY],
+            user_row=user,
+        ),
+        first_boss_records=_first_boss_record_rows(db, user_row=user),
         first_evolve_records=_first_evolve_record_rows(db),
         weekly_record_groups=weekly_record_groups,
         showcase_highlights=_record_showcase_highlights(db, user["id"]),
@@ -12275,14 +15207,14 @@ def map_view():
         (session["user_id"],),
     ).fetchone()
     streaks = _load_user_area_streaks(db, user["id"]) if user else {}
-    nodes = _build_map_nodes(user, area_streaks=streaks)
-    locked_layers = _locked_layer_lines(user)
+    nodes = _build_map_nodes(user, area_streaks=streaks, db=db)
+    locked_layers = _locked_layer_lines(user, db=db)
     return render_template(
         "map.html",
         nodes=nodes,
         locked_layers=locked_layers,
         stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,
-        max_unlocked_layer=_user_max_unlocked_layer(user),
+        max_unlocked_layer=_visible_user_max_unlocked_layer(user, db=db),
         wins_total=int(user["wins"] if user else 0),
         message=session.pop("message", None),
     )
@@ -12547,24 +15479,7 @@ def _select_main_robot(db, user_id):
         (user_id,),
     ).fetchone()
     if row:
-        data = dict(row)
-        if not data.get("composed_image_path"):
-            parts = db.execute(
-                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
-                (data["id"],),
-            ).fetchone()
-            if parts:
-                try:
-                    data["composed_image_path"] = _compose_instance_image(db, {"id": data["id"]}, parts)
-                    latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (data["id"],)).fetchone()
-                    data["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
-                except Exception:
-                    app.logger.warning("select_main_robot compose skipped id=%s", data["id"], exc_info=True)
-                    data["composed_image_path"] = None
-        if not data.get("icon_32_path"):
-            data["icon_32_path"] = _ensure_robot_instance_badge(db, data["id"], data.get("composed_image_path"))
-        data["image_url"] = _composed_image_url(data.get("composed_image_path"), data.get("updated_at"))
-        return data
+        return _refresh_robot_instance_render_assets(db, row, log_label="select_main_robot")
     row = db.execute(
         """
         SELECT id, name, personality, composed_image_path, icon_32_path, updated_at, style_key, style_stats_json
@@ -12576,24 +15491,7 @@ def _select_main_robot(db, user_id):
         (user_id,),
     ).fetchone()
     if row:
-        data = dict(row)
-        if not data.get("composed_image_path"):
-            parts = db.execute(
-                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
-                (data["id"],),
-            ).fetchone()
-            if parts:
-                try:
-                    data["composed_image_path"] = _compose_instance_image(db, {"id": data["id"]}, parts)
-                    latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (data["id"],)).fetchone()
-                    data["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
-                except Exception:
-                    app.logger.warning("select_main_robot compose skipped id=%s", data["id"], exc_info=True)
-                    data["composed_image_path"] = None
-        if not data.get("icon_32_path"):
-            data["icon_32_path"] = _ensure_robot_instance_badge(db, data["id"], data.get("composed_image_path"))
-        data["image_url"] = _composed_image_url(data.get("composed_image_path"), data.get("updated_at"))
-        return data
+        return _refresh_robot_instance_render_assets(db, row, log_label="select_main_robot")
     return None
 
 
@@ -12610,24 +15508,7 @@ def _get_active_robot(db, user_id):
             (active_id, user_id),
         ).fetchone()
         if row:
-            data = dict(row)
-            if not data.get("composed_image_path"):
-                parts = db.execute(
-                    "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
-                    (data["id"],),
-                ).fetchone()
-                if parts:
-                    try:
-                        data["composed_image_path"] = _compose_instance_image(db, {"id": data["id"]}, parts)
-                        latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (data["id"],)).fetchone()
-                        data["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
-                    except Exception:
-                        app.logger.warning("get_active_robot compose skipped id=%s", data["id"], exc_info=True)
-                        data["composed_image_path"] = None
-            if not data.get("icon_32_path"):
-                data["icon_32_path"] = _ensure_robot_instance_badge(db, data["id"], data.get("composed_image_path"))
-            data["image_url"] = _composed_image_url(data.get("composed_image_path"), data.get("updated_at"))
-            return data
+            return _refresh_robot_instance_render_assets(db, row, log_label="get_active_robot")
     return None
 
 
@@ -12939,7 +15820,7 @@ def explore():
         return redirect(url_for("home"))
     user = db.execute(
         """
-        SELECT is_admin, click_power, wins, battle_log_mode,
+        SELECT id, is_admin, click_power, wins, battle_log_mode,
                boss_meter_explore_l1, boss_meter_win_l1, layer2_unlocked, max_unlocked_layer, created_at,
                explore_boost_until,
                last_explore_area_key
@@ -12948,10 +15829,16 @@ def explore():
         """,
         (user_id,),
     ).fetchone()
+    user_is_main_admin = _is_main_admin_user_id(db, user_id)
     battle_log_mode = _battle_log_mode_for_user(user)
-    if not _is_area_unlocked(user, area_key):
+    if not _area_visible_for_viewer(db, area_key, user_row=user):
+        session["message"] = "その探索先はまだ公開準備中です。"
+        return redirect(url_for("home"))
+    if not _is_area_unlocked(user, area_key, db=db):
         area_layer = _area_layer(area_key)
-        if area_layer <= 1:
+        if area_key in SPECIAL_EXPLORE_AREA_KEYS:
+            session["message"] = f"その探索先は未解放です。{_special_area_unlock_reason(area_key)}"
+        elif area_layer <= 1:
             session["message"] = "その探索先は未解放です。"
         else:
             session["message"] = f"その探索先は未解放です。第{area_layer - 1}層ボス撃破で解放"
@@ -13067,51 +15954,95 @@ def explore():
     last_enemy_trait_desc = None
     last_enemy_variant_label = None
     if boss_enter_requested and _area_supports_boss_alert(area_key):
-        if not active_alert:
+        if user_is_main_admin and _has_area_boss_candidates(db, area_key):
+            area_boss_active = True
+            total_fights = 1
+            area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
+            if area_boss_enemy is None:
+                session["message"] = "この探索先には挑戦可能なボスがいません。"
+                db.commit()
+                return redirect(url_for("home"))
+            area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
+            area_boss_template_id = (
+                int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
+            )
+            area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
+            area_boss_spawn_p = 1.0
+            area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    int(area_boss_enemy.get("_npc_boss_template_id") or 0)
+                    if area_boss_kind == "npc"
+                    else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
+                    "boss_kind": area_boss_kind,
+                    "npc_boss_template_id": area_boss_template_id,
+                    "source_robot_instance_id": area_boss_enemy.get("_source_robot_instance_id"),
+                    "source_user_id": area_boss_enemy.get("_source_user_id"),
+                    "source_faction": area_boss_enemy.get("_source_faction"),
+                    "attempts_before": None,
+                    "attempts_after": None,
+                    "admin_direct": True,
+                },
+                ip=request.remote_addr,
+            )
+        elif not active_alert:
             session["message"] = "有効なボス警報がありません。探索で警報を引き当ててください。"
             db.commit()
             return redirect(url_for("home"))
-        area_boss_active = True
-        total_fights = 1
-        area_boss_enemy = active_alert["enemy"]
-        area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
-        area_boss_template_id = (
-            int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
-        )
-        area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
-        area_boss_spawn_p = float(AREA_BOSS_SPAWN_RATES.get(area_key, 0.0))
-        area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
-        consume = _consume_boss_attempt(db, user_id, area_key, now_ts=now)
-        area_boss_attempt_before = int(consume["before"])
-        area_boss_attempt_after = int(consume["after"])
-        audit_log(
-            db,
-            AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
-            user_id=user_id,
-            request_id=request_id,
-            action_key="explore",
-            entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
-            entity_id=(
-                int(area_boss_enemy.get("_npc_boss_template_id") or 0)
-                if area_boss_kind == "npc"
-                else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
-            ),
-            payload={
-                "user_id": user_id,
-                "area_key": area_key,
-                "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
-                "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
-                "boss_kind": area_boss_kind,
-                "npc_boss_template_id": area_boss_template_id,
-                "source_robot_instance_id": area_boss_enemy.get("_source_robot_instance_id"),
-                "source_user_id": area_boss_enemy.get("_source_user_id"),
-                "source_faction": area_boss_enemy.get("_source_faction"),
-                "attempts_before": area_boss_attempt_before,
-                "attempts_after": area_boss_attempt_after,
-                "expires_at": int(active_alert["expires_at"]),
-            },
-            ip=request.remote_addr,
-        )
+        else:
+            area_boss_active = True
+            total_fights = 1
+            area_boss_enemy = active_alert["enemy"]
+            area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
+            area_boss_template_id = (
+                int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
+            )
+            area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
+            area_boss_spawn_p = float(AREA_BOSS_SPAWN_RATES.get(area_key, 0.0))
+            area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
+            consume = _consume_boss_attempt(db, user_id, area_key, now_ts=now)
+            area_boss_attempt_before = int(consume["before"])
+            area_boss_attempt_after = int(consume["after"])
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    int(area_boss_enemy.get("_npc_boss_template_id") or 0)
+                    if area_boss_kind == "npc"
+                    else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
+                    "boss_kind": area_boss_kind,
+                    "npc_boss_template_id": area_boss_template_id,
+                    "source_robot_instance_id": area_boss_enemy.get("_source_robot_instance_id"),
+                    "source_user_id": area_boss_enemy.get("_source_user_id"),
+                    "source_faction": area_boss_enemy.get("_source_faction"),
+                    "attempts_before": area_boss_attempt_before,
+                    "attempts_after": area_boss_attempt_after,
+                    "expires_at": int(active_alert["expires_at"]),
+                },
+                ip=request.remote_addr,
+            )
     elif _area_supports_boss_alert(area_key) and _has_area_boss_candidates(db, area_key):
         if not active_alert:
             boss_roll = _area_boss_spawn_check(db, user_id, area_key, rng=random)
@@ -13587,17 +16518,14 @@ def explore():
                     entity_type="part_instance",
                     entity_id=p.get("part_instance_id"),
                     delta_count=1,
-                    payload={
-                        "area_key": area_key,
-                        "battle_no": battle_no,
-                        "drop_type": rewards.get("drop_type"),
-                        "part_type": p.get("part_type"),
-                        "part_key": p.get("part_key"),
-                        "rarity": p.get("rarity"),
-                        "plus": p.get("plus"),
-                        "growth_tendency_key": p.get("growth_tendency_key"),
-                        "growth_tendency_label": p.get("growth_tendency_label"),
-                    },
+                    payload=_drop_audit_payload(
+                        area_key,
+                        battle_no,
+                        {
+                            **dict(p),
+                            "drop_type": rewards.get("drop_type"),
+                        },
+                    ),
                     ip=request.remote_addr,
                 )
                 audit_log(
@@ -14391,20 +17319,16 @@ def robots():
     instances = [dict(r) for r in instances]
     weekly_env = _world_current_environment(db)
     weekly_element = weekly_env["element"] if weekly_env else None
-    for inst in instances:
+    for idx, inst in enumerate(instances):
+        inst = _refresh_robot_instance_render_assets(db, inst, log_label="robots")
+        if not inst:
+            continue
+        instances[idx] = inst
         raw_name = (inst.get("name") or "").strip()
         if not raw_name or re.fullmatch(r"Robot\s*#\d+", raw_name):
             inst["display_name"] = "無名ロボ"
         else:
             inst["display_name"] = raw_name
-        if not inst["composed_image_path"]:
-            rel = _compose_instance_image(db, inst, inst)
-            inst["composed_image_path"] = rel
-            latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (inst["id"],)).fetchone()
-            inst["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
-        if not inst.get("icon_32_path"):
-            inst["icon_32_path"] = _ensure_robot_instance_badge(db, inst["id"], inst["composed_image_path"])
-        inst["image_url"] = _composed_image_url(inst.get("composed_image_path"), inst.get("updated_at"))
         stat_obj = _compute_robot_stats_for_instance(db, inst["id"])
         if stat_obj:
             inst["final_stats"] = stat_obj["stats"]
@@ -15428,6 +18352,911 @@ def showcase_like(robot_id):
     return redirect(url_for("showcase", sort=sort_key))
 
 
+@app.route("/lab")
+@login_required
+def lab_home():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    latest_race = _lab_casino_latest_race(db, status="finished")
+    latest_results = _lab_casino_results(db, latest_race["id"])[:3] if latest_race else []
+    showcase_rows = _lab_showcase_query_rows(db, viewer_user_id=int(user["id"]), sort_key="popular", limit=4)
+    world_items = _lab_recent_world_items(db, limit=6)
+    counts = {
+        "approved_submissions": int(
+            db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'approved'").fetchone()["c"] or 0
+        ),
+        "pending_submissions": int(
+            db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'pending'").fetchone()["c"] or 0
+        ),
+        "race_count": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races").fetchone()["c"] or 0),
+    }
+    return render_template(
+        "lab.html",
+        latest_race=latest_race,
+        latest_results=latest_results,
+        showcase_rows=showcase_rows,
+        world_items=world_items,
+        counts=counts,
+        is_admin=bool(int(user["is_admin"] or 0) == 1),
+    )
+
+
+@app.route("/lab/race/legacy")
+@login_required
+def lab_race_legacy():
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    latest_race = _lab_latest_race(db)
+    latest_results = _lab_race_results(db, latest_race["id"]) if latest_race and latest_race["status"] == "finished" else []
+    rankings = _lab_race_rankings(db, limit=5)
+    return render_template(
+        "lab_race.html",
+        robot_choices=_lab_user_robot_choices(db, int(user["id"])),
+        latest_race=latest_race,
+        latest_results=latest_results[:LAB_RACE_ENTRY_TARGET],
+        rankings=rankings,
+        course_defs=visible_lab_course_defs(),
+        default_course_key=_lab_default_course_key(),
+    )
+
+
+@app.route("/lab/race/entry", methods=["POST"])
+@app.route("/lab/race/legacy/entry", methods=["POST"])
+@login_required
+def lab_race_entry():
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot_instance_id = request.form.get("robot_instance_id", type=int)
+    course_key = (request.form.get("course_key") or _lab_default_course_key()).strip().lower()
+    if not robot_instance_id:
+        flash("参加するロボを選択してください。", "error")
+        return redirect(url_for("lab_race_legacy"))
+    snapshot = _lab_entry_snapshot_from_robot(db, user_id, robot_instance_id)
+    if not snapshot:
+        flash("参加対象のロボが見つからないか、能力計算に失敗しました。", "error")
+        return redirect(url_for("lab_race_legacy"))
+    race_id = _lab_create_race(db, course_key=course_key)
+    db.execute(
+        """
+        INSERT INTO lab_race_entries
+        (
+            race_id, user_id, source_type, robot_instance_id, submission_id,
+            display_name, icon_path, hp, atk, def, spd, acc, cri, entry_order
+        )
+        VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        """,
+        (
+            int(race_id),
+            user_id,
+            snapshot["source_type"],
+            int(snapshot["robot_instance_id"]),
+            snapshot["display_name"],
+            snapshot["icon_path"],
+            int(snapshot["hp"]),
+            int(snapshot["atk"]),
+            int(snapshot["def"]),
+            int(snapshot["spd"]),
+            int(snapshot["acc"]),
+            int(snapshot["cri"]),
+        ),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_RACE_ENTRY"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_race_entry",
+        entity_type="lab_race",
+        entity_id=int(race_id),
+        payload={
+            "race_id": int(race_id),
+            "robot_instance_id": int(snapshot["robot_instance_id"]),
+            "robot_name": snapshot["display_name"],
+            "course_key": _lab_course_meta(course_key)["key"],
+        },
+        ip=request.remote_addr,
+    )
+    _lab_start_race(db, race_id, actor_user_id=user_id)
+    db.commit()
+    flash("観戦レースを開始しました。固定6レーンで、空き枠は LAB ENEMY が補完します。", "notice")
+    return redirect(url_for("lab_race_legacy_watch", race_id=int(race_id)))
+
+
+@app.route("/lab/race/legacy/watch/<int:race_id>")
+@login_required
+def lab_race_legacy_watch(race_id):
+    db = get_db()
+    race = _lab_fetch_race(db, race_id)
+    if not race:
+        abort(404)
+    course = _lab_course_payload_from_race(race, mode="standard")
+    frames = _lab_race_frames(db, race_id)
+    watch_entries = _lab_race_entries(db, race_id)
+    current_user_id = int(session.get("user_id") or 0)
+    for item in watch_entries:
+        item["is_user_entry"] = bool(int(item.get("user_id") or 0) == current_user_id)
+    user_entry = next((item for item in watch_entries if item.get("is_user_entry")), None)
+    lane_count = max(LAB_RACE_ENTRY_TARGET, len(watch_entries))
+    results = _lab_race_results(db, race_id)
+    return render_template(
+        "lab_race_watch.html",
+        race=race,
+        course=course,
+        frames=frames,
+        watch_entries=watch_entries,
+        user_entry=user_entry,
+        lane_count=lane_count,
+        results=results,
+        watch_mode="standard",
+        focus_chip_label="YOU",
+        focus_title="あなたの出走ロボ",
+        focus_line=(f"{user_entry['display_name']} / {user_entry['owner_label']}" if user_entry else None),
+        support_line="この観戦レースでは本編ロボが1体参加し、残りは LAB ENEMY が補完します。",
+        bet_row=None,
+    )
+
+
+@app.route("/lab/race/results/<int:race_id>")
+@login_required
+def lab_race_legacy_results_view(race_id):
+    db = get_db()
+    race = _lab_fetch_race(db, race_id)
+    if not race:
+        abort(404)
+    return render_template(
+        "lab_race_results.html",
+        race=race,
+        course=_lab_course_payload_from_race(race, mode="standard"),
+        results=_lab_race_results(db, race_id),
+    )
+
+
+@app.route("/lab/race/rankings")
+@login_required
+def lab_race_legacy_rankings():
+    db = get_db()
+    rankings = _lab_race_rankings(db, limit=20)
+    return render_template("lab_race_rankings.html", rankings=rankings)
+
+
+@app.route("/lab/race")
+@login_required
+def lab_race():
+    db = get_db()
+    user_id = int(session["user_id"])
+    daily_info = _lab_casino_apply_daily_grant_if_needed(db, user_id)
+    race = _lab_casino_ensure_open_race(db)
+    db.commit()
+    user_bet = _lab_casino_user_bet(db, race["id"], user_id)
+    if user_bet and race["status"] == "finished":
+        return redirect(url_for("lab_race_watch", race_id=int(race["id"])))
+    return render_template(
+        "lab_casino_race.html",
+        race=race,
+        course=_lab_course_payload_from_race(race, mode="casino"),
+        wallet=_lab_casino_wallet_row(db, user_id),
+        daily_info=daily_info,
+        entries=_lab_casino_entries(db, race["id"]),
+        bet_amounts=LAB_CASINO_BET_AMOUNTS,
+        user_bet=user_bet,
+    )
+
+
+@app.route("/lab/race/bet", methods=["POST"])
+@login_required
+def lab_race_place_bet():
+    db = get_db()
+    user_id = int(session["user_id"])
+    _lab_casino_apply_daily_grant_if_needed(db, user_id)
+    race_id = request.form.get("race_id", type=int)
+    entry_id = request.form.get("entry_id", type=int)
+    amount = request.form.get("amount", type=int)
+    if amount not in LAB_CASINO_BET_AMOUNTS:
+        flash("予想額は 10 / 50 / 100 から選んでください。", "error")
+        db.commit()
+        return redirect(url_for("lab_race"))
+    race = _lab_casino_fetch_race(db, race_id)
+    if not race or race["status"] != "betting":
+        flash("このレースは締め切り済みです。次のレースへどうぞ。", "notice")
+        db.commit()
+        return redirect(url_for("lab_race"))
+    if _lab_casino_user_bet(db, race_id, user_id):
+        flash("このレースはすでに予想済みです。", "notice")
+        db.commit()
+        return redirect(url_for("lab_race_watch", race_id=int(race_id)))
+    entry = db.execute(
+        "SELECT * FROM lab_casino_entries WHERE id = ? AND race_id = ? LIMIT 1",
+        (int(entry_id or 0), int(race_id)),
+    ).fetchone()
+    if not entry:
+        flash("出走ロボが見つかりませんでした。", "error")
+        db.commit()
+        return redirect(url_for("lab_race"))
+    wallet = _lab_casino_wallet_row(db, user_id)
+    if not wallet or int(wallet["lab_coin"] or 0) < int(amount):
+        flash("ラボコインが足りません。", "error")
+        db.commit()
+        return redirect(url_for("lab_race"))
+    before_coin, after_coin = _lab_casino_adjust_coins(db, user_id, -int(amount), cap=None)
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO lab_casino_bets (user_id, race_id, entry_id, amount, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (user_id, int(race_id), int(entry_id), int(amount), now_ts),
+    )
+    bet_id = int(cur.lastrowid)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_CASINO_BET_PLACE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_casino_bet_place",
+        entity_type="lab_casino_bet",
+        entity_id=bet_id,
+        delta_coins=-int(amount),
+        payload={
+            "race_id": int(race_id),
+            "entry_id": int(entry_id),
+            "bot_key": entry["bot_key"],
+            "amount": int(amount),
+            "odds": float(entry["odds"]),
+            "lab_coin_before": int(before_coin),
+            "lab_coin_after": int(after_coin),
+        },
+        ip=request.remote_addr,
+    )
+    _lab_casino_resolve_race(db, race_id, actor_user_id=user_id)
+    db.commit()
+    flash(f"{entry['display_name']} に {int(amount)} ラボコインで予想しました。", "notice")
+    return redirect(url_for("lab_race_watch", race_id=int(race_id)))
+
+
+@app.route("/lab/race/watch/<int:race_id>")
+@login_required
+def lab_race_watch(race_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    race = _lab_casino_fetch_race(db, race_id)
+    if not race:
+        abort(404)
+    if race["status"] != "finished":
+        race = _lab_casino_resolve_race(db, race_id, actor_user_id=user_id)
+        db.commit()
+    frames = _lab_casino_frames(db, race_id)
+    watch_entries = _lab_casino_entries(db, race_id)
+    bet_row = _lab_casino_user_bet(db, race_id, user_id)
+    for item in watch_entries:
+        item["is_user_entry"] = bool(bet_row and int(item["id"]) == int(bet_row["entry_id"]))
+    focus_entry = next((item for item in watch_entries if item.get("is_user_entry")), None)
+    course = _lab_course_payload_from_race(race, mode="casino")
+    return render_template(
+        "lab_race_watch.html",
+        race=race,
+        course=course,
+        frames=frames,
+        watch_entries=watch_entries,
+        user_entry=focus_entry,
+        lane_count=LAB_CASINO_ENTRY_TARGET,
+        results=_lab_casino_results(db, race_id),
+        watch_mode="enemy_race",
+        focus_chip_label="予想",
+        focus_title="あなたの予想",
+        focus_line=(f"{bet_row['display_name']} / {bet_row['amount']} / 倍率 {bet_row['odds_text']}" if bet_row else None),
+        support_line=(
+            f"的中で払い戻し、外れても観戦ボーナス +{int(LAB_CASINO_WATCH_BONUS)}"
+            if bet_row
+            else "まずは1体選ぶと、ここがあなたの予想レーンになります。"
+        ),
+        bet_row=bet_row,
+    )
+
+
+@app.route("/lab/race/result/<int:race_id>")
+@login_required
+def lab_race_result(race_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    race = _lab_casino_fetch_race(db, race_id)
+    if not race:
+        abort(404)
+    if race["status"] != "finished":
+        race = _lab_casino_resolve_race(db, race_id, actor_user_id=user_id)
+        db.commit()
+    return render_template(
+        "lab_casino_result.html",
+        race=race,
+        course=_lab_course_payload_from_race(race, mode="casino"),
+        wallet=_lab_casino_wallet_row(db, user_id),
+        results=_lab_casino_results(db, race_id),
+        bet_row=_lab_casino_user_bet(db, race_id, user_id),
+        watch_bonus=int(LAB_CASINO_WATCH_BONUS),
+    )
+
+
+@app.route("/lab/race/prizes")
+@login_required
+def lab_race_prizes():
+    db = get_db()
+    user_id = int(session["user_id"])
+    daily_info = _lab_casino_apply_daily_grant_if_needed(db, user_id)
+    db.commit()
+    claim_rows = db.execute(
+        """
+        SELECT c.created_at, p.name, p.prize_type
+        FROM lab_casino_prize_claims c
+        JOIN lab_casino_prizes p ON p.id = c.prize_id
+        WHERE c.user_id = ?
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT 8
+        """,
+        (user_id,),
+    ).fetchall()
+    return render_template(
+        "lab_casino_prizes.html",
+        wallet=_lab_casino_wallet_row(db, user_id),
+        daily_info=daily_info,
+        prizes=_lab_casino_prize_rows(db, user_id=user_id),
+        claim_rows=[
+            {"name": row["name"], "prize_type": row["prize_type"], "created_text": _format_jst_ts(row["created_at"])}
+            for row in claim_rows
+        ],
+    )
+
+
+@app.route("/lab/race/prizes/<int:prize_id>/claim", methods=["POST"])
+@login_required
+def lab_race_prize_claim(prize_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    prize = db.execute(
+        "SELECT * FROM lab_casino_prizes WHERE id = ? AND is_active = 1 LIMIT 1",
+        (int(prize_id),),
+    ).fetchone()
+    if not prize:
+        abort(404)
+    existing = db.execute(
+        """
+        SELECT id
+        FROM lab_casino_prize_claims
+        WHERE user_id = ? AND prize_id = ?
+        LIMIT 1
+        """,
+        (user_id, int(prize_id)),
+    ).fetchone()
+    if existing:
+        flash("この景品はすでに交換済みです。", "notice")
+        return redirect(url_for("lab_race_prizes"))
+    wallet = _lab_casino_wallet_row(db, user_id)
+    cost = int(prize["cost_lab_coin"])
+    if not wallet or int(wallet["lab_coin"] or 0) < cost:
+        flash("ラボコインが足りません。", "error")
+        return redirect(url_for("lab_race_prizes"))
+    before_coin, after_coin = _lab_casino_adjust_coins(db, user_id, -cost, cap=None)
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO lab_casino_prize_claims (user_id, prize_id, cost_lab_coin, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, int(prize_id), cost, now_ts),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_CASINO_PRIZE_CLAIM"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_casino_prize_claim",
+        entity_type="lab_casino_prize_claim",
+        entity_id=int(cur.lastrowid),
+        delta_coins=-cost,
+        payload={
+            "prize_id": int(prize_id),
+            "prize_key": prize["prize_key"],
+            "cost_lab_coin": cost,
+            "lab_coin_before": int(before_coin),
+            "lab_coin_after": int(after_coin),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{prize['name']} を交換しました。", "notice")
+    return redirect(url_for("lab_race_prizes"))
+
+
+@app.route("/lab/race/history")
+@login_required
+def lab_race_history():
+    db = get_db()
+    user_id = int(session["user_id"])
+    daily_info = _lab_casino_apply_daily_grant_if_needed(db, user_id)
+    db.commit()
+    return render_template(
+        "lab_casino_history.html",
+        wallet=_lab_casino_wallet_row(db, user_id),
+        daily_info=daily_info,
+        rows=_lab_casino_history_rows(db, user_id),
+    )
+
+
+@app.route("/lab/casino")
+@login_required
+def lab_casino_home():
+    return redirect(url_for("lab_race"))
+
+
+@app.route("/lab/casino/race")
+@login_required
+def lab_casino_race():
+    return redirect(url_for("lab_race"))
+
+
+@app.route("/lab/casino/race/bet", methods=["POST"])
+@login_required
+def lab_casino_place_bet():
+    return redirect(url_for("lab_race_place_bet"), code=307)
+
+
+@app.route("/lab/casino/race/watch/<int:race_id>")
+@login_required
+def lab_casino_watch(race_id):
+    return redirect(url_for("lab_race_watch", race_id=int(race_id)))
+
+
+@app.route("/lab/casino/race/result/<int:race_id>")
+@login_required
+def lab_casino_result(race_id):
+    return redirect(url_for("lab_race_result", race_id=int(race_id)))
+
+
+@app.route("/lab/casino/prizes")
+@login_required
+def lab_casino_prizes():
+    return redirect(url_for("lab_race_prizes"))
+
+
+@app.route("/lab/casino/prizes/<int:prize_id>/claim", methods=["POST"])
+@login_required
+def lab_casino_prize_claim(prize_id):
+    return redirect(url_for("lab_race_prize_claim", prize_id=int(prize_id)), code=307)
+
+
+@app.route("/lab/casino/history")
+@login_required
+def lab_casino_history():
+    return redirect(url_for("lab_race_history"))
+
+
+@app.route("/lab/upload", methods=["GET", "POST"])
+@login_required
+def lab_upload():
+    db = get_db()
+    user_id = int(session["user_id"])
+    message = None
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        comment = (request.form.get("comment") or "").strip()
+        image = request.files.get("image")
+        if not title:
+            message = "タイトルを入力してください。"
+        elif not comment:
+            message = "一言コメントを入力してください。"
+        else:
+            ok, err, image_path, thumb_path = _lab_save_submission_image(image)
+            if not ok:
+                message = err
+            else:
+                now_ts = int(time.time())
+                cur = db.execute(
+                    """
+                    INSERT INTO lab_robot_submissions
+                    (user_id, title, comment, image_path, thumb_path, status, moderation_note, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)
+                    """,
+                    (user_id, title[:80], comment[:200], image_path, thumb_path, now_ts, now_ts),
+                )
+                submission_id = int(cur.lastrowid)
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["LAB_SUBMISSION_CREATE"],
+                    user_id=user_id,
+                    request_id=getattr(g, "request_id", None),
+                    action_key="lab_submission_create",
+                    entity_type="lab_submission",
+                    entity_id=submission_id,
+                    payload={"submission_id": submission_id, "title": title[:80]},
+                    ip=request.remote_addr,
+                )
+                db.commit()
+                flash("投稿を受け付けました。公開は承認後です。", "notice")
+                return redirect(url_for("lab_upload"))
+    return render_template(
+        "lab_upload.html",
+        message=message,
+        recent_rows=_lab_submission_recent_rows(db, user_id),
+    )
+
+
+@app.route("/lab/showcase")
+@login_required
+def lab_showcase():
+    db = get_db()
+    sort_key = (request.args.get("sort") or "new").strip().lower()
+    if sort_key not in LAB_SUBMISSION_SORT_OPTIONS:
+        sort_key = "new"
+    return render_template(
+        "lab_showcase.html",
+        rows=_lab_showcase_query_rows(db, viewer_user_id=int(session["user_id"]), sort_key=sort_key, limit=48),
+        sort_key=sort_key,
+        sort_defs=LAB_SUBMISSION_SORT_DEFS,
+    )
+
+
+@app.route("/lab/showcase/<int:submission_id>")
+@login_required
+def lab_submission_detail(submission_id):
+    db = get_db()
+    is_admin = _is_admin_user(session["user_id"])
+    row = _lab_submission_detail_row(
+        db,
+        submission_id,
+        viewer_user_id=int(session["user_id"]),
+        is_admin=is_admin,
+    )
+    if not row:
+        abort(404)
+    reports = []
+    if is_admin:
+        reports = db.execute(
+            """
+            SELECT user_id, reason, created_at
+            FROM lab_submission_reports
+            WHERE submission_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 20
+            """,
+            (int(submission_id),),
+        ).fetchall()
+    return render_template(
+        "lab_submission_detail.html",
+        row=row,
+        report_reason_defs=LAB_REPORT_REASON_DEFS,
+        admin_reports=[
+            {
+                "user_label": _feed_user_label(db, report["user_id"]),
+                "reason_label": _lab_report_reason_label(report["reason"]),
+                "created_at": _format_jst_ts(report["created_at"]),
+            }
+            for report in reports
+        ],
+        is_admin=is_admin,
+    )
+
+
+@app.route("/lab/showcase/<int:submission_id>/like", methods=["POST"])
+@login_required
+def lab_submission_like(submission_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT id, user_id, title, status FROM lab_robot_submissions WHERE id = ? LIMIT 1",
+        (int(submission_id),),
+    ).fetchone()
+    if not row or row["status"] != "approved":
+        abort(404)
+    existing = db.execute(
+        """
+        SELECT id
+        FROM lab_submission_likes
+        WHERE submission_id = ? AND user_id = ?
+        LIMIT 1
+        """,
+        (int(submission_id), int(session["user_id"])),
+    ).fetchone()
+    if existing:
+        flash("この投稿には既にいいねしています。", "notice")
+    else:
+        db.execute(
+            """
+            INSERT INTO lab_submission_likes (submission_id, user_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(submission_id), int(session["user_id"]), int(time.time())),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAB_SUBMISSION_LIKE"],
+            user_id=int(session["user_id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="lab_submission_like",
+            entity_type="lab_submission",
+            entity_id=int(submission_id),
+            delta_count=1,
+            payload={"submission_id": int(submission_id)},
+            ip=request.remote_addr,
+        )
+        likes_count = int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM lab_submission_likes WHERE submission_id = ?",
+                (int(submission_id),),
+            ).fetchone()["c"]
+            or 0
+        )
+        already_world_logged = db.execute(
+            """
+            SELECT 1
+            FROM world_events_log
+            WHERE event_type = 'LAB_RACE_POPULAR_ENTRY'
+              AND CAST(COALESCE(json_extract(payload_json, '$.submission_id'), 0) AS INTEGER) = ?
+            LIMIT 1
+            """,
+            (int(submission_id),),
+        ).fetchone()
+        if likes_count >= 3 and not already_world_logged:
+            _lab_world_event_log(
+                db,
+                "LAB_RACE_POPULAR_ENTRY",
+                {
+                    "submission_id": int(submission_id),
+                    "title": row["title"],
+                    "username": _feed_user_label(db, row["user_id"]),
+                    "likes_count": likes_count,
+                },
+            )
+        db.commit()
+        flash("いいねしました。", "notice")
+    return redirect(url_for("lab_submission_detail", submission_id=int(submission_id)))
+
+
+@app.route("/lab/showcase/<int:submission_id>/report", methods=["POST"])
+@login_required
+def lab_submission_report(submission_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT id, status FROM lab_robot_submissions WHERE id = ? LIMIT 1",
+        (int(submission_id),),
+    ).fetchone()
+    if not row or row["status"] != "approved":
+        abort(404)
+    reason = (request.form.get("reason") or "").strip().lower()
+    if reason not in {item[0] for item in LAB_REPORT_REASON_DEFS}:
+        reason = "other"
+    db.execute(
+        """
+        INSERT INTO lab_submission_reports (submission_id, user_id, reason, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (int(submission_id), int(session["user_id"]), reason, int(time.time())),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SUBMISSION_REPORT"],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_submission_report",
+        entity_type="lab_submission",
+        entity_id=int(submission_id),
+        payload={"submission_id": int(submission_id), "reason": reason},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("通報を受け付けました。確認後に対応します。", "notice")
+    return redirect(url_for("lab_submission_detail", submission_id=int(submission_id)))
+
+
+@app.route("/admin/lab")
+@login_required
+def admin_lab():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    counts = {
+        "pending": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'pending'").fetchone()["c"] or 0),
+        "approved": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'approved'").fetchone()["c"] or 0),
+        "disabled": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'disabled'").fetchone()["c"] or 0),
+        "races": int(db.execute("SELECT COUNT(*) AS c FROM lab_races").fetchone()["c"] or 0),
+        "casino_races": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races").fetchone()["c"] or 0),
+    }
+    latest_races = db.execute(
+        """
+        SELECT id, status, course_key, created_at, finished_at
+        FROM lab_races
+        ORDER BY id DESC
+        LIMIT 10
+        """
+    ).fetchall()
+    return render_template("admin_lab.html", counts=counts, latest_races=latest_races)
+
+
+@app.route("/admin/lab/race")
+@login_required
+def admin_lab_race():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    day_key = _lab_casino_day_key()
+    day_start = int(datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST).timestamp())
+    day_end = int((datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST) + timedelta(days=1)).timestamp())
+    counts = {
+        "betting": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races WHERE status = 'betting'").fetchone()["c"] or 0),
+        "finished": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races WHERE status = 'finished'").fetchone()["c"] or 0),
+        "bets": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_bets").fetchone()["c"] or 0),
+        "claims": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_prize_claims").fetchone()["c"] or 0),
+        "total_lab_coin": int(db.execute("SELECT COALESCE(SUM(lab_coin), 0) AS c FROM users").fetchone()["c"] or 0),
+        "daily_grants_today": int(
+            db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM world_events_log
+                WHERE event_type = ?
+                  AND created_at >= ?
+                  AND created_at < ?
+                """,
+                (AUDIT_EVENT_TYPES["LAB_CASINO_DAILY_GRANT"], day_start, day_end),
+            ).fetchone()["c"]
+            or 0
+        ),
+    }
+    latest_races = db.execute(
+        """
+        SELECT
+            r.id,
+            r.status,
+            r.created_at,
+            r.finished_at,
+            COUNT(b.id) AS bet_count
+        FROM lab_casino_races r
+        LEFT JOIN lab_casino_bets b ON b.race_id = r.id
+        GROUP BY r.id
+        ORDER BY r.id DESC
+        LIMIT 12
+        """
+    ).fetchall()
+    recent_claims = db.execute(
+        """
+        SELECT c.created_at, c.cost_lab_coin, u.username, p.name, p.prize_key
+        FROM lab_casino_prize_claims c
+        JOIN users u ON u.id = c.user_id
+        JOIN lab_casino_prizes p ON p.id = c.prize_id
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT 12
+        """
+    ).fetchall()
+    return render_template(
+        "admin_lab_casino.html",
+        counts=counts,
+        latest_races=[
+            {
+                "id": int(row["id"]),
+                "status": row["status"],
+                "bet_count": int(row["bet_count"] or 0),
+                "created_text": _format_jst_ts(row["created_at"]),
+                "finished_text": _format_jst_ts(row["finished_at"]),
+            }
+            for row in latest_races
+        ],
+        recent_claims=[
+            {
+                "username": row["username"],
+                "name": row["name"],
+                "prize_key": row["prize_key"],
+                "cost_lab_coin": int(row["cost_lab_coin"]),
+                "created_text": _format_jst_ts(row["created_at"]),
+            }
+            for row in recent_claims
+        ],
+    )
+
+
+@app.route("/admin/lab/casino")
+@login_required
+def admin_lab_casino():
+    return redirect(url_for("admin_lab_race"))
+
+
+@app.route("/admin/lab/submissions")
+@login_required
+def admin_lab_submissions():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    status_filter = (request.args.get("status") or "pending").strip().lower()
+    if status_filter not in {"pending", "approved", "rejected", "disabled"}:
+        status_filter = "pending"
+    return render_template(
+        "admin_lab_submissions.html",
+        rows=_lab_submission_pending_rows(db, status_filter=status_filter, limit=100),
+        status_filter=status_filter,
+        status_options=("pending", "approved", "rejected", "disabled"),
+    )
+
+
+def _admin_lab_submission_mutate(submission_id, *, action):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ? LIMIT 1", (int(submission_id),)).fetchone()
+    if not row:
+        abort(404)
+    now_ts = int(time.time())
+    note = (request.form.get("moderation_note") or "").strip()[:200]
+    event_key = None
+    if action == "approve":
+        db.execute(
+            """
+            UPDATE lab_robot_submissions
+            SET status = 'approved',
+                moderation_note = ?,
+                approved_at = ?,
+                approved_by_user_id = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (note or None, now_ts, int(session["user_id"]), now_ts, int(submission_id)),
+        )
+        event_key = "LAB_SUBMISSION_APPROVE"
+        flash("投稿を承認しました。", "notice")
+    elif action == "reject":
+        db.execute(
+            """
+            UPDATE lab_robot_submissions
+            SET status = 'rejected',
+                moderation_note = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (note or None, now_ts, int(submission_id)),
+        )
+        event_key = "LAB_SUBMISSION_REJECT"
+        flash("投稿を差し戻しました。", "notice")
+    elif action == "disable":
+        db.execute(
+            """
+            UPDATE lab_robot_submissions
+            SET status = 'disabled',
+                moderation_note = ?,
+                disabled_at = ?,
+                disabled_by_user_id = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (note or None, now_ts, int(session["user_id"]), now_ts, int(submission_id)),
+        )
+        event_key = "LAB_SUBMISSION_DISABLE"
+        flash("投稿を停止しました。", "notice")
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES[event_key],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key=f"lab_submission_{action}",
+        entity_type="lab_submission",
+        entity_id=int(submission_id),
+        payload={"submission_id": int(submission_id), "title": row["title"], "note": note or None},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return redirect(url_for("admin_lab_submissions", status=(request.args.get("status") or request.form.get("status") or "pending")))
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/approve", methods=["POST"])
+@login_required
+def admin_lab_submission_approve(submission_id):
+    return _admin_lab_submission_mutate(submission_id, action="approve")
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/reject", methods=["POST"])
+@login_required
+def admin_lab_submission_reject(submission_id):
+    return _admin_lab_submission_mutate(submission_id, action="reject")
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/disable", methods=["POST"])
+@login_required
+def admin_lab_submission_disable(submission_id):
+    return _admin_lab_submission_mutate(submission_id, action="disable")
+
+
 @app.route("/ranking")
 @login_required
 def ranking():
@@ -16382,6 +20211,70 @@ def admin():
     return render_template("admin.html", message=message, referral_counts=referral_counts, missing_assets=missing_assets)
 
 
+@app.route("/admin/release", methods=["GET", "POST"])
+@login_required
+def admin_release():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user or int(user["is_admin"] or 0) != 1:
+        return redirect(url_for("home"))
+    _seed_release_flags(db)
+    if request.method == "POST":
+        feature_key = str(request.form.get("feature_key") or "").strip().lower()
+        state = str(request.form.get("state") or "").strip().lower()
+        if feature_key not in RELEASE_FLAG_DEF_BY_KEY or state not in {"public", "private"}:
+            flash("公開設定の変更内容が不正です。", "error")
+            return redirect(url_for("admin_release"))
+        target_public = state == "public"
+        changes = {feature_key: target_public}
+        if feature_key == "layer5" and target_public:
+            changes["layer4"] = True
+        if feature_key == "layer4" and not target_public:
+            changes["layer5"] = False
+        now_ts = int(time.time())
+        before_rows = {
+            row["key"]: bool(int(row["is_public"] or 0) == 1)
+            for row in db.execute("SELECT key, is_public FROM release_flags").fetchall()
+        }
+        applied_keys = []
+        for key, is_public in changes.items():
+            db.execute(
+                """
+                INSERT INTO release_flags (key, is_public, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    is_public = excluded.is_public,
+                    updated_at = excluded.updated_at
+                """,
+                (key, 1 if is_public else 0, now_ts),
+            )
+            applied_keys.append({"key": key, "is_public": bool(is_public)})
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["ADMIN_RELEASE_TOGGLE"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="admin_release_toggle",
+            entity_type="release_flag",
+            entity_id=None,
+            payload={
+                "feature_key": feature_key,
+                "state": state,
+                "applied": applied_keys,
+                "before": before_rows,
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        changed_labels = " / ".join(RELEASE_FLAG_DEF_BY_KEY[item["key"]]["label"] for item in applied_keys)
+        if target_public:
+            flash(f"{changed_labels} を一般公開しました。", "notice")
+        else:
+            flash(f"{changed_labels} を管理者限定に戻しました。", "notice")
+        return redirect(url_for("admin_release"))
+    return render_template("admin_release.html", release_rows=_release_flag_rows(db))
+
+
 def _admin_user_delete_summary(db, target_user_id):
     robot_count = int(
         db.execute(
@@ -16464,10 +20357,16 @@ def _admin_delete_user_hard(db, target_user_id):
         _safe_delete("showcase_votes", f"robot_id IN ({marks})", robot_ids)
         _safe_delete("user_showcase", f"robot_instance_id IN ({marks})", robot_ids)
         _safe_delete("npc_boss_templates", f"source_robot_instance_id IN ({marks})", robot_ids)
+        _safe_delete("lab_race_entries", f"robot_instance_id IN ({marks})", robot_ids)
 
     _safe_delete("battle_state", "user_id = ?", (target_user_id,))
     _safe_delete("chat_messages", "user_id = ?", (target_user_id,))
     _safe_delete("fusion_audit_logs", "user_id = ?", (target_user_id,))
+    _safe_delete("lab_submission_likes", "user_id = ?", (target_user_id,))
+    _safe_delete("lab_submission_reports", "user_id = ?", (target_user_id,))
+    _safe_delete("lab_race_entries", "user_id = ?", (target_user_id,))
+    _safe_delete("lab_race_records", "user_id = ?", (target_user_id,))
+    _safe_delete("lab_robot_submissions", "user_id = ?", (target_user_id,))
     _safe_delete("login_logs", "user_id = ?", (target_user_id,))
     _safe_delete("part_instances", "user_id = ?", (target_user_id,))
     _safe_delete("payment_orders", "user_id = ?", (target_user_id,))
@@ -16626,11 +20525,11 @@ def admin_users():
             if not new_username:
                 flash("新しいユーザー名を入力してください。", "error")
                 return redirect(url_for("admin_users"))
-            if old_username.lower() == "admin":
+            if _is_main_admin_username(old_username):
                 flash("メイン管理者アカウントのユーザー名は変更できません。", "error")
                 return redirect(url_for("admin_users"))
-            if new_username.lower() == "admin":
-                flash("admin はユーザー名に設定できません。", "error")
+            if _is_main_admin_username(new_username):
+                flash(f"{MAIN_ADMIN_USERNAME} はユーザー名に設定できません。", "error")
                 return redirect(url_for("admin_users"))
             if new_username == old_username:
                 message = f"ユーザー #{target_user_id} のユーザー名は変更済みです。"
@@ -16656,7 +20555,7 @@ def admin_users():
                 )
                 db.commit()
                 if target_user_id == admin_user_id:
-                    session["username"] = new_username
+                    session["username"] = _display_username(new_username, is_admin=True)
                 message = f"ユーザー #{target_user_id} のユーザー名を『{old_username}』から『{new_username}』へ変更しました。"
         elif action == "delete":
             return redirect(url_for("admin_user_delete_confirm", target_user_id=target_user_id))
@@ -16664,13 +20563,19 @@ def admin_users():
             flash("不正な操作です。", "error")
             return redirect(url_for("admin_users"))
 
-    rows = db.execute(
+    rows_raw = db.execute(
         """
         SELECT id, username, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id
         FROM users
         ORDER BY id ASC
         """
     ).fetchall()
+    rows = []
+    for row in rows_raw:
+        item = dict(row)
+        item["display_username"] = _display_username(item.get("username"), is_admin=bool(int(item.get("is_admin") or 0)))
+        item["is_main_admin"] = _is_main_admin_username(item.get("username"))
+        rows.append(item)
     return render_template("admin_users.html", rows=rows, message=message, self_user_id=admin_user_id)
 
 
@@ -16769,7 +20674,7 @@ def admin_user_delete_confirm(target_user_id):
     if target_user_id == actor_admin_id:
         flash("自分自身は完全削除できません。", "error")
         return redirect(url_for("admin_users"))
-    if (target["username"] or "").strip().lower() == "admin":
+    if _is_main_admin_username(target["username"]):
         flash("メイン管理者アカウントは完全削除できません。", "error")
         return redirect(url_for("admin_users"))
     summary = _admin_user_delete_summary(db, target_user_id)
@@ -17536,7 +21441,7 @@ def admin_enemies():
         where.append("(key LIKE ? OR name_ja LIKE ?)")
         like = f"%{q}%"
         params.extend([like, like])
-    if tier_raw in {"1", "2", "3"}:
+    if tier_raw in {"1", "2", "3", "4"}:
         where.append("tier = ?")
         params.append(int(tier_raw))
     if element:
@@ -17720,8 +21625,8 @@ def admin_enemy_new():
         valid_elements = {code for code, _ in ELEMENTS}
         if not key or not name_ja:
             message = "key と表示名は必須です。"
-        elif tier not in {1, 2, 3}:
-            message = "tier は 1〜3 で入力してください。"
+        elif tier not in {1, 2, 3, 4}:
+            message = "tier は 1〜4 で入力してください。"
         elif element not in valid_elements:
             message = "属性が不正です。"
         elif faction not in FACTION_LABELS:
@@ -17802,8 +21707,8 @@ def admin_enemy_edit(key):
         valid_elements = {code for code, _ in ELEMENTS}
         if not name_ja:
             message = "表示名は必須です。"
-        elif tier not in {1, 2, 3}:
-            message = "tier は 1〜3 で入力してください。"
+        elif tier not in {1, 2, 3, 4}:
+            message = "tier は 1〜4 で入力してください。"
         elif element not in valid_elements:
             message = "属性が不正です。"
         elif faction not in FACTION_LABELS:

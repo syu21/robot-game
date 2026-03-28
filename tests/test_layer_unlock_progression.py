@@ -123,6 +123,30 @@ class LayerUnlockProgressionTests(unittest.TestCase):
             )
             db.commit()
 
+    def _activate_specific_alert(self, area_key, boss_key):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            boss_id = db.execute("SELECT id FROM enemies WHERE key = ?", (boss_key,)).fetchone()["id"]
+            db.execute(
+                "UPDATE enemies SET hp = 1, atk = 1, def = 1, spd = 1, acc = 1, cri = 1, is_active = 1 WHERE key = ?",
+                (boss_key,),
+            )
+            db.execute(
+                """
+                INSERT INTO user_boss_progress
+                (user_id, area_key, no_boss_streak, active_boss_enemy_id, boss_attempts_left, boss_alert_expires_at, updated_at)
+                VALUES (?, ?, 0, ?, 3, ?, ?)
+                ON CONFLICT(user_id, area_key) DO UPDATE SET
+                    active_boss_enemy_id = excluded.active_boss_enemy_id,
+                    boss_attempts_left = excluded.boss_attempts_left,
+                    boss_alert_expires_at = excluded.boss_alert_expires_at,
+                    updated_at = excluded.updated_at
+                """,
+                (self.user_id, area_key, int(boss_id), now + 3600, now),
+            )
+            db.commit()
+
     def test_layer1_boss_defeat_unlocks_layer2(self):
         self._activate_alert_for_area("layer_1")
         client = self._new_client()
@@ -173,7 +197,7 @@ class LayerUnlockProgressionTests(unittest.TestCase):
             row = db.execute("SELECT max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(int(row["max_unlocked_layer"]), 3)
 
-    def test_layer3_boss_defeat_does_not_exceed_cap(self):
+    def test_layer3_boss_defeat_unlocks_layer4(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("UPDATE users SET max_unlocked_layer = 3 WHERE id = ?", (self.user_id,))
@@ -186,11 +210,48 @@ class LayerUnlockProgressionTests(unittest.TestCase):
             resp = client.post("/explore", data={"area_key": "layer_3", "boss_enter": "1"})
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertNotIn("第4層", html)
+        self.assertIn("⚙ 第4層 解放", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             row = db.execute("SELECT max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(row["max_unlocked_layer"]), 3)
+            self.assertEqual(int(row["max_unlocked_layer"]), 4)
+
+    def test_layer4_final_boss_defeat_unlocks_layer5(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 4 WHERE id = ?", (self.user_id,))
+            now = int(time.time())
+            for area_key, enemy_key in (
+                ("layer_4_forge", "boss_4_forge_elguard"),
+                ("layer_4_haze", "boss_4_haze_mirage"),
+                ("layer_4_burst", "boss_4_burst_volterio"),
+            ):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        now,
+                        game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                        json.dumps({"area_key": area_key, "enemy_key": enemy_key, "boss_kind": "fixed"}, ensure_ascii=False),
+                        self.user_id,
+                    ),
+                )
+            db.commit()
+        self._activate_specific_alert("layer_4_final", "boss_4_final_ark_zero")
+        client = self._new_client()
+        with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
+            game_app, "resolve_attack", side_effect=self._resolve_for_win
+        ):
+            resp = client.post("/explore", data={"area_key": "layer_4_final", "boss_enter": "1"})
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("⚙ 第5層 解放", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(row["max_unlocked_layer"]), 5)
 
 
 if __name__ == "__main__":

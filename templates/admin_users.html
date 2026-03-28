@@ -22,7 +22,7 @@
       {% for u in rows %}
       <tr>
         <td>{{ u['id'] }}</td>
-        <td>{{ u['username'] }}</td>
+        <td>{{ u['display_username'] }}</td>
         <td>{{ u['is_admin'] }}</td>
         <td>{{ u['is_banned'] }}</td>
         <td>{{ u['is_admin_protected'] }}</td>
@@ -66,7 +66,7 @@
           <form method="post" class="admin-inline-form">
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="delete" />
-            <button type="submit" {% if u['id'] == self_user_id or (u['username'] or '')|lower == 'admin' %}disabled{% endif %}>完全削除</button>
+            <button type="submit" {% if u['id'] == self_user_id or u['is_main_admin'] %}disabled{% endif %}>完全削除</button>
           </form>
         </td>
       </tr>

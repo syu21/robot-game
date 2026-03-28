@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card lab-race-watch-hero">
+  <div>
+    <h1>{% if watch_mode == 'enemy_race' %}エネミーレース観戦{% else %}観戦レース{% endif %}</h1>
+    <div><b>{{ course['label'] }}</b></div>
+    <div class="robot-part">{{ course['summary'] }}</div>
+    <div class="robot-part">Race #{{ race['id'] }} / {{ race['status'] }} / {{ lane_count }}レーン</div>
+    {% if user_entry %}
+    <div class="robot-part">{{ focus_title }}: <b>{{ user_entry['display_name'] }}</b> <span class="weekly-fit-badge">{{ focus_chip_label }}</span></div>
+    {% endif %}
+    {% if course.get('selected_features') %}
+    <div class="robot-part">今回の障害物:
+      {% for item in course['selected_features'] %}
+      <span class="weekly-fit-badge">{{ item['badge'] }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  <p class="link">
+    {% if watch_mode == 'enemy_race' %}
+    <a href="{{ url_for('lab_race_result', race_id=race['id']) }}">結果へ</a> | <a href="{{ url_for('lab_race_prizes') }}">交換所景品</a> | <a href="{{ url_for('lab_race_history') }}">レース記録</a>
+    {% else %}
+    <a href="{{ url_for('lab_race_legacy_results_view', race_id=race['id']) }}">結果だけ見る</a> | <a href="{{ url_for('lab_race_legacy_rankings') }}">記録庫へ</a>
+    {% endif %}
+  </p>
+</div>
+
+<div class="card lab-race-watch-shell" data-lab-race-root="1">
+  <div class="lab-race-board-head">
+    <div><b>ライブ再生</b></div>
+    <span class="weekly-fit-badge" data-lab-race-frame-label="1">1 / {{ frames|length if frames else 0 }}</span>
+  </div>
+  <script id="lab-race-frames-json" type="application/json">{{ frames|tojson }}</script>
+  <script id="lab-race-entries-json" type="application/json">{{ watch_entries|tojson }}</script>
+
+  <div class="lab-race-broadcast">
+    <section class="lab-race-main-board">
+      <div class="lab-race-segment-strip">
+        {% for segment in course['segments'] %}
+        <div class="lab-race-segment theme-{{ segment['theme'] }}" data-lab-race-segment-index="{{ segment['index'] }}">
+          <div class="lab-race-segment-badge">{{ segment['badge'] }}</div>
+          <div class="lab-race-segment-name">{{ segment['short_label'] }}</div>
+          <div class="lab-race-segment-effect">{{ segment['effect_label'] }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="lab-race-track-shell" style="--lane-count: {{ lane_count }};">
+        <div class="lab-race-lane-labels">
+          {% for lane_no in range(1, lane_count + 1) %}
+          {% set is_you_lane = user_entry and user_entry.get('lane_index') == loop.index0 %}
+          <div class="lab-race-lane-label{% if is_you_lane %} is-user-lane{% endif %}">
+            <span class="lab-race-lane-label-no">L{{ "%02d"|format(lane_no) }}</span>
+            {% if is_you_lane %}
+            <span class="lab-race-lane-label-you">{{ focus_chip_label }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="lab-race-track" data-lab-race-track="1" data-lane-count="{{ lane_count }}" style="--lane-count: {{ lane_count }};">
+          <div class="lab-race-track-start">START</div>
+          <div class="lab-race-track-goal">GOAL</div>
+          <div class="lab-race-track-segment-grid">
+            {% for segment in course['segments'] %}
+            <div class="lab-race-track-segment theme-{{ segment['theme'] }}" data-lab-race-segment-index="{{ segment['index'] }}">
+              <div class="lab-race-track-segment-chip">{{ segment['badge'] }}</div>
+              <div class="lab-race-track-segment-mark">{{ segment['short_label'] }}</div>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="lab-race-track-lanes">
+            {% for lane_no in range(1, lane_count + 1) %}
+            {% set is_you_lane = user_entry and user_entry.get('lane_index') == loop.index0 %}
+            <div class="lab-race-track-lane{% if is_you_lane %} is-user-lane{% endif %}" data-lane-index="{{ loop.index0 }}"></div>
+            {% endfor %}
+          </div>
+
+          <div class="lab-race-track-finish-line"></div>
+          <div class="lab-race-track-runners" data-lab-race-pack="1"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="lab-race-side-panel">
+      <div class="lab-race-side-card">
+        <div class="lab-race-side-title">現在の順位</div>
+        <div data-lab-race-leaderboard="1"></div>
+      </div>
+
+      <div class="lab-race-side-card">
+        <div class="lab-race-side-title">{% if watch_mode == 'enemy_race' %}あなたの予想{% else %}観戦メモ{% endif %}</div>
+        {% if focus_line %}
+        <div class="robot-part"><b>{{ focus_chip_label }}:</b> {{ focus_line }}</div>
+        {% endif %}
+        <div class="robot-part">{{ support_line }}</div>
+        {% if course.get('selected_features') %}
+        <div class="robot-part">
+          {% for item in course['selected_features'] %}
+          {{ item['badge'] }}{% if not loop.last %} / {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+
+  <div class="lab-race-event-panel">
+    <div class="lab-race-panel-title">レースの様子</div>
+    <div class="lab-race-event-list" data-lab-race-events="1">スタート待機中...</div>
+  </div>
+
+  <div class="lab-race-roster-panel">
+    <div class="lab-race-panel-title">参加者</div>
+    <div class="lab-race-roster-grid" data-lab-race-roster="1"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>最終結果</h2>
+  {% for row in results[:lane_count] %}
+  <div class="home-ranking-row">
+    <span>{{ row['final_rank'] }}位 {{ row['display_name'] }} / {{ row['owner_label'] }}</span>
+    <span class="weekly-fit-badge">{{ row['finish_text'] }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="link">
+  {% if watch_mode == 'enemy_race' %}
+  <a href="{{ url_for('lab_race_result', race_id=race['id']) }}">結果へ</a> | <a href="{{ url_for('lab_race') }}">次のレースへ</a>
+  {% else %}
+  <a href="{{ url_for('lab_race_legacy') }}">観戦レースへ</a>
+  {% endif %}
+</p>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='lab_race_watch.js') }}?v={{ app_version }}-watch5"></script>
+{% endblock %}

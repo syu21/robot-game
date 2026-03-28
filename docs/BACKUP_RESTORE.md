@@ -49,7 +49,8 @@ sudo systemctl start robot-game.service
 
 ```bash
 curl -I http://127.0.0.1/login
-curl -I http://127.0.0.1/healthz
+curl -i http://127.0.0.1:8000/healthz
+curl -I https://robolabo.site/healthz
 journalctl -u robot-game.service -n 50 --no-pager
 ```
 

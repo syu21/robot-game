@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>実験室レース記録</h1>
+
+<div class="card">
+  <div class="robot-part">本編ランキングとは分離された、見栄と語りのための記録です。</div>
+</div>
+
+<div class="card">
+  <h2>優勝回数</h2>
+  <table>
+    <tr><th>順位</th><th>ユーザー</th><th>回数</th></tr>
+    {% for row in rankings['wins'] %}
+    <tr><td>{{ loop.index }}</td><td>{{ row['username'] }}</td><td>{{ row['metric_value'] }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">まだ記録がありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>最速完走</h2>
+  <table>
+    <tr><th>順位</th><th>ロボ</th><th>所有者</th><th>タイム</th></tr>
+    {% for row in rankings['fastest'] %}
+    <tr><td>{{ loop.index }}</td><td>{{ row['robot_label'] }}</td><td>{{ row['username'] }}</td><td>{{ row['metric_value'] }}ms</td></tr>
+    {% else %}
+    <tr><td colspan="4">まだ記録がありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>事故王</h2>
+  <table>
+    <tr><th>順位</th><th>ユーザー</th><th>事故数</th></tr>
+    {% for row in rankings['accident'] %}
+    <tr><td>{{ loop.index }}</td><td>{{ row['username'] }}</td><td>{{ row['metric_value'] }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">まだ記録がありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>逆転王</h2>
+  <table>
+    <tr><th>順位</th><th>ユーザー</th><th>逆転回数</th></tr>
+    {% for row in rankings['comeback'] %}
+    <tr><td>{{ loop.index }}</td><td>{{ row['username'] }}</td><td>{{ row['metric_value'] }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">まだ記録がありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_race_legacy') }}">観戦レースへ</a></p>
+{% endblock %}

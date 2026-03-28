@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>エネミーレース</h1>
+
+<div class="card lab-race-bet-hero">
+  <div><b>どれに賭ける？</b></div>
+  <div class="lab-race-bet-copy">6体の中から1体を選んで、レースの行方を見届けよう。</div>
+  <div class="robot-part"><b>いまのラボコイン：{{ wallet['lab_coin'] }}</b></div>
+  <div class="robot-part">賭けるコインを選んでスタート</div>
+  {% if course.get('selected_features') %}
+  <div class="robot-part">今回のしかけ:
+    {% for item in course['selected_features'] %}
+    <span class="weekly-fit-badge">{{ item['badge'] }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="card lab-race-bet-guide">
+  <div><b>ロボの見かた</b></div>
+  <div class="robot-part">素早さ: 前に出やすい</div>
+  <div class="robot-part">安定: 崩れにくい</div>
+  <div class="robot-part">器用さ: しかけをさばきやすい</div>
+  <div class="robot-part">ひらめき: 一気に伸びることがある</div>
+  <div class="robot-part">運: 荒れた展開で光りやすい</div>
+</div>
+
+<div class="lab-card-grid lab-entry-grid">
+  {% for row in entries %}
+  <div class="card lab-entry-bet-card">
+    <div class="lab-entry-bet-figure">
+      <img src="{{ row['icon_url'] }}" alt="{{ row['display_name'] }}" loading="lazy" />
+    </div>
+    <div class="lab-entry-bet-name"><b>{{ row['display_name'] }}</b></div>
+    <div class="lab-entry-bet-copy">{{ row['role_label'] }} / {{ row['description'] }}</div>
+    <div class="lab-entry-bet-meta">
+      <span class="weekly-fit-badge">{{ row['condition_label'] }}</span>
+      <span class="weekly-fit-badge">倍率 {{ row['odds_text'] }}</span>
+    </div>
+    <div class="lab-entry-bet-stats">
+      <span>素早さ {{ row['spd'] }}</span>
+      <span>安定 {{ row['def'] }}</span>
+      <span>器用さ {{ row['acc'] }}</span>
+      <span>ひらめき {{ row['cri'] }}</span>
+      <span>運 {{ row['luck'] }}</span>
+    </div>
+    <form method="post" action="{{ url_for('lab_race_place_bet') }}" class="post-form lab-entry-bet-form">
+      <input type="hidden" name="race_id" value="{{ race['id'] }}" />
+      <input type="hidden" name="entry_id" value="{{ row['id'] }}" />
+      <div class="lab-entry-bet-actions">
+        {% for amount in bet_amounts %}
+        <button type="submit" name="amount" value="{{ amount }}" {% if wallet['lab_coin'] < amount %}disabled{% endif %}>{{ amount }}</button>
+        {% endfor %}
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('lab_race_prizes') }}">交換所景品へ</a> | <a href="{{ url_for('lab_race_history') }}">レース記録へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>投稿ロボ詳細</h1>
+
+<div class="card">
+  <div><b>{{ row['title'] }}</b></div>
+  <div class="robot-part">投稿者: {{ row['username'] }}</div>
+  <div class="robot-part">状態: {{ row['status_label'] }}</div>
+  {% if row.get('image_url') %}
+  <img class="robot-thumb lab-detail-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+  {% endif %}
+  <div class="robot-time">{{ row['comment'] }}</div>
+  <div class="robot-part">いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
+</div>
+
+{% if row['status'] == 'approved' %}
+<div class="card">
+  <form method="post" action="{{ url_for('lab_submission_like', submission_id=row['id']) }}">
+    <button type="submit" {% if row['liked_by_me'] %}disabled{% endif %}>{% if row['liked_by_me'] %}いいね済み{% else %}いいね{% endif %}</button>
+  </form>
+  <form method="post" action="{{ url_for('lab_submission_report', submission_id=row['id']) }}" class="post-form lab-report-form">
+    <label for="reason">通報理由</label>
+    <select id="reason" name="reason">
+      {% for key, label in report_reason_defs %}
+      <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-secondary">通報する</button>
+  </form>
+</div>
+{% endif %}
+
+{% if is_admin and admin_reports %}
+<div class="card">
+  <h2>管理者向け通報ログ</h2>
+  {% for item in admin_reports %}
+  <div class="robot-part">{{ item['created_at'] }} / {{ item['user_label'] }} / {{ item['reason_label'] }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('lab_showcase') }}">展示一覧へ</a></p>
+{% endblock %}

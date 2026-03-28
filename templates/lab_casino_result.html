@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>エネミーレース結果</h1>
+
+<div class="card">
+  <div><b>Race #{{ race['id'] }}</b></div>
+  <div class="robot-part">{{ course['label'] }}</div>
+  <div class="home-ranking-row">
+    <span>現在のラボコイン</span>
+    <span class="weekly-fit-badge">{{ wallet['lab_coin'] }}</span>
+  </div>
+  {% if bet_row %}
+  <div class="robot-part">あなたの予想: {{ bet_row['display_name'] }} / {{ bet_row['amount'] }} / 倍率 {{ bet_row['odds_text'] }}</div>
+  <div class="robot-part">
+    {% if bet_row['is_hit'] %}
+    的中！ 払い戻し {{ bet_row['payout_amount'] }} + 観戦ボーナス {{ watch_bonus }}
+    {% else %}
+    残念… 観戦ボーナス {{ watch_bonus }}
+    {% endif %}
+  </div>
+  <div class="robot-part">今回の差引: {{ "%+d"|format(bet_row['net_delta']) }}</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>着順</h2>
+  {% for row in results %}
+  <div class="home-ranking-row">
+    <span>{{ row['final_rank'] }}位 {{ row['display_name'] }} / {{ row['condition_label'] }} / 倍率 {{ row['odds_text'] }}</span>
+    <span class="weekly-fit-badge">{{ row['finish_text'] }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('lab_race_watch', race_id=race['id']) }}">観戦を見直す</a> | <a href="{{ url_for('lab_race') }}">もう一回遊ぶ</a> | <a href="{{ url_for('lab_race_prizes') }}">交換所景品へ</a></p>
+{% endblock %}

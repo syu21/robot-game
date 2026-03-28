@@ -1,0 +1,13 @@
+[Unit]
+Description=robot-game healthcheck
+After=network-online.target nginx.service robot-game.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/robot-game
+EnvironmentFile=/home/ubuntu/robot-game/.env.production
+ExecStart=/home/ubuntu/robot-game/venv/bin/python3 /home/ubuntu/robot-game/manage_healthcheck.py
+

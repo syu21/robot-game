@@ -165,11 +165,25 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("第2層ボスを狙う", html)
         self.assertIn('name="area_key" value="layer_2"', html)
 
-    def test_home_next_action_falls_back_to_explore_at_layer3(self):
+    def test_home_next_action_targets_layer4_boss_before_layer5_unlock(self):
         self._create_active_robot()
         with game_app.app.app_context():
             db = game_app.get_db()
-            db.execute("UPDATE users SET max_unlocked_layer = 3 WHERE id = ?", (self.user_id,))
+            db.execute("UPDATE users SET max_unlocked_layer = 4 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertEqual(html.count("next-action-card"), 1)
+        self.assertIn("第4層ボスを狙う", html)
+        self.assertIn('name="area_key" value="layer_4_forge"', html)
+
+    def test_home_next_action_falls_back_to_explore_at_layer5(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 5 WHERE id = ?", (self.user_id,))
             db.commit()
         client = self._new_client()
         resp = client.get("/home")
@@ -177,7 +191,38 @@ class HomeNextActionTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn(">出撃<", html)
-        self.assertIn('name="area_key" value="layer_3"', html)
+        self.assertIn('name="area_key" value="layer_5_labyrinth"', html)
+
+    def test_home_next_action_prioritizes_layer4_final_when_unlocked(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute("UPDATE users SET max_unlocked_layer = 4 WHERE id = ?", (self.user_id,))
+            for area_key, enemy_key in (
+                ("layer_4_forge", "boss_4_forge_elguard"),
+                ("layer_4_haze", "boss_4_haze_mirage"),
+                ("layer_4_burst", "boss_4_burst_volterio"),
+            ):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        now,
+                        game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                        json.dumps({"area_key": area_key, "enemy_key": enemy_key, "boss_kind": "fixed"}, ensure_ascii=False),
+                        self.user_id,
+                    ),
+                )
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("アーク=ゼロに挑む", html)
+        self.assertIn('name="area_key" value="layer_4_final"', html)
 
     def test_home_next_action_never_shows_showcase_or_ranking_links(self):
         self._create_active_robot()

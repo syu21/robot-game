@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>エネミーレース管理</h1>
+
+<div class="card">
+  <div class="robot-part">betting races: {{ counts['betting'] }}</div>
+  <div class="robot-part">finished races: {{ counts['finished'] }}</div>
+  <div class="robot-part">bets: {{ counts['bets'] }}</div>
+  <div class="robot-part">claims: {{ counts['claims'] }}</div>
+  <div class="robot-part">total lab coin: {{ counts['total_lab_coin'] }}</div>
+  <div class="robot-part">daily grants today: {{ counts['daily_grants_today'] }}</div>
+</div>
+
+<div class="card">
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.casino.daily_grant') }}">デイリー補充監査</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.casino.bet.place') }}">予想監査</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.casino.prize.claim') }}">景品交換監査</a></p>
+</div>
+
+<div class="card">
+  <h2>最近のレース</h2>
+  {% for row in latest_races %}
+  <div class="home-ranking-row">
+    <span>#{{ row['id'] }} / {{ row['status'] }}</span>
+    <span class="weekly-fit-badge">picks {{ row['bet_count'] }}</span>
+  </div>
+  <div class="robot-part">{{ row['created_text'] }} {% if row['finished_text'] != '-' %}→ {{ row['finished_text'] }}{% endif %}</div>
+  {% else %}
+  <div class="robot-part">まだエネミーレースはありません。</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>最近の景品交換</h2>
+  {% for row in recent_claims %}
+  <div class="home-ranking-row">
+    <span>{{ row['username'] }} / {{ row['name'] }}</span>
+    <span class="weekly-fit-badge">{{ row['cost_lab_coin'] }}</span>
+  </div>
+  <div class="robot-part">{{ row['created_text'] }} / {{ row['prize_key'] }}</div>
+  {% else %}
+  <div class="robot-part">まだ交換履歴はありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('admin_lab') }}">実験室管理へ</a></p>
+{% endblock %}

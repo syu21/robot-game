@@ -1,0 +1,11 @@
+[Unit]
+Description=Run robot-game daily backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=robot-game-backup.service
+
+[Install]
+WantedBy=timers.target
+

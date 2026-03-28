@@ -6,6 +6,13 @@ from balance_config import ENEMY_SEED_STATS
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
 EVOLUTION_CORE_KEY = "evolution_core"
+LAB_CASINO_PRIZE_SEEDS = (
+    ("lab_title_hot_streak", "称号: ヒートストリーク", "実験室プロフィールに飾る想定のカジノ称号。", 500, "title", "lab_title_hot_streak"),
+    ("lab_frame_checker", "観戦フレーム: チェッカー", "観戦気分を盛り上げるカジノ限定フレーム。", 1200, "frame", "lab_frame_checker"),
+    ("lab_badge_jackpot", "プロフィールバッジ: JACKPOT", "実験室での大当たり記念バッジ。", 1800, "badge", "lab_badge_jackpot"),
+    ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
+)
+RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5")
 
 robots_seed = [
     ("Head:A", "RightArm:A", "LeftArm:A", "Legs:A", "ヘラクス", "SR", "バランス", "蒼い炎をまとった強化型。", 4, 3, 20),
@@ -148,6 +155,8 @@ def main():
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
+            lab_coin INTEGER NOT NULL DEFAULT 1000,
+            lab_coin_last_daily_at TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -168,6 +177,15 @@ def main():
             UNIQUE(referred_user_id),
             FOREIGN KEY (referrer_user_id) REFERENCES users(id),
             FOREIGN KEY (referred_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS release_flags (
+            key TEXT PRIMARY KEY,
+            is_public INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -729,6 +747,221 @@ def main():
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_robot_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            image_path TEXT NOT NULL,
+            thumb_path TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            moderation_note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            approved_at INTEGER,
+            approved_by_user_id INTEGER,
+            disabled_at INTEGER,
+            disabled_by_user_id INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(submission_id, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_races (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            status TEXT NOT NULL DEFAULT 'entry_open',
+            course_key TEXT NOT NULL,
+            course_payload_json TEXT,
+            seed INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            user_id INTEGER,
+            source_type TEXT NOT NULL,
+            robot_instance_id INTEGER,
+            submission_id INTEGER,
+            display_name TEXT NOT NULL,
+            icon_path TEXT,
+            hp INTEGER NOT NULL,
+            atk INTEGER NOT NULL,
+            def INTEGER NOT NULL,
+            spd INTEGER NOT NULL,
+            acc INTEGER NOT NULL,
+            cri INTEGER NOT NULL,
+            entry_order INTEGER NOT NULL,
+            final_rank INTEGER,
+            finish_time_ms INTEGER,
+            dnf_reason TEXT,
+            UNIQUE(race_id, entry_order),
+            UNIQUE(race_id, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_frames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            frame_no INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, frame_no)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_race_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL,
+            user_id INTEGER,
+            robot_label TEXT NOT NULL,
+            final_rank INTEGER NOT NULL,
+            finish_time_ms INTEGER,
+            accident_count INTEGER NOT NULL DEFAULT 0,
+            comeback_flag INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, entry_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_races (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_key TEXT NOT NULL,
+            course_payload_json TEXT,
+            status TEXT NOT NULL DEFAULT 'betting',
+            seed INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            bot_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            role_type TEXT NOT NULL,
+            condition_key TEXT NOT NULL,
+            icon_path TEXT,
+            description TEXT,
+            spd INTEGER NOT NULL,
+            def INTEGER NOT NULL,
+            acc INTEGER NOT NULL,
+            cri INTEGER NOT NULL,
+            luck INTEGER NOT NULL,
+            odds REAL NOT NULL,
+            lane_index INTEGER NOT NULL,
+            entry_order INTEGER NOT NULL,
+            final_rank INTEGER,
+            finish_time_ms INTEGER,
+            accident_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, bot_key),
+            UNIQUE(race_id, lane_index),
+            UNIQUE(race_id, entry_order)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            race_id INTEGER NOT NULL,
+            entry_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            payout_amount INTEGER NOT NULL DEFAULT 0,
+            is_hit INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            resolved_at INTEGER,
+            UNIQUE(user_id, race_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_frames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id INTEGER NOT NULL,
+            frame_no INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(race_id, frame_no)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_prizes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prize_key TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            cost_lab_coin INTEGER NOT NULL,
+            prize_type TEXT NOT NULL,
+            grant_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_casino_prize_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            prize_id INTEGER NOT NULL,
+            cost_lab_coin INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    lab_race_cols = {row[1] for row in cur.execute("PRAGMA table_info(lab_races)").fetchall()}
+    if "course_payload_json" not in lab_race_cols:
+        cur.execute("ALTER TABLE lab_races ADD COLUMN course_payload_json TEXT")
+    lab_casino_race_cols = {row[1] for row in cur.execute("PRAGMA table_info(lab_casino_races)").fetchall()}
+    if "course_payload_json" not in lab_casino_race_cols:
+        cur.execute("ALTER TABLE lab_casino_races ADD COLUMN course_payload_json TEXT")
     udi_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_decor_inventory)").fetchall()}
     if "acquired_at" not in udi_cols:
         cur.execute("ALTER TABLE user_decor_inventory ADD COLUMN acquired_at INTEGER")
@@ -807,6 +1040,19 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "lab_coin" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 1000")
+    if "lab_coin_last_daily_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
+    for release_key in RELEASE_FLAG_KEYS:
+        cur.execute(
+            """
+            INSERT INTO release_flags (key, is_public, updated_at)
+            VALUES (?, 0, 0)
+            ON CONFLICT(key) DO NOTHING
+            """,
+            (release_key,),
+        )
     cur.execute(
         "UPDATE users SET faction = NULL WHERE faction IS NOT NULL AND LOWER(TRIM(faction)) NOT IN ('ignis','ventra','aurix')"
     )
@@ -820,6 +1066,8 @@ def main():
     cur.execute("UPDATE users SET explore_boost_until = 0 WHERE explore_boost_until IS NULL")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
+    cur.execute("UPDATE users SET lab_coin = 1000 WHERE lab_coin IS NULL OR lab_coin < 0")
+    cur.execute("UPDATE users SET lab_coin = 5000 WHERE lab_coin > 5000")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     ri_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instances)").fetchall()}
     if "personality" not in ri_cols:
@@ -904,7 +1152,18 @@ def main():
     cur.execute("UPDATE enemies SET faction = 'neutral' WHERE faction IS NULL OR faction = ''")
     cur.execute("UPDATE enemies SET trait = NULL WHERE COALESCE(trait, '') NOT IN ('', 'heavy', 'fast', 'berserk', 'unstable')")
     cur.execute("UPDATE enemies SET is_boss = 0 WHERE is_boss IS NULL")
-    cur.execute("UPDATE enemies SET boss_area_key = NULL WHERE boss_area_key NOT IN ('layer_1', 'layer_2', 'layer_3')")
+    cur.execute(
+        """
+        UPDATE enemies
+        SET boss_area_key = NULL
+        WHERE boss_area_key IS NOT NULL
+          AND boss_area_key NOT IN (
+                'layer_1', 'layer_2', 'layer_3',
+                'layer_4_forge', 'layer_4_haze', 'layer_4_burst', 'layer_4_final',
+                'layer_5_labyrinth', 'layer_5_pinnacle', 'layer_5_final'
+          )
+        """
+    )
     ubp_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_boss_progress)").fetchall()}
     if "active_boss_enemy_id" not in ubp_cols:
         cur.execute("ALTER TABLE user_boss_progress ADD COLUMN active_boss_enemy_id INTEGER")
@@ -982,6 +1241,21 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_user_created ON lab_robot_submissions(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_likes_submission ON lab_submission_likes(submission_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_reports_submission ON lab_submission_reports(submission_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_races_status_created ON lab_races(status, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_race ON lab_casino_bets(race_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_frames_race_frame ON lab_casino_frames(race_id, frame_no)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_prizes_active_cost ON lab_casino_prizes(is_active, cost_lab_coin ASC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_claims_user_created ON lab_casino_prize_claims(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_core_inventory_user_core ON user_core_inventory(user_id, core_asset_id)")
     pi_cols = {row[1] for row in cur.execute("PRAGMA table_info(part_instances)").fetchall()}
     if "part_type" not in pi_cols:
@@ -1039,6 +1313,13 @@ def main():
         ("boss_emblem_aurix", "オリクス紋章", "images/factions/aurix.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "images/factions/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "images/factions/ignis.png"),
+        ("fortress_badge_001", "要塞勲章", "decor/fortress_badge_001.png"),
+        ("mist_scope_001", "霧界スコープ", "decor/mist_scope_001.png"),
+        ("burst_reactor_001", "暴核リアクター", "decor/burst_reactor_001.png"),
+        ("judge_halo_001", "審判ハロー", "decor/judge_halo_001.png"),
+        ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
+        ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
+        ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
         ("supporter_emblem_001", "支援者トロフィー", "decor/aurix_trophy.png"),
     ]
     for key, name_ja, image_path in decor_seed:
@@ -1069,6 +1350,24 @@ def main():
             int(time.time()),
         ),
     )
+    now_ts = int(time.time())
+    for prize_key, name, description, cost_lab_coin, prize_type, grant_key in LAB_CASINO_PRIZE_SEEDS:
+        cur.execute(
+            """
+            INSERT INTO lab_casino_prizes
+            (prize_key, name, description, cost_lab_coin, prize_type, grant_key, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ON CONFLICT(prize_key) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description,
+                cost_lab_coin = excluded.cost_lab_coin,
+                prize_type = excluded.prize_type,
+                grant_key = excluded.grant_key,
+                is_active = 1,
+                updated_at = excluded.updated_at
+            """,
+            (prize_key, name, description, int(cost_lab_coin), prize_type, grant_key, now_ts, now_ts),
+        )
     rh_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_history)").fetchall()}
     if "wins_this_week_key" not in rh_cols:
         cur.execute("ALTER TABLE robot_history ADD COLUMN wins_this_week_key TEXT NOT NULL DEFAULT ''")

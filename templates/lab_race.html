@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>観戦レース</h1>
+
+<div class="card">
+  <div><b>参加する</b></div>
+  <div class="robot-part">参加と同時に開催され、固定6レーンで不足枠は LAB ENEMY が補完します。</div>
+  {% if robot_choices %}
+  <form method="post" action="{{ url_for('lab_race_entry') }}" class="post-form">
+    <label for="robot_instance_id">出走ロボ</label>
+    <select id="robot_instance_id" name="robot_instance_id" required>
+      {% for row in robot_choices %}
+      <option value="{{ row['id'] }}">
+        {{ row['name'] }} / 総合 {{ row['power'] }} / SPD {{ row['stats']['spd'] }} / DEF {{ row['stats']['def'] }}
+      </option>
+      {% endfor %}
+    </select>
+    <label for="course_key">コース</label>
+    <select id="course_key" name="course_key">
+      {% for row in course_defs %}
+      <option value="{{ row['key'] }}" {% if row['key'] == default_course_key %}selected{% endif %}>{{ row['label'] }}: {{ row['summary'] }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">参加して観戦する</button>
+  </form>
+  {% else %}
+  <div class="robot-part">参加するには本編のロボが必要です。</div>
+  <p class="link"><a href="{{ url_for('build') }}">ロボ編成へ</a></p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>最新レース</h2>
+  {% if latest_race %}
+  <div class="robot-part">{{ latest_race['course_key'] }} / {{ latest_race['status'] }}</div>
+  <div class="lab-mini-results">
+    {% for row in latest_results %}
+    <div class="home-ranking-row">
+      <span>{{ row['final_rank'] }}位 {{ row['display_name'] }}{% if row['owner_label'] %} / {{ row['owner_label'] }}{% endif %}</span>
+      <span class="weekly-fit-badge">{{ row['finish_text'] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="link"><a href="{{ url_for('lab_race_legacy_watch', race_id=latest_race['id']) }}">観戦する</a> | <a href="{{ url_for('lab_race_legacy_results_view', race_id=latest_race['id']) }}">結果を見る</a></p>
+  {% else %}
+  <div class="robot-part">まだ開催記録がありません。</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>記録プレビュー</h2>
+  <div class="lab-card-grid compact">
+    <div class="world-env-card">
+      <div><b>優勝回数</b></div>
+      {% for row in rankings['wins'][:3] %}
+      <div class="home-ranking-row"><span>{{ loop.index }}位 {{ row['username'] }}</span><span class="weekly-fit-badge">{{ row['metric_value'] }}</span></div>
+      {% else %}
+      <div class="robot-part">まだ記録なし</div>
+      {% endfor %}
+    </div>
+    <div class="world-env-card">
+      <div><b>最速完走</b></div>
+      {% for row in rankings['fastest'][:3] %}
+      <div class="home-ranking-row"><span>{{ row['robot_label'] }}</span><span class="weekly-fit-badge">{{ row['metric_value'] }}ms</span></div>
+      {% else %}
+      <div class="robot-part">まだ記録なし</div>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="link"><a href="{{ url_for('lab_race_legacy_rankings') }}">すべての記録を見る</a></p>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

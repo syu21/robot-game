@@ -121,6 +121,44 @@ class PortalOnlineCountTests(unittest.TestCase):
             result = game_app.send_portal_online_count(db=db)
 
         self.assertFalse(result["ok"])
+        self.assertTrue(result["queued"])
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT online_count, status, attempt_count FROM portal_online_delivery_queue ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(int(row["status"] == "pending"), 1)
+        self.assertEqual(int(row["attempt_count"] or 0), 0)
+
+    def test_flush_portal_online_retry_queue_marks_sent(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app._enqueue_portal_online_retry(db, online_count=3, window_minutes=5, reason="exception")
+
+        with game_app.app.app_context(), patch.dict(
+            os.environ,
+            {
+                "POCHI_PORTAL_ENDPOINT": "https://portal.example",
+                "POCHI_PORTAL_GAME_KEY": "GAME-1",
+                "POCHI_PORTAL_API_KEY": "API-1",
+            },
+            clear=False,
+        ), patch("app.urlopen", return_value=_DummyResp(status=204)):
+            db = game_app.get_db()
+            result = game_app.flush_portal_online_retry_queue(db=db, limit=5)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["sent"], 1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT status, attempt_count, delivered_at FROM portal_online_delivery_queue ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertEqual(row["status"], "sent")
+        self.assertEqual(int(row["attempt_count"] or 0), 1)
+        self.assertGreater(int(row["delivered_at"] or 0), 0)
 
 
 if __name__ == "__main__":

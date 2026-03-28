@@ -1,6 +1,6 @@
 # プロジェクト進捗・現行仕様（ロボらぼ）
 
-最終更新日: 2026-03-26
+最終更新日: 2026-03-28
 
 ## 1. プロダクト目標
 - 現在のロボらぼは `チュートリアルフェーズ` と位置付ける
@@ -55,6 +55,7 @@
 - `通信` は `今週のMVP` の直下で見られる
 - `通信` パネルは `世界ログ / 会議室 / 陣営通信 / 個人ログ` をページ内で即時タブ切替できる
 - 右列は `今週のランキング + 表示調整` をまとめ、`メニュー` は `ロボ展示 / 記録庫` のみ残す
+- 右列の表示順は `アクション -> 今週の戦況 -> 陣営戦 -> メニュー -> 今週のランキング -> 表示調整`
 - `世界ログ` は `ボス初討伐 / 層解放 / 陣営勝利 / 週更新 / 上位ランキング速報 / 特別出来事 / 全体発言` に絞り、`個人ログ` は入手・強化・探索・戦闘・遭遇・個人ランキングを蓄積する
 - `今週のランキング` は `アイコン+小ロボ` つきで表示
 - `今週のMVP` は `アイコン+小ロボ` と機体画像を併記
@@ -85,6 +86,13 @@
   - layer_2_mist: 命中寄り
   - layer_2_rush: 素早さ・会心寄り
   - layer_3: 攻撃・耐久寄り
+  - layer_4_forge: 耐久・防御寄り
+  - layer_4_haze: 命中・安定寄り
+  - layer_4_burst: 攻撃・会心寄り
+  - layer_4_final: 最終試験（複合）
+  - layer_5_labyrinth: 耐久・命中・安定寄り
+  - layer_5_pinnacle: 攻撃・会心・速攻寄り
+  - layer_5_final: 最終試験（思想完成）
 
 ### 3.4 育成
 - パーツ強化: `/parts/strengthen`（`/parts/fuse`互換）
@@ -101,13 +109,25 @@
 
 ### 3.5 ボス・層進行
 - ボス出現率 0.5%（エリア条件あり）
-- 固定ボス3体（layer_1/2/3）
+- 固定ボス10体
+  - layer_1 / 2 / 3
+  - layer_4_forge / layer_4_haze / layer_4_burst
+  - layer_4_final
+  - layer_5_labyrinth / layer_5_pinnacle
+  - layer_5_final
 - layer_2/3 は NPCボス統合抽選あり
 - 固定ボス/エリアボス報酬は DECOR 中心、NPCボスは進化コア報酬あり
 - 層解放は `max_unlocked_layer` 管理
+- layer_3 固定ボス撃破で第4層を解放
+- 第4層3ボス撃破で `layer_4_final` を解放
+- `layer_4_final` 固定ボス撃破で第5層を解放
+- 第5層2ボス撃破で `layer_5_final` を解放
 
 ### 3.6 管理機能
 - `/admin` 管理メニュー
+- `/admin/release`
+  - `実験室 / 第4層 / 第5層` を段階的に一般公開できる
+  - 未公開の間は管理者だけアクセスでき、一般ユーザーには導線も隠す
 - `/admin/users`:
   - BAN / BAN解除
   - 管理者保護ON/OFF
@@ -131,17 +151,29 @@
 - `/showcase` は 新着 / 今週 / ボス / いいね / 最速 / 耐久 / 命中 / 爆発 で並び替え可能
 - `/terms`, `/privacy`, `/commerce` を独立した法務ページとして公開
 - `/guide` で `性格 / 型 / 育成 / 世界競争` の基本用語を辞典形式で確認できる
+- ヘッダーの `設定` は `アイコン変更` 表記へ変更し、`通信` はホーム内機能へ集約した
 - `/support` で `ロボらぼ支援パック` の Stripe Checkout 購入に進める
 - `/payment/success` は「支払い確認中」、付与は webhook 完了後に反映
 - `/admin/payments` で支払い履歴を確認できる
 - `/world` で `今週の環境 / 熱源 / 陣営戦 / 研究進捗` をまとめて見返せる
 - `/records` で `初達成記録 / 今週の記録 / 話題ロボ` を `アイコン+小ロボ` と機体画像つきで見返せる
+- 第4層の `初到達 / 初ボス撃破` も記録庫で自然に追える
+- 第5層の `初到達 / 初ボス撃破` も同じ導線で追える
 - ホームの `今週のランキング`、`世界戦況` の MVP、`記録庫` で `アイコン+小ロボ` と機体画像を使った他プレイヤー表示を強化
 - `/contact` で問い合わせ導線を提供
+
+### 3.8 高層バランス方針
+- `layer_1` 〜 `layer_3` はチュートリアル帯
+- `layer_4` 以降は本番帯として、通常敵から `layer_3` 固定ボス級を超える圧を持たせる
+- `layer_4 / layer_5` は `release_flags.layer4 / layer5` で段階公開し、未公開中は管理者だけ入れる
+- ただし 8ターン上限は維持し、数値の大きさではなく `型相性 + 圧力差` で難度を作る
+- `layer_4` は型を学ぶ層、`layer_5` は型で名を残す層、という役割分担を維持する
   - Google フォーム: `https://forms.gle/mmjKJqX6QrPE9GkJ6`
 - `/sitemap.xml` を公開
 - `favicon.png` を `head` から参照
 - `GET /healthz` で最低限の公開監視に対応
+  - gunicorn 直確認: `http://127.0.0.1:8000/healthz`
+  - 公開導線確認: `https://robolabo.site/healthz`
 
 ### 3.8 通信
 - `/comms` で `世界ログ / 会議室 / 陣営通信 / 個人ログ` の4導線を表示
@@ -165,6 +197,34 @@
 - ホームの `みんなのログ` 投稿口は `通信` と同じ world_public 発言へ接続
 - ホームでは `通信` パネル内タブからそのまま世界ログや会議室を閲覧できる
 
+### 3.9 実験室（/lab）
+- 本編とは分離した遊び場として `実験室` を追加
+- `release_flags.lab` が public のときだけ一般公開し、未公開中は管理者限定で確認できる
+- レース本体は `services/lab_race_engine.py` を中心に共通化し、`/lab/race` を主導線とする
+- 共通レースは `6レーン固定 / 10区間固定 / 特殊区間 2〜5 抽選` を基本とし、見やすさと予想しやすさを優先する
+- `/lab`
+  - `エネミーレース / ロボ投稿 / 投稿ロボ展示 / レース記録` の導線を集約
+  - `今週の実験室話題` を world_events_log から表示
+- `/lab/race`
+  - `lab_coin` を使う敵6体固定の単勝予想モード
+  - 1日1回のデイリー補充、観戦ボーナス、交換所景品、予想履歴を実装
+  - 敵6体は固定キャラだが、各レースで `condition` とステータスが少し揺れ、倍率も毎回変動する
+  - レース自体は共通エンジンで事前シミュレーションし、`/lab/race/watch/<race_id>` で再生する
+  - `/lab/race/result/<race_id>` で結果、`/lab/race/history` で予想履歴を表示
+  - 旧観戦レースは `/lab/race/legacy` と `/lab/race/rankings` に残し、主導線からは外す
+- `/lab/upload`
+  - 見た目ロボ投稿を `pending` で保存
+  - 投稿画像は `PNG / 透過必須 / 正方形 96px〜512px / 1MBまで`
+  - 保存先は `static/user_lab_uploads/...`
+- `/lab/showcase`
+  - 承認済み投稿のみ公開
+  - `新着 / 人気 / 話題 / おすすめ` で閲覧
+  - `いいね / 通報` を実装
+- `/admin/lab`, `/admin/lab/submissions`
+  - `approve / reject / disable`
+  - 通報件数とモデレーションメモを確認可能
+- 実験室で得られるものは `見栄 / 展示 / 記録` に限定し、本編戦力へ影響しない
+
 ## 4. 主要データモデル
 - `users`
   - `active_robot_id`
@@ -172,6 +232,7 @@
   - `faction`
   - `avatar_path`
   - `invite_code`
+  - `lab_coin`, `lab_coin_last_daily_at`
   - `is_banned`, `is_admin_protected`, `banned_at`, `banned_reason`, `banned_by_user_id`
 - `robot_instances`, `robot_instance_parts`
   - `composed_image_path`, `icon_32_path`
@@ -181,6 +242,10 @@
 - `enemies`
 - `world_weekly_environment`, `world_weekly_counters`
 - `world_faction_weekly_scores`, `world_faction_weekly_result`
+- `lab_casino_races`, `lab_casino_entries`, `lab_casino_bets`
+- `lab_casino_frames`, `lab_casino_prizes`, `lab_casino_prize_claims`
+- `lab_races.course_payload_json`, `lab_casino_races.course_payload_json`
+  - 各レースで抽選された 10 区間コースと特殊区間情報を保存
 - `world_events_log`
 - `chat_messages`
   - `room_key`
@@ -197,6 +262,13 @@
 - `users`
   - `explore_boost_until`
   - 出撃ブーストの有効期限を保持
+- `lab_robot_submissions`
+- `lab_submission_likes`
+- `lab_submission_reports`
+- `lab_races`
+- `lab_race_entries`
+- `lab_race_frames`
+- `lab_race_records`
 
 ## 5. UI文言方針（運用中）
 - ホーム -> 基地

@@ -1,11 +1,23 @@
 # 出撃仕様（/explore）
 
-最終更新日: 2026-03-26
+最終更新日: 2026-03-28
 
 ## 1. エンドポイント
 - 実行: `POST /explore`
 - 主入力: `area_key`
-- エリア: `layer_1`, `layer_2`, `layer_2_mist`, `layer_2_rush`, `layer_3`
+- エリア:
+  - `layer_1`
+  - `layer_2`
+  - `layer_2_mist`
+  - `layer_2_rush`
+  - `layer_3`
+  - `layer_4_forge`
+  - `layer_4_haze`
+  - `layer_4_burst`
+  - `layer_4_final`（第4層3ボス撃破後の最終試験）
+  - `layer_5_labyrinth`
+  - `layer_5_pinnacle`
+  - `layer_5_final`（第5層2ボス撃破後の最終試験）
 
 ## 2. 前提チェック順序
 1. ログイン済み
@@ -30,6 +42,10 @@
 - 基本出現率: 0.5%
 - エリア対応ボスのみ抽選対象
 - layer_2/3 は NPCボス統合抽選（実装時設定に従う）
+- layer_4_forge / haze / burst は各エリア専用の固定ボスを持つ
+- `layer_4_final` は第4層3ボス撃破後に解放される最終試験エリアで、`アーク=ゼロ` 固定
+- `layer_5_labyrinth` / `layer_5_pinnacle` は各エリア専用の固定ボスを持つ
+- `layer_5_final` は第5層2ボス撃破後に解放される最終試験エリアで、`オメガフレーム` 固定
 
 ## 6. 報酬決定
 - コイン: 勝敗・環境補正に応じて加算
@@ -40,6 +56,15 @@
   - ゲージ満了で保証付与
   - layer_2/3 の NPCボス撃破では追加報酬として `進化コア x1`
   - 監査: `audit.core.drop`
+- 第4層の育成傾向:
+  - `layer_4_forge`: 耐久・防御寄り
+  - `layer_4_haze`: 命中・安定寄り
+  - `layer_4_burst`: 攻撃・会心寄り
+  - `layer_4_final`: 最終試験（複合）
+- 第5層の育成傾向:
+  - `layer_5_labyrinth`: 耐久・命中・安定寄り
+  - `layer_5_pinnacle`: 攻撃・会心・速攻寄り
+  - `layer_5_final`: 最終試験（思想完成）
 
 ## 7. 戦利品表示（battle結果）
 - 前面は最小表示:

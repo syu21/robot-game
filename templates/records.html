@@ -52,6 +52,50 @@
         {% endfor %}
       </ul>
     </div>
+    <div class="card">
+      <div><b>第4層初到達</b></div>
+      <ul class="timeline-list">
+        {% for row in first_layer4_records %}
+        <li>
+          <div><b>{{ row['title'] }}</b></div>
+          <div class="presence-user-line record-user-line">
+            <span class="user-chip mini">
+              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <span class="robot-part">{{ row['username'] }}</span>
+          </div>
+          <div class="robot-time">{{ row['time_jst'] }} JST</div>
+        </li>
+        {% else %}
+        <li>まだ第4層到達記録はありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <div><b>第5層初到達</b></div>
+      <ul class="timeline-list">
+        {% for row in first_layer5_records %}
+        <li>
+          <div><b>{{ row['title'] }}</b></div>
+          <div class="presence-user-line record-user-line">
+            <span class="user-chip mini">
+              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <span class="robot-part">{{ row['username'] }}</span>
+          </div>
+          <div class="robot-time">{{ row['time_jst'] }} JST</div>
+        </li>
+        {% else %}
+        <li>まだ第5層到達記録はありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
   </section>
 
   <section class="panel">

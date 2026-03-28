@@ -152,10 +152,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now robot-game-healthcheck.timer
 systemctl status robot-game-healthcheck.timer --no-pager
 journalctl -u robot-game-healthcheck.service -n 20 --no-pager
-curl -I http://127.0.0.1/healthz
+curl -i http://127.0.0.1:8000/healthz
+curl -I https://robolabo.site/healthz
 ```
 
 `HEALTHCHECK_URL` を独自ドメインにしておくと、外向き URL の監視にも使えます。
+`http://127.0.0.1/healthz` は nginx の `server_name` の当たり方によっては 404 になりうるため、ローカル確認は `127.0.0.1:8000` を優先します。
 
 ## 9. 敵/装飾の有効化フラグ
 

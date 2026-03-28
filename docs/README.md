@@ -1,6 +1,6 @@
 # ロボらぼ ドキュメント入口
 
-最終更新日: 2026-03-26
+最終更新日: 2026-03-28
 
 このディレクトリは、`ロボらぼ` の実装仕様・運用仕様・監査仕様の正本です。
 実装変更時は、関連仕様を必ず同時更新してください。
@@ -13,6 +13,9 @@
   - 固定ボス/エリアボス報酬は DECOR 中心、NPCボスは進化コア報酬あり
   - 監査ログ `audit.*` を常に残す
   - `ホームの今週ランキング / 世界戦況のMVP / 記録庫 / ロボ展示` で他プレイヤーの存在感と研究導線を強める
+  - `通信` は `世界ログ / 会議室 / 個人ログ` を役割分担し、世界ログは世界級の出来事と全体発言、個人ログは自分の成長記録を担う
+  - 基地内でも `通信` タブから世界ログ・会議室・陣営通信・個人ログをページ内で即時切替できる
+  - ホームでは `今週のMVP` の直下に `通信` を置き、右列は `アクション / 今週の戦況 / 陣営戦 / メニュー / 今週のランキング / 表示調整` の順で見る
 
 ## 2. 正本ドキュメント
 - 運営思想 / 中長期方針: `docs/GAME_DIRECTION.md`
@@ -27,6 +30,10 @@
 - 敵: `docs/ENEMY_SPEC.md`
 - 週間環境: `docs/WEEKLY_ENVIRONMENT_SPEC.md`
 - 監査: `docs/AUDIT_LOG_SPEC.md`
+- 実験室全体: `docs/LAB_SPEC.md`
+- 実験室レース: `docs/LAB_RACE_SPEC.md`
+- エネミーレース: `docs/LAB_ENEMY_RACE_SPEC.md`
+- 実験室投稿: `docs/LAB_SUBMISSION_SPEC.md`
 - 決済/ショップ: `docs/PAYMENT_SPEC.md`
 - 運用チェック: `docs/OPERATIONS_CHECKLIST.md`
 - バックアップ/復元: `docs/BACKUP_RESTORE.md`
@@ -47,6 +54,9 @@ FLASK_APP=app.py FLASK_ENV=development flask run --host 127.0.0.1 --port 5050
 - 既定URL: `http://127.0.0.1:5050/home`
 - DB: SQLite (`game.db`)
 - 公開URL: `https://robolabo.site`
+- 本番ヘルス確認:
+  - gunicorn 直: `curl -i http://127.0.0.1:8000/healthz`
+  - 公開導線: `curl -I https://robolabo.site/healthz`
 
 ## 4. 現フェーズの最重要認識
 - 現在のロボらぼは `チュートリアルフェーズ`
@@ -76,9 +86,20 @@ FLASK_APP=app.py FLASK_ENV=development flask run --host 127.0.0.1 --port 5050
   - `/contact`
 - 基地/進行:
   - `/home`
+  - `/lab`
+  - `/lab/race`
+  - `/lab/race/history`
+  - `/lab/race/prizes`
+  - `/lab/upload`
+  - `/lab/showcase`
   - `/map`
   - `/world`
   - `/records`
+  - `/comms`
+  - `/comms/world`
+  - `/comms/rooms`
+  - `/comms/faction`
+  - `/comms/personal`
   - `/ranking`
   - `/showcase`
   - `/feed`
@@ -102,7 +123,7 @@ FLASK_APP=app.py FLASK_ENV=development flask run --host 127.0.0.1 --port 5050
 - 出撃ターン上限: 8ターン固定
 - `turn_logs` 互換維持
 - 監査イベント体系 `audit.*` の互換維持
-- SYSTEMチャット投稿は「ボス撃破時のみ」
+- `chat_messages` は `room_key` ベースで通信面とホームのログ導線を兼用する
 
 ## 7. 変更時ルール
 1. 実装変更

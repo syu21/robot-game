@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボ投稿</h1>
+
+<div class="card">
+  <div><b>投稿する</b></div>
+  <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px。公開は管理承認後です。</div>
+  <form method="post" enctype="multipart/form-data" class="post-form">
+    <label for="title">タイトル</label>
+    <input id="title" type="text" name="title" maxlength="80" required />
+    <label for="comment">一言コメント</label>
+    <textarea id="comment" name="comment" rows="4" maxlength="200" required></textarea>
+    <label for="image">PNG画像</label>
+    <input id="image" type="file" name="image" accept="image/png" required />
+    <button type="submit">pending で投稿する</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>自分の投稿</h2>
+  <div class="lab-showcase-grid">
+    {% for row in recent_rows %}
+    <div class="robot-card lab-showcase-card">
+      {% if row.get('image_url') %}
+      <img class="robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+      {% endif %}
+      <div class="robot-id">{{ row['title'] }}</div>
+      <div class="robot-part">{{ row['status_label'] }}</div>
+      <div class="robot-time">{{ row['comment'] }}</div>
+    </div>
+    {% else %}
+    <div class="robot-part">まだ投稿はありません。</div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

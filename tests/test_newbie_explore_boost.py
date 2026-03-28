@@ -125,7 +125,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         client = self._new_client(self.user_id, "newbie_boost_user")
         resp = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertRegex(resp.get_data(as_text=True), r"あと (9|10) 秒で探索できる。")
+        self.assertRegex(resp.get_data(as_text=True), r"あと ?(9|10)秒")
 
     def test_after_72_hours_cooldown_returns_to_40_seconds(self):
         now = int(time.time())
@@ -141,7 +141,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         resp = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertRegex(html, r"あと (28|29|30) 秒で探索できる。")
+        self.assertRegex(html, r"あと ?(28|29|30)秒")
 
     def test_admin_ignores_cooldown_even_when_recently_actioned(self):
         self._set_last_action_at(self.admin_id, int(time.time()))
@@ -155,10 +155,10 @@ class NewbieExploreBoostTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/html", resp.content_type)
 
-    def test_home_shows_newbie_boost_card_only_while_active(self):
+    def test_home_no_longer_shows_legacy_newbie_boost_card(self):
         client = self._new_client(self.user_id, "newbie_boost_user")
         active_html = client.get("/home").get_data(as_text=True)
-        self.assertIn("新規ブースト中: 探索CT短縮", active_html)
+        self.assertNotIn("新規ブースト中: 探索CT短縮", active_html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -190,7 +190,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         client = self._new_client(self.user_id, "newbie_boost_user")
         resp = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertRegex(resp.get_data(as_text=True), r"あと (9|10) 秒で探索できる。")
+        self.assertRegex(resp.get_data(as_text=True), r"あと ?(9|10)秒")
 
     def test_consecutive_explore_post_second_request_is_blocked(self):
         client = self._new_client(self.user_id, "newbie_boost_user")
@@ -204,7 +204,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
 
         second = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
         self.assertEqual(second.status_code, 200)
-        self.assertIn("あと ", second.get_data(as_text=True))
+        self.assertRegex(second.get_data(as_text=True), r"あと ?\d+秒")
 
         with game_app.app.app_context():
             db = game_app.get_db()

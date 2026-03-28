@@ -8,7 +8,8 @@
 - アプリ追尾: `journalctl -u robot-game.service -f`
 - nginx エラー: `sudo tail -n 100 /var/log/nginx/error.log`
 - nginx アクセス: `sudo tail -n 100 /var/log/nginx/access.log`
-- ヘルス: `curl -I http://127.0.0.1/healthz`
+- ヘルス: `curl -i http://127.0.0.1:8000/healthz`
+- 公開ヘルス: `curl -I https://robolabo.site/healthz`
 
 ## 更新反映後の最低目視
 
@@ -21,8 +22,9 @@
 1. `journalctl -u robot-game.service -n 100 --no-pager`
 2. `sudo tail -n 100 /var/log/nginx/error.log`
 3. `curl -I http://127.0.0.1/login`
-4. `curl -I http://127.0.0.1/healthz`
-5. 必要なら `sudo systemctl restart robot-game.service`
+4. `curl -i http://127.0.0.1:8000/healthz`
+5. `curl -I https://robolabo.site/healthz`
+6. 必要なら `sudo systemctl restart robot-game.service`
 
 ## 定期確認
 

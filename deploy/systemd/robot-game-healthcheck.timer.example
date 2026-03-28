@@ -1,0 +1,10 @@
+[Unit]
+Description=Run robot-game healthcheck every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=robot-game-healthcheck.service
+
+[Install]
+WantedBy=timers.target

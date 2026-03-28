@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>段階公開の切り替え</h1>
+
+<div class="card">
+  <p>ローカル確認が終わった機能を、管理者だけ先に触ったまま一般公開へ切り替えるための画面です。</p>
+  <p class="robot-part">第5層を公開すると第4層も一緒に公開します。第4層を閉じると第5層も閉じます。</p>
+</div>
+
+{% for row in release_rows %}
+<div class="card">
+  <div><b>{{ row['label'] }}</b></div>
+  <div class="robot-part">{{ row['summary'] }}</div>
+  <div class="robot-part">現在: {% if row['is_public'] %}一般公開中{% else %}管理者のみ{% endif %}</div>
+  <div class="robot-part">更新: {{ row['updated_text'] }}</div>
+  <div class="home-inline-actions">
+    {% if row['is_public'] %}
+    <form method="post" class="inline-form inline-form-top">
+      <input type="hidden" name="feature_key" value="{{ row['key'] }}" />
+      <input type="hidden" name="state" value="private" />
+      <button type="submit" class="btn-secondary">管理者だけに戻す</button>
+    </form>
+    {% else %}
+    <form method="post" class="inline-form inline-form-top">
+      <input type="hidden" name="feature_key" value="{{ row['key'] }}" />
+      <input type="hidden" name="state" value="public" />
+      <button type="submit">一般公開する</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

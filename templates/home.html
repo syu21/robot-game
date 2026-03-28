@@ -488,6 +488,9 @@
           data-cta-ready-label="出撃する"
           {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
         >{{ ct_button_text }}</button>
+        {% if is_main_admin %}
+        <button type="submit" name="boss_enter" value="1" class="btn-secondary">ボスへ直行</button>
+        {% endif %}
       </form>
       <p class="link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
       {% if home_area_cards %}
@@ -604,6 +607,9 @@
       <h2>メニュー</h2>
       <div class="home-nav-section-title">リンク</div>
       <div class="home-nav-grid home-nav-links">
+        {% if show_lab_menu %}
+        <a class="action-card home-nav-card" href="{{ url_for('lab_home') }}"><div class="action-title">実験室</div><div class="action-desc">変なロボと遊ぶ</div></a>
+        {% endif %}
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
       </div>

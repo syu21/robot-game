@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>投稿ロボ展示</h1>
+
+<div class="card">
+  <div class="showcase-sort-tabs">
+    {% for item in sort_defs %}
+    <a href="{{ url_for('lab_showcase', sort=item['key']) }}" class="fuse-mode-tab {% if sort_key == item['key'] %}is-active{% endif %}">{{ item['label'] }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="lab-showcase-grid">
+  {% for row in rows %}
+  <div class="robot-card lab-showcase-card">
+    {% if row.get('thumb_url') %}
+    <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+    {% endif %}
+    <div class="robot-id">{{ row['title'] }}</div>
+    <div class="robot-part">投稿者: {{ row['username'] }}</div>
+    <div class="robot-time">{{ row['comment'] }}</div>
+    <div class="robot-part">いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
+    <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を見る</a></p>
+  </div>
+  {% else %}
+  <div class="card">まだ公開中の投稿ロボはありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

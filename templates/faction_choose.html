@@ -16,16 +16,21 @@
 {% else %}
 <div class="card">
   <p>所属する陣営を選択してください。選択後は変更できません。</p>
+  <p class="upgrade-cost">今週の陣営戦スコア（{{ current_week_key }}）も参考にできます。</p>
 </div>
 <div class="showcase-grid">
-  {% for key in ('ignis', 'ventra', 'aurix') %}
+  {% for row in faction_score_rows %}
   <form method="post" class="card">
-    <input type="hidden" name="faction" value="{{ key }}" />
-    <div><b>{{ faction_labels.get(key, key) }}</b>{% if recommended_faction == key %} <span class="weekly-fit-badge">おすすめ</span>{% endif %}</div>
-    <div class="upgrade-cost">所属人数: {{ member_counts.get(key, 0) }}</div>
-    {% if key == 'ignis' %}<div class="upgrade-cost">高出力試験と突破を重視する陣営。</div>{% endif %}
-    {% if key == 'ventra' %}<div class="upgrade-cost">機動戦術と速度適応を重視する陣営。</div>{% endif %}
-    {% if key == 'aurix' %}<div class="upgrade-cost">防衛運用と安定収集を重視する陣営。</div>{% endif %}
+    <input type="hidden" name="faction" value="{{ row['key'] }}" />
+    <div>
+      <b>{{ row['label'] }}</b>
+      {% if recommended_faction == row['key'] %}<span class="weekly-fit-badge">おすすめ</span>{% endif %}
+      {% if row['is_weekly_tailwind'] %}<span class="weekly-fit-badge">今週の追い風</span>{% endif %}
+    </div>
+    <div class="upgrade-cost">{{ row['doctrine_title'] }}</div>
+    <div class="upgrade-cost">所属人数: {{ row['member_count'] }} / 今週 {{ row['points'] }}pt</div>
+    <div class="upgrade-cost">{{ row['doctrine_summary'] }}</div>
+    <div class="robot-part">{{ row['world_hint'] }}</div>
     <button type="submit">この陣営に所属</button>
   </form>
   {% endfor %}

@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>実験室管理</h1>
+
+<div class="card">
+  <div class="robot-part">pending: {{ counts['pending'] }}</div>
+  <div class="robot-part">approved: {{ counts['approved'] }}</div>
+  <div class="robot-part">disabled: {{ counts['disabled'] }}</div>
+  <div class="robot-part">races: {{ counts['races'] }}</div>
+  <div class="robot-part">enemy races: {{ counts['casino_races'] }}</div>
+</div>
+
+<div class="card">
+  <p><a href="{{ url_for('admin_lab_submissions') }}">投稿承認一覧</a></p>
+  <p><a href="{{ url_for('admin_lab_race') }}">エネミーレース管理</a></p>
+  <p><a href="{{ url_for('admin_release') }}">段階公開の切り替え</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.submission.create') }}">投稿監査を見る</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.race.entry') }}">レース監査を見る</a></p>
+  <p><a href="{{ url_for('admin_audit', event_type='audit.lab.casino.bet.place') }}">予想監査を見る</a></p>
+</div>
+
+<div class="card">
+  <h2>最近のレース</h2>
+  {% for row in latest_races %}
+  <div class="robot-part">#{{ row['id'] }} / {{ row['course_key'] }} / {{ row['status'] }}</div>
+  {% else %}
+  <div class="robot-part">まだレースはありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

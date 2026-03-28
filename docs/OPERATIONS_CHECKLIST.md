@@ -78,7 +78,8 @@
 - [ ] `/ranking` の user系は `アイコン+小ロボ`、robot系は機体サムネで表示される
 
 ## 10. 公開運用
-- [ ] `GET /healthz` が `200`
+- [ ] `GET http://127.0.0.1:8000/healthz` が `200`
+- [ ] `GET https://robolabo.site/healthz` が `200`
 - [ ] `GET /sitemap.xml` が `200` で `application/xml`
 - [ ] `https://robolabo.site/terms` が利用規約として表示される
 - [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される

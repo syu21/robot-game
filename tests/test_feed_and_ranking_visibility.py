@@ -181,6 +181,58 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
         self.assertIn(self.target_part_name, evolve_html)
         self.assertNotIn(self.boss_name, evolve_html)
 
+    def test_feed_weekly_filter_shows_faction_and_research_events(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            week_key = game_app._world_week_key()
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json)
+                VALUES (?, 'FACTION_WAR_RESULT', ?)
+                """,
+                (
+                    now,
+                    json.dumps(
+                        {
+                            "week_key": week_key,
+                            "winner_faction": "ignis",
+                            "scores": {"ignis": 120, "ventra": 95, "aurix": 80},
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json)
+                VALUES (?, 'RESEARCH_UNLOCK', ?)
+                """,
+                (
+                    now + 1,
+                    json.dumps(
+                        {
+                            "week_key": week_key,
+                            "element": "FIRE",
+                            "part_type": "HEAD",
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.get("/feed?type=weekly")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("陣営戦決着", html)
+        self.assertIn("研究解禁", html)
+        self.assertIn("IGNIS", html)
+        self.assertIn("頭冠", html)
+
 
 class RankingVisibilityTests(unittest.TestCase):
     def setUp(self):

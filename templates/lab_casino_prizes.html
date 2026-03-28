@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>交換所景品</h1>
+
+<div class="card">
+  <div class="home-ranking-row">
+    <span>所持ラボコイン</span>
+    <span class="weekly-fit-badge">{{ wallet['lab_coin'] }}</span>
+  </div>
+  <div class="robot-part">
+    {% if daily_info['already_received'] %}
+    今日の補充は受け取り済みです。
+    {% else %}
+    今日の補充で +{{ daily_info['granted_amount'] }} されました。
+    {% endif %}
+  </div>
+</div>
+
+<div class="lab-card-grid">
+  {% for prize in prizes %}
+  <div class="card">
+    <div class="home-ranking-row">
+      <span><b>{{ prize['name'] }}</b></span>
+      <span class="weekly-fit-badge">{{ prize['cost_lab_coin'] }}</span>
+    </div>
+    <div class="robot-part">{{ prize['description'] }}</div>
+    <div class="robot-part">type: {{ prize['prize_type'] }} / 交換数 {{ prize['claim_count'] }}</div>
+    {% if prize['claimed_by_me'] %}
+    <div class="robot-part">交換済み</div>
+    {% else %}
+    <form method="post" action="{{ url_for('lab_race_prize_claim', prize_id=prize['id']) }}">
+      <button type="submit" {% if wallet['lab_coin'] < prize['cost_lab_coin'] %}disabled{% endif %}>交換する</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>最近の交換</h2>
+  {% for row in claim_rows %}
+  <div class="home-ranking-row">
+    <span>{{ row['name'] }} / {{ row['prize_type'] }}</span>
+    <span class="weekly-fit-badge">{{ row['created_text'] }}</span>
+  </div>
+  {% else %}
+  <div class="robot-part">まだ交換履歴はありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('lab_race') }}">レースへ</a> | <a href="{{ url_for('lab_race_history') }}">レース記録へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

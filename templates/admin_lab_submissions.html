@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>実験室投稿承認</h1>
+
+<div class="card">
+  <div class="showcase-sort-tabs">
+    {% for key in status_options %}
+    <a href="{{ url_for('admin_lab_submissions', status=key) }}" class="fuse-mode-tab {% if status_filter == key %}is-active{% endif %}">{{ key }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% for row in rows %}
+<div class="card">
+  <div><b>{{ row['title'] }}</b> / {{ row['username'] }}</div>
+  <div class="robot-part">状態: {{ row['status_label'] }} / いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
+  {% if row.get('thumb_url') %}
+  <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+  {% endif %}
+  <div class="robot-time">{{ row['comment'] }}</div>
+  <form method="post" class="post-form">
+    <input type="hidden" name="status" value="{{ status_filter }}" />
+    <label for="note-{{ row['id'] }}">メモ</label>
+    <textarea id="note-{{ row['id'] }}" name="moderation_note" rows="3" maxlength="200">{{ row['moderation_note'] or '' }}</textarea>
+    <div class="home-inline-actions">
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_approve', submission_id=row['id']) }}">approve</button>
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_reject', submission_id=row['id']) }}" class="btn-secondary">reject</button>
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_disable', submission_id=row['id']) }}" class="btn-secondary">disable</button>
+    </div>
+  </form>
+</div>
+{% else %}
+<div class="card">対象の投稿はありません。</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('admin_lab') }}">実験室管理へ</a></p>
+{% endblock %}

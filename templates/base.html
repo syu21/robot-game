@@ -6,7 +6,7 @@
   <title>{{ title or "ロボらぼ" }}</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}-ui3" />
 </head>
 {% set js_diag = request.args.get('js_diag') == '1' %}
 {% set no_layout_js = request.args.get('no_layout_js') == '1' %}
