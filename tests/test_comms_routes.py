@@ -71,6 +71,7 @@ class CommsRoutesTests(unittest.TestCase):
         self.assertIn("世界の動きや、他のロボ使いの声がここに流れます。", html)
         self.assertIn("ロボ使いたちが集まって話せる場所です。", html)
         self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
+        self.assertIn("フィードバック", html)
 
     def test_comms_world_shows_world_scale_events_and_public_posts_only(self):
         with game_app.app.app_context():
@@ -265,6 +266,23 @@ class CommsRoutesTests(unittest.TestCase):
         self.assertIn("全体会議室", global_html)
         self.assertIn("全体会議室の話題", global_html)
 
+        feedback_resp = client.post(
+            "/comms/rooms?room=feedback_room",
+            data={
+                "room_key": "feedback_room",
+                "message": "細かい改善案も送りやすいと助かります",
+                "next": "/comms/rooms?room=feedback_room",
+            },
+        )
+        self.assertEqual(feedback_resp.status_code, 302)
+
+        feedback_page = client.get("/comms/rooms?room=feedback_room")
+        self.assertEqual(feedback_page.status_code, 200)
+        feedback_html = feedback_page.get_data(as_text=True)
+        self.assertIn("フィードバック", feedback_html)
+        self.assertIn("細かい改善案も送りやすいと助かります", feedback_html)
+        self.assertNotIn("初心者向けの相談です", feedback_html)
+
     def test_comms_personal_collects_growth_battle_and_acquisition_logs(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -431,23 +449,4 @@ class CommsRoutesTests(unittest.TestCase):
             db.commit()
 
         client = self._client()
-        resp = client.get("/comms/personal")
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
-        self.assertIn("パーツ入手", html)
-        self.assertIn("強化成功", html)
-        self.assertIn("ボス遭遇", html)
-        self.assertIn("探索勝利", html)
-        self.assertIn("ボス撃破", html)
-        self.assertIn("層解放", html)
-        self.assertIn("進化成功", html)
-        self.assertIn("招待条件達成", html)
-        self.assertIn("進化コア保証到達", html)
-        self.assertIn("個人ランキング", html)
-        self.assertIn("整備層ガーディアン", html)
-        self.assertIn("第3層が解放されました。", html)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        resp = client.get("

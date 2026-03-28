@@ -188,6 +188,12 @@ COMM_ROOM_DEFS = (
         "summary": "困ったことや育成の相談を気軽に聞ける部屋。",
         "tone": "最初の壁を越えるための部屋",
     },
+    {
+        "key": "feedback_room",
+        "title": "フィードバック",
+        "summary": "気づいたことや要望、小さな違和感も気軽に送れる部屋。",
+        "tone": "改善案や感想を集める部屋",
+    },
 )
 COMM_ROOM_DEF_MAP = {item["key"]: item for item in COMM_ROOM_DEFS}
 EXPLORE_COOLDOWN_SECONDS = int(os.getenv("EXPLORE_COOLDOWN_SECONDS", "40"))
@@ -1129,7 +1135,7 @@ AREA_BOSS_ALERT_AREAS = (
 )
 AREA_BOSS_SPAWN_RATES = {
     "layer_1": 0.005,
-    "layer_2": 0.002,
+    "layer_2": 0.005,
     "layer_2_mist": 0.003,
     "layer_2_rush": 0.005,
     "layer_3": 0.005,
@@ -1142,11 +1148,11 @@ AREA_BOSS_SPAWN_RATES = {
     "layer_5_final": 1.0,
 }
 AREA_BOSS_PITY_MISSES = {
-    # UI要件により天井表示は撤去。内部ロジック互換のため列は維持しつつ、
-    # 体感のボス率を0.5%へ寄せるため実運用では到達しない値にする。
-    "layer_1": 1_000_000,
-    "layer_2": 1_000_000,
-    "layer_3": 1_000_000,
+    # UIには出さず、第1〜3層のみ内部でソフト天井を使う。
+    # 第4層以降は現行のレア感を維持する。
+    "layer_1": 90,
+    "layer_2": 120,
+    "layer_3": 140,
     "layer_4_forge": 1_000_000,
     "layer_4_haze": 1_000_000,
     "layer_4_burst": 1_000_000,
@@ -1154,6 +1160,16 @@ AREA_BOSS_PITY_MISSES = {
     "layer_5_labyrinth": 1_000_000,
     "layer_5_pinnacle": 1_000_000,
     "layer_5_final": 1,
+}
+AREA_BOSS_SOFT_PITY_STARTS = {
+    "layer_1": 45,
+    "layer_2": 70,
+    "layer_3": 85,
+}
+AREA_BOSS_SOFT_PITY_MAX_RATES = {
+    "layer_1": 0.035,
+    "layer_2": 0.040,
+    "layer_3": 0.045,
 }
 AREA_BOSS_ALERT_ATTEMPTS = int(os.getenv("AREA_BOSS_ALERT_ATTEMPTS", "3"))
 AREA_BOSS_ALERT_MINUTES = int(os.getenv("AREA_BOSS_ALERT_MINUTES", "45"))
@@ -4373,13 +4389,48 @@ def _consume_boss_attempt(db, user_id, area_key, now_ts=None):
     return {"before": before, "after": after}
 
 
+def _area_boss_spawn_profile(area_key, streak_before):
+    boss_progress_key = _boss_area_key_for_route(area_key)
+    base_probability = float(AREA_BOSS_SPAWN_RATES.get(area_key, 0.1))
+    pity_misses = int(
+        AREA_BOSS_PITY_MISSES.get(
+            boss_progress_key,
+            AREA_BOSS_PITY_MISSES.get(area_key, 9),
+        )
+    )
+    soft_start = int(
+        AREA_BOSS_SOFT_PITY_STARTS.get(
+            boss_progress_key,
+            AREA_BOSS_SOFT_PITY_STARTS.get(area_key, pity_misses),
+        )
+    )
+    soft_cap = float(
+        AREA_BOSS_SOFT_PITY_MAX_RATES.get(
+            boss_progress_key,
+            AREA_BOSS_SOFT_PITY_MAX_RATES.get(area_key, base_probability),
+        )
+    )
+    probability = float(base_probability)
+    misses = max(0, int(streak_before))
+    if soft_start < pity_misses and soft_cap > base_probability and misses >= soft_start:
+        progress = _clamp((misses - soft_start + 1) / float(max(1, pity_misses - soft_start)), 0.0, 1.0)
+        probability = float(base_probability + (soft_cap - base_probability) * progress)
+    return {
+        "probability": float(_clamp(probability, base_probability, 1.0)),
+        "pity_misses": int(pity_misses),
+        "soft_start": int(soft_start),
+        "progress_key": boss_progress_key,
+    }
+
+
 def _area_boss_spawn_check(db, user_id, area_key, rng=None):
     if not _area_supports_boss_alert(area_key) or not _has_area_boss_candidates(db, area_key):
         return {"spawn": False, "probability": 0.0, "pity_forced": False, "streak_before": 0}
     roller = rng or random
     streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
-    pity_misses = int(AREA_BOSS_PITY_MISSES.get(area_key, 9))
-    spawn_p = float(AREA_BOSS_SPAWN_RATES.get(area_key, 0.1))
+    spawn_profile = _area_boss_spawn_profile(area_key, streak_before)
+    pity_misses = int(spawn_profile["pity_misses"])
+    spawn_p = float(spawn_profile["probability"])
     pity_forced = streak_before >= max(0, pity_misses - 1)
     spawned = pity_forced or (roller.random() < spawn_p)
     # streakはボス遭遇で0、通常探索（非ボス）で+1。報酬付与は撃破時のみ別処理で行う。
@@ -15100,7 +15151,7 @@ def comms():
             "summary": "ロボ使いたちが集まって話せる場所です。",
             "status": "稼働中",
             "href": url_for("comms_rooms"),
-            "meta": "全体会議室 / 初心者相談室",
+            "meta": "全体会議室 / 初心者相談室 / フィードバック",
         },
         {
             "title": "陣営通信",
@@ -22230,44 +22281,4 @@ def admin_parts_purge(part_id):
         session["message"] = (
             "危険一括削除を実行しました。"
             f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}

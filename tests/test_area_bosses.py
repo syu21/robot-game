@@ -465,6 +465,4 @@ class AreaBossTests(unittest.TestCase):
         self.assertNotIn("直近ドロップ", html)
         self.assertNotIn("エリアボス天井", html)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_layer2_main_route_keeps_baseline_bo

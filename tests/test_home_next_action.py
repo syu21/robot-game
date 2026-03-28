@@ -471,10 +471,12 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn('data-home-comms-tab-button="faction"', html)
         self.assertIn('data-home-comms-tab-button="personal"', html)
         self.assertIn('data-home-comms-room-button="beginner_room"', html)
+        self.assertIn('data-home-comms-room-button="feedback_room"', html)
         self.assertIn('data-home-comms-scroll-list="1"', html)
         self.assertIn('data-home-comms-max-visible="5"', html)
         self.assertIn("世界の動きや、他のロボ使いの声がここに流れます。", html)
         self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
+        self.assertIn("フィードバック", html)
         self.assertIn("初心者相談室のメッセージ", html)
         self.assertIn("進化成功", html)
         self.assertNotIn("?comm_tab=", html)
@@ -623,9 +625,4 @@ class HomeNextActionTests(unittest.TestCase):
             payload2 = json.loads(rows[1]["payload_json"] or "{}")
             battle_id_1 = (((payload1.get("result") or {}).get("battle_id")) or "")
             battle_id_2 = (((payload2.get("result") or {}).get("battle_id")) or "")
-            self.assertTrue(battle_id_1)
-            self.assertEqual(battle_id_1, battle_id_2)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.
