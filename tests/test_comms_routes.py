@@ -449,4 +449,23 @@ class CommsRoutesTests(unittest.TestCase):
             db.commit()
 
         client = self._client()
-        resp = client.get("
+        resp = client.get("/comms/personal")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
+        self.assertIn("パーツ入手", html)
+        self.assertIn("強化成功", html)
+        self.assertIn("ボス遭遇", html)
+        self.assertIn("探索勝利", html)
+        self.assertIn("ボス撃破", html)
+        self.assertIn("層解放", html)
+        self.assertIn("進化成功", html)
+        self.assertIn("招待条件達成", html)
+        self.assertIn("進化コア保証到達", html)
+        self.assertIn("個人ランキング", html)
+        self.assertIn("整備層ガーディアン", html)
+        self.assertIn("第3層が解放されました。", html)
+
+
+if __name__ == "__main__":
+    unittest.main()

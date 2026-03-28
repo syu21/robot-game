@@ -625,4 +625,9 @@ class HomeNextActionTests(unittest.TestCase):
             payload2 = json.loads(rows[1]["payload_json"] or "{}")
             battle_id_1 = (((payload1.get("result") or {}).get("battle_id")) or "")
             battle_id_2 = (((payload2.get("result") or {}).get("battle_id")) or "")
-            self.
+            self.assertTrue(battle_id_1)
+            self.assertEqual(battle_id_1, battle_id_2)
+
+
+if __name__ == "__main__":
+    unittest.main()

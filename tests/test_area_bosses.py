@@ -465,4 +465,24 @@ class AreaBossTests(unittest.TestCase):
         self.assertNotIn("直近ドロップ", html)
         self.assertNotIn("エリアボス天井", html)
 
-    def test_layer2_main_route_keeps_baseline_bo
+    def test_layer2_main_route_keeps_baseline_boss_spawn_rate(self):
+        self.assertEqual(game_app.AREA_BOSS_SPAWN_RATES["layer_1"], 0.005)
+        self.assertEqual(game_app.AREA_BOSS_SPAWN_RATES["layer_2"], 0.005)
+        self.assertEqual(game_app.AREA_BOSS_SPAWN_RATES["layer_2"], game_app.AREA_BOSS_SPAWN_RATES["layer_1"])
+
+    def test_low_layers_use_internal_soft_pity_without_touching_high_layers(self):
+        layer2_base = game_app._area_boss_spawn_profile("layer_2", 0)
+        layer2_soft = game_app._area_boss_spawn_profile("layer_2", game_app.AREA_BOSS_SOFT_PITY_STARTS["layer_2"])
+        layer2_route_soft = game_app._area_boss_spawn_profile("layer_2_mist", game_app.AREA_BOSS_SOFT_PITY_STARTS["layer_2"])
+        layer4_late = game_app._area_boss_spawn_profile("layer_4_forge", 500)
+
+        self.assertEqual(layer2_base["pity_misses"], game_app.AREA_BOSS_PITY_MISSES["layer_2"])
+        self.assertGreater(layer2_soft["probability"], layer2_base["probability"])
+        self.assertEqual(layer2_route_soft["progress_key"], "layer_2")
+        self.assertEqual(layer2_route_soft["pity_misses"], game_app.AREA_BOSS_PITY_MISSES["layer_2"])
+        self.assertGreater(layer2_route_soft["probability"], game_app.AREA_BOSS_SPAWN_RATES["layer_2_mist"])
+        self.assertEqual(layer4_late["probability"], game_app.AREA_BOSS_SPAWN_RATES["layer_4_forge"])
+
+
+if __name__ == "__main__":
+    unittest.main()
