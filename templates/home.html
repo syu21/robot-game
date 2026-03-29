@@ -209,7 +209,7 @@
                 <span class="slot-overflow-badge">超過 +{{ slot_overflow }}</span>
               {% endif %}
             </div>
-            <div class="upgrade-cost">パーツ在庫: {{ part_count }} / {{ limits['part_inventory'] }}</div>
+            <div class="upgrade-cost">パーツ在庫: 所持 {{ part_inventory_count }} / {{ limits['part_inventory'] }}{% if part_storage_count > 0 %} | 保管 {{ part_storage_count }}{% endif %}</div>
           </div>
         </div>
       {% else %}
@@ -224,13 +224,16 @@
         <div><b>今週のMVP</b></div>
         {% if weekly_mvp %}
         <div class="presence-user-line">
-          <span class="user-chip mini">
+          <span class="user-chip mini" data-presence-state="{{ weekly_mvp.get('presence_state', 'idle') }}" title="{{ weekly_mvp.get('presence_title', '') }}">
             <img class="avatar-48" src="{{ url_for('static', filename=weekly_mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
             <span class="badge-overlay">
               <img class="robot-badge-32" src="{{ url_for('static', filename=weekly_mvp['badge_path']) }}" alt="badge" loading="lazy" />
             </span>
           </span>
-          <span>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</span>
+          <div>
+            <div>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+            <div class="presence-mini-label">{{ weekly_mvp.get('presence_label', '探索待機中') }}</div>
+          </div>
         </div>
         {% if weekly_mvp['robot_name'] %}<div>{{ weekly_mvp['robot_name'] }}</div>{% endif %}
         {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
@@ -266,7 +269,10 @@
           aria-hidden="false"
         >
           <div class="home-comms-toolbar">
-            <div class="home-mini-log-time">世界の動きや、他のロボ使いの声がここに流れます。</div>
+            <div>
+              <div class="home-mini-log-time">世界の動きや、他のロボ使いの声がここに流れます。</div>
+              <div class="presence-mini-label">{{ home_active_user_line }}</div>
+            </div>
           </div>
           <form method="post" action="{{ url_for('chat') }}" class="home-chat-form" data-home-comms-submit="1">
             <input type="hidden" name="next" value="{{ url_for('home') }}#home-comms-world" />
@@ -296,7 +302,7 @@
                 <article class="card home-comms-item comms-message-card">
                   <div class="comms-message-head">
                     <div class="presence-user-line">
-                      <span class="user-chip mini">
+                      <span class="user-chip mini" data-presence-state="{{ item.get('presence_state', 'idle') }}" title="{{ item.get('presence_title', '') }}">
                         <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
                         <span class="badge-overlay">
                           <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
@@ -304,7 +310,7 @@
                       </span>
                       <div>
                         <div class="feed-user">{{ item['user_label'] }}</div>
-                        <div class="feed-kicker">PUBLIC SIGNAL</div>
+                        <div class="feed-kicker">PUBLIC SIGNAL · {{ item.get('presence_label', '探索待機中') }}</div>
                       </div>
                     </div>
                     <div class="feed-time">{{ item['time_jst'] }} JST</div>
@@ -336,7 +342,7 @@
               data-home-comms-hash="home-comms-rooms-{{ room['key'] }}"
               aria-selected="{% if loop.first %}true{% else %}false{% endif %}"
               aria-controls="home-comms-room-pane-{{ room['key'] }}"
-            >{{ room['title'] }}</button>
+            >{{ room['title'] }}{% if home_comm_room_activity_counts_by_key.get(room['key'], 0) %}<span class="comms-count-pill">{{ home_comm_room_activity_counts_by_key[room['key']] }}</span>{% endif %}</button>
             {% endfor %}
           </div>
           {% for room in home_comm_room_defs %}
@@ -352,7 +358,10 @@
             {% if not loop.first %}hidden{% endif %}
           >
             <div class="home-comms-toolbar">
-              <div class="home-mini-log-time">{{ room['summary'] }}</div>
+              <div>
+                <div class="home-mini-log-time">{{ room['summary'] }}</div>
+                <div class="presence-mini-label">{{ home_comm_room_activity_lines_by_key[room['key']] }}</div>
+              </div>
             </div>
             <form method="post" action="{{ url_for('comms_rooms') }}" class="post-form comms-room-form home-room-form" data-home-comms-submit="1">
               <input type="hidden" name="next" value="{{ url_for('home') }}#home-comms-rooms-{{ room['key'] }}" />
@@ -365,13 +374,16 @@
               <article class="card home-comms-item comms-message-card">
                 <div class="comms-message-head">
                   <div class="presence-user-line">
-                    <span class="user-chip mini">
+                    <span class="user-chip mini" data-presence-state="{{ item.get('presence_state', 'idle') }}" title="{{ item.get('presence_title', '') }}">
                       <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
                       <span class="badge-overlay">
                         <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
                       </span>
                     </span>
-                    <div class="feed-user">{{ item['user_label'] }}</div>
+                    <div>
+                      <div class="feed-user">{{ item['user_label'] }}</div>
+                      <div class="presence-mini-label">{{ item.get('presence_label', '探索待機中') }}</div>
+                    </div>
                   </div>
                   <div class="feed-time">{{ item['time_jst'] }} JST</div>
                 </div>
@@ -627,7 +639,7 @@
         {% for row in home_ranking_rows %}
           <div class="home-ranking-row">
             <div class="presence-user-line">
-              <span class="user-chip mini">
+              <span class="user-chip mini" data-presence-state="{{ row.get('presence_state', 'idle') }}" title="{{ row.get('presence_title', '') }}">
                 <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
                 <span class="badge-overlay">
                   <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />

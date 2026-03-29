@@ -236,6 +236,9 @@
       </div>
       {% endfor %}
     </div>
+    {% if summary.get('storage_notice') %}
+    <div class="battle-summary-row">{{ summary.get('storage_notice') }}</div>
+    {% endif %}
     {% elif summary.get('highlight_core_drop') %}
     <div class="battle-summary-row">{{ summary.get('core_reward_row_label', '獲得') }}: {{ summary.get('dropped_core_name', '進化コア') }} ×{{ summary.get('reward_core', 0) }}</div>
     {% else %}

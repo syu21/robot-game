@@ -213,6 +213,18 @@ STRIPE_PRICE_ID_EXPLORE_BOOST = (os.getenv("STRIPE_PRICE_ID_EXPLORE_BOOST") or "
 PORTAL_ONLINE_WINDOW_MINUTES = int(os.getenv("PORTAL_ONLINE_WINDOW_MINUTES", "5"))
 PORTAL_ONLINE_TIMEOUT_SECONDS = float(os.getenv("PORTAL_ONLINE_TIMEOUT_SECONDS", "5"))
 LAST_SEEN_TOUCH_INTERVAL_SECONDS = int(os.getenv("LAST_SEEN_TOUCH_INTERVAL_SECONDS", "60"))
+USER_PRESENCE_ACTIVE_WINDOW_MINUTES = max(
+    1,
+    int(os.getenv("USER_PRESENCE_ACTIVE_WINDOW_MINUTES", str(PORTAL_ONLINE_WINDOW_MINUTES))),
+)
+USER_PRESENCE_WARM_WINDOW_MINUTES = max(
+    USER_PRESENCE_ACTIVE_WINDOW_MINUTES + 1,
+    int(os.getenv("USER_PRESENCE_WARM_WINDOW_MINUTES", "60")),
+)
+COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
+    5,
+    int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
+)
 SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
 SUPPORT_PACK_DECOR_KEY = "supporter_emblem_001"
 EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
@@ -397,6 +409,12 @@ PART_TYPE_TITLES_JA = {
     "right_arm": "右腕",
     "left_arm": "左腕",
     "legs": "脚部",
+}
+PART_TYPE_FILTER_LABELS_JA = {
+    "HEAD": "頭",
+    "RIGHT_ARM": "右腕",
+    "LEFT_ARM": "左腕",
+    "LEGS": "脚",
 }
 PART_RARITY_SUFFIX_JA = {
     "N": "",
@@ -1414,6 +1432,80 @@ def count_online_users(db, window_minutes=PORTAL_ONLINE_WINDOW_MINUTES, now_ts=N
 def count_active_users(db, window_minutes=PORTAL_ONLINE_WINDOW_MINUTES, now_ts=None):
     """Compatibility helper: active users within recent window."""
     return count_online_users(db=db, window_minutes=window_minutes, now_ts=now_ts)
+
+
+def _user_presence_snapshot(last_seen_at, *, now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    seen_ts = int(last_seen_at or 0)
+    active_window_seconds = max(60, int(USER_PRESENCE_ACTIVE_WINDOW_MINUTES) * 60)
+    warm_window_seconds = max(
+        active_window_seconds + 60,
+        int(USER_PRESENCE_WARM_WINDOW_MINUTES) * 60,
+    )
+    if seen_ts > 0:
+        age_seconds = max(0, int(now) - int(seen_ts))
+        if age_seconds <= active_window_seconds:
+            label = f"最近{int(USER_PRESENCE_ACTIVE_WINDOW_MINUTES)}分で活動中"
+            return {
+                "state": "active",
+                "label": label,
+                "title": f"{label}のロボ使い",
+            }
+        if age_seconds <= warm_window_seconds:
+            return {
+                "state": "warm",
+                "label": "少し前まで動いていた",
+                "title": "少し前まで基地で動いていたロボ使い",
+            }
+    return {
+        "state": "idle",
+        "label": "探索待機中",
+        "title": "いまは静かに待機中のロボ使い",
+    }
+
+
+def _active_users_summary_line(active_count, *, window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES):
+    return f"最近{int(window_minutes)}分で{int(active_count)}人が活動中"
+
+
+def _room_activity_summary_line(participant_count, *, window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES):
+    return f"最近{int(window_minutes)}分で{int(participant_count)}人が発言"
+
+
+def _chat_recent_participant_count(db, room_keys=None, *, window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES, now_ts=None):
+    now_value = _now_ts() if now_ts is None else int(now_ts)
+    cutoff_text = time.strftime(
+        "%Y-%m-%d %H:%M:%S",
+        time.localtime(int(now_value) - max(60, int(window_minutes) * 60)),
+    )
+    normalized_keys = []
+    for raw_key in (room_keys or (COMM_WORLD_ROOM_KEY,)):
+        key = _chat_normalize_room_key(raw_key) or COMM_WORLD_ROOM_KEY
+        if key not in normalized_keys:
+            normalized_keys.append(key)
+    placeholders = ", ".join("?" for _ in normalized_keys)
+    row = db.execute(
+        f"""
+        SELECT COUNT(DISTINCT user_id) AS c
+        FROM chat_messages
+        WHERE COALESCE(room_key, ?) IN ({placeholders})
+          AND deleted_at IS NULL
+          AND user_id IS NOT NULL
+          AND UPPER(COALESCE(username, '')) != 'SYSTEM'
+          AND created_at >= ?
+        """,
+        (COMM_WORLD_ROOM_KEY, *normalized_keys, cutoff_text),
+    ).fetchone()
+    return int((row["c"] if row else 0) or 0)
+
+
+def _chat_room_recent_participant_count(db, room_key, *, window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES, now_ts=None):
+    return _chat_recent_participant_count(
+        db,
+        [room_key],
+        window_minutes=window_minutes,
+        now_ts=now_ts,
+    )
 
 
 def _portal_online_endpoint():
@@ -3038,6 +3130,166 @@ def _part_display_name_ja(part_row_or_key, rarity=None, element=None, part_type=
         part_type=part_type,
     )
     return generated or key
+
+
+PART_STAT_KEYS = ("hp", "atk", "def", "spd", "acc", "cri")
+PART_IMAGE_PATH_ALIASES = {
+    "parts/head/head_normal.png": "parts/head/head_n_normal.png",
+    "parts/right_arm/right_arm_normal.png": "parts/right_arm/right_arm_n_normal.png",
+    "parts/left_arm/left_arm_normal.png": "parts/left_arm/left_arm_n_normal.png",
+    "parts/legs/legs_normal.png": "parts/legs/legs_n_normal.png",
+}
+
+
+def _normalize_part_type_filter(raw_value):
+    key = _norm_part_type(str(raw_value or "").strip().upper())
+    return key if key in PART_TYPE_FILTER_LABELS_JA else ""
+
+
+def _part_type_ui_label(part_type):
+    norm = _normalize_part_type_filter(part_type)
+    if norm:
+        return PART_TYPE_FILTER_LABELS_JA[norm]
+    return str(part_type or "パーツ")
+
+
+def _part_type_filter_rows(selected_part_type, endpoint, *, extra_params=None):
+    params = {
+        str(key): value
+        for key, value in (extra_params or {}).items()
+        if value not in (None, "")
+    }
+    rows = []
+    for key, label in (("", "すべて"), *PART_TYPE_FILTER_LABELS_JA.items()):
+        next_params = dict(params)
+        next_params.pop("page", None)
+        if key:
+            next_params["part_type"] = key
+        else:
+            next_params.pop("part_type", None)
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "is_active": selected_part_type == key,
+                "url": url_for(endpoint, **next_params),
+            }
+        )
+    return rows
+
+
+def _part_total_value(stat_map):
+    stats = stat_map or {}
+    return sum(int(stats.get(key) or 0) for key in PART_STAT_KEYS)
+
+
+def _delta_text(delta_value):
+    delta = int(delta_value or 0)
+    if delta > 0:
+        return f"+{delta}"
+    if delta < 0:
+        return str(delta)
+    return "±0"
+
+
+def _part_stat_rows(stats, compare_stats=None, *, focus_limit=2):
+    stat_map = stats or {}
+    compare_map = compare_stats or {}
+    focus_keys = {
+        row["key"] for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(focus_limit or 2)))
+    }
+    rows = []
+    for key in PART_STAT_KEYS:
+        value = int(stat_map.get(key) or 0)
+        after_value = None
+        delta = None
+        delta_text = None
+        delta_class = ""
+        if compare_stats is not None:
+            after_value = int(compare_map.get(key) or 0)
+            delta = int(after_value - value)
+            delta_text = _delta_text(delta)
+            if delta > 0:
+                delta_class = "up"
+            elif delta < 0:
+                delta_class = "down"
+            else:
+                delta_class = "flat"
+        rows.append(
+            {
+                "key": key,
+                "label": _stat_label(key),
+                "value": value,
+                "after_value": after_value,
+                "delta": delta,
+                "delta_text": delta_text,
+                "delta_class": delta_class,
+                "is_focus": key in focus_keys,
+            }
+        )
+    return rows
+
+
+def _part_image_candidates(image_path):
+    raw = str(image_path or "").strip().replace("\\", "/").lstrip("/")
+    if not raw:
+        return []
+    aliased = PART_IMAGE_PATH_ALIASES.get(raw)
+    rels = []
+    if aliased and aliased != raw:
+        rels.append(f"robot_assets/{aliased}")
+    rels.append(f"robot_assets/{raw}")
+    seen = set()
+    out = []
+    for rel in rels:
+        if rel not in seen:
+            seen.add(rel)
+            out.append(rel)
+    return out
+
+
+def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
+    item = dict(part_row)
+    status_key = str(item.get("status") or "inventory").strip().lower()
+    stats = compute_part_stats(item)
+    item["display_name"] = _part_display_name_ja(item)
+    item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
+    item["rarity_label"] = str(item.get("rarity") or "N").upper()
+    item["status_key"] = status_key
+    item["is_equipped"] = status_key == "equipped"
+    item["is_inventory"] = status_key == "inventory"
+    item["is_overflow"] = status_key == "overflow"
+    item["can_discard"] = (status_key == "inventory") if can_discard is None else bool(can_discard)
+    if item["is_equipped"]:
+        item["status_label"] = "装備中"
+    elif item["is_overflow"]:
+        item["status_label"] = "保管中"
+    else:
+        item["status_label"] = "所持中"
+    if item["is_inventory"]:
+        item["material_hint"] = "強化素材に使える"
+    elif item["is_overflow"]:
+        item["material_hint"] = "所持枠がいっぱいのため保管中"
+    else:
+        item["material_hint"] = "今は素材に使えない"
+    item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
+    item["stats"] = stats
+    item["total_value"] = int(_part_total_value(stats))
+    item["focus_rows"] = _robot_focus_stat_rows(stats, limit=2)
+    item["focus_line"] = " / ".join(row["label"] for row in item["focus_rows"])
+    item["extreme_title"] = _extract_part_extreme_title(item)
+    compare_stats = None
+    if compare_row:
+        compare_item = dict(compare_row)
+        compare_stats = compute_part_stats(compare_item)
+        item["compare_display_name"] = _part_display_name_ja(compare_item)
+        item["compare_image_url"] = url_for("static", filename=_part_image_rel(compare_item), v=APP_VERSION)
+        item["compare_stats"] = compare_stats
+        item["compare_total_value"] = int(_part_total_value(compare_stats))
+        item["compare_total_delta"] = int(item["compare_total_value"] - item["total_value"])
+        item["compare_total_delta_text"] = _delta_text(item["compare_total_delta"])
+    item["stat_rows"] = _part_stat_rows(stats, compare_stats)
+    return item
 
 
 def _backfill_part_display_names(db):
@@ -4834,11 +5086,13 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
     for item in (drop_items or []):
         name = (item.get("part_display_name") or item.get("part_key") or "不明パーツ").strip()
         plus = int(item.get("plus") or 0)
-        label = f"{name} +{plus}"
+        storage_suffix = "（保管）" if str(item.get("storage_status") or "").strip().lower() == "overflow" else ""
+        label = f"{name} +{plus}{storage_suffix}"
         drop_counter[label] += 1
         row_key = (
             item.get("part_key") or name,
             plus,
+            storage_suffix,
             item.get("image_url") or "",
             name,
         )
@@ -6795,10 +7049,10 @@ def _seed_robot_assets_v2(db):
 
 def _repair_legacy_starter_part_rows(db):
     updates = [
-        ("head_1", "parts/head/head_normal.png", "HEAD"),
-        ("r_arm_1", "parts/right_arm/right_arm_normal.png", "RIGHT_ARM"),
-        ("l_arm_1", "parts/left_arm/left_arm_normal.png", "LEFT_ARM"),
-        ("legs_1", "parts/legs/legs_normal.png", "LEGS"),
+        ("head_1", "parts/head/head_n_normal.png", "HEAD"),
+        ("r_arm_1", "parts/right_arm/right_arm_n_normal.png", "RIGHT_ARM"),
+        ("l_arm_1", "parts/left_arm/left_arm_n_normal.png", "LEFT_ARM"),
+        ("legs_1", "parts/legs/legs_n_normal.png", "LEGS"),
     ]
     changed = 0
     for key, image_path, part_type in updates:
@@ -6874,15 +7128,71 @@ def _ensure_qol_entitlement(db, user_id):
 
 
 def _count_part_inventory(db, user_id):
-    c1 = db.execute(
-        "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()["c"]
-    c2 = db.execute(
-        "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
-        (user_id,),
-    ).fetchone()["c"]
-    return c1 + c2
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
+            (user_id,),
+        ).fetchone()["c"]
+        or 0
+    )
+
+
+def _count_part_overflow(db, user_id):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'overflow'",
+            (user_id,),
+        ).fetchone()["c"]
+        or 0
+    )
+
+
+def _count_part_legacy_storage(db, user_id):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()["c"]
+        or 0
+    )
+
+
+def _part_storage_snapshot(db, user_id):
+    inventory_count = _count_part_inventory(db, user_id)
+    overflow_count = _count_part_overflow(db, user_id)
+    legacy_count = _count_part_legacy_storage(db, user_id)
+    return {
+        "inventory_count": int(inventory_count),
+        "overflow_count": int(overflow_count),
+        "legacy_count": int(legacy_count),
+        "storage_count": int(overflow_count + legacy_count),
+    }
+
+
+def _inventory_space_remaining(db, user_id, user_row=None):
+    if user_row is None:
+        user_row = db.execute(
+            "SELECT id, part_inventory_limit FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if not user_row:
+        return 0
+    limit = int(user_row["part_inventory_limit"] or 0)
+    used = _count_part_inventory(db, user_id)
+    return max(0, limit - used)
+
+
+def _next_part_instance_status(db, user_id, user_row=None):
+    return "inventory" if _inventory_space_remaining(db, user_id, user_row=user_row) > 0 else "overflow"
+
+
+def _return_part_instance_to_pool(db, user_id, part_instance_id, user_row=None):
+    next_status = _next_part_instance_status(db, user_id, user_row=user_row)
+    db.execute(
+        "UPDATE part_instances SET status = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        (next_status, int(part_instance_id), int(user_id)),
+    )
+    return next_status
 
 
 def _effective_limits(db, user):
@@ -6964,8 +7274,17 @@ def _add_part_drop(
     else:
         part = _get_part_by_key(db, part_key)
 
-    if as_instance and part:
-        pi_id = _create_part_instance_from_master(db, user_id, part, plus=int(plus), area_key=area_key)
+    create_as_instance = bool(as_instance or source == "battle_drop")
+    if create_as_instance and part:
+        storage_status = _next_part_instance_status(db, user_id)
+        pi_id = _create_part_instance_from_master(
+            db,
+            user_id,
+            part,
+            plus=int(plus),
+            area_key=area_key,
+            status=storage_status,
+        )
         tendency = _area_growth_tendency(area_key)
         if announce_username:
             pi_row = db.execute("SELECT * FROM part_instances WHERE id = ?", (pi_id,)).fetchone()
@@ -6978,6 +7297,7 @@ def _add_part_drop(
             "plus": int(plus),
             "part_instance_id": pi_id,
             "source": source,
+            "storage_status": storage_status,
             "growth_tendency_key": (tendency.get("key") if tendency else None),
             "growth_tendency_label": (tendency.get("label") if tendency else None),
         }
@@ -7001,6 +7321,7 @@ def _drop_audit_payload(area_key, battle_no, dropped_part):
         "part_key": row.get("part_key"),
         "rarity": row.get("rarity"),
         "plus": row.get("plus"),
+        "storage_status": row.get("storage_status"),
         "growth_tendency_key": row.get("growth_tendency_key"),
         "growth_tendency_label": row.get("growth_tendency_label"),
     }
@@ -7301,17 +7622,20 @@ def _norm_part_type(part_type):
     return part_type
 
 
-def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=None):
+def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=None, status="inventory"):
     ptype = _norm_part_type(part_row["part_type"])
     weights = generate_noisy_weights(ptype, bias=_area_weight_bias(area_key))
     rarity = (part_row["rarity"] or "N").upper()
     element = (part_row["element"] or "NORMAL").upper()
     series = part_row["series"] or "S1"
+    status_key = str(status or "inventory").strip().lower()
+    if status_key not in {"inventory", "equipped", "overflow"}:
+        status_key = "inventory"
     cur = db.execute(
         """
         INSERT INTO part_instances
         (part_id, user_id, part_type, rarity, element, series, plus, w_hp, w_atk, w_def, w_spd, w_acc, w_cri, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'inventory', ?, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         """,
         (
             part_row["id"],
@@ -7327,6 +7651,7 @@ def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=No
             weights["w_spd"],
             weights["w_acc"],
             weights["w_cri"],
+            status_key,
             int(time.time()),
         ),
     )
@@ -7364,7 +7689,8 @@ def _take_or_materialize_part_instance(db, user_id, part_key):
     part = _get_part_by_key(db, part_key)
     if not part:
         return None
-    pi_id = _create_part_instance_from_master(db, user_id, part, plus=0)
+    storage_status = _next_part_instance_status(db, user_id)
+    pi_id = _create_part_instance_from_master(db, user_id, part, plus=0, status=storage_status)
     db.execute("DELETE FROM user_parts_inventory WHERE id = ?", (inv["id"],))
     return pi_id
 
@@ -9778,11 +10104,13 @@ def _part_image_rel(part_row):
     row_keys = part_row.keys() if hasattr(part_row, "keys") else []
     image_path = part_row["image_path"] if "image_path" in row_keys else None
     part_key = part_row["key"] if "key" in row_keys else image_path
-    rel = _safe_static_rel(
-        f"robot_assets/{image_path}" if image_path else "",
-        warn_key=("part:" + str(part_key)) if image_path else None,
-    )
-    return rel or "enemies/_placeholder.png"
+    for rel_path in _part_image_candidates(image_path):
+        rel = _safe_static_rel(rel_path)
+        if rel:
+            return rel
+    if image_path:
+        _warn_missing_asset_once("part:" + str(part_key), detail=f"robot_assets/{image_path}")
+    return "enemies/_placeholder.png"
 
 
 def _generate_robot_badge_from_composed(composed_rel_path, out_abs_path):
@@ -9946,13 +10274,26 @@ def _user_badge_rel(db, user_id):
 def _user_visuals(db, user_id, cache):
     if user_id in cache:
         return cache[user_id]
-    user = db.execute("SELECT id, avatar_path FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute(
+        "SELECT id, avatar_path, last_seen_at FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    presence = _user_presence_snapshot(user["last_seen_at"] if user else 0)
     if not user:
-        cache[user_id] = {"avatar": DEFAULT_AVATAR_REL, "badge": DEFAULT_BADGE_REL}
+        cache[user_id] = {
+            "avatar": DEFAULT_AVATAR_REL,
+            "badge": DEFAULT_BADGE_REL,
+            "presence_state": presence["state"],
+            "presence_label": presence["label"],
+            "presence_title": presence["title"],
+        }
     else:
         cache[user_id] = {
             "avatar": _user_avatar_rel(user),
             "badge": _user_badge_rel(db, user_id),
+            "presence_state": presence["state"],
+            "presence_label": presence["label"],
+            "presence_title": presence["title"],
         }
     return cache[user_id]
 
@@ -9967,9 +10308,16 @@ def _decorate_user_rows(db, rows, user_key="user_id"):
             visuals = _user_visuals(db, user_id, cache)
             item["avatar_path"] = visuals["avatar"]
             item["badge_path"] = visuals["badge"]
+            item["presence_state"] = visuals["presence_state"]
+            item["presence_label"] = visuals["presence_label"]
+            item["presence_title"] = visuals["presence_title"]
         else:
+            presence = _user_presence_snapshot(0)
             item["avatar_path"] = DEFAULT_AVATAR_REL
             item["badge_path"] = DEFAULT_BADGE_REL
+            item["presence_state"] = presence["state"]
+            item["presence_label"] = presence["label"]
+            item["presence_title"] = presence["title"]
         decorated.append(item)
     return decorated
 
@@ -10987,6 +11335,9 @@ def _weekly_mvp_snapshot(db, week_key):
         "robot_image_url": image_url,
         "avatar_path": visuals["avatar"],
         "badge_path": visuals["badge"],
+        "presence_state": visuals["presence_state"],
+        "presence_label": visuals["presence_label"],
+        "presence_title": visuals["presence_title"],
     }
 
 
@@ -11098,6 +11449,9 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
                     "image_url": row.get("image_url"),
                     "profile": row.get("profile"),
+                    "presence_state": row.get("presence_state", "idle"),
+                    "presence_label": row.get("presence_label", "探索待機中"),
+                    "presence_title": row.get("presence_title", "いまは静かに待機中のロボ使い"),
                 }
             )
         else:
@@ -11112,6 +11466,9 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "user_id": int(row["id"]),
                     "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                    "presence_state": row.get("presence_state", "idle"),
+                    "presence_label": row.get("presence_label", "探索待機中"),
+                    "presence_title": row.get("presence_title", "いまは静かに待機中のロボ使い"),
                 }
             )
     return {
@@ -11160,6 +11517,9 @@ def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
                 "badge_path": visuals["badge"],
+                "presence_state": visuals.get("presence_state", "idle"),
+                "presence_label": visuals.get("presence_label", "探索待機中"),
+                "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
             }
         )
     return out
@@ -11199,6 +11559,9 @@ def _first_explore_record_rows(db, area_keys=None, *, user_row=None, user_id=Non
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
                 "badge_path": visuals["badge"],
+                "presence_state": visuals.get("presence_state", "idle"),
+                "presence_label": visuals.get("presence_label", "探索待機中"),
+                "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
             }
         )
     return out
@@ -11237,6 +11600,9 @@ def _first_evolve_record_rows(db):
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
                 "badge_path": visuals["badge"],
+                "presence_state": visuals.get("presence_state", "idle"),
+                "presence_label": visuals.get("presence_label", "探索待機中"),
+                "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
             }
         )
     return out
@@ -11260,6 +11626,9 @@ def _record_showcase_highlights(db, user_id):
                 "image_url": row.get("image_url"),
                 "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
                 "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                "presence_state": row.get("presence_state", "idle"),
+                "presence_label": row.get("presence_label", "探索待機中"),
+                "presence_title": row.get("presence_title", "いまは静かに待機中のロボ使い"),
             }
         )
     return highlights
@@ -12038,6 +12407,9 @@ def _world_user_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "presence_state": row.get("presence_state") or "idle",
+                "presence_label": row.get("presence_label") or "探索待機中",
+                "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
             }
         )
     return items
@@ -12094,6 +12466,9 @@ def _home_world_user_message_items(db, limit=HOME_COMM_PREVIEW_LIMIT):
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "presence_state": row.get("presence_state") or "idle",
+                "presence_label": row.get("presence_label") or "探索待機中",
+                "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
             }
         )
     return items
@@ -12130,6 +12505,9 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "presence_state": row.get("presence_state") or "idle",
+                "presence_label": row.get("presence_label") or "探索待機中",
+                "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
             }
         )
     return items
@@ -12691,11 +13069,9 @@ def _equip_main_admin_fire_loadout(db, user_id, robot_id):
         if col in parts.keys() and parts[col]
     ]
     if current_ids:
-        placeholders = ",".join(["?"] * len(current_ids))
-        db.execute(
-            f"UPDATE part_instances SET status = 'inventory', updated_at = datetime('now') WHERE id IN ({placeholders})",
-            current_ids,
-        )
+        user_row = db.execute("SELECT id, part_inventory_limit FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        for part_instance_id in current_ids:
+            _return_part_instance_to_pool(db, int(user_id), int(part_instance_id), user_row=user_row)
     selected = {
         "head": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["head"]),
         "r_arm": _select_owned_part_instance_id(db, user_id, MAIN_ADMIN_FIRE_LOADOUT["r_arm"]),
@@ -14451,7 +14827,9 @@ def home():
         (user["id"],),
     ).fetchone()["c"]
     has_any_robot = int(instance_count or 0) > 0
-    part_count = _count_part_inventory(db, user["id"])
+    part_storage = _part_storage_snapshot(db, user["id"])
+    part_inventory_count = int(part_storage["inventory_count"])
+    part_storage_count = int(part_storage["storage_count"])
     limits = _effective_limits(db, user)
     _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
     showcase_rows = _showcase_rows(db, user["id"])
@@ -14564,9 +14942,32 @@ def home():
         }
     home_comm_initial_tab = "world"
     home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
+    home_active_user_count = count_active_users(
+        db,
+        window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+    )
+    home_active_user_line = _active_users_summary_line(
+        home_active_user_count,
+        window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+    )
     home_comm_world_settings = _chat_room_settings(COMM_WORLD_ROOM_KEY)
     home_comm_room_settings_by_key = {
         room["key"]: _chat_room_settings(room["key"])
+        for room in COMM_ROOM_DEFS
+    }
+    home_comm_room_activity_counts_by_key = {
+        room["key"]: _chat_room_recent_participant_count(
+            db,
+            room["key"],
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        )
+        for room in COMM_ROOM_DEFS
+    }
+    home_comm_room_activity_lines_by_key = {
+        room["key"]: _room_activity_summary_line(
+            home_comm_room_activity_counts_by_key.get(room["key"], 0),
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        )
         for room in COMM_ROOM_DEFS
     }
     home_comm_world_items = _home_world_timeline_items(
@@ -14723,7 +15124,9 @@ def home():
             limits=limits,
             instance_count=instance_count,
             has_any_robot=has_any_robot,
-            part_count=part_count,
+            part_count=part_inventory_count,
+            part_inventory_count=part_inventory_count,
+            part_storage_count=part_storage_count,
             milestones=milestones,
             showcase_rows=showcase_rows,
             main_robot=main_robot,
@@ -14817,8 +15220,11 @@ def home():
             home_comm_room_defs=COMM_ROOM_DEFS,
             home_comm_initial_tab=home_comm_initial_tab,
             home_comm_initial_room_key=home_comm_initial_room_key,
+            home_active_user_line=home_active_user_line,
             home_comm_world_settings=home_comm_world_settings,
             home_comm_room_settings_by_key=home_comm_room_settings_by_key,
+            home_comm_room_activity_counts_by_key=home_comm_room_activity_counts_by_key,
+            home_comm_room_activity_lines_by_key=home_comm_room_activity_lines_by_key,
             home_comm_world_items=home_comm_world_items,
             home_comm_room_items_by_key=home_comm_room_items_by_key,
             home_comm_personal_items=home_comm_personal_items,
@@ -15138,20 +15544,36 @@ def comms():
     if not user:
         return redirect(url_for("login"))
     personal_items = _personal_log_items(db, int(user["id"]), limit=5)
+    active_user_count = count_active_users(
+        db,
+        window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+    )
+    room_participant_count = _chat_recent_participant_count(
+        db,
+        [room["key"] for room in COMM_ROOM_DEFS],
+        window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+    )
     sections = [
         {
             "title": "世界ログ",
             "summary": "世界の動きや、他のロボ使いの声がここに流れます。",
             "status": "稼働中",
             "href": url_for("comms_world"),
-            "meta": f"直近 {COMM_WORLD_TIMELINE_LIMIT} 件 / {COMM_AUTO_REFRESH_SECONDS} 秒ごと自動更新",
+            "meta": (
+                f"直近 {COMM_WORLD_TIMELINE_LIMIT} 件 / "
+                f"{COMM_AUTO_REFRESH_SECONDS} 秒ごと自動更新 / "
+                f"{_active_users_summary_line(active_user_count, window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES)}"
+            ),
         },
         {
             "title": "会議室",
             "summary": "ロボ使いたちが集まって話せる場所です。",
             "status": "稼働中",
             "href": url_for("comms_rooms"),
-            "meta": "全体会議室 / 初心者相談室 / フィードバック",
+            "meta": (
+                "全体会議室 / 初心者相談室 / フィードバック / "
+                f"{_room_activity_summary_line(room_participant_count, window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES)}"
+            ),
         },
         {
             "title": "陣営通信",
@@ -15191,11 +15613,19 @@ def comms_world():
         limit=COMM_WORLD_TIMELINE_LIMIT,
         is_admin=bool(int(user["is_admin"] or 0) == 1),
     )
+    active_user_count = count_active_users(
+        db,
+        window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+    )
     return render_template(
         "comms_world.html",
         items=items,
         world_settings=_chat_room_settings(COMM_WORLD_ROOM_KEY),
         auto_refresh_seconds=COMM_AUTO_REFRESH_SECONDS,
+        active_user_line=_active_users_summary_line(
+            active_user_count,
+            window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+        ),
         message=session.pop("message", None),
     )
 
@@ -15217,6 +15647,14 @@ def comms_rooms():
             room_key=selected_room_key,
             surface="comms_room",
         )
+    room_activity_counts_by_key = {
+        room["key"]: _chat_room_recent_participant_count(
+            db,
+            room["key"],
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        )
+        for room in COMM_ROOM_DEFS
+    }
     return render_template(
         "comms_rooms.html",
         room_defs=COMM_ROOM_DEFS,
@@ -15225,6 +15663,11 @@ def comms_rooms():
         room_items=_room_message_items(db, selected_room_key, limit=COMM_ROOM_TIMELINE_LIMIT),
         room_settings=_chat_room_settings(selected_room_key),
         auto_refresh_seconds=COMM_AUTO_REFRESH_SECONDS,
+        room_activity_counts_by_key=room_activity_counts_by_key,
+        room_activity_line=_room_activity_summary_line(
+            room_activity_counts_by_key.get(selected_room_key, 0),
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        ),
         message=session.pop("message", None),
     )
 
@@ -15470,8 +15913,8 @@ def parts_discard():
             [session["user_id"], *part_keys],
         )
         db.commit()
-        session["message"] = f"{cur.rowcount} 件の旧在庫パーツを破棄しました。"
-        return redirect(url_for("parts", tab="legacy"))
+        session["message"] = f"{cur.rowcount} 件の保管パーツを整理しました。"
+        return redirect(url_for("parts"))
 
     part_ids = request.form.getlist("part_ids")
     single_id = request.form.get("part_id")
@@ -15493,6 +15936,62 @@ def parts_discard():
     db.commit()
     session["message"] = f"{cur.rowcount} 件のパーツを破棄しました。"
     return redirect(url_for("parts"))
+
+
+@app.route("/parts/restore", methods=["POST"])
+@login_required
+def parts_restore():
+    db = get_db()
+    user_id = int(session["user_id"])
+    selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    redirect_params = {"part_type": selected_part_type} if selected_part_type else {}
+    overflow_instance_ids = [pid for pid in request.form.getlist("overflow_instance_ids") if pid.isdigit()]
+    if not overflow_instance_ids:
+        session["message"] = "所持へ戻す保管個体を選択してください。"
+        return redirect(url_for("parts", **redirect_params))
+
+    user_row = db.execute(
+        "SELECT id, part_inventory_limit FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
+    if remaining <= 0:
+        session["message"] = "所持枠がいっぱいです。先に所持中パーツを整理してください。"
+        return redirect(url_for("parts", **redirect_params))
+
+    placeholders = ",".join(["?"] * len(overflow_instance_ids))
+    rows = db.execute(
+        f"""
+        SELECT id
+        FROM part_instances
+        WHERE user_id = ? AND status = 'overflow' AND id IN ({placeholders})
+        ORDER BY id ASC
+        """,
+        [user_id, *[int(pid) for pid in overflow_instance_ids]],
+    ).fetchall()
+    if not rows:
+        session["message"] = "戻せる保管個体が見つかりませんでした。"
+        return redirect(url_for("parts", **redirect_params))
+
+    restored = 0
+    for row in rows:
+        if restored >= remaining:
+            break
+        cur = db.execute(
+            "UPDATE part_instances SET status = 'inventory', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'overflow'",
+            (int(row["id"]), user_id),
+        )
+        restored += int(cur.rowcount or 0)
+    db.commit()
+
+    total_rows = len(rows)
+    if restored <= 0:
+        session["message"] = "所持枠が足りず、保管個体を戻せませんでした。"
+    elif restored < total_rows:
+        session["message"] = f"{restored} 件を所持へ戻しました。残り {total_rows - restored} 件は保管のままです。"
+    else:
+        session["message"] = f"{restored} 件を所持へ戻しました。"
+    return redirect(url_for("parts", **redirect_params))
 
 
 def _ensure_battle_state(db, user_id):
@@ -15663,7 +16162,10 @@ def _perform_battle_attack(db, user_id, user, state, now):
         )
         part_drop = _add_part_drop(db, user_id, source="battle_drop")
         if part_drop:
-            drop_labels.append(f"{part_drop['part_type']} {part_drop['part_key']}")
+            label_suffix = "（保管）" if str(part_drop.get("storage_status") or "").strip().lower() == "overflow" else ""
+            drop_labels.append(f"{part_drop['part_type']} {part_drop['part_key']}{label_suffix}")
+            if label_suffix:
+                message = "所持がいっぱいだったため、戦利品は保管へ送りました。"
         got_robot, new_robot = _add_robot_if_lucky(db, user_id)
         if got_robot and new_robot is not None:
             session["new_robot"] = {
@@ -15683,12 +16185,6 @@ def _perform_battle_attack(db, user_id, user, state, now):
             "UPDATE battle_state SET active = 0, enemy_name = '', enemy_hp = 0 WHERE user_id = ?",
             (user_id,),
         )
-        user_row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-        limits = _effective_limits(db, user_row)
-        part_count = _count_part_inventory(db, user_id)
-        if part_count > limits["part_inventory"]:
-            message = "パーツ在庫が上限超過です。分解/破棄で整理してください。"
-
     lines = generate_exploration_log(
         narrator["name"],
         narrator["personality"],
@@ -15976,6 +16472,7 @@ def explore():
     crit_finisher_kills = 0
     consecutive_bonus_applied = False
     suppressed_part_drop_count = 0
+    overflow_part_drop_count = 0
     total_fights = 1
     if weekly_mode == "暴走" and random.random() < 0.25:
         total_fights = 2
@@ -16559,7 +17056,10 @@ def explore():
             for p in rewards["dropped_parts"]:
                 part_row_for_label = _get_part_by_key(db, p.get("part_key")) if p.get("part_key") else None
                 part_display_name = _part_display_name_ja(part_row_for_label) if part_row_for_label else p.get("part_key")
-                drop_labels.append(f"{p['rarity']} {p['part_type']} {part_display_name} +{p['plus']}")
+                storage_suffix = "（保管）" if str(p.get("storage_status") or "").strip().lower() == "overflow" else ""
+                if storage_suffix:
+                    overflow_part_drop_count += 1
+                drop_labels.append(f"{p['rarity']} {p['part_type']} {part_display_name} +{p['plus']}{storage_suffix}")
                 audit_log(
                     db,
                     AUDIT_EVENT_TYPES["DROP"],
@@ -17199,6 +17699,11 @@ def explore():
         "core_reward_subline": core_reward_subline,
         "core_reward_row_label": core_reward_row_label,
         "dropped_parts": drop_labels,
+        "storage_notice": (
+            f"所持がいっぱいだったため、{int(overflow_part_drop_count)}件を保管へ送りました。"
+            if overflow_part_drop_count > 0
+            else None
+        ),
         "player_final_hp": player_hp,
         "player_max_hp": player_max_hp,
         "enemy_name": (last_enemy["name_ja"] if last_enemy else "謎の敵"),
@@ -17639,9 +18144,10 @@ def robot_instance_decompose(instance_id):
     ).fetchone()
     restored = 0
     restored_ids = []
+    user_row = db.execute("SELECT id, part_inventory_limit FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     for col in ("head_part_instance_id", "r_arm_part_instance_id", "l_arm_part_instance_id", "legs_part_instance_id"):
         if col in rip.keys() and rip[col]:
-            db.execute("UPDATE part_instances SET status = 'inventory' WHERE id = ?", (rip[col],))
+            _return_part_instance_to_pool(db, session["user_id"], rip[col], user_row=user_row)
             restored += 1
             restored_ids.append(int(rip[col]))
     if restored == 0:
@@ -17828,6 +18334,13 @@ def build():
             "cri": 0,
         }
         item["estimate_element"] = (preview_payload.get("element") or "NORMAL").upper()
+        card = _part_card_payload(item, can_discard=False)
+        item["part_type_label"] = card["part_type_label"]
+        item["stat_rows"] = card["stat_rows"]
+        item["focus_rows"] = card["focus_rows"]
+        item["focus_line"] = card["focus_line"]
+        item["total_value"] = card["total_value"]
+        item["extreme_title"] = card["extreme_title"]
         part_groups[row["part_type"]].append(item)
 
     slot_param_map = {
@@ -17836,7 +18349,11 @@ def build():
         "LEFT_ARM": "l_arm_key",
         "LEGS": "legs_key",
     }
-    missing_part_types = [part_type for part_type in slot_param_map.keys() if not part_groups[part_type]]
+    missing_part_types = [
+        _part_type_ui_label(part_type)
+        for part_type in slot_param_map.keys()
+        if not part_groups[part_type]
+    ]
     selected_slot_values = {}
     selected_parts = {}
     selected_payloads = []
@@ -17986,7 +18503,7 @@ def build_confirm():
         if choice.isdigit():
             row = db.execute(
                 """
-                SELECT pi.id, rp.key, rp.part_type
+                SELECT pi.id, pi.status, rp.key, rp.part_type
                 FROM part_instances pi
                 JOIN robot_parts rp ON rp.id = pi.part_id
                 WHERE pi.id = ? AND pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1
@@ -18001,7 +18518,7 @@ def build_confirm():
         # Backward-compatible key fallback.
         row = db.execute(
             """
-            SELECT pi.id, rp.key, rp.part_type
+            SELECT pi.id, pi.status, rp.key, rp.part_type
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.key = ? AND rp.is_active = 1
@@ -18017,14 +18534,18 @@ def build_confirm():
             return None
         legacy_row = db.execute(
             """
-            SELECT pi.id, rp.key, rp.part_type
+            SELECT pi.id, pi.status, rp.key, rp.part_type
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.id = ? AND pi.user_id = ? AND rp.is_active = 1
             """,
             (legacy_id, user["id"]),
         ).fetchone()
-        if not legacy_row or _norm_part_type(legacy_row["part_type"]) != expected_type:
+        if (
+            not legacy_row
+            or _norm_part_type(legacy_row["part_type"]) != expected_type
+            or str(legacy_row["status"] or "inventory").strip().lower() != "inventory"
+        ):
             return None
         return {"id": int(legacy_row["id"]), "key": legacy_row["key"], "part_type": _norm_part_type(legacy_row["part_type"])}
 
@@ -19397,50 +19918,121 @@ def parts():
     db = get_db()
     user_id = int(session["user_id"])
     user_row = db.execute(
-        "SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?",
+        "SELECT id, is_admin, max_unlocked_layer, part_inventory_limit FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
-    tab = request.args.get("tab", "legacy")
-    if tab not in {"instances", "legacy"}:
-        tab = "instances"
+    selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
     page = max(1, int(request.args.get("page", "1")))
-    per_page = 40
+    per_page = 24
     offset = (page - 1) * per_page
+    where_clauses = ["pi.user_id = ?", "pi.status IN ('inventory', 'equipped')"]
+    params = [user_id]
+    if selected_part_type:
+        where_clauses.append("rp.part_type = ?")
+        params.append(selected_part_type)
+    where_sql = " AND ".join(where_clauses)
+
     rows = db.execute(
         """
         SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE pi.user_id = ? AND pi.status = 'inventory'
-        ORDER BY pi.plus DESC, pi.id DESC
+        WHERE """
+        + where_sql
+        + """
+        ORDER BY
+            CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC,
+            CASE rp.part_type
+                WHEN 'HEAD' THEN 1
+                WHEN 'RIGHT_ARM' THEN 2
+                WHEN 'LEFT_ARM' THEN 3
+                WHEN 'LEGS' THEN 4
+                ELSE 9
+            END ASC,
+            CASE UPPER(COALESCE(pi.rarity, 'N'))
+                WHEN 'UR' THEN 5
+                WHEN 'SSR' THEN 4
+                WHEN 'SR' THEN 3
+                WHEN 'R' THEN 2
+                ELSE 1
+            END DESC,
+            pi.plus DESC,
+            pi.id DESC
         LIMIT ? OFFSET ?
         """,
-        (user_id, per_page, offset),
+        [*params, per_page, offset],
     ).fetchall()
     total = db.execute(
-        "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
-        (user_id,),
+        """
+        SELECT COUNT(*) AS c
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE """
+        + where_sql,
+        params,
     ).fetchone()["c"]
-    items = []
-    for r in rows:
-        d = dict(r)
-        d["display_name"] = _part_display_name_ja(d)
-        ps = compute_part_stats(d)
-        d["top_stats"] = sorted(ps.items(), key=lambda x: x[1], reverse=True)[:2]
-        d["extreme_title"] = _extract_part_extreme_title(d)
-        d["image_url"] = url_for("static", filename=_part_image_rel(d))
-        items.append(d)
+    summary = db.execute(
+        """
+        SELECT
+            SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) AS inventory_count,
+            SUM(CASE WHEN pi.status = 'equipped' THEN 1 ELSE 0 END) AS equipped_count
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE """
+        + where_sql,
+        params,
+    ).fetchone()
+    items = [_part_card_payload(r) for r in rows]
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
+    inventory_space_remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
+    overflow_rows = db.execute(
+        """
+        SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND pi.status = 'overflow'
+        """
+        + (" AND rp.part_type = ?" if selected_part_type else "")
+        + """
+        ORDER BY
+            CASE rp.part_type
+                WHEN 'HEAD' THEN 1
+                WHEN 'RIGHT_ARM' THEN 2
+                WHEN 'LEFT_ARM' THEN 3
+                WHEN 'LEGS' THEN 4
+                ELSE 9
+            END ASC,
+            CASE UPPER(COALESCE(pi.rarity, 'N'))
+                WHEN 'UR' THEN 5
+                WHEN 'SSR' THEN 4
+                WHEN 'SR' THEN 3
+                WHEN 'R' THEN 2
+                ELSE 1
+            END DESC,
+            pi.plus DESC,
+            pi.id DESC
+        """,
+        ([user_id, selected_part_type] if selected_part_type else [user_id]),
+    ).fetchall()
+    overflow_items = [_part_card_payload(r, can_discard=False) for r in overflow_rows]
+    overflow_total = len(overflow_items)
+    legacy_where = ["upi.user_id = ?"]
+    legacy_params = [user_id]
+    if selected_part_type:
+        legacy_where.append("upi.part_type = ?")
+        legacy_params.append(selected_part_type)
     legacy_rows = db.execute(
         """
         SELECT upi.part_type, upi.part_key, COUNT(*) AS qty, rp.image_path, rp.rarity, rp.element, rp.display_name_ja
         FROM user_parts_inventory upi
         LEFT JOIN robot_parts rp ON rp.key = upi.part_key
-        WHERE upi.user_id = ?
+        WHERE """
+        + " AND ".join(legacy_where)
+        + """
         GROUP BY upi.part_type, upi.part_key, rp.image_path
         ORDER BY upi.part_type, upi.part_key
         """,
-        (user_id,),
+        legacy_params,
     ).fetchall()
     legacy_items = []
     legacy_total = 0
@@ -19452,20 +20044,36 @@ def parts():
             element=d.get("element"),
             part_type=d.get("part_type"),
         )
+        d["part_type_label"] = _part_type_ui_label(d.get("part_type"))
         legacy_total += int(d["qty"])
-        d["image_url"] = url_for("static", filename=_part_image_rel(d))
+        d["image_url"] = url_for("static", filename=_part_image_rel(d), v=APP_VERSION)
         legacy_items.append(d)
+    storage_total = int(overflow_total + legacy_total)
+    list_params = {}
+    if selected_part_type:
+        list_params["part_type"] = selected_part_type
+    prev_url = url_for("parts", page=page - 1, **list_params) if page > 1 else None
+    next_url = url_for("parts", page=page + 1, **list_params) if total > page * per_page else None
     return render_template(
         "parts_instances.html",
-        tab=tab,
         items=items,
         legacy_items=legacy_items,
         legacy_total=legacy_total,
         page=page,
-        has_prev=page > 1,
-        has_next=total > page * per_page,
+        has_prev=bool(prev_url),
+        has_next=bool(next_url),
+        prev_url=prev_url,
+        next_url=next_url,
         total=total,
+        inventory_total=int(summary["inventory_count"] or 0),
+        equipped_total=int(summary["equipped_count"] or 0),
+        inventory_space_remaining=inventory_space_remaining,
+        overflow_items=overflow_items,
+        overflow_total=overflow_total,
         protect_core=protect_core,
+        storage_total=storage_total,
+        selected_part_type=selected_part_type,
+        part_type_filters=_part_type_filter_rows(selected_part_type, "parts"),
         show_evolution_actions=_evolution_feature_unlocked(db, user=user_row, user_id=user_id),
     )
 
@@ -19486,12 +20094,16 @@ def evolve_parts():
     selected_mode = (request.args.get("mode") or "select").strip().lower()
     if selected_mode not in {"select", "result"}:
         selected_mode = "select"
+    selected_part_type = _normalize_part_type_filter(request.values.get("part_type"))
 
     if request.method == "POST":
         part_instance_id_raw = (request.form.get("part_instance_id") or "").strip()
+        redirect_params = {"mode": "select"}
+        if selected_part_type:
+            redirect_params["part_type"] = selected_part_type
         if not part_instance_id_raw.isdigit():
             flash("進化対象を選択してください。", "error")
-            return redirect(url_for("evolve_parts", mode="select"))
+            return redirect(url_for("evolve_parts", **redirect_params))
         part_instance_id = int(part_instance_id_raw)
         try:
             db.execute("BEGIN IMMEDIATE")
@@ -19510,17 +20122,17 @@ def evolve_parts():
             if not source_row:
                 db.rollback()
                 flash("進化対象が見つかりません。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
             source_rarity = str(source_row["rarity"] or "").upper().strip()
             if source_rarity != "N":
                 db.rollback()
                 flash("Nパーツのみ進化できます。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
             target_part_key = resolve_evolved_part_key(source_row["part_key"])
             if not target_part_key:
                 db.rollback()
                 flash("このパーツは進化できません。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
             target_part = db.execute(
                 """
                 SELECT id, key, part_type, rarity, element, series, image_path, display_name_ja
@@ -19533,18 +20145,34 @@ def evolve_parts():
             if not target_part:
                 db.rollback()
                 flash("進化先パーツが未登録です。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
             if str(target_part["rarity"] or "").upper().strip() != "R":
                 db.rollback()
                 flash("進化先パーツのレアリティ設定が不正です。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
             if not _consume_player_core(db, user_id, EVOLUTION_CORE_KEY, qty=1):
                 db.rollback()
                 flash("進化コアが不足しています。", "error")
-                return redirect(url_for("evolve_parts", mode="select"))
+                return redirect(url_for("evolve_parts", **redirect_params))
 
             source_name = _part_display_name_ja(source_row)
             target_name = _part_display_name_ja(target_part)
+            target_preview = dict(target_part)
+            target_preview.update(
+                {
+                    "plus": int(source_row["plus"] or 0),
+                    "w_hp": source_row["w_hp"],
+                    "w_atk": source_row["w_atk"],
+                    "w_def": source_row["w_def"],
+                    "w_spd": source_row["w_spd"],
+                    "w_acc": source_row["w_acc"],
+                    "w_cri": source_row["w_cri"],
+                    "rarity": "R",
+                    "element": target_part["element"] or source_row["element"],
+                    "series": target_part["series"] or source_row["series"],
+                }
+            )
+            compare_payload = _part_card_payload(source_row, compare_row=target_preview)
             source_status = str(source_row["status"] or "inventory").strip().lower()
             if source_status == "equipped":
                 db.execute(
@@ -19634,14 +20262,22 @@ def evolve_parts():
                 "target_image_url": (
                     url_for("static", filename=_part_image_rel(target_part))
                 ),
+                "part_type_label": compare_payload["part_type_label"],
+                "source_total_value": compare_payload["total_value"],
+                "target_total_value": compare_payload["compare_total_value"],
+                "total_delta_text": compare_payload["compare_total_delta_text"],
+                "stat_rows": compare_payload["stat_rows"],
             }
             flash("✨ 進化成功！", "notice")
-            return redirect(url_for("evolve_parts", mode="result"))
+            result_params = {"mode": "result"}
+            if selected_part_type:
+                result_params["part_type"] = selected_part_type
+            return redirect(url_for("evolve_parts", **result_params))
         except Exception:
             db.rollback()
             app.logger.exception("evolve_parts.failed user_id=%s part_instance_id=%s", user_id, part_instance_id_raw)
             flash("進化処理に失敗しました。", "error")
-            return redirect(url_for("evolve_parts", mode="select"))
+            return redirect(url_for("evolve_parts", **redirect_params))
 
     last_evolve_result = session.pop("last_evolve_result", None) if selected_mode == "result" else None
     if selected_mode == "result" and not last_evolve_result:
@@ -19651,17 +20287,29 @@ def evolve_parts():
         _get_player_evolution_core_progress(db, user_id),
         core_qty=core_qty,
     )
+    where_clauses = [
+        "pi.user_id = ?",
+        "pi.status IN ('inventory', 'equipped')",
+        "UPPER(COALESCE(pi.rarity, 'N')) = 'N'",
+    ]
+    params = [user_id]
+    if selected_part_type:
+        where_clauses.append("rp.part_type = ?")
+        params.append(selected_part_type)
     rows = db.execute(
         """
         SELECT
-            pi.id, pi.rarity, pi.plus, pi.part_type, pi.element, pi.status,
+            pi.id, pi.rarity, pi.plus, pi.part_type, pi.element, pi.series, pi.status,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
             rp.key AS part_key, rp.image_path, rp.display_name_ja
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND UPPER(COALESCE(pi.rarity, 'N')) = 'N'
+        WHERE """
+        + " AND ".join(where_clauses)
+        + """
         ORDER BY CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC, pi.plus DESC, pi.id DESC
         """,
-        (user_id,),
+        params,
     ).fetchall()
     evolve_items = []
     for row in rows:
@@ -19671,7 +20319,7 @@ def evolve_parts():
             continue
         target_part = db.execute(
             """
-            SELECT id, key, display_name_ja, image_path, part_type, element
+            SELECT id, key, display_name_ja, image_path, part_type, element, rarity, series
             FROM robot_parts
             WHERE key = ? AND is_active = 1
             LIMIT 1
@@ -19680,19 +20328,37 @@ def evolve_parts():
         ).fetchone()
         if not target_part:
             continue
-        item["display_name"] = _part_display_name_ja(item)
-        item["target_display_name"] = _part_display_name_ja(target_part)
-        item["target_part_key"] = target_key
-        item["target_image_url"] = url_for("static", filename=_part_image_rel(target_part))
-        item["image_url"] = url_for("static", filename=_part_image_rel(item))
-        item["next_rarity"] = "R"
-        evolve_items.append(item)
+        target_preview = dict(target_part)
+        target_preview.update(
+            {
+                "plus": int(item.get("plus") or 0),
+                "w_hp": item.get("w_hp"),
+                "w_atk": item.get("w_atk"),
+                "w_def": item.get("w_def"),
+                "w_spd": item.get("w_spd"),
+                "w_acc": item.get("w_acc"),
+                "w_cri": item.get("w_cri"),
+                "rarity": "R",
+                "element": target_part["element"] or item.get("element"),
+                "series": target_part["series"] or item.get("series"),
+            }
+        )
+        payload = _part_card_payload(item, compare_row=target_preview)
+        payload["target_part_key"] = target_key
+        payload["next_rarity"] = "R"
+        evolve_items.append(payload)
     return render_template(
         "evolve.html",
         core_key=EVOLUTION_CORE_KEY,
         core_qty=core_qty,
         evolution_core_status=evolution_core_status,
         items=evolve_items,
+        selected_part_type=selected_part_type,
+        part_type_filters=_part_type_filter_rows(
+            selected_part_type,
+            "evolve_parts",
+            extra_params={"mode": "select"},
+        ),
         selected_mode=selected_mode,
         last_evolve_result=last_evolve_result,
     )
@@ -19831,7 +20497,7 @@ def parts_strengthen():
     selected_mode = (request.args.get("mode") or "select").strip().lower()
     if selected_mode not in {"select", "result"}:
         selected_mode = "select"
-    filter_part_type = (request.values.get("part_type") or "").strip().upper()
+    filter_part_type = _normalize_part_type_filter(request.values.get("part_type"))
     filter_rarity = (request.values.get("rarity") or "").strip().upper()
     plus_raw = (request.values.get("plus") or "").strip()
     filter_plus = int(plus_raw) if plus_raw.isdigit() else None
@@ -20000,14 +20666,15 @@ def parts_strengthen():
                 (created_id, user_id),
             ).fetchone()
             if created_row:
-                created_part = dict(created_row)
-                created_part["display_name"] = _part_display_name_ja(created_part)
-                created_part["stats"] = compute_part_stats(created_part)
-                created_part["image_url"] = (
-                    url_for("static", filename=_part_image_rel(created_part))
-                )
-                last_fuse_result["created_part"] = created_part
-        last_fuse_result["retry_url"] = url_for("parts_strengthen")
+                last_fuse_result["created_part"] = _part_card_payload(created_row)
+        retry_params = {"mode": "select"}
+        if filter_part_type:
+            retry_params["part_type"] = filter_part_type
+        if filter_rarity:
+            retry_params["rarity"] = filter_rarity
+        if filter_plus is not None:
+            retry_params["plus"] = filter_plus
+        last_fuse_result["retry_url"] = url_for("parts_strengthen", **retry_params)
 
     where_clauses = ["pi.user_id = ?", "pi.status IN ('inventory', 'equipped')"]
     params = [user_id]
@@ -20076,7 +20743,7 @@ def parts_strengthen():
     if not part_type_options:
         part_type_options = ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"]
     stat_labels = {k: _stat_label(k) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
-    groups = []
+    base_candidates = []
     for group_row in group_rows:
         ids_csv = group_row["ids"] or ""
         sample_rows = db.execute(
@@ -20163,41 +20830,72 @@ def parts_strengthen():
         plus_values = [int(row["plus"] or 0) for row in sample_rows]
         plus_min = min(plus_values) if plus_values else 0
         plus_max = max(plus_values) if plus_values else 0
-        default_base_plus = int(eligible_base_rows[0]["plus"] or 0)
-        groups.append(
-            {
-                "stack_key": f"{group_row['part_key']}|{group_row['rarity']}",
-                "part_type": group_row["part_type"],
-                "part_key": group_row["part_key"],
-                "display_name": group_display_name,
-                "rarity": group_row["rarity"],
-                "plus_min": plus_min,
-                "plus_max": plus_max,
-                "qty": int(group_row["qty_total"] or 0),
-                "qty_inventory": int(group_row["qty_inventory"] or 0),
-                "ids": ids_csv,
-                "element": group_row["element"],
-                "success_rate": int(FUSE_SUCCESS_TABLE.get(default_base_plus, (5, 8))[0]),
-                "cost": int(FUSE_COST_BY_PLUS.get(default_base_plus, 20)),
-                "stat_ranges": stat_ranges,
-                "instance_options": instance_options,
-                "preview_image_url": (
-                    url_for("static", filename=f"robot_assets/{sample_rows[0]['image_path']}")
-                    if sample_rows and sample_rows[0]["image_path"]
-                    else None
-                ),
-            }
+        for row in eligible_base_rows:
+            row_dict = dict(row)
+            row_status = (row_dict.get("status") or "inventory").strip().lower()
+            materials = [
+                dict(candidate)
+                for candidate in sample_rows
+                if int(candidate["id"]) != int(row_dict["id"])
+                and str(candidate["status"] or "").strip().lower() == "inventory"
+            ]
+            materials.sort(key=lambda item: (int(item.get("plus") or 0), int(item.get("id") or 0)))
+            materials = materials[:2]
+            if len(materials) != 2:
+                continue
+            next_row = dict(row_dict)
+            next_row["plus"] = min(int(MAX_PART_PLUS), int(next_row.get("plus") or 0) + 1)
+            candidate_item = _part_card_payload(row_dict, compare_row=next_row)
+            candidate_item["group_display_name"] = group_display_name
+            candidate_item["part_key"] = group_row["part_key"]
+            candidate_item["qty_total"] = int(group_row["qty_total"] or 0)
+            candidate_item["qty_inventory"] = int(group_row["qty_inventory"] or 0)
+            candidate_item["plus_min"] = plus_min
+            candidate_item["plus_max"] = plus_max
+            candidate_item["cost"] = int(FUSE_COST_BY_PLUS.get(int(row_dict.get("plus") or 0), 20))
+            candidate_item["material_cards"] = [_part_card_payload(material, can_discard=False) for material in materials]
+            candidate_item["material_ids"] = [int(material["id"]) for material in materials]
+            candidate_item["material_plus_text"] = " / ".join(
+                f"+{int(material.get('plus') or 0)}" for material in materials
+            )
+            candidate_item["material_notice"] = (
+                "装備中ベースのまま強化できます。素材は所持中から2個使います。"
+                if row_status == "equipped"
+                else "素材は所持中から2個使います。"
+            )
+            candidate_item["expected_plus_text"] = (
+                f"+{int(row_dict.get('plus') or 0)} → +{int(next_row.get('plus') or 0)}"
+            )
+            candidate_item["stack_key"] = f"{group_row['part_key']}|{group_row['rarity']}|{int(row_dict['id'])}"
+            base_candidates.append(candidate_item)
+    base_candidates.sort(
+        key=lambda item: (
+            0 if item.get("is_equipped") else 1,
+            ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"].index(item.get("part_type")) if item.get("part_type") in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else 9,
+            -int(item.get("total_value") or 0),
+            -int(item.get("plus") or 0),
+            int(item.get("id") or 0),
         )
+    )
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
     return render_template(
         "parts_fuse.html",
-        groups=groups,
+        base_candidates=base_candidates,
         protect_core=protect_core,
         rarity_options=rarity_options,
         part_type_options=part_type_options,
         selected_part_type=filter_part_type,
         selected_rarity=filter_rarity,
         selected_plus=filter_plus,
+        part_type_filters=_part_type_filter_rows(
+            filter_part_type,
+            "parts_strengthen",
+            extra_params={
+                "mode": "select",
+                "rarity": filter_rarity or "",
+                "plus": filter_plus if filter_plus is not None else "",
+            },
+        ),
         selected_mode=selected_mode,
         plus_options=plus_options,
         element_labels=ELEMENT_LABEL_MAP,

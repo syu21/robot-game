@@ -224,6 +224,42 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("アーク=ゼロに挑む", html)
         self.assertIn('name="area_key" value="layer_4_final"', html)
 
+    def test_home_shows_usable_inventory_and_storage_separately(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.initialize_new_user(db, self.user_id)
+            head_row = db.execute(
+                """
+                SELECT *
+                FROM robot_parts
+                WHERE part_type = 'HEAD' AND is_active = 1
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            game_app._create_part_instance_from_master(
+                db,
+                self.user_id,
+                head_row,
+                plus=2,
+                status="overflow",
+            )
+            db.execute(
+                """
+                INSERT INTO user_parts_inventory (user_id, part_type, part_key, obtained_at, source)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (self.user_id, "HEAD", head_row["key"], int(time.time()), "legacy_home"),
+            )
+            db.execute("UPDATE users SET part_inventory_limit = 4 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("パーツ在庫: 所持 4 / 4 | 保管 2", html)
+
     def test_home_next_action_never_shows_showcase_or_ranking_links(self):
         self._create_active_robot()
         client = self._new_client()
@@ -479,6 +515,19 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("フィードバック", html)
         self.assertIn("初心者相談室のメッセージ", html)
         self.assertIn("進化成功", html)
+        self.assertIn(
+            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で1人が活動中",
+            html,
+        )
+        self.assertIn(
+            f"最近{game_app.COMM_ROOM_ACTIVITY_WINDOW_MINUTES}分で1人が発言",
+            html,
+        )
+        self.assertIn(
+            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で活動中",
+            html,
+        )
+        self.assertIn('data-presence-state="active"', html)
         self.assertNotIn("?comm_tab=", html)
 
     def test_home_shows_area_feature_cards_for_unlocked_areas(self):
