@@ -741,6 +741,12 @@ body.lightbox-open .lightbox-overlay {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.part-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
 .part-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -757,6 +763,10 @@ body.lightbox-open .lightbox-overlay {
 .part-compare-card.is-equipped {
   border-color: rgba(26, 107, 103, 0.34);
   box-shadow: 0 14px 28px rgba(26, 107, 103, 0.12);
+}
+.part-compare-focus {
+  display: grid;
+  gap: 12px;
 }
 .part-card-topline {
   display: flex;

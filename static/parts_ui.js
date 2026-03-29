@@ -12,7 +12,7 @@
       if (!submitter) return;
       form.dataset.submitLocked = "1";
       submitter.dataset.originalText = submitter.textContent || submitter.value || "";
-      const loadingText = form.dataset.loadingText || "送信中...";
+      const loadingText = submitter.dataset.loadingText || form.dataset.loadingText || "送信中...";
       if ("textContent" in submitter && submitter.textContent) {
         submitter.textContent = loadingText;
       } else if ("value" in submitter) {

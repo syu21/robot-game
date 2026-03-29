@@ -148,10 +148,54 @@ class PartsUiTests(unittest.TestCase):
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("装備中", html)
         self.assertIn("強化素材に使える", html)
+        self.assertIn("選んだパーツを見比べる", html)
+        self.assertIn("選択した所持パーツを破棄", html)
+        self.assertIn(">選択<", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
         self.assertIn("次のページはありません", html)
         self.assertNotIn("旧在庫", html)
+
+    def test_parts_compare_focus_shows_only_selected_cards(self):
+        compare_part = self._create_custom_part("HEAD", "compare_head_proto", "比較ヘッド")
+        self._create_extra_instance(compare_part, plus=3, status="inventory")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            equipped_id = db.execute(
+                """
+                SELECT pi.id
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'equipped' AND rp.part_type = 'HEAD'
+                ORDER BY pi.id ASC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()["id"]
+            compare_id = db.execute(
+                """
+                SELECT pi.id
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.key = ?
+                ORDER BY pi.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "compare_head_proto"),
+            ).fetchone()["id"]
+
+        client = self._client()
+        resp = client.post(
+            "/parts/compare",
+            data={"instance_ids": [str(equipped_id), str(compare_id)], "part_type": "HEAD"},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("選んだパーツを見比べる", html)
+        self.assertIn("比較ヘッド", html)
+        self.assertIn(self.head_name, html)
+        self.assertIn("見比べを閉じる", html)
 
     def test_parts_page_shows_storage_separately_and_excludes_it_from_usable_candidates(self):
         overflow_part = self._create_custom_part("HEAD", "overflow_head_proto", "保管試作ヘッド")
@@ -222,7 +266,7 @@ class PartsUiTests(unittest.TestCase):
         client = self._client()
         get_resp = client.get("/parts?part_type=HEAD")
         self.assertEqual(get_resp.status_code, 200)
-        self.assertIn("今は所持枠がいっぱいです。先に所持中パーツを整理すると戻せます。", get_resp.get_data(as_text=True))
+        self.assertIn("今は所持枠がいっぱいです。先に所持中パーツを破棄すると戻せます。", get_resp.get_data(as_text=True))
         post_resp = client.post(
             "/parts/restore",
             data={"overflow_instance_ids": str(overflow_id), "part_type": "HEAD"},
@@ -234,6 +278,48 @@ class PartsUiTests(unittest.TestCase):
             db = game_app.get_db()
             status = db.execute("SELECT status FROM part_instances WHERE id = ?", (overflow_id,)).fetchone()["status"]
             self.assertEqual(str(status), "overflow")
+
+    def test_parts_discard_keeps_equipped_items_even_if_selected(self):
+        discard_part = self._create_custom_part("HEAD", "discard_head_proto", "破棄ヘッド")
+        self._create_extra_instance(discard_part, plus=0, status="inventory")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            equipped_id = db.execute(
+                """
+                SELECT pi.id
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'equipped' AND rp.part_type = 'HEAD'
+                ORDER BY pi.id ASC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()["id"]
+            inventory_id = db.execute(
+                """
+                SELECT pi.id
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.key = ?
+                ORDER BY pi.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "discard_head_proto"),
+            ).fetchone()["id"]
+
+        client = self._client()
+        resp = client.post(
+            "/parts/discard",
+            data={"instance_ids": [str(equipped_id), str(inventory_id)], "confirm": "yes", "part_type": "HEAD"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            equipped_status = db.execute("SELECT status FROM part_instances WHERE id = ?", (equipped_id,)).fetchone()["status"]
+            removed_row = db.execute("SELECT id FROM part_instances WHERE id = ?", (inventory_id,)).fetchone()
+            self.assertEqual(str(equipped_status), "equipped")
+            self.assertIsNone(removed_row)
 
     def test_battle_drop_over_capacity_goes_to_overflow(self):
         with game_app.app.app_context():

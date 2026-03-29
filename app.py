@@ -3178,6 +3178,25 @@ def _part_type_filter_rows(selected_part_type, endpoint, *, extra_params=None):
     return rows
 
 
+def _normalize_instance_id_values(raw_values, *, limit=None):
+    normalized = []
+    seen = set()
+    max_items = max(1, int(limit)) if limit else None
+    for raw in raw_values or ():
+        for chunk in str(raw or "").split(","):
+            token = chunk.strip()
+            if not token.isdigit():
+                continue
+            value = int(token)
+            if value <= 0 or value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+            if max_items and len(normalized) >= max_items:
+                return normalized
+    return normalized
+
+
 def _part_total_value(stat_map):
     stats = stat_map or {}
     return sum(int(stats.get(key) or 0) for key in PART_STAT_KEYS)
@@ -15893,6 +15912,13 @@ def milestone_claim():
 @login_required
 def parts_discard():
     db = get_db()
+    selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    page = max(1, int(request.form.get("page", "1")))
+    redirect_params = {}
+    if selected_part_type:
+        redirect_params["part_type"] = selected_part_type
+    if page > 1:
+        redirect_params["page"] = page
     instance_ids = request.form.getlist("instance_ids")
     valid_instance_ids = [pid for pid in instance_ids if pid.isdigit()]
     if valid_instance_ids:
@@ -15902,8 +15928,13 @@ def parts_discard():
             [session["user_id"], *valid_instance_ids],
         )
         db.commit()
-        session["message"] = f"{cur.rowcount} 件の個体パーツを破棄しました。"
-        return redirect(url_for("parts"))
+        deleted_count = int(cur.rowcount or 0)
+        skipped_count = max(0, len(valid_instance_ids) - deleted_count)
+        if skipped_count > 0:
+            session["message"] = f"{deleted_count} 件の個体パーツを破棄しました。装備中または対象外 {skipped_count} 件は残しています。"
+        else:
+            session["message"] = f"{deleted_count} 件の個体パーツを破棄しました。"
+        return redirect(url_for("parts", **redirect_params))
 
     part_keys = [k.strip() for k in request.form.getlist("part_keys") if k.strip()]
     if part_keys:
@@ -15913,8 +15944,8 @@ def parts_discard():
             [session["user_id"], *part_keys],
         )
         db.commit()
-        session["message"] = f"{cur.rowcount} 件の保管パーツを整理しました。"
-        return redirect(url_for("parts"))
+        session["message"] = f"{cur.rowcount} 件の保管パーツを破棄しました。"
+        return redirect(url_for("parts", **redirect_params))
 
     part_ids = request.form.getlist("part_ids")
     single_id = request.form.get("part_id")
@@ -15923,11 +15954,11 @@ def parts_discard():
     confirm = request.form.get("confirm")
     if confirm != "yes":
         session["message"] = "破棄確認が必要です。"
-        return redirect(url_for("parts"))
+        return redirect(url_for("parts", **redirect_params))
     valid_ids = [pid for pid in part_ids if pid.isdigit()]
     if not valid_ids:
         session["message"] = "破棄対象が選択されていません。"
-        return redirect(url_for("parts"))
+        return redirect(url_for("parts", **redirect_params))
     placeholders = ",".join(["?"] * len(valid_ids))
     cur = db.execute(
         f"DELETE FROM user_parts_inventory WHERE user_id = ? AND id IN ({placeholders})",
@@ -15935,7 +15966,28 @@ def parts_discard():
     )
     db.commit()
     session["message"] = f"{cur.rowcount} 件のパーツを破棄しました。"
-    return redirect(url_for("parts"))
+    return redirect(url_for("parts", **redirect_params))
+
+
+@app.route("/parts/compare", methods=["POST"])
+@login_required
+def parts_compare():
+    selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    page = max(1, int(request.form.get("page", "1")))
+    redirect_params = {}
+    if selected_part_type:
+        redirect_params["part_type"] = selected_part_type
+    if page > 1:
+        redirect_params["page"] = page
+    selected_ids = _normalize_instance_id_values(request.form.getlist("instance_ids"))
+    if not selected_ids:
+        session["message"] = "見比べるパーツを選択してください。"
+        return redirect(url_for("parts", **redirect_params))
+    if len(selected_ids) > 6:
+        session["message"] = "見比べは6件まで表示できます。最初の6件を並べました。"
+        selected_ids = selected_ids[:6]
+    redirect_params["compare_ids"] = ",".join(str(pid) for pid in selected_ids)
+    return redirect(url_for("parts", **redirect_params))
 
 
 @app.route("/parts/restore", methods=["POST"])
@@ -15956,7 +16008,7 @@ def parts_restore():
     ).fetchone()
     remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
     if remaining <= 0:
-        session["message"] = "所持枠がいっぱいです。先に所持中パーツを整理してください。"
+        session["message"] = "所持枠がいっぱいです。先に所持中パーツを破棄してください。"
         return redirect(url_for("parts", **redirect_params))
 
     placeholders = ",".join(["?"] * len(overflow_instance_ids))
@@ -19922,6 +19974,7 @@ def parts():
         (user_id,),
     ).fetchone()
     selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
+    selected_compare_ids = _normalize_instance_id_values((request.args.get("compare_ids"),), limit=6)
     page = max(1, int(request.args.get("page", "1")))
     per_page = 24
     offset = (page - 1) * per_page
@@ -19983,6 +20036,24 @@ def parts():
         params,
     ).fetchone()
     items = [_part_card_payload(r) for r in rows]
+    compare_items = []
+    if selected_compare_ids:
+        placeholders = ",".join(["?"] * len(selected_compare_ids))
+        compare_rows = db.execute(
+            f"""
+            SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND pi.id IN ({placeholders})
+            """,
+            [user_id, *selected_compare_ids],
+        ).fetchall()
+        compare_rows_by_id = {int(row["id"]): row for row in compare_rows}
+        compare_items = [
+            _part_card_payload(compare_rows_by_id[part_instance_id])
+            for part_instance_id in selected_compare_ids
+            if part_instance_id in compare_rows_by_id
+        ]
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
     inventory_space_remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
     overflow_rows = db.execute(
@@ -20054,9 +20125,15 @@ def parts():
         list_params["part_type"] = selected_part_type
     prev_url = url_for("parts", page=page - 1, **list_params) if page > 1 else None
     next_url = url_for("parts", page=page + 1, **list_params) if total > page * per_page else None
+    compare_clear_params = dict(list_params)
+    if page > 1:
+        compare_clear_params["page"] = page
     return render_template(
         "parts_instances.html",
         items=items,
+        compare_items=compare_items,
+        compare_total=len(compare_items),
+        compare_clear_url=url_for("parts", **compare_clear_params),
         legacy_items=legacy_items,
         legacy_total=legacy_total,
         page=page,
