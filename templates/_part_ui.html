@@ -1,0 +1,33 @@
+{% macro render_part_type_filters(filters) -%}
+  {% if filters %}
+  <div class="part-filter-row">
+    {% for filter in filters %}
+      <a
+        class="part-filter-chip{% if filter['is_active'] %} is-active{% endif %}"
+        href="{{ filter['url'] }}"
+        data-busy-link="1"
+      >
+        {{ filter['label'] }}
+      </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro stat_grid(stat_rows, modifier='') -%}
+  <div class="part-stat-grid{% if modifier %} {{ modifier }}{% endif %}">
+    {% for row in stat_rows %}
+      <div class="part-stat-item{% if row.get('is_focus') %} is-focus{% endif %}">
+        <span class="part-stat-label">{{ row['label'] }}</span>
+        {% if row.get('after_value') is not none %}
+          <span class="part-stat-value compare">
+            {{ row['value'] }} <span class="part-stat-arrow">→</span> {{ row['after_value'] }}
+          </span>
+          <span class="part-stat-delta is-{{ row.get('delta_class') or 'flat' }}">{{ row['delta_text'] }}</span>
+        {% else %}
+          <span class="part-stat-value">{{ row['value'] }}</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{%- endmacro %}
