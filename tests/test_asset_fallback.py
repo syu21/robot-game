@@ -38,6 +38,23 @@ class AssetFallbackTests(unittest.TestCase):
         rel = game_app._part_image_rel(part_like)
         self.assertEqual(rel, "enemies/_placeholder.png")
 
+    def test_part_image_rel_accepts_legacy_normal_alias(self):
+        rel = game_app._part_image_rel(
+            {"key": "head_1", "image_path": "parts/head/head_normal.png"}
+        )
+        self.assertEqual(rel, "robot_assets/parts/head/head_n_normal.png")
+
+    def test_legacy_normal_compose_assets_exist(self):
+        legacy_normals = (
+            "parts/head/head_normal.png",
+            "parts/left_arm/left_arm_normal.png",
+            "parts/legs/legs_normal.png",
+            "parts/right_arm/right_arm_normal.png",
+        )
+        for rel in legacy_normals:
+            with self.subTest(rel=rel):
+                self.assertTrue(os.path.exists(game_app._asset_abs(rel)))
+
 
 if __name__ == "__main__":
     unittest.main()
