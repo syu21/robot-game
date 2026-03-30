@@ -1,105 +1,199 @@
 {% extends 'base.html' %}
+{% from '_part_ui.html' import render_part_type_filters, stat_grid %}
 {% block content %}
 <div id="parts-fuse-root">
-<h1>パーツ強化</h1>
-<div id="fuse-filter-error" class="error is-hidden" role="alert"></div>
-<div class="card">
-  <p>同じパーツ3個で +1（+値違い可）</p>
-  <p>手順: ベースを1つ選ぶと、同じパーツ（種別/rarity一致）の素材2つを自動で消費</p>
-  <p class="robot-time">成功率100%。ベース1 + 素材2を消費し、ベースが+1されます。</p>
-</div>
+  <h1>パーツ強化</h1>
+  <div id="fuse-filter-error" class="error is-hidden" role="alert"></div>
 
-{% if last_fuse_result %}
-<div class="card fuse-result-card">
-  <div class="fuse-result-head">
-    <strong>強化結果</strong>
-    <span class="fuse-outcome {% if last_fuse_result['outcome'] == 'success' %}success{% else %}fail{% endif %}">
-      {{ last_fuse_result['outcome_label'] }}
-    </span>
+  <div class="card">
+    <div><b>同じパーツ3個で +1</b></div>
+    <div class="robot-time">ベース1つを選ぶと、同じパーツの所持中2個を素材として使います。上昇量は必ず +1 です。</div>
+    <div class="robot-time">素材にできるのは所持中だけです。装備中の個体は素材として消えません。</div>
+    {{ render_part_type_filters(part_type_filters) }}
   </div>
-  <div class="robot-part">
-    {{ last_fuse_result.get('part_type') or '-' }} / {{ last_fuse_result.get('rarity') or '-' }}
-    {% if last_fuse_result.get('from_plus') is not none %}
-      / +{{ last_fuse_result.get('from_plus') }}{% if last_fuse_result.get('to_plus') is not none %} → +{{ last_fuse_result.get('to_plus') }}{% endif %}
-    {% endif %}
-    {% if last_fuse_result.get('coin_cost') is not none %}
-      / -{{ last_fuse_result.get('coin_cost') }}コイン
-    {% endif %}
-  </div>
-  <div class="robot-time">上昇量: +1</div>
-  <div class="robot-time">ベースID: #{{ last_fuse_result.get('base_id') or '-' }} / 消費ID: {% for cid in last_fuse_result.get('consumed_ids', []) %}#{{ cid }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
-  {% if last_fuse_result.get('created_part') %}
-    {% set cp = last_fuse_result['created_part'] %}
-    <div class="fuse-created">
-      <div class="robot-part"><b>生成物:</b> #{{ cp['id'] }} {{ cp.get('display_name') or cp['part_key'] }} (+{{ cp['plus'] }})</div>
-      <div class="fuse-created-row">
-        {% if cp['image_url'] %}
-          <img src="{{ cp['image_url'] }}" alt="{{ cp['part_key'] }}" loading="lazy" decoding="async" />
-        {% endif %}
-        <div class="fuse-created-stats">
-          <span>耐久 {{ cp['stats']['hp'] }}</span>
-          <span>攻撃 {{ cp['stats']['atk'] }}</span>
-          <span>防御 {{ cp['stats']['def'] }}</span>
-          <span>素早さ {{ cp['stats']['spd'] }}</span>
-          <span>命中 {{ cp['stats']['acc'] }}</span>
-          <span>会心 {{ cp['stats']['cri'] }}</span>
+
+  {% if storage_blocked_groups %}
+  <div class="card">
+    <div><b>保管中の個体があるため、今は強化に使えない組み合わせがあります</b></div>
+    <div class="robot-time">保管中の個体は強化素材に使えません。先に所持へ戻すと候補に出ます。</div>
+    <div class="robot-time">
+      {% if inventory_space_remaining > 0 %}
+      今はあと {{ inventory_space_remaining }} 件まで所持へ戻せます。
+      {% else %}
+      今は所持枠がいっぱいです。先に所持中パーツを破棄すると戻せます。
+      {% endif %}
+    </div>
+    <div class="part-mini-grid">
+      {% for item in storage_blocked_groups %}
+      <div class="part-mini-card">
+        <img class="part-mini-image" src="{{ item['image_url'] }}" alt="{{ item['display_name'] }}" loading="lazy" decoding="async" />
+        <div>
+          <div class="part-mini-name">{{ item['display_name'] }}</div>
+          <div class="robot-time">{{ item['part_type_label'] }} / {{ item['rarity'] }}</div>
+          <div class="robot-time">所持 {{ item['qty_inventory'] }} / 装備 {{ item['qty_equipped'] }} / 保管 {{ item['qty_overflow'] }}</div>
         </div>
       </div>
-    </div>
-  {% endif %}
-  <div class="actions-grid">
-    <a class="action-card" href="{{ last_fuse_result.get('retry_url') or url_for('parts_strengthen') }}">
-      <div class="action-title">もう一度強化する</div>
-      <div class="action-desc">最初の画面に戻る</div>
-    </a>
-  </div>
-  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-</div>
-{% endif %}
-
-{% if selected_mode == 'select' %}
-<form method="post" class="card fuse-panel" id="fuse-select-panel">
-  <input type="hidden" name="mode" value="select" />
-  <input type="hidden" name="base_id" id="fuse-base-id" value="" />
-  <div class="fuse-selection-summary" id="fuse-selection-summary">
-    <div>ベース: <span id="fuse-base-selected">未選択</span></div>
-    <div>素材: <span id="fuse-material-selected">自動選択（2個・低+優先）</span></div>
-    <div>結果: <span id="fuse-result-expected">+1固定</span></div>
-  </div>
-  <div class="fuse-select-status">選択数 <b id="fuse-selected-count">0</b>/1</div>
-  <p class="robot-time">素材は同じパーツ（+値違い可）から自動選出されます。</p>
-
-  {% if groups %}
-    <div class="fuse-stack-grid">
-      {% for g in groups %}
-        <label class="robot-card fuse-card fuse-stack-card compact-part-card">
-          <input type="radio" name="stack_key" class="fuse-stack-radio" value="{{ g['stack_key'] }}" data-part-label="{{ g.get('display_name') or g['part_key'] }}" data-cost="{{ g['cost'] }}" data-instance-options='{{ g["instance_options"] | tojson }}' />
-          <div class="robot-id">{{ g.get('display_name') or g['part_type'] }}</div>
-          <div class="robot-part">key: {{ g['part_key'] }} / rarity: {{ g['rarity'] }}</div>
-          <div class="robot-part">+範囲: +{{ g['plus_min'] }}〜+{{ g['plus_max'] }}</div>
-          <div class="robot-part">所持: {{ g['qty'] }}（在庫素材: {{ g.get('qty_inventory', 0) }}）</div>
-          <div class="robot-part">コスト: {{ g['cost'] }} coin</div>
-          {% if g['preview_image_url'] %}
-            <img class="robot-thumb" src="{{ g['preview_image_url'] }}" alt="{{ g['part_key'] }}" loading="lazy" decoding="async" />
-          {% endif %}
-        </label>
       {% endfor %}
     </div>
-    <div class="fuse-exec-summary">消費: ベース1 + 素材2（同じパーツ・+値違い可） / 上昇量: +1</div>
-    <button type="submit" id="fuse-select-submit" disabled class="fuse-submit-large">強化する（指定）</button>
-  {% else %}
-    <div class="card">
-      <div><b>強化できるパーツはありません</b></div>
-      <div class="robot-time">同じパーツを3個そろえると強化できます</div>
-    </div>
+    <p class="link"><a href="{{ storage_manage_url }}">所持パーツで保管を確認する</a></p>
+  </div>
   {% endif %}
-</form>
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endif %}
 
-<p class="link"><a href="{{ url_for('parts') }}">個体一覧へ戻る</a></p>
+  {% if last_fuse_result %}
+  <div class="card fuse-result-card">
+    <div class="fuse-result-head">
+      <strong>強化結果</strong>
+      <span class="fuse-outcome {% if last_fuse_result['outcome'] == 'success' %}success{% else %}fail{% endif %}">
+        {{ last_fuse_result['outcome_label'] }}
+      </span>
+    </div>
+    {% if last_fuse_result.get('message') %}
+    <div class="part-meta-line">{{ last_fuse_result['message'] }}</div>
+    {% endif %}
+    <div class="part-meta-line">
+      {{ last_fuse_result.get('part_type') or '-' }} / {{ last_fuse_result.get('rarity') or '-' }}
+      {% if last_fuse_result.get('from_plus') is not none and last_fuse_result.get('to_plus') is not none %}
+        / +{{ last_fuse_result.get('from_plus') }} → +{{ last_fuse_result.get('to_plus') }}
+      {% endif %}
+      {% if last_fuse_result.get('coin_cost') is not none %}
+        / -{{ last_fuse_result.get('coin_cost') }}コイン
+      {% endif %}
+    </div>
+    <div class="robot-time">素材に使った個体: {% for cid in last_fuse_result.get('consumed_ids', []) %}#{{ cid }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    {% if last_fuse_result.get('created_part') %}
+      {% set cp = last_fuse_result['created_part'] %}
+      <div class="part-result-card">
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ cp['image_url'] }}" alt="{{ cp['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div class="robot-id">{{ cp['display_name'] }}</div>
+            <div class="part-chip-row">
+              <span class="part-chip">{{ cp['part_type_label'] }}</span>
+              <span class="part-chip rarity-{{ cp['rarity_label']|lower }}">{{ cp['rarity_label'] }}</span>
+              <span class="part-chip">+{{ cp['plus'] }}</span>
+            </div>
+            <div class="part-meta-line">総合値 {{ cp['total_value'] }}{% if cp.get('focus_line') %} / 注目 {{ cp['focus_line'] }}{% endif %}</div>
+          </div>
+        </div>
+        {{ stat_grid(cp['stat_rows']) }}
+      </div>
+    {% endif %}
+    <div class="actions-grid">
+      <a class="action-card" href="{{ last_fuse_result.get('retry_url') or url_for('parts_strengthen') }}">
+        <div class="action-title">もう一度強化する</div>
+        <div class="action-desc">候補一覧に戻る</div>
+      </a>
+    </div>
+    <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  </div>
+  {% endif %}
+
+  {% if selected_mode == 'select' %}
+  <form
+    method="post"
+    class="card fuse-panel"
+    id="fuse-select-panel"
+    data-submit-lock="1"
+    data-loading-text="強化中..."
+  >
+    <input type="hidden" name="mode" value="select" />
+    {% if selected_part_type %}
+      <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+    {% endif %}
+    {% if selected_rarity %}
+      <input type="hidden" name="rarity" value="{{ selected_rarity }}" />
+    {% endif %}
+    {% if selected_plus is not none %}
+      <input type="hidden" name="plus" value="{{ selected_plus }}" />
+    {% endif %}
+    <div class="fuse-selection-summary" id="fuse-selection-summary">
+      <div>ベース: <span id="fuse-base-selected">未選択</span></div>
+      <div>素材: <span id="fuse-material-selected">同じパーツの所持中2個を使います</span></div>
+      <div>結果: <span id="fuse-result-expected">+1固定</span></div>
+    </div>
+    <div class="fuse-select-status">選択数 <b id="fuse-selected-count">0</b>/1</div>
+    <p class="robot-time">強化するとどう変わるかを見比べてから選べます。</p>
+
+    {% if base_candidates %}
+      <div class="part-card-grid">
+        {% for candidate in base_candidates %}
+          <label class="robot-card part-compare-card fuse-candidate-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}">
+            <div class="part-card-topline">
+              <span class="part-check">
+                <input
+                  type="radio"
+                  name="base_id"
+                  class="fuse-base-radio"
+                  value="{{ candidate['id'] }}"
+                  required
+                  data-part-label="{{ candidate['display_name'] }}"
+                  data-base-plus="{{ candidate['plus'] }}"
+                  data-material-labels="{% for material in candidate['material_cards'] %}#{{ material['id'] }} {{ material['display_name'] }} +{{ material['plus'] }}{% if not loop.last %}, {% endif %}{% endfor %}"
+                />
+                <span>この個体をベースにする</span>
+              </span>
+              <span class="robot-time">コスト {{ candidate['cost'] }}コイン</span>
+            </div>
+            <div class="part-card-main">
+              <img class="part-card-image" src="{{ candidate['image_url'] }}" alt="{{ candidate['display_name'] }}" loading="lazy" decoding="async" />
+              <div class="part-card-copy">
+                <div class="robot-id">{{ candidate['display_name'] }}</div>
+                <div class="part-chip-row">
+                  <span class="part-chip">{{ candidate['part_type_label'] }}</span>
+                  <span class="part-chip rarity-{{ candidate['rarity_label']|lower }}">{{ candidate['rarity_label'] }}</span>
+                  <span class="part-chip">{{ candidate['expected_plus_text'] }}</span>
+                  {% if candidate.get('is_equipped') %}
+                    <span class="part-chip is-equipped">装備中</span>
+                  {% else %}
+                    <span class="part-chip">所持中</span>
+                  {% endif %}
+                </div>
+                <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
+                <div class="part-meta-line">{% if candidate.get('focus_line') %}注目 {{ candidate['focus_line'] }} / {% endif %}所持 {{ candidate['qty_total'] }}個</div>
+                <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
+              </div>
+            </div>
+            {{ stat_grid(candidate['stat_rows']) }}
+            <div class="part-subsection">
+              <div class="part-subsection-title">素材として使う2個</div>
+              <div class="part-mini-grid">
+                {% for material in candidate['material_cards'] %}
+                  <div class="part-mini-card">
+                    <img class="part-mini-image" src="{{ material['image_url'] }}" alt="{{ material['display_name'] }}" loading="lazy" decoding="async" />
+                    <div>
+                      <div class="part-mini-name">#{{ material['id'] }} {{ material['display_name'] }}</div>
+                      <div class="robot-time">+{{ material['plus'] }} / {{ material['status_label'] }}</div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="fuse-exec-summary">消費: ベース1 + 素材2 / 上昇量: +1 / 成功率: 100%</div>
+      <button type="submit" id="fuse-select-submit" class="fuse-submit-large">選んだ個体を強化する</button>
+    {% else %}
+      <div class="card">
+        <div><b>使える素材がありません</b></div>
+        <div class="robot-time">
+          同じパーツを3個そろえると強化できます。
+          {% if storage_blocked_groups %}
+          保管中の個体がある場合は、先に所持へ戻すと候補に出ます。
+          {% else %}
+          部位を切り替えると候補が見つかることがあります。
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </form>
+  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  {% endif %}
+
+  <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v=0.1.2"></script>
+<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v=0.2.0"></script>
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
 {% endblock %}

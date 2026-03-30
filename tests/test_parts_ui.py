@@ -226,6 +226,21 @@ class PartsUiTests(unittest.TestCase):
         self.assertNotIn("保管試作ヘッド", strengthen_html)
         self.assertNotIn("保管試作ヘッド", build_html)
 
+    def test_strengthen_page_explains_when_required_parts_are_in_storage(self):
+        blocked_part = self._create_custom_part("HEAD", "blocked_strengthen_head", "保管強化ヘッド")
+        self._create_extra_instance(blocked_part, plus=0, status="inventory")
+        self._create_extra_instance(blocked_part, plus=0, status="overflow")
+        self._create_extra_instance(blocked_part, plus=1, status="overflow")
+
+        client = self._client()
+        resp = client.get("/parts/strengthen?part_type=HEAD")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("保管中の個体があるため、今は強化に使えない組み合わせがあります", html)
+        self.assertIn("保管強化ヘッド", html)
+        self.assertIn("所持パーツで保管を確認する", html)
+        self.assertIn("#part-storage", html)
+
     def test_parts_restore_moves_selected_overflow_items_back_to_inventory(self):
         overflow_part = self._create_custom_part("HEAD", "restore_head_proto", "復帰ヘッド")
         self._create_extra_instance(overflow_part, plus=1, status="overflow")

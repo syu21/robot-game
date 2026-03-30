@@ -205,6 +205,11 @@ STAGE_MODIFIERS_ENABLED = os.getenv("STAGE_MODIFIERS_ENABLED", "1") == "1"
 BATTLE_RITUAL_OVERLAY_ENABLED = os.getenv("BATTLE_RITUAL_OVERLAY_ENABLED", "1") == "1"
 UI_EFFECTS_ENABLED = os.getenv("UI_EFFECTS_ENABLED", "1") == "1"
 PUBLIC_GAME_URL = (os.getenv("PUBLIC_GAME_URL") or "").strip()
+OFFICIAL_X_URL = (os.getenv("OFFICIAL_X_URL") or "").strip()
+GOOGLE_OAUTH_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+GOOGLE_OAUTH_PROVIDER = "google"
+GOOGLE_OAUTH_SCOPE = "openid email profile"
+_google_oauth_discovery_cache = {"loaded_at": 0.0, "data": None}
 STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
 STRIPE_PUBLISHABLE_KEY = (os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()
 STRIPE_WEBHOOK_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
@@ -5673,6 +5678,24 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_auth_identities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            provider_user_id TEXT NOT NULL,
+            email TEXT,
+            display_name TEXT,
+            avatar_url TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(provider, provider_user_id),
+            UNIQUE(user_id, provider),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS chat_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -10591,6 +10614,218 @@ def _public_game_root_url():
     return "https://example.com"
 
 
+def _google_oauth_client_id():
+    return (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+
+
+def _google_oauth_client_secret():
+    return (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or "").strip()
+
+
+def _google_oauth_enabled():
+    return bool(_google_oauth_client_id() and _google_oauth_client_secret())
+
+
+def _google_oauth_redirect_uri():
+    explicit = (os.getenv("GOOGLE_OAUTH_REDIRECT_URI") or "").strip()
+    if explicit:
+        return explicit
+    if has_request_context():
+        return f"{_public_game_root_url()}{url_for('google_oauth_callback')}"
+    return ""
+
+
+def _google_oauth_discovery_doc(force=False):
+    now = time.time()
+    cached = _google_oauth_discovery_cache.get("data")
+    loaded_at = float(_google_oauth_discovery_cache.get("loaded_at") or 0.0)
+    if cached and not force and (now - loaded_at) < 3600:
+        return cached
+    req = Request(
+        GOOGLE_OAUTH_DISCOVERY_URL,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": f"robolabo/{APP_VERSION}",
+        },
+        method="GET",
+    )
+    with urlopen(req, timeout=8.0) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("google_oauth_discovery_invalid")
+    _google_oauth_discovery_cache["loaded_at"] = now
+    _google_oauth_discovery_cache["data"] = payload
+    return payload
+
+
+def _google_oauth_authorize_url(*, state, nonce):
+    discovery = _google_oauth_discovery_doc()
+    auth_endpoint = (
+        str(discovery.get("authorization_endpoint") or "").strip()
+        or "https://accounts.google.com/o/oauth2/v2/auth"
+    )
+    query = urlencode(
+        {
+            "client_id": _google_oauth_client_id(),
+            "redirect_uri": _google_oauth_redirect_uri(),
+            "response_type": "code",
+            "scope": GOOGLE_OAUTH_SCOPE,
+            "state": state,
+            "nonce": nonce,
+            "access_type": "online",
+            "include_granted_scopes": "true",
+            "prompt": "select_account",
+        }
+    )
+    return f"{auth_endpoint}?{query}"
+
+
+def _google_oauth_exchange_code(code):
+    discovery = _google_oauth_discovery_doc()
+    token_endpoint = (
+        str(discovery.get("token_endpoint") or "").strip()
+        or "https://oauth2.googleapis.com/token"
+    )
+    payload = urlencode(
+        {
+            "code": code,
+            "client_id": _google_oauth_client_id(),
+            "client_secret": _google_oauth_client_secret(),
+            "redirect_uri": _google_oauth_redirect_uri(),
+            "grant_type": "authorization_code",
+        }
+    ).encode("utf-8")
+    req = Request(
+        token_endpoint,
+        data=payload,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": f"robolabo/{APP_VERSION}",
+        },
+        method="POST",
+    )
+    with urlopen(req, timeout=8.0) as resp:
+        token_payload = json.loads(resp.read().decode("utf-8"))
+    return token_payload if isinstance(token_payload, dict) else {}
+
+
+def _google_oauth_fetch_userinfo(access_token):
+    discovery = _google_oauth_discovery_doc()
+    userinfo_endpoint = (
+        str(discovery.get("userinfo_endpoint") or "").strip()
+        or "https://openidconnect.googleapis.com/v1/userinfo"
+    )
+    req = Request(
+        userinfo_endpoint,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": f"robolabo/{APP_VERSION}",
+        },
+        method="GET",
+    )
+    with urlopen(req, timeout=8.0) as resp:
+        profile = json.loads(resp.read().decode("utf-8"))
+    return profile if isinstance(profile, dict) else {}
+
+
+def _oauth_safe_next_path(next_path):
+    text = str(next_path or "").strip()
+    if text.startswith("/") and not text.startswith("//"):
+        return text
+    return ""
+
+
+def _social_username_seed(*values):
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        seed = re.sub(r"[^0-9A-Za-z_-]+", "", text)
+        seed = seed.strip("_-")
+        if seed:
+            return seed[:24]
+    return "pilot"
+
+
+def _build_unique_social_username(db, *seed_values):
+    base = _social_username_seed(*seed_values)
+    if _is_main_admin_username(base):
+        base = "pilot"
+    candidate = base
+    suffix = 1
+    while _find_user_for_login(db, candidate):
+        trimmed = base[: max(8, 24 - len(str(suffix)) - 1)]
+        candidate = f"{trimmed}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _find_user_identity(db, provider, provider_user_id):
+    provider_value = str(provider or "").strip().lower()
+    sub_value = str(provider_user_id or "").strip()
+    if not provider_value or not sub_value:
+        return None
+    return db.execute(
+        """
+        SELECT *
+        FROM user_auth_identities
+        WHERE provider = ? AND provider_user_id = ?
+        LIMIT 1
+        """,
+        (provider_value, sub_value),
+    ).fetchone()
+
+
+def _upsert_user_identity(db, *, user_id, provider, provider_user_id, email=None, display_name=None, avatar_url=None):
+    now_ts = int(time.time())
+    existing = _find_user_identity(db, provider, provider_user_id)
+    if existing:
+        db.execute(
+            """
+            UPDATE user_auth_identities
+            SET user_id = ?, email = ?, display_name = ?, avatar_url = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                int(user_id),
+                (str(email or "").strip() or None),
+                (str(display_name or "").strip() or None),
+                (str(avatar_url or "").strip() or None),
+                now_ts,
+                int(existing["id"]),
+            ),
+        )
+        return int(existing["id"])
+    cur = db.execute(
+        """
+        INSERT INTO user_auth_identities (
+            user_id,
+            provider,
+            provider_user_id,
+            email,
+            display_name,
+            avatar_url,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            str(provider or "").strip().lower(),
+            str(provider_user_id or "").strip(),
+            (str(email or "").strip() or None),
+            (str(display_name or "").strip() or None),
+            (str(avatar_url or "").strip() or None),
+            now_ts,
+            now_ts,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
 def _invite_link_for_code(code):
     if not code:
         return ""
@@ -11690,6 +11925,7 @@ def _home_next_action_card(
     new_layer_badge,
     unlocked_layer_recent,
     faction_status=None,
+    total_explores=0,
 ):
     robot_count = int(
         db.execute(
@@ -11745,6 +11981,16 @@ def _home_next_action_card(
     current_layer = max(1, min(MAX_UNLOCKABLE_LAYER, int(max_unlocked_layer or 1)))
     area_key = HOME_PRIMARY_AREA_BY_LAYER.get(current_layer, "layer_1")
     if current_layer == 1:
+        if int(total_explores or 0) <= 0:
+            return {
+                "title": "Next Action",
+                "desc": "最初の出撃へ。まずは第1層で1勝しよう",
+                "cta_label": "第1層へ出撃",
+                "cta_url": url_for("explore"),
+                "is_post": True,
+                "area_key": "layer_1",
+                "boss_enter": False,
+            }
         if _home_fuse_ready(db, int(user["id"])):
             return {
                 "title": "Next Action",
@@ -13720,6 +13966,8 @@ def inject_app_meta():
     return {
         "app_version": APP_VERSION,
         "support_email": SUPPORT_EMAIL,
+        "official_x_url": OFFICIAL_X_URL,
+        "google_auth_available": _google_oauth_enabled(),
         "legal_operator_name": LEGAL_OPERATOR_NAME,
         "legal_brand_name": LEGAL_BRAND_NAME,
         "legal_disclosure_policy": LEGAL_DISCLOSURE_POLICY,
@@ -13873,11 +14121,142 @@ def handle_500(err):
     return render_template("500.html"), 500
 
 
+def _public_changelog_entries():
+    return [
+        {
+            "version": "0.1.14",
+            "date": "2026/03/26",
+            "title": "育成導線と表示整理を改善",
+            "notes": [
+                "探索場所ごとの育ち方の差を追加",
+                "ロボの性格表示（安定 / 背水 / 爆発）を追加",
+                "目的別ランキングと展示ソートを追加",
+                "用語ページを追加",
+                "ホームから前回の出撃先へすぐ出撃できるよう改善",
+                "Layer2ボス報酬未付与の不具合を修正",
+            ],
+        },
+        {
+            "version": "0.1.13",
+            "date": "2026-03-21",
+            "title": "ヘッダー挙動と sitemap を調整",
+            "notes": [
+                "PC でのヘッダー自動非表示判定を修正",
+                "公開用の /sitemap.xml を追加",
+            ],
+        },
+        {
+            "version": "0.1.12",
+            "date": "2026-03-21",
+            "title": "公開運用の土台を強化",
+            "notes": [
+                "ポータル送信の再送キューと運用タイマー例を追加",
+                "利用規約/プライバシー/問い合わせ/監視/バックアップ運用を整備",
+                "初心者ホームの情報量を絞って初回導線を改善",
+            ],
+        },
+        {
+            "version": "0.1.11",
+            "date": "2026-03-21",
+            "title": "モバイル表示と本番運用の調整",
+            "notes": [
+                "VPS 本番化と独自ドメイン公開に対応",
+                "ホームのモバイル表示順とヘッダー挙動を改善",
+            ],
+        },
+        {
+            "version": "0.1.10",
+            "date": "2026-02-27",
+            "title": "初回リリース",
+            "notes": ["運用開始", "探索/組立/合成/監査の基本機能を提供"],
+        },
+    ]
+
+
+def _landing_world_snapshot(db):
+    today_start_ts, today_end_ts = _jst_day_bounds()
+    week_key = _world_week_key()
+    week_start_dt, week_end_dt = _world_week_bounds(week_key)
+    week_start_ts = int(week_start_dt.timestamp())
+    week_end_ts = int(week_end_dt.timestamp())
+    active_count = count_active_users(
+        db,
+        window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+    )
+    today_explores = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM world_events_log
+            WHERE event_type = ?
+              AND created_at >= ?
+              AND created_at < ?
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_END"], int(today_start_ts), int(today_end_ts)),
+        ).fetchone()["c"]
+        or 0
+    )
+    week_boss_defeats = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM world_events_log
+            WHERE event_type = ?
+              AND created_at >= ?
+              AND created_at < ?
+            """,
+            (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], int(week_start_ts), int(week_end_ts)),
+        ).fetchone()["c"]
+        or 0
+    )
+    weekly_mvp = _weekly_mvp_snapshot(db, week_key)
+    hero_image_url = (
+        weekly_mvp.get("robot_image_url")
+        if weekly_mvp and weekly_mvp.get("robot_image_url")
+        else url_for("static", filename="images/ui/robonavi.png")
+    )
+    world_metrics = [
+        {
+            "label": f"最近{int(USER_PRESENCE_ACTIVE_WINDOW_MINUTES)}分で活動中",
+            "value": active_count,
+            "suffix": "人",
+            "caption": "いま世界で動いているロボ使い",
+        },
+        {
+            "label": "今日の探索回数",
+            "value": today_explores,
+            "suffix": "回",
+            "caption": "今日だけで積み上がった出撃",
+        },
+        {
+            "label": "今週のボス撃破",
+            "value": week_boss_defeats,
+            "suffix": "体",
+            "caption": "層突破につながった撃破記録",
+        },
+    ]
+    return {
+        "world_metrics": world_metrics,
+        "weekly_mvp": weekly_mvp,
+        "hero_image_url": hero_image_url,
+        "beta_kicker": "ロボらぼ β版公開中",
+        "beta_line": "現在、入口体験と戦闘UIを中心に改善中です。",
+    }
+
+
 @app.route("/")
 def index():
     if "user_id" in session:
         return redirect(url_for("home"))
-    return redirect(url_for("login"))
+    db = get_db()
+    landing = _landing_world_snapshot(db)
+    landing["ref_code"] = (request.args.get("ref") or "").strip().upper()
+    return render_template(
+        "landing.html",
+        title="ロボらぼ β版",
+        landing=landing,
+        changelog_entries=_public_changelog_entries()[:3],
+    )
 
 
 @app.route("/maintenance")
@@ -14499,26 +14878,7 @@ def healthz():
 
 @app.route("/changelog")
 def changelog():
-    entries = [
-        {
-            "version": "0.1.14",
-            "date": "2026/03/26",
-            "title": "育成導線と表示整理を改善",
-            "notes": [
-                "探索場所ごとの育ち方の差を追加",
-                "ロボの性格表示（安定 / 背水 / 爆発）を追加",
-                "目的別ランキングと展示ソートを追加",
-                "用語ページを追加",
-                "ホームから前回の出撃先へすぐ出撃できるよう改善",
-                "Layer2ボス報酬未付与の不具合を修正",
-            ],
-        },
-        {"version": "0.1.13", "date": "2026-03-21", "title": "ヘッダー挙動と sitemap を調整", "notes": ["PC でのヘッダー自動非表示判定を修正", "公開用の /sitemap.xml を追加"]},
-        {"version": "0.1.12", "date": "2026-03-21", "title": "公開運用の土台を強化", "notes": ["ポータル送信の再送キューと運用タイマー例を追加", "利用規約/プライバシー/問い合わせ/監視/バックアップ運用を整備", "初心者ホームの情報量を絞って初回導線を改善"]},
-        {"version": "0.1.11", "date": "2026-03-21", "title": "モバイル表示と本番運用の調整", "notes": ["VPS 本番化と独自ドメイン公開に対応", "ホームのモバイル表示順とヘッダー挙動を改善"]},
-        {"version": "0.1.10", "date": "2026-02-27", "title": "初回リリース", "notes": ["運用開始", "探索/組立/合成/監査の基本機能を提供"]},
-    ]
-    return render_template("changelog.html", title="更新履歴", entries=entries)
+    return render_template("changelog.html", title="更新履歴", entries=_public_changelog_entries())
 
 
 @app.route("/client-error/js", methods=["POST"])
@@ -14627,10 +14987,153 @@ def _login_user_session(db, user_row):
     db.commit()
 
 
+@app.route("/auth/google/start")
+def google_oauth_start():
+    fallback_endpoint = "register" if request.args.get("intent") == "register" else "login"
+    fallback_target = url_for(fallback_endpoint)
+    if not _google_oauth_enabled():
+        flash("Googleログインはまだ準備中です。", "notice")
+        return redirect(fallback_target)
+    ref_code = (request.args.get("ref") or "").strip().upper()
+    next_path = _oauth_safe_next_path(request.args.get("next"))
+    state = uuid.uuid4().hex
+    nonce = uuid.uuid4().hex
+    session["google_oauth_state"] = state
+    session["google_oauth_nonce"] = nonce
+    session["google_oauth_ref_code"] = ref_code
+    session["google_oauth_next"] = next_path
+    try:
+        auth_url = _google_oauth_authorize_url(state=state, nonce=nonce)
+    except Exception:
+        app.logger.exception("google_oauth.start_failed")
+        flash("Googleログインの準備に失敗しました。少し置いてからもう一度お試しください。", "error")
+        return redirect(fallback_target)
+    return redirect(auth_url)
+
+
+@app.route("/auth/google/callback")
+def google_oauth_callback():
+    if not _google_oauth_enabled():
+        flash("Googleログインはまだ準備中です。", "notice")
+        return redirect(url_for("login"))
+    error_code = (request.args.get("error") or "").strip()
+    if error_code:
+        flash("Googleログインを完了できませんでした。", "notice")
+        return redirect(url_for("login"))
+    expected_state = str(session.pop("google_oauth_state", "") or "")
+    expected_nonce = str(session.pop("google_oauth_nonce", "") or "")
+    ref_code = str(session.pop("google_oauth_ref_code", "") or "").strip().upper()
+    next_path = _oauth_safe_next_path(session.pop("google_oauth_next", ""))
+    state = (request.args.get("state") or "").strip()
+    code = (request.args.get("code") or "").strip()
+    if (not expected_state) or state != expected_state or not code:
+        flash("Googleログインの確認に失敗しました。もう一度やり直してください。", "error")
+        return redirect(url_for("login"))
+    try:
+        token_payload = _google_oauth_exchange_code(code)
+        access_token = str(token_payload.get("access_token") or "").strip()
+        if not access_token:
+            raise ValueError("missing_access_token")
+        profile = _google_oauth_fetch_userinfo(access_token)
+    except Exception:
+        app.logger.exception("google_oauth.callback_failed")
+        flash("Googleログインの処理に失敗しました。時間を置いてもう一度お試しください。", "error")
+        return redirect(url_for("login"))
+
+    provider_user_id = str(profile.get("sub") or "").strip()
+    email = str(profile.get("email") or "").strip()
+    email_verified = bool(profile.get("email_verified"))
+    display_name = str(profile.get("name") or "").strip()
+    avatar_url = str(profile.get("picture") or "").strip()
+    if not expected_nonce or not provider_user_id or not email or not email_verified:
+        flash("Googleアカウント情報を確認できませんでした。", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    identity = _find_user_identity(db, GOOGLE_OAUTH_PROVIDER, provider_user_id)
+    user_row = None
+    created_new_user = False
+    if identity:
+        user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(identity["user_id"]),)).fetchone()
+    if user_row:
+        if int(user_row["is_banned"] or 0) == 1:
+            flash("このアカウントは利用停止されています。", "error")
+            return redirect(url_for("login"))
+        if int(user_row["is_admin_protected"] or 0) == 1:
+            flash("このアカウントは通常のGoogleログインを利用できません。", "error")
+            return redirect(url_for("login"))
+        _upsert_user_identity(
+            db,
+            user_id=int(user_row["id"]),
+            provider=GOOGLE_OAUTH_PROVIDER,
+            provider_user_id=provider_user_id,
+            email=email,
+            display_name=display_name,
+            avatar_url=avatar_url,
+        )
+        db.commit()
+    else:
+        username_seed = email.split("@", 1)[0] if "@" in email else email
+        username = _build_unique_social_username(db, username_seed, display_name, expected_nonce[:8], "pilot")
+        is_admin = 1 if _is_main_admin_username(username) else 0
+        cur = db.execute(
+            """
+            INSERT INTO users
+            (username, password_hash, coins, created_at, last_seen_at, is_admin, is_admin_protected)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username,
+                generate_password_hash(uuid.uuid4().hex),
+                0,
+                int(time.time()),
+                int(time.time()),
+                is_admin,
+                is_admin,
+            ),
+        )
+        user_id = int(cur.lastrowid)
+        _ensure_user_invite_code(db, user_id)
+        if ref_code:
+            _attach_referral_if_valid(
+                db,
+                referred_user_id=user_id,
+                referral_code=ref_code,
+                request_ip=request.remote_addr,
+            )
+        initialize_new_user(db, user_id)
+        _ensure_qol_entitlement(db, user_id)
+        _upsert_user_identity(
+            db,
+            user_id=user_id,
+            provider=GOOGLE_OAUTH_PROVIDER,
+            provider_user_id=provider_user_id,
+            email=email,
+            display_name=display_name,
+            avatar_url=avatar_url,
+        )
+        db.commit()
+        user_row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        created_new_user = True
+
+    if not user_row:
+        flash("Googleログインに失敗しました。", "error")
+        return redirect(url_for("login"))
+
+    _login_user_session(db, user_row)
+    if created_new_user:
+        session["just_registered"] = 1
+        flash("Googleアカウントで登録しました。第1層からすぐ出撃できます。", "notice")
+    if next_path:
+        return redirect(next_path)
+    return redirect(url_for("home"))
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = None
     ref_code = (request.values.get("ref") or "").strip().upper()
+    db = get_db()
     if request.method == "POST":
         username = _normalize_main_admin_username(request.form.get("username", "").strip())
         password = request.form.get("password", "").strip()
@@ -14640,7 +15143,6 @@ def register():
         elif password_confirm and password_confirm != password:
             error = "確認用パスワードが一致しません。"
         else:
-            db = get_db()
             try:
                 is_admin = 1 if _is_main_admin_username(username) else 0
                 cur = db.execute(
@@ -14676,7 +15178,12 @@ def register():
                 return redirect(url_for("home"))
             except sqlite3.IntegrityError:
                 error = "そのユーザー名は既に使われています。"
-    return render_template("register.html", error=error, ref_code=ref_code)
+    return render_template(
+        "register.html",
+        error=error,
+        ref_code=ref_code,
+        landing=_landing_world_snapshot(db),
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -15056,6 +15563,13 @@ def home():
         new_layer_badge = None
     if int(unlocked_layer_recent or 0) > int(release_cap):
         unlocked_layer_recent = None
+    total_explores = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user["id"]), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+        ).fetchone()["c"]
+        or 0
+    )
     next_action_card = _home_next_action_card(
         db,
         user,
@@ -15064,13 +15578,7 @@ def home():
         new_layer_badge,
         unlocked_layer_recent,
         faction_status=faction_status,
-    )
-    total_explores = int(
-        db.execute(
-            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
-            (int(user["id"]), AUDIT_EVENT_TYPES["EXPLORE_END"]),
-        ).fetchone()["c"]
-        or 0
+        total_explores=total_explores,
     )
     layer1_boss_defeated = _has_fixed_boss_defeat_in_area(db, user["id"], "layer_1")
     beginner_mission_available = (user["is_admin"] != 1) and (not layer1_boss_defeated)
@@ -15094,8 +15602,8 @@ def home():
     )
     home_summary_line = "パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。"
     home_beginner_hint = "最初は「ロボ編成」か「出撃」だけ見ればOKです。"
-    beginner_mission_text = "出撃してパーツを集めよう！\n強くなったらボスに挑戦だ！"
-    beginner_mission_cta_label = "出撃する"
+    beginner_mission_text = "次は第1層へ出撃しよう！\nまずは1勝してパーツを持ち帰ろう。"
+    beginner_mission_cta_label = "第1層へ出撃"
     beginner_mission_is_post = True
     beginner_mission_cta_url = url_for("explore")
     if not has_any_robot:
@@ -15105,6 +15613,9 @@ def home():
         beginner_mission_cta_url = url_for("build")
     intro_modal_seen = int(user["has_seen_intro_modal"] or 0) == 1 if "has_seen_intro_modal" in user.keys() else False
     just_registered = bool(session.pop("just_registered", None))
+    if has_any_robot and int(total_explores or 0) <= 0:
+        beginner_mission_text = "最初の出撃へ。\nまずは第1層でパーツを集めよう。"
+        beginner_mission_cta_label = "第1層へ出撃"
     show_intro_modal = (not intro_modal_seen) and (just_registered or total_explores == 0)
     intro_npc_image = "images/ui/robonavi.png"
     explore_submission_id = _issue_explore_submission_id()
@@ -20451,10 +20962,32 @@ def evolve_parts_legacy():
 
 
 def _strengthen_parts_selected(db, user_id, base_id):
+    def _fail(message, *, base_row=None, coin_cost=None):
+        payload = {
+            "ok": False,
+            "outcome": "fail",
+            "message": str(message or "強化に失敗しました。"),
+        }
+        if base_row:
+            payload.update(
+                {
+                    "part_type": base_row["part_type"],
+                    "rarity": base_row["rarity"],
+                    "part_key": base_row["part_key"],
+                    "base_plus": int(base_row["plus"] or 0),
+                    "new_plus": int(base_row["plus"] or 0),
+                    "base_id": int(base_row["id"]),
+                    "base_status": str(base_row["status"] or "inventory"),
+                }
+            )
+        if coin_cost is not None:
+            payload["coin_cost"] = int(coin_cost)
+        return payload
+
     try:
         base_id_int = int(base_id)
     except Exception:
-        return {"ok": False, "message": "ベース個体を選択してください。"}
+        return _fail("ベース個体を選択してください。")
 
     base_row = db.execute(
         """
@@ -20469,9 +21002,12 @@ def _strengthen_parts_selected(db, user_id, base_id):
         (int(user_id), base_id_int),
     ).fetchone()
     if not base_row:
-        return {"ok": False, "message": "ベース個体が見つかりません。"}
+        return _fail("ベース個体が見つかりません。")
     if int(base_row["plus"] or 0) >= int(MAX_PART_PLUS):
-        return {"ok": False, "message": f"この個体はすでに最大強化（+{MAX_PART_PLUS}）です。"}
+        return _fail(
+            f"この個体はすでに最大強化（+{MAX_PART_PLUS}）です。",
+            base_row=base_row,
+        )
 
     material_rows = db.execute(
         """
@@ -20497,14 +21033,21 @@ def _strengthen_parts_selected(db, user_id, base_id):
         ),
     ).fetchall()
     if len(material_rows) != 2:
-        return {"ok": False, "message": "同じパーツ（＋値違い可）の素材が2個不足しています。"}
+        return _fail(
+            "同じパーツ（＋値違い可）の素材が2個不足しています。",
+            base_row=base_row,
+        )
 
     material_ids = [int(material_rows[0]["id"]), int(material_rows[1]["id"])]
 
     coin_cost = int(FUSE_COST_BY_PLUS.get(int(base_row["plus"] or 0), 20))
     user_row = db.execute("SELECT coins FROM users WHERE id = ?", (int(user_id),)).fetchone()
     if not user_row or int(user_row["coins"] or 0) < coin_cost:
-        return {"ok": False, "message": f"コイン不足です（必要: {coin_cost}）", "coin_cost": coin_cost}
+        return _fail(
+            f"コイン不足です（必要: {coin_cost}）",
+            base_row=base_row,
+            coin_cost=coin_cost,
+        )
 
     try:
         base_plus = int(base_row["plus"] or 0)
@@ -20535,7 +21078,11 @@ def _strengthen_parts_selected(db, user_id, base_id):
         db.commit()
     except Exception as exc:
         db.rollback()
-        return {"ok": False, "message": f"強化に失敗しました: {exc}"}
+        return _fail(
+            f"強化に失敗しました: {exc}",
+            base_row=base_row,
+            coin_cost=coin_cost,
+        )
 
     return {
         "ok": True,
@@ -20656,6 +21203,7 @@ def parts_strengthen():
             session["last_fuse_result"] = {
                 "mode": "select",
                 "outcome": result.get("outcome"),
+                "message": result.get("message"),
                 "part_type": result.get("part_type"),
                 "part_key": result.get("part_key"),
                 "rarity": result.get("rarity"),
@@ -20945,6 +21493,66 @@ def parts_strengthen():
             )
             candidate_item["stack_key"] = f"{group_row['part_key']}|{group_row['rarity']}|{int(row_dict['id'])}"
             base_candidates.append(candidate_item)
+    storage_blocked_rows = db.execute(
+        """
+        SELECT
+            rp.part_type,
+            rp.key AS part_key,
+            pi.rarity,
+            SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) AS qty_inventory,
+            SUM(CASE WHEN pi.status = 'equipped' THEN 1 ELSE 0 END) AS qty_equipped,
+            SUM(CASE WHEN pi.status = 'overflow' THEN 1 ELSE 0 END) AS qty_overflow,
+            COUNT(*) AS qty_total,
+            MAX(rp.image_path) AS image_path,
+            MAX(rp.display_name_ja) AS display_name_ja
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ?
+          AND pi.status IN ('inventory', 'equipped', 'overflow')
+        """
+        + (" AND rp.part_type = ?" if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else "")
+        + (" AND pi.rarity = ?" if filter_rarity in RARITIES else "")
+        + """
+        GROUP BY rp.part_type, rp.key, pi.rarity
+        HAVING SUM(CASE WHEN pi.status = 'overflow' THEN 1 ELSE 0 END) > 0
+           AND COUNT(*) >= 3
+           AND NOT (
+                SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 3
+                OR (
+                    SUM(CASE WHEN pi.status = 'equipped' THEN 1 ELSE 0 END) >= 1
+                    AND SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 2
+                )
+           )
+        ORDER BY
+            CASE rp.part_type
+                WHEN 'HEAD' THEN 1
+                WHEN 'RIGHT_ARM' THEN 2
+                WHEN 'LEFT_ARM' THEN 3
+                WHEN 'LEGS' THEN 4
+                ELSE 9
+            END ASC,
+            qty_overflow DESC,
+            qty_total DESC,
+            rp.key ASC
+        LIMIT 8
+        """,
+        (
+            [user_id, filter_part_type, filter_rarity]
+            if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} and filter_rarity in RARITIES
+            else [user_id, filter_part_type]
+            if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}
+            else [user_id, filter_rarity]
+            if filter_rarity in RARITIES
+            else [user_id]
+        ),
+    ).fetchall()
+    storage_blocked_groups = []
+    for row in storage_blocked_rows:
+        item = dict(row)
+        item["display_name"] = _part_display_name_ja(item)
+        item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
+        item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
+        storage_blocked_groups.append(item)
     base_candidates.sort(
         key=lambda item: (
             0 if item.get("is_equipped") else 1,
@@ -20955,9 +21563,17 @@ def parts_strengthen():
         )
     )
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
+    storage_list_params = {}
+    if filter_part_type:
+        storage_list_params["part_type"] = filter_part_type
+    storage_manage_url = url_for("parts", **storage_list_params) + "#part-storage"
+    inventory_space_remaining = _inventory_space_remaining(db, user_id)
     return render_template(
         "parts_fuse.html",
         base_candidates=base_candidates,
+        storage_blocked_groups=storage_blocked_groups,
+        storage_manage_url=storage_manage_url,
+        inventory_space_remaining=inventory_space_remaining,
         protect_core=protect_core,
         rarity_options=rarity_options,
         part_type_options=part_type_options,

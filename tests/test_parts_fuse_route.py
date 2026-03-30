@@ -188,6 +188,23 @@ class PartsFuseRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(int(row["p"] or 0), 2)
 
+    def test_fuse_failure_result_shows_reason(self):
+        ids = self._seed_same_part_instances([0, 0, 0])
+        base_id = ids[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 0 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        client = self._client()
+        resp = client.post("/parts/fuse", data={"mode": "select", "base_id": str(base_id)}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("強化結果", html)
+        self.assertIn("失敗", html)
+        self.assertIn("コイン不足です", html)
+        self.assertNotIn("不明", html)
+
     def test_fuse_plus_cap_is_five(self):
         ids = self._seed_same_part_instances([5, 2, 2])
         base_id = ids[0]

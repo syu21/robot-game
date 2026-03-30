@@ -45,6 +45,7 @@
 - [ ] `/build` の候補カードで `総合値 / 6ステ` を見ながら選べる
 - [ ] 保存枠満杯時に保存ブロック
 - [ ] `/parts/strengthen` で候補0件時の案内表示
+- [ ] `/parts/strengthen` で保管中個体のため成立していない場合、`/parts` の保管確認導線が出る
 - [ ] `/parts/strengthen` の部位フィルターが動く
 - [ ] `/parts/strengthen` が `ベース1 + 素材2 -> +1固定` で動作
   - 素材2個消費
@@ -52,6 +53,7 @@
   - 成功率100%
 - [ ] `/parts/strengthen` で `強化前 -> 強化後` 差分が6ステで見える
 - [ ] `/parts/strengthen` で装備中ベースと消える素材2個が分かる
+- [ ] `/parts/strengthen` の失敗時に理由が結果面で分かる
 - [ ] `/parts/evolve` でコア不足時に500にならない
 - [ ] `/parts/evolve` の部位フィルターが動く
 - [ ] `/parts/evolve` が `N + 進化コア1 -> R` で動作

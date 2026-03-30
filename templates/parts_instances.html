@@ -159,6 +159,7 @@
 
   {% if overflow_total > 0 %}
   <form
+    id="part-storage"
     method="post"
     action="{{ url_for('parts_restore') }}"
     class="card"
