@@ -4347,7 +4347,7 @@ def _robot_metric_rows(db, metric_key, limit=50):
     metric = RANKING_METRIC_DEF_BY_KEY.get(metric_key) or RANKING_METRIC_DEF_BY_KEY["wins"]
     rows = db.execute(
         """
-        SELECT ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.updated_at, u.username
+        SELECT ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.icon_32_path, ri.updated_at, u.username
         FROM robot_instances ri
         JOIN users u ON u.id = ri.user_id
         WHERE ri.status = 'active'
@@ -4356,6 +4356,12 @@ def _robot_metric_rows(db, metric_key, limit=50):
     ).fetchall()
     best_by_user = {}
     for row in rows:
+        row = _refresh_robot_instance_render_assets(
+            db,
+            row,
+            log_label="ranking_robot_metrics",
+            preserve_updated_at=True,
+        ) or row
         stat_obj = _compute_robot_stats_for_instance(db, int(row["id"]))
         if not stat_obj:
             continue
@@ -10219,20 +10225,44 @@ def _robot_render_revision():
     return max(int(PART_OFFSET_CACHE_VERSION or 0), int(COMPOSE_REV or 0))
 
 
-def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_render"):
+def _render_matches_placeholder_image(rel_path):
+    rel = _safe_static_rel(rel_path)
+    if not rel:
+        return False
+    target_abs = _static_abs(rel)
+    if not os.path.exists(target_abs):
+        return False
+    for placeholder_rel in ("enemies/_placeholder.png",):
+        placeholder_abs = _static_abs(placeholder_rel)
+        if not os.path.exists(placeholder_abs):
+            continue
+        try:
+            if os.path.getsize(target_abs) != os.path.getsize(placeholder_abs):
+                continue
+            with open(target_abs, "rb") as target_fp, open(placeholder_abs, "rb") as placeholder_fp:
+                if target_fp.read() == placeholder_fp.read():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_render", preserve_updated_at=False):
     if not robot_row:
         return None
     data = dict(robot_row)
     robot_id = int(data["id"])
     render_rev = _robot_render_revision()
-    updated_at = int(data.get("updated_at") or 0)
+    original_updated_at = int(data.get("updated_at") or 0)
+    updated_at = int(original_updated_at)
     composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
     icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
     composed_missing = not composed_rel or not os.path.exists(_static_abs(composed_rel))
     icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
     render_stale = updated_at < render_rev
+    composed_placeholder = bool(composed_rel and _render_matches_placeholder_image(composed_rel))
 
-    if composed_missing or render_stale:
+    if composed_missing or render_stale or composed_placeholder:
         parts = db.execute(
             "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
             (robot_id,),
@@ -10251,11 +10281,19 @@ def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_ren
                     composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
                     icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
                     icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
+                    composed_placeholder = bool(composed_rel and _render_matches_placeholder_image(composed_rel))
+                    if preserve_updated_at and original_updated_at > 0:
+                        db.execute(
+                            "UPDATE robot_instances SET updated_at = ? WHERE id = ?",
+                            (int(original_updated_at), robot_id),
+                        )
+                        db.commit()
+                        data["updated_at"] = int(original_updated_at)
             except Exception:
                 app.logger.warning("%s compose skipped id=%s", log_label, robot_id, exc_info=True)
                 data["composed_image_path"] = None
 
-    if data.get("composed_image_path") and (icon_missing or render_stale):
+    if data.get("composed_image_path") and (icon_missing or render_stale or composed_placeholder):
         try:
             data["icon_32_path"] = _ensure_robot_instance_badge(db, robot_id, data.get("composed_image_path"))
             latest = db.execute(
@@ -10265,6 +10303,13 @@ def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_ren
             if latest:
                 data["icon_32_path"] = latest["icon_32_path"]
                 data["updated_at"] = int(latest["updated_at"] or 0)
+                if preserve_updated_at and original_updated_at > 0:
+                    db.execute(
+                        "UPDATE robot_instances SET updated_at = ? WHERE id = ?",
+                        (int(original_updated_at), robot_id),
+                    )
+                    db.commit()
+                    data["updated_at"] = int(original_updated_at)
         except Exception:
             app.logger.warning("%s badge skipped id=%s", log_label, robot_id, exc_info=True)
 

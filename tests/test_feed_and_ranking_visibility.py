@@ -4,6 +4,7 @@ import re
 import tempfile
 import time
 import unittest
+import hashlib
 
 import app as game_app
 import init_db
@@ -429,6 +430,56 @@ class RankingVisibilityTests(unittest.TestCase):
         self.assertIn("Bulwark Alpha", durable_html)
         self.assertIn("Swift Beta", durable_html)
         self.assertLess(durable_html.index("Bulwark Alpha"), durable_html.index("Swift Beta"))
+
+    def test_ranking_repairs_placeholder_robot_render_without_touching_order_timestamp(self):
+        self._set_robot_weights(
+            self.beta_robot_id,
+            name="Swift Beta",
+            hp=0.04,
+            atk=0.12,
+            defe=0.05,
+            spd=0.58,
+            acc=0.13,
+            cri=0.08,
+        )
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            robot_id = int(self.beta_robot_id)
+            rel_path = f"robot_composed/instance_{robot_id}.png"
+            abs_path = os.path.join(game_app.STATIC_ROOT, rel_path)
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            placeholder_abs = os.path.join(game_app.STATIC_ROOT, "enemies", "_placeholder.png")
+            with open(placeholder_abs, "rb") as fp:
+                placeholder_hash = hashlib.md5(fp.read()).hexdigest()
+            with open(placeholder_abs, "rb") as src, open(abs_path, "wb") as dst:
+                dst.write(src.read())
+            old_updated_at = int(
+                db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (robot_id,)).fetchone()["updated_at"]
+            )
+            db.execute(
+                "UPDATE robot_instances SET composed_image_path = ?, icon_32_path = NULL WHERE id = ?",
+                (rel_path, robot_id),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.get("/ranking?metric=fastest")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("Swift Beta", html)
+        self.assertIn("ranking-robot-thumb", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT composed_image_path, updated_at FROM robot_instances WHERE id = ?",
+                (int(self.beta_robot_id),),
+            ).fetchone()
+            self.assertEqual(int(row["updated_at"] or 0), old_updated_at)
+            repaired_abs = os.path.join(game_app.STATIC_ROOT, str(row["composed_image_path"]))
+            with open(repaired_abs, "rb") as fp:
+                repaired_hash = hashlib.md5(fp.read()).hexdigest()
+            self.assertNotEqual(repaired_hash, placeholder_hash)
 
 
 if __name__ == "__main__":
