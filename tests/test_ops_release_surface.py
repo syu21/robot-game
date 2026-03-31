@@ -52,6 +52,71 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             resp = client.get(path)
             self.assertEqual(resp.status_code, 200)
 
+    def test_public_landing_page_shows_beta_cta_and_legal_links(self):
+        client = game_app.app.test_client()
+        resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ロボらぼ", html)
+        self.assertIn("ロボらぼ β版公開中", html)
+        self.assertIn("新規登録して始める", html)
+        self.assertIn("ログイン", html)
+        self.assertIn("今この瞬間の世界", html)
+        self.assertIn("3ステップで始まる", html)
+        self.assertIn("最新アップデート", html)
+        self.assertIn("/terms", html)
+        self.assertIn("/privacy", html)
+        self.assertIn("/commerce", html)
+        self.assertIn("/contact", html)
+        self.assertIn("/support", html)
+
+    def test_public_landing_shows_google_cta_when_configured(self):
+        client = game_app.app.test_client()
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_OAUTH_CLIENT_ID": "google-client-id",
+                "GOOGLE_OAUTH_CLIENT_SECRET": "google-client-secret",
+            },
+            clear=False,
+        ):
+            resp = client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("Googleで始める", html)
+        self.assertIn("/auth/google/start", html)
+
+    def test_register_page_has_hero_google_priority_and_world_reassurance(self):
+        client = game_app.app.test_client()
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_OAUTH_CLIENT_ID": "google-client-id",
+                "GOOGLE_OAUTH_CLIENT_SECRET": "google-client-secret",
+            },
+            clear=False,
+        ):
+            resp = client.get("/register")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ロボを組んで出撃せよ", html)
+        self.assertIn("Googleで3秒ではじめる", html)
+        self.assertIn("今すぐロボを組んで始める", html)
+        self.assertIn("新規登録して出撃する", html)
+        self.assertIn("パスワード確認", html)
+        self.assertIn("3ステップ", html)
+        self.assertIn("出撃", html)
+        self.assertIn("育成", html)
+        self.assertIn("世界", html)
+        self.assertIn("今この瞬間の世界", html)
+        self.assertIn("/static/images/ui/register_hero_banner.png", html)
+
+    def test_root_redirects_logged_in_user_to_home(self):
+        client = self._client_with_user(self.user_id, "ops_user")
+        resp = client.get("/", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/home", resp.headers.get("Location", ""))
+
     def test_guide_page_explains_core_terms(self):
         client = game_app.app.test_client()
         resp = client.get("/guide")

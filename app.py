@@ -14260,6 +14260,12 @@ def _landing_world_snapshot(db):
         if weekly_mvp and weekly_mvp.get("robot_image_url")
         else url_for("static", filename="images/ui/robonavi.png")
     )
+    register_hero_rel = "images/ui/register_hero_banner.png"
+    register_hero_image_url = (
+        url_for("static", filename=register_hero_rel)
+        if os.path.exists(_static_abs(register_hero_rel))
+        else hero_image_url
+    )
     world_metrics = [
         {
             "label": f"最近{int(USER_PRESENCE_ACTIVE_WINDOW_MINUTES)}分で活動中",
@@ -14284,6 +14290,7 @@ def _landing_world_snapshot(db):
         "world_metrics": world_metrics,
         "weekly_mvp": weekly_mvp,
         "hero_image_url": hero_image_url,
+        "register_hero_image_url": register_hero_image_url,
         "beta_kicker": "ロボらぼ β版公開中",
         "beta_line": "現在、入口体験と戦闘UIを中心に改善中です。",
     }

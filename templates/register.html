@@ -1,24 +1,125 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="auth">
-  <h1 class="auth-title">ユーザー登録</h1>
-  <p class="auth-lead">ロボらぼを始めるために、アカウントを作成しましょう。</p>
-  <p class="upgrade-cost">パーツを集めてロボを組み立て、ボスを倒しながら少しずつ先へ進みます。</p>
-  {% if ref_code %}
-  <div class="notice">招待コード: {{ ref_code }}</div>
-  {% endif %}
-  <form method="post" class="card auth-card">
-    {% if ref_code %}
-    <input type="hidden" name="ref" value="{{ ref_code }}" />
-    {% endif %}
-    <label for="register-username">ユーザー名</label>
-    <input id="register-username" type="text" name="username" autocomplete="username" required />
-    <label for="register-password">パスワード</label>
-    <input id="register-password" type="password" name="password" autocomplete="new-password" required />
-    <label for="register-password-confirm">パスワード（確認）</label>
-    <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
-    <button type="submit">登録</button>
-  </form>
-  <p class="link"><a href="{{ url_for('login') }}">ログインへ</a></p>
+<div class="auth-shell auth-register-shell">
+  <section class="auth-hero-stage">
+    <section class="card auth-hero-card">
+      <div class="auth-hero-grid">
+        <div class="auth-hero-copy">
+          <div><span class="weekly-fit-badge">ロボらぼ β版公開中</span></div>
+          <h1 class="auth-hero-title">ロボらぼ</h1>
+          <div class="auth-hero-tagline">ロボを組んで出撃せよ</div>
+          <p class="auth-hero-subline">集める、強くする、進化する。<br />君だけの機体で世界に挑もう。</p>
+          <div class="auth-hero-cta-stack">
+            {% if google_auth_available %}
+            <a class="auth-hero-cta auth-hero-cta-google" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleで3秒ではじめる</a>
+            {% endif %}
+            <a class="auth-hero-cta auth-hero-cta-primary" href="#register-form-card">今すぐロボを組んで始める</a>
+          </div>
+          <div class="auth-hero-hint">すぐ遊べます。登録後はそのまま第1層へ出撃できます。</div>
+        </div>
+        <div class="auth-hero-visual">
+          <div class="auth-hero-image-card">
+            <img class="auth-hero-image" src="{{ landing['register_hero_image_url'] }}" alt="ロボらぼの出撃前バナー" loading="eager" decoding="async" />
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section class="auth-register-main">
+    <section class="card auth-register-card" id="register-form-card">
+      <div class="auth-register-head">
+        <div>
+          <h2 class="auth-title">ユーザー登録</h2>
+          <p class="auth-lead">ユーザー名とパスワードだけで始められます。<br />登録後はそのままホームから最初の出撃へ進めます。</p>
+        </div>
+        {% if ref_code %}
+        <div class="notice auth-register-ref">招待コード: {{ ref_code }}</div>
+        {% endif %}
+      </div>
+
+      {% if google_auth_available %}
+      <div class="auth-register-google-priority">
+        <a class="auth-hero-cta auth-hero-cta-google auth-register-google-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleで3秒ではじめる</a>
+        <div class="robot-time">Googleアカウントがあれば、すぐ登録してそのまま出撃できます。</div>
+      </div>
+      {% endif %}
+
+      <form method="post" class="auth-card auth-card-register">
+        {% if ref_code %}
+        <input type="hidden" name="ref" value="{{ ref_code }}" />
+        {% endif %}
+        <label for="register-username">ユーザー名</label>
+        <input id="register-username" type="text" name="username" autocomplete="username" required />
+        <label for="register-password">パスワード</label>
+        <input id="register-password" type="password" name="password" autocomplete="new-password" required />
+        <label for="register-password-confirm">パスワード確認</label>
+        <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
+        <button type="submit">新規登録して出撃する</button>
+      </form>
+    </section>
+
+    <section class="auth-info-grid">
+      <section class="card auth-step-card">
+        <div class="auth-section-head">
+          <div><b>3ステップ</b></div>
+          <div class="robot-time">登録したら、この流れで始まります。</div>
+        </div>
+        <div class="auth-step-grid">
+          <article class="auth-step-item">
+            <div class="auth-step-icon">出撃</div>
+            <div class="auth-step-text">敵を倒してパーツを集める</div>
+          </article>
+          <article class="auth-step-item">
+            <div class="auth-step-icon">育成</div>
+            <div class="auth-step-text">強化・進化で自分だけの型を作る</div>
+          </article>
+          <article class="auth-step-item">
+            <div class="auth-step-icon">世界</div>
+            <div class="auth-step-text">ランキングや世界ログで機体が語られる</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card auth-beta-note-card">
+        <div class="auth-section-head">
+          <div><b>ロボらぼ β版公開中</b></div>
+        </div>
+        <div class="robot-time">現在、入口体験と戦闘UIを中心に改善しています。気になった点はぜひフィードバックしてください。</div>
+      </section>
+
+      <section class="card auth-world-card">
+        <div class="auth-section-head">
+          <div><b>今この瞬間の世界</b></div>
+          <div class="robot-time">数字はまだ小さくても、世界はちゃんと動いています。</div>
+        </div>
+        <div class="auth-world-metrics">
+          {% for metric in landing['world_metrics'] %}
+          <article class="auth-world-metric">
+            <div class="auth-world-metric-label">{{ metric['label'] }}</div>
+            <div class="auth-world-metric-value">{{ metric['value'] }}{{ metric['suffix'] }}</div>
+          </article>
+          {% endfor %}
+        </div>
+        {% if landing.get('weekly_mvp') %}
+        {% set mvp = landing['weekly_mvp'] %}
+        <div class="auth-world-mvp">
+          <div class="presence-user-line">
+            <span class="user-chip mini" data-presence-state="{{ mvp.get('presence_state', 'idle') }}" title="{{ mvp.get('presence_title', '') }}">
+              <img class="avatar-48" src="{{ url_for('static', filename=mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
+              <span class="badge-overlay">
+                <img class="robot-badge-32" src="{{ url_for('static', filename=mvp['badge_path']) }}" alt="badge" loading="lazy" />
+              </span>
+            </span>
+            <div>
+              <div><b>今週のMVP: {{ mvp['username'] }}</b></div>
+              <div class="robot-time">{{ mvp.get('robot_name') or '話題の機体' }}</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </section>
+    </section>
+  </section>
 </div>
 {% endblock %}
