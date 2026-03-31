@@ -3,21 +3,9 @@
 <div class="auth-shell auth-register-shell">
   <section class="auth-hero-stage">
     <section class="card auth-hero-card">
-      <div class="auth-hero-grid">
-        <div class="auth-hero-visual">
-          <div class="auth-hero-image-card">
-            <img class="auth-hero-image" src="{{ landing['register_hero_image_url'] }}" alt="ロボらぼの出撃前バナー" loading="eager" decoding="async" />
-          </div>
-        </div>
-        <div class="auth-hero-copy">
-          <div><span class="weekly-fit-badge">ロボらぼ β版公開中</span></div>
-          <h1 class="auth-hero-title">ロボらぼ</h1>
-          <div class="auth-hero-tagline">ロボを組んで出撃せよ</div>
-          <p class="auth-hero-subline">集める、強くする、進化する。<br />君だけの機体で世界に挑もう。</p>
-          <div class="auth-hero-cta-stack">
-            <a class="auth-hero-cta auth-hero-cta-primary" href="#register-form-card">今すぐロボを組んで始める</a>
-          </div>
-          <div class="auth-hero-hint">すぐ始められます。登録したらそのまま最初の出撃へ進めます。</div>
+      <div class="auth-hero-visual">
+        <div class="auth-hero-image-card">
+          <img class="auth-hero-image" src="{{ landing['register_hero_image_url'] }}" alt="ロボらぼの出撃前バナー" loading="eager" decoding="async" />
         </div>
       </div>
     </section>
@@ -28,7 +16,6 @@
       <div class="auth-register-head">
         <div>
           <h2 class="auth-title">ユーザー登録</h2>
-          <p class="auth-lead">すぐ始められます。登録したらそのまま最初の出撃へ進めます。<br />難しい設定はありません。まずは1機、組んで出してみてください。</p>
         </div>
         {% if ref_code %}
         <div class="notice auth-register-ref">招待コード: {{ ref_code }}</div>
@@ -51,7 +38,6 @@
         </div>
         {% if google_auth_available %}
         <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
-        <div class="auth-register-alt-note">Googleアカウントがあれば、数タップでそのまま出撃できます。</div>
         {% else %}
         <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでかんたん登録</div>
         <div class="auth-register-alt-note">Google登録は準備中です。いまはユーザー名登録からすぐ始められます。</div>
@@ -72,37 +58,40 @@
         <div class="auth-step-grid">
           <article class="auth-step-item">
             <div class="auth-step-top">
-              <div class="auth-step-no">1</div>
+              <div class="auth-step-icon-wrap" aria-hidden="true">
+                <svg class="auth-step-icon-svg" viewBox="0 0 24 24" role="presentation" focusable="false">
+                  <path d="M14 3l7 7-2 2-1.5-1.5-3 3L16 15l-3 3 1.5 1.5-2 2-7-7 2-2L9 14l3-3-1.5-1.5 2-2L14 10l3-3L14 4z" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="auth-step-no">1.</div>
               <div class="auth-step-icon">出撃</div>
             </div>
             <div class="auth-step-text">敵を倒してパーツを集める</div>
           </article>
           <article class="auth-step-item">
             <div class="auth-step-top">
-              <div class="auth-step-no">2</div>
+              <div class="auth-step-icon-wrap" aria-hidden="true">
+                <svg class="auth-step-icon-svg" viewBox="0 0 24 24" role="presentation" focusable="false">
+                  <path d="M12 3l4 4h-3v6h-2V7H8l4-4zm-6 12h12v4H6v-4zm2 2v1h8v-1H8z" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="auth-step-no">2.</div>
               <div class="auth-step-icon">育成</div>
             </div>
             <div class="auth-step-text">強化や進化で少しずつ形を作る</div>
           </article>
           <article class="auth-step-item">
             <div class="auth-step-top">
-              <div class="auth-step-no">3</div>
+              <div class="auth-step-icon-wrap" aria-hidden="true">
+                <svg class="auth-step-icon-svg" viewBox="0 0 24 24" role="presentation" focusable="false">
+                  <path d="M12 3a9 9 0 100 18 9 9 0 000-18zm5.7 8H14a15.5 15.5 0 00-1.2-5A7.02 7.02 0 0117.7 11zM12 5.2c.7 1.1 1.4 3 1.7 5H10.3c.3-2 1-3.9 1.7-5zM6.3 13H10c.1 1.8.5 3.5 1.2 5A7.02 7.02 0 016.3 13zm0-2A7.02 7.02 0 0111.2 6c-.7 1.5-1.1 3.2-1.2 5H6.3zm5.7 7.8c-.7-1.1-1.4-3-1.7-5h3.4c-.3 2-1 3.9-1.7 5zm.8-.8A15.5 15.5 0 0014 13h3.7a7.02 7.02 0 01-4.9 5z" fill="currentColor"/>
+                </svg>
+              </div>
+              <div class="auth-step-no">3.</div>
               <div class="auth-step-icon">世界</div>
             </div>
             <div class="auth-step-text">ランキングや世界ログで他の機体と出会う</div>
           </article>
-        </div>
-      </section>
-
-      <section class="card auth-beta-note-card">
-        <div class="auth-section-head">
-          <div><b>ロボらぼ β版公開中</b></div>
-        </div>
-        <div class="robot-time">まだ入口体験を中心に育てている段階です。まずは出撃と育成を気持ちよく回せるよう、少しずつ整えています。</div>
-        <div class="auth-beta-badges">
-          <span class="auth-beta-badge">すぐ遊べる</span>
-          <span class="auth-beta-badge">スマホOK</span>
-          <span class="auth-beta-badge">フィードバック歓迎</span>
         </div>
       </section>
 

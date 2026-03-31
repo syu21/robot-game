@@ -99,8 +99,6 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             resp = client.get("/register")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("ロボを組んで出撃せよ", html)
-        self.assertIn("今すぐロボを組んで始める", html)
         self.assertIn("新規登録して出撃する", html)
         self.assertIn("または", html)
         self.assertIn("Googleでかんたん登録", html)
@@ -111,15 +109,23 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("育成", html)
         self.assertIn("世界", html)
         self.assertIn("今この瞬間の世界", html)
-        self.assertIn("ロボらぼ β版公開中", html)
-        self.assertIn("すぐ遊べる", html)
-        self.assertIn("スマホOK", html)
-        self.assertIn("フィードバック歓迎", html)
         self.assertIn("/static/images/ui/register_hero_banner.png", html)
+        self.assertIn("/auth/google/start", html)
+        self.assertNotIn("Googleで3秒ではじめる", html)
+        self.assertNotIn("ロボらぼ β版公開中", html)
 
     def test_register_page_keeps_google_ui_visible_when_google_is_unconfigured(self):
         client = game_app.app.test_client()
-        resp = client.get("/register")
+        with patch.dict(
+            os.environ,
+            {
+                "GOOGLE_OAUTH_CLIENT_ID": "",
+                "GOOGLE_OAUTH_CLIENT_SECRET": "",
+                "GOOGLE_OAUTH_REDIRECT_URI": "",
+            },
+            clear=False,
+        ):
+            resp = client.get("/register")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("Googleでかんたん登録", html)
