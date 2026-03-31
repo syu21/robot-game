@@ -10000,6 +10000,19 @@ def _static_abs(rel_path):
     return os.path.join(STATIC_ROOT, rel_path)
 
 
+def _versioned_static_url(rel_path, fallback_url=None):
+    rel = str(rel_path or "").strip()
+    if not rel:
+        return fallback_url
+    abs_path = _static_abs(rel)
+    if not os.path.exists(abs_path):
+        return fallback_url if fallback_url is not None else url_for("static", filename=rel)
+    version = int(os.path.getmtime(abs_path) or 0)
+    if version > 0:
+        return url_for("static", filename=rel, v=version)
+    return url_for("static", filename=rel)
+
+
 def _composed_image_url(rel_path, updated_at=None):
     if not rel_path:
         return None
@@ -14261,11 +14274,7 @@ def _landing_world_snapshot(db):
         else url_for("static", filename="images/ui/robonavi.png")
     )
     register_hero_rel = "images/ui/register_hero_banner.png"
-    register_hero_image_url = (
-        url_for("static", filename=register_hero_rel)
-        if os.path.exists(_static_abs(register_hero_rel))
-        else hero_image_url
-    )
+    register_hero_image_url = _versioned_static_url(register_hero_rel, fallback_url=hero_image_url)
     world_metrics = [
         {
             "label": f"最近{int(USER_PRESENCE_ACTIVE_WINDOW_MINUTES)}分で活動中",

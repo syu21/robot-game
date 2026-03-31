@@ -109,7 +109,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("育成", html)
         self.assertIn("世界", html)
         self.assertIn("今この瞬間の世界", html)
-        self.assertIn("/static/images/ui/register_hero_banner.png", html)
+        self.assertIn("/static/images/ui/register_hero_banner.png?v=", html)
         self.assertIn("/auth/google/start", html)
         self.assertNotIn("Googleで3秒ではじめる", html)
         self.assertNotIn("ロボらぼ β版公開中", html)
