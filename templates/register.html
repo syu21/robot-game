@@ -4,6 +4,11 @@
   <section class="auth-hero-stage">
     <section class="card auth-hero-card">
       <div class="auth-hero-grid">
+        <div class="auth-hero-visual">
+          <div class="auth-hero-image-card">
+            <img class="auth-hero-image" src="{{ landing['register_hero_image_url'] }}" alt="ロボらぼの出撃前バナー" loading="eager" decoding="async" />
+          </div>
+        </div>
         <div class="auth-hero-copy">
           <div><span class="weekly-fit-badge">ロボらぼ β版公開中</span></div>
           <h1 class="auth-hero-title">ロボらぼ</h1>
@@ -16,11 +21,6 @@
             <a class="auth-hero-cta auth-hero-cta-primary" href="#register-form-card">今すぐロボを組んで始める</a>
           </div>
           <div class="auth-hero-hint">すぐ遊べます。登録後はそのまま第1層へ出撃できます。</div>
-        </div>
-        <div class="auth-hero-visual">
-          <div class="auth-hero-image-card">
-            <img class="auth-hero-image" src="{{ landing['register_hero_image_url'] }}" alt="ロボらぼの出撃前バナー" loading="eager" decoding="async" />
-          </div>
         </div>
       </div>
     </section>
@@ -56,6 +56,10 @@
         <label for="register-password-confirm">パスワード確認</label>
         <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
         <button type="submit">新規登録して出撃する</button>
+        <div class="auth-form-footnote">
+          すでにアカウントがある場合は
+          <a href="{{ url_for('login') }}">ログイン</a>
+        </div>
       </form>
     </section>
 
