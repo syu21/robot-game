@@ -87,9 +87,15 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             resp = client.get("/register")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
+        self.assertIn("はじめる", html)
+        self.assertIn("ログイン", html)
+        self.assertIn('data-auth-mode-trigger="register"', html)
+        self.assertIn('data-auth-mode-trigger="login"', html)
         self.assertIn("新規登録して出撃する", html)
+        self.assertIn("ログインして基地へ戻る", html)
         self.assertIn("または", html)
         self.assertIn("Googleでかんたん登録", html)
+        self.assertIn("Googleでログイン", html)
         self.assertIn("すでにアカウントがある場合は", html)
         self.assertIn("パスワード確認", html)
         self.assertIn("3ステップ", html)
@@ -99,6 +105,8 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("今この瞬間の世界", html)
         self.assertIn("/static/images/ui/register_hero_banner.png?v=", html)
         self.assertIn("/auth/google/start", html)
+        self.assertIn('action="/register"', html)
+        self.assertIn('action="/login"', html)
         self.assertNotIn("Googleで3秒ではじめる", html)
         self.assertNotIn("ロボらぼ β版公開中", html)
 
@@ -118,7 +126,27 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("Googleでかんたん登録", html)
         self.assertIn("Google登録は準備中です。", html)
+        self.assertIn("Googleでログイン", html)
+        self.assertIn("Googleログインは準備中です。", html)
         self.assertNotIn("/auth/google/start", html)
+
+    def test_register_login_mode_shows_shared_login_gateway(self):
+        client = game_app.app.test_client()
+        resp = client.get("/register?mode=login&next=%2Fhome")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn('data-auth-pane="login"', html)
+        self.assertIn("ログインして基地へ戻る", html)
+        self.assertIn('name="next" value="/home"', html)
+        self.assertIn('action="/login"', html)
+
+    def test_login_get_redirects_to_register_login_mode(self):
+        client = game_app.app.test_client()
+        resp = client.get("/login?next=%2Fworld", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        location = resp.headers.get("Location", "")
+        self.assertIn("/register?mode=login", location)
+        self.assertIn("next=/world", location)
 
     def test_root_redirects_logged_in_user_to_home(self):
         client = self._client_with_user(self.user_id, "ops_user")

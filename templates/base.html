@@ -47,6 +47,16 @@
         <a href="{{ url_for('settings') }}">アイコン変更</a> |
         <a href="{{ url_for('logout') }}">ログアウト</a>
       </div>
+    {% elif request.endpoint in ['register', 'login', 'index'] %}
+      <div class="user auth-header-links">
+        {% if request.endpoint != 'register' %}
+        <a href="{{ url_for('register') }}">新規登録</a>
+        {% endif %}
+        {% if request.endpoint != 'login' %}
+        {% if request.endpoint != 'register' %}|{% endif %}
+        <a href="{{ url_for('register', mode='login') }}">ログイン</a>
+        {% endif %}
+      </div>
     {% endif %}
   </header>
   <main class="container">
@@ -89,6 +99,9 @@
     | <a href="{{ url_for('privacy') }}">プライバシー</a>
     | <a href="{{ url_for('commerce') }}">特商法表記</a>
     | <a href="{{ url_for('contact') }}">お問い合わせ</a>
+    {% if official_x_url %}
+    | <a href="{{ official_x_url }}" rel="noopener noreferrer" target="_blank">公式X</a>
+    {% endif %}
     | <a href="{{ url_for('changelog') }}">更新履歴</a>
   </footer>
 </body>

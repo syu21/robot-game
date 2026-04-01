@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
+{% set current_auth_mode = auth_mode or 'register' %}
 <div class="auth-shell auth-register-shell">
   <section class="auth-hero-stage">
     <section class="card auth-hero-card">
@@ -15,38 +16,116 @@
     <section class="card auth-register-card" id="register-form-card">
       <div class="auth-register-head">
         <div>
-          <h2 class="auth-title">ユーザー登録</h2>
+          <h2 class="auth-title">認証</h2>
         </div>
         {% if ref_code %}
         <div class="notice auth-register-ref">招待コード: {{ ref_code }}</div>
         {% endif %}
       </div>
 
-      <form method="post" class="auth-card auth-card-register">
-        {% if ref_code %}
-        <input type="hidden" name="ref" value="{{ ref_code }}" />
-        {% endif %}
-        <label for="register-username">ユーザー名</label>
-        <input id="register-username" type="text" name="username" autocomplete="username" required />
-        <label for="register-password">パスワード</label>
-        <input id="register-password" type="password" name="password" autocomplete="new-password" required />
-        <label for="register-password-confirm">パスワード確認</label>
-        <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
-        <button type="submit">新規登録して出撃する</button>
-        <div class="auth-register-separator" aria-hidden="true">
-          <span>または</span>
-        </div>
-        {% if google_auth_available %}
-        <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
-        {% else %}
-        <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでかんたん登録</div>
-        <div class="auth-register-alt-note">Google登録は準備中です。いまはユーザー名登録からすぐ始められます。</div>
-        {% endif %}
-        <div class="auth-form-footnote">
-          すでにアカウントがある場合は
-          <a href="{{ url_for('login') }}">ログイン</a>
-        </div>
-      </form>
+      <nav class="auth-mode-tabs" aria-label="認証切替" data-auth-tabs>
+        <a
+          class="auth-mode-tab{% if current_auth_mode == 'register' %} is-active{% endif %}"
+          href="{{ url_for('register', mode='register', ref=ref_code or None, next=next_path or None) }}#register-form-card"
+          data-auth-mode-trigger="register"
+          role="tab"
+          aria-selected="{{ 'true' if current_auth_mode == 'register' else 'false' }}"
+          aria-controls="auth-pane-register"
+        >
+          はじめる
+        </a>
+        <a
+          class="auth-mode-tab{% if current_auth_mode == 'login' %} is-active{% endif %}"
+          href="{{ url_for('register', mode='login', ref=ref_code or None, next=next_path or None) }}#register-form-card"
+          data-auth-mode-trigger="login"
+          role="tab"
+          aria-selected="{{ 'true' if current_auth_mode == 'login' else 'false' }}"
+          aria-controls="auth-pane-login"
+        >
+          ログイン
+        </a>
+      </nav>
+
+      <div class="auth-pane-stack" data-auth-pane-stack>
+        <section
+          id="auth-pane-register"
+          class="auth-pane{% if current_auth_mode == 'register' %} is-active{% endif %}"
+          data-auth-pane="register"
+          {% if current_auth_mode != 'register' %}hidden{% endif %}
+        >
+          <div class="auth-pane-copy">
+            <div class="auth-pane-title">ユーザー登録</div>
+            <div class="robot-time">そのまま第1層の出撃へ進めます。</div>
+          </div>
+          {% if register_error %}
+          <div class="error auth-pane-feedback">{{ register_error }}</div>
+          {% endif %}
+          <form method="post" action="{{ url_for('register') }}" class="auth-card auth-card-register auth-form-grid">
+            {% if ref_code %}
+            <input type="hidden" name="ref" value="{{ ref_code }}" />
+            {% endif %}
+            <label for="register-username">ユーザー名</label>
+            <input id="register-username" type="text" name="username" autocomplete="username" required />
+            <label for="register-password">パスワード</label>
+            <input id="register-password" type="password" name="password" autocomplete="new-password" required />
+            <label for="register-password-confirm">パスワード確認</label>
+            <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
+            <button type="submit">新規登録して出撃する</button>
+          </form>
+          <div class="auth-register-separator" aria-hidden="true">
+            <span>または</span>
+          </div>
+          {% if google_auth_available %}
+          <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
+          {% else %}
+          <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでかんたん登録</div>
+          <div class="auth-register-alt-note">Google登録は準備中です。いまはユーザー名登録からすぐ始められます。</div>
+          {% endif %}
+          <div class="auth-form-footnote">
+            すでにアカウントがある場合は
+            <a href="{{ url_for('register', mode='login', ref=ref_code or None, next=next_path or None) }}#register-form-card" data-auth-mode-trigger="login">ログイン</a>
+          </div>
+        </section>
+
+        <section
+          id="auth-pane-login"
+          class="auth-pane{% if current_auth_mode == 'login' %} is-active{% endif %}"
+          data-auth-pane="login"
+          {% if current_auth_mode != 'login' %}hidden{% endif %}
+        >
+          <div class="auth-pane-copy">
+            <div class="auth-pane-title">ログイン</div>
+            <div class="robot-time">育てた機体の続きから、すぐ基地へ戻れます。</div>
+          </div>
+          {% if login_message %}
+          <div class="notice auth-pane-feedback">{{ login_message }}</div>
+          {% endif %}
+          {% if login_error %}
+          <div class="error auth-pane-feedback">{{ login_error }}</div>
+          {% endif %}
+          <form method="post" action="{{ url_for('login') }}" class="auth-card auth-card-register auth-form-grid">
+            <input type="hidden" name="next" value="{{ next_path or '' }}" />
+            <label for="login-username">ユーザー名</label>
+            <input id="login-username" type="text" name="username" autocomplete="username" required />
+            <label for="login-password">パスワード</label>
+            <input id="login-password" type="password" name="password" autocomplete="current-password" required />
+            <button type="submit">ログインして基地へ戻る</button>
+          </form>
+          <div class="auth-register-separator" aria-hidden="true">
+            <span>または</span>
+          </div>
+          {% if google_auth_available %}
+          <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', next=next_path or None) }}">Googleでログイン</a>
+          {% else %}
+          <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでログイン</div>
+          <div class="auth-register-alt-note">Googleログインは準備中です。いまはユーザー名ログインをご利用ください。</div>
+          {% endif %}
+          <div class="auth-form-footnote">
+            はじめてなら
+            <a href="{{ url_for('register', mode='register', ref=ref_code or None) }}#register-form-card" data-auth-mode-trigger="register">新規登録</a>
+          </div>
+        </section>
+      </div>
     </section>
 
     <section class="auth-info-grid">
@@ -133,4 +212,8 @@
     </section>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='auth_tabs.js') }}?v={{ app_version }}"></script>
 {% endblock %}

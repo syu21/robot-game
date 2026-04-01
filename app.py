@@ -15367,8 +15367,13 @@ def _login_user_session(db, user_row):
 
 @app.route("/auth/google/start")
 def google_oauth_start():
-    fallback_endpoint = "register" if request.args.get("intent") == "register" else "login"
-    fallback_target = url_for(fallback_endpoint)
+    is_register_intent = request.args.get("intent") == "register"
+    fallback_target = url_for(
+        "register",
+        mode=("register" if is_register_intent else "login"),
+        ref=((request.args.get("ref") or "").strip().upper() or None),
+        next=_oauth_safe_next_path(request.args.get("next")) or None,
+    )
     if not _google_oauth_enabled():
         flash("Googleログインはまだ準備中です。", "notice")
         return redirect(fallback_target)
@@ -15393,11 +15398,11 @@ def google_oauth_start():
 def google_oauth_callback():
     if not _google_oauth_enabled():
         flash("Googleログインはまだ準備中です。", "notice")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
     error_code = (request.args.get("error") or "").strip()
     if error_code:
         flash("Googleログインを完了できませんでした。", "notice")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
     expected_state = str(session.pop("google_oauth_state", "") or "")
     expected_nonce = str(session.pop("google_oauth_nonce", "") or "")
     ref_code = str(session.pop("google_oauth_ref_code", "") or "").strip().upper()
@@ -15406,7 +15411,7 @@ def google_oauth_callback():
     code = (request.args.get("code") or "").strip()
     if (not expected_state) or state != expected_state or not code:
         flash("Googleログインの確認に失敗しました。もう一度やり直してください。", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
     try:
         token_payload = _google_oauth_exchange_code(code)
         access_token = str(token_payload.get("access_token") or "").strip()
@@ -15416,7 +15421,7 @@ def google_oauth_callback():
     except Exception:
         app.logger.exception("google_oauth.callback_failed")
         flash("Googleログインの処理に失敗しました。時間を置いてもう一度お試しください。", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
 
     provider_user_id = str(profile.get("sub") or "").strip()
     email = str(profile.get("email") or "").strip()
@@ -15425,7 +15430,7 @@ def google_oauth_callback():
     avatar_url = str(profile.get("picture") or "").strip()
     if not expected_nonce or not provider_user_id or not email or not email_verified:
         flash("Googleアカウント情報を確認できませんでした。", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
 
     db = get_db()
     identity = _find_user_identity(db, GOOGLE_OAUTH_PROVIDER, provider_user_id)
@@ -15436,10 +15441,10 @@ def google_oauth_callback():
     if user_row:
         if int(user_row["is_banned"] or 0) == 1:
             flash("このアカウントは利用停止されています。", "error")
-            return redirect(url_for("login"))
+            return redirect(url_for("register", mode="login"))
         if int(user_row["is_admin_protected"] or 0) == 1:
             flash("このアカウントは通常のGoogleログインを利用できません。", "error")
-            return redirect(url_for("login"))
+            return redirect(url_for("register", mode="login"))
         _upsert_user_identity(
             db,
             user_id=int(user_row["id"]),
@@ -15496,7 +15501,7 @@ def google_oauth_callback():
 
     if not user_row:
         flash("Googleログインに失敗しました。", "error")
-        return redirect(url_for("login"))
+        return redirect(url_for("register", mode="login"))
 
     _login_user_session(db, user_row)
     if created_new_user:
@@ -15507,10 +15512,48 @@ def google_oauth_callback():
     return redirect(url_for("home"))
 
 
+def _auth_mode_value(raw_mode):
+    mode = str(raw_mode or "").strip().lower()
+    return "login" if mode == "login" else "register"
+
+
+def _auth_login_reason_message(reason):
+    if str(reason or "").strip().lower() == "expired":
+        return "セッションが期限切れです。もう一度ログインしてください。"
+    return None
+
+
+def _render_auth_gateway(
+    db,
+    *,
+    auth_mode="register",
+    ref_code="",
+    next_path="",
+    register_error=None,
+    login_error=None,
+    login_message=None,
+):
+    return render_template(
+        "register.html",
+        error=None,
+        message=None,
+        auth_mode=_auth_mode_value(auth_mode),
+        register_error=register_error,
+        login_error=login_error,
+        login_message=login_message,
+        ref_code=(str(ref_code or "").strip().upper()),
+        next_path=(str(next_path or "").strip()),
+        landing=_landing_world_snapshot(db),
+    )
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     error = None
     ref_code = (request.values.get("ref") or "").strip().upper()
+    auth_mode = _auth_mode_value(request.values.get("mode"))
+    next_path = _oauth_safe_next_path(request.values.get("next"))
+    login_message = _auth_login_reason_message(request.values.get("reason"))
     db = get_db()
     if request.method == "POST":
         username = _normalize_main_admin_username(request.form.get("username", "").strip())
@@ -15556,11 +15599,13 @@ def register():
                 return redirect(url_for("home"))
             except sqlite3.IntegrityError:
                 error = "そのユーザー名は既に使われています。"
-    return render_template(
-        "register.html",
-        error=error,
+    return _render_auth_gateway(
+        db,
+        auth_mode=auth_mode,
         ref_code=ref_code,
-        landing=_landing_world_snapshot(db),
+        next_path=next_path,
+        register_error=error,
+        login_message=login_message,
     )
 
 
@@ -15572,6 +15617,8 @@ def login():
     message = None
     if reason == "expired":
         message = "セッションが期限切れです。もう一度ログインしてください。"
+    if request.method == "GET":
+        return redirect(url_for("register", mode="login", next=next_path or None, reason=reason or None))
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
@@ -15581,10 +15628,22 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             if int(user["is_banned"] or 0) == 1:
                 error = "このアカウントは利用停止されています。"
-                return render_template("login.html", error=error, message=message, next_path=next_path)
+                return _render_auth_gateway(
+                    db,
+                    auth_mode="login",
+                    next_path=next_path,
+                    login_error=error,
+                    login_message=message,
+                )
             if int(user["is_admin_protected"] or 0) == 1:
                 error = "このアカウントは通常ログインできません。"
-                return render_template("login.html", error=error, message=message, next_path=next_path)
+                return _render_auth_gateway(
+                    db,
+                    auth_mode="login",
+                    next_path=next_path,
+                    login_error=error,
+                    login_message=message,
+                )
             if _is_main_admin_username(username) and user["is_admin"] == 0:
                 db.execute("UPDATE users SET is_admin = 1, is_admin_protected = 1 WHERE id = ?", (user["id"],))
                 db.commit()
@@ -15594,7 +15653,14 @@ def login():
                 return redirect(next_path)
             return redirect(url_for("home"))
         error = "ユーザー名かパスワードが違います。"
-    return render_template("login.html", error=error, message=message, next_path=next_path)
+    db = get_db()
+    return _render_auth_gateway(
+        db,
+        auth_mode="login",
+        next_path=next_path,
+        login_error=error,
+        login_message=message,
+    )
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
