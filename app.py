@@ -208,6 +208,7 @@ PUBLIC_GAME_URL = (os.getenv("PUBLIC_GAME_URL") or "").strip()
 OFFICIAL_X_URL = (os.getenv("OFFICIAL_X_URL") or "").strip()
 GOOGLE_OAUTH_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 GOOGLE_OAUTH_PROVIDER = "google"
+DISPLAY_NAME_MAX_LENGTH = 20
 GOOGLE_OAUTH_SCOPE = "openid email profile"
 _google_oauth_discovery_cache = {"loaded_at": 0.0, "data": None}
 STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
@@ -5855,6 +5856,8 @@ def ensure_schema(db):
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     if "is_admin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    if "display_name" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
     if "wins" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN wins INTEGER NOT NULL DEFAULT 0")
     if "click_power" not in cols:
@@ -5945,6 +5948,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET last_seen_at = COALESCE(created_at, 0) WHERE last_seen_at IS NULL OR last_seen_at <= 0")
     db.execute("UPDATE users SET is_banned = 0 WHERE is_banned IS NULL")
     db.execute("UPDATE users SET is_admin_protected = 0 WHERE is_admin_protected IS NULL")
+    db.execute("UPDATE users SET display_name = NULL WHERE display_name IS NOT NULL AND TRIM(display_name) = ''")
     db.execute("UPDATE users SET banned_at = NULL WHERE banned_at IS NOT NULL AND TRIM(banned_at) = ''")
     db.execute("UPDATE users SET banned_reason = NULL WHERE banned_reason IS NOT NULL AND TRIM(banned_reason) = ''")
     db.execute("UPDATE users SET has_seen_intro_modal = 0 WHERE has_seen_intro_modal IS NULL")
@@ -12588,9 +12592,9 @@ def _parse_jst_day_filter(raw_value, *, end=False):
 def _feed_user_label(db, user_id):
     if user_id is None:
         return "SYSTEM"
-    row = db.execute("SELECT username, is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    row = db.execute("SELECT id, username, is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
     if row and row["username"]:
-        return _display_username(row["username"], is_admin=bool(int(row["is_admin"] or 0)))
+        return _display_username_for_user_row(db, row)
     return f"User#{int(user_id)}"
 
 
@@ -13535,13 +13539,52 @@ def _is_main_admin_username(username):
     return text == MAIN_ADMIN_USERNAME or text.lower() == "admin"
 
 
-def _display_username(username, *, is_admin=False):
+def _display_username(username, *, display_name=None, is_admin=False):
     text = str(username or "").strip()
+    label = str(display_name or "").strip()
     if not text:
-        return ""
+        return label
     if bool(is_admin) and _is_main_admin_username(text):
         return MAIN_ADMIN_USERNAME
-    return text
+    return label or text
+
+
+def _user_identity_display_name(db, user_id):
+    if not user_id:
+        return ""
+    row = db.execute(
+        """
+        SELECT display_name
+        FROM user_auth_identities
+        WHERE user_id = ?
+          AND COALESCE(TRIM(display_name), '') <> ''
+        ORDER BY CASE WHEN provider = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), GOOGLE_OAUTH_PROVIDER),
+    ).fetchone()
+    if not row:
+        return ""
+    return str(row["display_name"] or "").strip()
+
+
+def _display_username_for_user_row(db, user_row):
+    if not user_row or not hasattr(user_row, "keys"):
+        return ""
+    username = user_row["username"] if "username" in user_row.keys() else None
+    is_admin = bool(int(user_row["is_admin"] or 0)) if "is_admin" in user_row.keys() else False
+    user_id = int(user_row["id"]) if "id" in user_row.keys() and user_row["id"] is not None else None
+    custom_display_name = ""
+    if "display_name" in user_row.keys():
+        custom_display_name = str(user_row["display_name"] or "").strip()
+    if (not custom_display_name) and user_id:
+        row = db.execute("SELECT display_name FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        custom_display_name = str(row["display_name"] or "").strip() if row else ""
+    return _display_username(
+        username,
+        display_name=(custom_display_name or _user_identity_display_name(db, user_id)),
+        is_admin=is_admin,
+    )
 
 
 def _is_main_admin_user_row(user_row):
@@ -14375,7 +14418,7 @@ def enforce_banned_user_logout():
     if not row:
         session.clear()
         return redirect(url_for("login", reason="expired"))
-    username = _display_username(row["username"], is_admin=bool(int(row["is_admin"] or 0)))
+    username = _display_username_for_user_row(db, row)
     if username and session.get("username") != username:
         session["username"] = username
     if int(row["is_banned"] or 0) != 1:
@@ -15348,10 +15391,7 @@ def client_error_js():
 def _login_user_session(db, user_row):
     session.clear()
     session["user_id"] = int(user_row["id"])
-    session["username"] = _display_username(
-        user_row["username"],
-        is_admin=bool(int(user_row["is_admin"] or 0)) if "is_admin" in user_row.keys() else False,
-    )
+    session["username"] = _display_username_for_user_row(db, user_row)
     session["battle_log"] = []
     db.execute("UPDATE users SET last_seen_at = ? WHERE id = ?", (int(time.time()), int(user_row["id"])))
     db.execute(
@@ -15506,6 +15546,7 @@ def google_oauth_callback():
     _login_user_session(db, user_row)
     if created_new_user:
         session["just_registered"] = 1
+        session["needs_display_name_setup"] = 1
         flash("Googleアカウントで登録しました。第1層からすぐ出撃できます。", "notice")
     if next_path:
         return redirect(next_path)
@@ -15521,6 +15562,11 @@ def _auth_login_reason_message(reason):
     if str(reason or "").strip().lower() == "expired":
         return "セッションが期限切れです。もう一度ログインしてください。"
     return None
+
+
+def _normalize_display_name(raw_value):
+    text = re.sub(r"\s+", " ", str(raw_value or "").strip())
+    return text
 
 
 def _render_auth_gateway(
@@ -16057,6 +16103,8 @@ def home():
         beginner_mission_cta_url = url_for("build")
     intro_modal_seen = int(user["has_seen_intro_modal"] or 0) == 1 if "has_seen_intro_modal" in user.keys() else False
     just_registered = bool(session.pop("just_registered", None))
+    show_display_name_setup = bool(session.get("needs_display_name_setup"))
+    current_display_name = _display_username_for_user_row(db, user)
     if has_any_robot and int(total_explores or 0) <= 0:
         beginner_mission_text = "最初の出撃へ。\nまずは第1層でパーツを集めよう。"
         beginner_mission_cta_label = "第1層へ出撃"
@@ -16184,6 +16232,8 @@ def home():
             home_next_action_force_open=home_next_action_force_open,
             show_home_visibility_controls=show_home_visibility_controls,
             show_intro_modal=show_intro_modal,
+            show_display_name_setup=show_display_name_setup,
+            display_name_setup_prefill=current_display_name,
             intro_npc_image=intro_npc_image,
             main_robot_weekly_fit=main_robot_weekly_fit,
             today_progress=today_progress,
@@ -16247,6 +16297,40 @@ def home_intro_modal_dismiss():
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return ("", 204)
     return redirect(url_for("home"))
+
+
+@app.route("/home/display-name", methods=["POST"])
+@login_required
+def home_display_name_update():
+    display_name = _normalize_display_name(request.form.get("display_name"))
+    next_path = (request.form.get("next") or "").strip()
+    if not display_name:
+        flash("表示名を入力してください。", "error")
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+    if len(display_name) > DISPLAY_NAME_MAX_LENGTH:
+        flash(f"表示名は{DISPLAY_NAME_MAX_LENGTH}文字以内で入力してください。", "error")
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+    db = get_db()
+    user = db.execute(
+        "SELECT id, username, is_admin FROM users WHERE id = ?",
+        (int(session["user_id"]),),
+    ).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    db.execute(
+        "UPDATE users SET display_name = ? WHERE id = ?",
+        (display_name, int(user["id"])),
+    )
+    db.commit()
+    session["username"] = _display_username(
+        user["username"],
+        display_name=display_name,
+        is_admin=bool(int(user["is_admin"] or 0)),
+    )
+    session.pop("needs_display_name_setup", None)
+    flash("表示名を登録しました。", "notice")
+    return redirect(next_path if next_path.startswith("/") else url_for("home"))
 
 
 def _safe_home_next_redirect():

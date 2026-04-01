@@ -467,6 +467,25 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("最初は「ロボ編成」か「出撃」だけ見ればOKです。", html)
         self.assertLess(html.index("通信"), html.index("今週のランキング"))
 
+    def test_home_intro_modal_uses_dedicated_readable_copy_class(self):
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("intro-guide-subcopy", html)
+        self.assertNotIn('class="upgrade-cost">ロボらぼへようこそ。最初の流れだけ案内します。', html)
+
+    def test_home_can_show_google_display_name_setup_modal(self):
+        client = self._new_client()
+        with client.session_transaction() as session:
+            session["needs_display_name_setup"] = 1
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("表示名を決めよう", html)
+        self.assertIn('action="/home/display-name"', html)
+        self.assertIn('name="display_name"', html)
+
     def test_home_comms_tabs_switch_room_and_personal_views(self):
         with game_app.app.app_context():
             db = game_app.get_db()

@@ -67,12 +67,12 @@
       <img class="intro-guide-npc" src="{{ url_for('static', filename=intro_npc_image) }}" alt="案内役" loading="eager" decoding="async" width="56" height="56" />
       <div>
         <div id="intro-guide-title"><b>案内役</b> <span class="intro-guide-badge">案内役</span></div>
-        <div class="upgrade-cost">ロボらぼへようこそ。最初の流れだけ案内します。</div>
+        <div class="intro-guide-subcopy">ロボらぼへようこそ。最初の流れだけ案内します。</div>
       </div>
     </div>
     <div class="intro-guide-body">
-      <p>ホーム上部の <b>最初のミッション</b> から始めよう。</p>
-      <p><b>出撃</b> でパーツを集めて、強くなったらボスに挑戦！</p>
+      <p>ホーム上部の <b>最初のミッション</b> から、第1層へそのまま出撃できます。</p>
+      <p>まずは1勝してパーツを持ち帰り、強くなったらボスに挑戦しましょう。</p>
     </div>
     <div class="intro-guide-footer">
       <form method="post" action="{{ url_for('explore') }}" class="inline-form">
@@ -80,7 +80,7 @@
         {% if explore_submission_id %}
         <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
         {% endif %}
-        <button type="submit">出撃する</button>
+        <button type="submit">第1層へ出撃</button>
       </form>
       <form id="intro-guide-dismiss-form" method="post" action="{{ url_for('home_intro_modal_dismiss') }}" class="inline-form">
         <input type="hidden" name="dont_show_again" value="1" />
@@ -91,6 +91,29 @@
       <input id="intro-guide-no-show" type="checkbox" checked />
       次回から表示しない
     </label>
+  </div>
+</div>
+{% endif %}
+{% if show_display_name_setup %}
+<div id="display-name-setup-modal" class="intro-guide-modal display-name-setup-modal" role="dialog" aria-modal="true" aria-labelledby="display-name-setup-title">
+  <div class="intro-guide-backdrop"></div>
+  <div class="intro-guide-card display-name-setup-card">
+    <div class="intro-guide-head">
+      <img class="intro-guide-npc" src="{{ url_for('static', filename=intro_npc_image) }}" alt="案内役" loading="eager" decoding="async" width="56" height="56" />
+      <div>
+        <div id="display-name-setup-title"><b>表示名を決めよう</b> <span class="intro-guide-badge">Google登録</span></div>
+        <div class="intro-guide-subcopy">ゲームの中で見える名前を決めます。あとから変えやすいように、まずは呼ばれたい名前を入れてください。</div>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('home_display_name_update') }}" class="display-name-setup-form">
+      <input type="hidden" name="next" value="{{ url_for('home') }}" />
+      <label for="display-name-input">表示名</label>
+      <input id="display-name-input" type="text" name="display_name" maxlength="20" required value="{{ display_name_setup_prefill }}" autocomplete="nickname" />
+      <div class="intro-guide-subcopy">20文字以内。ランキングや世界ログではこの名前が表示されます。</div>
+      <div class="intro-guide-footer">
+        <button type="submit">この名前で始める</button>
+      </div>
+    </form>
   </div>
 </div>
 {% endif %}
@@ -535,7 +558,16 @@
         {% endif %}
         {% endif %}
         <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
-        <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体と在庫を整理</div></a>
+        <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体差を見比べる</div></a>
+      </div>
+      <div class="home-nav-section-title">β版を応援</div>
+      <div class="home-support-card card">
+        <div><b>入口と戦闘UIを改善中です</b></div>
+        <div class="upgrade-cost">気に入ってもらえたら、見た目特典つきの支援パックで応援できます。</div>
+        <div class="home-inline-actions">
+          <a class="battle-home-link" href="{{ url_for('support') }}">β版支援パック</a>
+          <a class="battle-home-link" href="{{ url_for('shop') }}">ショップ</a>
+        </div>
       </div>
       {% if is_admin %}
       <div class="home-nav-section-title">管理</div>

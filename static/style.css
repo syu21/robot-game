@@ -4436,11 +4436,13 @@ body.home-page.home-mobile .invite-link-row {
   width: min(560px, 100%);
   max-height: min(90vh, 680px);
   overflow: auto;
-  background: #f6f9ff;
-  border: 1px solid #cdd8ee;
+  background:
+    linear-gradient(180deg, rgba(17, 25, 44, 0.98) 0%, rgba(13, 20, 36, 0.98) 100%);
+  color: #eef4ff;
+  border: 1px solid rgba(103, 232, 249, 0.18);
   border-radius: 16px;
   padding: 18px;
-  box-shadow: 0 14px 36px rgba(7, 18, 42, 0.28);
+  box-shadow: 0 18px 42px rgba(2, 8, 23, 0.42);
 }
 
 .intro-guide-close {
@@ -4457,7 +4459,7 @@ body.home-page.home-mobile .invite-link-row {
   line-height: 1;
   font-size: 20px;
   font-weight: 600;
-  color: #1c2a42;
+  color: #dce9ff;
   cursor: pointer;
 }
 
@@ -4477,8 +4479,8 @@ body.home-page.home-mobile .invite-link-row {
   max-width: none;
   object-fit: cover;
   border-radius: 12px;
-  border: 1px solid #d6def1;
-  background: #fff;
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  background: rgba(11, 16, 32, 0.9);
 }
 
 .intro-guide-badge {
@@ -4487,14 +4489,42 @@ body.home-page.home-mobile .invite-link-row {
   padding: 2px 7px;
   border-radius: 999px;
   font-size: 11px;
-  border: 1px solid #afc5ef;
-  color: #20437c;
-  background: #e9f2ff;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  color: #86ecff;
+  background: rgba(103, 232, 249, 0.1);
+}
+
+.intro-guide-subcopy {
+  margin-top: 4px;
+  color: #bfcee7;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .intro-guide-body p {
   margin: 7px 0;
   line-height: 1.55;
+  color: #eef4ff;
+}
+
+.display-name-setup-card {
+  width: min(520px, 100%);
+}
+
+.display-name-setup-form {
+  margin-top: 10px;
+}
+
+.display-name-setup-form label {
+  display: block;
+  margin-bottom: 8px;
+  color: #dce9ff;
+  font-weight: 700;
+}
+
+.display-name-setup-form input[type="text"] {
+  width: 100%;
+  margin-bottom: 10px;
 }
 
 .intro-guide-footer {
@@ -4505,9 +4535,9 @@ body.home-page.home-mobile .invite-link-row {
 }
 
 .btn-secondary {
-  background: #eef2f8;
-  color: #20324f;
-  border: 1px solid #c0cce0;
+  background: rgba(255, 255, 255, 0.05);
+  color: #eef4ff;
+  border: 1px solid rgba(103, 232, 249, 0.16);
 }
 
 .intro-guide-checkbox {
@@ -4518,7 +4548,7 @@ body.home-page.home-mobile .invite-link-row {
   white-space: nowrap;
   margin-top: 12px;
   font-size: 13px;
-  color: #384a67;
+  color: #bfcee7;
   min-width: 0;
 }
 
