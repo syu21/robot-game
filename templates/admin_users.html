@@ -9,7 +9,7 @@
     <thead>
       <tr>
         <th>id</th>
-        <th>username</th>
+        <th>表示名 / 内部ID</th>
         <th>is_admin</th>
         <th>is_banned</th>
         <th>is_admin_protected</th>
@@ -22,7 +22,13 @@
       {% for u in rows %}
       <tr>
         <td>{{ u['id'] }}</td>
-        <td>{{ u['display_username'] }}</td>
+        <td>
+          <div><b>{{ u['display_username'] }}</b></div>
+          <div class="robot-time">ID: {{ u['username'] }}</div>
+          {% if u['has_custom_display_name'] %}
+          <div class="robot-time">Google/ゲーム表示名を優先表示中</div>
+          {% endif %}
+        </td>
         <td>{{ u['is_admin'] }}</td>
         <td>{{ u['is_banned'] }}</td>
         <td>{{ u['is_admin_protected'] }}</td>

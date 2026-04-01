@@ -36,6 +36,7 @@
 - Google OAuth は環境変数設定時のみ有効化し、`/auth/google/start` から新規登録/ログインへ進める
 - Google で初回登録した場合もスターター機体付与と `just_registered` を維持し、そのまま第1層導線へ着地する
 - Google 連携ユーザーは内部ログインIDと表示名を分け、画面上では Google 側の表示名を優先して見せる
+- 管理者のユーザー管理では、表示名と内部ID(username)を併記して照合しやすくしている
 - 管理者保護ログイン:
   - 通常 `/login`: `is_admin_protected=1` は拒否
   - `/admin/login`: 管理者保護アカウントでもログイン可

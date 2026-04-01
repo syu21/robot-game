@@ -179,6 +179,33 @@ class AdminUserControlsTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(rename_audit)
 
+    def test_admin_user_list_shows_display_name_and_internal_username(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, is_admin_protected)
+                VALUES (?, ?, ?, 1, 1)
+                """,
+                ("viewer_admin", generate_password_hash("pw"), now),
+            )
+            admin_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("viewer_admin",)).fetchone()["id"])
+            db.execute(
+                "INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                ("google_internal_01", "あるけみすと", generate_password_hash("pw"), now),
+            )
+            db.commit()
+
+        with game_app.app.test_client() as client:
+            self._session_login(client, admin_id, "viewer_admin")
+            resp = client.get("/admin/users")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_data(as_text=True)
+            self.assertIn("あるけみすと", body)
+            self.assertIn("ID: google_internal_01", body)
+            self.assertIn("Google/ゲーム表示名を優先表示中", body)
+
     def test_admin_cannot_rename_user_to_existing_username(self):
         with game_app.app.app_context():
             db = game_app.get_db()

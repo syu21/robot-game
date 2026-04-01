@@ -22550,7 +22550,7 @@ def admin_users():
 
     rows_raw = db.execute(
         """
-        SELECT id, username, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id
+        SELECT id, username, display_name, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id
         FROM users
         ORDER BY id ASC
         """
@@ -22558,7 +22558,11 @@ def admin_users():
     rows = []
     for row in rows_raw:
         item = dict(row)
-        item["display_username"] = _display_username(item.get("username"), is_admin=bool(int(item.get("is_admin") or 0)))
+        item["display_username"] = _display_username_for_user_row(db, row)
+        item["has_custom_display_name"] = bool(
+            str(item.get("display_name") or "").strip()
+            and str(item.get("display_name") or "").strip() != str(item.get("username") or "").strip()
+        )
         item["is_main_admin"] = _is_main_admin_username(item.get("username"))
         rows.append(item)
     return render_template("admin_users.html", rows=rows, message=message, self_user_id=admin_user_id)
