@@ -122,6 +122,7 @@ def main():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
+            display_name TEXT,
             password_hash TEXT NOT NULL,
             invite_code TEXT UNIQUE,
             coins INTEGER NOT NULL DEFAULT 0,
