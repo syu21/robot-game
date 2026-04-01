@@ -1,84 +1,304 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>運用メトリクス（直近7日）</h1>
-<form method="post" class="card inline-form">
-  <button type="submit">再集計</button>
-</form>
-<div class="card">
-  <div class="table-wrap">
-    <table class="admin-parts-table">
-      <thead>
-        <tr>
-          <th>day_key</th>
-          <th>DAU</th>
-          <th>新規登録</th>
-          <th>探索回数</th>
-          <th>ボス遭遇</th>
-          <th>ボス撃破</th>
-          <th>合成回数</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for r in rows %}
-        <tr>
-          <td>{{ r['day_key'] }}</td>
-          <td>{{ r['dau_count'] }}</td>
-          <td>{{ r['new_users'] }}</td>
-          <td>{{ r['explore_count'] }}</td>
-          <td>{{ r['boss_encounters'] }}</td>
-          <td>{{ r['boss_defeats'] }}</td>
-          <td>{{ r['fuse_count'] }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="7">データがありません。</td></tr>
+<div class="admin-metrics-shell">
+  <section class="card admin-metrics-panel admin-metrics-head-panel">
+    <div>
+      <div class="admin-metrics-eyebrow">Admin Metrics</div>
+      <h1>運用メトリクス</h1>
+      <p class="admin-metrics-desc">
+        人数そのものではなく、「登録して、ホームを見て、出撃して、育成して、また戻ってきたか」を追うための画面です。
+      </p>
+    </div>
+    <form method="post" class="inline-form admin-metrics-toolbar">
+      <button type="submit">直近7日を再集計</button>
+    </form>
+  </section>
+
+  <section class="admin-metrics-overview-grid">
+    <article class="card admin-metrics-stat-card">
+      <div class="admin-metrics-stat-label">分析期間</div>
+      <div class="admin-metrics-stat-value">直近{{ behavior_snapshot.window_days }}日</div>
+      <div class="admin-metrics-stat-sub">ファネルと離脱ポイントの集計窓</div>
+    </article>
+    <article class="card admin-metrics-stat-card">
+      <div class="admin-metrics-stat-label">行動ユーザー</div>
+      <div class="admin-metrics-stat-value">{{ behavior_snapshot.dropoff_total }}人</div>
+      <div class="admin-metrics-stat-sub">直近{{ behavior_snapshot.window_days }}日で何かしら行動したユーザー</div>
+    </article>
+    <article class="card admin-metrics-stat-card">
+      <div class="admin-metrics-stat-label">登録日コホート</div>
+      <div class="admin-metrics-stat-value">{{ behavior_snapshot.new_user_count }}人</div>
+      <div class="admin-metrics-stat-sub">直近{{ behavior_snapshot.new_user_window_days }}日で登録した新規ユーザー</div>
+    </article>
+    <article class="card admin-metrics-stat-card">
+      <div class="admin-metrics-stat-label">再訪率</div>
+      <div class="admin-metrics-stat-value">D1 {{ '%.1f'|format(behavior_snapshot.d1.rate_pct) }}% / D3 {{ '%.1f'|format(behavior_snapshot.d3.rate_pct) }}%</div>
+      <div class="admin-metrics-stat-sub">登録後に戻ってきたかをコホートで確認</div>
+    </article>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
+        <div class="admin-metrics-section-title">行動ファネル</div>
+        <div class="admin-metrics-section-sub">
+          login → home_view → explore_start → explore_end → strengthen / evolve / build → boss → next_day_return を横断で見ます。
+        </div>
+      </div>
+    </div>
+    <div class="admin-metrics-bar-list">
+      {% for item in behavior_snapshot.funnel_rows %}
+        <article class="admin-metrics-bar-row">
+          <div class="admin-metrics-bar-head">
+            <div class="admin-metrics-bar-label">{{ item.label }}</div>
+            <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct_of_base) }}%</div>
+          </div>
+          <div class="admin-metrics-bar-track">
+            <div class="admin-metrics-bar-fill is-{{ item.accent }}" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+          </div>
+        </article>
       {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-<h2>進化コア観測（実測）</h2>
-<form method="get" class="card inline-form">
-  <label>探索サンプル件数
-    <input type="number" min="50" max="5000" name="sample" value="{{ selected_sample_size }}" />
-  </label>
-  <label>user/day日数
-    <input type="number" min="1" max="90" name="core_days" value="{{ selected_core_days }}" />
-  </label>
-  <button type="submit">更新</button>
-</form>
-<div class="card">
-  <p>設定ドロップ率（戦闘勝利1回あたり）: {{ '%.2f'|format(100 * core_obs.configured_drop_rate) }}%</p>
-  <p>探索サンプル: {{ core_obs.explores }}件 / 勝利: {{ core_obs.wins }}件 / 総戦闘試行: {{ core_obs.battles_total }}回</p>
-  <p>実測（探索あたり）: {{ '%.2f'|format(100 * core_obs.core_per_explore) }}% （ヒット率 {{ '%.2f'|format(100 * core_obs.core_hit_rate_explore) }}%）</p>
-  <p>実測（戦闘試行あたり）: {{ '%.2f'|format(100 * core_obs.core_per_battle_trial) }}% / 推定探索ヒット率: {{ '%.2f'|format(100 * core_obs.expected_hit_per_explore) }}%</p>
-  <p>平均戦闘数/探索: {{ '%.3f'|format(core_obs.avg_battles_per_explore) }}</p>
-</div>
-<div class="card">
-  <h3>進化コア流入（user/day, 直近{{ core_obs.days }}日）</h3>
-  <div class="table-wrap">
-    <table class="admin-parts-table">
-      <thead>
-        <tr>
-          <th>day</th>
-          <th>user_id</th>
-          <th>username</th>
-          <th>core_qty</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for r in core_obs.user_day %}
-        <tr>
-          <td>{{ r.day_key }}</td>
-          <td>{{ r.user_id }}</td>
-          <td>{{ r.username }}</td>
-          <td>{{ r.core_qty }}</td>
-        </tr>
+    </div>
+  </section>
+
+  <section class="admin-metrics-grid admin-metrics-grid-halves">
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">離脱ポイント</div>
+          <div class="admin-metrics-section-sub">ユーザーごとの最終行動を集計しています。どこで止まりやすいかを見るためのビューです。</div>
+        </div>
+      </div>
+      {% if behavior_snapshot.dropoff_rows %}
+        <div class="admin-metrics-bar-list">
+          {% for item in behavior_snapshot.dropoff_rows %}
+            <article class="admin-metrics-bar-row">
+              <div class="admin-metrics-bar-head">
+                <div class="admin-metrics-bar-label">{{ item.label }}</div>
+                <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct) }}%</div>
+              </div>
+              <div class="admin-metrics-bar-track">
+                <div class="admin-metrics-bar-fill is-{{ item.accent }}" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
       {% else %}
-        <tr><td colspan="4">データがありません。</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        <p class="admin-metrics-empty">まだ十分な行動データがありません。</p>
+      {% endif %}
+    </article>
+
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">平均探索数 / DAU</div>
+          <div class="admin-metrics-section-sub">1日あたり、活動ユーザー1人が平均で何回探索したかを日次で見ます。</div>
+        </div>
+      </div>
+      {% if daily_explore_rows %}
+        <div class="admin-metrics-bar-list">
+          {% for row in daily_explore_rows %}
+            <article class="admin-metrics-bar-row">
+              <div class="admin-metrics-bar-head">
+                <div class="admin-metrics-bar-label">{{ row.day_key }}</div>
+                <div class="admin-metrics-bar-meta">{{ '%.2f'|format(row.explores_per_dau) }} 探索 / DAU</div>
+              </div>
+              <div class="admin-metrics-bar-track">
+                <div class="admin-metrics-bar-fill is-cyan" style="width: {{ '%.2f'|format(row.bar_pct) }}%"></div>
+              </div>
+              <div class="admin-metrics-bar-foot">
+                <span>探索 {{ row.explore_count }}回</span>
+                <span>DAU {{ row.dau_count }}人</span>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="admin-metrics-empty">日次の探索データがまだありません。</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="admin-metrics-grid admin-metrics-grid-halves">
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">登録日ユーザーの初回行動</div>
+          <div class="admin-metrics-section-sub">
+            直近{{ behavior_snapshot.new_user_window_days }}日で登録したユーザーが、登録当日にどこまで進んだかを見ます。
+          </div>
+        </div>
+      </div>
+      <div class="admin-metrics-chip-row">
+        <span class="admin-metrics-chip">新規 {{ behavior_snapshot.new_user_count }}人</span>
+        <span class="admin-metrics-chip">翌日再訪判定対象 {{ behavior_snapshot.new_user_next_day_eligible }}人</span>
+      </div>
+      {% if behavior_snapshot.new_user_funnel_rows %}
+        <div class="admin-metrics-bar-list">
+          {% for item in behavior_snapshot.new_user_funnel_rows %}
+            <article class="admin-metrics-bar-row">
+              <div class="admin-metrics-bar-head">
+                <div class="admin-metrics-bar-label">{{ item.label }}</div>
+                <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct_of_new_users) }}%</div>
+              </div>
+              <div class="admin-metrics-bar-track">
+                <div class="admin-metrics-bar-fill is-{{ item.accent }}" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="admin-metrics-empty">新規ユーザーの行動データがまだありません。</p>
+      {% endif %}
+    </article>
+
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">D1 / D3 再訪率</div>
+          <div class="admin-metrics-section-sub">
+            登録から翌日、3日後に戻ってきた割合です。直近{{ behavior_snapshot.revisit_cohort_days }}日コホートで見ています。
+          </div>
+        </div>
+      </div>
+      <div class="admin-metrics-retention-grid">
+        <article class="admin-metrics-retention-card">
+          <div class="admin-metrics-retention-title">D1再訪率</div>
+          <div class="admin-metrics-retention-value">{{ '%.1f'|format(behavior_snapshot.d1.rate_pct) }}%</div>
+          <div class="admin-metrics-retention-meta">戻った {{ behavior_snapshot.d1.returned }}人 / 判定対象 {{ behavior_snapshot.d1.eligible }}人</div>
+          <div class="admin-metrics-bar-track">
+            <div class="admin-metrics-bar-fill is-purple" style="width: {{ '%.2f'|format(behavior_snapshot.d1.rate_pct) }}%"></div>
+          </div>
+        </article>
+        <article class="admin-metrics-retention-card">
+          <div class="admin-metrics-retention-title">D3再訪率</div>
+          <div class="admin-metrics-retention-value">{{ '%.1f'|format(behavior_snapshot.d3.rate_pct) }}%</div>
+          <div class="admin-metrics-retention-meta">戻った {{ behavior_snapshot.d3.returned }}人 / 判定対象 {{ behavior_snapshot.d3.eligible }}人</div>
+          <div class="admin-metrics-bar-track">
+            <div class="admin-metrics-bar-fill is-gold" style="width: {{ '%.2f'|format(behavior_snapshot.d3.rate_pct) }}%"></div>
+          </div>
+        </article>
+      </div>
+    </article>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
+        <div class="admin-metrics-section-title">日次サマリー</div>
+        <div class="admin-metrics-section-sub">既存の daily_metrics をベースに、探索の深さも合わせて見られるようにしています。</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="admin-parts-table">
+        <thead>
+          <tr>
+            <th>day_key</th>
+            <th>DAU</th>
+            <th>新規登録</th>
+            <th>探索回数</th>
+            <th>探索 / DAU</th>
+            <th>ボス遭遇</th>
+            <th>ボス撃破</th>
+            <th>合成回数</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          {% set avg = (r['explore_count'] / r['dau_count']) if r['dau_count'] else 0 %}
+          <tr>
+            <td>{{ r['day_key'] }}</td>
+            <td>{{ r['dau_count'] }}</td>
+            <td>{{ r['new_users'] }}</td>
+            <td>{{ r['explore_count'] }}</td>
+            <td>{{ '%.2f'|format(avg) }}</td>
+            <td>{{ r['boss_encounters'] }}</td>
+            <td>{{ r['boss_defeats'] }}</td>
+            <td>{{ r['fuse_count'] }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8">データがありません。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-metrics-grid admin-metrics-grid-core">
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">進化コア観測（実測）</div>
+          <div class="admin-metrics-section-sub">ドロップ率の想定と、実際の探索あたり流入量を見比べる補助セクションです。</div>
+        </div>
+      </div>
+      <form method="get" class="inline-form admin-metrics-toolbar">
+        <label>探索サンプル件数
+          <input type="number" min="50" max="5000" name="sample" value="{{ selected_sample_size }}" />
+        </label>
+        <label>user/day日数
+          <input type="number" min="1" max="90" name="core_days" value="{{ selected_core_days }}" />
+        </label>
+        <button type="submit">更新</button>
+      </form>
+      <div class="admin-metrics-note-grid">
+        <div class="admin-metrics-note-card">
+          <div class="admin-metrics-note-label">設定ドロップ率</div>
+          <div class="admin-metrics-note-value">{{ '%.2f'|format(100 * core_obs.configured_drop_rate) }}%</div>
+        </div>
+        <div class="admin-metrics-note-card">
+          <div class="admin-metrics-note-label">探索サンプル</div>
+          <div class="admin-metrics-note-value">{{ core_obs.explores }}件</div>
+        </div>
+        <div class="admin-metrics-note-card">
+          <div class="admin-metrics-note-label">実測（探索あたり）</div>
+          <div class="admin-metrics-note-value">{{ '%.2f'|format(100 * core_obs.core_per_explore) }}%</div>
+        </div>
+        <div class="admin-metrics-note-card">
+          <div class="admin-metrics-note-label">平均戦闘数 / 探索</div>
+          <div class="admin-metrics-note-value">{{ '%.3f'|format(core_obs.avg_battles_per_explore) }}</div>
+        </div>
+      </div>
+      <div class="admin-metrics-copy">
+        <p>勝利: {{ core_obs.wins }}件 / 総戦闘試行: {{ core_obs.battles_total }}回</p>
+        <p>実測（戦闘試行あたり）: {{ '%.2f'|format(100 * core_obs.core_per_battle_trial) }}% / 推定探索ヒット率: {{ '%.2f'|format(100 * core_obs.expected_hit_per_explore) }}%</p>
+      </div>
+    </article>
+
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">進化コア流入（user/day）</div>
+          <div class="admin-metrics-section-sub">直近{{ core_obs.days }}日で、誰がどれくらいコアを引いたかの確認用テーブルです。</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="admin-parts-table">
+          <thead>
+            <tr>
+              <th>day</th>
+              <th>user_id</th>
+              <th>username</th>
+              <th>core_qty</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in core_obs.user_day %}
+            <tr>
+              <td>{{ r.day_key }}</td>
+              <td>{{ r.user_id }}</td>
+              <td>{{ r.username }}</td>
+              <td>{{ r.core_qty }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4">データがありません。</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+
+  <p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
 </div>
-<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
 {% endblock %}

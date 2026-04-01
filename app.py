@@ -1880,6 +1880,322 @@ def _collect_recent_daily_metrics(db, days=7):
     return rows
 
 
+ADMIN_METRICS_FUNNEL_DAYS = 7
+ADMIN_METRICS_NEW_USER_DAYS = 7
+ADMIN_METRICS_REVISIT_COHORT_DAYS = 30
+ADMIN_METRICS_FUNNEL_STEPS = (
+    {"key": "login", "label": "ログイン", "accent": "purple"},
+    {"key": "home_view", "label": "ホーム表示", "accent": "purple"},
+    {"key": "explore_start", "label": "出撃開始", "accent": "cyan"},
+    {"key": "explore_end", "label": "探索完了", "accent": "cyan"},
+    {"key": "strengthen", "label": "パーツ強化", "accent": "green"},
+    {"key": "evolve", "label": "進化", "accent": "green"},
+    {"key": "build", "label": "編成完了", "accent": "gold"},
+    {"key": "boss_encounter", "label": "ボス遭遇", "accent": "gold"},
+    {"key": "boss_defeat", "label": "ボス撃破", "accent": "gold"},
+    {"key": "next_day_return", "label": "翌日再訪", "accent": "purple"},
+)
+ADMIN_METRICS_FUNNEL_STEP_LABELS = {
+    item["key"]: item["label"]
+    for item in ADMIN_METRICS_FUNNEL_STEPS
+}
+ADMIN_METRICS_FUNNEL_STEP_ACCENTS = {
+    item["key"]: item["accent"]
+    for item in ADMIN_METRICS_FUNNEL_STEPS
+}
+ADMIN_METRICS_WORLD_EVENT_TO_STEP = {
+    AUDIT_EVENT_TYPES["HOME_VIEW"]: "home_view",
+    AUDIT_EVENT_TYPES["EXPLORE_START"]: "explore_start",
+    AUDIT_EVENT_TYPES["EXPLORE_END"]: "explore_end",
+    AUDIT_EVENT_TYPES["FUSE"]: "strengthen",
+    AUDIT_EVENT_TYPES["PART_EVOLVE"]: "evolve",
+    AUDIT_EVENT_TYPES["BUILD_CONFIRM"]: "build",
+    AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]: "boss_encounter",
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: "boss_defeat",
+}
+
+
+def _parse_login_log_created_at(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return 0
+    try:
+        return int(datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=JST).timestamp())
+    except ValueError:
+        try:
+            return int(float(raw))
+        except (TypeError, ValueError):
+            return 0
+
+
+def _jst_day_key_from_ts(ts):
+    return datetime.fromtimestamp(int(ts), JST).strftime("%Y-%m-%d")
+
+
+def _jst_date_from_ts(ts):
+    return datetime.fromtimestamp(int(ts), JST).date()
+
+
+def _has_next_day_return(day_set, *, window_start=None):
+    if not day_set:
+        return False
+    for day in sorted(day_set):
+        next_day = day + timedelta(days=1)
+        if next_day in day_set:
+            if window_start is None or next_day >= window_start:
+                return True
+    return False
+
+
+def _admin_behavior_events(db, since_ts):
+    since_ts = int(since_ts or 0)
+    since_login_text = datetime.fromtimestamp(since_ts, JST).strftime("%Y-%m-%d %H:%M:%S")
+    items = []
+
+    login_rows = db.execute(
+        """
+        SELECT id, user_id, created_at
+        FROM login_logs
+        WHERE user_id IS NOT NULL
+          AND created_at >= ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (since_login_text,),
+    ).fetchall()
+    for row in login_rows:
+        created_ts = _parse_login_log_created_at(row["created_at"])
+        if created_ts < since_ts:
+            continue
+        items.append(
+            {
+                "user_id": int(row["user_id"]),
+                "ts": int(created_ts),
+                "step_key": "login",
+            }
+        )
+
+    tracked_event_types = tuple(ADMIN_METRICS_WORLD_EVENT_TO_STEP.keys())
+    audit_rows = db.execute(
+        f"""
+        SELECT id, user_id, created_at, event_type
+        FROM world_events_log
+        WHERE user_id IS NOT NULL
+          AND created_at >= ?
+          AND event_type IN ({",".join(["?"] * len(tracked_event_types))})
+        ORDER BY created_at ASC, id ASC
+        """,
+        (since_ts, *tracked_event_types),
+    ).fetchall()
+    for row in audit_rows:
+        step_key = ADMIN_METRICS_WORLD_EVENT_TO_STEP.get(str(row["event_type"] or ""))
+        if not step_key:
+            continue
+        items.append(
+            {
+                "user_id": int(row["user_id"]),
+                "ts": int(row["created_at"] or 0),
+                "step_key": step_key,
+            }
+        )
+
+    items.sort(key=lambda item: (int(item["ts"]), str(item["step_key"]), int(item["user_id"])))
+    return items
+
+
+def _admin_metrics_behavior_snapshot(db, *, window_days=ADMIN_METRICS_FUNNEL_DAYS):
+    window_days = max(3, int(window_days or ADMIN_METRICS_FUNNEL_DAYS))
+    now_ts = _now_ts()
+    window_start_ts = int(now_ts - (window_days * 86400))
+    lookback_days = max(
+        int(window_days) + 1,
+        int(ADMIN_METRICS_NEW_USER_DAYS) + 2,
+        int(ADMIN_METRICS_REVISIT_COHORT_DAYS) + 4,
+    )
+    all_events = _admin_behavior_events(db, now_ts - lookback_days * 86400)
+    events_in_window = [item for item in all_events if int(item["ts"]) >= window_start_ts]
+
+    funnel_sets = {item["key"]: set() for item in ADMIN_METRICS_FUNNEL_STEPS}
+    activity_days_by_user = {}
+    for event in events_in_window:
+        user_id = int(event["user_id"])
+        step_key = str(event["step_key"])
+        if step_key in funnel_sets:
+            funnel_sets[step_key].add(user_id)
+        activity_days_by_user.setdefault(user_id, set()).add(_jst_date_from_ts(event["ts"]))
+
+    window_start_day = _jst_date_from_ts(window_start_ts)
+    next_day_return_users = {
+        int(user_id)
+        for user_id, day_set in activity_days_by_user.items()
+        if _has_next_day_return(day_set, window_start=window_start_day)
+    }
+    funnel_sets["next_day_return"] = next_day_return_users
+
+    funnel_base = max(1, len(funnel_sets["login"]), len(funnel_sets["home_view"]))
+    funnel_rows = []
+    for item in ADMIN_METRICS_FUNNEL_STEPS:
+        key = item["key"]
+        count = len(funnel_sets.get(key, set()))
+        funnel_rows.append(
+            {
+                "key": key,
+                "label": item["label"],
+                "count": int(count),
+                "pct_of_base": (float(count) / float(funnel_base)) * 100.0,
+                "accent": item["accent"],
+            }
+        )
+    funnel_max = max((item["count"] for item in funnel_rows), default=0)
+    for item in funnel_rows:
+        item["bar_pct"] = (float(item["count"]) / float(funnel_max) * 100.0) if funnel_max else 0.0
+
+    last_action_by_user = {}
+    for event in events_in_window:
+        user_id = int(event["user_id"])
+        prev = last_action_by_user.get(user_id)
+        if (not prev) or int(event["ts"]) >= int(prev["ts"]):
+            last_action_by_user[user_id] = event
+    dropoff_counts = Counter(
+        str(item["step_key"])
+        for item in last_action_by_user.values()
+        if str(item["step_key"])
+    )
+    dropoff_rows = []
+    for item in ADMIN_METRICS_FUNNEL_STEPS:
+        key = item["key"]
+        count = int(dropoff_counts.get(key, 0))
+        if count <= 0:
+            continue
+        dropoff_rows.append(
+            {
+                "key": key,
+                "label": item["label"],
+                "count": count,
+                "accent": item["accent"],
+            }
+        )
+    dropoff_rows.sort(key=lambda item: item["count"], reverse=True)
+    dropoff_max = max((item["count"] for item in dropoff_rows), default=0)
+    dropoff_total = max(1, sum(int(item["count"]) for item in dropoff_rows))
+    for item in dropoff_rows:
+        item["bar_pct"] = (float(item["count"]) / float(dropoff_max) * 100.0) if dropoff_max else 0.0
+        item["pct"] = (float(item["count"]) / float(dropoff_total)) * 100.0
+
+    new_user_since_ts = int(now_ts - (ADMIN_METRICS_NEW_USER_DAYS * 86400))
+    new_user_rows = db.execute(
+        """
+        SELECT id, created_at
+        FROM users
+        WHERE created_at >= ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (new_user_since_ts,),
+    ).fetchall()
+    new_user_ids = {int(row["id"]) for row in new_user_rows}
+    new_user_events_by_user = {}
+    for event in all_events:
+        user_id = int(event["user_id"])
+        if user_id not in new_user_ids:
+            continue
+        new_user_events_by_user.setdefault(user_id, []).append(event)
+
+    new_user_funnel_sets = {item["key"]: set() for item in ADMIN_METRICS_FUNNEL_STEPS}
+    new_user_next_day_eligible = 0
+    today_jst = datetime.fromtimestamp(now_ts, JST).date()
+    for row in new_user_rows:
+        user_id = int(row["id"])
+        created_ts = int(row["created_at"] or 0)
+        day_start_ts, day_end_ts = _jst_day_bounds(created_ts)
+        created_day = _jst_date_from_ts(created_ts)
+        user_events = new_user_events_by_user.get(user_id, [])
+        user_days = set()
+        for event in user_events:
+            event_ts = int(event["ts"])
+            user_days.add(_jst_date_from_ts(event_ts))
+            if day_start_ts <= event_ts < day_end_ts:
+                step_key = str(event["step_key"])
+                if step_key in new_user_funnel_sets:
+                    new_user_funnel_sets[step_key].add(user_id)
+        if created_day + timedelta(days=1) <= today_jst:
+            new_user_next_day_eligible += 1
+            if (created_day + timedelta(days=1)) in user_days:
+                new_user_funnel_sets["next_day_return"].add(user_id)
+
+    new_user_base = max(1, len(new_user_rows))
+    new_user_funnel_rows = []
+    for item in ADMIN_METRICS_FUNNEL_STEPS:
+        key = item["key"]
+        count = len(new_user_funnel_sets.get(key, set()))
+        pct_base = new_user_next_day_eligible if key == "next_day_return" and new_user_next_day_eligible > 0 else new_user_base
+        new_user_funnel_rows.append(
+            {
+                "key": key,
+                "label": item["label"],
+                "count": int(count),
+                "pct_of_new_users": (float(count) / float(max(1, pct_base))) * 100.0,
+                "accent": item["accent"],
+            }
+        )
+    new_user_funnel_max = max((item["count"] for item in new_user_funnel_rows), default=0)
+    for item in new_user_funnel_rows:
+        item["bar_pct"] = (float(item["count"]) / float(new_user_funnel_max) * 100.0) if new_user_funnel_max else 0.0
+
+    revisit_since_ts = int(now_ts - (ADMIN_METRICS_REVISIT_COHORT_DAYS * 86400))
+    revisit_users = db.execute(
+        """
+        SELECT id, created_at
+        FROM users
+        WHERE created_at >= ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (revisit_since_ts,),
+    ).fetchall()
+    activity_days_full = {}
+    for event in all_events:
+        activity_days_full.setdefault(int(event["user_id"]), set()).add(_jst_date_from_ts(event["ts"]))
+
+    d1_eligible = 0
+    d1_returned = 0
+    d3_eligible = 0
+    d3_returned = 0
+    for row in revisit_users:
+        user_id = int(row["id"])
+        created_day = _jst_date_from_ts(int(row["created_at"] or 0))
+        user_days = activity_days_full.get(user_id, set())
+        d1_day = created_day + timedelta(days=1)
+        d3_day = created_day + timedelta(days=3)
+        if d1_day <= today_jst:
+            d1_eligible += 1
+            if d1_day in user_days:
+                d1_returned += 1
+        if d3_day <= today_jst:
+            d3_eligible += 1
+            if d3_day in user_days:
+                d3_returned += 1
+
+    return {
+        "window_days": int(window_days),
+        "funnel_rows": funnel_rows,
+        "dropoff_rows": dropoff_rows,
+        "dropoff_total": int(len(last_action_by_user)),
+        "new_user_window_days": int(ADMIN_METRICS_NEW_USER_DAYS),
+        "new_user_count": int(len(new_user_rows)),
+        "new_user_next_day_eligible": int(new_user_next_day_eligible),
+        "new_user_funnel_rows": new_user_funnel_rows,
+        "revisit_cohort_days": int(ADMIN_METRICS_REVISIT_COHORT_DAYS),
+        "d1": {
+            "eligible": int(d1_eligible),
+            "returned": int(d1_returned),
+            "rate_pct": (float(d1_returned) / float(max(1, d1_eligible))) * 100.0,
+        },
+        "d3": {
+            "eligible": int(d3_eligible),
+            "returned": int(d3_returned),
+            "rate_pct": (float(d3_returned) / float(max(1, d3_eligible))) * 100.0,
+        },
+    }
+
+
 def _roll_evolution_core_drop(rng=None, drop_rate=None):
     """Single gateway for evolution-core drop RNG.
     Keep current behavior (flat probability), and allow pity extension later.
@@ -14309,15 +14625,8 @@ def _landing_world_snapshot(db):
 def index():
     if "user_id" in session:
         return redirect(url_for("home"))
-    db = get_db()
-    landing = _landing_world_snapshot(db)
-    landing["ref_code"] = (request.args.get("ref") or "").strip().upper()
-    return render_template(
-        "landing.html",
-        title="ロボらぼ β版",
-        landing=landing,
-        changelog_entries=_public_changelog_entries()[:3],
-    )
+    ref_code = (request.args.get("ref") or "").strip().upper()
+    return redirect(url_for("register", ref=ref_code or None))
 
 
 @app.route("/maintenance")
@@ -15045,6 +15354,14 @@ def _login_user_session(db, user_row):
     )
     session["battle_log"] = []
     db.execute("UPDATE users SET last_seen_at = ? WHERE id = ?", (int(time.time()), int(user_row["id"])))
+    db.execute(
+        "INSERT INTO login_logs (user_id, username, created_at) VALUES (?, ?, ?)",
+        (
+            int(user_row["id"]),
+            str(user_row["username"] or ""),
+            now_str(),
+        ),
+    )
     db.commit()
 
 
@@ -15701,6 +16018,21 @@ def home():
     }
     is_main_admin = _is_main_admin_user_row(user)
     show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["HOME_VIEW"],
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="home_view",
+        entity_type="page",
+        payload={
+            "has_any_robot": bool(has_any_robot),
+            "total_explores": int(total_explores or 0),
+            "beginner_focus": bool(home_beginner_focus),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
     try:
         return render_template(
             "home.html",
@@ -22247,9 +22579,33 @@ def admin_metrics():
             """
         ).fetchall()
     core_obs = _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300)
+    behavior_snapshot = _admin_metrics_behavior_snapshot(db, window_days=ADMIN_METRICS_FUNNEL_DAYS)
+    daily_explore_rows = []
+    daily_explore_max = 0.0
+    for row in sorted(rows, key=lambda item: item["day_key"]):
+        dau_count = int(row["dau_count"] or 0)
+        explore_count = int(row["explore_count"] or 0)
+        explores_per_dau = (float(explore_count) / float(dau_count)) if dau_count else 0.0
+        daily_explore_max = max(daily_explore_max, explores_per_dau)
+        daily_explore_rows.append(
+            {
+                "day_key": str(row["day_key"]),
+                "dau_count": dau_count,
+                "explore_count": explore_count,
+                "explores_per_dau": float(explores_per_dau),
+            }
+        )
+    for row in daily_explore_rows:
+        row["bar_pct"] = (
+            float(row["explores_per_dau"]) / float(daily_explore_max) * 100.0
+            if daily_explore_max > 0
+            else 0.0
+        )
     return render_template(
         "admin_metrics.html",
         rows=rows,
+        daily_explore_rows=daily_explore_rows,
+        behavior_snapshot=behavior_snapshot,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),
         selected_core_days=int(core_days or 14),

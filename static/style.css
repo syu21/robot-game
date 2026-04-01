@@ -1,12 +1,48 @@
 :root {
-  --bg-1: #f4ead7;
-  --bg-2: #e5f0ef;
-  --bg-3: #f7caa9;
-  --ink: #1e1c17;
-  --accent: #e9562f;
-  --accent-2: #1a6b67;
-  --panel: #fffdf8;
-  --shadow: rgba(25, 20, 15, 0.12);
+  --bg-main: #0b1020;
+  --bg-main-2: #111827;
+  --bg-main-3: #0f172a;
+
+  --bg-section: #12182b;
+  --bg-section-soft: #151c31;
+
+  --bg-card: #171f36;
+  --bg-card-2: #1b2542;
+  --bg-card-elevated: #202b4a;
+
+  --text-main: #f3f4f6;
+  --text-sub: #c7cfdd;
+  --text-muted: #8e9ab0;
+
+  --accent-cyan: #67e8f9;
+  --accent-cyan-soft: rgba(103, 232, 249, 0.12);
+
+  --accent-purple: #a855f7;
+  --accent-purple-2: #c084fc;
+
+  --accent-gold: #fbbf24;
+  --accent-orange: #fb923c;
+  --accent-green: #34d399;
+  --accent-red: #f87171;
+
+  --border-soft: rgba(103, 232, 249, 0.12);
+  --border-soft-2: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(168, 85, 247, 0.22);
+
+  --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-soft: 0 6px 16px rgba(0, 0, 0, 0.20);
+
+  --surface-highlight: rgba(255, 255, 255, 0.03);
+
+  /* legacy aliases */
+  --bg-1: var(--bg-main);
+  --bg-2: var(--bg-main-2);
+  --bg-3: var(--bg-main-3);
+  --ink: var(--text-main);
+  --accent: var(--accent-purple);
+  --accent-2: var(--accent-cyan);
+  --panel: rgba(18, 24, 43, 0.94);
+  --shadow: rgba(0, 0, 0, 0.28);
 }
 
 * { box-sizing: border-box; }
@@ -5080,6 +5116,594 @@ body.home-page.home-mobile .invite-link-row {
   color: #cbf4a9;
 }
 
+/* ------------------------------------------------------------------
+   Dark laboratory theme unification
+------------------------------------------------------------------- */
+body {
+  background:
+    radial-gradient(circle at top center, rgba(103, 232, 249, 0.08), transparent 38%),
+    radial-gradient(circle at 88% 14%, rgba(168, 85, 247, 0.08), transparent 24%),
+    linear-gradient(180deg, var(--bg-main) 0%, var(--bg-main-2) 55%, var(--bg-main-3) 100%);
+  color: var(--text-main);
+}
+
+a {
+  color: var(--accent-cyan);
+}
+
+a:hover {
+  color: var(--accent-purple-2);
+}
+
+.top {
+  background:
+    linear-gradient(180deg, rgba(10, 15, 30, 0.94), rgba(15, 23, 42, 0.92));
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-soft-2);
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.42);
+}
+
+.logo,
+.user,
+.user a,
+.auth-header-links a {
+  color: var(--text-main);
+}
+
+.logo {
+  text-shadow: 0 0 18px rgba(103, 232, 249, 0.12);
+}
+
+.avatar-48,
+.badge-overlay,
+.robot-badge-32.preview {
+  border-color: var(--border-soft);
+  background: rgba(16, 23, 42, 0.92);
+}
+
+.presence-mini-label,
+.robot-time,
+.upgrade-cost,
+.landing-metric-label,
+.landing-update-meta,
+.landing-front-card .upgrade-cost,
+.landing-front-card .robot-time,
+.landing-front-subcard .robot-time,
+.landing-front-caption,
+.landing-inline-metric-label,
+.feed-meta,
+.feed-time,
+.feed-type,
+.comms-lead,
+.comms-card-meta,
+.comms-toolbar-copy,
+.comms-kicker,
+.comms-message-body,
+.home-mini-log-time,
+.home-mini-log-empty,
+.auth-form-footnote,
+.auth-register-alt-note,
+.auth-world-metric-label,
+.auth-step-text,
+.part-meta-line,
+.part-stat-label,
+.part-page-indicator,
+.guide-term-body,
+.world-env-reason {
+  color: var(--text-sub);
+}
+
+.card,
+.panel,
+.world-env-card,
+.action-card,
+.robot-card,
+.stat-card,
+.build-submit-card,
+.fuse-selection-summary,
+.fuse-estimate,
+.part-summary-pill,
+.part-stat-item,
+.part-mini-card,
+.part-page-link,
+.part-chip,
+.part-filter-chip,
+.part-mini-image,
+.part-card-image,
+.part-picker-card,
+.home-mini-log-item,
+.comms-room-hero,
+.comms-empty-card,
+.comms-placeholder-card,
+.comms-message-card,
+.comms-legacy-system-card,
+.world-score-card,
+.guide-term-item,
+.picker-item,
+.estimate-item,
+.fusion-item,
+.layer-status-card,
+.locked-layer-card,
+.battle-drop-card,
+.battle-home-link,
+.battle-log-fold > summary,
+.battle-log-container,
+.log li,
+.battle-side,
+.timeline-list li,
+.ranking-mini li,
+.auth-step-card,
+.auth-world-card,
+.auth-step-item,
+.auth-world-metric,
+.auth-world-mvp-main,
+.landing-metric-card,
+.landing-update-card,
+.landing-step-card {
+  color: var(--text-main);
+  border-color: var(--border-soft);
+  background: rgba(23, 31, 54, 0.96);
+  box-shadow: var(--shadow-soft);
+}
+
+.panel,
+.auth-hero-card,
+.auth-register-card,
+body#page-home .panel,
+body#page-ranking .container > h1:first-child,
+body#page-showcase .container > h1:first-child {
+  background: rgba(18, 24, 43, 0.94);
+  border-color: var(--border-soft-2);
+  box-shadow: var(--shadow-panel);
+}
+
+body#page-ranking .container > h1:first-child,
+body#page-showcase .container > h1:first-child {
+  margin: 0 0 16px;
+  padding: 18px 20px;
+  border-radius: 16px;
+}
+
+.notice {
+  background: rgba(103, 232, 249, 0.12);
+  color: var(--text-main);
+  border: 1px solid var(--border-soft);
+}
+
+.error,
+.client-error-fallback {
+  background: rgba(248, 113, 113, 0.12);
+  color: #ffd4d4;
+  border: 1px solid rgba(248, 113, 113, 0.26);
+}
+
+.error-box {
+  border-color: rgba(248, 113, 113, 0.36);
+  background: rgba(120, 26, 26, 0.32);
+}
+
+.footer {
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-soft-2);
+  background: rgba(8, 12, 24, 0.82);
+}
+
+.footer a {
+  color: var(--accent-purple-2);
+}
+
+input,
+select,
+textarea,
+.chat-form input,
+.post-form input,
+.post-form textarea,
+.post-form select,
+.inline-form select {
+  border: 1px solid var(--border-soft);
+  background: rgba(14, 21, 38, 0.92);
+  color: var(--text-main);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.actions button,
+.button-link,
+.inline-form button:not(.btn-secondary):not(.danger-btn),
+.auth-card button,
+.upgrade button,
+.post-form button,
+.chat-form button,
+.offset-form button {
+  background: linear-gradient(180deg, var(--accent-purple) 0%, #7c3aed 100%);
+  color: #fdfbff;
+  box-shadow: 0 12px 24px rgba(91, 33, 182, 0.26);
+}
+
+.action-card,
+.part-page-link,
+.part-filter-chip,
+.part-chip,
+.battle-home-link,
+.fuse-mode-tab,
+.showcase-sort-tabs .fuse-mode-tab {
+  color: var(--text-main);
+}
+
+.btn-secondary,
+.battle-home-link,
+.part-page-link,
+.part-filter-chip,
+.part-summary-pill,
+.part-chip,
+.fuse-mode-tab,
+.battle-log-fold > summary {
+  background: rgba(27, 37, 66, 0.86);
+  border-color: var(--border-soft);
+  color: var(--text-sub);
+}
+
+.action-card:hover,
+.part-filter-chip:hover,
+.part-page-link:hover,
+.fuse-mode-tab:hover {
+  border-color: rgba(103, 232, 249, 0.28);
+  box-shadow: 0 12px 22px rgba(3, 7, 18, 0.28);
+}
+
+.fuse-mode-tab.is-active,
+.part-filter-chip.is-active,
+.part-chip.is-equipped,
+.weekly-fit-badge,
+.battle-home-link.active,
+.battle-next-cta,
+.home-area-card.is-selected,
+.world-score-card.is-user,
+.mvp-hero-card {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, rgba(47, 32, 76, 0.92), rgba(28, 36, 68, 0.96));
+  color: var(--text-main);
+}
+
+.world-score-card.is-tailwind,
+.home-mini-log-item,
+.comms-message-card,
+.feed-card-evolve {
+  background: linear-gradient(180deg, rgba(20, 36, 60, 0.94), rgba(21, 30, 52, 0.98));
+}
+
+.feed-card,
+.feed-card-boss,
+.feed-card-weekly,
+.comms-legacy-system-card,
+.comms-empty-card,
+.comms-placeholder-card,
+.comms-room-hero,
+.next-action-card,
+.battle-progress-card,
+.evolve-overview-card,
+.battle-next-card-primary {
+  background: linear-gradient(180deg, rgba(21, 29, 50, 0.96), rgba(25, 34, 59, 0.96));
+  color: var(--text-main);
+}
+
+.feed-card-boss,
+.boss-defeated-card {
+  border-left-color: rgba(251, 146, 60, 0.78);
+}
+
+.feed-card-weekly,
+.world-score-card.is-tailwind,
+.world-score-points,
+.auth-world-mvp-copy b,
+.landing-inline-metric-value,
+.landing-metric-value,
+.battle-outcome-banner.win .battle-outcome-label,
+.battle-outcome-label,
+.battle-drop-count-mini,
+.core-drop-count,
+.world-score-points {
+  color: var(--accent-gold);
+}
+
+.comms-status-badge,
+.comms-count-pill,
+.comms-hub-card,
+.world-env-card .link a,
+.link a,
+.robot-idle-line,
+.part-lock-note,
+.part-stat-delta.is-up,
+.battle-next-cta,
+.battle-next-card .action-title,
+.home-room-form .robot-time {
+  color: var(--accent-cyan);
+}
+
+.slot-overflow-badge,
+.boss-badge-strong,
+.danger-link,
+.part-stat-delta.is-down,
+.battle-outcome-banner.lose .battle-outcome-label,
+.outcome.lose {
+  color: var(--accent-red);
+}
+
+.title-badge,
+.landing-kicker .weekly-fit-badge,
+.chip,
+.auth-step-icon-wrap,
+.auth-step-icon,
+.landing-step-no {
+  background: rgba(168, 85, 247, 0.14);
+  border-color: rgba(168, 85, 247, 0.24);
+  color: var(--accent-purple-2);
+}
+
+.landing-front-card,
+.landing-front-subcard {
+  background: linear-gradient(180deg, rgba(14, 21, 38, 0.98), rgba(23, 31, 54, 0.98));
+  border-color: var(--border-soft);
+}
+
+.landing-front-showcase {
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(12, 16, 32, 0.98));
+}
+
+.landing-mvp-image,
+.robot-thumb,
+.ranking-robot-thumb,
+.battle-drop-thumb,
+.feed-thumb,
+.robot-preview,
+.picker-thumb,
+.part-thumb,
+.world-score-emblem,
+.battle-avatar,
+.core-drop-icon,
+.evolve-compare-image,
+.evolve-preview-thumb,
+.shop-product-image,
+.part-card-image,
+.part-mini-image,
+.fuse-instance img,
+.fuse-created-row img {
+  background: rgba(10, 15, 30, 0.94);
+  border-color: var(--border-soft);
+}
+
+.robot-thumb.empty,
+.robot-preview.empty {
+  color: var(--text-muted);
+}
+
+.stat-value,
+.part-stat-value,
+.landing-metric-value,
+.auth-world-metric-value {
+  color: var(--text-main);
+}
+
+.part-stat-item.is-focus,
+.fuse-outcome.great,
+.fuse-outcome.success,
+.core-drop-banner,
+.evolve-success-banner {
+  border-color: rgba(103, 232, 249, 0.28);
+  background: linear-gradient(180deg, rgba(17, 43, 58, 0.92), rgba(21, 33, 59, 0.98));
+}
+
+.fuse-outcome.fail,
+.danger-card {
+  background: rgba(120, 26, 26, 0.22);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.part-stat-delta.is-flat,
+.feed-kicker,
+.comms-card-meta,
+.comms-toolbar-copy,
+.home-mini-log-time,
+.robot-part,
+.auth-step-no {
+  color: var(--text-muted);
+}
+
+.ranking-mini li,
+.timeline-list li,
+.home-ranking-row + .home-ranking-row,
+.fuse-created,
+.battle-log-entry,
+.part-subsection,
+.comms-timeline-item-system {
+  border-color: var(--border-soft-2);
+}
+
+.timeline-list li {
+  border-left-color: rgba(103, 232, 249, 0.26);
+}
+
+.auth-section-head b,
+.world-score-title b,
+.action-title,
+.robot-id,
+.guide-term-name,
+.auth-title,
+h1,
+h2 {
+  color: var(--text-main);
+}
+
+.auth-step-card,
+.auth-world-card {
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(18, 24, 43, 0.96), rgba(21, 28, 49, 0.98));
+}
+
+.auth-step-item,
+.auth-world-metric,
+.auth-world-mvp-main {
+  background: rgba(27, 37, 66, 0.92);
+  border-color: var(--border-soft);
+}
+
+.auth-step-text,
+.auth-world-mvp-copy .robot-time {
+  color: var(--text-sub);
+}
+
+.auth-register-card .auth-title {
+  text-align: center;
+}
+
+.auth-card button,
+.auth-register-alt-btn {
+  justify-self: center;
+}
+
+.auth-register-alt-btn {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.auth-register-alt-btn-disabled {
+  color: var(--text-muted);
+}
+
+.home-current-robot,
+.home-ranking-panel,
+.home-comms-panel,
+.home-weekly-panel,
+.home-faction-panel,
+.home-nav-panel,
+.home-visibility-panel,
+.home-mvp-panel,
+.research-unlock-banner,
+.beginner-mission-panel,
+.priority-boss-alert,
+.home-return-explore-panel {
+  background: rgba(18, 24, 43, 0.94);
+}
+
+.world-env-card,
+.home-summary-panel .card,
+.home-area-card,
+.action-card,
+.robot-card,
+.showcase-grid .card,
+.record-highlight-thumb {
+  background: rgba(23, 31, 54, 0.96);
+}
+
+.world-score-emblem,
+.faction-badge,
+.beginner-mission-npc {
+  background: rgba(10, 15, 30, 0.96);
+  border-color: var(--border-soft);
+}
+
+.faction-badge.is-active {
+  border-color: rgba(103, 232, 249, 0.42);
+  background: rgba(19, 48, 59, 0.86);
+}
+
+.battle-side {
+  background: rgba(20, 27, 47, 0.96);
+}
+
+.battle-side.enemy {
+  background: rgba(39, 22, 36, 0.94);
+}
+
+.battle-turn-head,
+.battle-vs {
+  background: rgba(27, 37, 66, 0.94);
+  color: var(--text-sub);
+}
+
+.hp-bar,
+.hpbar,
+.hpbar-meter,
+.research-progress-meter,
+.research-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hp-fill,
+.hpbar-inner,
+.hpbar-meter::-webkit-progress-value,
+.hpbar-meter::-moz-progress-bar,
+.research-progress-fill,
+.research-progress-meter::-webkit-progress-value,
+.research-progress-meter::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--accent-cyan) 0%, var(--accent-purple-2) 100%);
+}
+
+.world-score-card.is-user,
+.world-score-card.is-tailwind,
+.home-area-card.is-selected,
+.mvp-hero-card,
+.next-action-card {
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.12), var(--shadow-soft);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(23, 31, 54, 0.96);
+}
+
+th,
+td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border-soft-2);
+  color: var(--text-main);
+}
+
+th {
+  text-align: left;
+  background: rgba(27, 37, 66, 0.96);
+  color: var(--accent-cyan);
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+body#page-ranking .card,
+body#page-world .panel,
+body#page-records .panel,
+body#page-showcase .card,
+body#page-showcase .panel {
+  background: rgba(18, 24, 43, 0.94);
+}
+
+body#page-ranking .robot-part,
+body#page-showcase .robot-part,
+body#page-world .robot-part,
+body#page-records .robot-part {
+  color: var(--text-sub);
+}
+
+body#page-showcase .robot-grid,
+body#page-records .showcase-grid,
+body#page-home .home-layout-grid,
+body#page-world .world-competition-grid {
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .auth-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .lab-watch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -6278,5 +6902,257 @@ body.home-page.home-mobile .invite-link-row {
     animation: none;
     transform: none;
     filter: none;
+  }
+}
+
+/* Admin metrics */
+.admin-metrics-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-metrics-panel {
+  background: rgba(18, 24, 43, 0.94);
+  border: 1px solid var(--border-soft-2);
+  box-shadow: var(--shadow-panel);
+}
+
+.admin-metrics-head-panel {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-metrics-eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  margin-bottom: 8px;
+}
+
+.admin-metrics-desc,
+.admin-metrics-section-sub,
+.admin-metrics-stat-sub,
+.admin-metrics-copy,
+.admin-metrics-empty {
+  color: var(--text-sub);
+}
+
+.admin-metrics-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-metrics-overview-grid,
+.admin-metrics-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-metrics-overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-metrics-grid-halves {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-metrics-grid-core {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.admin-metrics-stat-card,
+.admin-metrics-retention-card,
+.admin-metrics-note-card {
+  background: rgba(23, 31, 54, 0.96);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+}
+
+.admin-metrics-stat-label,
+.admin-metrics-note-label,
+.admin-metrics-retention-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.admin-metrics-stat-value,
+.admin-metrics-note-value,
+.admin-metrics-retention-value {
+  margin-top: 10px;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.1;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.admin-metrics-section-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-metrics-section-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.admin-metrics-bar-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-metrics-bar-row {
+  background: rgba(23, 31, 54, 0.72);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  padding: 12px 14px;
+}
+
+.admin-metrics-bar-head,
+.admin-metrics-bar-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-metrics-bar-head {
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.admin-metrics-bar-foot {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.admin-metrics-bar-label {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.admin-metrics-bar-meta {
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.admin-metrics-bar-track {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.admin-metrics-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple-2));
+  box-shadow: 0 0 18px rgba(103, 232, 249, 0.22);
+}
+
+.admin-metrics-bar-fill.is-purple {
+  background: linear-gradient(90deg, var(--accent-purple), var(--accent-purple-2));
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.25);
+}
+
+.admin-metrics-bar-fill.is-cyan {
+  background: linear-gradient(90deg, #22d3ee, var(--accent-cyan));
+}
+
+.admin-metrics-bar-fill.is-gold {
+  background: linear-gradient(90deg, var(--accent-gold), #fde68a);
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.2);
+}
+
+.admin-metrics-bar-fill.is-green {
+  background: linear-gradient(90deg, var(--accent-green), #6ee7b7);
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.22);
+}
+
+.admin-metrics-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.admin-metrics-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.24);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-metrics-retention-grid,
+.admin-metrics-note-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-metrics-retention-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-metrics-note-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.admin-metrics-retention-meta {
+  margin: 8px 0 12px;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .admin-metrics-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-metrics-grid-halves,
+  .admin-metrics-grid-core {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-metrics-head-panel,
+  .admin-metrics-section-head,
+  .admin-metrics-bar-head,
+  .admin-metrics-bar-foot {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .admin-metrics-overview-grid,
+  .admin-metrics-retention-grid,
+  .admin-metrics-note-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-metrics-stat-value,
+  .admin-metrics-note-value,
+  .admin-metrics-retention-value {
+    font-size: 24px;
   }
 }

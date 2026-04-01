@@ -1,8 +1,10 @@
+import json
 import os
 import re
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import app as game_app
@@ -46,45 +48,31 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             session["username"] = username
         return client
 
+    def _jst_ts(self, day_offset=0, hour=12, minute=0):
+        now_jst = datetime.fromtimestamp(int(time.time()), game_app.JST)
+        base = datetime(now_jst.year, now_jst.month, now_jst.day, tzinfo=game_app.JST)
+        return int((base + timedelta(days=day_offset, hours=hour, minutes=minute)).timestamp())
+
+    def _login_log_text(self, ts):
+        return datetime.fromtimestamp(int(ts), game_app.JST).strftime("%Y-%m-%d %H:%M:%S")
+
     def test_public_policy_pages_are_available(self):
         client = game_app.app.test_client()
         for path in ("/terms", "/privacy", "/commerce", "/contact", "/changelog", "/guide", "/support", "/shop"):
             resp = client.get(path)
             self.assertEqual(resp.status_code, 200)
 
-    def test_public_landing_page_shows_beta_cta_and_legal_links(self):
+    def test_public_root_redirects_to_register(self):
         client = game_app.app.test_client()
-        resp = client.get("/")
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn("ロボらぼ", html)
-        self.assertIn("ロボらぼ β版公開中", html)
-        self.assertIn("新規登録して始める", html)
-        self.assertIn("ログイン", html)
-        self.assertIn("今この瞬間の世界", html)
-        self.assertIn("3ステップで始まる", html)
-        self.assertIn("最新アップデート", html)
-        self.assertIn("/terms", html)
-        self.assertIn("/privacy", html)
-        self.assertIn("/commerce", html)
-        self.assertIn("/contact", html)
-        self.assertIn("/support", html)
+        resp = client.get("/", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.headers.get("Location", "").endswith("/register"))
 
-    def test_public_landing_shows_google_cta_when_configured(self):
+    def test_public_root_redirects_to_register_and_preserves_ref(self):
         client = game_app.app.test_client()
-        with patch.dict(
-            os.environ,
-            {
-                "GOOGLE_OAUTH_CLIENT_ID": "google-client-id",
-                "GOOGLE_OAUTH_CLIENT_SECRET": "google-client-secret",
-            },
-            clear=False,
-        ):
-            resp = client.get("/")
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn("Googleで始める", html)
-        self.assertIn("/auth/google/start", html)
+        resp = client.get("/?ref=ab12", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/register?ref=AB12", resp.headers.get("Location", ""))
 
     def test_register_page_has_hero_google_priority_and_world_reassurance(self):
         client = game_app.app.test_client()
@@ -181,12 +169,94 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("メンテナンス中", resp.get_data(as_text=True))
 
     def test_admin_metrics_is_admin_only(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            created_recent_ts = self._jst_ts(day_offset=-1, hour=10)
+            created_returner_ts = self._jst_ts(day_offset=-4, hour=10)
+            db.execute(
+                "UPDATE users SET created_at = ? WHERE id = ?",
+                (created_recent_ts, int(self.user_id)),
+            )
+            db.execute(
+                "INSERT INTO users (username, password_hash, created_at, is_admin, wins) VALUES (?, ?, ?, 0, 0)",
+                ("ops_returner", "x", created_returner_ts),
+            )
+            returner_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("ops_returner",)).fetchone()["id"]
+            )
+
+            tracked_rows = [
+                (int(self.user_id), self._login_log_text(self._jst_ts(day_offset=-1, hour=10)), None),
+                (int(self.user_id), self._login_log_text(self._jst_ts(day_offset=0, hour=9)), None),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"]),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"]),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["FUSE"]),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]),
+                (int(self.user_id), None, game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"]),
+                (returner_id, self._login_log_text(self._jst_ts(day_offset=-4, hour=10)), None),
+                (returner_id, self._login_log_text(self._jst_ts(day_offset=-3, hour=11)), None),
+                (returner_id, self._login_log_text(self._jst_ts(day_offset=-1, hour=12)), None),
+                (returner_id, None, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"]),
+                (returner_id, None, game_app.AUDIT_EVENT_TYPES["BUILD_CONFIRM"]),
+                (returner_id, None, game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"]),
+            ]
+            event_timestamps = {
+                game_app.AUDIT_EVENT_TYPES["HOME_VIEW"]: self._jst_ts(day_offset=0, hour=9, minute=5),
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]: self._jst_ts(day_offset=0, hour=9, minute=10),
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"]: self._jst_ts(day_offset=0, hour=9, minute=18),
+                game_app.AUDIT_EVENT_TYPES["FUSE"]: self._jst_ts(day_offset=0, hour=9, minute=25),
+                game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]: self._jst_ts(day_offset=0, hour=9, minute=32),
+                game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: self._jst_ts(day_offset=0, hour=9, minute=40),
+                game_app.AUDIT_EVENT_TYPES["BUILD_CONFIRM"]: self._jst_ts(day_offset=-1, hour=12, minute=5),
+                game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"]: self._jst_ts(day_offset=-1, hour=12, minute=10),
+            }
+            for user_id, login_text, event_type in tracked_rows:
+                if login_text:
+                    db.execute(
+                        "INSERT INTO login_logs (user_id, username, created_at) VALUES (?, ?, ?)",
+                        (
+                            int(user_id),
+                            db.execute("SELECT username FROM users WHERE id = ?", (int(user_id),)).fetchone()["username"],
+                            login_text,
+                        ),
+                    )
+                    continue
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        int(event_timestamps[event_type]),
+                        str(event_type),
+                        json.dumps({}, ensure_ascii=False),
+                        int(user_id),
+                    ),
+                )
+            db.commit()
+
         admin_client = self._client_with_user(self.admin_id, "ops_admin")
         user_client = self._client_with_user(self.user_id, "ops_user")
 
         admin_resp = admin_client.get("/admin/metrics")
         self.assertEqual(admin_resp.status_code, 200)
-        self.assertIn("運用メトリクス", admin_resp.get_data(as_text=True))
+        html = admin_resp.get_data(as_text=True)
+        self.assertIn("運用メトリクス", html)
+        self.assertIn("行動ファネル", html)
+        self.assertIn("離脱ポイント", html)
+        self.assertIn("平均探索数 / DAU", html)
+        self.assertIn("登録日ユーザーの初回行動", html)
+        self.assertIn("D1再訪率", html)
+        self.assertIn("D3再訪率", html)
+        self.assertIn("ログイン", html)
+        self.assertIn("ホーム表示", html)
+        self.assertIn("出撃開始", html)
+        self.assertIn("探索完了", html)
+        self.assertIn("パーツ強化", html)
+        self.assertIn("進化", html)
+        self.assertIn("編成完了", html)
+        self.assertIn("翌日再訪", html)
 
         user_resp = user_client.get("/admin/metrics")
         self.assertEqual(user_resp.status_code, 403)

@@ -159,6 +159,7 @@ DEFEAT_LOGS = [
 ]
 
 AUDIT_EVENT_TYPES = {
+    "HOME_VIEW": "audit.home.view",
     "EXPLORE_START": "audit.explore.start",
     "EXPLORE_END": "audit.explore.end",
     "COIN_DELTA": "audit.coin.delta",
