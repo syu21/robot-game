@@ -72,16 +72,14 @@
             <input id="register-password-confirm" type="password" name="password_confirm" autocomplete="new-password" required />
             <button type="submit">新規登録して出撃する</button>
           </form>
-          <div class="auth-register-separator" aria-hidden="true">
-            <span>または</span>
-          </div>
-          {% if google_auth_available %}
-          <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
-          {% else %}
-          <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでかんたん登録</div>
-          <div class="auth-register-alt-note">Google登録は準備中です。いまはユーザー名登録からすぐ始められます。</div>
-          {% endif %}
-          <div class="auth-form-footnote">
+        <div class="auth-register-separator" aria-hidden="true">
+          <span>または</span>
+        </div>
+        <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
+        {% if not google_auth_available %}
+        <div class="auth-register-alt-note">Google登録は準備中です。いまはユーザー名登録からすぐ始められます。</div>
+        {% endif %}
+        <div class="auth-form-footnote">
             すでにアカウントがある場合は
             <a href="{{ url_for('register', mode='login', ref=ref_code or None, next=next_path or None) }}#register-form-card" data-auth-mode-trigger="login">ログイン</a>
           </div>
@@ -114,10 +112,8 @@
           <div class="auth-register-separator" aria-hidden="true">
             <span>または</span>
           </div>
-          {% if google_auth_available %}
           <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', next=next_path or None) }}">Googleでログイン</a>
-          {% else %}
-          <div class="auth-register-alt-btn auth-register-alt-btn-disabled" aria-disabled="true">Googleでログイン</div>
+          {% if not google_auth_available %}
           <div class="auth-register-alt-note">Googleログインは準備中です。いまはユーザー名ログインをご利用ください。</div>
           {% endif %}
           <div class="auth-form-footnote">

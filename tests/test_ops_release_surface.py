@@ -128,7 +128,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("Google登録は準備中です。", html)
         self.assertIn("Googleでログイン", html)
         self.assertIn("Googleログインは準備中です。", html)
-        self.assertNotIn("/auth/google/start", html)
+        self.assertIn("/auth/google/start", html)
 
     def test_register_login_mode_shows_shared_login_gateway(self):
         client = game_app.app.test_client()
