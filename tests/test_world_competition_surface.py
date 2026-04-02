@@ -126,6 +126,10 @@ class WorldCompetitionSurfaceTests(unittest.TestCase):
         self.assertIn("突破主義", html)
         self.assertIn("勝利陣営バフ発動中", html)
         self.assertIn("user-chip mini", html)
+        self.assertIn("is-robot-icon", html)
+        self.assertIn("user-chip-avatar", html)
+        self.assertIn("user-signal-hero is-podium", html)
+        self.assertNotIn("badge-overlay", html)
         self.assertIn("world-mvp-thumb", html)
 
     def test_records_page_shows_first_records_and_weekly_records(self):
@@ -208,6 +212,10 @@ class WorldCompetitionSurfaceTests(unittest.TestCase):
         self.assertIn("最速ロボランキング", html)
         self.assertIn("話題ロボ", html)
         self.assertIn("user-chip mini", html)
+        self.assertIn("is-robot-icon", html)
+        self.assertIn("user-chip-avatar", html)
+        self.assertIn("record-ranking-item is-podium", html)
+        self.assertNotIn("badge-overlay", html)
         self.assertIn("ranking-robot-thumb", html)
 
     def test_home_links_world_and_records_pages(self):

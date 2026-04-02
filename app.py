@@ -1,4 +1,5 @@
 import os
+import hashlib
 import random
 import re
 import shutil
@@ -18,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
-from PIL import Image
+from PIL import Image, ImageDraw
 from balance_config import (
     COIN_REWARD_BY_TIER,
     DROP_TYPE_WEIGHTS_BY_TIER,
@@ -113,11 +114,13 @@ LAB_UPLOAD_ORIGINAL_ROOT = os.path.join(LAB_UPLOAD_ROOT, "originals")
 LAB_UPLOAD_THUMB_ROOT = os.path.join(LAB_UPLOAD_ROOT, "thumbs")
 LAB_SCENE_SPRITE_ROOT = os.path.join(STATIC_ROOT, "lab_scene_sprites")
 ROBOT_ICON_ROOT = os.path.join(STATIC_ROOT, "robot_icons")
+GENERATED_AVATAR_ROOT = os.path.join(STATIC_ROOT, "generated_avatars")
 DEFAULT_ROOT = os.path.join(STATIC_ROOT, "defaults")
-DEFAULT_AVATAR_REL = "defaults/avatar_default.png"
-DEFAULT_BADGE_REL = "defaults/robot_badge_default.png"
+DEFAULT_AVATAR_REL = "defaults/robot_face_default.png"
+DEFAULT_BADGE_REL = "defaults/robot_face_badge_default.png"
 AVATAR_OUTPUT_SIZE = 48
 BADGE_OUTPUT_SIZE = 32
+PROFILE_AVATAR_OUTPUT_SIZE = 32
 MAX_BADGE_INNER_SIZE = 28
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 MAX_LAB_UPLOAD_BYTES = 1 * 1024 * 1024
@@ -8658,22 +8661,161 @@ def _ensure_dirs():
     os.makedirs(LAB_UPLOAD_THUMB_ROOT, exist_ok=True)
     os.makedirs(LAB_SCENE_SPRITE_ROOT, exist_ok=True)
     os.makedirs(ROBOT_ICON_ROOT, exist_ok=True)
+    os.makedirs(GENERATED_AVATAR_ROOT, exist_ok=True)
     os.makedirs(DEFAULT_ROOT, exist_ok=True)
+
+
+def _draw_default_robot_icon(output_size):
+    canvas = Image.new("RGBA", (output_size, output_size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    border = max(1, output_size // 24)
+    radius = max(5, output_size // 5)
+    draw.rounded_rectangle(
+        (1, 1, output_size - 2, output_size - 2),
+        radius=radius,
+        fill=(16, 24, 42, 255),
+        outline=(84, 228, 216, 180),
+        width=border,
+    )
+
+    face_left = int(round(output_size * 0.18))
+    face_top = int(round(output_size * 0.18))
+    face_right = int(round(output_size * 0.82))
+    face_bottom = int(round(output_size * 0.78))
+    draw.rounded_rectangle(
+        (face_left, face_top, face_right, face_bottom),
+        radius=max(4, output_size // 8),
+        fill=(224, 235, 242, 255),
+        outline=(48, 64, 92, 210),
+        width=border,
+    )
+
+    eye_w = max(2, output_size // 10)
+    eye_h = max(2, output_size // 8)
+    eye_top = int(round(output_size * 0.36))
+    left_eye_left = int(round(output_size * 0.32))
+    right_eye_left = int(round(output_size * 0.58))
+    eye_fill = (77, 233, 215, 255)
+    draw.rounded_rectangle(
+        (left_eye_left, eye_top, left_eye_left + eye_w, eye_top + eye_h),
+        radius=max(1, eye_w // 2),
+        fill=eye_fill,
+    )
+    draw.rounded_rectangle(
+        (right_eye_left, eye_top, right_eye_left + eye_w, eye_top + eye_h),
+        radius=max(1, eye_w // 2),
+        fill=eye_fill,
+    )
+
+    mouth_left = int(round(output_size * 0.35))
+    mouth_top = int(round(output_size * 0.59))
+    mouth_right = int(round(output_size * 0.65))
+    mouth_bottom = mouth_top + max(2, output_size // 12)
+    draw.rounded_rectangle(
+        (mouth_left, mouth_top, mouth_right, mouth_bottom),
+        radius=max(1, output_size // 16),
+        fill=(52, 70, 96, 255),
+    )
+
+    antenna_y = int(round(output_size * 0.08))
+    antenna_tip_y = int(round(output_size * 0.02))
+    left_antenna_x = int(round(output_size * 0.36))
+    right_antenna_x = int(round(output_size * 0.64))
+    for antenna_x in (left_antenna_x, right_antenna_x):
+        draw.line(
+            (antenna_x, antenna_y, antenna_x, antenna_tip_y),
+            fill=(77, 233, 215, 235),
+            width=max(1, border),
+        )
+        dot_r = max(1, output_size // 20)
+        draw.ellipse(
+            (antenna_x - dot_r, antenna_tip_y - dot_r, antenna_x + dot_r, antenna_tip_y + dot_r),
+            fill=(250, 214, 108, 255),
+        )
+    return canvas
+
+
+def _draw_seed_profile_avatar(seed_text, output_size):
+    digest = hashlib.sha256(str(seed_text or "pilot").encode("utf-8", "ignore")).digest()
+    canvas = Image.new("RGBA", (output_size, output_size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    border = max(1, output_size // 16)
+    radius = max(5, output_size // 4)
+    bg = (18 + digest[0] % 28, 24 + digest[1] % 34, 40 + digest[2] % 44, 255)
+    panel = (34 + digest[3] % 42, 44 + digest[4] % 48, 72 + digest[5] % 56, 255)
+    accent = (86 + digest[6] % 120, 110 + digest[7] % 110, 146 + digest[8] % 90, 255)
+    accent_soft = (72 + digest[9] % 70, 168 + digest[10] % 70, 220 + digest[11] % 35, 225)
+    outline = (140 + digest[12] % 90, 208 + digest[13] % 32, 232 + digest[14] % 24, 200)
+    draw.rounded_rectangle(
+        (1, 1, output_size - 2, output_size - 2),
+        radius=radius,
+        fill=bg,
+        outline=outline,
+        width=border,
+    )
+    inset = max(3, output_size // 10)
+    draw.rounded_rectangle(
+        (inset, inset, output_size - inset - 1, output_size - inset - 1),
+        radius=max(4, output_size // 5),
+        fill=panel,
+    )
+
+    cell = max(2, output_size // 7)
+    gap = max(1, output_size // 28)
+    origin_x = int(round(output_size * 0.17))
+    origin_y = int(round(output_size * 0.16))
+    bit_index = 0
+    for col in range(3):
+        for row in range(5):
+            if (digest[bit_index // 8] >> (bit_index % 8)) & 1:
+                left = origin_x + col * (cell + gap)
+                top = origin_y + row * (cell + gap)
+                right = left + cell
+                bottom = top + cell
+                draw.rounded_rectangle(
+                    (left, top, right, bottom),
+                    radius=max(1, cell // 3),
+                    fill=(accent if (bit_index % 2 == 0) else accent_soft),
+                )
+                if col < 2:
+                    mirror_left = output_size - right
+                    mirror_right = output_size - left
+                    draw.rounded_rectangle(
+                        (mirror_left, top, mirror_right, bottom),
+                        radius=max(1, cell // 3),
+                        fill=(accent if (bit_index % 2 == 0) else accent_soft),
+                    )
+            bit_index += 1
+
+    visor_top = int(round(output_size * 0.66))
+    visor_height = max(2, output_size // 10)
+    visor_left = int(round(output_size * 0.28))
+    visor_right = int(round(output_size * 0.72))
+    draw.rounded_rectangle(
+        (visor_left, visor_top, visor_right, visor_top + visor_height),
+        radius=max(1, visor_height // 2),
+        fill=(226, 238, 244, 220),
+    )
+    return canvas
+
+
+def _safe_remote_avatar_url(url):
+    text = str(url or "").strip()
+    if not text or len(text) > 600:
+        return None
+    lowered = text.lower()
+    if lowered.startswith("https://") or lowered.startswith("http://"):
+        return text
+    return None
 
 
 def _ensure_default_images():
     avatar_abs = os.path.join(STATIC_ROOT, DEFAULT_AVATAR_REL)
     badge_abs = os.path.join(STATIC_ROOT, DEFAULT_BADGE_REL)
     if not os.path.exists(avatar_abs):
-        img = Image.new("RGBA", (AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE), (35, 40, 52, 255))
-        inner = Image.new("RGBA", (36, 36), (88, 190, 180, 255))
-        img.alpha_composite(inner, (6, 6))
-        img.save(avatar_abs, format="PNG")
+        _draw_default_robot_icon(AVATAR_OUTPUT_SIZE).save(avatar_abs, format="PNG")
     if not os.path.exists(badge_abs):
-        badge = Image.new("RGBA", (BADGE_OUTPUT_SIZE, BADGE_OUTPUT_SIZE), (0, 0, 0, 0))
-        core = Image.new("RGBA", (24, 24), (230, 96, 56, 255))
-        badge.alpha_composite(core, (4, 4))
-        badge.save(badge_abs, format="PNG")
+        _draw_default_robot_icon(BADGE_OUTPUT_SIZE).save(badge_abs, format="PNG")
     enemy_placeholder = os.path.join(STATIC_ROOT, "enemies", "_placeholder.png")
     if not os.path.exists(enemy_placeholder):
         img = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
@@ -10503,12 +10645,20 @@ def _generate_robot_badge_from_composed(composed_rel_path, out_abs_path):
     bbox = alpha.getbbox()
     if not bbox:
         return False
-    pad = 3
+    pad = 4
     left = max(0, bbox[0] - pad)
     top = max(0, bbox[1] - pad)
     right = min(img.width, bbox[2] + pad)
     bottom = min(img.height, bbox[3] + pad)
-    cropped = img.crop((left, top, right, bottom))
+    crop_w = max(1, right - left)
+    crop_h = max(1, bottom - top)
+    crop_size = max(crop_w, int(round(crop_h * 0.82)))
+    crop_size = min(max(crop_size, 1), img.width, img.height)
+    crop_left = int(round(((left + right) / 2) - (crop_size / 2)))
+    crop_top = top
+    crop_left = max(0, min(crop_left, img.width - crop_size))
+    crop_top = max(0, min(crop_top, img.height - crop_size))
+    cropped = img.crop((crop_left, crop_top, crop_left + crop_size, crop_top + crop_size))
     if cropped.width <= 0 or cropped.height <= 0:
         return False
 
@@ -10654,63 +10804,166 @@ def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_ren
 
 
 def _user_avatar_rel(row):
-    rel = _safe_static_rel(row["avatar_path"]) if row and "avatar_path" in row.keys() else None
-    return rel or DEFAULT_AVATAR_REL
+    if not row or not hasattr(row, "keys") or "avatar_path" not in row.keys():
+        return None
+    rel = _safe_static_rel(row["avatar_path"]) if row["avatar_path"] else None
+    if rel and os.path.exists(_static_abs(rel)):
+        return rel
+    return None
+
+
+def _user_google_avatar_url(db, user_id):
+    if not user_id:
+        return None
+    row = db.execute(
+        """
+        SELECT avatar_url
+        FROM user_auth_identities
+        WHERE user_id = ?
+          AND provider = ?
+          AND COALESCE(TRIM(avatar_url), '') <> ''
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), GOOGLE_OAUTH_PROVIDER),
+    ).fetchone()
+    if not row:
+        return None
+    return _safe_remote_avatar_url(row["avatar_url"])
+
+
+def _seed_profile_avatar_rel(user_row):
+    if not user_row:
+        return DEFAULT_AVATAR_REL
+    user_id = int(user_row["id"])
+    out_rel = f"generated_avatars/user_{user_id}.png"
+    out_abs = _static_abs(out_rel)
+    if os.path.exists(out_abs):
+        return out_rel
+    seed_text = "::".join(
+        str(part or "").strip()
+        for part in (
+            user_id,
+            (user_row["username"] if "username" in user_row.keys() else ""),
+            (user_row["display_name"] if "display_name" in user_row.keys() else ""),
+        )
+    )
+    try:
+        os.makedirs(os.path.dirname(out_abs), exist_ok=True)
+        _draw_seed_profile_avatar(seed_text, PROFILE_AVATAR_OUTPUT_SIZE).save(out_abs, format="PNG")
+        return out_rel
+    except Exception:
+        return DEFAULT_AVATAR_REL
+
+
+def _user_profile_avatar_visual(db, user_row):
+    if not user_row:
+        return {
+            "avatar": DEFAULT_AVATAR_REL,
+            "avatar_url": None,
+            "avatar_kind": "seed",
+            "avatar_is_generated": True,
+        }
+    google_avatar_url = _user_google_avatar_url(db, int(user_row["id"]))
+    if google_avatar_url:
+        return {
+            "avatar": None,
+            "avatar_url": google_avatar_url,
+            "avatar_kind": "google",
+            "avatar_is_generated": False,
+        }
+    uploaded_avatar_rel = _user_avatar_rel(user_row)
+    if uploaded_avatar_rel:
+        return {
+            "avatar": uploaded_avatar_rel,
+            "avatar_url": None,
+            "avatar_kind": "uploaded",
+            "avatar_is_generated": False,
+        }
+    return {
+        "avatar": _seed_profile_avatar_rel(user_row),
+        "avatar_url": None,
+        "avatar_kind": "seed",
+        "avatar_is_generated": True,
+    }
+
+
+def _active_robot_icon_row(db, user_id):
+    user_row = db.execute(
+        "SELECT active_robot_id FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    if user_row and user_row["active_robot_id"]:
+        active_row = db.execute(
+            """
+            SELECT id, icon_32_path, composed_image_path, updated_at
+            FROM robot_instances
+            WHERE id = ? AND user_id = ? AND status = 'active'
+            LIMIT 1
+            """,
+            (int(user_row["active_robot_id"]), int(user_id)),
+        ).fetchone()
+        if active_row:
+            return active_row
+    return db.execute(
+        """
+        SELECT id, icon_32_path, composed_image_path, updated_at
+        FROM robot_instances
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+
+
+def _user_primary_icon_rel(db, user_id, *, default_rel=DEFAULT_AVATAR_REL):
+    row = _active_robot_icon_row(db, user_id)
+    if not row:
+        return default_rel
+    data = _refresh_robot_instance_render_assets(db, row, log_label="user_icon", preserve_updated_at=True) or dict(row)
+    icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
+    if icon_rel and os.path.exists(_static_abs(icon_rel)):
+        return icon_rel
+    composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
+    if composed_rel:
+        return _ensure_robot_instance_badge(db, int(data["id"]), composed_rel)
+    return default_rel
 
 
 def _user_badge_rel(db, user_id):
-    pick = db.execute(
-        """
-        SELECT ri.id, ri.icon_32_path, ri.composed_image_path
-        FROM user_showcase us
-        JOIN robot_instances ri ON ri.id = us.robot_instance_id
-        WHERE us.user_id = ? AND ri.status = 'active'
-        ORDER BY us.slot_no ASC
-        LIMIT 1
-        """,
-        (user_id,),
-    ).fetchone()
-    if pick is None:
-        pick = db.execute(
-            """
-            SELECT id, icon_32_path, composed_image_path
-            FROM robot_instances
-            WHERE user_id = ? AND status = 'active'
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
-    if pick is None:
-        return DEFAULT_BADGE_REL
-    icon_rel = _safe_static_rel(pick["icon_32_path"]) if pick["icon_32_path"] else None
-    if icon_rel:
-        return icon_rel
-    if pick["composed_image_path"]:
-        return _ensure_robot_instance_badge(db, pick["id"], pick["composed_image_path"])
-    return DEFAULT_BADGE_REL
+    return _user_primary_icon_rel(db, user_id, default_rel=DEFAULT_BADGE_REL)
 
 
 def _user_visuals(db, user_id, cache):
     if user_id in cache:
         return cache[user_id]
     user = db.execute(
-        "SELECT id, avatar_path, last_seen_at FROM users WHERE id = ?",
+        "SELECT id, username, is_admin, display_name, avatar_path, last_seen_at FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
     presence = _user_presence_snapshot(user["last_seen_at"] if user else 0)
     if not user:
         cache[user_id] = {
             "avatar": DEFAULT_AVATAR_REL,
+            "avatar_url": None,
+            "avatar_kind": "seed",
+            "avatar_is_generated": True,
             "badge": DEFAULT_BADGE_REL,
+            "display_username": (f"User#{int(user_id)}" if user_id else "SYSTEM"),
             "presence_state": presence["state"],
             "presence_label": presence["label"],
             "presence_title": presence["title"],
         }
     else:
+        profile_avatar = _user_profile_avatar_visual(db, user)
         cache[user_id] = {
-            "avatar": _user_avatar_rel(user),
+            "avatar": profile_avatar["avatar"],
+            "avatar_url": profile_avatar["avatar_url"],
+            "avatar_kind": profile_avatar["avatar_kind"],
+            "avatar_is_generated": bool(profile_avatar["avatar_is_generated"]),
             "badge": _user_badge_rel(db, user_id),
+            "display_username": _display_username_for_user_row(db, user) or str(user["username"] or "").strip(),
             "presence_state": presence["state"],
             "presence_label": presence["label"],
             "presence_title": presence["title"],
@@ -10727,14 +10980,22 @@ def _decorate_user_rows(db, rows, user_key="user_id"):
         if user_id:
             visuals = _user_visuals(db, user_id, cache)
             item["avatar_path"] = visuals["avatar"]
+            item["avatar_url"] = visuals.get("avatar_url")
+            item["avatar_kind"] = visuals.get("avatar_kind", "seed")
+            item["avatar_is_generated"] = bool(visuals.get("avatar_is_generated"))
             item["badge_path"] = visuals["badge"]
+            item["display_username"] = visuals.get("display_username") or str(item.get("username") or "").strip()
             item["presence_state"] = visuals["presence_state"]
             item["presence_label"] = visuals["presence_label"]
             item["presence_title"] = visuals["presence_title"]
         else:
             presence = _user_presence_snapshot(0)
             item["avatar_path"] = DEFAULT_AVATAR_REL
+            item["avatar_url"] = None
+            item["avatar_kind"] = "seed"
+            item["avatar_is_generated"] = True
             item["badge_path"] = DEFAULT_BADGE_REL
+            item["display_username"] = str(item.get("username") or "SYSTEM").strip() or "SYSTEM"
             item["presence_state"] = presence["state"]
             item["presence_label"] = presence["label"]
             item["presence_title"] = presence["title"]
@@ -11960,12 +12221,15 @@ def _weekly_mvp_snapshot(db, week_key):
     visuals = _user_visuals(db, int(user_row["id"]), {})
     return {
         "user_id": int(user_row["id"]),
-        "username": user_row["username"],
+        "username": visuals.get("display_username") or user_row["username"],
         "wins": int(row["wins"] or 0),
         "robot_id": int(robot_dict["id"]) if robot_dict else None,
         "robot_name": (robot_dict["name"] if robot_dict else None),
         "robot_image_url": image_url,
         "avatar_path": visuals["avatar"],
+        "avatar_url": visuals.get("avatar_url"),
+        "avatar_kind": visuals.get("avatar_kind", "seed"),
+        "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
         "badge_path": visuals["badge"],
         "presence_state": visuals["presence_state"],
         "presence_label": visuals["presence_label"],
@@ -12072,12 +12336,15 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                 {
                     "rank": idx,
                     "title": row["robot_name"],
-                    "subtitle": row["username"],
+                    "subtitle": row.get("display_username") or row["username"],
                     "value": int(row["metric_value"] or 0),
                     "value_label": metric["metric_label"],
                     "robot_id": int(row["robot_id"]),
                     "user_id": int(row["user_id"]),
                     "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                    "avatar_url": row.get("avatar_url"),
+                    "avatar_kind": row.get("avatar_kind", "seed"),
+                    "avatar_is_generated": bool(row.get("avatar_is_generated")),
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
                     "image_url": row.get("image_url"),
                     "profile": row.get("profile"),
@@ -12090,13 +12357,16 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
             out.append(
                 {
                     "rank": idx,
-                    "title": row["username"],
+                    "title": row.get("display_username") or row["username"],
                     "subtitle": "",
                     "value": int(row["metric_value"] or 0),
                     "value_label": metric["metric_label"],
                     "robot_id": None,
                     "user_id": int(row["id"]),
                     "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                    "avatar_url": row.get("avatar_url"),
+                    "avatar_kind": row.get("avatar_kind", "seed"),
+                    "avatar_is_generated": bool(row.get("avatar_is_generated")),
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
                     "presence_state": row.get("presence_state", "idle"),
                     "presence_label": row.get("presence_label", "探索待機中"),
@@ -12148,6 +12418,9 @@ def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
                 ),
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
@@ -12190,6 +12463,9 @@ def _first_explore_record_rows(db, area_keys=None, *, user_row=None, user_id=Non
                 "detail": "",
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
@@ -12231,6 +12507,9 @@ def _first_evolve_record_rows(db):
                 "detail": target_name,
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
@@ -12253,10 +12532,14 @@ def _record_showcase_highlights(db, user_id):
                 "robot_id": int(row["id"]),
                 "robot_name": row["name"],
                 "username": row["username"],
+                "display_username": row.get("display_username") or row["username"],
                 "profile": row.get("profile"),
                 "sort_key": sort_key,
                 "image_url": row.get("image_url"),
                 "avatar_path": row.get("avatar_path", DEFAULT_AVATAR_REL),
+                "avatar_url": row.get("avatar_url"),
+                "avatar_kind": row.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
                 "presence_state": row.get("presence_state", "idle"),
                 "presence_label": row.get("presence_label", "探索待機中"),
@@ -13045,10 +13328,13 @@ def _world_user_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
                 "sort_ts": int(created_ts),
                 "sort_id": int(row["id"]),
                 "user_id": (int(row["user_id"]) if row.get("user_id") else None),
-                "user_label": username or _feed_user_label(db, row.get("user_id")),
+                "user_label": str(row.get("display_username") or username or _feed_user_label(db, row.get("user_id"))).strip(),
                 "message": str(row.get("message") or "").strip(),
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "avatar_url": row.get("avatar_url"),
+                "avatar_kind": row.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
@@ -13104,10 +13390,13 @@ def _home_world_user_message_items(db, limit=HOME_COMM_PREVIEW_LIMIT):
                 "sort_ts": int(created_ts),
                 "sort_id": int(row["id"]),
                 "user_id": (int(row["user_id"]) if row.get("user_id") else None),
-                "user_label": username or _feed_user_label(db, row.get("user_id")),
+                "user_label": str(row.get("display_username") or username or _feed_user_label(db, row.get("user_id"))).strip(),
                 "message": str(row.get("message") or "").strip(),
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "avatar_url": row.get("avatar_url"),
+                "avatar_kind": row.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
@@ -13143,10 +13432,13 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
             {
                 "id": int(row["id"]),
                 "user_id": (int(row["user_id"]) if row.get("user_id") else None),
-                "user_label": str(row.get("username") or "").strip() or _feed_user_label(db, row.get("user_id")),
+                "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
                 "message": str(row.get("message") or "").strip(),
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
+                "avatar_url": row.get("avatar_url"),
+                "avatar_kind": row.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
@@ -14350,13 +14642,17 @@ def inject_user_display():
     if not user_id:
         return {"header_user_visual": None}
     db = get_db()
-    user = db.execute("SELECT id, avatar_path FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
     if not user:
         return {"header_user_visual": None}
+    visuals = _user_visuals(db, int(user_id), {})
     return {
         "header_user_visual": {
-            "avatar_path": _user_avatar_rel(user),
-            "badge_path": _user_badge_rel(db, user_id),
+            "avatar_path": visuals["avatar"],
+            "avatar_url": visuals.get("avatar_url"),
+            "avatar_kind": visuals.get("avatar_kind", "seed"),
+            "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+            "badge_path": visuals["badge"],
         }
     }
 
@@ -14540,6 +14836,39 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.17",
+            "date": "2026/04/02",
+            "title": "小ロボ主役のユーザー表示へ再調整",
+            "notes": [
+                "ランキング / MVP / 記録庫 / 世界ログでは、現在の出撃機体から作る小ロボ画像を主役に寄せて表示",
+                "補助アバターは Google画像を優先し、未設定ユーザーは seed ベースの簡易アイコンで見た目が散るよう調整",
+                "ユーザー名と機体画像の結びつきを強め、上位3位は少し強調して賑わい感を出すよう改善",
+            ],
+        },
+        {
+            "version": "0.1.16",
+            "date": "2026/04/02",
+            "title": "ユーザーアイコンを機体ベースへ統一",
+            "notes": [
+                "ユーザーアイコンを手動アップロード依存から外し、現在の出撃機体から自動生成する 32x32 アイコンへ切り替え",
+                "編成確定時に小型機体アイコンを生成し、ランキング / ホーム / 世界戦況 / 記録庫 / 通信で統一表示",
+                "機体未所持時は初期ノーマルロボ顔を使い、水色の共通デフォルト画像を廃止",
+                "小型アイコンは HEAD が見やすい切り抜きを優先し、DECOR があれば小さく残すよう調整",
+            ],
+        },
+        {
+            "version": "0.1.15",
+            "date": "2026/04/02",
+            "title": "入口導線と通信表示を改善",
+            "notes": [
+                "登録画面を「はじめる / ログイン」切替つきの認証ゲートとして整理し、Google登録と世界の活動量表示を強化",
+                "戦利品結果を「再出撃 / パーツ確認 / ホームへ戻る」の次の行動カードへ整理",
+                "通信・ランキング・世界戦況・記録庫で、最近の活動人数と活動状態の表示を追加",
+                "ロボ編成 / パーツ強化 / 進化合成の比較UIを整理し、見比べやすさを改善",
+                "β版支援パックの文言を調整し、応援導線を控えめに整理",
+            ],
+        },
         {
             "version": "0.1.14",
             "date": "2026/03/26",
@@ -15764,31 +16093,19 @@ def starter_pack_claim():
     return redirect(url_for("home"))
 
 
-@app.route("/settings", methods=["GET", "POST"])
+@app.route("/settings")
 @login_required
 def settings():
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    message = None
-    if request.method == "POST":
-        avatar_file = request.files.get("avatar")
-        if not avatar_file:
-            message = "画像ファイルを選択してください。"
-        else:
-            ok, err, rel_path = _save_user_avatar(avatar_file, user["id"])
-            if not ok:
-                message = err
-            else:
-                db.execute("UPDATE users SET avatar_path = ? WHERE id = ?", (rel_path, user["id"]))
-                db.commit()
-                message = "ユーザーアイコンを更新しました。"
-                user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    active_robot = _get_active_robot(db, int(user["id"])) if user else None
+    active_robot_name = str((active_robot or {}).get("name") or "").strip()
+    visuals = _user_visuals(db, int(user["id"]), {}) if user else None
     return render_template(
         "settings.html",
         user=user,
-        message=message,
-        avatar_path=_user_avatar_rel(user),
-        badge_path=_user_badge_rel(db, user["id"]),
+        user_visual=visuals,
+        active_robot_name=active_robot_name,
     )
 
 

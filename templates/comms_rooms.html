@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <section class="panel comms-shell" data-comms-auto-refresh="1" data-auto-refresh-ms="{{ auto_refresh_seconds * 1000 }}">
   <div class="comms-kicker">ROOMS</div>
@@ -14,7 +15,7 @@
 
   <div class="comms-room-tabs">
     {% for room in room_defs %}
-    <a class="battle-home-link{% if room['key'] == selected_room_key %} active{% endif %}" href="{{ url_for('comms_rooms', room=room['key']) }}">{{ room['title'] }}</a>
+    <a class="battle-home-link{% if room['key'] == selected_room_key %} active{% endif %}" href="{{ url_for('comms_rooms', room=room['key']) }}">{{ room['title'] }}{% if room_activity_counts_by_key.get(room['key'], 0) %}<span class="comms-count-pill">{{ room_activity_counts_by_key[room['key']] }}</span>{% endif %}</a>
     {% endfor %}
   </div>
 
@@ -23,6 +24,7 @@
       <div class="action-title">{{ selected_room['title'] }}</div>
       <div class="action-desc">{{ selected_room['summary'] }}</div>
       <div class="comms-card-meta">{{ selected_room['tone'] }}</div>
+      <div class="presence-mini-label">{{ room_activity_line }}</div>
     </div>
     <div class="comms-toolbar-copy">{{ room_settings['max_chars'] }}文字まで / 連投CT {{ room_settings['cooldown_seconds'] }}秒 / {{ auto_refresh_seconds }}秒ごと自動更新</div>
   </div>
@@ -43,14 +45,12 @@
     {% for item in room_items %}
     <article class="card comms-timeline-item comms-message-card">
       <div class="comms-message-head">
-        <div class="presence-user-line">
-          <span class="user-chip mini">
-            <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
-            <span class="badge-overlay">
-              <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
-            </span>
-          </span>
-          <div class="feed-user">{{ item['user_label'] }}</div>
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(item, 'log', item['user_label'] ~ ' robot') }}
+          <div class="user-signal-meta">
+            <div class="feed-user user-signal-name">{{ item['user_label'] }}</div>
+            <div class="presence-mini-label">{{ item.get('presence_label', '探索待機中') }}</div>
+          </div>
         </div>
         <div class="feed-time">{{ item['time_jst'] }} JST</div>
       </div>

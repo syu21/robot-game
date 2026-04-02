@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 {% if not user %}
 <div class="card">
@@ -246,15 +247,10 @@
       <div class="world-env-card mvp-hero-card">
         <div><b>今週のMVP</b></div>
         {% if weekly_mvp %}
-        <div class="presence-user-line">
-          <span class="user-chip mini" data-presence-state="{{ weekly_mvp.get('presence_state', 'idle') }}" title="{{ weekly_mvp.get('presence_title', '') }}">
-            <img class="avatar-48" src="{{ url_for('static', filename=weekly_mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
-            <span class="badge-overlay">
-              <img class="robot-badge-32" src="{{ url_for('static', filename=weekly_mvp['badge_path']) }}" alt="badge" loading="lazy" />
-            </span>
-          </span>
-          <div>
-            <div>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+        <div class="presence-user-line user-signal user-signal-hero is-podium">
+          {{ render_user_chip(weekly_mvp, 'mvp', weekly_mvp['username'] ~ ' robot', 'lazy', true) }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name">{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
             <div class="presence-mini-label">{{ weekly_mvp.get('presence_label', '探索待機中') }}</div>
           </div>
         </div>
@@ -325,14 +321,9 @@
                 <article class="card home-comms-item comms-message-card">
                   <div class="comms-message-head">
                     <div class="presence-user-line">
-                      <span class="user-chip mini" data-presence-state="{{ item.get('presence_state', 'idle') }}" title="{{ item.get('presence_title', '') }}">
-                        <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
-                        <span class="badge-overlay">
-                          <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
-                        </span>
-                      </span>
-                      <div>
-                        <div class="feed-user">{{ item['user_label'] }}</div>
+                      {{ render_user_chip(item, 'log', item['user_label'] ~ ' robot') }}
+                      <div class="user-signal-meta">
+                        <div class="feed-user user-signal-name">{{ item['user_label'] }}</div>
                         <div class="feed-kicker">PUBLIC SIGNAL · {{ item.get('presence_label', '探索待機中') }}</div>
                       </div>
                     </div>
@@ -397,14 +388,9 @@
               <article class="card home-comms-item comms-message-card">
                 <div class="comms-message-head">
                   <div class="presence-user-line">
-                    <span class="user-chip mini" data-presence-state="{{ item.get('presence_state', 'idle') }}" title="{{ item.get('presence_title', '') }}">
-                      <img class="avatar-48" src="{{ url_for('static', filename=item['avatar_path']) }}" alt="avatar" loading="lazy" />
-                      <span class="badge-overlay">
-                        <img class="robot-badge-32" src="{{ url_for('static', filename=item['badge_path']) }}" alt="badge" loading="lazy" />
-                      </span>
-                    </span>
-                    <div>
-                      <div class="feed-user">{{ item['user_label'] }}</div>
+                    {{ render_user_chip(item, 'log', item['user_label'] ~ ' robot') }}
+                    <div class="user-signal-meta">
+                      <div class="feed-user user-signal-name">{{ item['user_label'] }}</div>
                       <div class="presence-mini-label">{{ item.get('presence_label', '探索待機中') }}</div>
                     </div>
                   </div>
@@ -669,15 +655,13 @@
         <div><b>今週のランキング</b></div>
         <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
         {% for row in home_ranking_rows %}
-          <div class="home-ranking-row">
-            <div class="presence-user-line">
-              <span class="user-chip mini" data-presence-state="{{ row.get('presence_state', 'idle') }}" title="{{ row.get('presence_title', '') }}">
-                <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-                <span class="badge-overlay">
-                  <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-                </span>
-              </span>
-              <span>{{ loop.index }}位 {{ row['username'] }}</span>
+          <div class="home-ranking-row{% if loop.index <= 3 %} is-podium{% endif %}">
+            <div class="presence-user-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+              {{ render_user_chip(row, 'ranking', (row.get('display_username') or row['username']) ~ ' robot', 'lazy', loop.index <= 3) }}
+              <div class="user-signal-meta">
+                <div class="user-signal-name">{{ loop.index }}位 {{ row.get('display_username') or row['username'] }}</div>
+                <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+              </div>
             </div>
             <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span>
           </div>

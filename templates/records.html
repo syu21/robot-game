@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <div class="panel">
   <h1>記録庫</h1>
@@ -14,14 +15,12 @@
         {% for row in first_boss_records %}
         <li>
           <div><b>{{ row['title'] }}</b></div>
-          <div class="presence-user-line record-user-line">
-            <span class="user-chip mini">
-              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-              <span class="badge-overlay">
-                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-              </span>
-            </span>
-            <span class="robot-part">{{ row['username'] }}{% if row['detail'] %} / {{ row['detail'] }}{% endif %}</span>
+          <div class="presence-user-line record-user-line user-signal">
+            {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
+            <div class="user-signal-meta">
+              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              <div class="user-signal-sub">{% if row['detail'] %}{{ row['detail'] }}{% else %}初達成ログ{% endif %}</div>
+            </div>
           </div>
           <div class="robot-time">{{ row['time_jst'] }} JST</div>
         </li>
@@ -36,14 +35,12 @@
         {% for row in first_evolve_records %}
         <li>
           <div><b>{{ row['title'] }}</b></div>
-          <div class="presence-user-line record-user-line">
-            <span class="user-chip mini">
-              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-              <span class="badge-overlay">
-                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-              </span>
-            </span>
-            <span class="robot-part">{{ row['username'] }}{% if row['detail'] %} / {{ row['detail'] }}{% endif %}</span>
+          <div class="presence-user-line record-user-line user-signal">
+            {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
+            <div class="user-signal-meta">
+              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              <div class="user-signal-sub">{% if row['detail'] %}{{ row['detail'] }}{% else %}初進化ログ{% endif %}</div>
+            </div>
           </div>
           <div class="robot-time">{{ row['time_jst'] }} JST</div>
         </li>
@@ -58,14 +55,12 @@
         {% for row in first_layer4_records %}
         <li>
           <div><b>{{ row['title'] }}</b></div>
-          <div class="presence-user-line record-user-line">
-            <span class="user-chip mini">
-              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-              <span class="badge-overlay">
-                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-              </span>
-            </span>
-            <span class="robot-part">{{ row['username'] }}</span>
+          <div class="presence-user-line record-user-line user-signal">
+            {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
+            <div class="user-signal-meta">
+              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              <div class="user-signal-sub">第4層の先駆者</div>
+            </div>
           </div>
           <div class="robot-time">{{ row['time_jst'] }} JST</div>
         </li>
@@ -80,14 +75,12 @@
         {% for row in first_layer5_records %}
         <li>
           <div><b>{{ row['title'] }}</b></div>
-          <div class="presence-user-line record-user-line">
-            <span class="user-chip mini">
-              <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-              <span class="badge-overlay">
-                <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-              </span>
-            </span>
-            <span class="robot-part">{{ row['username'] }}</span>
+          <div class="presence-user-line record-user-line user-signal">
+            {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
+            <div class="user-signal-meta">
+              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              <div class="user-signal-sub">第5層の先駆者</div>
+            </div>
           </div>
           <div class="robot-time">{{ row['time_jst'] }} JST</div>
         </li>
@@ -105,7 +98,7 @@
       <div><b>{{ group['metric']['title'] }}</b></div>
       <ul class="ranking-mini">
         {% for row in group['rows'] %}
-        <li class="record-ranking-item{% if group['metric'].get('row_kind') == 'robot' %} is-robot{% endif %}">
+        <li class="record-ranking-item{% if group['metric'].get('row_kind') == 'robot' %} is-robot{% endif %}{% if loop.index <= 3 %} is-podium{% endif %}">
           <div class="record-ranking-main">
             {% if group['metric'].get('row_kind') == 'robot' %}
             <div class="ranking-robot-cell">
@@ -114,14 +107,12 @@
               {% endif %}
               <div>
                 <div><b>{{ row['rank'] }}位 {{ row['title'] }}</b></div>
-                <div class="presence-user-line record-owner-line">
-                  <span class="user-chip mini">
-                    <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-                    <span class="badge-overlay">
-                      <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-                    </span>
-                  </span>
-                  <span class="robot-part">{{ row['subtitle'] }}</span>
+                <div class="presence-user-line record-owner-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+                  {{ render_user_chip(row, 'record', row['subtitle'] ~ ' robot', 'lazy', loop.index <= 3) }}
+                  <div class="user-signal-meta">
+                    <div class="user-signal-name">{{ row['subtitle'] }}</div>
+                    <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+                  </div>
                 </div>
                 {% if row.get('profile') and row['profile'].get('signature_label') %}
                 <div class="robot-time">{{ row['profile']['signature_label'] }}</div>
@@ -129,14 +120,12 @@
               </div>
             </div>
             {% else %}
-            <div class="presence-user-line">
-              <span class="user-chip mini">
-                <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-                <span class="badge-overlay">
-                  <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-                </span>
-              </span>
-              <span>{{ row['rank'] }}位 {{ row['title'] }}</span>
+            <div class="presence-user-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+              {{ render_user_chip(row, 'record', row['title'] ~ ' robot', 'lazy', loop.index <= 3) }}
+              <div class="user-signal-meta">
+                <div class="user-signal-name">{{ row['rank'] }}位 {{ row['title'] }}</div>
+                <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+              </div>
             </div>
             {% endif %}
           </div>
@@ -161,14 +150,12 @@
       <img class="robot-thumb record-highlight-thumb" src="{{ row['image_url'] }}" alt="{{ row['robot_name'] }}" loading="lazy" decoding="async" />
       {% endif %}
       <div>{{ row['robot_name'] }}</div>
-      <div class="presence-user-line record-user-line">
-        <span class="user-chip mini">
-          <img class="avatar-48" src="{{ url_for('static', filename=row['avatar_path']) }}" alt="avatar" loading="lazy" />
-          <span class="badge-overlay">
-            <img class="robot-badge-32" src="{{ url_for('static', filename=row['badge_path']) }}" alt="badge" loading="lazy" />
-          </span>
-        </span>
-        <span class="upgrade-cost">{{ row['username'] }}</span>
+      <div class="presence-user-line record-user-line user-signal">
+        {{ render_user_chip(row, 'record', (row.get('display_username') or row['username']) ~ ' robot') }}
+        <div class="user-signal-meta">
+          <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+          <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+        </div>
       </div>
       {% if row['profile'] and row['profile']['signature_label'] %}
       <div class="robot-part">思想: {{ row['profile']['signature_label'] }}</div>

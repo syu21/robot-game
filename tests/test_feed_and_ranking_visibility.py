@@ -372,6 +372,11 @@ class RankingVisibilityTests(unittest.TestCase):
         wins_html = wins_resp.get_data(as_text=True)
         self.assertIn("勝利数ランキング", wins_html)
         self.assertRegex(wins_html, re.compile(r"<td>1</td>.*?rank_alpha.*?<td>5</td>", re.S))
+        self.assertIn("is-robot-icon", wins_html)
+        self.assertIn("ranking-user-row is-podium", wins_html)
+        self.assertIn("user-chip-avatar", wins_html)
+        self.assertIn("user-signal-name", wins_html)
+        self.assertNotIn("badge-overlay", wins_html)
 
         explore_resp = client.get("/ranking?metric=explores")
         self.assertEqual(explore_resp.status_code, 200)

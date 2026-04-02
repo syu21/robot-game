@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <div class="panel">
   <h1>世界戦況</h1>
@@ -46,14 +47,12 @@
     <div class="card">
       <div><b>今週のMVP</b></div>
       {% if weekly_mvp %}
-      <div class="presence-user-line">
-        <span class="user-chip mini">
-          <img class="avatar-48" src="{{ url_for('static', filename=weekly_mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
-          <span class="badge-overlay">
-            <img class="robot-badge-32" src="{{ url_for('static', filename=weekly_mvp['badge_path']) }}" alt="badge" loading="lazy" />
-          </span>
-        </span>
-        <span>{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</span>
+      <div class="presence-user-line user-signal user-signal-hero is-podium">
+        {{ render_user_chip(weekly_mvp, 'mvp', weekly_mvp['username'] ~ ' robot', 'lazy', true) }}
+        <div class="user-signal-meta">
+          <div class="user-signal-name">{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+          <div class="presence-mini-label">{{ weekly_mvp.get('presence_label', '探索待機中') }}</div>
+        </div>
       </div>
       {% if weekly_mvp['robot_name'] %}<div class="robot-part">{{ weekly_mvp['robot_name'] }}</div>{% endif %}
       {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb world-mvp-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}

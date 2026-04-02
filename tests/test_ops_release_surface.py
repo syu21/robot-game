@@ -316,21 +316,21 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("/static/header_scroll_v2.js", html)
         self.assertIn("/guide", html)
-        self.assertIn("アイコン変更", html)
+        self.assertIn("機体アイコン", html)
         header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
         self.assertIsNotNone(header_match)
         header_html = header_match.group(0)
         self.assertNotIn('href="/comms"', header_html)
 
-    def test_changelog_shows_latest_2026_03_26_entry(self):
+    def test_changelog_shows_latest_2026_04_02_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.14 - 2026/03/26", html)
-        self.assertIn("探索場所ごとの育ち方の差を追加", html)
-        self.assertIn("ロボの性格表示（安定 / 背水 / 爆発）を追加", html)
-        self.assertLess(html.index("v0.1.14 - 2026/03/26"), html.index("v0.1.13 - 2026-03-21"))
+        self.assertIn("v0.1.17 - 2026/04/02", html)
+        self.assertIn("ランキング / MVP / 記録庫 / 世界ログでは、現在の出撃機体から作る小ロボ画像を主役に寄せて表示", html)
+        self.assertIn("補助アバターは Google画像を優先し、未設定ユーザーは seed ベースの簡易アイコンで見た目が散るよう調整", html)
+        self.assertLess(html.index("v0.1.17 - 2026/04/02"), html.index("v0.1.16 - 2026/04/02"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

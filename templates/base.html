@@ -8,6 +8,7 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}-ui3" />
 </head>
+{% from '_user_chip.html' import render_user_chip %}
 {% set js_diag = request.args.get('js_diag') == '1' %}
 {% set no_layout_js = request.args.get('no_layout_js') == '1' %}
 {% set no_base_cleanup = request.args.get('no_base_cleanup') == '1' %}
@@ -29,14 +30,7 @@
     <div class="logo">ロボらぼ</div>
     {% if session.get('user_id') %}
       <div class="user">
-        <span class="user-chip">
-          {% if header_user_visual %}
-          <img class="avatar-48" src="{{ url_for('static', filename=header_user_visual['avatar_path']) }}" alt="avatar" />
-          <span class="badge-overlay">
-            <img class="robot-badge-32" src="{{ url_for('static', filename=header_user_visual['badge_path']) }}" alt="badge" />
-          </span>
-          {% endif %}
-        </span>
+        {% if header_user_visual %}{{ render_user_chip(header_user_visual, 'header', 'current robot icon', 'eager') }}{% endif %}
         {{ session.get('username') }} |
         {% if safe_mode %}
         <a href="{{ url_for('home', safe=0) }}">通常表示へ</a> |
@@ -44,7 +38,7 @@
         <a href="{{ url_for('home', safe=1) }}">セーフモード</a> |
         {% endif %}
         <a href="{{ url_for('guide') }}">用語</a> |
-        <a href="{{ url_for('settings') }}">アイコン変更</a> |
+        <a href="{{ url_for('settings') }}">機体アイコン</a> |
         <a href="{{ url_for('logout') }}">ログアウト</a>
       </div>
     {% elif request.endpoint in ['register', 'login', 'index'] %}

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 {% set current_auth_mode = auth_mode or 'register' %}
 <div class="auth-shell auth-register-shell">
@@ -187,12 +188,7 @@
         {% set mvp = landing['weekly_mvp'] %}
         <div class="auth-world-mvp">
           <div class="auth-world-mvp-main">
-            <span class="user-chip mini" data-presence-state="{{ mvp.get('presence_state', 'idle') }}" title="{{ mvp.get('presence_title', '') }}">
-              <img class="avatar-48" src="{{ url_for('static', filename=mvp['avatar_path']) }}" alt="avatar" loading="lazy" />
-              <span class="badge-overlay">
-                <img class="robot-badge-32" src="{{ url_for('static', filename=mvp['badge_path']) }}" alt="badge" loading="lazy" />
-              </span>
-            </span>
+            {{ render_user_chip(mvp, 'mvp', mvp['username'] ~ ' robot', 'lazy', true) }}
             {% if mvp.get('robot_image_url') %}
             <img class="auth-world-mvp-robot" src="{{ mvp['robot_image_url'] }}" alt="{{ mvp.get('robot_name') or 'MVPロボ' }}" loading="lazy" decoding="async" />
             {% endif %}

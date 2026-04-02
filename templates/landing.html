@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
+{% block content %}
+<div class="landing-page landing-arcade-page">
+  <section class="landing-front-stage">
+    <div class="landing-front-banner">
+      <div class="landing-front-showcase">
+        <img class="landing-front-showcase-main" src="{{ landing['hero_image_url'] }}" alt="ロボらぼの機体" loading="eager" decoding="async" />
+        <div class="landing-front-icons" aria-hidden="true">
+          <img src="{{ url_for('static', filename='robot_icons/1.png') }}" alt="" loading="lazy" />
+          <img src="{{ url_for('static', filename='robot_icons/11.png') }}" alt="" loading="lazy" />
+          <img src="{{ url_for('static', filename='robot_icons/12.png') }}" alt="" loading="lazy" />
+          <img src="{{ url_for('static', filename='robot_icons/13.png') }}" alt="" loading="lazy" />
+        </div>
+      </div>
+
+      <section class="card landing-front-card">
+        <div class="landing-kicker"><span class="weekly-fit-badge">{{ landing['beta_kicker'] }}</span></div>
+        <h1 class="landing-title">ロボらぼ</h1>
+        <div class="landing-tagline">ロボを組んで出撃せよ</div>
+        <div class="landing-subline">育てた機体が、世界で語られる。</div>
+        <p class="upgrade-cost">{{ landing['beta_line'] }}</p>
+
+        <div class="landing-cta-row landing-cta-row-hero">
+          <a class="landing-front-btn landing-front-btn-primary" href="{{ url_for('register', ref=landing.get('ref_code') or None) }}">新規登録して始める</a>
+          <a class="landing-front-btn landing-front-btn-secondary" href="{{ url_for('login') }}">ログイン</a>
+          {% if google_auth_available %}
+          <a class="landing-front-btn landing-front-btn-google" href="{{ url_for('google_oauth_start', intent='register', ref=landing.get('ref_code') or None) }}">Googleで始める</a>
+          {% endif %}
+        </div>
+
+        {% if not google_auth_available %}
+        <div class="robot-time">Googleログインは準備中です。いまはユーザー登録からすぐ始められます。</div>
+        {% endif %}
+
+        {% if landing.get('weekly_mvp') %}
+        <div class="landing-front-caption">
+          今週の話題ロボ:
+          <b>{{ landing['weekly_mvp']['username'] }}</b>
+          {% if landing['weekly_mvp'].get('robot_name') %}
+          / {{ landing['weekly_mvp']['robot_name'] }}
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="landing-front-caption">登録したら、そのまま第1層から最初の1勝を取りにいけます。</div>
+        {% endif %}
+      </section>
+
+      <section class="card landing-front-subcard">
+        <div class="landing-section-head">
+          <div><b>ロボらぼはこんなゲームです</b></div>
+          <div class="robot-time">ダウンロード不要で、登録後すぐに出撃できます。</div>
+        </div>
+        <div class="landing-mini-nav">
+          <a class="landing-front-btn landing-front-btn-mini" href="#landing-steps">どんなゲーム？</a>
+          <a class="landing-front-btn landing-front-btn-mini" href="{{ url_for('guide') }}">Q&amp;A / 用語</a>
+        </div>
+        <div class="landing-inline-metrics">
+          {% for metric in landing['world_metrics'] %}
+          <div class="landing-inline-metric">
+            <div class="landing-inline-metric-label">{{ metric['label'] }}</div>
+            <div class="landing-inline-metric-value">{{ metric['value'] }}{{ metric['suffix'] }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section class="card landing-world-panel">
+    <div class="landing-section-head">
+      <div>
+        <div><b>今この瞬間の世界</b></div>
+        <div class="robot-time">探索、撃破、記録で世界が少しずつ動いています。</div>
+      </div>
+    </div>
+    <div class="landing-metric-grid">
+      {% for metric in landing['world_metrics'] %}
+      <article class="landing-metric-card">
+        <div class="landing-metric-label">{{ metric['label'] }}</div>
+        <div class="landing-metric-value">{{ metric['value'] }}<span>{{ metric['suffix'] }}</span></div>
+        <div class="robot-time">{{ metric['caption'] }}</div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="landing-main-grid">
+    <div class="landing-main-stack">
+      <section id="landing-steps" class="card landing-steps-panel">
+        <div class="landing-section-head">
+          <div><b>3ステップで始まる</b></div>
+          <div class="robot-time">最初は迷わず、この流れだけ見れば大丈夫です。</div>
+        </div>
+        <div class="landing-step-list">
+          <article class="landing-step-card">
+            <div class="landing-step-no">1</div>
+            <div>
+              <div><b>出撃してパーツを集める</b></div>
+              <div class="robot-time">第1層で1勝して、最初の戦利品を持ち帰ろう。</div>
+            </div>
+          </article>
+          <article class="landing-step-card">
+            <div class="landing-step-no">2</div>
+            <div>
+              <div><b>強化・進化で型を作る</b></div>
+              <div class="robot-time">同じ系統を育てると、機体の思想がだんだん見えてきます。</div>
+            </div>
+          </article>
+          <article class="landing-step-card">
+            <div class="landing-step-no">3</div>
+            <div>
+              <div><b>世界ログやランキングで存在感が出る</b></div>
+              <div class="robot-time">育てた機体は記録に残り、他のプレイヤーにも見つかります。</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card landing-updates-panel">
+        <div class="landing-section-head">
+          <div><b>最新アップデート</b></div>
+          <a class="link" href="{{ url_for('changelog') }}">更新履歴を見る</a>
+        </div>
+        <div class="landing-update-list">
+          {% for entry in changelog_entries %}
+          <article class="landing-update-card">
+            <div class="landing-update-meta">v{{ entry['version'] }} / {{ entry['date'] }}</div>
+            <div><b>{{ entry['title'] }}</b></div>
+            <div class="robot-time">{{ entry['notes'][0] if entry.get('notes') else '' }}</div>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+
+    <div class="landing-side-stack">
+      <section class="card landing-mvp-panel">
+        <div class="landing-section-head">
+          <div><b>今週の話題ロボ</b></div>
+          <div class="robot-time">いま世界で存在感を出している機体です。</div>
+        </div>
+        {% if landing.get('weekly_mvp') %}
+        {% set mvp = landing['weekly_mvp'] %}
+        <div class="presence-user-line user-signal user-signal-hero is-podium">
+          {{ render_user_chip(mvp, 'mvp', mvp['username'] ~ ' robot', 'lazy', true) }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name"><b>{{ mvp['username'] }}</b></div>
+            <div class="presence-mini-label">{{ mvp.get('presence_label', '探索待機中') }}</div>
+          </div>
+        </div>
+        {% if mvp.get('robot_name') %}
+        <div class="landing-mvp-robot-name">{{ mvp['robot_name'] }}</div>
+        {% endif %}
+        <div class="upgrade-cost">今週の勝利数: {{ mvp['wins'] }}</div>
+        {% if mvp.get('robot_image_url') %}
+        <img class="landing-mvp-image" src="{{ mvp['robot_image_url'] }}" alt="{{ mvp.get('robot_name') or '話題ロボ' }}" loading="lazy" decoding="async" />
+        {% endif %}
+        {% else %}
+        <div class="robot-time">いまは集計準備中です。最初の勝利記録を作る側になれます。</div>
+        {% endif %}
+      </section>
+
+      <section class="card landing-support-panel">
+        <div class="landing-section-head">
+          <div><b>ロボらぼを応援する</b></div>
+          <div class="robot-time">強さではなく、見た目特典つきのβ版支援です。</div>
+        </div>
+        <p class="robot-time">気に入ってもらえたら、控えめに応援してもらえると次の改善が進みます。</p>
+        <div class="landing-mini-nav">
+          <a class="landing-front-btn landing-front-btn-mini" href="{{ url_for('support') }}">β版支援パック</a>
+          <a class="landing-front-btn landing-front-btn-mini" href="{{ url_for('shop') }}">ショップを見る</a>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,19 +1,20 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <h1>設定</h1>
 <div class="card">
-  <h2>ユーザーアイコン</h2>
-  <div class="user-chip">
-    <img class="avatar-48" src="{{ url_for('static', filename=avatar_path) }}" alt="avatar" />
-    <span class="badge-overlay">
-      <img class="robot-badge-32" src="{{ url_for('static', filename=badge_path) }}" alt="badge" />
-    </span>
-  </div>
-  <form method="post" enctype="multipart/form-data" class="post-form">
-    <input type="file" name="avatar" accept="image/png,image/*" required />
-    <button type="submit">アップロード</button>
-  </form>
-  <div class="upgrade-cost">PNG推奨 / 最大2MB / 正方形以外は中央クロップで48x48化</div>
+  <h2>機体アイコン</h2>
+  {% if user_visual %}
+  {{ render_user_chip(user_visual, 'hero', 'current robot icon', 'eager') }}
+  {% endif %}
+  <div class="upgrade-cost">小ロボは現在の出撃機体から自動生成され、補助アバターは Google画像 → 手動画像 → seed生成 の順で使われます。</div>
+  {% if active_robot_name %}
+  <div class="robot-part">現在の出撃機体: <b>{{ active_robot_name }}</b></div>
+  <div class="upgrade-cost">ロボ編成を確定すると、小ロボ画像も自動で更新されます。</div>
+  {% else %}
+  <div class="robot-part">機体未所持のあいだは、初期ノーマルロボ顔を表示します。</div>
+  {% endif %}
+  <p class="link"><a href="{{ url_for('build') }}">ロボ編成へ</a> | <a href="{{ url_for('robots') }}">ロボ一覧へ</a></p>
 </div>
 <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
 {% endblock %}

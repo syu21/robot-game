@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <h1>ランキング</h1>
 <div class="card">
@@ -28,7 +29,7 @@
       <th>{{ metric['metric_label'] }}</th>
     </tr>
     {% for r in rows %}
-    <tr>
+    <tr{% if row_kind == 'user' %} class="ranking-user-row{% if loop.index <= 3 %} is-podium{% endif %}"{% endif %}>
       <td>{{ loop.index }}</td>
       {% if row_kind == 'robot' %}
       <td>
@@ -50,13 +51,13 @@
       <td>{{ r['username'] }}</td>
       {% else %}
       <td>
-        <span class="user-chip mini">
-          <img class="avatar-48" src="{{ url_for('static', filename=r['avatar_path']) }}" alt="avatar" />
-          <span class="badge-overlay">
-            <img class="robot-badge-32" src="{{ url_for('static', filename=r['badge_path']) }}" alt="badge" />
-          </span>
-        </span>
-        {{ r['username'] }}
+        <div class="ranking-user-cell user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+          {{ render_user_chip(r, 'ranking', (r.get('display_username') or r['username']) ~ ' robot', 'lazy', loop.index <= 3) }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name">{{ r.get('display_username') or r['username'] }}</div>
+            <div class="user-signal-sub">{{ r.get('presence_label', '探索待機中') }}</div>
+          </div>
+        </div>
       </td>
       {% endif %}
       <td>{{ r['metric_value'] }}</td>

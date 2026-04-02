@@ -1,0 +1,34 @@
+{% macro render_user_chip(item, variant='log', alt='robot icon', loading='lazy', podium=false) -%}
+  {% set main_path = item.get('badge_path') or item.get('badge') or item.get('robot_icon_path') or item.get('avatar_path') or item.get('avatar') %}
+  {% set profile_path = item.get('avatar_path') or item.get('avatar') %}
+  {% set profile_url = item.get('avatar_url') %}
+  {% set show_profile = profile_url or (profile_path and profile_path != main_path) %}
+  <span
+    class="user-chip{% if variant != 'header' and variant != 'hero' %} mini{% endif %} is-robot-icon variant-{{ variant }}{% if podium %} is-podium{% endif %}{% if item.get('avatar_is_generated') %} has-generated-avatar{% endif %}"
+    {% if item.get('presence_state') %}data-presence-state="{{ item.get('presence_state') }}"{% endif %}
+    {% if item.get('presence_title') %}title="{{ item.get('presence_title') }}"{% endif %}
+  >
+    <span class="user-chip-main">
+      <img
+        class="user-chip-robot"
+        src="{{ url_for('static', filename=main_path) }}"
+        alt="{{ alt }}"
+        {% if loading %}loading="{{ loading }}"{% endif %}
+        decoding="async"
+      />
+    </span>
+    {% if show_profile %}
+    <span class="user-chip-avatar{% if item.get('avatar_is_generated') %} is-generated{% endif %}{% if profile_url %} is-external{% endif %}">
+      <img
+        class="user-chip-avatar-img"
+        src="{{ profile_url if profile_url else url_for('static', filename=profile_path) }}"
+        alt=""
+        aria-hidden="true"
+        {% if loading %}loading="{{ loading }}"{% endif %}
+        decoding="async"
+        {% if profile_url %}referrerpolicy="no-referrer"{% endif %}
+      />
+    </span>
+    {% endif %}
+  </span>
+{%- endmacro %}
