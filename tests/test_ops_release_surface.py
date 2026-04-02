@@ -334,10 +334,10 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.19 - 2026/04/02", html)
-        self.assertIn("管理者の運用メトリクスに、層到達人数・停止層ファネル・層ボス未撃破を見られる進行状況セクションを追加", html)
-        self.assertIn("監査ログの explore_end / boss_defeat を優先して再集計し、チュートリアルの離脱ポイントを追いやすく調整", html)
-        self.assertLess(html.index("v0.1.19 - 2026/04/02"), html.index("v0.1.18 - 2026/04/02"))
+        self.assertIn("v0.1.20 - 2026/04/02", html)
+        self.assertIn("ロボ編成では、同名・同強化値のパーツもまとめず個体ごとに並べ、狙った個体をそのまま選べるよう改善", html)
+        self.assertIn("旧 enemy_key が残る敵図鑑や世界ログでも、実画像のある現行敵データを優先して表示するよう補正", html)
+        self.assertLess(html.index("v0.1.20 - 2026/04/02"), html.index("v0.1.19 - 2026/04/02"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

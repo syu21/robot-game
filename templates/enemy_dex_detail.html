@@ -3,10 +3,10 @@
 <h1>敵図鑑詳細</h1>
 <div class="card">
   <div><b>{% if show_stats %}{{ enemy['name_ja'] }}{% else %}？？？{% endif %}</b></div>
-  <div class="robot-part">キー: {{ enemy['key'] }}</div>
+  <div class="robot-part">キー: {{ enemy.get('display_key', enemy['key']) }}</div>
   <div class="robot-part">遭遇: {{ dex['seen_count'] }} / 撃破: {{ dex['defeat_count'] }}</div>
   {% if enemy['is_boss'] %}<div class="robot-part">BOSS</div>{% endif %}
-  <img class="robot-thumb" src="{{ image_url }}" alt="{{ enemy['key'] }}" loading="lazy" decoding="async" />
+  <img class="robot-thumb" src="{{ image_url }}" alt="{{ enemy.get('display_key', enemy['key']) }}" loading="lazy" decoding="async" />
   {% if show_stats %}
   <div class="stat-grid">
     <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ enemy['hp'] }}</div></div>

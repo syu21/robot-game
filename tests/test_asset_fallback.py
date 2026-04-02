@@ -55,6 +55,30 @@ class AssetFallbackTests(unittest.TestCase):
             with self.subTest(rel=rel):
                 self.assertTrue(os.path.exists(game_app._asset_abs(rel)))
 
+    def test_feed_enemy_row_prefers_active_row_with_real_image(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO enemies (key, name_ja, image_path, tier, element, hp, atk, def, spd, acc, cri, is_active)
+                VALUES ('legacy_scout', 'スチールスカウト', 'enemies/steel_scout.png', 2, 'NORMAL', 30, 9, 8, 7, 8, 2, 0)
+                """
+            )
+            db.execute(
+                """
+                INSERT INTO enemies (key, name_ja, image_path, tier, element, hp, atk, def, spd, acc, cri, is_active)
+                VALUES ('active_scout', 'スチールスカウト', 'enemies/enemy14.png', 2, 'NORMAL', 30, 9, 8, 7, 8, 2, 1)
+                """
+            )
+            db.commit()
+            row = {"entity_type": "enemy", "entity_id": None}
+            payload = {"enemy_key": "legacy_scout", "enemy_name": "スチールスカウト"}
+            enemy = game_app._feed_enemy_row(db, row, payload)
+        self.assertIsNotNone(enemy)
+        self.assertNotEqual(enemy["key"], "legacy_scout")
+        self.assertNotEqual(enemy["image_path"], "enemies/steel_scout.png")
+        self.assertTrue(game_app._enemy_row_has_display_image(enemy))
+
 
 if __name__ == "__main__":
     unittest.main()

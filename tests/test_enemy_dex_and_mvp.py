@@ -84,6 +84,43 @@ class EnemyDexAndMvpTests(unittest.TestCase):
             self.assertEqual(detail2.status_code, 200)
             self.assertIn("耐久", detail2.get_data(as_text=True))
 
+    def test_enemy_dex_detail_prefers_active_image_for_legacy_key(self):
+        legacy_key = "legacy_steel_scout"
+        active_key = "active_steel_scout"
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO enemies (key, name_ja, image_path, tier, element, hp, atk, def, spd, acc, cri, is_active)
+                VALUES (?, ?, ?, 2, 'NORMAL', 30, 9, 8, 7, 8, 2, 0)
+                """,
+                (legacy_key, "スチールスカウト", "enemies/steel_scout.png"),
+            )
+            db.execute(
+                """
+                INSERT INTO enemies (key, name_ja, image_path, tier, element, hp, atk, def, spd, acc, cri, is_active)
+                VALUES (?, ?, ?, 2, 'NORMAL', 30, 9, 8, 7, 8, 2, 1)
+                """,
+                (active_key, "スチールスカウト", "enemies/enemy14.png"),
+            )
+            db.execute(
+                """
+                INSERT INTO user_enemy_dex (user_id, enemy_key, first_seen_at, first_defeated_at, seen_count, defeat_count)
+                VALUES (?, ?, ?, ?, 1, 1)
+                """,
+                (self.viewer_id, legacy_key, now, now),
+            )
+            db.commit()
+
+        with game_app.app.test_client() as client:
+            self._login(client, self.viewer_id, "viewer_user")
+            detail = client.get(f"/dex/enemies/{legacy_key}")
+            self.assertEqual(detail.status_code, 200)
+            html = detail.get_data(as_text=True)
+            self.assertIn("キー: legacy_steel_scout", html)
+            self.assertIn("/static/enemies/enemy14.png", html)
+
 
 if __name__ == "__main__":
     unittest.main()

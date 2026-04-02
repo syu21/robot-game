@@ -10864,6 +10864,71 @@ def _enemy_image_rel(image_path):
     return "enemies/_placeholder.png"
 
 
+def _enemy_row_has_display_image(enemy_row):
+    if not enemy_row:
+        return False
+    row_keys = enemy_row.keys() if hasattr(enemy_row, "keys") else []
+    image_path = enemy_row["image_path"] if "image_path" in row_keys else enemy_row.get("image_path")
+    return bool(_safe_static_rel(image_path))
+
+
+def _resolve_enemy_display_row(db, *, enemy_key=None, enemy_id=None, enemy_name=None):
+    candidates = []
+    seen = set()
+
+    def _append(row):
+        if not row:
+            return
+        row_keys = row.keys() if hasattr(row, "keys") else []
+        row_id = int(row["id"]) if "id" in row_keys and row["id"] is not None else None
+        row_key = str(row["key"] if "key" in row_keys else row.get("key") or "").strip()
+        dedupe_key = ("id", row_id) if row_id is not None else ("key", row_key)
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        candidates.append(row)
+
+    enemy_id_val = int(enemy_id) if enemy_id is not None else None
+    if enemy_id_val:
+        _append(db.execute("SELECT * FROM enemies WHERE id = ?", (enemy_id_val,)).fetchone())
+
+    enemy_key_val = str(enemy_key or "").strip()
+    if enemy_key_val:
+        _append(db.execute("SELECT * FROM enemies WHERE key = ?", (enemy_key_val,)).fetchone())
+
+    resolved_name = ""
+    for row in candidates:
+        row_keys = row.keys() if hasattr(row, "keys") else []
+        name_ja = str(row["name_ja"] if "name_ja" in row_keys else row.get("name_ja") or "").strip()
+        if name_ja:
+            resolved_name = name_ja
+            break
+    if not resolved_name:
+        resolved_name = str(enemy_name or "").strip()
+    if resolved_name:
+        for row in db.execute(
+            """
+            SELECT *
+            FROM enemies
+            WHERE name_ja = ?
+            ORDER BY is_active DESC, id ASC
+            """,
+            (resolved_name,),
+        ).fetchall():
+            _append(row)
+
+    for row in candidates:
+        if bool(int(row["is_active"] or 0)) and _enemy_row_has_display_image(row):
+            return row
+    for row in candidates:
+        if _enemy_row_has_display_image(row):
+            return row
+    for row in candidates:
+        if bool(int(row["is_active"] or 0)):
+            return row
+    return candidates[0] if candidates else None
+
+
 def _part_image_rel(part_row):
     if not part_row:
         return "enemies/_placeholder.png"
@@ -13139,21 +13204,15 @@ def _part_image_url(part_row):
 
 def _feed_enemy_row(db, row, payload):
     enemy_key = str(payload.get("enemy_key") or "").strip()
-    if enemy_key:
-        enemy = db.execute(
-            "SELECT id, key, name_ja, image_path FROM enemies WHERE key = ?",
-            (enemy_key,),
-        ).fetchone()
-        if enemy:
-            return enemy
     entity_type = str((row["entity_type"] if "entity_type" in row.keys() else "") or "").strip().lower()
     entity_id = row["entity_id"] if "entity_id" in row.keys() else None
-    if entity_type == "enemy" and entity_id:
-        return db.execute(
-            "SELECT id, key, name_ja, image_path FROM enemies WHERE id = ?",
-            (int(entity_id),),
-        ).fetchone()
-    return None
+    enemy_id = int(entity_id) if entity_type == "enemy" and entity_id else None
+    return _resolve_enemy_display_row(
+        db,
+        enemy_key=enemy_key,
+        enemy_id=enemy_id,
+        enemy_name=str(payload.get("enemy_name") or "").strip(),
+    )
 
 
 def _feed_card_from_event(db, row):
@@ -15088,6 +15147,16 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.20",
+            "date": "2026/04/02",
+            "title": "編成の個体選択と敵画像参照を改善",
+            "notes": [
+                "ロボ編成では、同名・同強化値のパーツもまとめず個体ごとに並べ、狙った個体をそのまま選べるよう改善",
+                "編成カードの『所持 2』表示をやめ、同名候補の並び順と個体IDが分かるように調整",
+                "旧 enemy_key が残る敵図鑑や世界ログでも、実画像のある現行敵データを優先して表示するよう補正",
+            ],
+        },
         {
             "version": "0.1.19",
             "date": "2026/04/02",
@@ -20030,7 +20099,6 @@ def build():
         )
         SELECT *
         FROM ranked
-        WHERE rn = 1
         ORDER BY
             part_type ASC,
             plus DESC,
@@ -20051,8 +20119,14 @@ def build():
     for row in owned_rows:
         item = dict(row)
         item["instance_id"] = int(item["instance_id"])
+        item["qty"] = int(item.get("qty") or 1)
+        item["rn"] = int(item.get("rn") or 1)
         item["display_name"] = _part_display_name_ja(item)
         item["display_name_with_plus"] = f"{item['display_name']} +{int(item.get('plus') or 0)}"
+        item["instance_slot_label"] = (
+            f"同名 {int(item['rn'])}/{int(item['qty'])}" if int(item["qty"]) > 1 else "個体"
+        )
+        item["instance_id_label"] = f"ID {int(item['instance_id'])}"
         item["display_image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
         preview_payload = {
             "part_type": item.get("part_type"),
@@ -21612,15 +21686,27 @@ def enemy_dex():
     ).fetchall()
     cards = []
     for row in rows:
-        name_ja = row["name_ja"] if int(row["defeat_count"] or 0) > 0 else "？？？"
-        image_url = url_for("static", filename=_enemy_image_rel(row["image_path"]))
+        display_enemy = _resolve_enemy_display_row(db, enemy_key=row["enemy_key"], enemy_name=row["name_ja"])
+        display_name = (
+            str(display_enemy["name_ja"] or "").strip()
+            if display_enemy and str(display_enemy["name_ja"] or "").strip()
+            else str(row["name_ja"] or "").strip()
+        )
+        name_ja = display_name if int(row["defeat_count"] or 0) > 0 else "？？？"
+        image_path = display_enemy["image_path"] if display_enemy else row["image_path"]
+        image_url = url_for("static", filename=_enemy_image_rel(image_path))
+        is_boss = (
+            bool(int(display_enemy["is_boss"] or 0))
+            if display_enemy is not None
+            else bool(int(row["is_boss"] or 0))
+        )
         cards.append(
             {
                 "enemy_key": row["enemy_key"],
                 "name_ja": name_ja,
                 "seen_count": int(row["seen_count"] or 0),
                 "defeat_count": int(row["defeat_count"] or 0),
-                "is_boss": bool(int(row["is_boss"] or 0)),
+                "is_boss": is_boss,
                 "image_url": image_url,
             }
         )
@@ -21641,14 +21727,16 @@ def enemy_dex_detail(enemy_key):
     ).fetchone()
     if not dex_row:
         return abort(404)
-    enemy = db.execute("SELECT * FROM enemies WHERE key = ?", (enemy_key,)).fetchone()
+    enemy = _resolve_enemy_display_row(db, enemy_key=enemy_key)
     if not enemy:
         return abort(404)
+    enemy_dict = dict(enemy)
+    enemy_dict["display_key"] = str(enemy_key or enemy_dict.get("key") or "").strip()
     show_stats = int(dex_row["defeat_count"] or 0) > 0
-    image_url = url_for("static", filename=_enemy_image_rel(enemy["image_path"]))
+    image_url = url_for("static", filename=_enemy_image_rel(enemy_dict["image_path"]))
     return render_template(
         "enemy_dex_detail.html",
-        enemy=enemy,
+        enemy=enemy_dict,
         dex=dex_row,
         show_stats=show_stats,
         image_url=image_url,

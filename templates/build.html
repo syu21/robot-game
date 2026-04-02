@@ -1,9 +1,49 @@
 {% extends 'base.html' %}
+{% from '_part_ui.html' import stat_grid %}
+{% macro render_picker_option(input_name, preview_target, p, selected_value) -%}
+  <label class="picker-item part-picker-card">
+    <input
+      type="radio"
+      name="{{ input_name }}"
+      value="{{ p['instance_id'] }}"
+      data-part-key="{{ p['key'] }}"
+      data-preview-target="{{ preview_target }}"
+      data-img="{{ p['display_image_url'] }}"
+      data-offset-x="{{ p['offset_x'] }}"
+      data-offset-y="{{ p['offset_y'] }}"
+      data-series="{{ p.get('series', '') }}"
+      data-element="{{ p['estimate_element'] }}"
+      data-stat-hp="{{ p['estimate_stats']['hp'] }}"
+      data-stat-atk="{{ p['estimate_stats']['atk'] }}"
+      data-stat-def="{{ p['estimate_stats']['def'] }}"
+      data-stat-spd="{{ p['estimate_stats']['spd'] }}"
+      data-stat-acc="{{ p['estimate_stats']['acc'] }}"
+      data-stat-cri="{{ p['estimate_stats']['cri'] }}"
+      required
+      {% if p['instance_id'] == selected_value %}checked{% endif %}
+    />
+    <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+    <div class="picker-copy">
+      <div class="picker-title">{{ p['display_name_with_plus'] }}</div>
+      <div class="part-chip-row">
+        <span class="part-chip">{{ p['part_type_label'] }}</span>
+        <span class="part-chip rarity-{{ (p['instance_rarity'] or p['rarity'] or 'n')|lower }}">{{ p['instance_rarity'] or p['rarity'] or 'N' }}</span>
+        <span class="part-chip">{{ p['instance_slot_label'] }}</span>
+        <span class="part-chip">{{ p['instance_id_label'] }}</span>
+      </div>
+      <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+      {% if p.get('extreme_title') %}
+        <div class="part-meta-line"><span class="weekly-fit-badge">{{ p['extreme_title'] }}</span></div>
+      {% endif %}
+      {{ stat_grid(p['stat_rows']) }}
+    </div>
+  </label>
+{%- endmacro %}
 {% block content %}
 <h1>ロボ編成</h1>
 {% if missing_part_types %}
 <div class="card">
-  <p><b>不足部位:</b> {{ missing_part_types | join(', ') }}</p>
+  <p><b>不足部位:</b> {{ missing_part_types | join(' / ') }}</p>
   <p>先に出撃でパーツを集めよう。</p>
   <form method="post" action="{{ url_for('explore') }}" class="inline-form">
     <input type="hidden" name="area_key" value="layer_1" />
@@ -11,7 +51,7 @@
   </form>
 </div>
 {% endif %}
-<form method="post" action="{{ url_for('build_confirm') }}" id="build-form">
+<form method="post" action="{{ url_for('build_confirm') }}" id="build-form" data-submit-lock="1" data-loading-text="登録中...">
   <div class="build-grid">
     <section class="card build-preview build-preview-primary">
       <h2>プレビュー</h2>
@@ -72,60 +112,44 @@
       <h2>所持パーツから選択</h2>
 
       <details class="picker-section" data-picker-section="head" open>
-        <summary><b>HEAD（頭+胴体）</b></summary>
+        <summary><b>HEAD（頭）</b></summary>
         {% if part_groups['HEAD'] %}
           <div class="picker-list">
           {% for p in part_groups['HEAD'] %}
-            <label class="picker-item">
-              <input type="radio" name="head_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="head" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['head_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
-              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
-            </label>
+            {{ render_picker_option('head_key', 'head', p, selected_slot_values['head_key']) }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
       </details>
 
       <details class="picker-section" data-picker-section="right_arm">
-        <summary><b>RIGHT_ARM</b></summary>
+        <summary><b>RIGHT_ARM（右腕）</b></summary>
         {% if part_groups['RIGHT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['RIGHT_ARM'] %}
-            <label class="picker-item">
-              <input type="radio" name="r_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="rarm" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['r_arm_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
-              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
-            </label>
+            {{ render_picker_option('r_arm_key', 'rarm', p, selected_slot_values['r_arm_key']) }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
       </details>
 
       <details class="picker-section" data-picker-section="left_arm">
-        <summary><b>LEFT_ARM</b></summary>
+        <summary><b>LEFT_ARM（左腕）</b></summary>
         {% if part_groups['LEFT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['LEFT_ARM'] %}
-            <label class="picker-item">
-              <input type="radio" name="l_arm_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="larm" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['l_arm_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
-              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
-            </label>
+            {{ render_picker_option('l_arm_key', 'larm', p, selected_slot_values['l_arm_key']) }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
       </details>
 
       <details class="picker-section" data-picker-section="legs">
-        <summary><b>LEGS</b></summary>
+        <summary><b>LEGS（脚）</b></summary>
         {% if part_groups['LEGS'] %}
           <div class="picker-list">
           {% for p in part_groups['LEGS'] %}
-            <label class="picker-item">
-              <input type="radio" name="legs_key" value="{{ p['instance_id'] }}" data-part-key="{{ p['key'] }}" data-preview-target="legs" data-img="{{ p['display_image_url'] }}" data-offset-x="{{ p['offset_x'] }}" data-offset-y="{{ p['offset_y'] }}" data-series="{{ p.get('series', '') }}" data-element="{{ p['estimate_element'] }}" data-stat-hp="{{ p['estimate_stats']['hp'] }}" data-stat-atk="{{ p['estimate_stats']['atk'] }}" data-stat-def="{{ p['estimate_stats']['def'] }}" data-stat-spd="{{ p['estimate_stats']['spd'] }}" data-stat-acc="{{ p['estimate_stats']['acc'] }}" data-stat-cri="{{ p['estimate_stats']['cri'] }}" required {% if p['instance_id'] == selected_slot_values['legs_key'] %}checked{% endif %} />
-              <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
-              <span>{{ p['display_name_with_plus'] }} (所持: {{ p['qty'] }})</span>
-            </label>
+            {{ render_picker_option('legs_key', 'legs', p, selected_slot_values['legs_key']) }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
@@ -169,4 +193,5 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='build_preview.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
 {% endblock %}
