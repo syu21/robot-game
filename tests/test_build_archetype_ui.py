@@ -86,6 +86,8 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("ステータス比較", build_html)
         self.assertIn("組み立て中（プレビュー）", build_html)
         self.assertIn("現装備（起動中ロボ）", build_html)
+        self.assertIn("現在装備", build_html)
+        self.assertIn("総合差分", build_html)
         self.assertNotIn('style="', build_html)
         self.assertNotIn('type="application/json"', build_html)
 

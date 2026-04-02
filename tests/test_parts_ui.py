@@ -428,7 +428,9 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("ロボ編成", html)
         self.assertIn("HEAD（頭）", html)
         self.assertIn("RIGHT_ARM（右腕）", html)
-        self.assertIn("総合値", html)
+        self.assertIn("現在装備", html)
+        self.assertIn("総合差分", html)
+        self.assertIn("詳細を開く", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 

@@ -3779,6 +3779,15 @@ def _delta_text(delta_value):
     return "±0"
 
 
+def _delta_class(delta_value):
+    delta = int(delta_value or 0)
+    if delta > 0:
+        return "up"
+    if delta < 0:
+        return "down"
+    return "flat"
+
+
 def _part_stat_rows(stats, compare_stats=None, *, focus_limit=2):
     stat_map = stats or {}
     compare_map = compare_stats or {}
@@ -3815,6 +3824,114 @@ def _part_stat_rows(stats, compare_stats=None, *, focus_limit=2):
             }
         )
     return rows
+
+
+def _build_picker_stat_pair_rows(stats, compare_stats=None):
+    stat_map = stats or {}
+    compare_map = compare_stats or {}
+    rows = []
+    for left_key, right_key in (("hp", "atk"), ("def", "spd"), ("acc", "cri")):
+        pair = {"left": {}, "right": {}}
+        for side, key in (("left", left_key), ("right", right_key)):
+            value = int(stat_map.get(key) or 0)
+            delta = None
+            delta_text = None
+            delta_class = "flat"
+            if compare_stats is not None:
+                delta = int(value - int(compare_map.get(key) or 0))
+                delta_text = _delta_text(delta)
+                delta_class = _delta_class(delta)
+            pair[side] = {
+                "key": key,
+                "label": _stat_label(key),
+                "value": value,
+                "delta": delta,
+                "delta_text": delta_text,
+                "delta_class": delta_class,
+            }
+        rows.append(pair)
+    return rows
+
+
+def _build_picker_summary_rows(stats, compare_stats=None, *, limit=2):
+    stat_map = stats or {}
+    if compare_stats is None:
+        return [
+            {
+                "key": row["key"],
+                "label": row["label"],
+                "value": int(row["value"]),
+                "delta": None,
+                "delta_text": None,
+                "delta_class": "flat",
+                "display_text": f"{row['label']} {int(row['value'])}",
+            }
+            for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(limit or 2)))
+        ]
+
+    compare_map = compare_stats or {}
+    focus_keys = {
+        row["key"] for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(limit or 2)))
+    }
+    rows = []
+    for index, key in enumerate(PART_STAT_KEYS):
+        delta = int(stat_map.get(key) or 0) - int(compare_map.get(key) or 0)
+        if delta == 0:
+            continue
+        rows.append(
+            {
+                "key": key,
+                "label": _stat_label(key),
+                "value": int(stat_map.get(key) or 0),
+                "delta": delta,
+                "delta_text": _delta_text(delta),
+                "delta_class": _delta_class(delta),
+                "display_text": f"{_stat_label(key)} {_delta_text(delta)}",
+                "_sort_abs": abs(delta),
+                "_sort_focus": 0 if key in focus_keys else 1,
+                "_sort_index": index,
+            }
+        )
+    rows.sort(key=lambda item: (-int(item["_sort_abs"]), int(item["_sort_focus"]), int(item["_sort_index"])))
+    trimmed = rows[: max(1, int(limit or 2))]
+    if trimmed:
+        for row in trimmed:
+            row.pop("_sort_abs", None)
+            row.pop("_sort_focus", None)
+            row.pop("_sort_index", None)
+        return trimmed
+    return [
+        {
+            "key": row["key"],
+            "label": row["label"],
+            "value": int(row["value"]),
+            "delta": 0,
+            "delta_text": "±0",
+            "delta_class": "flat",
+            "display_text": f"{row['label']} {int(row['value'])}",
+        }
+        for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(limit or 2)))
+    ]
+
+
+def _build_picker_total_summary(stats, compare_stats=None):
+    total_value = int(_part_total_value(stats))
+    if compare_stats is None:
+        return {
+            "label": "総合",
+            "value": total_value,
+            "value_text": str(total_value),
+            "value_class": "flat",
+            "note_text": None,
+        }
+    delta = int(total_value - int(_part_total_value(compare_stats)))
+    return {
+        "label": "総合差分",
+        "value": total_value,
+        "value_text": _delta_text(delta),
+        "value_class": _delta_class(delta),
+        "note_text": f"候補総合 {total_value}",
+    }
 
 
 def _part_image_candidates(image_path):
@@ -3876,6 +3993,85 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
         item["compare_total_delta"] = int(item["compare_total_value"] - item["total_value"])
         item["compare_total_delta_text"] = _delta_text(item["compare_total_delta"])
     item["stat_rows"] = _part_stat_rows(stats, compare_stats)
+    return item
+
+
+def _part_instance_display_rows(db, instance_ids):
+    normalized_ids = _normalize_instance_id_values(instance_ids, limit=32)
+    if not normalized_ids:
+        return []
+    marks = ",".join("?" for _ in normalized_ids)
+    return db.execute(
+        f"""
+        SELECT
+            pi.id AS instance_id,
+            pi.plus,
+            pi.status,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+            pi.rarity AS instance_rarity,
+            pi.element AS instance_element,
+            pi.series AS instance_series,
+            rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+            rp.rarity, rp.element, rp.display_name_ja
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.id IN ({marks}) AND rp.is_active = 1
+        """,
+        normalized_ids,
+    ).fetchall()
+
+
+def _build_picker_part_item(part_row, *, compare_item=None):
+    item = dict(part_row)
+    item["instance_id"] = int(item["instance_id"])
+    item["qty"] = int(item.get("qty") or 1)
+    item["rn"] = int(item.get("rn") or 1)
+    item["plus"] = int(item.get("plus") or 0)
+    item["display_name"] = _part_display_name_ja(item)
+    item["display_name_with_plus"] = f"{item['display_name']} +{int(item['plus'])}"
+    item["display_plus_text"] = f"+{int(item['plus'])}"
+    item["instance_slot_label"] = (
+        f"同名 {int(item['rn'])}/{int(item['qty'])}" if int(item["qty"]) > 1 else "個体"
+    )
+    item["instance_id_label"] = f"ID {int(item['instance_id'])}"
+    item["instance_short_label"] = item["instance_id_label"]
+    item["display_image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
+    preview_payload = {
+        "part_type": item.get("part_type"),
+        "key": item.get("key"),
+        "series": (item.get("instance_series") or item.get("series")),
+        "rarity": (item.get("instance_rarity") or item.get("rarity") or "N"),
+        "element": (item.get("instance_element") or item.get("element") or "NORMAL"),
+        "plus": int(item.get("plus") or 0),
+        "w_hp": item.get("w_hp"),
+        "w_atk": item.get("w_atk"),
+        "w_def": item.get("w_def"),
+        "w_spd": item.get("w_spd"),
+        "w_acc": item.get("w_acc"),
+        "w_cri": item.get("w_cri"),
+    }
+    item["estimate_stats"] = compute_part_stats(preview_payload) if preview_payload else {
+        "hp": 0,
+        "atk": 0,
+        "def": 0,
+        "spd": 0,
+        "acc": 0,
+        "cri": 0,
+    }
+    item["estimate_element"] = (preview_payload.get("element") or "NORMAL").upper()
+    card = _part_card_payload(item, can_discard=False)
+    item["part_type_label"] = card["part_type_label"]
+    item["stat_rows"] = card["stat_rows"]
+    item["focus_rows"] = card["focus_rows"]
+    item["focus_line"] = card["focus_line"]
+    item["total_value"] = card["total_value"]
+    item["extreme_title"] = card["extreme_title"]
+    compare_stats = compare_item.get("estimate_stats") if compare_item else None
+    item["summary_total"] = _build_picker_total_summary(item["estimate_stats"], compare_stats=compare_stats)
+    item["summary_rows"] = _build_picker_summary_rows(item["estimate_stats"], compare_stats=compare_stats, limit=2)
+    item["detail_stat_pairs"] = _build_picker_stat_pair_rows(item["estimate_stats"], compare_stats=compare_stats)
+    item["compare_target_label"] = compare_item.get("display_name_with_plus") if compare_item else "未装備"
+    item["has_compare_target"] = compare_item is not None
     return item
 
 
@@ -15148,6 +15344,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.21",
+            "date": "2026/04/02",
+            "title": "ロボ編成を差分比較主役のUIへ整理",
+            "notes": [
+                "ロボ編成候補は『現在装備との差分』を主役にし、総合差分と注目2能力の増減を先頭で比べられるよう改善",
+                "初期表示はパーツ名・+値・個体ID・差分比較に絞り、6ステ実数や同名内の並び情報は詳細開閉側へ整理",
+                "候補を選んだ瞬間に左プレビューと比較欄が強調更新され、スマホでもカード全体を押して迷わず選べるよう調整",
+            ],
+        },
+        {
             "version": "0.1.20",
             "date": "2026/04/02",
             "title": "編成の個体選択と敵画像参照を改善",
@@ -20074,6 +20280,30 @@ def build():
     db = get_db()
     user_id = session["user_id"]
     now = int(time.time())
+    active_robot = _get_active_robot(db, user_id)
+    current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
+    if active_robot:
+        active_mapping = _ensure_robot_instance_part_instances(db, int(active_robot["id"])) or {}
+        current_rows = _part_instance_display_rows(
+            db,
+            [
+                active_mapping.get("head"),
+                active_mapping.get("r_arm"),
+                active_mapping.get("l_arm"),
+                active_mapping.get("legs"),
+            ],
+        )
+        current_rows_by_id = {int(row["instance_id"]): row for row in current_rows}
+        slot_to_mapping_key = {
+            "HEAD": "head",
+            "RIGHT_ARM": "r_arm",
+            "LEFT_ARM": "l_arm",
+            "LEGS": "legs",
+        }
+        for part_type, mapping_key in slot_to_mapping_key.items():
+            current_row = current_rows_by_id.get(int(active_mapping.get(mapping_key) or 0))
+            if current_row:
+                current_part_items[part_type] = _build_picker_part_item(current_row)
     owned_rows = db.execute(
         """
         WITH inv AS (
@@ -20117,47 +20347,8 @@ def build():
     ).fetchall()
     part_groups = {"HEAD": [], "RIGHT_ARM": [], "LEFT_ARM": [], "LEGS": []}
     for row in owned_rows:
-        item = dict(row)
-        item["instance_id"] = int(item["instance_id"])
-        item["qty"] = int(item.get("qty") or 1)
-        item["rn"] = int(item.get("rn") or 1)
-        item["display_name"] = _part_display_name_ja(item)
-        item["display_name_with_plus"] = f"{item['display_name']} +{int(item.get('plus') or 0)}"
-        item["instance_slot_label"] = (
-            f"同名 {int(item['rn'])}/{int(item['qty'])}" if int(item["qty"]) > 1 else "個体"
-        )
-        item["instance_id_label"] = f"ID {int(item['instance_id'])}"
-        item["display_image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
-        preview_payload = {
-            "part_type": item.get("part_type"),
-            "key": item.get("key"),
-            "series": (item.get("instance_series") or item.get("series")),
-            "rarity": (item.get("instance_rarity") or item.get("rarity") or "N"),
-            "element": (item.get("instance_element") or item.get("element") or "NORMAL"),
-            "plus": int(item.get("plus") or 0),
-            "w_hp": item.get("w_hp"),
-            "w_atk": item.get("w_atk"),
-            "w_def": item.get("w_def"),
-            "w_spd": item.get("w_spd"),
-            "w_acc": item.get("w_acc"),
-            "w_cri": item.get("w_cri"),
-        }
-        item["estimate_stats"] = compute_part_stats(preview_payload) if preview_payload else {
-            "hp": 0,
-            "atk": 0,
-            "def": 0,
-            "spd": 0,
-            "acc": 0,
-            "cri": 0,
-        }
-        item["estimate_element"] = (preview_payload.get("element") or "NORMAL").upper()
-        card = _part_card_payload(item, can_discard=False)
-        item["part_type_label"] = card["part_type_label"]
-        item["stat_rows"] = card["stat_rows"]
-        item["focus_rows"] = card["focus_rows"]
-        item["focus_line"] = card["focus_line"]
-        item["total_value"] = card["total_value"]
-        item["extreme_title"] = card["extreme_title"]
+        compare_item = current_part_items.get(str(row["part_type"] or "").strip())
+        item = _build_picker_part_item(row, compare_item=compare_item)
         part_groups[row["part_type"]].append(item)
 
     slot_param_map = {
@@ -20232,7 +20423,6 @@ def build():
         "style_scores": {"stable": 0.0, "desperate": 0.0, "burst": 0.0},
         "legacy_build_type": "STABLE",
     }
-    active_robot = _get_active_robot(db, user_id)
     current_robot_stats_obj = _compute_robot_stats_for_instance(db, active_robot["id"]) if active_robot else None
     current_robot_stats = {
         "hp": int(current_robot_stats_obj["stats"]["hp"]) if current_robot_stats_obj else 0,
@@ -20274,6 +20464,7 @@ def build():
         missing_part_types=missing_part_types,
         selected_slot_values=selected_slot_values,
         selected_parts=selected_parts,
+        current_part_items=current_part_items,
         estimate=estimate,
         decor_assets=decor_assets,
         selected_decor_id=selected_decor_id,

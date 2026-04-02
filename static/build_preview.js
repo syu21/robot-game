@@ -6,6 +6,10 @@
   const pickerSections = Array.from(document.querySelectorAll("details.picker-section[data-picker-section]"));
   const pickerStorageKey = "build_open_picker_section";
   const SLOT_NAMES = ["head_key", "r_arm_key", "l_arm_key", "legs_key", "decor_asset_id"];
+  const comparePulseTargets = [
+    document.querySelector(".build-preview-primary"),
+    document.querySelector(".build-estimate"),
+  ].filter(Boolean);
 
   const targetMap = {
     head: document.getElementById("pv-head"),
@@ -52,6 +56,21 @@
 
   function selectedInput(name) {
     return formEl.querySelector(`input[name='${name}']:checked`);
+  }
+
+  function syncSelectedCards() {
+    formEl.querySelectorAll(".part-picker-card").forEach((card) => {
+      const checked = !!card.querySelector(".picker-radio:checked");
+      card.classList.toggle("is-selected", checked);
+    });
+  }
+
+  function pulseComparePanels() {
+    comparePulseTargets.forEach((el) => {
+      el.classList.remove("is-compare-pulse");
+      void el.offsetWidth;
+      el.classList.add("is-compare-pulse");
+    });
   }
 
   function statOf(input, key) {
@@ -276,8 +295,10 @@
     formEl.querySelectorAll(`input[type='radio'][name='${slotName}']`).forEach((input) => {
       input.addEventListener("change", () => {
         try {
+          syncSelectedCards();
           syncPreviewFromSelection(input);
           updateEstimate();
+          pulseComparePanels();
         } catch (err) {
           console.error("[build_preview] update failed", err);
         }
@@ -285,11 +306,13 @@
     });
   });
 
+  syncSelectedCards();
   syncAllPreviews();
 
   updateEstimate();
   window.addEventListener("pageshow", () => {
     try {
+      syncSelectedCards();
       syncAllPreviews();
       updateEstimate();
     } catch (err) {

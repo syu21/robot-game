@@ -1,8 +1,10 @@
 {% extends 'base.html' %}
-{% from '_part_ui.html' import stat_grid %}
 {% macro render_picker_option(input_name, preview_target, p, selected_value) -%}
-  <label class="picker-item part-picker-card">
+  {% set input_id = input_name ~ '_' ~ p['instance_id'] %}
+  <article class="picker-item part-picker-card">
     <input
+      class="picker-radio"
+      id="{{ input_id }}"
       type="radio"
       name="{{ input_name }}"
       value="{{ p['instance_id'] }}"
@@ -22,22 +24,79 @@
       required
       {% if p['instance_id'] == selected_value %}checked{% endif %}
     />
-    <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
-    <div class="picker-copy">
-      <div class="picker-title">{{ p['display_name_with_plus'] }}</div>
-      <div class="part-chip-row">
+    <label class="part-picker-main" for="{{ input_id }}">
+      <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
+      <div class="picker-copy">
+        <div class="picker-head">
+          <div class="picker-heading">
+            <div class="picker-title">{{ p['display_name'] }}</div>
+            <div class="picker-submeta">{{ p['display_plus_text'] }} / {{ p['instance_short_label'] }}</div>
+          </div>
+          <span class="picker-selected-badge">選択中</span>
+        </div>
+        <div class="picker-total-row">
+          <span class="picker-total-label">{{ p['summary_total']['label'] }}</span>
+          <span class="picker-total-value is-{{ p['summary_total']['value_class'] }}">{{ p['summary_total']['value_text'] }}</span>
+        </div>
+        {% if p['summary_total']['note_text'] %}
+          <div class="picker-total-note">{{ p['summary_total']['note_text'] }}</div>
+        {% endif %}
+        <div class="picker-diff-row">
+          {% for row in p['summary_rows'] %}
+            <span class="picker-diff-chip is-{{ row['delta_class'] }}">{{ row['display_text'] }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </label>
+    <details class="picker-detail">
+      <summary>詳細を開く</summary>
+      {% if p['has_compare_target'] %}
+        <div class="picker-detail-note">比較対象: {{ p['compare_target_label'] }}</div>
+      {% endif %}
+      <div class="picker-detail-lines">
+        {% for pair in p['detail_stat_pairs'] %}
+          <div class="picker-detail-line">
+            <span>
+              {{ pair['left']['label'] }} {{ pair['left']['value'] }}
+              {% if p['has_compare_target'] and pair['left']['delta'] %}
+                <em class="picker-mini-delta is-{{ pair['left']['delta_class'] }}">{{ pair['left']['delta_text'] }}</em>
+              {% endif %}
+            </span>
+            <span>
+              {{ pair['right']['label'] }} {{ pair['right']['value'] }}
+              {% if p['has_compare_target'] and pair['right']['delta'] %}
+                <em class="picker-mini-delta is-{{ pair['right']['delta_class'] }}">{{ pair['right']['delta_text'] }}</em>
+              {% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="picker-detail-meta">
         <span class="part-chip">{{ p['part_type_label'] }}</span>
         <span class="part-chip rarity-{{ (p['instance_rarity'] or p['rarity'] or 'n')|lower }}">{{ p['instance_rarity'] or p['rarity'] or 'N' }}</span>
         <span class="part-chip">{{ p['instance_slot_label'] }}</span>
-        <span class="part-chip">{{ p['instance_id_label'] }}</span>
+        {% if p.get('extreme_title') %}
+          <span class="part-chip">{{ p['extreme_title'] }}</span>
+        {% endif %}
       </div>
-      <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
-      {% if p.get('extreme_title') %}
-        <div class="part-meta-line"><span class="weekly-fit-badge">{{ p['extreme_title'] }}</span></div>
-      {% endif %}
-      {{ stat_grid(p['stat_rows']) }}
-    </div>
-  </label>
+    </details>
+  </article>
+{%- endmacro %}
+{% macro render_current_equipped(part) -%}
+  <div class="picker-current-row{% if not part %} is-empty{% endif %}">
+    <div class="picker-current-title">現在装備</div>
+    {% if part %}
+      <div class="picker-current-name">{{ part['display_name_with_plus'] }}</div>
+      <div class="part-chip-row">
+        <span class="part-chip is-equipped">総合 {{ part['total_value'] }}</span>
+        {% for row in part['summary_rows'] %}
+          <span class="part-chip">{{ row['display_text'] }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="picker-current-name">なし</div>
+    {% endif %}
+  </div>
 {%- endmacro %}
 {% block content %}
 <h1>ロボ編成</h1>
@@ -113,6 +172,7 @@
 
       <details class="picker-section" data-picker-section="head" open>
         <summary><b>HEAD（頭）</b></summary>
+        {{ render_current_equipped(current_part_items['HEAD']) }}
         {% if part_groups['HEAD'] %}
           <div class="picker-list">
           {% for p in part_groups['HEAD'] %}
@@ -124,6 +184,7 @@
 
       <details class="picker-section" data-picker-section="right_arm">
         <summary><b>RIGHT_ARM（右腕）</b></summary>
+        {{ render_current_equipped(current_part_items['RIGHT_ARM']) }}
         {% if part_groups['RIGHT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['RIGHT_ARM'] %}
@@ -135,6 +196,7 @@
 
       <details class="picker-section" data-picker-section="left_arm">
         <summary><b>LEFT_ARM（左腕）</b></summary>
+        {{ render_current_equipped(current_part_items['LEFT_ARM']) }}
         {% if part_groups['LEFT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['LEFT_ARM'] %}
@@ -146,6 +208,7 @@
 
       <details class="picker-section" data-picker-section="legs">
         <summary><b>LEGS（脚）</b></summary>
+        {{ render_current_equipped(current_part_items['LEGS']) }}
         {% if part_groups['LEGS'] %}
           <div class="picker-list">
           {% for p in part_groups['LEGS'] %}
