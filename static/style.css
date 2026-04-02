@@ -221,6 +221,39 @@ body {
   object-fit: cover;
   display: block;
 }
+.settings-avatar-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+.settings-avatar-row,
+.settings-avatar-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.settings-avatar-label {
+  color: var(--text-muted);
+  font-size: 0.94rem;
+}
+.settings-avatar-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: rgba(14, 21, 38, 0.92);
+  color: var(--text-sub);
+}
+.settings-avatar-input {
+  max-width: min(100%, 340px);
+}
+.settings-avatar-form button {
+  flex: 0 0 auto;
+}
 .badge-overlay {
   position: absolute;
   right: -4px;

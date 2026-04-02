@@ -1,3 +1,4 @@
+import io
 import os
 import tempfile
 import time
@@ -5,6 +6,7 @@ import unittest
 
 import app as game_app
 import init_db
+from PIL import Image
 
 
 class UserRobotIconTests(unittest.TestCase):
@@ -61,6 +63,12 @@ class UserRobotIconTests(unittest.TestCase):
             session["user_id"] = user_id
             session["username"] = username
         return client
+
+    def _png_upload(self, *, size=(18, 12), color=(255, 0, 0, 255)):
+        buf = io.BytesIO()
+        Image.new("RGBA", size, color).save(buf, format="PNG")
+        buf.seek(0)
+        return buf
 
     def _insert_google_identity(self, user_id, *, avatar_url="https://example.com/google-avatar.png", display_name="Google Pilot"):
         with game_app.app.app_context():
@@ -134,7 +142,7 @@ class UserRobotIconTests(unittest.TestCase):
         self.assertIn("variant-header", html)
         self.assertNotIn("badge-overlay", html)
 
-    def test_settings_page_explains_auto_icon_generation(self):
+    def test_settings_page_supports_secondary_avatar_upload(self):
         user_id = self._create_user("settings_icon_user", initialize=True)
         client = self._client(user_id, "settings_icon_user")
 
@@ -148,12 +156,14 @@ class UserRobotIconTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("機体アイコン", html)
-        self.assertIn("小ロボは現在の出撃機体から自動生成され", html)
-        self.assertIn("Google画像 → 手動画像 → seed生成", html)
-        self.assertIn("ロボ編成を確定すると、小ロボ画像も自動で更新されます。", html)
+        self.assertIn("補助アバター", html)
+        self.assertIn("アップロード", html)
         self.assertIn(expected_icon, html)
         self.assertIn(expected_avatar, html)
-        self.assertNotIn('type="file"', html)
+        self.assertIn('type="file"', html)
+        self.assertNotIn("小ロボは現在の出撃機体から自動生成され", html)
+        self.assertNotIn("Google画像 → 手動画像 → seed生成", html)
+        self.assertNotIn("ロボ編成を確定すると、小ロボ画像も自動で更新されます。", html)
 
     def test_non_google_user_gets_seed_profile_avatar(self):
         user_id = self._create_user("no_robot_user", initialize=False)
@@ -174,8 +184,8 @@ class UserRobotIconTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn(game_app.DEFAULT_BADGE_REL, html)
         self.assertIn(str(visuals["avatar"]), html)
-        self.assertIn("機体未所持のあいだは、初期ノーマルロボ顔を表示します。", html)
-        self.assertNotIn('type="file"', html)
+        self.assertIn("自動生成アイコンを使用中", html)
+        self.assertIn('type="file"', html)
 
     def test_google_identity_avatar_is_used_as_profile_overlay(self):
         user_id = self._create_user("google_robot_user", initialize=True)
@@ -196,7 +206,50 @@ class UserRobotIconTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("https://example.com/google-overlay.png", html)
         self.assertIn(str(visuals["badge"]), html)
-        self.assertIn("Google画像 → 手動画像 → seed生成", html)
+        self.assertIn("Google画像を使用中", html)
+
+    def test_uploaded_avatar_overrides_google_avatar_and_can_reset(self):
+        user_id = self._create_user("upload_google_user", initialize=True)
+        self._insert_google_identity(user_id, avatar_url="https://example.com/google-manual-reset.png", display_name="Reset Pilot")
+        client = self._client(user_id, "upload_google_user")
+
+        upload_resp = client.post(
+            "/settings/avatar",
+            data={"avatar": (self._png_upload(color=(40, 200, 180, 255)), "overlay.png")},
+            content_type="multipart/form-data",
+            follow_redirects=False,
+        )
+        self.assertEqual(upload_resp.status_code, 302)
+        self.assertIn("/settings", upload_resp.headers["Location"])
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            visuals = game_app._user_visuals(db, user_id, {})
+            user = db.execute("SELECT avatar_path FROM users WHERE id = ?", (user_id,)).fetchone()
+
+        self.assertEqual(visuals["avatar_kind"], "uploaded")
+        self.assertIsNone(visuals["avatar_url"])
+        self.assertTrue(str(user["avatar_path"]).startswith("uploads/avatars/"))
+        self.assertTrue(os.path.exists(os.path.join(game_app.STATIC_ROOT, str(user["avatar_path"]))))
+
+        resp = client.get("/settings")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("アップロード画像を使用中", html)
+        self.assertIn("Google画像に戻す", html)
+
+        reset_resp = client.post("/settings/avatar/reset", follow_redirects=False)
+        self.assertEqual(reset_resp.status_code, 302)
+        self.assertIn("/settings", reset_resp.headers["Location"])
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            reset_visuals = game_app._user_visuals(db, user_id, {})
+            user = db.execute("SELECT avatar_path FROM users WHERE id = ?", (user_id,)).fetchone()
+
+        self.assertEqual(reset_visuals["avatar_kind"], "google")
+        self.assertEqual(reset_visuals["avatar_url"], "https://example.com/google-manual-reset.png")
+        self.assertIsNone(user["avatar_path"])
 
 
 if __name__ == "__main__":

@@ -7,13 +7,26 @@
   {% if user_visual %}
   {{ render_user_chip(user_visual, 'hero', 'current robot icon', 'eager') }}
   {% endif %}
-  <div class="upgrade-cost">小ロボは現在の出撃機体から自動生成され、補助アバターは Google画像 → 手動画像 → seed生成 の順で使われます。</div>
   {% if active_robot_name %}
   <div class="robot-part">現在の出撃機体: <b>{{ active_robot_name }}</b></div>
-  <div class="upgrade-cost">ロボ編成を確定すると、小ロボ画像も自動で更新されます。</div>
   {% else %}
-  <div class="robot-part">機体未所持のあいだは、初期ノーマルロボ顔を表示します。</div>
+  <div class="robot-part">現在の出撃機体: <b>未編成</b></div>
   {% endif %}
+  <div class="settings-avatar-panel">
+    <div class="settings-avatar-row">
+      <span class="settings-avatar-label">補助アバター</span>
+      <span class="settings-avatar-status">{{ avatar_status_label }}</span>
+    </div>
+    <form method="post" action="{{ url_for('settings_avatar_upload') }}" enctype="multipart/form-data" class="settings-avatar-form">
+      <input class="settings-avatar-input" type="file" name="avatar" accept="image/png,image/jpeg,image/webp" required />
+      <button type="submit">アップロード</button>
+    </form>
+    {% if avatar_can_reset %}
+    <form method="post" action="{{ url_for('settings_avatar_reset') }}" class="inline-form">
+      <button type="submit" class="btn-secondary">{{ avatar_reset_label }}に戻す</button>
+    </form>
+    {% endif %}
+  </div>
   <p class="link"><a href="{{ url_for('build') }}">ロボ編成へ</a> | <a href="{{ url_for('robots') }}">ロボ一覧へ</a></p>
 </div>
 <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>

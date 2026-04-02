@@ -327,10 +327,10 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.17 - 2026/04/02", html)
-        self.assertIn("ランキング / MVP / 記録庫 / 世界ログでは、現在の出撃機体から作る小ロボ画像を主役に寄せて表示", html)
-        self.assertIn("補助アバターは Google画像を優先し、未設定ユーザーは seed ベースの簡易アイコンで見た目が散るよう調整", html)
-        self.assertLess(html.index("v0.1.17 - 2026/04/02"), html.index("v0.1.16 - 2026/04/02"))
+        self.assertIn("v0.1.18 - 2026/04/02", html)
+        self.assertIn("補助アバターの手動アップロードを復帰し、アップロード画像を Google画像 / seed生成より優先できるよう変更", html)
+        self.assertIn("アップロード画像を外すと、Google画像または seed生成アイコンへ自然に戻るよう改善", html)
+        self.assertLess(html.index("v0.1.18 - 2026/04/02"), html.index("v0.1.17 - 2026/04/02"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

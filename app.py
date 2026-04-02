@@ -10864,14 +10864,6 @@ def _user_profile_avatar_visual(db, user_row):
             "avatar_kind": "seed",
             "avatar_is_generated": True,
         }
-    google_avatar_url = _user_google_avatar_url(db, int(user_row["id"]))
-    if google_avatar_url:
-        return {
-            "avatar": None,
-            "avatar_url": google_avatar_url,
-            "avatar_kind": "google",
-            "avatar_is_generated": False,
-        }
     uploaded_avatar_rel = _user_avatar_rel(user_row)
     if uploaded_avatar_rel:
         return {
@@ -10880,12 +10872,29 @@ def _user_profile_avatar_visual(db, user_row):
             "avatar_kind": "uploaded",
             "avatar_is_generated": False,
         }
+    google_avatar_url = _user_google_avatar_url(db, int(user_row["id"]))
+    if google_avatar_url:
+        return {
+            "avatar": None,
+            "avatar_url": google_avatar_url,
+            "avatar_kind": "google",
+            "avatar_is_generated": False,
+        }
     return {
         "avatar": _seed_profile_avatar_rel(user_row),
         "avatar_url": None,
         "avatar_kind": "seed",
         "avatar_is_generated": True,
     }
+
+
+def _profile_avatar_kind_label(kind):
+    key = str(kind or "").strip().lower()
+    if key == "uploaded":
+        return "アップロード画像を使用中"
+    if key == "google":
+        return "Google画像を使用中"
+    return "自動生成アイコンを使用中"
 
 
 def _active_robot_icon_row(db, user_id):
@@ -14837,6 +14846,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.18",
+            "date": "2026/04/02",
+            "title": "補助アバターを再編集可能に調整",
+            "notes": [
+                "設定画面の説明文を整理し、いま使っている補助アバターの状態と変更操作を見やすく調整",
+                "補助アバターの手動アップロードを復帰し、アップロード画像を Google画像 / seed生成より優先できるよう変更",
+                "アップロード画像を外すと、Google画像または seed生成アイコンへ自然に戻るよう改善",
+            ],
+        },
+        {
             "version": "0.1.17",
             "date": "2026/04/02",
             "title": "小ロボ主役のユーザー表示へ再調整",
@@ -16101,12 +16120,60 @@ def settings():
     active_robot = _get_active_robot(db, int(user["id"])) if user else None
     active_robot_name = str((active_robot or {}).get("name") or "").strip()
     visuals = _user_visuals(db, int(user["id"]), {}) if user else None
+    has_google_avatar = bool(_user_google_avatar_url(db, int(user["id"]))) if user else False
+    avatar_kind = visuals.get("avatar_kind", "seed") if visuals else "seed"
+    avatar_status_label = _profile_avatar_kind_label(avatar_kind)
+    avatar_reset_label = "Google画像" if has_google_avatar else "自動生成アイコン"
     return render_template(
         "settings.html",
         user=user,
         user_visual=visuals,
         active_robot_name=active_robot_name,
+        avatar_status_label=avatar_status_label,
+        avatar_can_reset=bool(avatar_kind == "uploaded"),
+        avatar_reset_label=avatar_reset_label,
     )
+
+
+@app.route("/settings/avatar", methods=["POST"])
+@login_required
+def settings_avatar_upload():
+    db = get_db()
+    user_id = int(session["user_id"])
+    upload = request.files.get("avatar")
+    if upload is None:
+        flash("画像が選択されていません。", "error")
+        return redirect(url_for("settings"))
+    ok, error_text, rel_path = _save_user_avatar(upload, user_id)
+    if not ok or not rel_path:
+        flash(error_text or "補助アバターの更新に失敗しました。", "error")
+        return redirect(url_for("settings"))
+    db.execute("UPDATE users SET avatar_path = ? WHERE id = ?", (rel_path, user_id))
+    db.commit()
+    flash("補助アバターを更新しました。")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/avatar/reset", methods=["POST"])
+@login_required
+def settings_avatar_reset():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT avatar_path FROM users WHERE id = ?", (user_id,)).fetchone()
+    current_avatar_rel = _safe_static_rel(user["avatar_path"]) if user and user["avatar_path"] else None
+    if not current_avatar_rel:
+        flash("アップロード画像はありません。", "error")
+        return redirect(url_for("settings"))
+    db.execute("UPDATE users SET avatar_path = NULL WHERE id = ?", (user_id,))
+    db.commit()
+    if current_avatar_rel.startswith("uploads/avatars/"):
+        try:
+            os.remove(_static_abs(current_avatar_rel))
+        except OSError:
+            pass
+    fallback_label = "Google画像" if _user_google_avatar_url(db, user_id) else "自動生成アイコン"
+    flash(f"補助アバターを外しました。{fallback_label}へ戻しています。")
+    return redirect(url_for("settings"))
 
 
 @app.route("/settings/battle_log_mode", methods=["POST"])
