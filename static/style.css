@@ -7268,6 +7268,19 @@ body#page-world .world-competition-grid {
   color: var(--text-muted);
 }
 
+.admin-metrics-inline-note {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.14);
+  border: 1px solid rgba(168, 85, 247, 0.22);
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .admin-metrics-stat-value,
 .admin-metrics-note-value,
 .admin-metrics-retention-value {

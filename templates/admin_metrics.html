@@ -185,6 +185,139 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">進行状況</div>
+        <div class="admin-metrics-section-sub">
+          `users.max_unlocked_layer` を補助にしつつ、`audit.explore.end / audit.boss.defeat` を優先して各ユーザーの進行層と詰まりを再集計します。
+        </div>
+      </div>
+    </div>
+    <div class="admin-metrics-chip-row">
+      <span class="admin-metrics-chip">集計対象 {{ progression_snapshot.total_users }}人</span>
+      <span class="admin-metrics-chip">最深到達 {{ progression_snapshot.deepest_layer }}層</span>
+      <span class="admin-metrics-chip">ボス未撃破で停止 {{ progression_snapshot.boss_blocker_total }}人</span>
+      {% if progression_snapshot.admin_only_count %}
+      <span class="admin-metrics-chip">管理者 {{ progression_snapshot.admin_only_count }}人は一覧のみ</span>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="admin-metrics-grid admin-metrics-grid-halves">
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">層ごとの到達人数</div>
+          <div class="admin-metrics-section-sub">各層に到達した人数と、前段階からどれだけ残っているかを見ます。</div>
+        </div>
+      </div>
+      <div class="admin-metrics-bar-list">
+        {% for item in progression_snapshot.layer_reach_rows %}
+          <article class="admin-metrics-bar-row">
+            <div class="admin-metrics-bar-head">
+              <div class="admin-metrics-bar-label">{{ item.label }}</div>
+              <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct) }}%</div>
+            </div>
+            <div class="admin-metrics-bar-track">
+              <div class="admin-metrics-bar-fill is-green" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+            </div>
+            <div class="admin-metrics-bar-foot">
+              <span>次層へ進めず停止 {{ item.drop_count }}人</span>
+              <span>前段階比 {{ '%.0f'|format(item.convert_pct) }}%</span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="card admin-metrics-panel">
+      <div class="admin-metrics-section-head">
+        <div>
+          <div class="admin-metrics-section-title">停止層ファネル</div>
+          <div class="admin-metrics-section-sub">最高到達層がそのまま「今どこで止まっているか」の近似になります。</div>
+        </div>
+      </div>
+      <div class="admin-metrics-bar-list">
+        {% for item in progression_snapshot.layer_stop_rows %}
+          <article class="admin-metrics-bar-row">
+            <div class="admin-metrics-bar-head">
+              <div class="admin-metrics-bar-label">{{ item.label }}</div>
+              <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct) }}%</div>
+            </div>
+            <div class="admin-metrics-bar-track">
+              <div class="admin-metrics-bar-fill is-purple" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
+        <div class="admin-metrics-section-title">層ボス未撃破</div>
+        <div class="admin-metrics-section-sub">固定ボス未撃破で次層解放が止まっている人数です。第2層の周回条件待ちはここから除外しています。</div>
+      </div>
+    </div>
+    {% if progression_snapshot.boss_block_rows %}
+      <div class="admin-metrics-bar-list">
+        {% for item in progression_snapshot.boss_block_rows %}
+          <article class="admin-metrics-bar-row">
+            <div class="admin-metrics-bar-head">
+              <div class="admin-metrics-bar-label">{{ item.label }}</div>
+              <div class="admin-metrics-bar-meta">{{ item.count }}人 / {{ '%.0f'|format(item.pct) }}%</div>
+            </div>
+            <div class="admin-metrics-bar-track">
+              <div class="admin-metrics-bar-fill is-gold" style="width: {{ '%.2f'|format(item.bar_pct) }}%"></div>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="admin-metrics-empty">固定ボス未撃破で止まっているユーザーはまだいません。</p>
+    {% endif %}
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
+        <div class="admin-metrics-section-title">ユーザー進行一覧</div>
+        <div class="admin-metrics-section-sub">各ユーザーの最高到達層、詰まり、最終活動日時を一覧で確認できます。</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="admin-parts-table">
+        <thead>
+          <tr>
+            <th>ユーザー</th>
+            <th>最高到達層</th>
+            <th>最深エリア</th>
+            <th>詰まり状況</th>
+            <th>最終活動</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in progression_snapshot.user_rows %}
+          <tr>
+            <td>
+              {{ row.display_username or row.username }}
+              {% if row.is_admin %}<span class="admin-metrics-inline-note">管理者</span>{% endif %}
+            </td>
+            <td>{{ row.highest_layer_label }}</td>
+            <td>{{ row.furthest_area_label }}</td>
+            <td>{{ row.boss_status }}</td>
+            <td>{{ row.last_activity_text }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">まだユーザーがいません。</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">日次サマリー</div>
         <div class="admin-metrics-section-sub">既存の daily_metrics をベースに、探索の深さも合わせて見られるようにしています。</div>
       </div>
