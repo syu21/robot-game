@@ -3916,9 +3916,9 @@ def _build_battle_replay_summary(
             )
         )
 
-    event_duration_ms = 360 if not is_boss else 560
-    intro_delay_ms = 160 if not is_boss else 320
-    outro_hold_ms = 260 if not is_boss else 720
+    event_duration_ms = 480 if not is_boss else 760
+    intro_delay_ms = 220 if not is_boss else 420
+    outro_hold_ms = 460 if not is_boss else 980
     return {
         "battle_type": ("boss" if is_boss else "normal"),
         "is_boss": bool(is_boss),
