@@ -128,6 +128,36 @@ class ReleaseGateTests(unittest.TestCase):
             }
             self.assertEqual(flags.get("layer4"), 0)
             self.assertEqual(flags.get("layer5"), 0)
+            self.assertEqual(flags.get("battle_short_replay"), 0)
+
+    def test_battle_short_replay_is_admin_only_until_released(self):
+        user_client = self._client()
+        admin_client = self._client(admin=True)
+
+        user_resp = user_client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(user_resp.status_code, 200)
+        self.assertNotIn('id="battle-short-replay"', user_resp.get_data(as_text=True))
+
+        admin_resp = admin_client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(admin_resp.status_code, 200)
+        self.assertIn('id="battle-short-replay"', admin_resp.get_data(as_text=True))
+
+        toggle = admin_client.post(
+            "/admin/release",
+            data={"feature_key": "battle_short_replay", "state": "public"},
+            follow_redirects=True,
+        )
+        self.assertEqual(toggle.status_code, 200)
+        self.assertIn("一般公開しました", toggle.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE battle_state SET last_action_at = 0 WHERE user_id = ?", (self.user_id,))
+            db.commit()
+
+        user_after = user_client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(user_after.status_code, 200)
+        self.assertIn('id="battle-short-replay"', user_after.get_data(as_text=True))
 
     def test_records_hide_unreleased_layer_records(self):
         with game_app.app.app_context():

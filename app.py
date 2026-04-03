@@ -207,6 +207,7 @@ NEWBIE_EXPLORE_CT_SECONDS = int(os.getenv("NEWBIE_EXPLORE_CT_SECONDS", "20"))
 HOME_UNLOCK_RECENT_SECONDS = int(os.getenv("HOME_UNLOCK_RECENT_SECONDS", "86400"))
 STAGE_MODIFIERS_ENABLED = os.getenv("STAGE_MODIFIERS_ENABLED", "1") == "1"
 BATTLE_RITUAL_OVERLAY_ENABLED = os.getenv("BATTLE_RITUAL_OVERLAY_ENABLED", "1") == "1"
+BATTLE_SHORT_REPLAY_ENABLED = os.getenv("BATTLE_SHORT_REPLAY_ENABLED", "1") == "1"
 UI_EFFECTS_ENABLED = os.getenv("UI_EFFECTS_ENABLED", "1") == "1"
 PUBLIC_GAME_URL = (os.getenv("PUBLIC_GAME_URL") or "").strip()
 OFFICIAL_X_URL = (os.getenv("OFFICIAL_X_URL") or "").strip()
@@ -874,6 +875,11 @@ RELEASE_FLAG_DEFS = (
         "key": "layer5",
         "label": "第5層",
         "summary": "第5層2エリアと第5層最終試験を一般公開します。",
+    },
+    {
+        "key": "battle_short_replay",
+        "label": "ショート戦闘演出",
+        "summary": "探索結果前のショート戦闘演出を一般公開します。管理者は非公開中でも確認できます。",
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
@@ -3117,6 +3123,18 @@ def _release_gate_redirect(db, feature_key, *, user_row=None, user_id=None, is_a
     return redirect(url_for(next_endpoint))
 
 
+def _battle_short_replay_open_for_viewer(db, *, user_row=None, user_id=None, is_admin=None):
+    if not BATTLE_SHORT_REPLAY_ENABLED:
+        return False
+    return _release_open_for_viewer(
+        db,
+        "battle_short_replay",
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
 def _release_flag_rows(db):
     _seed_release_flags(db)
     rows = {
@@ -3570,6 +3588,359 @@ def _boss_battle_bg_path(enemy_row, is_area_boss):
         if token in key:
             return f"backgrounds/boss/{token}.png"
     return None
+
+
+def _battle_replay_bias(value, *, low, high):
+    score = int(value or 0)
+    if score >= int(high):
+        return "high"
+    if score <= int(low):
+        return "low"
+    return "normal"
+
+
+def _battle_replay_theme(area_key, is_boss=False):
+    if is_boss:
+        return "boss"
+    key = str(area_key or "").strip().lower()
+    if "mist" in key:
+        return "mist"
+    if "forge" in key or key.startswith("layer_4"):
+        return "forge"
+    if "lab" in key or "maze" in key or key.startswith("layer_5"):
+        return "lab"
+    if "goal" in key:
+        return "goal"
+    if key.startswith("layer_2"):
+        return "mist"
+    if key.startswith("layer_3"):
+        return "scrap"
+    if key.startswith("layer_1"):
+        return "workshop"
+    return "hangar"
+
+
+def _battle_replay_visual_traits(player_stats, robot_style=None):
+    stats = player_stats or {}
+    hp = max(1, int(stats.get("hp") or 0))
+    atk = max(1, int(stats.get("atk") or 0))
+    defn = max(1, int(stats.get("def") or 0))
+    spd = max(1, int(stats.get("spd") or 0))
+    acc = max(1, int(stats.get("acc") or 0))
+    cri = max(1, int(stats.get("cri") or 0))
+    defense_score = int(round((hp + defn * 2) / 3.0))
+    burst_score = int(round((atk * 2 + cri) / 3.0))
+    style_key = ((robot_style or {}).get("style_key") or "stable").strip().lower()
+    return {
+        "style_key": style_key,
+        "speed_bias": _battle_replay_bias(spd, low=8, high=13),
+        "accuracy_bias": _battle_replay_bias(acc, low=8, high=13),
+        "burst_bias": _battle_replay_bias(burst_score, low=8, high=13),
+        "defense_bias": _battle_replay_bias(defense_score, low=9, high=14),
+    }
+
+
+def _battle_replay_is_miss(action_name, damage_value):
+    action = str(action_name or "").strip()
+    if action in {"", "行動不能", "追撃不要"}:
+        return False
+    return int(damage_value or 0) <= 0
+
+
+def _battle_replay_event(event_type, label, *, actor=None, crit=False, heavy=False):
+    return {
+        "type": str(event_type or "").strip(),
+        "label": str(label or "").strip(),
+        "actor": (str(actor or "").strip() or None),
+        "crit": bool(crit),
+        "heavy": bool(heavy),
+    }
+
+
+def _build_battle_replay_summary(
+    *,
+    area_key,
+    area_label,
+    enemy_name,
+    enemy_image_url,
+    player_name,
+    player_image_url,
+    player_stats,
+    enemy_stats,
+    robot_style,
+    turn_logs,
+    outcome,
+    is_boss=False,
+):
+    logs = [dict(item) for item in (turn_logs or []) if isinstance(item, dict) and not item.get("separator_line")]
+    if not logs:
+        return None
+    player_won = str(outcome or "").strip() in {"win", "勝利"}
+    player_traits = _battle_replay_visual_traits(player_stats, robot_style)
+    enemy_trait = _normalize_enemy_trait((enemy_stats or {}).get("trait"))
+    enemy_speed = int((enemy_stats or {}).get("spd") or 0)
+    player_speed = int((player_stats or {}).get("spd") or 0)
+    player_first = player_speed >= enemy_speed
+
+    def _first_hit(side):
+        for row in logs:
+            damage = int(row.get(f"{side}_damage") or 0)
+            if damage > 0:
+                return row
+        return None
+
+    def _first_miss(side):
+        for row in logs:
+            if _battle_replay_is_miss(row.get(f"{side}_action"), row.get(f"{side}_damage")):
+                return row
+        return None
+
+    def _finisher(side):
+        target_key = "enemy_after" if side == "player" else "player_after"
+        for row in logs:
+            if int(row.get(target_key) or 0) == 0:
+                return row
+        hit = _first_hit(side)
+        return hit or (logs[-1] if logs else None)
+
+    def _heavy_hit(side, row):
+        if not row:
+            return False
+        damage = int(row.get(f"{side}_damage") or 0)
+        max_hp = int(row.get("enemy_max" if side == "player" else "player_max") or 0)
+        if damage <= 0:
+            return False
+        return damage >= max(4, int(math.ceil(max(1, max_hp) * 0.34)))
+
+    player_hit = _first_hit("player")
+    enemy_hit = _first_hit("enemy")
+    player_miss = _first_miss("player")
+    enemy_miss = _first_miss("enemy")
+    player_finisher = _finisher("player")
+    enemy_finisher = _finisher("enemy")
+    player_braced = any(int(row.get("enemy_damage") or 0) > 0 and int(row.get("player_after") or 0) > 0 for row in logs)
+    player_crit = any(bool(row.get("critical")) for row in logs)
+
+    events = []
+
+    def append_event(event):
+        if not event:
+            return
+        if events and events[-1]["type"] == event["type"] and events[-1]["label"] == event["label"]:
+            return
+        events.append(event)
+
+    summary_style = "standard_finish"
+    if is_boss:
+        summary_style = "boss_duel"
+        append_event(_battle_replay_event("boss_warning", "BOSS WARNING"))
+        if player_won:
+            if (not player_first) and enemy_hit:
+                append_event(
+                    _battle_replay_event(
+                        "enemy_strike",
+                        "被弾！",
+                        actor="enemy",
+                        heavy=_heavy_hit("enemy", enemy_hit),
+                    )
+                )
+            elif player_hit:
+                append_event(
+                    _battle_replay_event(
+                        "player_strike",
+                        "先手！" if player_first else "反撃！",
+                        actor="player",
+                        crit=bool(player_hit.get("critical")),
+                        heavy=_heavy_hit("player", player_hit),
+                    )
+                )
+            if enemy_miss and player_traits["speed_bias"] == "high":
+                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+                summary_style = "evasion_finish"
+            elif player_braced and enemy_hit:
+                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
+                summary_style = "brace_finish"
+            elif player_hit and (not player_first):
+                append_event(
+                    _battle_replay_event(
+                        "player_strike",
+                        "反撃！",
+                        actor="player",
+                        crit=bool(player_hit.get("critical")),
+                        heavy=_heavy_hit("player", player_hit),
+                    )
+                )
+            finisher = player_finisher or player_hit
+            if finisher:
+                append_event(
+                    _battle_replay_event(
+                        "player_finisher",
+                        "会心！" if bool(finisher.get("critical")) else "決着！",
+                        actor="player",
+                        crit=bool(finisher.get("critical")),
+                        heavy=_heavy_hit("player", finisher),
+                    )
+                )
+            append_event(_battle_replay_event("boss_defeated", "BOSS DEFEATED"))
+        else:
+            opening = enemy_hit or player_hit or logs[0]
+            if opening is enemy_hit:
+                append_event(
+                    _battle_replay_event(
+                        "enemy_strike",
+                        "被弾！",
+                        actor="enemy",
+                        heavy=_heavy_hit("enemy", enemy_hit),
+                    )
+                )
+            elif player_hit:
+                append_event(
+                    _battle_replay_event(
+                        "player_strike",
+                        "反撃！",
+                        actor="player",
+                        crit=bool(player_hit.get("critical")),
+                        heavy=_heavy_hit("player", player_hit),
+                    )
+                )
+            if player_braced and enemy_hit:
+                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
+            elif enemy_miss and player_traits["speed_bias"] == "high":
+                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+            finisher = enemy_finisher or enemy_hit or logs[-1]
+            append_event(
+                _battle_replay_event(
+                    "enemy_finisher",
+                    "決着！",
+                    actor="enemy",
+                    heavy=_heavy_hit("enemy", finisher),
+                )
+            )
+    else:
+        if player_won:
+            if player_traits["speed_bias"] == "high":
+                summary_style = "speed_finish"
+            elif player_traits["defense_bias"] == "high":
+                summary_style = "brace_finish"
+            elif player_traits["accuracy_bias"] == "high":
+                summary_style = "lock_finish"
+            if player_first and player_hit:
+                append_event(
+                    _battle_replay_event(
+                        "player_strike",
+                        "先手！",
+                        actor="player",
+                        crit=bool(player_hit.get("critical")),
+                        heavy=_heavy_hit("player", player_hit),
+                    )
+                )
+            elif enemy_hit:
+                append_event(
+                    _battle_replay_event(
+                        "enemy_strike",
+                        "被弾！",
+                        actor="enemy",
+                        heavy=_heavy_hit("enemy", enemy_hit),
+                    )
+                )
+            elif enemy_miss:
+                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+
+            if enemy_miss and player_traits["speed_bias"] == "high":
+                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+            elif player_braced and enemy_hit:
+                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
+            elif player_miss:
+                append_event(_battle_replay_event("player_miss", "MISS...", actor="player"))
+
+            finisher = player_finisher or player_hit
+            if finisher:
+                append_event(
+                    _battle_replay_event(
+                        "player_finisher",
+                        "会心！" if bool(finisher.get("critical")) else "決着！",
+                        actor="player",
+                        crit=bool(finisher.get("critical")),
+                        heavy=_heavy_hit("player", finisher),
+                    )
+                )
+        else:
+            summary_style = "enemy_finish"
+            if player_first and player_hit:
+                append_event(
+                    _battle_replay_event(
+                        "player_strike",
+                        "先手！",
+                        actor="player",
+                        crit=bool(player_hit.get("critical")),
+                        heavy=_heavy_hit("player", player_hit),
+                    )
+                )
+            elif player_miss:
+                append_event(_battle_replay_event("player_miss", "MISS...", actor="player"))
+            elif enemy_hit:
+                append_event(
+                    _battle_replay_event(
+                        "enemy_strike",
+                        "被弾！",
+                        actor="enemy",
+                        heavy=_heavy_hit("enemy", enemy_hit),
+                    )
+                )
+            if enemy_miss and player_traits["speed_bias"] == "high":
+                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+            elif enemy_hit and player_braced:
+                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
+            finisher = enemy_finisher or enemy_hit or logs[-1]
+            append_event(
+                _battle_replay_event(
+                    "enemy_finisher",
+                    "決着！",
+                    actor="enemy",
+                    heavy=_heavy_hit("enemy", finisher),
+                )
+            )
+
+    if not is_boss:
+        events = events[:3]
+    if is_boss:
+        events = events[:5]
+    if not events:
+        append_event(_battle_replay_event("player_finisher" if player_won else "enemy_finisher", "決着！"))
+
+    event_duration_ms = 380 if not is_boss else 620
+    intro_delay_ms = 120 if not is_boss else 280
+    outro_hold_ms = 340 if not is_boss else 760
+    return {
+        "battle_type": ("boss" if is_boss else "normal"),
+        "is_boss": bool(is_boss),
+        "player_won": bool(player_won),
+        "summary_style": summary_style,
+        "stage_theme": _battle_replay_theme(area_key, is_boss=is_boss),
+        "area_label": str(area_label or ""),
+        "enemy_name": str(enemy_name or "謎の敵"),
+        "player_name": str(player_name or "あなた"),
+        "player_image_url": player_image_url,
+        "enemy_image_url": enemy_image_url,
+        "player_visual_traits": player_traits,
+        "enemy_visual_traits": {
+            "trait": enemy_trait or "normal",
+            "speed_bias": _battle_replay_bias(enemy_speed, low=8, high=13),
+        },
+        "highlight_events": list(events),
+        "events": list(events),
+        "intro_delay_ms": int(intro_delay_ms),
+        "event_duration_ms": int(event_duration_ms),
+        "outro_hold_ms": int(outro_hold_ms),
+        "result_label": (
+            "BOSS DEFEATED"
+            if is_boss and player_won
+            else ("WIN" if player_won else "LOSE")
+        ),
+        "result_sub_label": (
+            "会心で決着" if player_crit and player_won else ("勝利" if player_won else "敗北")
+        ),
+    }
 
 
 def _boss_type_code(enemy_row):
@@ -18992,6 +19363,9 @@ def battle():
         no_active_robot=no_active_robot,
         battle_log_mode=battle_log_mode,
         battle_ritual_overlay_enabled=BATTLE_RITUAL_OVERLAY_ENABLED,
+        battle_short_replay_enabled=_battle_short_replay_open_for_viewer(
+            db, user_row=user, user_id=user_id
+        ),
     )
 
 
@@ -20454,6 +20828,45 @@ def explore():
         summary["boss_reward_display"] = None
     if boss_unlock_line:
         summary["world_bonus_notes"] = summary.get("world_bonus_notes", []) + [boss_unlock_line]
+    active_robot_view = _get_active_robot(db, user_id)
+    enemy_replay_stats = {
+        "hp": int(enemy_max_hp or 0),
+        "atk": int(enemy_atk or 0),
+        "def": int(enemy_def or 0),
+        "spd": int(enemy_spd or 0),
+        "acc": int(enemy_acc or 0),
+        "cri": int(enemy_cri or 0),
+        "trait": enemy_trait_key,
+    }
+    summary["battle_replay"] = (
+        _build_battle_replay_summary(
+            area_key=area["key"],
+            area_label=area["label"],
+            enemy_name=summary["enemy_name"],
+            enemy_image_url=summary["enemy_image_url"],
+            player_name=(active_robot_view.get("name") if active_robot_view else "あなた"),
+            player_image_url=(
+                active_robot_view.get("image_url")
+                if active_robot_view and active_robot_view.get("image_url")
+                else url_for("static", filename="assets/placeholder_player.png")
+            ),
+            player_stats={
+                "hp": int(player_max_hp or 0),
+                "atk": int(player_atk or 0),
+                "def": int(player_def or 0),
+                "spd": int(player_spd or 0),
+                "acc": int(player_acc or 0),
+                "cri": int(player_cri or 0),
+            },
+            enemy_stats=enemy_replay_stats,
+            robot_style=robot_style,
+            turn_logs=all_turn_logs,
+            outcome=summary["outcome"],
+            is_boss=bool(area_boss_active),
+        )
+        if _battle_short_replay_open_for_viewer(db, user_row=user, user_id=user_id)
+        else None
+    )
     return render_template(
         "battle.html",
         state={"active": 0, "enemy_name": summary["enemy_name"], "enemy_hp": 0},
@@ -20464,12 +20877,15 @@ def explore():
         explore_mode=True,
         explore_area_key=area["key"],
         explore_area_label=area["label"],
-        active_robot=_get_active_robot(db, user_id),
+        active_robot=active_robot_view,
         no_active_robot=False,
         turn_logs=all_turn_logs,
         summary=summary,
         battle_log_mode=battle_log_mode,
         battle_ritual_overlay_enabled=BATTLE_RITUAL_OVERLAY_ENABLED,
+        battle_short_replay_enabled=_battle_short_replay_open_for_viewer(
+            db, user_row=user, user_id=user_id
+        ),
     )
 
 
