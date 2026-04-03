@@ -65,7 +65,7 @@
           <div class="presence-user-line user-signal">
             {{ render_user_chip(item, 'log', item['user_label'] ~ ' robot') }}
             <div class="user-signal-meta">
-              <div class="feed-user user-signal-name">{{ item['user_label'] }}</div>
+              {{ render_user_name_badged_html(item, item['user_label'], 'feed-user user-signal-name') }}
               <div class="feed-kicker">PUBLIC SIGNAL · {{ item.get('presence_label', '探索待機中') }}</div>
             </div>
           </div>

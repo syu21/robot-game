@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
+from markupsafe import Markup, escape
 from PIL import Image, ImageDraw
 from balance_config import (
     COIN_REWARD_BY_TIER,
@@ -12179,6 +12180,52 @@ def _trophy_badges_for_keys(keys):
     return badges
 
 
+def _render_user_trophy_badges_markup(item, *, compact=True, max_items=1):
+    badges = list((item or {}).get("trophy_badges") or [])
+    if not badges:
+        return Markup("")
+    limit = max(0, int(max_items or 0))
+    shown = badges if limit <= 0 else badges[:limit]
+    compact_class = " is-compact" if compact else ""
+    parts = [f'<span class="user-trophy-list{compact_class}">']
+    for badge in shown:
+        badge_key = escape(str(badge.get("key") or "unknown"))
+        title = escape(str(badge.get("title") or badge.get("label") or badge_key))
+        label = str(badge.get("short_label") if compact else badge.get("label") or badge_key).strip() or str(badge_key)
+        parts.append(
+            f'<span class="user-trophy-badge trophy-{badge_key}" title="{title}">{escape(label)}</span>'
+        )
+    if limit > 0 and len(badges) > limit:
+        more_count = len(badges) - limit
+        parts.append(
+            f'<span class="user-trophy-badge is-more" title="ほか {more_count} 件">+{more_count}</span>'
+        )
+    parts.append("</span>")
+    return Markup("".join(parts))
+
+
+def _render_user_name_badged_markup(item, text=None, *, outer_class="user-signal-name", compact=True, max_items=1):
+    item = item or {}
+    label = (
+        text
+        or item.get("display_username")
+        or item.get("username")
+        or item.get("user_label")
+        or "SYSTEM"
+    )
+    class_name = str(outer_class or "user-signal-name").strip() or "user-signal-name"
+    classes = f"{class_name} user-name-with-badges"
+    if compact:
+        classes = f"{classes} is-compact"
+    badges_markup = _render_user_trophy_badges_markup(item, compact=compact, max_items=max_items)
+    return Markup(
+        f'<span class="{escape(classes)}">'
+        f'<span class="user-name-text">{escape(str(label))}</span>'
+        f"{badges_markup}"
+        f"</span>"
+    )
+
+
 def _get_user_trophy_keys(db, user_id):
     if not user_id:
         return []
@@ -15451,6 +15498,17 @@ def inject_user_display():
             "trophy_badges": list(visuals.get("trophy_badges") or []),
         }
     }
+
+
+@app.template_global()
+def render_user_name_badged_html(item, text=None, outer_class="user-signal-name", compact=True, max_items=1):
+    return _render_user_name_badged_markup(
+        item,
+        text,
+        outer_class=outer_class,
+        compact=compact,
+        max_items=max_items,
+    )
 
 
 @app.context_processor

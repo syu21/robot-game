@@ -18,7 +18,7 @@
           <div class="presence-user-line record-user-line user-signal">
             {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
             <div class="user-signal-meta">
-              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
               <div class="user-signal-sub">{% if row['detail'] %}{{ row['detail'] }}{% else %}初達成ログ{% endif %}</div>
             </div>
           </div>
@@ -38,7 +38,7 @@
           <div class="presence-user-line record-user-line user-signal">
             {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
             <div class="user-signal-meta">
-              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
               <div class="user-signal-sub">{% if row['detail'] %}{{ row['detail'] }}{% else %}初進化ログ{% endif %}</div>
             </div>
           </div>
@@ -58,7 +58,7 @@
           <div class="presence-user-line record-user-line user-signal">
             {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
             <div class="user-signal-meta">
-              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
               <div class="user-signal-sub">第4層の先駆者</div>
             </div>
           </div>
@@ -78,7 +78,7 @@
           <div class="presence-user-line record-user-line user-signal">
             {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
             <div class="user-signal-meta">
-              <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+              {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
               <div class="user-signal-sub">第5層の先駆者</div>
             </div>
           </div>
@@ -110,7 +110,7 @@
                 <div class="presence-user-line record-owner-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
                   {{ render_user_chip(row, 'record', row['subtitle'] ~ ' robot', 'lazy', loop.index <= 3) }}
                   <div class="user-signal-meta">
-                    <div class="user-signal-name">{{ row['subtitle'] }}</div>
+                    {{ render_user_name_badged_html(row, row['subtitle']) }}
                     <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
                   </div>
                 </div>
@@ -123,7 +123,7 @@
             <div class="presence-user-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
               {{ render_user_chip(row, 'record', row['title'] ~ ' robot', 'lazy', loop.index <= 3) }}
               <div class="user-signal-meta">
-                <div class="user-signal-name">{{ row['rank'] }}位 {{ row['title'] }}</div>
+                <div class="user-signal-name-line"><span class="user-name-inline-note">{{ row['rank'] }}位</span>{{ render_user_name_badged_html(row, row['title']) }}</div>
                 <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
               </div>
             </div>
@@ -153,7 +153,7 @@
       <div class="presence-user-line record-user-line user-signal">
         {{ render_user_chip(row, 'record', (row.get('display_username') or row['username']) ~ ' robot') }}
         <div class="user-signal-meta">
-          <div class="user-signal-name">{{ row.get('display_username') or row['username'] }}</div>
+          {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
           <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
         </div>
       </div>

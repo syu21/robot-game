@@ -31,7 +31,11 @@
     {% if session.get('user_id') %}
       <div class="user">
         {% if header_user_visual %}{{ render_user_chip(header_user_visual, 'header', 'current robot icon', 'eager') }}{% endif %}
-        {{ session.get('username') }} |
+        {% if header_user_visual %}
+        {{ render_user_name_badged_html(header_user_visual, header_user_visual.get('display_username') or session.get('username'), 'header-user-name', false) }}
+        {% else %}
+        <span class="header-user-name">{{ session.get('username') }}</span>
+        {% endif %} |
         {% if safe_mode %}
         <a href="{{ url_for('home', safe=0) }}">通常表示へ</a> |
         {% else %}

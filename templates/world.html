@@ -50,7 +50,7 @@
       <div class="presence-user-line user-signal user-signal-hero is-podium">
         {{ render_user_chip(weekly_mvp, 'mvp', weekly_mvp['username'] ~ ' robot', 'lazy', true) }}
         <div class="user-signal-meta">
-          <div class="user-signal-name">{{ weekly_mvp['username'] }}（勝利 {{ weekly_mvp['wins'] }}）</div>
+          <div class="user-signal-name-line">{{ render_user_name_badged_html(weekly_mvp, weekly_mvp['username']) }}<span class="user-name-inline-note">（勝利 {{ weekly_mvp['wins'] }}）</span></div>
           <div class="presence-mini-label">{{ weekly_mvp.get('presence_label', '探索待機中') }}</div>
         </div>
       </div>

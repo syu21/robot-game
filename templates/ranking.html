@@ -48,13 +48,13 @@
           </div>
         </div>
       </td>
-      <td>{{ r['username'] }}</td>
+      <td>{{ render_user_name_badged_html(r, r.get('display_username') or r['username']) }}</td>
       {% else %}
       <td>
         <div class="ranking-user-cell user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
           {{ render_user_chip(r, 'ranking', (r.get('display_username') or r['username']) ~ ' robot', 'lazy', loop.index <= 3) }}
           <div class="user-signal-meta">
-            <div class="user-signal-name">{{ r.get('display_username') or r['username'] }}</div>
+            {{ render_user_name_badged_html(r, r.get('display_username') or r['username']) }}
             <div class="user-signal-sub">{{ r.get('presence_label', '探索待機中') }}</div>
           </div>
         </div>
