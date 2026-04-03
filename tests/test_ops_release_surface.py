@@ -369,12 +369,12 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.25 - 2026/04/03", html)
-        self.assertIn("課金導線をB案の3商品構成へ整理", html)
-        self.assertIn("`/support` は `創設支援パック(100円)` と `ラボ維持支援パック(300円)` の2商品に整理", html)
-        self.assertIn("`/shop` には `出撃ブースター(500円)` のみを置き", html)
-        self.assertIn("`STRIPE_PRICE_ID_SUPPORT_FOUNDER` / `STRIPE_PRICE_ID_SUPPORT_LAB` / `STRIPE_PRICE_ID_EXPLORE_BOOST_14D`", html)
-        self.assertLess(html.index("v0.1.25 - 2026/04/03"), html.index("v0.1.24 - 2026/04/03"))
+        self.assertIn("v0.1.26 - 2026/04/03", html)
+        self.assertIn("ショート戦闘演出の可読性と表示安定性を改善", html)
+        self.assertIn("1行テロップ同期へ変更", html)
+        self.assertIn("弾道 / 着弾 / HIT / 会心 / 踏ん張り", html)
+        self.assertIn("`battle_page_v2.js` の参照を新バージョンへ切り替え", html)
+        self.assertLess(html.index("v0.1.26 - 2026/04/03"), html.index("v0.1.25 - 2026/04/03"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
