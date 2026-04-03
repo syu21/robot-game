@@ -72,11 +72,25 @@ class CommsRoutesTests(unittest.TestCase):
         self.assertIn("ロボ使いたちが集まって話せる場所です。", html)
         self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
         self.assertIn("フィードバック", html)
+        self.assertIn(f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で", html)
+        self.assertIn("人が活動中", html)
+        self.assertIn(
+            f"最近{game_app.COMM_ROOM_ACTIVITY_WINDOW_MINUTES}分で0人が発言",
+            html,
+        )
 
     def test_comms_world_shows_world_scale_events_and_public_posts_only(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             now = int(time.time())
+            db.execute(
+                "UPDATE users SET last_seen_at = ? WHERE id = ?",
+                (now - 10 * 60, self.other_user_id),
+            )
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.other_user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 60),
+            )
             db.execute(
                 """
                 INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
@@ -182,6 +196,14 @@ class CommsRoutesTests(unittest.TestCase):
         self.assertIn("層解放", html)
         self.assertIn("みんなの動きが見えていい感じ", html)
         self.assertIn("roommate", html)
+        self.assertIn("🏆", html)
+        self.assertIn("user-trophy-badge", html)
+        self.assertIn(
+            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で1人が活動中",
+            html,
+        )
+        self.assertIn("PUBLIC SIGNAL · 少し前まで動いていた", html)
+        self.assertIn('data-presence-state="warm"', html)
         self.assertNotIn("秘密進化ヘッド", html)
         self.assertNotIn("試験ドローン", html)
 
@@ -238,6 +260,11 @@ class CommsRoutesTests(unittest.TestCase):
 
         with game_app.app.app_context():
             db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.other_user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 30),
+            )
             db.execute(
                 """
                 INSERT INTO chat_messages (user_id, username, room_key, message, created_at, deleted_at)
@@ -265,6 +292,8 @@ class CommsRoutesTests(unittest.TestCase):
         global_html = global_resp.get_data(as_text=True)
         self.assertIn("全体会議室", global_html)
         self.assertIn("全体会議室の話題", global_html)
+        self.assertIn("🏆", global_html)
+        self.assertIn("user-trophy-badge", global_html)
 
         feedback_resp = client.post(
             "/comms/rooms?room=feedback_room",
@@ -281,6 +310,15 @@ class CommsRoutesTests(unittest.TestCase):
         feedback_html = feedback_page.get_data(as_text=True)
         self.assertIn("フィードバック", feedback_html)
         self.assertIn("細かい改善案も送りやすいと助かります", feedback_html)
+        self.assertIn(
+            f"最近{game_app.COMM_ROOM_ACTIVITY_WINDOW_MINUTES}分で1人が発言",
+            feedback_html,
+        )
+        self.assertIn(
+            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で活動中",
+            feedback_html,
+        )
+        self.assertIn('data-presence-state="active"', feedback_html)
         self.assertNotIn("初心者向けの相談です", feedback_html)
 
     def test_comms_personal_collects_growth_battle_and_acquisition_logs(self):

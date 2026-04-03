@@ -328,7 +328,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("/static/header_scroll_v2.js", html)
         self.assertIn("/guide", html)
         self.assertIn("機体アイコン", html)
-        self.assertIn("創設", html)
+        self.assertIn("🏆", html)
         self.assertIn("user-trophy-badge", html)
         header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
         self.assertIsNotNone(header_match)
@@ -361,7 +361,7 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
         self.assertIsNotNone(header_match)
         header_html = header_match.group(0)
-        self.assertIn("創設", header_html)
+        self.assertIn("🏆", header_html)
         self.assertIn("user-trophy-badge", header_html)
 
     def test_changelog_shows_latest_2026_04_03_entry(self):

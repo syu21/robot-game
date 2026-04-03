@@ -33,6 +33,10 @@ class WorldCompetitionSurfaceTests(unittest.TestCase):
                 ("world_surface_user",),
             ).fetchone()["id"]
             game_app.initialize_new_user(db, self.user_id)
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 30),
+            )
 
             for username, faction in (("ventra_member", "ventra"), ("aurix_member", "aurix")):
                 db.execute(
@@ -129,6 +133,8 @@ class WorldCompetitionSurfaceTests(unittest.TestCase):
         self.assertIn("is-robot-icon", html)
         self.assertIn("user-chip-avatar", html)
         self.assertIn("user-signal-hero is-podium", html)
+        self.assertIn("🏆", html)
+        self.assertIn("user-trophy-badge", html)
         self.assertNotIn("badge-overlay", html)
         self.assertIn("world-mvp-thumb", html)
 
@@ -215,6 +221,8 @@ class WorldCompetitionSurfaceTests(unittest.TestCase):
         self.assertIn("is-robot-icon", html)
         self.assertIn("user-chip-avatar", html)
         self.assertIn("record-ranking-item is-podium", html)
+        self.assertIn("🏆", html)
+        self.assertIn("user-trophy-badge", html)
         self.assertNotIn("badge-overlay", html)
         self.assertIn("ranking-robot-thumb", html)
 

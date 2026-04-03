@@ -32,7 +32,7 @@
       <div class="user">
         {% if header_user_visual %}{{ render_user_chip(header_user_visual, 'header', 'current robot icon', 'eager') }}{% endif %}
         {% if header_user_visual %}
-        {{ render_user_name_badged_html(header_user_visual, header_user_visual.get('display_username') or session.get('username'), 'header-user-name', false) }}
+        {{ render_user_name_badged_html(header_user_visual, header_user_visual.get('display_username') or session.get('username'), 'header-user-name') }}
         {% else %}
         <span class="header-user-name">{{ session.get('username') }}</span>
         {% endif %} |

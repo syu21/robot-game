@@ -280,6 +280,10 @@ class RankingVisibilityTests(unittest.TestCase):
                 "SELECT active_robot_id FROM users WHERE id = ?",
                 (self.beta_id,),
             ).fetchone()["active_robot_id"]
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.alpha_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 10),
+            )
 
             week_key = game_app._world_week_key()
             start_dt, end_dt = game_app._world_week_bounds(week_key)
@@ -376,6 +380,8 @@ class RankingVisibilityTests(unittest.TestCase):
         self.assertIn("ranking-user-row is-podium", wins_html)
         self.assertIn("user-chip-avatar", wins_html)
         self.assertIn("user-signal-name", wins_html)
+        self.assertIn("🏆", wins_html)
+        self.assertIn("user-trophy-badge", wins_html)
         self.assertNotIn("badge-overlay", wins_html)
 
         explore_resp = client.get("/ranking?metric=explores")

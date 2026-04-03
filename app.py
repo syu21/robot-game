@@ -249,7 +249,7 @@ PAYMENT_STATUS_EXPIRED = "expired"
 USER_TROPHY_DEFS = {
     SUPPORTER_FOUNDER_TROPHY_KEY: {
         "label": "創設支援章",
-        "short_label": "創設",
+        "short_label": "🏆",
         "description": "開発初期を支えた証",
         "sort_order": 10,
     },
