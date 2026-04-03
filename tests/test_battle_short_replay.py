@@ -52,6 +52,10 @@ class BattleShortReplayHelperTests(unittest.TestCase):
         self.assertLessEqual(len(replay["events"]), 4)
         self.assertEqual(replay["events"][-1]["type"], "player_finisher")
         self.assertEqual(replay["events"][0]["type"], "player_opening")
+        self.assertEqual(replay["player_hp_start"], 15)
+        self.assertEqual(replay["enemy_hp_start"], 12)
+        self.assertTrue(all(item.get("player_hp_max") for item in replay["events"]))
+        self.assertTrue(all(item.get("enemy_hp_max") for item in replay["events"]))
 
     def test_boss_replay_includes_warning_and_defeat(self):
         replay = game_app._build_battle_replay_summary(
@@ -158,6 +162,8 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('data-replay-skip="1"', html)
             self.assertIn('data-replay-caption="1"', html)
             self.assertIn('data-replay-projectile="1"', html)
+            self.assertIn('data-replay-hp="player"', html)
+            self.assertIn('data-replay-hp="enemy"', html)
             self.assertIn('id="battle-replay-followup"', html)
 
     def test_ui_effects_off_skips_short_replay_markup(self):

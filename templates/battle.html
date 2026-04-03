@@ -73,7 +73,14 @@
           <span class="battle-short-replay-part part-left" aria-hidden="true"></span>
           <span class="battle-short-replay-part part-legs" aria-hidden="true"></span>
         </div>
-        <div class="battle-short-replay-name">{{ battle_replay.get('player_name', player_name) }}</div>
+        <div class="battle-short-replay-status">
+          <div class="battle-short-replay-name">{{ battle_replay.get('player_name', player_name) }}</div>
+          <div class="battle-short-replay-hp" data-replay-hp="player" aria-hidden="true">
+            <span class="battle-short-replay-hp-track"></span>
+            <span class="battle-short-replay-hp-lag" data-replay-hp-lag="player"></span>
+            <span class="battle-short-replay-hp-fill" data-replay-hp-fill="player"></span>
+          </div>
+        </div>
       </div>
 
       <div class="battle-short-replay-center" aria-hidden="true">
@@ -91,7 +98,14 @@
           <span class="battle-short-replay-part part-left" aria-hidden="true"></span>
           <span class="battle-short-replay-part part-legs" aria-hidden="true"></span>
         </div>
-        <div class="battle-short-replay-name">{{ battle_replay.get('enemy_name', enemy_name) }}</div>
+        <div class="battle-short-replay-status">
+          <div class="battle-short-replay-name">{{ battle_replay.get('enemy_name', enemy_name) }}</div>
+          <div class="battle-short-replay-hp" data-replay-hp="enemy" aria-hidden="true">
+            <span class="battle-short-replay-hp-track"></span>
+            <span class="battle-short-replay-hp-lag" data-replay-hp-lag="enemy"></span>
+            <span class="battle-short-replay-hp-fill" data-replay-hp-fill="enemy"></span>
+          </div>
+        </div>
       </div>
     </div>
 

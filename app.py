@@ -3655,6 +3655,10 @@ def _battle_replay_event(
     target=None,
     projectile=None,
     reaction=None,
+    player_hp=None,
+    player_hp_max=None,
+    enemy_hp=None,
+    enemy_hp_max=None,
     crit=False,
     heavy=False,
 ):
@@ -3665,6 +3669,10 @@ def _battle_replay_event(
         "target": (str(target or "").strip() or None),
         "projectile": (str(projectile or "").strip() or None),
         "reaction": (str(reaction or "").strip() or None),
+        "player_hp": (int(player_hp) if player_hp is not None else None),
+        "player_hp_max": (int(player_hp_max) if player_hp_max is not None else None),
+        "enemy_hp": (int(enemy_hp) if enemy_hp is not None else None),
+        "enemy_hp_max": (int(enemy_hp_max) if enemy_hp_max is not None else None),
         "crit": bool(crit),
         "heavy": bool(heavy),
     }
@@ -3694,6 +3702,33 @@ def _build_battle_replay_summary(
     enemy_speed = int((enemy_stats or {}).get("spd") or 0)
     player_speed = int((player_stats or {}).get("spd") or 0)
     player_first = player_speed >= enemy_speed
+    first_row = logs[0]
+    player_hp_max = int(first_row.get("player_max") or player_stats.get("hp") or 1)
+    enemy_hp_max = int(first_row.get("enemy_max") or enemy_stats.get("hp") or 1)
+    player_hp_start = int(first_row.get("player_before") or player_hp_max)
+    enemy_hp_start = int(first_row.get("enemy_before") or enemy_hp_max)
+
+    def _hp_kwargs(row=None, *, before=False):
+        if row:
+            if before:
+                return {
+                    "player_hp": int(row.get("player_before") or player_hp_start),
+                    "player_hp_max": int(row.get("player_max") or player_hp_max),
+                    "enemy_hp": int(row.get("enemy_before") or enemy_hp_start),
+                    "enemy_hp_max": int(row.get("enemy_max") or enemy_hp_max),
+                }
+            return {
+                "player_hp": int(row.get("player_after") or player_hp_start),
+                "player_hp_max": int(row.get("player_max") or player_hp_max),
+                "enemy_hp": int(row.get("enemy_after") or enemy_hp_start),
+                "enemy_hp_max": int(row.get("enemy_max") or enemy_hp_max),
+            }
+        return {
+            "player_hp": int(player_hp_start),
+            "player_hp_max": int(player_hp_max),
+            "enemy_hp": int(enemy_hp_start),
+            "enemy_hp_max": int(enemy_hp_max),
+        }
 
     def _first_hit(side):
         for row in logs:
@@ -3749,14 +3784,15 @@ def _build_battle_replay_summary(
     def target_name(side):
         return enemy_name if side == "player" else player_name
 
-    def opening_event(side):
+    def opening_event(side, row=None):
         return _battle_replay_event(
             f"{side}_opening",
             f"{actor_name(side)} が先手！",
             actor=side,
+            **_hp_kwargs(row, before=True),
         )
 
-    def miss_event(side):
+    def miss_event(side, row=None):
         if side == "player":
             return _battle_replay_event(
                 "player_miss",
@@ -3765,6 +3801,7 @@ def _build_battle_replay_summary(
                 target="enemy",
                 projectile="shot",
                 reaction="evade",
+                **_hp_kwargs(row),
             )
         return _battle_replay_event(
             "enemy_miss",
@@ -3773,6 +3810,7 @@ def _build_battle_replay_summary(
             target="player",
             projectile="shot",
             reaction="evade",
+            **_hp_kwargs(row),
         )
 
     def strike_event(side, row, *, finisher=False):
@@ -3796,17 +3834,19 @@ def _build_battle_replay_summary(
             target=("enemy" if side == "player" else "player"),
             projectile="shot",
             reaction=("critical" if crit else "hit"),
+            **_hp_kwargs(row),
             crit=crit,
             heavy=heavy,
         )
 
-    def brace_event():
+    def brace_event(row=None):
         return _battle_replay_event(
             "player_guard",
             f"{player_name} は踏ん張った！",
             actor="player",
             target="player",
             reaction="brace",
+            **_hp_kwargs(row),
         )
 
     summary_style = "standard_finish"
@@ -3815,40 +3855,48 @@ def _build_battle_replay_summary(
         append_event(_battle_replay_event("boss_warning", f"{enemy_name} 出現！"))
         if player_won:
             if player_first:
-                append_event(opening_event("player"))
+                append_event(opening_event("player", player_hit or player_miss or logs[0]))
                 if player_hit and player_hit is not player_finisher:
                     append_event(strike_event("player", player_hit))
             else:
-                append_event(opening_event("enemy"))
+                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
                 if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy"))
+                    append_event(miss_event("enemy", enemy_miss))
                     summary_style = "evasion_finish"
                 elif enemy_hit:
                     append_event(strike_event("enemy", enemy_hit))
                     if player_braced:
-                        append_event(brace_event())
+                        append_event(brace_event(enemy_hit))
                         summary_style = "brace_finish"
                 if player_hit and player_hit is not player_finisher:
                     append_event(strike_event("player", player_hit))
             finisher = player_finisher or player_hit
             if finisher:
                 append_event(strike_event("player", finisher, finisher=True))
-            append_event(_battle_replay_event("boss_defeated", "BOSS DEFEATED", target="enemy", reaction="finish"))
+            append_event(
+                _battle_replay_event(
+                    "boss_defeated",
+                    "BOSS DEFEATED",
+                    target="enemy",
+                    reaction="finish",
+                    **_hp_kwargs(finisher),
+                )
+            )
         else:
             if player_first and (player_hit or player_miss):
-                append_event(opening_event("player"))
+                append_event(opening_event("player", player_hit or player_miss or logs[0]))
                 if player_miss:
-                    append_event(miss_event("player"))
+                    append_event(miss_event("player", player_miss))
                 elif player_hit:
                     append_event(strike_event("player", player_hit))
             else:
-                append_event(opening_event("enemy"))
+                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
                 if enemy_hit:
                     append_event(strike_event("enemy", enemy_hit))
                     if player_braced:
-                        append_event(brace_event())
+                        append_event(brace_event(enemy_hit))
                 elif enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy"))
+                    append_event(miss_event("enemy", enemy_miss))
             finisher = enemy_finisher or enemy_hit or logs[-1]
             append_event(strike_event("enemy", finisher, finisher=True))
     else:
@@ -3861,20 +3909,20 @@ def _build_battle_replay_summary(
                 summary_style = "lock_finish"
 
             if player_first and (player_hit or player_miss):
-                append_event(opening_event("player"))
+                append_event(opening_event("player", player_hit or player_miss or logs[0]))
                 if player_miss:
-                    append_event(miss_event("player"))
+                    append_event(miss_event("player", player_miss))
                 elif player_hit and player_hit is not player_finisher:
                     append_event(strike_event("player", player_hit))
             else:
-                append_event(opening_event("enemy"))
+                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
                 if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy"))
+                    append_event(miss_event("enemy", enemy_miss))
                     summary_style = "evasion_finish"
                 elif enemy_hit:
                     append_event(strike_event("enemy", enemy_hit))
                     if player_braced:
-                        append_event(brace_event())
+                        append_event(brace_event(enemy_hit))
                         summary_style = "brace_finish"
 
             finisher = player_finisher or player_hit
@@ -3883,19 +3931,19 @@ def _build_battle_replay_summary(
         else:
             summary_style = "enemy_finish"
             if player_first and (player_hit or player_miss):
-                append_event(opening_event("player"))
+                append_event(opening_event("player", player_hit or player_miss or logs[0]))
                 if player_miss:
-                    append_event(miss_event("player"))
+                    append_event(miss_event("player", player_miss))
                 elif player_hit and player_hit is not player_finisher:
                     append_event(strike_event("player", player_hit))
             else:
-                append_event(opening_event("enemy"))
+                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
                 if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy"))
+                    append_event(miss_event("enemy", enemy_miss))
                 elif enemy_hit:
                     append_event(strike_event("enemy", enemy_hit))
                     if player_braced:
-                        append_event(brace_event())
+                        append_event(brace_event(enemy_hit))
             finisher = enemy_finisher or enemy_hit or logs[-1]
             append_event(strike_event("enemy", finisher, finisher=True))
 
@@ -3907,7 +3955,15 @@ def _build_battle_replay_summary(
             events = [item for item in events if item.get("type") != "boss_defeated"]
             if len(events) >= 6:
                 events = events[:5]
-            events.append(_battle_replay_event("boss_defeated", "BOSS DEFEATED", target="enemy", reaction="finish"))
+            events.append(
+                _battle_replay_event(
+                    "boss_defeated",
+                    "BOSS DEFEATED",
+                    target="enemy",
+                    reaction="finish",
+                    **_hp_kwargs(player_finisher or player_hit or logs[-1]),
+                )
+            )
     if not events:
         append_event(
             _battle_replay_event(
@@ -3930,6 +3986,10 @@ def _build_battle_replay_summary(
         "player_name": str(player_name or "あなた"),
         "player_image_url": player_image_url,
         "enemy_image_url": enemy_image_url,
+        "player_hp_start": int(player_hp_start),
+        "player_hp_max": int(player_hp_max),
+        "enemy_hp_start": int(enemy_hp_start),
+        "enemy_hp_max": int(enemy_hp_max),
         "player_visual_traits": player_traits,
         "enemy_visual_traits": {
             "trait": enemy_trait or "normal",
