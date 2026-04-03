@@ -1,58 +1,78 @@
-# 決済基盤仕様（Stripe / support_pack_001 / explore_boost_14d）
+# 決済基盤仕様（Stripe / support_pack_founder / support_pack_lab / explore_boost_14d）
 
 最終更新日: 2026-04-03
 
 ## 1. 目的
-- 本格課金の前に、安全な決済土台を先に作る
-- 戦力販売ではなく、見た目・参加価値の支援導線から始める
+- 商品数を `支援2本 + 利便性1本` に絞り、迷わせない
+- 戦力販売ではなく、`見栄 / 応援 / 参加感 / 利便性` で収益化する
 - `success_url` ではなく webhook を正として付与する
 - 既存の `audit.*` / `world_events_log` 体系に沿って追跡する
 
-## 2. 対象商品
-- `product_key`: `support_pack_001`
-- 表示名: `ロボらぼ支援パック`
-- 支援額: `100円`
+## 2. 商品構成
+### 2.1 創設支援パック
+- `product_key`: `support_pack_founder`
+- 表示名: `創設支援パック`
+- 価格: `100円`
+- 性質: `1回限り`
 - 決済: Stripe Checkout
-- 付与: 初回限定の見た目特典 + 支援者トロフィー
-  - `grant_type`: `decor`
-  - `grant_key`: `shien_trophy`
+- 特典:
   - `trophy_key`: `supporter_founder`
   - 表示名: `創設支援章`
-  - 説明: `開発初期を支えた証`
-- `product_key`: `explore_boost_14d`
-- 表示名: `出撃ブースト`
-- 支援額: `500円`
+  - DECOR: `founder_badge_silver`
+  - 戦力差はつけない
+
+### 2.2 ラボ維持支援パック
+- `product_key`: `support_pack_lab`
+- 表示名: `ラボ維持支援パック`
+- 価格: `300円`
+- 性質: `1回限り`
 - 決済: Stripe Checkout
-- 付与: 14日間の出撃CT短縮
+- 特典:
+  - `trophy_key`: `supporter_lab`
+  - 表示名: `ラボ支援章`
+  - DECOR: `lab_badge_gold`
+  - 戦力差はつけない
+
+### 2.3 出撃ブースター
+- `product_key`: `explore_boost_14d`
+- 表示名: `出撃ブースター`
+- 価格: `500円`
+- 性質: `1回限り`
+- 決済: Stripe Checkout
+- 効果:
   - `grant_type`: `explore_boost`
   - `boost_days`: `14`
-  - 効果: `通常40秒 -> 20秒`
-  - 1アカウント1回限定
+  - `探索CT 40秒 -> 20秒`
+  - `周回効率アップ`
 
 ## 3. 環境変数
 - `STRIPE_SECRET_KEY`
 - `STRIPE_PUBLISHABLE_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_ID_SUPPORT_PACK`
-- `STRIPE_PRICE_ID_EXPLORE_BOOST`
+- `STRIPE_PRICE_ID_SUPPORT_FOUNDER`
+- `STRIPE_PRICE_ID_SUPPORT_LAB`
+- `STRIPE_PRICE_ID_EXPLORE_BOOST_14D`
 - `PUBLIC_GAME_URL`
 
-今回のサンドボックス商品は以下を使う:
-- `STRIPE_PRICE_ID_EXPLORE_BOOST=price_1TF2saJwvZBQaY3FEzCD3h0S`
+互換のため、旧 `STRIPE_PRICE_ID_SUPPORT_PACK` / `STRIPE_PRICE_ID_EXPLORE_BOOST` が残っている場合は読み取りフォールバックを持つが、本番運用では新しい3本を正本とする。
 
 ## 4. 主要ルート
-- `GET /shop`
-  - 出撃ブーストのサンドボックス購入ページ
-  - ログイン済みなら購入導線と残り期間を表示
-- `POST /shop/explore-boost/checkout`
-  - 毎回新しい Checkout Session を生成
-  - `metadata` に `user_id / product_key / grant_type / boost_days` を保存
 - `GET /support`
-  - 支援パック説明ページ
-  - ログイン済みなら `支援する（100円）` ボタンを表示
-- `POST /support/checkout`
-  - 毎回新しい Checkout Session を生成
-  - `metadata` に `user_id / product_key / grant_type` を保存
+  - 支援パック専用ページ
+  - `創設支援パック 100円` と `ラボ維持支援パック 300円` を表示
+  - `ロボらぼの開発を応援できます / 戦力差はつきません / 名前横バッジ / 限定DECOR付き` を案内
+- `POST /support/founder/checkout`
+  - `support_pack_founder` の Checkout Session を作成
+  - `metadata` に `user_id / product_key` を保存
+- `POST /support/lab/checkout`
+  - `support_pack_lab` の Checkout Session を作成
+  - `metadata` に `user_id / product_key` を保存
+- `GET /shop`
+  - `出撃ブースター 500円` を表示
+  - `14日間 出撃しやすくなります / 探索CT 40秒 -> 20秒 / 周回効率アップ` を案内
+- `POST /shop/explore-boost/checkout`
+  - `explore_boost_14d` の Checkout Session を作成
+  - `metadata` に `user_id / product_key / grant_type / boost_days` を保存
 - `GET /payment/success`
   - 「支払い確認中」画面
   - 付与は行わない
@@ -106,25 +126,23 @@
 ## 6. 付与方針
 - `success_url` 到達では付与しない
 - webhook の `checkout.session.completed` だけで付与する
-- クライアントから送られた product/amount は信用しない
+- クライアントから送られた `product / amount / price_id` は信用しない
 - Checkout 作成時はサーバー固定の商品定義だけを使う
-- `support_pack_001` は `user_decor_inventory` と `user_trophies` の両方へ付与する
+- `support_pack_founder` は `user_decor_inventory` と `user_trophies` の両方へ付与する
+- `support_pack_lab` も `user_decor_inventory` と `user_trophies` の両方へ付与する
 - DECOR 付与は `user_decor_inventory` へ `INSERT OR IGNORE`
 - トロフィー付与は `user_trophies` へ `INSERT OR IGNORE`
-- DECOR キーは `shien_trophy` を使い、既存の `support_pack_001` 購入済みユーザーにも backfill で揃える
-- 既に同じ DECOR を所持している場合は二重付与せず `skip_duplicate`
-- 既に同じトロフィーを所持している場合も二重付与せず `skip_duplicate`
-- 出撃ブーストは `users.explore_boost_until` に期限を保存する
-- 出撃ブーストは 1回限定で、すでに期限が入っている場合は `skip_duplicate`
-- `support_pack_001` は表示用の支援者バッジとして `創設支援章` を付けるが、戦力差はつけない
+- 既に同じ DECOR / トロフィーを所持している場合は二重付与せず `skip_duplicate`
+- `explore_boost_14d` は `users.explore_boost_until` に期限を保存する
+- ブースターは期限加算方式で扱い、既存期限が未来にある場合はそこから `14日` 延長する
+- 旧 `support_pack_001` は `support_pack_founder` の互換商品として扱い、既存購入者にも `founder_badge_silver` と `supporter_founder` が揃うよう backfill する
 
 ## 7. 出撃CTとの競合整理
 - 管理者: `0秒`
-- 新規ブースト: `20秒`
-- 課金出撃ブースト中: `20秒`
+- 課金ブースト中: `20秒`
 - それ以外: `40秒`
-- 新規ブーストと課金出撃ブーストが同時に有効な場合は、**最も短いCTを採用**する
-- 今回の実装では `min(通常CT, 新規CT, 課金CT)` の形で一箇所に寄せて判定する
+- 将来の短縮要素と重なった場合も、**最も短いCT** を採用する
+- 実装では `min(通常CT, 各短縮CT)` の形で一箇所に寄せて判定する
 
 ## 8. webhook 処理方針
 1. `Stripe-Signature` を検証
@@ -133,9 +151,10 @@
 4. `payment_orders` を `stripe_checkout_session_id` で特定
 5. すでに `stripe_event_id` が同じ、または `status` が完了系なら冪等 skip
 6. 商品ごとの付与ロジックへ分岐
-   - `support_pack_001`: DECOR + トロフィー付与
-   - `explore_boost_14d`: 出撃CT短縮期限を付与
-7. 成功/重複/失敗を監査へ残す
+   - `support_pack_founder`: `founder_badge_silver` + `supporter_founder`
+   - `support_pack_lab`: `lab_badge_gold` + `supporter_lab`
+   - `explore_boost_14d`: `explore_boost_until` を 14 日延長
+7. 成功 / 重複 / 失敗を監査へ残す
 
 ## 9. 監査イベント
 - `audit.payment.checkout.create`
@@ -167,7 +186,7 @@ payload 推奨キー:
 - `duplicate_reason`
 
 ## 10. 購入から付与までの流れ
-1. ユーザーが `/shop` または `/support` から購入を開始
+1. ユーザーが `/support` または `/shop` から購入を開始
 2. サーバーが Stripe Checkout Session を新規作成
 3. Stripe hosted checkout で決済
 4. `success_url` には「支払い確認中」だけを表示
@@ -181,8 +200,10 @@ payload 推奨キー:
 ```bash
 export STRIPE_SECRET_KEY=sk_test_xxx
 export STRIPE_PUBLISHABLE_KEY=pk_test_xxx
-export STRIPE_PRICE_ID_SUPPORT_PACK=price_xxx
-export STRIPE_PRICE_ID_EXPLORE_BOOST=price_1TF2saJwvZBQaY3FEzCD3h0S
+export STRIPE_WEBHOOK_SECRET=whsec_xxx
+export STRIPE_PRICE_ID_SUPPORT_FOUNDER=price_xxx
+export STRIPE_PRICE_ID_SUPPORT_LAB=price_xxx
+export STRIPE_PRICE_ID_EXPLORE_BOOST_14D=price_xxx
 export PUBLIC_GAME_URL=http://127.0.0.1:5050
 python3 app.py
 ```
@@ -196,27 +217,30 @@ stripe listen --forward-to http://127.0.0.1:5050/stripe/webhook
 Stripe CLI が表示した `Signing secret` を `STRIPE_WEBHOOK_SECRET` に設定する。
 
 ### 11.3 動作確認
-1. `/shop` を開く
-2. 出撃ブースト購入を押す
-3. Stripe Checkout でテスト決済
-4. `/payment/success` は「確認中」表示になる
-5. webhook 後に `payment_orders.status=granted` と `users.explore_boost_until` を確認
-6. `/support` でも既存支援パックが同じ webhook 基盤で動くことを確認する
-7. 支援完了後、ヘッダーや `/ranking` などで `創設支援章` が見えることを確認する
+1. `/support` を開く
+2. `支援する（100円）` と `しっかり支援する（300円）` が出ることを確認
+3. `/shop` を開き、`購入する（500円）` が出ることを確認
+4. Stripe Checkout でテスト決済
+5. `/payment/success` は「確認中」表示になる
+6. webhook 後に `payment_orders.status=granted` を確認
+7. founder 購入では `founder_badge_silver` と `supporter_founder` を確認
+8. lab 購入では `lab_badge_gold` と `supporter_lab` を確認
+9. ブースター購入では `users.explore_boost_until` が延長されることを確認
+10. ヘッダーや `/ranking` などで支援章バッジが見えることを確認
 
-## 12. サンドボックス設定
-1. Stripe ダッシュボードでサンドボックス用 Price を確認
-2. `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` をテスト用で設定
-3. `STRIPE_PRICE_ID_SUPPORT_PACK` / `STRIPE_PRICE_ID_EXPLORE_BOOST` を設定
-4. `PUBLIC_GAME_URL` をローカル確認時は `http://127.0.0.1:5050`、公開確認時は該当URLに設定
+## 12. 本番設定
+1. Stripe ダッシュボードで本番用 Price を確認
+2. `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` を本番値で設定
+3. `STRIPE_PRICE_ID_SUPPORT_FOUNDER` / `STRIPE_PRICE_ID_SUPPORT_LAB` / `STRIPE_PRICE_ID_EXPLORE_BOOST_14D` を設定
+4. `PUBLIC_GAME_URL` を `https://robolabo.site` に設定
 5. webhook endpoint を `/stripe/webhook` に向ける
-6. `/shop` と `/support` と `/admin/payments` を確認
+6. `/support` `/shop` `/admin/payments` を確認
 
 ## 13. 本番移行時の注意
-- 今回の出撃ブーストは**サンドボックス前提で導線を追加**している
-- 本番公開前に、Price / webhook secret / 商品文言 / 管理画面確認を再点検する
 - `success_url` では付与されないため、Webhook 到達確認を必ず行う
-- 1回限定商品のため、手動補填時も `explore_boost_until` と `payment_orders` の両方を確認する
+- 支援系は 1 回限りなので、手動補填時は `payment_orders` と `user_trophies` / `user_decor_inventory` の両方を確認する
+- ブースターは利便性課金であり、戦力差を売らない方針を崩さない
+- 旧 `support_pack_001` の購入履歴が残っている環境では backfill 後の founder 特典反映も確認する
 
 ## 14. セキュリティ注意
 - シークレットは環境変数のみ

@@ -57,7 +57,7 @@ class ShopExploreBoostPaymentsTests(unittest.TestCase):
         self.old_secret_key = game_app.STRIPE_SECRET_KEY
         self.old_publishable_key = game_app.STRIPE_PUBLISHABLE_KEY
         self.old_webhook_secret = game_app.STRIPE_WEBHOOK_SECRET
-        self.old_boost_price_id = game_app.STRIPE_PRICE_ID_EXPLORE_BOOST
+        self.old_boost_price_id = game_app.STRIPE_PRICE_ID_EXPLORE_BOOST_14D
         self.old_public_game_url = game_app.PUBLIC_GAME_URL
 
         game_app.DB_PATH = os.path.join(self.tmpdir.name, "test_game.db")
@@ -68,7 +68,7 @@ class ShopExploreBoostPaymentsTests(unittest.TestCase):
         game_app.STRIPE_SECRET_KEY = "sk_test_boost"
         game_app.STRIPE_PUBLISHABLE_KEY = "pk_test_boost"
         game_app.STRIPE_WEBHOOK_SECRET = "whsec_test"
-        game_app.STRIPE_PRICE_ID_EXPLORE_BOOST = "price_test_explore_boost"
+        game_app.STRIPE_PRICE_ID_EXPLORE_BOOST_14D = "price_test_explore_boost"
         game_app.PUBLIC_GAME_URL = "https://robolabo.site"
 
         with game_app.app.app_context():
@@ -96,7 +96,7 @@ class ShopExploreBoostPaymentsTests(unittest.TestCase):
         game_app.STRIPE_SECRET_KEY = self.old_secret_key
         game_app.STRIPE_PUBLISHABLE_KEY = self.old_publishable_key
         game_app.STRIPE_WEBHOOK_SECRET = self.old_webhook_secret
-        game_app.STRIPE_PRICE_ID_EXPLORE_BOOST = self.old_boost_price_id
+        game_app.STRIPE_PRICE_ID_EXPLORE_BOOST_14D = self.old_boost_price_id
         game_app.PUBLIC_GAME_URL = self.old_public_game_url
         self.tmpdir.cleanup()
 

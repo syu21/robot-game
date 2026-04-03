@@ -2,7 +2,8 @@
 {% block content %}
 <div class="card">
   <h1>ショップ</h1>
-  <p>サンドボックス決済の確認用です。戦力差はつきません。</p>
+  <p>出撃ブースターを購入できます。</p>
+  <p>14日間 出撃しやすくなります。</p>
 </div>
 
 <div class="card">
@@ -13,9 +14,11 @@
     <div>
       <p>{{ product['description'] }}</p>
       <ul>
+        <li>価格: {{ product['price_label'] }}</li>
         <li>効果: {{ product['grant_name'] }}</li>
         <li>期間: {{ product['boost_days'] }}日</li>
-        <li>CT: 通常40秒 → ブースト中20秒</li>
+        <li>探索CT 40秒 → 20秒</li>
+        <li>周回効率アップ</li>
       </ul>
       {% if session.get('user_id') %}
         {% if boost_status and boost_status['active'] %}
@@ -29,8 +32,8 @@
         {% elif purchase_locked %}
           <p>現在は購入できません。状態が落ち着いてからもう一度確認してください。</p>
         {% else %}
-          <form method="post" action="{{ url_for('shop_explore_boost_checkout') }}">
-            <button type="submit">Stripeで購入する</button>
+          <form method="post" action="{{ url_for(product['checkout_endpoint']) }}">
+            <button type="submit">{{ product.get('button_label', '購入する') }}</button>
           </form>
         {% endif %}
         {% if recent_order %}
@@ -45,7 +48,7 @@
   </div>
   {% else %}
   <h2>出撃ブースト</h2>
-  <p>現在はサンドボックス設定待ちです。`STRIPE_PRICE_ID_EXPLORE_BOOST` を設定すると購入導線が有効になります。</p>
+  <p>現在はサンドボックス設定待ちです。`STRIPE_PRICE_ID_EXPLORE_BOOST_14D` を設定すると購入導線が有効になります。</p>
   {% endif %}
 </div>
 

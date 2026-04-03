@@ -218,8 +218,17 @@ _google_oauth_discovery_cache = {"loaded_at": 0.0, "data": None}
 STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
 STRIPE_PUBLISHABLE_KEY = (os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()
 STRIPE_WEBHOOK_SECRET = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
-STRIPE_PRICE_ID_SUPPORT_PACK = (os.getenv("STRIPE_PRICE_ID_SUPPORT_PACK") or "").strip()
-STRIPE_PRICE_ID_EXPLORE_BOOST = (os.getenv("STRIPE_PRICE_ID_EXPLORE_BOOST") or "").strip()
+STRIPE_PRICE_ID_SUPPORT_FOUNDER = (
+    os.getenv("STRIPE_PRICE_ID_SUPPORT_FOUNDER")
+    or os.getenv("STRIPE_PRICE_ID_SUPPORT_PACK")
+    or ""
+).strip()
+STRIPE_PRICE_ID_SUPPORT_LAB = (os.getenv("STRIPE_PRICE_ID_SUPPORT_LAB") or "").strip()
+STRIPE_PRICE_ID_EXPLORE_BOOST_14D = (
+    os.getenv("STRIPE_PRICE_ID_EXPLORE_BOOST_14D")
+    or os.getenv("STRIPE_PRICE_ID_EXPLORE_BOOST")
+    or ""
+).strip()
 PORTAL_ONLINE_WINDOW_MINUTES = int(os.getenv("PORTAL_ONLINE_WINDOW_MINUTES", "5"))
 PORTAL_ONLINE_TIMEOUT_SECONDS = float(os.getenv("PORTAL_ONLINE_TIMEOUT_SECONDS", "5"))
 LAST_SEEN_TOUCH_INTERVAL_SECONDS = int(os.getenv("LAST_SEEN_TOUCH_INTERVAL_SECONDS", "60"))
@@ -235,9 +244,14 @@ COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     5,
     int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
 )
-SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
-SUPPORT_PACK_DECOR_KEY = "shien_trophy"
+SUPPORT_PACK_PRODUCT_KEY = "support_pack_founder"
+SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
+LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
+SUPPORT_PACK_DECOR_KEY = "founder_badge_silver"
+SUPPORT_PACK_LAB_DECOR_KEY = "lab_badge_gold"
+LEGACY_SUPPORT_PACK_DECOR_KEY = "shien_trophy"
 SUPPORTER_FOUNDER_TROPHY_KEY = "supporter_founder"
+SUPPORTER_LAB_TROPHY_KEY = "supporter_lab"
 EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
 EXPLORE_BOOST_DURATION_DAYS = 14
 EXPLORE_BOOST_CT_SECONDS = 20
@@ -252,6 +266,12 @@ USER_TROPHY_DEFS = {
         "short_label": "🏆",
         "description": "開発初期を支えた証",
         "sort_order": 10,
+    },
+    SUPPORTER_LAB_TROPHY_KEY: {
+        "label": "ラボ支援章",
+        "short_label": "🏆+",
+        "description": "ラボ維持と開発を支えた証",
+        "sort_order": 5,
     },
 }
 BUILD_ARCHETYPE_PRIORITY = ("BERSERK", "BURST", "STABLE", "NONE")
@@ -546,39 +566,102 @@ def _payment_catalog():
     return {
         SUPPORT_PACK_PRODUCT_KEY: {
             "product_key": SUPPORT_PACK_PRODUCT_KEY,
-            "display_name": "ロボらぼ支援パック",
-            "description": "100円の開発支援です。戦力差はつきません。",
-            "price_id": STRIPE_PRICE_ID_SUPPORT_PACK,
+            "display_name": "創設支援パック",
+            "description": "ロボらぼの開発を応援できます。戦力差はつきません。",
+            "price_id": STRIPE_PRICE_ID_SUPPORT_FOUNDER,
             "grant_type": "decor",
             "grant_key": SUPPORT_PACK_DECOR_KEY,
+            "legacy_grant_keys": (LEGACY_SUPPORT_PACK_DECOR_KEY,),
             "grant_name": USER_TROPHY_DEFS[SUPPORTER_FOUNDER_TROPHY_KEY]["label"],
             "trophy_key": SUPPORTER_FOUNDER_TROPHY_KEY,
             "trophy_name": USER_TROPHY_DEFS[SUPPORTER_FOUNDER_TROPHY_KEY]["label"],
+            "legacy_product_keys": (LEGACY_SUPPORT_PACK_PRODUCT_KEY,),
             "price_yen": 100,
+            "price_label": "100円",
             "button_label": "支援する（100円）",
-            "image_path": "decor/shien_trophy.png",
+            "benefit_lines": (
+                "戦力差はつきません",
+                "名前横バッジ / 限定DECOR付き",
+            ),
+            "image_path": "decor/founder_badge_silver.png",
+            "checkout_endpoint": "support_founder_checkout",
+            "return_endpoint": "support",
+        },
+        SUPPORT_PACK_LAB_PRODUCT_KEY: {
+            "product_key": SUPPORT_PACK_LAB_PRODUCT_KEY,
+            "display_name": "ラボ維持支援パック",
+            "description": "ロボらぼのサーバー維持と開発を応援できます。戦力差はつきません。",
+            "price_id": STRIPE_PRICE_ID_SUPPORT_LAB,
+            "grant_type": "decor",
+            "grant_key": SUPPORT_PACK_LAB_DECOR_KEY,
+            "grant_name": USER_TROPHY_DEFS[SUPPORTER_LAB_TROPHY_KEY]["label"],
+            "trophy_key": SUPPORTER_LAB_TROPHY_KEY,
+            "trophy_name": USER_TROPHY_DEFS[SUPPORTER_LAB_TROPHY_KEY]["label"],
+            "price_yen": 300,
+            "price_label": "300円",
+            "button_label": "しっかり支援する（300円）",
+            "benefit_lines": (
+                "戦力差はつきません",
+                "名前横バッジ / 限定DECOR付き",
+            ),
+            "image_path": "decor/lab_badge_gold.png",
+            "checkout_endpoint": "support_lab_checkout",
             "return_endpoint": "support",
         },
         EXPLORE_BOOST_PRODUCT_KEY: {
             "product_key": EXPLORE_BOOST_PRODUCT_KEY,
             "display_name": "出撃ブースト",
-            "description": "2週間、出撃待機時間を短縮します。戦力差はつきません。",
-            "price_id": STRIPE_PRICE_ID_EXPLORE_BOOST,
+            "description": "14日間 出撃しやすくなります。戦力差ではなく、周回の快適さを高めます。",
+            "price_id": STRIPE_PRICE_ID_EXPLORE_BOOST_14D,
             "grant_type": "explore_boost",
             "boost_days": EXPLORE_BOOST_DURATION_DAYS,
             "grant_name": "出撃CT短縮（40秒 → 20秒）",
+            "benefit_lines": (
+                "探索CT 40秒 → 20秒",
+                "周回効率アップ",
+            ),
+            "price_yen": 500,
+            "price_label": "500円",
+            "button_label": "購入する（500円）",
             "image_path": "images/ui/robonavi.png",
+            "checkout_endpoint": "shop_explore_boost_checkout",
             "return_endpoint": "shop",
         },
     }
 
 
 def _payment_product(product_key):
-    return _payment_catalog().get(str(product_key or "").strip())
+    key = str(product_key or "").strip()
+    if not key:
+        return None
+    catalog = _payment_catalog()
+    if key in catalog:
+        return catalog[key]
+    if key == LEGACY_SUPPORT_PACK_PRODUCT_KEY:
+        return catalog.get(SUPPORT_PACK_PRODUCT_KEY)
+    return None
+
+
+def _payment_product_keys(product_or_key):
+    product = product_or_key if isinstance(product_or_key, dict) else _payment_product(product_or_key)
+    if not product:
+        key = str(product_or_key or "").strip()
+        return tuple([key] if key else [])
+    keys = [str(product.get("product_key") or "").strip()]
+    keys.extend(str(key or "").strip() for key in product.get("legacy_product_keys") or ())
+    seen = []
+    for key in keys:
+        if key and key not in seen:
+            seen.append(key)
+    return tuple(seen)
 
 
 def _support_payment_catalog():
-    return _payment_catalog()
+    catalog = _payment_catalog()
+    return {
+        SUPPORT_PACK_PRODUCT_KEY: catalog[SUPPORT_PACK_PRODUCT_KEY],
+        SUPPORT_PACK_LAB_PRODUCT_KEY: catalog[SUPPORT_PACK_LAB_PRODUCT_KEY],
+    }
 
 
 def _support_payment_product(product_key=SUPPORT_PACK_PRODUCT_KEY):
@@ -5690,7 +5773,9 @@ def _seed_default_decor_assets(db):
         ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
         ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
         ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
-        (SUPPORT_PACK_DECOR_KEY, "支援トロフィー", "decor/shien_trophy.png"),
+        (SUPPORT_PACK_DECOR_KEY, "創設支援トロフィー", "decor/founder_badge_silver.png"),
+        (SUPPORT_PACK_LAB_DECOR_KEY, "ラボ維持支援トロフィー", "decor/lab_badge_gold.png"),
+        (LEGACY_SUPPORT_PACK_DECOR_KEY, "旧支援トロフィー", "decor/founder_badge_silver.png"),
     ]
     for key, name_ja, image_path in seeds:
         db.execute(
@@ -7298,6 +7383,28 @@ def ensure_schema(db):
     db.execute("UPDATE payment_orders SET boost_days = 0 WHERE boost_days IS NULL")
     db.execute("UPDATE payment_orders SET created_at = 0 WHERE created_at IS NULL")
     db.execute("UPDATE payment_orders SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    founder_product_keys = _payment_product_keys(SUPPORT_PACK_PRODUCT_KEY)
+    founder_placeholders = ",".join(["?"] * len(founder_product_keys))
+    db.execute(
+        f"""
+        INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
+        SELECT
+            po.user_id,
+            ?,
+            COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+        FROM payment_orders po
+        WHERE po.product_key IN ({founder_placeholders})
+          AND po.user_id IS NOT NULL
+          AND po.status IN (?, ?)
+        """,
+        (
+            SUPPORTER_FOUNDER_TROPHY_KEY,
+            int(time.time()),
+            *founder_product_keys,
+            PAYMENT_STATUS_COMPLETED,
+            PAYMENT_STATUS_GRANTED,
+        ),
+    )
     db.execute(
         """
         INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
@@ -7311,9 +7418,9 @@ def ensure_schema(db):
           AND po.status IN (?, ?)
         """,
         (
-            SUPPORTER_FOUNDER_TROPHY_KEY,
+            SUPPORTER_LAB_TROPHY_KEY,
             int(time.time()),
-            SUPPORT_PACK_PRODUCT_KEY,
+            SUPPORT_PACK_LAB_PRODUCT_KEY,
             PAYMENT_STATUS_COMPLETED,
             PAYMENT_STATUS_GRANTED,
         ),
@@ -7614,8 +7721,32 @@ def ensure_schema(db):
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
-    support_decor = _get_decor_asset_by_key(db, SUPPORT_PACK_DECOR_KEY)
-    if support_decor:
+    founder_decor = _get_decor_asset_by_key(db, SUPPORT_PACK_DECOR_KEY)
+    if founder_decor:
+        founder_product_keys = _payment_product_keys(SUPPORT_PACK_PRODUCT_KEY)
+        founder_placeholders = ",".join(["?"] * len(founder_product_keys))
+        db.execute(
+            f"""
+            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+            SELECT
+                po.user_id,
+                ?,
+                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+            FROM payment_orders po
+            WHERE po.product_key IN ({founder_placeholders})
+              AND po.user_id IS NOT NULL
+              AND po.status IN (?, ?)
+            """,
+            (
+                int(founder_decor["id"]),
+                int(time.time()),
+                *founder_product_keys,
+                PAYMENT_STATUS_COMPLETED,
+                PAYMENT_STATUS_GRANTED,
+            ),
+        )
+    lab_decor = _get_decor_asset_by_key(db, SUPPORT_PACK_LAB_DECOR_KEY)
+    if lab_decor:
         db.execute(
             """
             INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
@@ -7629,9 +7760,9 @@ def ensure_schema(db):
               AND po.status IN (?, ?)
             """,
             (
-                int(support_decor["id"]),
+                int(lab_decor["id"]),
                 int(time.time()),
-                SUPPORT_PACK_PRODUCT_KEY,
+                SUPPORT_PACK_LAB_PRODUCT_KEY,
                 PAYMENT_STATUS_COMPLETED,
                 PAYMENT_STATUS_GRANTED,
             ),
@@ -11548,9 +11679,21 @@ def _user_visuals(db, user_id, cache):
         trophy_keys = _get_user_trophy_keys(db, int(user_id))
         if (
             SUPPORTER_FOUNDER_TROPHY_KEY not in trophy_keys
-            and _user_has_decor_key(db, int(user_id), SUPPORT_PACK_DECOR_KEY)
+            and _user_has_any_decor_key(
+                db,
+                int(user_id),
+                (
+                    SUPPORT_PACK_DECOR_KEY,
+                    LEGACY_SUPPORT_PACK_DECOR_KEY,
+                ),
+            )
         ):
             trophy_keys = _sorted_trophy_keys([*trophy_keys, SUPPORTER_FOUNDER_TROPHY_KEY])
+        if (
+            SUPPORTER_LAB_TROPHY_KEY not in trophy_keys
+            and _user_has_decor_key(db, int(user_id), SUPPORT_PACK_LAB_DECOR_KEY)
+        ):
+            trophy_keys = _sorted_trophy_keys([*trophy_keys, SUPPORTER_LAB_TROPHY_KEY])
         cache[user_id] = {
             "avatar": profile_avatar["avatar"],
             "avatar_url": profile_avatar["avatar_url"],
@@ -12138,6 +12281,14 @@ def _user_has_decor_key(db, user_id, decor_key):
     return bool(row)
 
 
+def _user_has_any_decor_key(db, user_id, decor_keys):
+    for decor_key in decor_keys or ():
+        key = str(decor_key or "").strip()
+        if key and _user_has_decor_key(db, user_id, key):
+            return True
+    return False
+
+
 def _trophy_definition(trophy_key):
     key = str(trophy_key or "").strip()
     return USER_TROPHY_DEFS.get(key)
@@ -12423,25 +12574,17 @@ def _grant_explore_boost_reward(db, user_id, product):
             "starts_at": None,
             "ends_at": None,
         }
-    existing_until = _explore_boost_until_ts(user_row)
-    if existing_until > 0:
-        return {
-            "ok": True,
-            "granted": False,
-            "duplicate_reason": "already_purchased_boost",
-            "boost_days": boost_days,
-            "starts_at": None,
-            "ends_at": existing_until,
-        }
     starts_at = _now_ts()
-    ends_at = starts_at + (boost_days * 86400)
+    existing_until = _explore_boost_until_ts(user_row)
+    effective_start = max(starts_at, existing_until)
+    ends_at = effective_start + (boost_days * 86400)
     db.execute("UPDATE users SET explore_boost_until = ? WHERE id = ?", (ends_at, int(user_id)))
     return {
         "ok": True,
         "granted": True,
         "duplicate_reason": None,
         "boost_days": boost_days,
-        "starts_at": starts_at,
+        "starts_at": effective_start,
         "ends_at": ends_at,
     }
 
@@ -12492,15 +12635,19 @@ def _payment_order_for_session(db, stripe_checkout_session_id):
 
 
 def _latest_payment_order_for_user_product(db, user_id, product_key):
+    keys = _payment_product_keys(product_key)
+    if not keys:
+        return None
+    placeholders = ",".join(["?"] * len(keys))
     return db.execute(
-        """
+        f"""
         SELECT *
         FROM payment_orders
-        WHERE user_id = ? AND product_key = ?
+        WHERE user_id = ? AND product_key IN ({placeholders})
         ORDER BY id DESC
         LIMIT 1
         """,
-        (int(user_id), str(product_key or "")),
+        [int(user_id), *keys],
     ).fetchone()
 
 
@@ -15691,6 +15838,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.25",
+            "date": "2026/04/03",
+            "title": "課金導線をB案の3商品構成へ整理",
+            "notes": [
+                "`/support` は `創設支援パック(100円)` と `ラボ維持支援パック(300円)` の2商品に整理し、どちらも戦力差なしの `名前横バッジ / 限定DECOR` 特典へ統一",
+                "`/shop` には `出撃ブースター(500円)` のみを置き、`探索CT 40秒 → 20秒` の14日ブーストを分かりやすく購入できるよう調整",
+                "Stripe price id は `STRIPE_PRICE_ID_SUPPORT_FOUNDER` / `STRIPE_PRICE_ID_SUPPORT_LAB` / `STRIPE_PRICE_ID_EXPLORE_BOOST_14D` の3本構成へ更新し、webhook の付与処理と backfill も新商品キーへ対応",
+            ],
+        },
+        {
             "version": "0.1.24",
             "date": "2026/04/03",
             "title": "100円支援パックに切り替え",
@@ -15997,53 +16154,79 @@ def shop():
     )
 
 
+def _support_reward_owned_for_product(db, user_id, product):
+    if not user_id or not product:
+        return False
+    decor_keys = [str(product.get("grant_key") or "").strip()]
+    decor_keys.extend(str(key or "").strip() for key in (product.get("legacy_grant_keys") or ()))
+    return bool(
+        _user_has_any_decor_key(db, int(user_id), decor_keys)
+        or _user_has_trophy_key(db, int(user_id), product.get("trophy_key"))
+    )
+
+
+def _build_support_product_state(db, user_id, product):
+    recent_order = _latest_payment_order_for_user_product(db, int(user_id), product["product_key"])
+    reward_owned = _support_reward_owned_for_product(db, int(user_id), product)
+    pending_order = bool(
+        recent_order and str(recent_order["status"] or "") in {PAYMENT_STATUS_CREATED, PAYMENT_STATUS_COMPLETED}
+    )
+    return {
+        "product": product,
+        "decor_asset": _get_decor_asset_by_key(db, product.get("grant_key")),
+        "checkout_ready": _payment_checkout_ready(product["product_key"]),
+        "reward_owned": reward_owned,
+        "recent_order": recent_order,
+        "pending_order": pending_order,
+        "purchase_locked": bool(reward_owned or pending_order),
+    }
+
+
 @app.route("/support")
 def support():
     db = get_db()
-    product = _payment_product(SUPPORT_PACK_PRODUCT_KEY)
+    support_products = [
+        _payment_product(SUPPORT_PACK_PRODUCT_KEY),
+        _payment_product(SUPPORT_PACK_LAB_PRODUCT_KEY),
+    ]
+    support_products = [product for product in support_products if product]
     user = None
-    reward_owned = False
-    recent_order = None
-    decor_asset = _get_decor_asset_by_key(db, product.get("grant_key")) if product else None
+    product_states = []
     if session.get("user_id"):
         user = db.execute(
             "SELECT id, username FROM users WHERE id = ?",
             (int(session["user_id"]),),
         ).fetchone()
-        if user and product:
-            reward_owned = bool(
-                _user_has_decor_key(db, int(user["id"]), product["grant_key"])
-                or _user_has_trophy_key(db, int(user["id"]), product.get("trophy_key"))
-            )
-            recent_order = _latest_payment_order_for_user_product(db, int(user["id"]), product["product_key"])
+        if user:
+            product_states = [
+                _build_support_product_state(db, int(user["id"]), product)
+                for product in support_products
+            ]
     return render_template(
         "support.html",
         title="支援",
-        product=product,
-        checkout_ready=_payment_checkout_ready(SUPPORT_PACK_PRODUCT_KEY),
-        reward_owned=reward_owned,
-        recent_order=recent_order,
+        support_products=support_products,
+        product_states=product_states,
         payment_status_labels=_payment_status_labels_map(),
-        decor_asset=decor_asset,
     )
 
 
-@app.route("/support/checkout", methods=["POST"])
-@login_required
-def support_checkout():
+def _start_support_checkout(product_key):
     db = get_db()
     user_id = int(session["user_id"])
-    product = _payment_product(SUPPORT_PACK_PRODUCT_KEY)
+    product = _payment_product(product_key)
     if not product or not product.get("price_id"):
         flash("支援導線はまだ準備中です。", "error")
         return redirect(url_for("support"))
-    if not _payment_checkout_ready(SUPPORT_PACK_PRODUCT_KEY):
+    if not _payment_checkout_ready(product["product_key"]):
         flash("決済機能の準備が完了していません。", "error")
         return redirect(url_for("support"))
-    if _user_has_decor_key(db, user_id, product["grant_key"]) or _user_has_trophy_key(
-        db, user_id, product.get("trophy_key")
-    ):
+    if _support_reward_owned_for_product(db, user_id, product):
         flash("この支援特典はすでに受け取り済みです。", "notice")
+        return redirect(url_for("support"))
+    recent_order = _latest_payment_order_for_user_product(db, user_id, product["product_key"])
+    if recent_order and str(recent_order["status"] or "") in {PAYMENT_STATUS_CREATED, PAYMENT_STATUS_COMPLETED}:
+        flash("前回の支払いを確認中です。少し待ってから状態を確認してください。", "notice")
         return redirect(url_for("support"))
     try:
         checkout_result = _create_checkout_session_for_product(db, user_id=user_id, product=product)
@@ -16057,6 +16240,24 @@ def support_checkout():
         or url_for("payment_success", session_id=checkout_result["session_id"], product_key=product["product_key"]),
         code=303,
     )
+
+
+@app.route("/support/checkout", methods=["POST"])
+@login_required
+def support_checkout():
+    return _start_support_checkout(SUPPORT_PACK_PRODUCT_KEY)
+
+
+@app.route("/support/founder/checkout", methods=["POST"])
+@login_required
+def support_founder_checkout():
+    return _start_support_checkout(SUPPORT_PACK_PRODUCT_KEY)
+
+
+@app.route("/support/lab/checkout", methods=["POST"])
+@login_required
+def support_lab_checkout():
+    return _start_support_checkout(SUPPORT_PACK_LAB_PRODUCT_KEY)
 
 
 @app.route("/shop/explore-boost/checkout", methods=["POST"])
@@ -16350,7 +16551,7 @@ def stripe_webhook():
         )
         order = _payment_order_for_session(db, stripe_checkout_session_id)
     else:
-        if int(order["user_id"]) != user_id or str(order["product_key"]) != product["product_key"]:
+        if int(order["user_id"]) != user_id or str(order["product_key"]) not in _payment_product_keys(product):
             _update_payment_order(
                 db,
                 int(order["id"]),

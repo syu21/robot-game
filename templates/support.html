@@ -1,40 +1,72 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card">
-  <h1>ロボらぼを応援する</h1>
-  <p>β版を一緒に育ててくれる方向けの支援です。戦力差はつきません。</p>
-{% if product %}
-  <p>今回の支援パックでは、ゲーム内で見える支援の証を受け取れます。</p>
-  <ul>
-    <li>商品: {{ product['display_name'] }}</li>
-    <li>特典: {{ product.get('trophy_name') or product['grant_name'] }}</li>
-  </ul>
-{% else %}
-  <p>支援パックはまだ準備中です。</p>
-{% endif %}
+  <h1>支援パック</h1>
+  <p>ロボらぼの開発を応援できます。</p>
+  <p>戦力差はつきません。</p>
+  <p>名前横バッジ / 限定DECOR付きです。</p>
 </div>
 
-{% if session.get('user_id') %}
-<div class="card">
-  <h2>支援パック</h2>
-  {% if reward_owned %}
-    <p>この特典は受け取り済みです。引き続き応援ありがとうございます。</p>
-  {% elif not checkout_ready %}
-    <p>現在、決済導線の準備中です。設定完了後に購入できます。</p>
+<div class="support-product-grid">
+  {% if session.get('user_id') %}
+    {% for state in product_states %}
+      {% set product = state['product'] %}
+      <div class="card support-product-card">
+        <h2>{{ product['display_name'] }}</h2>
+        <div class="shop-product">
+          <img class="shop-product-image" src="{{ url_for('static', filename=product['image_path']) }}" alt="{{ product['display_name'] }}" loading="lazy" />
+          <div>
+            <p>{{ product['description'] }}</p>
+            <ul>
+              <li>価格: {{ product['price_label'] }}</li>
+              <li>特典: {{ product.get('trophy_name') }}</li>
+              {% for line in product.get('benefit_lines') or [] %}
+              <li>{{ line }}</li>
+              {% endfor %}
+            </ul>
+            {% if state['reward_owned'] %}
+              <p>この特典は受け取り済みです。応援ありがとうございます。</p>
+            {% elif state['pending_order'] %}
+              <p>支払い確認中です。Webhook 反映後に特典が見えるようになります。</p>
+            {% elif not state['checkout_ready'] %}
+              <p>現在、決済導線の準備中です。price id 設定後に購入できます。</p>
+            {% else %}
+              <form method="post" action="{{ url_for(product['checkout_endpoint']) }}">
+                <button type="submit">{{ product['button_label'] }}</button>
+              </form>
+            {% endif %}
+
+            {% if state['recent_order'] %}
+              <p>最近の状態: {{ payment_status_labels.get(state['recent_order']['status'], state['recent_order']['status']) }}</p>
+              <p>注文: {{ state['recent_order']['stripe_checkout_session_id'] or '-' }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
   {% else %}
-    <p>{{ product['description'] }}</p>
-    <p>特典: {{ product.get('trophy_name') or product['grant_name'] }}</p>
-    <form method="post" action="{{ url_for('support_checkout') }}">
-      <button type="submit">{{ product.get('button_label', 'Stripeで支援する') }}</button>
-    </form>
-  {% endif %}
-
-  {% if recent_order %}
-    <p>最近の状態: {{ payment_status_labels.get(recent_order['status'], recent_order['status']) }}</p>
-    <p>注文: {{ recent_order['stripe_checkout_session_id'] or '-' }}</p>
+    {% for product in support_products %}
+      <div class="card support-product-card">
+        <h2>{{ product['display_name'] }}</h2>
+        <div class="shop-product">
+          <img class="shop-product-image" src="{{ url_for('static', filename=product['image_path']) }}" alt="{{ product['display_name'] }}" loading="lazy" />
+          <div>
+            <p>{{ product['description'] }}</p>
+            <ul>
+              <li>価格: {{ product['price_label'] }}</li>
+              <li>特典: {{ product.get('trophy_name') }}</li>
+              {% for line in product.get('benefit_lines') or [] %}
+              <li>{{ line }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
   {% endif %}
 </div>
-{% else %}
+
+{% if not session.get('user_id') %}
 <div class="card">
   <p>ログインすると支援パックの購入に進めます。</p>
   <p class="link"><a href="{{ url_for('login', next='/support') }}">ログインして支援する</a></p>

@@ -13,6 +13,14 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5")
+SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
+SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
+LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
+SUPPORTER_FOUNDER_TROPHY_KEY = "supporter_founder"
+SUPPORTER_LAB_TROPHY_KEY = "supporter_lab"
+SUPPORT_PACK_FOUNDER_DECOR_KEY = "founder_badge_silver"
+SUPPORT_PACK_LAB_DECOR_KEY = "lab_badge_gold"
+LEGACY_SUPPORT_PACK_DECOR_KEY = "shien_trophy"
 
 robots_seed = [
     ("Head:A", "RightArm:A", "LeftArm:A", "Legs:A", "ヘラクス", "SR", "バランス", "蒼い炎をまとった強化型。", 4, 3, 20),
@@ -1026,14 +1034,37 @@ def main():
         INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
         SELECT
             po.user_id,
-            'supporter_founder',
+            ?,
             COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
         FROM payment_orders po
-        WHERE po.product_key = 'support_pack_001'
+        WHERE po.product_key IN (?, ?)
           AND po.user_id IS NOT NULL
           AND po.status IN ('completed', 'granted')
         """,
-        (int(time.time()),),
+        (
+            SUPPORTER_FOUNDER_TROPHY_KEY,
+            int(time.time()),
+            LEGACY_SUPPORT_PACK_PRODUCT_KEY,
+            SUPPORT_PACK_FOUNDER_PRODUCT_KEY,
+        ),
+    )
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
+        SELECT
+            po.user_id,
+            ?,
+            COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+        FROM payment_orders po
+        WHERE po.product_key = ?
+          AND po.user_id IS NOT NULL
+          AND po.status IN ('completed', 'granted')
+        """,
+        (
+            SUPPORTER_LAB_TROPHY_KEY,
+            int(time.time()),
+            SUPPORT_PACK_LAB_PRODUCT_KEY,
+        ),
     )
 
     users_cols = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
@@ -1352,7 +1383,9 @@ def main():
         ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
         ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
         ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
-        ("shien_trophy", "支援トロフィー", "decor/shien_trophy.png"),
+        (SUPPORT_PACK_FOUNDER_DECOR_KEY, "創設支援トロフィー", "decor/founder_badge_silver.png"),
+        (SUPPORT_PACK_LAB_DECOR_KEY, "ラボ維持支援トロフィー", "decor/lab_badge_gold.png"),
+        (LEGACY_SUPPORT_PACK_DECOR_KEY, "旧支援トロフィー", "decor/founder_badge_silver.png"),
     ]
     for key, name_ja, image_path in decor_seed:
         cur.execute(
@@ -1367,7 +1400,7 @@ def main():
         )
     support_decor = cur.execute(
         "SELECT id FROM robot_decor_assets WHERE key = ? LIMIT 1",
-        ("shien_trophy",),
+        (SUPPORT_PACK_FOUNDER_DECOR_KEY,),
     ).fetchone()
     if support_decor:
         cur.execute(
@@ -1378,11 +1411,35 @@ def main():
                 ?,
                 COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
             FROM payment_orders po
-            WHERE po.product_key = 'support_pack_001'
+            WHERE po.product_key IN (?, ?)
               AND po.user_id IS NOT NULL
               AND po.status IN ('completed', 'granted')
             """,
-            (int(support_decor[0]), int(time.time())),
+            (
+                int(support_decor[0]),
+                int(time.time()),
+                LEGACY_SUPPORT_PACK_PRODUCT_KEY,
+                SUPPORT_PACK_FOUNDER_PRODUCT_KEY,
+            ),
+        )
+    lab_decor = cur.execute(
+        "SELECT id FROM robot_decor_assets WHERE key = ? LIMIT 1",
+        (SUPPORT_PACK_LAB_DECOR_KEY,),
+    ).fetchone()
+    if lab_decor:
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+            SELECT
+                po.user_id,
+                ?,
+                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+            FROM payment_orders po
+            WHERE po.product_key = ?
+              AND po.user_id IS NOT NULL
+              AND po.status IN ('completed', 'granted')
+            """,
+            (int(lab_decor[0]), int(time.time()), SUPPORT_PACK_LAB_PRODUCT_KEY),
         )
     cur.execute(
         """
