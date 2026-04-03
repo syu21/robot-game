@@ -335,6 +335,35 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         header_html = header_match.group(0)
         self.assertNotIn('href="/comms"', header_html)
 
+    def test_home_header_shows_founder_badge_from_support_decor_fallback(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute("DELETE FROM user_trophies WHERE user_id = ?", (int(self.user_id),))
+            decor = db.execute(
+                "SELECT id FROM robot_decor_assets WHERE key = ?",
+                (game_app.SUPPORT_PACK_DECOR_KEY,),
+            ).fetchone()
+            self.assertIsNotNone(decor)
+            db.execute(
+                """
+                INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+                VALUES (?, ?, ?)
+                """,
+                (int(self.user_id), int(decor["id"]), now),
+            )
+            db.commit()
+
+        client = self._client_with_user(self.user_id, "ops_user")
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
+        self.assertIsNotNone(header_match)
+        header_html = header_match.group(0)
+        self.assertIn("創設", header_html)
+        self.assertIn("user-trophy-badge", header_html)
+
     def test_changelog_shows_latest_2026_04_03_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")

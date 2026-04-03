@@ -11545,6 +11545,11 @@ def _user_visuals(db, user_id, cache):
     else:
         profile_avatar = _user_profile_avatar_visual(db, user)
         trophy_keys = _get_user_trophy_keys(db, int(user_id))
+        if (
+            SUPPORTER_FOUNDER_TROPHY_KEY not in trophy_keys
+            and _user_has_decor_key(db, int(user_id), SUPPORT_PACK_DECOR_KEY)
+        ):
+            trophy_keys = _sorted_trophy_keys([*trophy_keys, SUPPORTER_FOUNDER_TROPHY_KEY])
         cache[user_id] = {
             "avatar": profile_avatar["avatar"],
             "avatar_url": profile_avatar["avatar_url"],
