@@ -662,6 +662,18 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_trophies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            trophy_key TEXT NOT NULL,
+            granted_at INTEGER NOT NULL,
+            UNIQUE(user_id, trophy_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS payment_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -969,6 +981,10 @@ def main():
         if "created_at" in udi_cols:
             cur.execute("UPDATE user_decor_inventory SET acquired_at = created_at WHERE acquired_at IS NULL")
         cur.execute("UPDATE user_decor_inventory SET acquired_at = ? WHERE acquired_at IS NULL", (int(time.time()),))
+    trophy_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_trophies)").fetchall()}
+    if "granted_at" not in trophy_cols and trophy_cols:
+        cur.execute("ALTER TABLE user_trophies ADD COLUMN granted_at INTEGER")
+        cur.execute("UPDATE user_trophies SET granted_at = ? WHERE granted_at IS NULL", (int(time.time()),))
     po_cols = {row[1] for row in cur.execute("PRAGMA table_info(payment_orders)").fetchall()}
     if "user_id" not in po_cols:
         cur.execute("ALTER TABLE payment_orders ADD COLUMN user_id INTEGER")
@@ -1005,6 +1021,20 @@ def main():
     cur.execute("UPDATE payment_orders SET boost_days = 0 WHERE boost_days IS NULL")
     cur.execute("UPDATE payment_orders SET created_at = 0 WHERE created_at IS NULL")
     cur.execute("UPDATE payment_orders SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
+        SELECT
+            po.user_id,
+            'supporter_founder',
+            COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+        FROM payment_orders po
+        WHERE po.product_key = 'support_pack_001'
+          AND po.user_id IS NOT NULL
+          AND po.status IN ('completed', 'granted')
+        """,
+        (int(time.time()),),
+    )
 
     users_cols = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
     if "avatar_path" not in users_cols:
@@ -1233,6 +1263,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_day_key ON daily_metrics(day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_enemies_boss_area_active ON enemies(is_boss, boss_area_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_decor_inventory_user_acquired ON user_decor_inventory(user_id, acquired_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_trophies_user_granted ON user_trophies(user_id, granted_at DESC)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_session_id ON payment_orders(stripe_checkout_session_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_event_id ON payment_orders(stripe_event_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)")
@@ -1321,7 +1352,7 @@ def main():
         ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
         ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
         ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
-        ("supporter_emblem_001", "支援者トロフィー", "decor/aurix_trophy.png"),
+        ("shien_trophy", "支援トロフィー", "decor/shien_trophy.png"),
     ]
     for key, name_ja, image_path in decor_seed:
         cur.execute(
@@ -1333,6 +1364,25 @@ def main():
                 image_path = excluded.image_path
             """,
             (key, name_ja, image_path, int(time.time())),
+        )
+    support_decor = cur.execute(
+        "SELECT id FROM robot_decor_assets WHERE key = ? LIMIT 1",
+        ("shien_trophy",),
+    ).fetchone()
+    if support_decor:
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+            SELECT
+                po.user_id,
+                ?,
+                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+            FROM payment_orders po
+            WHERE po.product_key = 'support_pack_001'
+              AND po.user_id IS NOT NULL
+              AND po.status IN ('completed', 'granted')
+            """,
+            (int(support_decor[0]), int(time.time())),
         )
     cur.execute(
         """

@@ -235,7 +235,8 @@ COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
 )
 SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
-SUPPORT_PACK_DECOR_KEY = "supporter_emblem_001"
+SUPPORT_PACK_DECOR_KEY = "shien_trophy"
+SUPPORTER_FOUNDER_TROPHY_KEY = "supporter_founder"
 EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
 EXPLORE_BOOST_DURATION_DAYS = 14
 EXPLORE_BOOST_CT_SECONDS = 20
@@ -244,6 +245,14 @@ PAYMENT_STATUS_COMPLETED = "completed"
 PAYMENT_STATUS_GRANTED = "granted"
 PAYMENT_STATUS_FAILED = "failed"
 PAYMENT_STATUS_EXPIRED = "expired"
+USER_TROPHY_DEFS = {
+    SUPPORTER_FOUNDER_TROPHY_KEY: {
+        "label": "創設支援章",
+        "short_label": "創設",
+        "description": "開発初期を支えた証",
+        "sort_order": 10,
+    },
+}
 BUILD_ARCHETYPE_PRIORITY = ("BERSERK", "BURST", "STABLE", "NONE")
 BUILD_ARCHETYPE_LABELS = {
     "BERSERK": "背水型",
@@ -537,12 +546,16 @@ def _payment_catalog():
         SUPPORT_PACK_PRODUCT_KEY: {
             "product_key": SUPPORT_PACK_PRODUCT_KEY,
             "display_name": "ロボらぼ支援パック",
-            "description": "開発応援ありがとうございます。戦力差はつきません。",
+            "description": "100円の開発支援です。戦力差はつきません。",
             "price_id": STRIPE_PRICE_ID_SUPPORT_PACK,
             "grant_type": "decor",
             "grant_key": SUPPORT_PACK_DECOR_KEY,
-            "grant_name": "支援者トロフィー",
-            "image_path": "decor/aurix_trophy.png",
+            "grant_name": USER_TROPHY_DEFS[SUPPORTER_FOUNDER_TROPHY_KEY]["label"],
+            "trophy_key": SUPPORTER_FOUNDER_TROPHY_KEY,
+            "trophy_name": USER_TROPHY_DEFS[SUPPORTER_FOUNDER_TROPHY_KEY]["label"],
+            "price_yen": 100,
+            "button_label": "支援する（100円）",
+            "image_path": "decor/shien_trophy.png",
             "return_endpoint": "support",
         },
         EXPLORE_BOOST_PRODUCT_KEY: {
@@ -5676,7 +5689,7 @@ def _seed_default_decor_assets(db):
         ("nyx_array_crest_001", "観測群冠", "decor/nyx_array_crest_001.png"),
         ("ignition_crown_001", "覇走冠", "decor/ignition_crown_001.png"),
         ("omega_frame_halo_001", "終機輪", "decor/omega_frame_halo_001.png"),
-        (SUPPORT_PACK_DECOR_KEY, "支援者トロフィー", "decor/aurix_trophy.png"),
+        (SUPPORT_PACK_DECOR_KEY, "支援トロフィー", "decor/shien_trophy.png"),
     ]
     for key, name_ja, image_path in seeds:
         db.execute(
@@ -6831,6 +6844,18 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_trophies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            trophy_key TEXT NOT NULL,
+            granted_at INTEGER NOT NULL,
+            UNIQUE(user_id, trophy_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS payment_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -7232,6 +7257,10 @@ def ensure_schema(db):
         if "created_at" in udi_cols:
             db.execute("UPDATE user_decor_inventory SET acquired_at = created_at WHERE acquired_at IS NULL")
         db.execute("UPDATE user_decor_inventory SET acquired_at = ? WHERE acquired_at IS NULL", (int(time.time()),))
+    trophy_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_trophies)").fetchall()}
+    if "granted_at" not in trophy_cols and trophy_cols:
+        db.execute("ALTER TABLE user_trophies ADD COLUMN granted_at INTEGER")
+        db.execute("UPDATE user_trophies SET granted_at = ? WHERE granted_at IS NULL", (int(time.time()),))
     po_cols = {row["name"] for row in db.execute("PRAGMA table_info(payment_orders)").fetchall()}
     if "user_id" not in po_cols:
         db.execute("ALTER TABLE payment_orders ADD COLUMN user_id INTEGER")
@@ -7268,6 +7297,26 @@ def ensure_schema(db):
     db.execute("UPDATE payment_orders SET boost_days = 0 WHERE boost_days IS NULL")
     db.execute("UPDATE payment_orders SET created_at = 0 WHERE created_at IS NULL")
     db.execute("UPDATE payment_orders SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
+        SELECT
+            po.user_id,
+            ?,
+            COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+        FROM payment_orders po
+        WHERE po.product_key = ?
+          AND po.user_id IS NOT NULL
+          AND po.status IN (?, ?)
+        """,
+        (
+            SUPPORTER_FOUNDER_TROPHY_KEY,
+            int(time.time()),
+            SUPPORT_PACK_PRODUCT_KEY,
+            PAYMENT_STATUS_COMPLETED,
+            PAYMENT_STATUS_GRANTED,
+        ),
+    )
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS user_area_streaks (
@@ -7556,6 +7605,7 @@ def ensure_schema(db):
     )
     db.execute("CREATE INDEX IF NOT EXISTS idx_enemies_boss_area_active ON enemies(is_boss, boss_area_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_decor_inventory_user_acquired ON user_decor_inventory(user_id, acquired_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_trophies_user_granted ON user_trophies(user_id, granted_at DESC)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_session_id ON payment_orders(stripe_checkout_session_id)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_event_id ON payment_orders(stripe_event_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)")
@@ -7563,6 +7613,28 @@ def ensure_schema(db):
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
+    support_decor = _get_decor_asset_by_key(db, SUPPORT_PACK_DECOR_KEY)
+    if support_decor:
+        db.execute(
+            """
+            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+            SELECT
+                po.user_id,
+                ?,
+                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
+            FROM payment_orders po
+            WHERE po.product_key = ?
+              AND po.user_id IS NOT NULL
+              AND po.status IN (?, ?)
+            """,
+            (
+                int(support_decor["id"]),
+                int(time.time()),
+                SUPPORT_PACK_PRODUCT_KEY,
+                PAYMENT_STATUS_COMPLETED,
+                PAYMENT_STATUS_GRANTED,
+            ),
+        )
     _seed_core_definitions(db)
     _seed_release_flags(db)
     _warn_missing_boss_decor_keys(db)
@@ -11464,12 +11536,15 @@ def _user_visuals(db, user_id, cache):
             "avatar_is_generated": True,
             "badge": DEFAULT_BADGE_REL,
             "display_username": (f"User#{int(user_id)}" if user_id else "SYSTEM"),
+            "trophy_keys": [],
+            "trophy_badges": [],
             "presence_state": presence["state"],
             "presence_label": presence["label"],
             "presence_title": presence["title"],
         }
     else:
         profile_avatar = _user_profile_avatar_visual(db, user)
+        trophy_keys = _get_user_trophy_keys(db, int(user_id))
         cache[user_id] = {
             "avatar": profile_avatar["avatar"],
             "avatar_url": profile_avatar["avatar_url"],
@@ -11477,6 +11552,8 @@ def _user_visuals(db, user_id, cache):
             "avatar_is_generated": bool(profile_avatar["avatar_is_generated"]),
             "badge": _user_badge_rel(db, user_id),
             "display_username": _display_username_for_user_row(db, user) or str(user["username"] or "").strip(),
+            "trophy_keys": trophy_keys,
+            "trophy_badges": _trophy_badges_for_keys(trophy_keys),
             "presence_state": presence["state"],
             "presence_label": presence["label"],
             "presence_title": presence["title"],
@@ -11498,6 +11575,8 @@ def _decorate_user_rows(db, rows, user_key="user_id"):
             item["avatar_is_generated"] = bool(visuals.get("avatar_is_generated"))
             item["badge_path"] = visuals["badge"]
             item["display_username"] = visuals.get("display_username") or str(item.get("username") or "").strip()
+            item["trophy_keys"] = list(visuals.get("trophy_keys") or [])
+            item["trophy_badges"] = list(visuals.get("trophy_badges") or [])
             item["presence_state"] = visuals["presence_state"]
             item["presence_label"] = visuals["presence_label"]
             item["presence_title"] = visuals["presence_title"]
@@ -11509,6 +11588,8 @@ def _decorate_user_rows(db, rows, user_key="user_id"):
             item["avatar_is_generated"] = True
             item["badge_path"] = DEFAULT_BADGE_REL
             item["display_username"] = str(item.get("username") or "SYSTEM").strip() or "SYSTEM"
+            item["trophy_keys"] = []
+            item["trophy_badges"] = []
             item["presence_state"] = presence["state"]
             item["presence_label"] = presence["label"]
             item["presence_title"] = presence["title"]
@@ -12051,25 +12132,198 @@ def _user_has_decor_key(db, user_id, decor_key):
     return bool(row)
 
 
-def _grant_support_reward(db, user_id, product):
-    grant_type = str((product or {}).get("grant_type") or "").strip().lower()
-    if grant_type != "decor":
-        return {"ok": False, "granted": False, "duplicate_reason": "unsupported_grant_type", "decor_asset": None}
-    decor = _get_decor_asset_by_key(db, product.get("grant_key"))
-    if not decor:
-        return {"ok": False, "granted": False, "duplicate_reason": "missing_decor_asset", "decor_asset": None}
+def _trophy_definition(trophy_key):
+    key = str(trophy_key or "").strip()
+    return USER_TROPHY_DEFS.get(key)
+
+
+def _sorted_trophy_keys(keys):
+    unique_keys = []
+    seen = set()
+    for trophy_key in keys or ():
+        key = str(trophy_key or "").strip()
+        if not key or key in seen or key not in USER_TROPHY_DEFS:
+            continue
+        seen.add(key)
+        unique_keys.append(key)
+    unique_keys.sort(
+        key=lambda key: (
+            int(USER_TROPHY_DEFS.get(key, {}).get("sort_order", 9999)),
+            str(USER_TROPHY_DEFS.get(key, {}).get("label") or key),
+            key,
+        )
+    )
+    return unique_keys
+
+
+def _trophy_badges_for_keys(keys):
+    badges = []
+    for trophy_key in _sorted_trophy_keys(keys):
+        definition = _trophy_definition(trophy_key) or {}
+        label = str(definition.get("label") or trophy_key)
+        description = str(definition.get("description") or "").strip()
+        badges.append(
+            {
+                "key": trophy_key,
+                "label": label,
+                "short_label": str(definition.get("short_label") or label).strip() or label,
+                "description": description,
+                "title": (f"{label} | {description}" if description else label),
+            }
+        )
+    return badges
+
+
+def _get_user_trophy_keys(db, user_id):
+    if not user_id:
+        return []
+    rows = db.execute(
+        """
+        SELECT trophy_key
+        FROM user_trophies
+        WHERE user_id = ?
+        ORDER BY granted_at ASC, trophy_key ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return _sorted_trophy_keys(row["trophy_key"] for row in rows)
+
+
+def _user_has_trophy_key(db, user_id, trophy_key):
+    key = str(trophy_key or "").strip()
+    if not user_id or not key:
+        return False
+    row = db.execute(
+        """
+        SELECT 1
+        FROM user_trophies
+        WHERE user_id = ? AND trophy_key = ?
+        LIMIT 1
+        """,
+        (int(user_id), key),
+    ).fetchone()
+    return bool(row)
+
+
+def _grant_user_trophy(db, user_id, trophy_key):
+    key = str(trophy_key or "").strip()
+    if not key or not _trophy_definition(key):
+        return {"ok": False, "granted": False, "duplicate_reason": "missing_trophy_definition", "trophy_key": key}
     inserted = db.execute(
         """
-        INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+        INSERT OR IGNORE INTO user_trophies (user_id, trophy_key, granted_at)
         VALUES (?, ?, ?)
         """,
-        (int(user_id), int(decor["id"]), _now_ts()),
+        (int(user_id), key, _now_ts()),
     ).rowcount > 0
     return {
         "ok": True,
         "granted": bool(inserted),
-        "duplicate_reason": (None if inserted else "already_owned_decor"),
+        "duplicate_reason": (None if inserted else "already_owned_trophy"),
+        "trophy_key": key,
+        "trophy_badge": (_trophy_badges_for_keys([key])[0] if _trophy_definition(key) else None),
+    }
+
+
+def _audit_trophy_grant(
+    db,
+    event_type,
+    *,
+    user_id,
+    trophy_key,
+    product_key,
+    stripe_checkout_session_id,
+    stripe_event_id,
+    duplicate_reason=None,
+    entity_id=None,
+):
+    key = str(trophy_key or "").strip()
+    if not key:
+        return
+    audit_log(
+        db,
+        event_type,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key=(product_key or key),
+        entity_type="payment_order",
+        entity_id=entity_id,
+        payload={
+            "user_id": (int(user_id) if user_id is not None else None),
+            "trophy_key": key,
+            "product_key": product_key,
+            "stripe_checkout_session_id": stripe_checkout_session_id,
+            "stripe_event_id": stripe_event_id,
+            "duplicate_reason": duplicate_reason,
+        },
+        ip=request.remote_addr,
+    )
+
+
+def _grant_support_reward(db, user_id, product):
+    grant_type = str((product or {}).get("grant_type") or "").strip().lower()
+    if grant_type != "decor":
+        return {
+            "ok": False,
+            "granted": False,
+            "duplicate_reason": "unsupported_grant_type",
+            "decor_asset": None,
+            "trophy_result": None,
+        }
+    decor = _get_decor_asset_by_key(db, product.get("grant_key"))
+    if not decor:
+        return {
+            "ok": False,
+            "granted": False,
+            "duplicate_reason": "missing_decor_asset",
+            "decor_asset": None,
+            "trophy_result": None,
+        }
+    trophy_result = None
+    inserted = False
+    db.execute("SAVEPOINT support_reward_grant")
+    try:
+        inserted = db.execute(
+            """
+            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(user_id), int(decor["id"]), _now_ts()),
+        ).rowcount > 0
+        trophy_key = str((product or {}).get("trophy_key") or "").strip()
+        if trophy_key:
+            trophy_result = _grant_user_trophy(db, int(user_id), trophy_key)
+            if not trophy_result["ok"]:
+                raise ValueError(trophy_result["duplicate_reason"] or "trophy_grant_failed")
+        db.execute("RELEASE SAVEPOINT support_reward_grant")
+    except Exception:
+        db.execute("ROLLBACK TO SAVEPOINT support_reward_grant")
+        db.execute("RELEASE SAVEPOINT support_reward_grant")
+        app.logger.exception(
+            "payment.support_reward_grant_failed user_id=%s product_key=%s",
+            user_id,
+            (product or {}).get("product_key"),
+        )
+        return {
+            "ok": False,
+            "granted": False,
+            "duplicate_reason": (
+                trophy_result["duplicate_reason"] if trophy_result and not trophy_result["ok"] else "support_reward_grant_failed"
+            ),
+            "decor_asset": decor,
+            "trophy_result": trophy_result,
+        }
+    duplicate_reason = None
+    if not inserted:
+        duplicate_reason = "already_owned_decor"
+    if trophy_result and not trophy_result["granted"]:
+        duplicate_reason = trophy_result["duplicate_reason"] or duplicate_reason
+    return {
+        "ok": True,
+        "granted": bool(inserted or (trophy_result and trophy_result["granted"])),
+        "duplicate_reason": duplicate_reason,
         "decor_asset": decor,
+        "trophy_result": trophy_result,
     }
 
 
@@ -12735,6 +12989,7 @@ def _weekly_mvp_snapshot(db, week_key):
     return {
         "user_id": int(user_row["id"]),
         "username": visuals.get("display_username") or user_row["username"],
+        "display_username": visuals.get("display_username") or user_row["username"],
         "wins": int(row["wins"] or 0),
         "robot_id": int(robot_dict["id"]) if robot_dict else None,
         "robot_name": (robot_dict["name"] if robot_dict else None),
@@ -12744,6 +12999,8 @@ def _weekly_mvp_snapshot(db, week_key):
         "avatar_kind": visuals.get("avatar_kind", "seed"),
         "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
         "badge_path": visuals["badge"],
+        "trophy_keys": list(visuals.get("trophy_keys") or []),
+        "trophy_badges": list(visuals.get("trophy_badges") or []),
         "presence_state": visuals["presence_state"],
         "presence_label": visuals["presence_label"],
         "presence_title": visuals["presence_title"],
@@ -12859,6 +13116,8 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "avatar_kind": row.get("avatar_kind", "seed"),
                     "avatar_is_generated": bool(row.get("avatar_is_generated")),
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                    "trophy_keys": list(row.get("trophy_keys") or []),
+                    "trophy_badges": list(row.get("trophy_badges") or []),
                     "image_url": row.get("image_url"),
                     "profile": row.get("profile"),
                     "presence_state": row.get("presence_state", "idle"),
@@ -12881,6 +13140,8 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
                     "avatar_kind": row.get("avatar_kind", "seed"),
                     "avatar_is_generated": bool(row.get("avatar_is_generated")),
                     "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                    "trophy_keys": list(row.get("trophy_keys") or []),
+                    "trophy_badges": list(row.get("trophy_badges") or []),
                     "presence_state": row.get("presence_state", "idle"),
                     "presence_label": row.get("presence_label", "探索待機中"),
                     "presence_title": row.get("presence_title", "いまは静かに待機中のロボ使い"),
@@ -12917,10 +13178,12 @@ def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
             payload = {}
+        username = _feed_user_label(db, row["user_id"])
         out.append(
             {
                 "title": f"{area['label']} 初撃破",
-                "username": _feed_user_label(db, row["user_id"]),
+                "username": username,
+                "display_username": username,
                 "detail": " / ".join(
                     part
                     for part in [
@@ -12935,6 +13198,8 @@ def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
                 "avatar_kind": visuals.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
                 "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
@@ -12969,10 +13234,12 @@ def _first_explore_record_rows(db, area_keys=None, *, user_row=None, user_id=Non
         if not row:
             continue
         visuals = _user_visuals(db, int(row["user_id"]), cache) if row["user_id"] else {"avatar": DEFAULT_AVATAR_REL, "badge": DEFAULT_BADGE_REL}
+        username = _feed_user_label(db, row["user_id"])
         out.append(
             {
                 "title": f"{area['label']} 初到達",
-                "username": _feed_user_label(db, row["user_id"]),
+                "username": username,
+                "display_username": username,
                 "detail": "",
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
@@ -12980,6 +13247,8 @@ def _first_explore_record_rows(db, area_keys=None, *, user_row=None, user_id=Non
                 "avatar_kind": visuals.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
                 "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
@@ -13013,10 +13282,12 @@ def _first_evolve_record_rows(db):
             payload = {}
         part_label = PART_TYPE_TITLES_JA.get(_normalize_part_type_key(part_type), part_type)
         target_name = str(payload.get("target_part_name") or "").strip() or "Rパーツ"
+        username = _feed_user_label(db, row["user_id"])
         out.append(
             {
                 "title": f"{part_label} 初R化",
-                "username": _feed_user_label(db, row["user_id"]),
+                "username": username,
+                "display_username": username,
                 "detail": target_name,
                 "time_jst": _format_jst_ts(row["created_at"]),
                 "avatar_path": visuals["avatar"],
@@ -13024,6 +13295,8 @@ def _first_evolve_record_rows(db):
                 "avatar_kind": visuals.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
                 "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
                 "presence_state": visuals.get("presence_state", "idle"),
                 "presence_label": visuals.get("presence_label", "探索待機中"),
                 "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
@@ -13054,6 +13327,8 @@ def _record_showcase_highlights(db, user_id):
                 "avatar_kind": row.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path", DEFAULT_BADGE_REL),
+                "trophy_keys": list(row.get("trophy_keys") or []),
+                "trophy_badges": list(row.get("trophy_badges") or []),
                 "presence_state": row.get("presence_state", "idle"),
                 "presence_label": row.get("presence_label", "探索待機中"),
                 "presence_title": row.get("presence_title", "いまは静かに待機中のロボ使い"),
@@ -13843,6 +14118,8 @@ def _world_user_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
                 "avatar_kind": row.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "trophy_keys": list(row.get("trophy_keys") or []),
+                "trophy_badges": list(row.get("trophy_badges") or []),
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
                 "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
@@ -13905,6 +14182,8 @@ def _home_world_user_message_items(db, limit=HOME_COMM_PREVIEW_LIMIT):
                 "avatar_kind": row.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "trophy_keys": list(row.get("trophy_keys") or []),
+                "trophy_badges": list(row.get("trophy_badges") or []),
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
                 "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
@@ -13947,6 +14226,8 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
                 "avatar_kind": row.get("avatar_kind", "seed"),
                 "avatar_is_generated": bool(row.get("avatar_is_generated")),
                 "badge_path": row.get("badge_path") or DEFAULT_BADGE_REL,
+                "trophy_keys": list(row.get("trophy_keys") or []),
+                "trophy_badges": list(row.get("trophy_badges") or []),
                 "presence_state": row.get("presence_state") or "idle",
                 "presence_label": row.get("presence_label") or "探索待機中",
                 "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
@@ -15155,11 +15436,14 @@ def inject_user_display():
     visuals = _user_visuals(db, int(user_id), {})
     return {
         "header_user_visual": {
+            "display_username": visuals.get("display_username") or session.get("username"),
             "avatar_path": visuals["avatar"],
             "avatar_url": visuals.get("avatar_url"),
             "avatar_kind": visuals.get("avatar_kind", "seed"),
             "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
             "badge_path": visuals["badge"],
+            "trophy_keys": list(visuals.get("trophy_keys") or []),
+            "trophy_badges": list(visuals.get("trophy_badges") or []),
         }
     }
 
@@ -15343,6 +15627,38 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.24",
+            "date": "2026/04/03",
+            "title": "100円支援パックに切り替え",
+            "notes": [
+                "`STRIPE_PRICE_ID_SUPPORT_PACK` の商品を 100円支援パック前提に切り替え、`/support` では `支援する（100円）` ボタンで購入へ進めるよう調整",
+                "支援パックの DECOR 付与は `shien_trophy` に差し替え、既存の `support_pack_001` 購入済みユーザーにも新DECORが揃うよう backfill を追加",
+                "webhook 完了時の `創設支援章` 付与はそのまま維持し、決済仕様と公開文言も新構成へ更新",
+            ],
+        },
+        {
+            "version": "0.1.23",
+            "date": "2026/04/03",
+            "title": "支援者トロフィーを追加",
+            "notes": [
+                "β版支援パック `support_pack_001` の webhook 完了時に、DECOR に加えて `創設支援章` を冪等付与するよう改善",
+                "ヘッダー / 通信 / ランキング / ホーム / 世界戦況 / 記録庫では、ユーザー名の近くに小さな支援者バッジを表示",
+                "支援ページと決済仕様も更新し、支援すると見える形で残ることが分かるよう調整",
+            ],
+        },
+        {
+            "version": "0.1.22",
+            "date": "2026/04/02",
+            "title": "本日の改善まとめ",
+            "notes": [
+                "ランキング / MVP / 世界ログ / 記録庫では、小ロボを主役にした表示へ寄せ、補助アバターの見え方も整理",
+                "設定では補助アバターのアップロードを戻し、Google画像や自動生成アイコンとの切り替えを自然に調整",
+                "ロボ編成は同名・同強化値でも個体ごとに選べるまま、現在装備との差分比較を主役にした見やすい候補UIへ改善",
+                "管理者画面には進行ダッシュボードを追加し、層到達人数 / 停止層 / ボス未撃破 / 最終活動を追えるよう改善",
+                "敵図鑑や世界ログでは、古い enemy_key が残っていても実画像のある現行敵データを優先して表示するよう補正",
+            ],
+        },
         {
             "version": "0.1.21",
             "date": "2026/04/02",
@@ -15632,7 +15948,10 @@ def support():
             (int(session["user_id"]),),
         ).fetchone()
         if user and product:
-            reward_owned = _user_has_decor_key(db, int(user["id"]), product["grant_key"])
+            reward_owned = bool(
+                _user_has_decor_key(db, int(user["id"]), product["grant_key"])
+                or _user_has_trophy_key(db, int(user["id"]), product.get("trophy_key"))
+            )
             recent_order = _latest_payment_order_for_user_product(db, int(user["id"]), product["product_key"])
     return render_template(
         "support.html",
@@ -15658,7 +15977,9 @@ def support_checkout():
     if not _payment_checkout_ready(SUPPORT_PACK_PRODUCT_KEY):
         flash("決済機能の準備が完了していません。", "error")
         return redirect(url_for("support"))
-    if _user_has_decor_key(db, user_id, product["grant_key"]):
+    if _user_has_decor_key(db, user_id, product["grant_key"]) or _user_has_trophy_key(
+        db, user_id, product.get("trophy_key")
+    ):
         flash("この支援特典はすでに受け取り済みです。", "notice")
         return redirect(url_for("support"))
     try:
@@ -15794,6 +16115,22 @@ def stripe_webhook():
     boost_days = int(metadata["boost_days"]) if str(metadata.get("boost_days") or "").isdigit() else 0
     product = _payment_product(product_key)
     grant_event_types = _payment_grant_audit_event_types(product)
+    trophy_key = str((product or {}).get("trophy_key") or "").strip() or None
+
+    def _audit_trophy_event(event_type, duplicate_reason=None, *, resolved_user_id=None, entity_id=None):
+        if not trophy_key:
+            return
+        _audit_trophy_grant(
+            db,
+            event_type,
+            user_id=resolved_user_id,
+            trophy_key=trophy_key,
+            product_key=(product["product_key"] if product else product_key),
+            stripe_checkout_session_id=stripe_checkout_session_id,
+            stripe_event_id=event_id,
+            duplicate_reason=duplicate_reason,
+            entity_id=entity_id,
+        )
 
     audit_log(
         db,
@@ -15839,10 +16176,11 @@ def stripe_webhook():
         return jsonify({"received": True})
 
     if order and order["stripe_event_id"] and str(order["stripe_event_id"]) == str(event_id or ""):
+        resolved_user_id = int(order["user_id"]) if order["user_id"] is not None else user_id
         audit_log(
             db,
             grant_event_types["skip"],
-            user_id=(int(order["user_id"]) if order["user_id"] is not None else user_id),
+            user_id=resolved_user_id,
             request_id=getattr(g, "request_id", None),
             action_key=(order["product_key"] or product_key or "payment_duplicate"),
             entity_type="payment_order",
@@ -15861,6 +16199,12 @@ def stripe_webhook():
                 "ends_at": (int(order["ends_at"]) if order["ends_at"] else None),
             },
             ip=request.remote_addr,
+        )
+        _audit_trophy_event(
+            AUDIT_EVENT_TYPES["TROPHY_GRANT_SKIP_DUPLICATE"],
+            "event_already_processed",
+            resolved_user_id=resolved_user_id,
+            entity_id=int(order["id"]),
         )
         db.commit()
         return jsonify({"received": True})
@@ -15896,6 +16240,12 @@ def stripe_webhook():
                 "boost_days": int(boost_days or 0),
             },
             ip=request.remote_addr,
+        )
+        _audit_trophy_event(
+            AUDIT_EVENT_TYPES["TROPHY_GRANT_FAILED"],
+            "invalid_metadata",
+            resolved_user_id=user_id,
+            entity_id=(int(order["id"]) if order else None),
         )
         db.commit()
         return jsonify({"received": True})
@@ -15969,6 +16319,12 @@ def stripe_webhook():
                 },
                 ip=request.remote_addr,
             )
+            _audit_trophy_event(
+                AUDIT_EVENT_TYPES["TROPHY_GRANT_FAILED"],
+                "order_mismatch",
+                resolved_user_id=user_id,
+                entity_id=int(order["id"]),
+            )
             db.commit()
             return jsonify({"received": True})
         if str(order["status"] or "") in {PAYMENT_STATUS_COMPLETED, PAYMENT_STATUS_GRANTED}:
@@ -15994,6 +16350,12 @@ def stripe_webhook():
                     "ends_at": (int(order["ends_at"]) if order["ends_at"] else None),
                 },
                 ip=request.remote_addr,
+            )
+            _audit_trophy_event(
+                AUDIT_EVENT_TYPES["TROPHY_GRANT_SKIP_DUPLICATE"],
+                "session_already_completed",
+                resolved_user_id=user_id,
+                entity_id=int(order["id"]),
             )
             db.commit()
             return jsonify({"received": True})
@@ -16057,8 +16419,37 @@ def stripe_webhook():
             },
             ip=request.remote_addr,
         )
+        _audit_trophy_event(
+            AUDIT_EVENT_TYPES["TROPHY_GRANT_FAILED"],
+            (grant_result.get("trophy_result") or {}).get("duplicate_reason") or grant_result["duplicate_reason"],
+            resolved_user_id=user_id,
+            entity_id=int(order["id"]),
+        )
         db.commit()
         return jsonify({"received": True})
+
+    trophy_result = grant_result.get("trophy_result")
+    if trophy_result:
+        if not trophy_result.get("ok"):
+            _audit_trophy_event(
+                AUDIT_EVENT_TYPES["TROPHY_GRANT_FAILED"],
+                trophy_result.get("duplicate_reason"),
+                resolved_user_id=user_id,
+                entity_id=int(order["id"]),
+            )
+        elif trophy_result.get("granted"):
+            _audit_trophy_event(
+                AUDIT_EVENT_TYPES["TROPHY_GRANT_SUCCESS"],
+                resolved_user_id=user_id,
+                entity_id=int(order["id"]),
+            )
+        else:
+            _audit_trophy_event(
+                AUDIT_EVENT_TYPES["TROPHY_GRANT_SKIP_DUPLICATE"],
+                trophy_result.get("duplicate_reason"),
+                resolved_user_id=user_id,
+                entity_id=int(order["id"]),
+            )
 
     if grant_result["granted"]:
         _update_payment_order(
@@ -23280,6 +23671,7 @@ def _admin_delete_user_hard(db, target_user_id):
     _safe_delete("user_boss_progress", "user_id = ?", (target_user_id,))
     _safe_delete("user_core_inventory", "user_id = ?", (target_user_id,))
     _safe_delete("user_decor_inventory", "user_id = ?", (target_user_id,))
+    _safe_delete("user_trophies", "user_id = ?", (target_user_id,))
     _safe_delete("user_enemy_dex", "user_id = ?", (target_user_id,))
     _safe_delete("user_items", "user_id = ?", (target_user_id,))
     _safe_delete("user_milestone_claims", "user_id = ?", (target_user_id,))

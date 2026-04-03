@@ -1,17 +1,17 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card">
-  <h1>ロボらぼ支援</h1>
-  <p>開発応援ありがとうございます。戦力差はつきません。</p>
-  {% if product %}
-  <p>今回の支援パックでは、見た目用の特典を1つ受け取れます。</p>
+  <h1>ロボらぼを応援する</h1>
+  <p>β版を一緒に育ててくれる方向けの支援です。戦力差はつきません。</p>
+{% if product %}
+  <p>今回の支援パックでは、ゲーム内で見える支援の証を受け取れます。</p>
   <ul>
     <li>商品: {{ product['display_name'] }}</li>
-    <li>特典: {{ product['grant_name'] }}</li>
+    <li>特典: {{ product.get('trophy_name') or product['grant_name'] }}</li>
   </ul>
-  {% else %}
+{% else %}
   <p>支援パックはまだ準備中です。</p>
-  {% endif %}
+{% endif %}
 </div>
 
 {% if session.get('user_id') %}
@@ -23,8 +23,9 @@
     <p>現在、決済導線の準備中です。設定完了後に購入できます。</p>
   {% else %}
     <p>{{ product['description'] }}</p>
+    <p>特典: {{ product.get('trophy_name') or product['grant_name'] }}</p>
     <form method="post" action="{{ url_for('support_checkout') }}">
-      <button type="submit">Stripeで支援する</button>
+      <button type="submit">{{ product.get('button_label', 'Stripeで支援する') }}</button>
     </form>
   {% endif %}
 

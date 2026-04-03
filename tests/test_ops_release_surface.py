@@ -34,6 +34,10 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
             )
             self.admin_id = db.execute("SELECT id FROM users WHERE username = ?", ("ops_admin",)).fetchone()["id"]
             self.user_id = db.execute("SELECT id FROM users WHERE username = ?", ("ops_user",)).fetchone()["id"]
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 15),
+            )
             db.commit()
 
     def tearDown(self):
@@ -324,20 +328,24 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("/static/header_scroll_v2.js", html)
         self.assertIn("/guide", html)
         self.assertIn("機体アイコン", html)
+        self.assertIn("創設", html)
+        self.assertIn("user-trophy-badge", html)
         header_match = re.search(r"<header class=\"top topbar site-header\".*?</header>", html, re.DOTALL)
         self.assertIsNotNone(header_match)
         header_html = header_match.group(0)
         self.assertNotIn('href="/comms"', header_html)
 
-    def test_changelog_shows_latest_2026_04_02_entry(self):
+    def test_changelog_shows_latest_2026_04_03_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.21 - 2026/04/02", html)
-        self.assertIn("ロボ編成候補は『現在装備との差分』を主役にし、総合差分と注目2能力の増減を先頭で比べられるよう改善", html)
-        self.assertIn("候補を選んだ瞬間に左プレビューと比較欄が強調更新され、スマホでもカード全体を押して迷わず選べるよう調整", html)
-        self.assertLess(html.index("v0.1.21 - 2026/04/02"), html.index("v0.1.20 - 2026/04/02"))
+        self.assertIn("v0.1.24 - 2026/04/03", html)
+        self.assertIn("100円支援パックに切り替え", html)
+        self.assertIn("`STRIPE_PRICE_ID_SUPPORT_PACK` の商品を 100円支援パック前提に切り替え", html)
+        self.assertIn("支援パックの DECOR 付与は `shien_trophy` に差し替え", html)
+        self.assertIn("webhook 完了時の `創設支援章` 付与はそのまま維持", html)
+        self.assertLess(html.index("v0.1.24 - 2026/04/03"), html.index("v0.1.23 - 2026/04/03"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

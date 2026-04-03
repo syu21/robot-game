@@ -1,7 +1,7 @@
 import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.21"
+APP_VERSION = "0.1.24"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
 LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
 LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
@@ -187,6 +187,9 @@ AUDIT_EVENT_TYPES = {
     "PAYMENT_GRANT_SUCCESS": "audit.payment.grant.success",
     "PAYMENT_GRANT_SKIP_DUPLICATE": "audit.payment.grant.skip_duplicate",
     "PAYMENT_GRANT_FAILED": "audit.payment.grant.failed",
+    "TROPHY_GRANT_SUCCESS": "audit.trophy.grant.success",
+    "TROPHY_GRANT_SKIP_DUPLICATE": "audit.trophy.grant.skip_duplicate",
+    "TROPHY_GRANT_FAILED": "audit.trophy.grant.failed",
     "EXPLORE_BOOST_GRANT_SUCCESS": "audit.explore_boost.grant.success",
     "EXPLORE_BOOST_GRANT_SKIP_DUPLICATE": "audit.explore_boost.grant.skip_duplicate",
     "EXPLORE_BOOST_GRANT_FAILED": "audit.explore_boost.grant.failed",

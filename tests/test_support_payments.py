@@ -112,7 +112,7 @@ class SupportPaymentsTests(unittest.TestCase):
                 "object": {
                     "id": "cs_test_support_123",
                     "payment_intent": "pi_test_support_123",
-                    "amount_total": 500,
+                    "amount_total": 100,
                     "currency": "jpy",
                     "metadata": {
                         "user_id": str(self.user_id),
@@ -128,6 +128,15 @@ class SupportPaymentsTests(unittest.TestCase):
         resp = client.post("/support/checkout", follow_redirects=False)
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/login", resp.headers.get("Location", ""))
+
+    def test_support_page_shows_founder_benefit_and_100yen_button(self):
+        client = game_app.app.test_client()
+        self._login(client, self.user_id, "support_user")
+        resp = client.get("/support")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("特典: 創設支援章", html)
+        self.assertIn("支援する（100円）", html)
 
     def test_support_checkout_creates_checkout_session_and_order(self):
         client = game_app.app.test_client()
@@ -179,7 +188,7 @@ class SupportPaymentsTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(order["status"], game_app.PAYMENT_STATUS_GRANTED)
             self.assertEqual(order["stripe_event_id"], "evt_test_completed_123")
-            self.assertEqual(order["amount_jpy"], 500)
+            self.assertEqual(order["amount_jpy"], 100)
             decor = db.execute(
                 """
                 SELECT 1
@@ -189,7 +198,16 @@ class SupportPaymentsTests(unittest.TestCase):
                 """,
                 (self.user_id, game_app.SUPPORT_PACK_DECOR_KEY),
             ).fetchone()
+            trophy = db.execute(
+                """
+                SELECT 1
+                FROM user_trophies
+                WHERE user_id = ? AND trophy_key = ?
+                """,
+                (self.user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY),
+            ).fetchone()
             self.assertIsNotNone(decor)
+            self.assertIsNotNone(trophy)
             completed_audit = db.execute(
                 "SELECT 1 FROM world_events_log WHERE event_type = ? LIMIT 1",
                 (game_app.AUDIT_EVENT_TYPES["PAYMENT_COMPLETED"],),
@@ -198,8 +216,13 @@ class SupportPaymentsTests(unittest.TestCase):
                 "SELECT 1 FROM world_events_log WHERE event_type = ? LIMIT 1",
                 (game_app.AUDIT_EVENT_TYPES["PAYMENT_GRANT_SUCCESS"],),
             ).fetchone()
+            trophy_audit = db.execute(
+                "SELECT 1 FROM world_events_log WHERE event_type = ? LIMIT 1",
+                (game_app.AUDIT_EVENT_TYPES["TROPHY_GRANT_SUCCESS"],),
+            ).fetchone()
             self.assertIsNotNone(completed_audit)
             self.assertIsNotNone(grant_audit)
+            self.assertIsNotNone(trophy_audit)
 
     def test_duplicate_webhook_event_does_not_double_grant(self):
         client = game_app.app.test_client()
@@ -231,12 +254,26 @@ class SupportPaymentsTests(unittest.TestCase):
                 """,
                 (self.user_id, game_app.SUPPORT_PACK_DECOR_KEY),
             ).fetchone()["c"]
+            trophy_count = db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM user_trophies
+                WHERE user_id = ? AND trophy_key = ?
+                """,
+                (self.user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY),
+            ).fetchone()["c"]
             self.assertEqual(count, 1)
+            self.assertEqual(trophy_count, 1)
             duplicate_audit = db.execute(
                 "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ?",
                 (game_app.AUDIT_EVENT_TYPES["PAYMENT_GRANT_SKIP_DUPLICATE"],),
             ).fetchone()["c"]
+            trophy_duplicate_audit = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ?",
+                (game_app.AUDIT_EVENT_TYPES["TROPHY_GRANT_SKIP_DUPLICATE"],),
+            ).fetchone()["c"]
             self.assertGreaterEqual(int(duplicate_audit), 1)
+            self.assertGreaterEqual(int(trophy_duplicate_audit), 1)
 
     def test_admin_payments_page_lists_payment_history(self):
         with game_app.app.app_context():
@@ -266,7 +303,7 @@ class SupportPaymentsTests(unittest.TestCase):
                     "cs_admin_view_001",
                     "pi_admin_view_001",
                     "evt_admin_view_001",
-                    500,
+                    100,
                     "jpy",
                     game_app.PAYMENT_STATUS_GRANTED,
                     "decor",

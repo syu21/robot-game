@@ -327,7 +327,7 @@ class AdminUserControlsTests(unittest.TestCase):
                     created_at,
                     updated_at
                 )
-                VALUES (?, 'support_pack_001', 'cs_delete_case', 'pi_delete_case', 'evt_delete_case', 500, 'jpy', 'granted', 'decor', ?, ?)
+                VALUES (?, 'support_pack_001', 'cs_delete_case', 'pi_delete_case', 'evt_delete_case', 100, 'jpy', 'granted', 'decor', ?, ?)
                 """,
                 (target_id, now, now),
             )

@@ -113,7 +113,7 @@ class ShopExploreBoostPaymentsTests(unittest.TestCase):
                 "object": {
                     "id": "cs_test_boost_123",
                     "payment_intent": "pi_test_boost_123",
-                    "amount_total": 300,
+                    "amount_total": 500,
                     "currency": "jpy",
                     "metadata": {
                         "user_id": str(self.user_id),
@@ -180,7 +180,7 @@ class ShopExploreBoostPaymentsTests(unittest.TestCase):
             self.assertEqual(order["status"], game_app.PAYMENT_STATUS_GRANTED)
             self.assertEqual(order["stripe_event_id"], "evt_test_boost_completed_123")
             self.assertEqual(order["stripe_payment_intent_id"], "pi_test_boost_123")
-            self.assertEqual(order["amount_jpy"], 300)
+            self.assertEqual(order["amount_jpy"], 500)
             self.assertGreater(int(order["ends_at"] or 0), now_before)
             self.assertGreater(int(user["explore_boost_until"] or 0), now_before)
             completed_audit = db.execute(
