@@ -3647,11 +3647,24 @@ def _battle_replay_is_miss(action_name, damage_value):
     return int(damage_value or 0) <= 0
 
 
-def _battle_replay_event(event_type, label, *, actor=None, crit=False, heavy=False):
+def _battle_replay_event(
+    event_type,
+    label,
+    *,
+    actor=None,
+    target=None,
+    projectile=None,
+    reaction=None,
+    crit=False,
+    heavy=False,
+):
     return {
         "type": str(event_type or "").strip(),
         "label": str(label or "").strip(),
         "actor": (str(actor or "").strip() or None),
+        "target": (str(target or "").strip() or None),
+        "projectile": (str(projectile or "").strip() or None),
+        "reaction": (str(reaction or "").strip() or None),
         "crit": bool(crit),
         "heavy": bool(heavy),
     }
@@ -3730,92 +3743,114 @@ def _build_battle_replay_summary(
             return
         events.append(event)
 
+    def actor_name(side):
+        return player_name if side == "player" else enemy_name
+
+    def target_name(side):
+        return enemy_name if side == "player" else player_name
+
+    def opening_event(side):
+        return _battle_replay_event(
+            f"{side}_opening",
+            f"{actor_name(side)} が先手！",
+            actor=side,
+        )
+
+    def miss_event(side):
+        if side == "player":
+            return _battle_replay_event(
+                "player_miss",
+                f"{actor_name('player')} の右腕攻撃は外れた！",
+                actor="player",
+                target="enemy",
+                projectile="shot",
+                reaction="evade",
+            )
+        return _battle_replay_event(
+            "enemy_miss",
+            f"{actor_name('enemy')} の攻撃を {target_name('enemy')} が回避！",
+            actor="enemy",
+            target="player",
+            projectile="shot",
+            reaction="evade",
+        )
+
+    def strike_event(side, row, *, finisher=False):
+        row = row or {}
+        crit = bool(row.get("critical")) if side == "player" else False
+        heavy = _heavy_hit(side, row)
+        if finisher and side == "player" and crit:
+            caption = f"{actor_name(side)} の会心の一撃！"
+        elif finisher:
+            caption = f"{actor_name(side)} の一撃で決着！"
+        elif side == "player" and crit:
+            caption = f"{actor_name(side)} の右腕攻撃が会心！"
+        elif side == "player":
+            caption = f"{actor_name(side)} の右腕攻撃、命中！"
+        else:
+            caption = f"{actor_name(side)} の攻撃が命中！"
+        return _battle_replay_event(
+            f"{side}_{'finisher' if finisher else 'strike'}",
+            caption,
+            actor=side,
+            target=("enemy" if side == "player" else "player"),
+            projectile="shot",
+            reaction=("critical" if crit else "hit"),
+            crit=crit,
+            heavy=heavy,
+        )
+
+    def brace_event():
+        return _battle_replay_event(
+            "player_guard",
+            f"{player_name} は踏ん張った！",
+            actor="player",
+            target="player",
+            reaction="brace",
+        )
+
     summary_style = "standard_finish"
     if is_boss:
         summary_style = "boss_duel"
-        append_event(_battle_replay_event("boss_warning", "BOSS WARNING"))
+        append_event(_battle_replay_event("boss_warning", f"{enemy_name} 出現！"))
         if player_won:
-            if (not player_first) and enemy_hit:
-                append_event(
-                    _battle_replay_event(
-                        "enemy_strike",
-                        "被弾！",
-                        actor="enemy",
-                        heavy=_heavy_hit("enemy", enemy_hit),
-                    )
-                )
-            elif player_hit:
-                append_event(
-                    _battle_replay_event(
-                        "player_strike",
-                        "先手！" if player_first else "反撃！",
-                        actor="player",
-                        crit=bool(player_hit.get("critical")),
-                        heavy=_heavy_hit("player", player_hit),
-                    )
-                )
-            if enemy_miss and player_traits["speed_bias"] == "high":
-                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
-                summary_style = "evasion_finish"
-            elif player_braced and enemy_hit:
-                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
-                summary_style = "brace_finish"
-            elif player_hit and (not player_first):
-                append_event(
-                    _battle_replay_event(
-                        "player_strike",
-                        "反撃！",
-                        actor="player",
-                        crit=bool(player_hit.get("critical")),
-                        heavy=_heavy_hit("player", player_hit),
-                    )
-                )
+            if player_first:
+                append_event(opening_event("player"))
+                if player_hit and player_hit is not player_finisher:
+                    append_event(strike_event("player", player_hit))
+            else:
+                append_event(opening_event("enemy"))
+                if enemy_miss and player_traits["speed_bias"] == "high":
+                    append_event(miss_event("enemy"))
+                    summary_style = "evasion_finish"
+                elif enemy_hit:
+                    append_event(strike_event("enemy", enemy_hit))
+                    if player_braced:
+                        append_event(brace_event())
+                        summary_style = "brace_finish"
+                if player_hit and player_hit is not player_finisher:
+                    append_event(strike_event("player", player_hit))
             finisher = player_finisher or player_hit
             if finisher:
-                append_event(
-                    _battle_replay_event(
-                        "player_finisher",
-                        "会心！" if bool(finisher.get("critical")) else "決着！",
-                        actor="player",
-                        crit=bool(finisher.get("critical")),
-                        heavy=_heavy_hit("player", finisher),
-                    )
-                )
-            append_event(_battle_replay_event("boss_defeated", "BOSS DEFEATED"))
+                append_event(strike_event("player", finisher, finisher=True))
+            append_event(_battle_replay_event("boss_defeated", "BOSS DEFEATED", target="enemy", reaction="finish"))
         else:
-            opening = enemy_hit or player_hit or logs[0]
-            if opening is enemy_hit:
-                append_event(
-                    _battle_replay_event(
-                        "enemy_strike",
-                        "被弾！",
-                        actor="enemy",
-                        heavy=_heavy_hit("enemy", enemy_hit),
-                    )
-                )
-            elif player_hit:
-                append_event(
-                    _battle_replay_event(
-                        "player_strike",
-                        "反撃！",
-                        actor="player",
-                        crit=bool(player_hit.get("critical")),
-                        heavy=_heavy_hit("player", player_hit),
-                    )
-                )
-            if player_braced and enemy_hit:
-                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
-            elif enemy_miss and player_traits["speed_bias"] == "high":
-                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
+            if player_first and (player_hit or player_miss):
+                append_event(opening_event("player"))
+                if player_miss:
+                    append_event(miss_event("player"))
+                elif player_hit:
+                    append_event(strike_event("player", player_hit))
+            else:
+                append_event(opening_event("enemy"))
+                if enemy_hit:
+                    append_event(strike_event("enemy", enemy_hit))
+                    if player_braced:
+                        append_event(brace_event())
+                elif enemy_miss and player_traits["speed_bias"] == "high":
+                    append_event(miss_event("enemy"))
             finisher = enemy_finisher or enemy_hit or logs[-1]
-            append_event(
-                _battle_replay_event(
-                    "enemy_finisher",
-                    "決着！",
-                    actor="enemy",
-                    heavy=_heavy_hit("enemy", finisher),
-                )
-            )
+            append_event(strike_event("enemy", finisher, finisher=True))
     else:
         if player_won:
             if player_traits["speed_bias"] == "high":
@@ -3824,93 +3859,66 @@ def _build_battle_replay_summary(
                 summary_style = "brace_finish"
             elif player_traits["accuracy_bias"] == "high":
                 summary_style = "lock_finish"
-            if player_first and player_hit:
-                append_event(
-                    _battle_replay_event(
-                        "player_strike",
-                        "先手！",
-                        actor="player",
-                        crit=bool(player_hit.get("critical")),
-                        heavy=_heavy_hit("player", player_hit),
-                    )
-                )
-            elif enemy_hit:
-                append_event(
-                    _battle_replay_event(
-                        "enemy_strike",
-                        "被弾！",
-                        actor="enemy",
-                        heavy=_heavy_hit("enemy", enemy_hit),
-                    )
-                )
-            elif enemy_miss:
-                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
 
-            if enemy_miss and player_traits["speed_bias"] == "high":
-                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
-            elif player_braced and enemy_hit:
-                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
-            elif player_miss:
-                append_event(_battle_replay_event("player_miss", "MISS...", actor="player"))
+            if player_first and (player_hit or player_miss):
+                append_event(opening_event("player"))
+                if player_miss:
+                    append_event(miss_event("player"))
+                elif player_hit and player_hit is not player_finisher:
+                    append_event(strike_event("player", player_hit))
+            else:
+                append_event(opening_event("enemy"))
+                if enemy_miss and player_traits["speed_bias"] == "high":
+                    append_event(miss_event("enemy"))
+                    summary_style = "evasion_finish"
+                elif enemy_hit:
+                    append_event(strike_event("enemy", enemy_hit))
+                    if player_braced:
+                        append_event(brace_event())
+                        summary_style = "brace_finish"
 
             finisher = player_finisher or player_hit
             if finisher:
-                append_event(
-                    _battle_replay_event(
-                        "player_finisher",
-                        "会心！" if bool(finisher.get("critical")) else "決着！",
-                        actor="player",
-                        crit=bool(finisher.get("critical")),
-                        heavy=_heavy_hit("player", finisher),
-                    )
-                )
+                append_event(strike_event("player", finisher, finisher=True))
         else:
             summary_style = "enemy_finish"
-            if player_first and player_hit:
-                append_event(
-                    _battle_replay_event(
-                        "player_strike",
-                        "先手！",
-                        actor="player",
-                        crit=bool(player_hit.get("critical")),
-                        heavy=_heavy_hit("player", player_hit),
-                    )
-                )
-            elif player_miss:
-                append_event(_battle_replay_event("player_miss", "MISS...", actor="player"))
-            elif enemy_hit:
-                append_event(
-                    _battle_replay_event(
-                        "enemy_strike",
-                        "被弾！",
-                        actor="enemy",
-                        heavy=_heavy_hit("enemy", enemy_hit),
-                    )
-                )
-            if enemy_miss and player_traits["speed_bias"] == "high":
-                append_event(_battle_replay_event("enemy_miss", "回避！", actor="enemy"))
-            elif enemy_hit and player_braced:
-                append_event(_battle_replay_event("player_guard", "踏ん張った！", actor="player"))
+            if player_first and (player_hit or player_miss):
+                append_event(opening_event("player"))
+                if player_miss:
+                    append_event(miss_event("player"))
+                elif player_hit and player_hit is not player_finisher:
+                    append_event(strike_event("player", player_hit))
+            else:
+                append_event(opening_event("enemy"))
+                if enemy_miss and player_traits["speed_bias"] == "high":
+                    append_event(miss_event("enemy"))
+                elif enemy_hit:
+                    append_event(strike_event("enemy", enemy_hit))
+                    if player_braced:
+                        append_event(brace_event())
             finisher = enemy_finisher or enemy_hit or logs[-1]
-            append_event(
-                _battle_replay_event(
-                    "enemy_finisher",
-                    "決着！",
-                    actor="enemy",
-                    heavy=_heavy_hit("enemy", finisher),
-                )
-            )
+            append_event(strike_event("enemy", finisher, finisher=True))
 
     if not is_boss:
-        events = events[:3]
+        events = events[:4]
     if is_boss:
-        events = events[:5]
+        events = events[:6]
+        if player_won and not any(item.get("type") == "boss_defeated" for item in events):
+            events = [item for item in events if item.get("type") != "boss_defeated"]
+            if len(events) >= 6:
+                events = events[:5]
+            events.append(_battle_replay_event("boss_defeated", "BOSS DEFEATED", target="enemy", reaction="finish"))
     if not events:
-        append_event(_battle_replay_event("player_finisher" if player_won else "enemy_finisher", "決着！"))
+        append_event(
+            _battle_replay_event(
+                "player_finisher" if player_won else "enemy_finisher",
+                f"{player_name if player_won else enemy_name} が決着！",
+            )
+        )
 
-    event_duration_ms = 480 if not is_boss else 760
-    intro_delay_ms = 220 if not is_boss else 420
-    outro_hold_ms = 460 if not is_boss else 980
+    event_duration_ms = 360 if not is_boss else 560
+    intro_delay_ms = 160 if not is_boss else 320
+    outro_hold_ms = 260 if not is_boss else 720
     return {
         "battle_type": ("boss" if is_boss else "normal"),
         "is_boss": bool(is_boss),

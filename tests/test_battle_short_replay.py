@@ -8,7 +8,7 @@ import init_db
 
 
 class BattleShortReplayHelperTests(unittest.TestCase):
-    def test_normal_replay_caps_at_three_events(self):
+    def test_normal_replay_caps_at_four_events(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_1",
             area_label="第一層",
@@ -49,8 +49,9 @@ class BattleShortReplayHelperTests(unittest.TestCase):
             is_boss=False,
         )
         self.assertIsNotNone(replay)
-        self.assertLessEqual(len(replay["events"]), 3)
+        self.assertLessEqual(len(replay["events"]), 4)
         self.assertEqual(replay["events"][-1]["type"], "player_finisher")
+        self.assertEqual(replay["events"][0]["type"], "player_opening")
 
     def test_boss_replay_includes_warning_and_defeat(self):
         replay = game_app._build_battle_replay_summary(
@@ -155,6 +156,8 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('id="battle-short-replay"', html)
             self.assertIn('id="battle-short-replay-data"', html)
             self.assertIn('data-replay-skip="1"', html)
+            self.assertIn('data-replay-caption="1"', html)
+            self.assertIn('data-replay-projectile="1"', html)
             self.assertIn('id="battle-replay-followup"', html)
 
     def test_ui_effects_off_skips_short_replay_markup(self):

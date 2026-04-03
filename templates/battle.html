@@ -58,6 +58,10 @@
       data-stage-theme="{{ battle_replay.get('stage_theme', 'hangar') }}"
       data-battle-type="{{ battle_replay.get('battle_type', 'normal') }}"
     >
+      <div class="battle-short-replay-ground" aria-hidden="true"></div>
+      <div class="battle-short-replay-projectile" data-replay-projectile="1" aria-hidden="true"></div>
+      <div class="battle-short-replay-hitflash" data-replay-hitflash="1" aria-hidden="true"></div>
+      <div class="battle-short-replay-sparks" data-replay-sparks="1" aria-hidden="true"></div>
       <div
         class="battle-short-replay-unit is-player trait-speed-{{ battle_replay.get('player_visual_traits', {}).get('speed_bias', 'normal') }} trait-accuracy-{{ battle_replay.get('player_visual_traits', {}).get('accuracy_bias', 'normal') }} trait-burst-{{ battle_replay.get('player_visual_traits', {}).get('burst_bias', 'normal') }} trait-defense-{{ battle_replay.get('player_visual_traits', {}).get('defense_bias', 'normal') }}"
         data-replay-unit="player"
@@ -92,9 +96,7 @@
     </div>
 
     <div class="battle-short-replay-bottom">
-      <div class="battle-short-replay-log" data-replay-log="1">
-        <div class="battle-short-replay-log-line is-current">戦闘開始</div>
-      </div>
+      <div class="battle-short-replay-caption" data-replay-caption="1">戦闘開始</div>
       <div class="battle-short-replay-result" data-replay-result="1" hidden>
         <div class="battle-short-replay-result-main">{{ battle_replay.get('result_label', 'WIN') }}</div>
         <div class="battle-short-replay-result-sub">{{ battle_replay.get('result_sub_label', summary.get('outcome', '勝利')) }}</div>
