@@ -190,6 +190,7 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('data-cinematic-turn-indicator', html)
             self.assertIn('data-cinematic-projectile="1"', html)
             self.assertIn('data-cinematic-finish-call="1"', html)
+            self.assertNotRegex(html, r'id="battle-short-replay"[^>]*\shidden')
             self.assertIn('data-cinematic-hp="player"', html)
             self.assertIn('data-cinematic-hp="enemy"', html)
             self.assertIn('id="battle-replay-followup"', html)
