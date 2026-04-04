@@ -8,6 +8,62 @@ import init_db
 
 
 class BattleShortReplayHelperTests(unittest.TestCase):
+    def test_timeout_judgement_prefers_higher_hp_ratio(self):
+        decision = game_app._battle_timeout_judgement(
+            player_hp=15,
+            player_hp_max=21,
+            enemy_hp=1,
+            enemy_hp_max=34,
+        )
+        self.assertTrue(decision["player_wins"])
+        self.assertEqual(decision["outcome"], "win")
+        self.assertEqual(decision["display_outcome"], "判定勝ち")
+
+    def test_timeout_judgement_tie_stays_loss(self):
+        decision = game_app._battle_timeout_judgement(
+            player_hp=10,
+            player_hp_max=20,
+            enemy_hp=5,
+            enemy_hp_max=10,
+        )
+        self.assertFalse(decision["player_wins"])
+        self.assertEqual(decision["outcome"], "lose")
+        self.assertEqual(decision["display_outcome"], "判定負け")
+
+    def test_replay_summary_treats_timeout_win_as_player_victory(self):
+        replay = game_app._build_battle_replay_summary(
+            area_key="layer_2_mist",
+            area_label="第二層",
+            enemy_name="エンバーレンチ",
+            enemy_image_url="/static/assets/placeholder_enemy.png",
+            player_name="Starter Unit",
+            player_image_url="/static/assets/placeholder_player.png",
+            player_stats={"hp": 21, "atk": 9, "def": 10, "spd": 10, "acc": 9, "cri": 6},
+            enemy_stats={"hp": 34, "atk": 7, "def": 9, "spd": 9, "acc": 8, "cri": 5, "trait": "heavy"},
+            robot_style={"style_key": "stable"},
+            turn_logs=[
+                {
+                    "turn": 8,
+                    "player_action": "ドライブ",
+                    "enemy_action": "攻撃",
+                    "player_damage": 0,
+                    "enemy_damage": 1,
+                    "player_before": 16,
+                    "enemy_before": 1,
+                    "player_after": 15,
+                    "enemy_after": 1,
+                    "player_max": 21,
+                    "enemy_max": 34,
+                    "critical": False,
+                }
+            ],
+            outcome="判定勝ち",
+            is_boss=False,
+        )
+        self.assertEqual(replay["winner"], "player")
+        self.assertEqual(replay["result_sub_label"], "判定勝ち")
+        self.assertEqual(replay["summary_heading"], "今回の勝ち筋")
+
     def test_normal_replay_builds_turn_cards_until_finisher(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_1",

@@ -3733,7 +3733,13 @@ def _build_battle_replay_summary(
     if not logs:
         return None
 
-    player_won = str(outcome or "").strip() in {"win", "勝利"}
+    outcome_text = str(outcome or "").strip()
+    player_won = outcome_text in {"win", "勝利", "判定勝ち"}
+    outcome_sub_label = (
+        outcome_text
+        if outcome_text in {"判定勝ち", "判定負け"}
+        else ("勝利" if player_won else "敗北")
+    )
     player_traits = _battle_replay_visual_traits(player_stats, robot_style)
     enemy_trait = _normalize_enemy_trait((enemy_stats or {}).get("trait"))
     enemy_speed = int((enemy_stats or {}).get("spd") or 0)
@@ -4065,7 +4071,7 @@ def _build_battle_replay_summary(
         "summary_heading": summary_heading,
         "summary_label": summary_label,
         "result_label": ("BOSS DEFEATED" if is_boss and player_won else ("WIN" if player_won else "LOSE")),
-        "result_sub_label": ("勝利" if player_won else "敗北"),
+        "result_sub_label": outcome_sub_label,
         "player_name": str(player_name or "あなた"),
         "enemy_name": str(enemy_name or "謎の敵"),
         "player_image_url": player_image_url,
@@ -4085,6 +4091,27 @@ def _build_battle_replay_summary(
         "outro_hold_ms": int(outro_hold_ms),
         "fast_intro_delay_ms": int(fast_intro_delay_ms),
         "fast_outro_hold_ms": int(fast_outro_hold_ms),
+    }
+
+
+def _battle_timeout_judgement(*, player_hp, player_hp_max, enemy_hp, enemy_hp_max):
+    def _ratio(hp_value, hp_max_value):
+        return max(0.0, min(1.0, float(int(hp_value or 0)) / max(1, int(hp_max_value or 1))))
+
+    player_ratio = _ratio(player_hp, player_hp_max)
+    enemy_ratio = _ratio(enemy_hp, enemy_hp_max)
+    player_wins = player_ratio > enemy_ratio
+    outcome = "win" if player_wins else "lose"
+    display_outcome = "判定勝ち" if player_wins else "判定負け"
+    return {
+        "player_ratio": float(player_ratio),
+        "enemy_ratio": float(enemy_ratio),
+        "player_ratio_pct": round(player_ratio * 100.0, 1),
+        "enemy_ratio_pct": round(enemy_ratio * 100.0, 1),
+        "player_wins": bool(player_wins),
+        "outcome": outcome,
+        "display_outcome": display_outcome,
+        "result_line": f"8ターン終了。残HP割合で{display_outcome}",
     }
 
 
@@ -16358,6 +16385,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.33",
+            "date": "2026/04/04",
+            "title": "戦闘のtimeoutを残HP割合で判定するよう変更",
+            "notes": [
+                "8ターン到達で両者生存だった場合は即敗北ではなく、プレイヤーと敵の残HP割合を比較して `判定勝ち / 判定負け` を返すよう変更",
+                "耐久寄りの機体でも、受け切って残HP割合で上回れば勝ち筋になるよう探索戦の終盤判定を調整",
+                "結果画面には `8ターン終了: 残HP割合 ...` の補足行を追加し、なぜ勝敗が決まったか分かりやすく改善",
+            ],
+        },
+        {
             "version": "0.1.32",
             "date": "2026/04/04",
             "title": "戦闘演出でHP 0 の決着ターンが欠ける不具合を修正",
@@ -19727,6 +19764,8 @@ def explore():
     drop_labels = []
     new_robot = None
     timeout_any = False
+    final_timeout_decision = None
+    final_battle_timeout = False
     world_bonus_notes = []
     bonus_events = {}
     spawned_bonus_applied = False
@@ -20240,12 +20279,22 @@ def explore():
             )
             if enemy_hp == 0 or player_hp == 0:
                 break
+        timeout_decision = None
         if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= max_turns:
             battle_timeout = True
+            timeout_decision = _battle_timeout_judgement(
+                player_hp=player_hp,
+                player_hp_max=player_max_hp,
+                enemy_hp=enemy_hp,
+                enemy_hp_max=enemy_max_hp,
+            )
         timeout_any = timeout_any or battle_timeout
         all_turn_logs.extend(battle_logs)
+        timeout_player_win = bool(timeout_decision and timeout_decision.get("player_wins"))
 
-        if enemy_hp == 0:
+        if enemy_hp == 0 or timeout_player_win:
+            final_battle_timeout = bool(battle_timeout)
+            final_timeout_decision = dict(timeout_decision) if timeout_decision else None
             if area_boss_active and battle_no == 1:
                 rewards = {"coin": 0, "drop_type": "boss_reward", "dropped_parts": [], "promotion_triggered": False}
                 if area_boss_kind == "npc":
@@ -20517,6 +20566,7 @@ def explore():
                     "win": True,
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
+                    "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -20542,6 +20592,8 @@ def explore():
                     consecutive_bonus_applied = True
                     bonus_events["chain_bonus"] = 1
         else:
+            final_battle_timeout = bool(battle_timeout)
+            final_timeout_decision = dict(timeout_decision) if timeout_decision else None
             final_outcome = "lose"
             battle_results.append(
                 {
@@ -20549,6 +20601,7 @@ def explore():
                     "win": False,
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
+                    "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -20864,9 +20917,16 @@ def explore():
                     "link": url_for("parts", tab="instances"),
                 }
             )
+    outcome_display = "勝利" if final_outcome == "win" else "敗北"
+    if final_battle_timeout and final_timeout_decision:
+        outcome_display = str(final_timeout_decision.get("display_outcome") or outcome_display)
     if all_turn_logs:
-        all_turn_logs[-1]["result_line"] = random.choice(VICTORY_LOGS if final_outcome == "win" else DEFEAT_LOGS)
-        if boss_unlock_line:
+        all_turn_logs[-1]["result_line"] = (
+            str(final_timeout_decision.get("result_line"))
+            if final_battle_timeout and final_timeout_decision
+            else random.choice(VICTORY_LOGS if final_outcome == "win" else DEFEAT_LOGS)
+        )
+        if boss_unlock_line and not final_battle_timeout:
             all_turn_logs[-1]["result_line"] = boss_unlock_line
     if area_boss_active and final_outcome == "win" and last_enemy is not None:
         last_turn = int(all_turn_logs[-1]["turn"]) if all_turn_logs else 1
@@ -20954,7 +21014,9 @@ def explore():
         explore_ct_status_label = "出撃可能"
 
     summary = {
-        "outcome": "勝利" if final_outcome == "win" else "敗北",
+        "outcome": outcome_display,
+        "outcome_base": ("勝利" if final_outcome == "win" else "敗北"),
+        "outcome_is_win": bool(final_outcome == "win"),
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
         "reward_core": reward_core,
@@ -20991,6 +21053,12 @@ def explore():
         "streak_hint_line": streak_hint_line,
         "streak_break_line": streak_break_line,
         "timeout": timeout_any,
+        "timeout_decision": final_timeout_decision,
+        "timeout_decision_line": (
+            f"8ターン終了: 残HP割合 {final_timeout_decision.get('player_ratio_pct', 0):g}% vs {final_timeout_decision.get('enemy_ratio_pct', 0):g}% で{outcome_display}"
+            if final_battle_timeout and final_timeout_decision
+            else None
+        ),
         "archetype_line": archetype_note,
         "player_style": robot_style,
         "reason_line": reason_line,
