@@ -3,80 +3,90 @@
   class="card battle-cinematic-v1 theme-{{ battle_cinematic.get('stage_theme', 'hangar') }}{% if battle_cinematic.get('is_boss') %} is-boss{% endif %}"
   data-cinematic-version="v1"
 >
-  <div class="battle-cinematic-v1-head">
-    <div class="battle-cinematic-v1-heading">
-      <div class="battle-cinematic-v1-area">{{ battle_cinematic.get('area_label') or explore_area_label or '探索宙域' }}</div>
-      <div class="battle-cinematic-v1-battle-type">
-        {% if battle_cinematic.get('is_boss') %}
-        BOSS BATTLE
-        {% else %}
-        STANDARD BATTLE
-        {% endif %}
+  <div class="battle-cinematic-v1-core" data-cinematic-core="1">
+    <div class="battle-cinematic-v1-head">
+      <div class="battle-cinematic-v1-heading">
+        <div class="battle-cinematic-v1-title">{{ battle_cinematic.get('enemy_name', enemy_name) }}が襲いかかってきた！！！</div>
+        <div class="battle-cinematic-v1-progress-row">
+          <div class="battle-cinematic-v1-progress" data-cinematic-turn-indicator>TURN 1 / {{ battle_cinematic.get('turn_count', 1) }}</div>
+          <div class="battle-cinematic-v1-meta">
+            <div class="battle-cinematic-v1-area">{{ battle_cinematic.get('area_label') or explore_area_label or '探索宙域' }}</div>
+            <div class="battle-cinematic-v1-battle-type">
+              {% if battle_cinematic.get('is_boss') %}
+              BOSS BATTLE
+              {% else %}
+              STANDARD BATTLE
+              {% endif %}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="battle-cinematic-v1-progress" data-cinematic-turn-indicator>TURN 1 / {{ battle_cinematic.get('turn_count', 1) }}</div>
     </div>
-    <div class="battle-cinematic-v1-controls">
+
+    <div
+      class="battle-cinematic-v1-stage"
+      data-cinematic-stage="1"
+      data-stage-theme="{{ battle_cinematic.get('stage_theme', 'hangar') }}"
+      data-battle-type="{{ battle_cinematic.get('battle_type', 'normal') }}"
+    >
+      <div class="battle-cinematic-v1-floor" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-haze" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-center-line" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-projectile" data-cinematic-projectile="1" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-hitflash" data-cinematic-hitflash="1" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-sparks" data-cinematic-sparks="1" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-damage-pop target-player" data-cinematic-damage="player" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-damage-pop target-enemy" data-cinematic-damage="enemy" aria-hidden="true"></div>
+      <div class="battle-cinematic-v1-finish-call" data-cinematic-finish-call="1" hidden></div>
+
+      <div
+        class="battle-cinematic-v1-unit is-player trait-speed-{{ battle_cinematic.get('player_visual_traits', {}).get('speed_bias', 'normal') }} trait-accuracy-{{ battle_cinematic.get('player_visual_traits', {}).get('accuracy_bias', 'normal') }} trait-burst-{{ battle_cinematic.get('player_visual_traits', {}).get('burst_bias', 'normal') }} trait-defense-{{ battle_cinematic.get('player_visual_traits', {}).get('defense_bias', 'normal') }}"
+        data-cinematic-unit="player"
+      >
+        <div class="battle-cinematic-v1-nameplate">
+          <div class="battle-cinematic-v1-name">{{ battle_cinematic.get('player_name', player_name) }}</div>
+          <div class="battle-cinematic-v1-state-badge" data-cinematic-state="player"></div>
+        </div>
+        <div class="battle-cinematic-v1-frame">
+          <div class="battle-cinematic-v1-shadow" aria-hidden="true"></div>
+          <img src="{{ battle_cinematic.get('player_image_url') }}" alt="{{ battle_cinematic.get('player_name', player_name) }}" loading="eager" decoding="async" />
+        </div>
+        <div class="battle-cinematic-v1-hp" data-cinematic-hp="player" aria-hidden="true">
+          <span class="battle-cinematic-v1-hp-track"></span>
+          <span class="battle-cinematic-v1-hp-lag" data-cinematic-hp-lag="player"></span>
+          <span class="battle-cinematic-v1-hp-fill" data-cinematic-hp-fill="player"></span>
+        </div>
+      </div>
+
+      <div class="battle-cinematic-v1-center" aria-hidden="true">
+        <div class="battle-cinematic-v1-impact"></div>
+      </div>
+
+      <div
+        class="battle-cinematic-v1-unit is-enemy trait-enemy-{{ battle_cinematic.get('enemy_visual_traits', {}).get('trait', 'normal') }}"
+        data-cinematic-unit="enemy"
+      >
+        <div class="battle-cinematic-v1-nameplate">
+          <div class="battle-cinematic-v1-name">{{ battle_cinematic.get('enemy_name', enemy_name) }}</div>
+          <div class="battle-cinematic-v1-state-badge" data-cinematic-state="enemy"></div>
+        </div>
+        <div class="battle-cinematic-v1-frame">
+          <div class="battle-cinematic-v1-shadow" aria-hidden="true"></div>
+          <img src="{{ battle_cinematic.get('enemy_image_url') }}" alt="{{ battle_cinematic.get('enemy_name', enemy_name) }}" loading="eager" decoding="async" />
+        </div>
+        <div class="battle-cinematic-v1-hp" data-cinematic-hp="enemy" aria-hidden="true">
+          <span class="battle-cinematic-v1-hp-track"></span>
+          <span class="battle-cinematic-v1-hp-lag" data-cinematic-hp-lag="enemy"></span>
+          <span class="battle-cinematic-v1-hp-fill" data-cinematic-hp-fill="enemy"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="battle-cinematic-v1-controls battle-mode-tabs">
       <button type="button" class="battle-cinematic-v1-mode-button" data-cinematic-mode="standard">標準</button>
       <button type="button" class="battle-cinematic-v1-mode-button" data-cinematic-mode="fast">高速</button>
       <button type="button" class="battle-cinematic-v1-mode-button" data-cinematic-mode="instant">即結果</button>
       <button type="button" class="battle-cinematic-v1-skip" data-cinematic-skip="1">スキップ</button>
-    </div>
-  </div>
-
-  <div
-    class="battle-cinematic-v1-stage"
-    data-cinematic-stage="1"
-    data-stage-theme="{{ battle_cinematic.get('stage_theme', 'hangar') }}"
-    data-battle-type="{{ battle_cinematic.get('battle_type', 'normal') }}"
-  >
-    <div class="battle-cinematic-v1-floor" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-haze" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-center-line" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-projectile" data-cinematic-projectile="1" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-hitflash" data-cinematic-hitflash="1" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-sparks" data-cinematic-sparks="1" aria-hidden="true"></div>
-    <div class="battle-cinematic-v1-finish-call" data-cinematic-finish-call="1" hidden></div>
-
-    <div
-      class="battle-cinematic-v1-unit is-player trait-speed-{{ battle_cinematic.get('player_visual_traits', {}).get('speed_bias', 'normal') }} trait-accuracy-{{ battle_cinematic.get('player_visual_traits', {}).get('accuracy_bias', 'normal') }} trait-burst-{{ battle_cinematic.get('player_visual_traits', {}).get('burst_bias', 'normal') }} trait-defense-{{ battle_cinematic.get('player_visual_traits', {}).get('defense_bias', 'normal') }}"
-      data-cinematic-unit="player"
-    >
-      <div class="battle-cinematic-v1-nameplate">
-        <div class="battle-cinematic-v1-name">{{ battle_cinematic.get('player_name', player_name) }}</div>
-        <div class="battle-cinematic-v1-state-badge" data-cinematic-state="player"></div>
-      </div>
-      <div class="battle-cinematic-v1-hp" data-cinematic-hp="player" aria-hidden="true">
-        <span class="battle-cinematic-v1-hp-track"></span>
-        <span class="battle-cinematic-v1-hp-lag" data-cinematic-hp-lag="player"></span>
-        <span class="battle-cinematic-v1-hp-fill" data-cinematic-hp-fill="player"></span>
-      </div>
-      <div class="battle-cinematic-v1-frame">
-        <div class="battle-cinematic-v1-shadow" aria-hidden="true"></div>
-        <img src="{{ battle_cinematic.get('player_image_url') }}" alt="{{ battle_cinematic.get('player_name', player_name) }}" loading="eager" decoding="async" />
-      </div>
-    </div>
-
-    <div class="battle-cinematic-v1-center" aria-hidden="true">
-      <div class="battle-cinematic-v1-impact"></div>
-    </div>
-
-    <div
-      class="battle-cinematic-v1-unit is-enemy trait-enemy-{{ battle_cinematic.get('enemy_visual_traits', {}).get('trait', 'normal') }}"
-      data-cinematic-unit="enemy"
-    >
-      <div class="battle-cinematic-v1-nameplate">
-        <div class="battle-cinematic-v1-name">{{ battle_cinematic.get('enemy_name', enemy_name) }}</div>
-        <div class="battle-cinematic-v1-state-badge" data-cinematic-state="enemy"></div>
-      </div>
-      <div class="battle-cinematic-v1-hp" data-cinematic-hp="enemy" aria-hidden="true">
-        <span class="battle-cinematic-v1-hp-track"></span>
-        <span class="battle-cinematic-v1-hp-lag" data-cinematic-hp-lag="enemy"></span>
-        <span class="battle-cinematic-v1-hp-fill" data-cinematic-hp-fill="enemy"></span>
-      </div>
-      <div class="battle-cinematic-v1-frame">
-        <div class="battle-cinematic-v1-shadow" aria-hidden="true"></div>
-        <img src="{{ battle_cinematic.get('enemy_image_url') }}" alt="{{ battle_cinematic.get('enemy_name', enemy_name) }}" loading="eager" decoding="async" />
-      </div>
     </div>
   </div>
 

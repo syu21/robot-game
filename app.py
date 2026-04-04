@@ -129,6 +129,8 @@ REQUIRE_ALPHA = os.getenv("REQUIRE_ALPHA", "1") == "1"
 HOME_OK_MODE = os.getenv("HOME_OK_MODE", "0") == "1"
 HOME_DEBUG_COMMENT = os.getenv("HOME_DEBUG_COMMENT", "1") == "1"
 EXPLORE_MAX_TURNS = 8
+BUILD_PART_OFFSET_MIN = -24
+BUILD_PART_OFFSET_MAX = 24
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
@@ -178,6 +180,13 @@ COMM_WORLD_TIMELINE_LIMIT = 50
 COMM_ROOM_TIMELINE_LIMIT = 100
 COMM_PERSONAL_LOG_LIMIT = 30
 COMM_AUTO_REFRESH_SECONDS = 18
+
+BUILD_OFFSET_CONTROL_DEFS = (
+    {"slot": "head", "label": "HEAD（頭）", "preview_target": "head"},
+    {"slot": "r_arm", "label": "RIGHT_ARM（右腕）", "preview_target": "rarm"},
+    {"slot": "l_arm", "label": "LEFT_ARM（左腕）", "preview_target": "larm"},
+    {"slot": "legs", "label": "LEGS（脚）", "preview_target": "legs"},
+)
 HOME_COMM_PREVIEW_LIMIT = 12
 COMM_ROOM_DEFS = (
     {
@@ -7169,6 +7178,14 @@ def ensure_schema(db):
             r_arm_key TEXT NOT NULL,
             l_arm_key TEXT NOT NULL,
             legs_key TEXT NOT NULL,
+            head_offset_x INTEGER NOT NULL DEFAULT 0,
+            head_offset_y INTEGER NOT NULL DEFAULT 0,
+            r_arm_offset_x INTEGER NOT NULL DEFAULT 0,
+            r_arm_offset_y INTEGER NOT NULL DEFAULT 0,
+            l_arm_offset_x INTEGER NOT NULL DEFAULT 0,
+            l_arm_offset_y INTEGER NOT NULL DEFAULT 0,
+            legs_offset_x INTEGER NOT NULL DEFAULT 0,
+            legs_offset_y INTEGER NOT NULL DEFAULT 0,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
         )
@@ -8140,6 +8157,22 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN l_arm_part_instance_id INTEGER")
     if "legs_part_instance_id" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_part_instance_id INTEGER")
+    if "head_offset_x" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN head_offset_x INTEGER NOT NULL DEFAULT 0")
+    if "head_offset_y" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN head_offset_y INTEGER NOT NULL DEFAULT 0")
+    if "r_arm_offset_x" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN r_arm_offset_x INTEGER NOT NULL DEFAULT 0")
+    if "r_arm_offset_y" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN r_arm_offset_y INTEGER NOT NULL DEFAULT 0")
+    if "l_arm_offset_x" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN l_arm_offset_x INTEGER NOT NULL DEFAULT 0")
+    if "l_arm_offset_y" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN l_arm_offset_y INTEGER NOT NULL DEFAULT 0")
+    if "legs_offset_x" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_offset_x INTEGER NOT NULL DEFAULT 0")
+    if "legs_offset_y" not in rip_cols:
+        db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_offset_y INTEGER NOT NULL DEFAULT 0")
     if "decor_asset_id" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
     rda_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_decor_assets)").fetchall()}
@@ -8777,6 +8810,7 @@ def _create_robot_instance(
     status="active",
     personality=None,
     combat_mode="normal",
+    offsets=None,
 ):
     now = int(time.time())
     if not personality:
@@ -8789,12 +8823,35 @@ def _create_robot_instance(
         (user_id, robot_name, status, personality, _normalize_combat_mode(combat_mode), now, now),
     )
     instance_id = cur.lastrowid
+    offsets = offsets or {}
     db.execute(
         """
-        INSERT INTO robot_instance_parts (robot_instance_id, head_key, r_arm_key, l_arm_key, legs_key, decor_asset_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO robot_instance_parts (
+            robot_instance_id, head_key, r_arm_key, l_arm_key, legs_key,
+            head_offset_x, head_offset_y,
+            r_arm_offset_x, r_arm_offset_y,
+            l_arm_offset_x, l_arm_offset_y,
+            legs_offset_x, legs_offset_y,
+            decor_asset_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (instance_id, head_key, r_arm_key, l_arm_key, legs_key, decor_asset_id),
+        (
+            instance_id,
+            head_key,
+            r_arm_key,
+            l_arm_key,
+            legs_key,
+            int(offsets.get("head_offset_x", 0)),
+            int(offsets.get("head_offset_y", 0)),
+            int(offsets.get("r_arm_offset_x", 0)),
+            int(offsets.get("r_arm_offset_y", 0)),
+            int(offsets.get("l_arm_offset_x", 0)),
+            int(offsets.get("l_arm_offset_y", 0)),
+            int(offsets.get("legs_offset_x", 0)),
+            int(offsets.get("legs_offset_y", 0)),
+            decor_asset_id,
+        ),
     )
     return instance_id
 
@@ -9450,6 +9507,41 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def _build_offset_field_name(slot, axis):
+    return f"{slot}_offset_{axis}"
+
+
+def _build_offset_payload_from_values(values):
+    payload = {}
+    for cfg in BUILD_OFFSET_CONTROL_DEFS:
+        slot = cfg["slot"]
+        for axis in ("x", "y"):
+            field = _build_offset_field_name(slot, axis)
+            raw = ""
+            if values is not None:
+                try:
+                    raw = values.get(field, "")
+                except Exception:
+                    raw = ""
+            try:
+                val = int(str(raw or "").strip())
+            except (TypeError, ValueError):
+                val = 0
+            payload[field] = int(_clamp(val, BUILD_PART_OFFSET_MIN, BUILD_PART_OFFSET_MAX))
+    return payload
+
+
+def _robot_instance_part_offsets(parts_row):
+    payload = {}
+    row_keys = set(parts_row.keys()) if parts_row and hasattr(parts_row, "keys") else set()
+    for cfg in BUILD_OFFSET_CONTROL_DEFS:
+        slot = cfg["slot"]
+        for axis in ("x", "y"):
+            field = _build_offset_field_name(slot, axis)
+            payload[field] = int(parts_row[field] or 0) if field in row_keys else 0
+    return payload
+
+
 def _seed_enemies(db):
     for key, s in ENEMY_SEED_STATS.items():
         db.execute(
@@ -9708,11 +9800,28 @@ def _compose_instance_image(db, instance_row, parts_row):
     decor = _get_decor_asset_by_id(db, parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None)
     if not all([head, r_arm, l_arm, legs]):
         return None
+    offsets = _robot_instance_part_offsets(parts_row)
     compose_robot(
-        {"path": _asset_abs(head["image_path"]), "x": head["offset_x"], "y": head["offset_y"]},
-        {"path": _asset_abs(r_arm["image_path"]), "x": r_arm["offset_x"], "y": r_arm["offset_y"]},
-        {"path": _asset_abs(l_arm["image_path"]), "x": l_arm["offset_x"], "y": l_arm["offset_y"]},
-        {"path": _asset_abs(legs["image_path"]), "x": legs["offset_x"], "y": legs["offset_y"]},
+        {
+            "path": _asset_abs(head["image_path"]),
+            "x": head["offset_x"] + offsets.get("head_offset_x", 0),
+            "y": head["offset_y"] + offsets.get("head_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(r_arm["image_path"]),
+            "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
+            "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(l_arm["image_path"]),
+            "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
+            "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(legs["image_path"]),
+            "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
+            "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
+        },
         out_path,
         _decor_layer_or_none(decor),
     )
@@ -9756,12 +9865,29 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
     decor = _get_decor_asset_by_id(db, parts_row.get("decor_asset_id"))
     if not all([head, r_arm, l_arm, legs]):
         raise ValueError("パーツ構成が不正です。")
+    offsets = _robot_instance_part_offsets(parts_row)
 
     compose_robot(
-        {"path": _asset_abs(head["image_path"]), "x": head["offset_x"], "y": head["offset_y"]},
-        {"path": _asset_abs(r_arm["image_path"]), "x": r_arm["offset_x"], "y": r_arm["offset_y"]},
-        {"path": _asset_abs(l_arm["image_path"]), "x": l_arm["offset_x"], "y": l_arm["offset_y"]},
-        {"path": _asset_abs(legs["image_path"]), "x": legs["offset_x"], "y": legs["offset_y"]},
+        {
+            "path": _asset_abs(head["image_path"]),
+            "x": head["offset_x"] + offsets.get("head_offset_x", 0),
+            "y": head["offset_y"] + offsets.get("head_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(r_arm["image_path"]),
+            "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
+            "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(l_arm["image_path"]),
+            "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
+            "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
+        },
+        {
+            "path": _asset_abs(legs["image_path"]),
+            "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
+            "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
+        },
         out_path,
         _decor_layer_or_none(decor),
     )
@@ -16385,6 +16511,26 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.35",
+            "date": "2026/04/05",
+            "title": "スマホで戦闘アニメを最優先表示",
+            "notes": [
+                "battle-cinematic-v1 の見出しと TURN 表示を戦闘本体の直上へ整理し、敵名 / TURN / ロボ2体 / HPバー / モード切替 がスマホのファーストビューに入りやすいよう改善",
+                "モード切替は横並びタブ化し、スマホでは戦闘コアを sticky 表示にしてログを見ても戦闘本体を追いやすいよう調整",
+                "被弾時の数字ダメージ表示と HPバー変化を強め、静的JS/CSSのキャッシュ切り替えのためアプリ版を更新",
+            ],
+        },
+        {
+            "version": "0.1.34",
+            "date": "2026/04/04",
+            "title": "ロボ編成で部位位置の微調整に対応",
+            "notes": [
+                "build 画面のプレビュー下に HEAD / 右腕 / 左腕 / 脚 の `左右 / 上下` 微調整スライダーを追加し、完成前に見た目を追い込めるよう改善",
+                "調整値はロボ個体ごとに保存され、完成登録後の composed 画像やアイコン再生成でも同じ位置が維持されるよう対応",
+                "静的JS/CSSのキャッシュ切り替えのためアプリ版を更新",
+            ],
+        },
+        {
             "version": "0.1.33",
             "date": "2026/04/04",
             "title": "戦闘のtimeoutを残HP割合で判定するよう変更",
@@ -21724,6 +21870,7 @@ def build():
     selected_slot_values = {}
     selected_parts = {}
     selected_payloads = []
+    selected_offsets = _build_offset_payload_from_values(request.values)
     for part_type, param in slot_param_map.items():
         options = part_groups[part_type]
         picked_raw = (request.values.get(param) or "").strip()
@@ -21831,6 +21978,10 @@ def build():
         current_build_style=current_build_style,
         current_robot_stats=current_robot_stats,
         stat_comparison_rows=stat_comparison_rows,
+        selected_offsets=selected_offsets,
+        build_offset_control_defs=BUILD_OFFSET_CONTROL_DEFS,
+        build_offset_min=BUILD_PART_OFFSET_MIN,
+        build_offset_max=BUILD_PART_OFFSET_MAX,
         boss_alert_active=boss_alert_hint["boss_alert_active"],
         boss_type=boss_alert_hint["boss_type"],
         recommended_build=boss_alert_hint["recommended_build"],
@@ -21846,6 +21997,7 @@ def build_confirm():
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     robot_name = request.form.get("robot_name", "").strip()
+    selected_offsets = _build_offset_payload_from_values(request.form)
     head_choice = (request.form.get("head_key") or "").strip()
     r_arm_choice = (request.form.get("r_arm_key") or "").strip()
     l_arm_choice = (request.form.get("l_arm_key") or "").strip()
@@ -21986,6 +22138,7 @@ def build_confirm():
             decor_asset_id=decor_asset_id,
             status="active",
             combat_mode=combat_mode,
+            offsets=selected_offsets,
         )
         _equip_part_instances_on_robot(db, instance_id, selected)
         parts = {
@@ -21994,6 +22147,7 @@ def build_confirm():
             "l_arm_key": l_arm_key,
             "legs_key": legs_key,
             "decor_asset_id": decor_asset_id,
+            **selected_offsets,
         }
         _compose_instance_assets_no_commit(db, instance_id, parts)
         _ensure_robot_title_master_rows(db)
@@ -22020,6 +22174,7 @@ def build_confirm():
                 "legs_key": legs_key,
                 "decor_asset_id": decor_asset_id,
                 "combat_mode": combat_mode,
+                "offsets": dict(selected_offsets),
                 "consumed_part_instance_ids": consumed_ids,
             },
             ip=request.remote_addr,

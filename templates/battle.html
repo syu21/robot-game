@@ -6,6 +6,7 @@
 {% set boss_victory = summary and summary.get('is_area_boss') and summary.get('outcome') == '勝利' %}
 {% set show_battle_ritual_overlay = ui_effects_enabled and battle_ritual_overlay_enabled and boss_victory %}
 {% set battle_cinematic = summary.get('battle_cinematic') if summary else (summary.get('battle_replay') if summary else None) %}
+{% set battle_cinematic_enabled = explore_mode and summary and ui_effects_enabled and battle_short_replay_enabled and battle_cinematic %}
 <div class="battle-scene{% if battle_bg_url %} has-boss-bg{% endif %}{% if boss_victory %} boss-victory-ritual{% endif %}"{% if battle_bg_url %} data-battle-bg-url="{{ battle_bg_url }}"{% endif %}>
 {% if show_battle_ritual_overlay %}
 <div id="battle-ritual-overlay" class="battle-ritual-overlay{% if summary.get('unlocked_layer') %} layer-theme-{{ summary['unlocked_layer'] }}{% endif %}" aria-hidden="true"></div>
@@ -18,6 +19,10 @@
   {% endif %}
 </div>
 {% endif %}
+{% if battle_cinematic_enabled %}
+  {% include '_battle_cinematic_v1.html' %}
+{% endif %}
+{% if not battle_cinematic_enabled %}
 <h1 class="battle-title">{{ enemy_name }}が襲いかかってきた！！！</h1>
 {% if summary and summary.get('enemy_faction_label') %}
   <div class="upgrade-cost">所属: {{ summary['enemy_faction_label'] }} / Tier {{ summary.get('enemy_tier', '-') }}</div>
@@ -29,12 +34,9 @@
 {% if message %}
   <div class="notice">{{ message }}</div>
 {% endif %}
+{% endif %}
 
 {% if explore_mode and summary %}
-  {% if ui_effects_enabled and battle_short_replay_enabled and battle_cinematic %}
-  {% include '_battle_cinematic_v1.html' %}
-  {% endif %}
-
   <div id="battle-replay-followup">
   {% set player_img = active_robot.get('image_url') if active_robot and active_robot.get('image_url') else url_for('static', filename='assets/placeholder_player.png') %}
   {% set enemy_img = summary.get('enemy_image_url') if summary and summary.get('enemy_image_url') else url_for('static', filename='assets/placeholder_enemy.png') %}
@@ -207,9 +209,12 @@
   {% endif %}
 
   <div class="battle-section-title">結果</div>
-  <div class="card battle-outcome-banner {% if summary['outcome'] == '勝利' %}win{% else %}lose{% endif %}">
-    <div class="battle-outcome-label">{% if summary['outcome'] == '勝利' %}WIN{% else %}LOSE{% endif %}</div>
+  <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
+    <div class="battle-outcome-label">{% if summary.get('outcome_is_win') %}WIN{% else %}LOSE{% endif %}</div>
     <div class="battle-outcome-sub">{{ summary['outcome'] }}</div>
+    {% if summary.get('timeout_decision_line') %}
+    <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
+    {% endif %}
   </div>
 
   <div class="battle-section-title">戦利品</div>

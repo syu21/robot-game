@@ -244,6 +244,8 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('id="battle-short-replay"', html)
             self.assertIn('data-cinematic-version="v1"', html)
             self.assertIn('id="battle-cinematic-v1-data"', html)
+            self.assertIn('class="battle-cinematic-v1-title"', html)
+            self.assertIn('class="battle-cinematic-v1-controls battle-mode-tabs"', html)
             self.assertIn('data-cinematic-mode="standard"', html)
             self.assertIn('data-cinematic-mode="fast"', html)
             self.assertIn('data-cinematic-mode="instant"', html)
@@ -251,10 +253,13 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('data-cinematic-turn-indicator', html)
             self.assertIn('data-cinematic-projectile="1"', html)
             self.assertIn('data-cinematic-finish-call="1"', html)
+            self.assertIn('data-cinematic-damage="player"', html)
+            self.assertIn('data-cinematic-damage="enemy"', html)
             self.assertNotRegex(html, r'id="battle-short-replay"[^>]*\shidden')
             self.assertIn('data-cinematic-hp="player"', html)
             self.assertIn('data-cinematic-hp="enemy"', html)
             self.assertIn('id="battle-replay-followup"', html)
+            self.assertNotIn('class="battle-title"', html)
 
     def test_ui_effects_off_skips_short_replay_markup(self):
         user_id = self._create_user("replay_no_fx", is_admin=0)

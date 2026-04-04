@@ -28,6 +28,10 @@
     const hitflash = root.querySelector("[data-cinematic-hitflash]");
     const sparks = root.querySelector("[data-cinematic-sparks]");
     const finishCall = root.querySelector("[data-cinematic-finish-call]");
+    const damagePops = {
+      player: root.querySelector('[data-cinematic-damage="player"]'),
+      enemy: root.querySelector('[data-cinematic-damage="enemy"]'),
+    };
     const modeButtons = Array.from(root.querySelectorAll("[data-cinematic-mode]"));
     const skipButton = root.querySelector("[data-cinematic-skip]");
     const turnIndicator = root.querySelector("[data-cinematic-turn-indicator]");
@@ -170,6 +174,14 @@
           .filter((className) => !/^is-/.test(className) && !/^from-/.test(className) && !/^to-/.test(className) && !/^target-/.test(className))
           .join(" ");
       });
+      Object.values(damagePops).forEach((node) => {
+        if (!node) return;
+        node.textContent = "";
+        node.className = node.className
+          .split(" ")
+          .filter((className) => !/^is-/.test(className))
+          .join(" ");
+      });
       if (finishCall) {
         finishCall.hidden = true;
         finishCall.textContent = "";
@@ -278,6 +290,22 @@
       };
     };
 
+    const showDamagePop = (side, label, step, runId) => {
+      const node = damagePops[side];
+      if (!node || !label) return;
+      node.textContent = label;
+      node.classList.remove("is-visible", "is-critical");
+      if (String(step.hit_type || "") === "crit") {
+        node.classList.add("is-critical");
+      }
+      void node.offsetWidth;
+      node.classList.add("is-visible");
+      queueTimeout(() => {
+        node.classList.remove("is-visible", "is-critical");
+        node.textContent = "";
+      }, 520, runId);
+    };
+
     const applyStepVisuals = (step, runId) => {
       resetTransientClasses();
       if (stage) {
@@ -297,6 +325,9 @@
         targetUnit && targetUnit.classList.add("is-blocking");
       } else {
         targetUnit && targetUnit.classList.add("is-hit");
+        if (step.value_label) {
+          showDamagePop(step.target || "enemy", step.value_label, step, runId);
+        }
         if (step.hit_type === "crit") {
           root.classList.add("is-critical", "is-hit-stop");
           targetUnit && targetUnit.classList.add("is-crit-hit");
