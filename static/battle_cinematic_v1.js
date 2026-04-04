@@ -303,9 +303,13 @@
     const playFinisherMoment = async (step, visuals, baseStepDelay, runId) => {
       const targetSide = step.target === "player" ? "player" : "enemy";
       const targetAnim = targetSide === "player" ? visuals.playerHpAnim : visuals.enemyHpAnim;
-      const collapseDelay = Math.max(260, Number(targetAnim?.dropDelay || 120) + 140);
-      const callDelay = collapseDelay + (step.hit_type === "crit" ? 200 : 140);
-      const holdDelay = Math.max(baseStepDelay + 320, callDelay + 520);
+      const hpZeroDelay = Math.max(
+        Number(targetAnim?.dropDelay || 120),
+        Number(targetAnim?.lagDelay || 260)
+      );
+      const collapseDelay = Math.max(320, hpZeroDelay + 120);
+      const callDelay = collapseDelay + (step.hit_type === "crit" ? 240 : 180);
+      const holdDelay = Math.max(baseStepDelay + 520, callDelay + 680);
       const finishText =
         payload.is_boss && targetSide === "enemy"
           ? "BOSS DEFEATED"
