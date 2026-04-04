@@ -225,14 +225,31 @@
 
     const applyHpAnimation = (side, nextHp, step, runId) => {
       const bar = hpBars[side];
-      if (!bar || !bar.root) return { hasDrop: false, dropDelay: 0, lagDelay: 0, hpValue: hpState[side] };
+      if (!bar || !bar.root) {
+        return {
+          hasDrop: false,
+          dropDelay: 0,
+          lagDelay: 0,
+          hpValue: hpState[side],
+          fillCompleteDelay: 0,
+          lagCompleteDelay: 0,
+        };
+      }
       const hpValue = Math.max(0, Math.min(hpMax[side], Number(nextHp)));
       const previousHp = hpState[side];
       const hasDrop = hpValue !== previousHp;
       const isCrit = String(step.hit_type || "") === "crit";
+      const isLethal = Boolean(step.is_finisher) && hpValue <= 0;
       const isBrace = side === "player" && hpValue > 0 && hpRatio(side, hpValue) <= 0.12 && hasDrop;
       if (!hasDrop) {
-        return { hasDrop: false, dropDelay: 0, lagDelay: 0, hpValue };
+        return {
+          hasDrop: false,
+          dropDelay: 0,
+          lagDelay: 0,
+          hpValue,
+          fillCompleteDelay: 0,
+          lagCompleteDelay: 0,
+        };
       }
 
       bar.root.classList.add("is-hurt");
@@ -240,7 +257,9 @@
       if (isBrace) bar.root.classList.add("is-bracing");
 
       const dropDelay = isCrit ? 170 : 120;
-      const lagDelay = isCrit ? 350 : 260;
+      const lagDelay = isLethal ? dropDelay + 70 : (isCrit ? 350 : 260);
+      const fillTransitionMs = 180;
+      const lagTransitionMs = isLethal ? 180 : 340;
       queueTimeout(() => {
         hpState[side] = hpValue;
         paintHp(side, hpState[side], lagHpState[side]);
@@ -249,7 +268,14 @@
         lagHpState[side] = hpValue;
         paintHp(side, hpState[side], lagHpState[side]);
       }, lagDelay, runId);
-      return { hasDrop: true, dropDelay, lagDelay, hpValue };
+      return {
+        hasDrop: true,
+        dropDelay,
+        lagDelay,
+        hpValue,
+        fillCompleteDelay: dropDelay + fillTransitionMs,
+        lagCompleteDelay: lagDelay + lagTransitionMs,
+      };
     };
 
     const applyStepVisuals = (step, runId) => {
@@ -304,8 +330,8 @@
       const targetSide = step.target === "player" ? "player" : "enemy";
       const targetAnim = targetSide === "player" ? visuals.playerHpAnim : visuals.enemyHpAnim;
       const hpZeroDelay = Math.max(
-        Number(targetAnim?.dropDelay || 120),
-        Number(targetAnim?.lagDelay || 260)
+        Number(targetAnim?.fillCompleteDelay || targetAnim?.dropDelay || 120),
+        Number(targetAnim?.lagCompleteDelay || targetAnim?.lagDelay || 260)
       );
       const collapseDelay = Math.max(320, hpZeroDelay + 120);
       const callDelay = collapseDelay + (step.hit_type === "crit" ? 240 : 180);
