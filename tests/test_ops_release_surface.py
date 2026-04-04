@@ -364,17 +364,17 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("🏆", header_html)
         self.assertIn("user-trophy-badge", header_html)
 
-    def test_changelog_shows_latest_2026_04_03_entry(self):
+    def test_changelog_shows_latest_2026_04_04_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.26 - 2026/04/03", html)
-        self.assertIn("ショート戦闘演出の可読性と表示安定性を改善", html)
-        self.assertIn("1行テロップ同期へ変更", html)
-        self.assertIn("弾道 / 着弾 / HIT / 会心 / 踏ん張り", html)
-        self.assertIn("`battle_page_v2.js` の参照を新バージョンへ切り替え", html)
-        self.assertLess(html.index("v0.1.26 - 2026/04/03"), html.index("v0.1.25 - 2026/04/03"))
+        self.assertIn("v0.1.28 - 2026/04/04", html)
+        self.assertIn("戦闘演出をターンカード式の battle-cinematic-v1 へ刷新", html)
+        self.assertIn("標準 / 高速 / 即結果", html)
+        self.assertIn("装甲亀裂 / センサー異常 / 駆動低下 / 武装不安定 / 出力暴走 / 体勢維持", html)
+        self.assertIn("機構状態と、最後の `勝ち筋 / 崩れ筋` 要約を表示", html)
+        self.assertLess(html.index("v0.1.28 - 2026/04/04"), html.index("v0.1.27 - 2026/04/03"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

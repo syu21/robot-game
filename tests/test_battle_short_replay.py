@@ -8,7 +8,7 @@ import init_db
 
 
 class BattleShortReplayHelperTests(unittest.TestCase):
-    def test_normal_replay_caps_at_four_events(self):
+    def test_normal_replay_builds_turn_cards_until_finisher(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_1",
             area_label="第一層",
@@ -26,6 +26,8 @@ class BattleShortReplayHelperTests(unittest.TestCase):
                     "enemy_action": "攻撃",
                     "player_damage": 4,
                     "enemy_damage": 0,
+                    "player_before": 15,
+                    "enemy_before": 12,
                     "player_after": 15,
                     "enemy_after": 8,
                     "player_max": 15,
@@ -38,6 +40,8 @@ class BattleShortReplayHelperTests(unittest.TestCase):
                     "enemy_action": "攻撃",
                     "player_damage": 8,
                     "enemy_damage": 2,
+                    "player_before": 15,
+                    "enemy_before": 8,
                     "player_after": 13,
                     "enemy_after": 0,
                     "player_max": 15,
@@ -49,15 +53,22 @@ class BattleShortReplayHelperTests(unittest.TestCase):
             is_boss=False,
         )
         self.assertIsNotNone(replay)
-        self.assertLessEqual(len(replay["events"]), 4)
-        self.assertEqual(replay["events"][-1]["type"], "player_finisher")
-        self.assertEqual(replay["events"][0]["type"], "player_opening")
+        self.assertEqual(replay["version"], "v1")
+        self.assertEqual(replay["battle_type"], "normal")
+        self.assertEqual(replay["winner"], "player")
+        self.assertEqual(len(replay["turns"]), 2)
+        self.assertEqual(replay["turns"][0]["turn"], 1)
+        self.assertEqual(replay["turns"][0]["opening_actor"], "player")
+        self.assertTrue(any(step.get("critical") for step in replay["turns"][-1]["steps"]))
+        self.assertEqual(replay["turns"][-1]["steps"][0]["target"], "enemy")
         self.assertEqual(replay["player_hp_start"], 15)
         self.assertEqual(replay["enemy_hp_start"], 12)
-        self.assertTrue(all(item.get("player_hp_max") for item in replay["events"]))
-        self.assertTrue(all(item.get("enemy_hp_max") for item in replay["events"]))
+        self.assertGreaterEqual(replay["turns"][0]["standard_duration_ms"], 1550)
+        self.assertGreaterEqual(replay["turns"][0]["fast_duration_ms"], 760)
+        self.assertTrue(all(turn.get("steps") for turn in replay["turns"]))
+        self.assertIn(replay["summary_label"], {"爆発力で押し切った", "命中安定で崩した", "先手制圧で押し切った", "装甲差で競り勝った"})
 
-    def test_boss_replay_includes_warning_and_defeat(self):
+    def test_boss_replay_includes_turn_status_and_defeat_summary(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_4_forge",
             area_label="第四層",
@@ -75,6 +86,8 @@ class BattleShortReplayHelperTests(unittest.TestCase):
                     "enemy_action": "斬撃",
                     "player_damage": 0,
                     "enemy_damage": 4,
+                    "player_before": 17,
+                    "enemy_before": 20,
                     "player_after": 13,
                     "enemy_after": 20,
                     "player_max": 17,
@@ -87,6 +100,8 @@ class BattleShortReplayHelperTests(unittest.TestCase):
                     "enemy_action": "追撃",
                     "player_damage": 11,
                     "enemy_damage": 0,
+                    "player_before": 13,
+                    "enemy_before": 20,
                     "player_after": 13,
                     "enemy_after": 9,
                     "player_max": 17,
@@ -99,6 +114,8 @@ class BattleShortReplayHelperTests(unittest.TestCase):
                     "enemy_action": "追撃",
                     "player_damage": 9,
                     "enemy_damage": 0,
+                    "player_before": 13,
+                    "enemy_before": 9,
                     "player_after": 13,
                     "enemy_after": 0,
                     "player_max": 17,
@@ -110,10 +127,16 @@ class BattleShortReplayHelperTests(unittest.TestCase):
             is_boss=True,
         )
         self.assertIsNotNone(replay)
-        event_types = [item["type"] for item in replay["events"]]
-        self.assertEqual(event_types[0], "boss_warning")
-        self.assertIn("boss_defeated", event_types)
+        self.assertEqual(replay["version"], "v1")
+        self.assertTrue(replay["is_boss"])
         self.assertEqual(replay["result_label"], "BOSS DEFEATED")
+        self.assertEqual(replay["summary_heading"], "今回の勝ち筋")
+        self.assertGreaterEqual(replay["intro_delay_ms"], 760)
+        self.assertGreaterEqual(replay["outro_hold_ms"], 1320)
+        self.assertEqual(len(replay["turns"]), 3)
+        self.assertTrue(any(turn.get("status_label") for turn in replay["turns"]))
+        self.assertTrue(all(int(turn.get("standard_duration_ms") or 0) >= 2100 for turn in replay["turns"]))
+        self.assertTrue(any(step.get("hit_type") == "crit" for turn in replay["turns"] for step in turn.get("steps") or []))
 
 
 class BattleShortReplayRouteTests(unittest.TestCase):
@@ -158,12 +181,16 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn('id="battle-short-replay"', html)
-            self.assertIn('id="battle-short-replay-data"', html)
-            self.assertIn('data-replay-skip="1"', html)
-            self.assertIn('data-replay-caption="1"', html)
-            self.assertIn('data-replay-projectile="1"', html)
-            self.assertIn('data-replay-hp="player"', html)
-            self.assertIn('data-replay-hp="enemy"', html)
+            self.assertIn('data-cinematic-version="v1"', html)
+            self.assertIn('id="battle-cinematic-v1-data"', html)
+            self.assertIn('data-cinematic-mode="standard"', html)
+            self.assertIn('data-cinematic-mode="fast"', html)
+            self.assertIn('data-cinematic-mode="instant"', html)
+            self.assertIn('data-cinematic-skip="1"', html)
+            self.assertIn('data-cinematic-turn-indicator', html)
+            self.assertIn('data-cinematic-projectile="1"', html)
+            self.assertIn('data-cinematic-hp="player"', html)
+            self.assertIn('data-cinematic-hp="enemy"', html)
             self.assertIn('id="battle-replay-followup"', html)
 
     def test_ui_effects_off_skips_short_replay_markup(self):

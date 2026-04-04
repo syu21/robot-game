@@ -3659,6 +3659,7 @@ def _battle_replay_event(
     player_hp_max=None,
     enemy_hp=None,
     enemy_hp_max=None,
+    duration_ms=None,
     crit=False,
     heavy=False,
 ):
@@ -3673,9 +3674,44 @@ def _battle_replay_event(
         "player_hp_max": (int(player_hp_max) if player_hp_max is not None else None),
         "enemy_hp": (int(enemy_hp) if enemy_hp is not None else None),
         "enemy_hp_max": (int(enemy_hp_max) if enemy_hp_max is not None else None),
+        "duration_ms": (int(duration_ms) if duration_ms is not None else None),
         "crit": bool(crit),
         "heavy": bool(heavy),
     }
+
+
+BATTLE_CINEMATIC_STATE_META = {
+    "armor_crack": {
+        "label": "装甲亀裂",
+        "tactical": "装甲が揺らいだ",
+        "priority": 20,
+    },
+    "sensor_glitch": {
+        "label": "センサー異常",
+        "tactical": "補足精度が乱れた",
+        "priority": 30,
+    },
+    "drive_drop": {
+        "label": "駆動低下",
+        "tactical": "機動が鈍った",
+        "priority": 40,
+    },
+    "weapon_unstable": {
+        "label": "武装不安定",
+        "tactical": "出力が安定しない",
+        "priority": 50,
+    },
+    "output_surge": {
+        "label": "出力暴走",
+        "tactical": "高出力へ移行",
+        "priority": 60,
+    },
+    "stance_hold": {
+        "label": "体勢維持",
+        "tactical": "体勢を崩していない",
+        "priority": 10,
+    },
+}
 
 
 def _build_battle_replay_summary(
@@ -3696,6 +3732,7 @@ def _build_battle_replay_summary(
     logs = [dict(item) for item in (turn_logs or []) if isinstance(item, dict) and not item.get("separator_line")]
     if not logs:
         return None
+
     player_won = str(outcome or "").strip() in {"win", "勝利"}
     player_traits = _battle_replay_visual_traits(player_stats, robot_style)
     enemy_trait = _normalize_enemy_trait((enemy_stats or {}).get("trait"))
@@ -3703,287 +3740,327 @@ def _build_battle_replay_summary(
     player_speed = int((player_stats or {}).get("spd") or 0)
     player_first = player_speed >= enemy_speed
     first_row = logs[0]
-    player_hp_max = int(first_row.get("player_max") or player_stats.get("hp") or 1)
-    enemy_hp_max = int(first_row.get("enemy_max") or enemy_stats.get("hp") or 1)
+    player_hp_max = max(1, int(first_row.get("player_max") or player_stats.get("hp") or 1))
+    enemy_hp_max = max(1, int(first_row.get("enemy_max") or enemy_stats.get("hp") or 1))
     player_hp_start = int(first_row.get("player_before") or player_hp_max)
     enemy_hp_start = int(first_row.get("enemy_before") or enemy_hp_max)
+    enemy_speed_bias = _battle_replay_bias(enemy_speed, low=8, high=13)
 
-    def _hp_kwargs(row=None, *, before=False):
-        if row:
-            if before:
-                return {
-                    "player_hp": int(row.get("player_before") or player_hp_start),
-                    "player_hp_max": int(row.get("player_max") or player_hp_max),
-                    "enemy_hp": int(row.get("enemy_before") or enemy_hp_start),
-                    "enemy_hp_max": int(row.get("enemy_max") or enemy_hp_max),
-                }
+    def _ratio(hp_value, hp_max):
+        return max(0.0, min(1.0, float(int(hp_value or 0)) / max(1, int(hp_max or 1))))
+
+    def _effect_meta(effect_key):
+        return BATTLE_CINEMATIC_STATE_META.get(str(effect_key or "").strip(), {})
+
+    def _effect_priority(effect_key):
+        return int(_effect_meta(effect_key).get("priority") or 0)
+
+    def _row_has_action(side, row):
+        action = str((row or {}).get(f"{side}_action") or "").strip()
+        return action not in {"", "行動不能", "追撃不要"}
+
+    def _action_family(action_name):
+        action = str(action_name or "").strip()
+        if any(token in action for token in ("砲", "射", "バースト", "ビーム")):
+            return "shot"
+        if any(token in action for token in ("斬", "スラッシュ", "ブレード")):
+            return "slash"
+        if any(token in action for token in ("防", "ガード", "受け")):
+            return "guard"
+        return "strike"
+
+    def _action_label(side, action_name, hit_type, *, crit=False, finisher=False):
+        family = _action_family(action_name)
+        if hit_type == "miss":
+            return "補足失敗"
+        if hit_type == "block":
+            return "防壁で軽減"
+        if finisher and crit:
+            return "会心で制圧"
+        if finisher:
+            return "決着の一撃"
+        if crit:
+            return "高出力攻撃"
+        if family == "shot":
+            return "砲撃命中"
+        if family == "slash":
+            return "斬撃命中"
+        if family == "guard":
+            return "防御姿勢"
+        return "攻撃命中"
+
+    def _result_label(hit_type, damage_value, *, actor, target):
+        damage = int(damage_value or 0)
+        if hit_type == "miss":
+            return f"{target} は回避"
+        if hit_type == "block":
+            return f"{target} が受け切った"
+        if hit_type == "crit":
+            return f"{target} に会心 -{damage}"
+        if damage > 0:
+            return f"{target} に -{damage}"
+        return f"{actor} が仕掛けた"
+
+    def _value_label(hit_type, damage_value):
+        damage = int(damage_value or 0)
+        if hit_type == "miss":
+            return "MISS"
+        if hit_type == "block":
+            return "BLOCK"
+        if damage > 0:
+            return f"-{damage}"
+        return ""
+
+    def _infer_step_effect(*, side, row, damage, hit_type, crit, target_side, target_after, target_max):
+        row = row or {}
+        if hit_type == "miss":
+            return "sensor_glitch", side, _effect_meta("sensor_glitch").get("tactical")
+        if crit and damage > 0:
+            return "output_surge", side, _effect_meta("output_surge").get("tactical")
+        if side == "enemy" and enemy_trait == "unstable" and damage > 0:
+            return "weapon_unstable", side, _effect_meta("weapon_unstable").get("tactical")
+        if side == "enemy" and enemy_trait == "berserk" and damage > 0 and int(row.get("enemy_before") or enemy_hp_start) * 2 <= enemy_hp_max:
+            return "output_surge", side, _effect_meta("output_surge").get("tactical")
+        damage_ratio = float(damage) / max(1, int(target_max or 1))
+        if damage_ratio >= 0.34 or (damage > 0 and int(target_after or 0) <= 0):
+            return "armor_crack", target_side, _effect_meta("armor_crack").get("tactical")
+        if target_side == "enemy" and enemy_speed_bias == "high" and damage > 0:
+            return "drive_drop", target_side, _effect_meta("drive_drop").get("tactical")
+        if hit_type == "block":
+            return "stance_hold", target_side, _effect_meta("stance_hold").get("tactical")
+        if damage > 0 and int(target_after or 0) > 0 and _ratio(target_after, target_max) <= 0.12:
+            return "stance_hold", target_side, "体勢を崩さず踏みとどまった"
+        return None, None, None
+
+    def _infer_turn_brace(row):
+        row = row or {}
+        damage = int(row.get("enemy_damage") or 0)
+        player_after = int(row.get("player_after") or 0)
+        if damage <= 0 or player_after <= 0:
+            return None
+        player_before = int(row.get("player_before") or player_hp_start)
+        severe_drop = (player_before - player_after) >= max(4, int(math.ceil(player_hp_max * 0.22)))
+        near_break = player_after <= max(1, int(math.ceil(player_hp_max * 0.1)))
+        if severe_drop or near_break:
             return {
-                "player_hp": int(row.get("player_after") or player_hp_start),
-                "player_hp_max": int(row.get("player_max") or player_hp_max),
-                "enemy_hp": int(row.get("enemy_after") or enemy_hp_start),
-                "enemy_hp_max": int(row.get("enemy_max") or enemy_hp_max),
+                "effect": "stance_hold",
+                "target": "player",
+                "tactical": "体勢維持で踏みとどまった",
             }
+        return None
+
+    def _turn_tactical(row, step_effect):
+        if step_effect and step_effect.get("tactical"):
+            return str(step_effect.get("tactical"))
+        player_damage = int((row or {}).get("player_damage") or 0)
+        enemy_damage = int((row or {}).get("enemy_damage") or 0)
+        player_missed = _battle_replay_is_miss((row or {}).get("player_action"), player_damage)
+        enemy_missed = _battle_replay_is_miss((row or {}).get("enemy_action"), enemy_damage)
+        if player_damage > enemy_damage:
+            return "制圧を維持"
+        if enemy_damage > player_damage:
+            return "押し返されている"
+        if player_missed or enemy_missed:
+            return "補足差を探っている"
+        return "体勢を探り合っている"
+
+    def _turn_duration(turn_payload):
+        steps = list(turn_payload.get("steps") or [])
+        has_status = bool(turn_payload.get("status_effect"))
+        has_crit = any(str(step.get("hit_type") or "") == "crit" for step in steps)
+        has_finisher = any(bool(step.get("is_finisher")) for step in steps)
+        base_standard = 1420 if not is_boss else 1820
+        standard_duration = base_standard + len(steps) * 240
+        if has_status:
+            standard_duration += 200
+        if has_crit:
+            standard_duration += 220
+        if has_finisher:
+            standard_duration += 320
+        standard_duration = int(
+            max(
+                1550 if not is_boss else 2100,
+                min(
+                    2050 if not is_boss else 2750,
+                    standard_duration,
+                ),
+            )
+        )
+        fast_duration = int(max(760 if not is_boss else 980, min(1650, round(standard_duration * 0.58))))
+        return standard_duration, fast_duration
+
+    def _summary_label():
+        player_total_damage = sum(max(0, int(row.get("player_damage") or 0)) for row in logs)
+        enemy_total_damage = sum(max(0, int(row.get("enemy_damage") or 0)) for row in logs)
+        player_miss_count = sum(
+            1 for row in logs if _battle_replay_is_miss(row.get("player_action"), row.get("player_damage"))
+        )
+        enemy_miss_count = sum(
+            1 for row in logs if _battle_replay_is_miss(row.get("enemy_action"), row.get("enemy_damage"))
+        )
+        player_crit_count = sum(1 for row in logs if bool(row.get("critical")))
+        if player_won:
+            if player_traits.get("burst_bias") == "high" or player_crit_count >= 1:
+                return "爆発力で押し切った"
+            if player_traits.get("accuracy_bias") == "high" or enemy_miss_count >= 1:
+                return "命中安定で崩した"
+            if player_traits.get("defense_bias") == "high" or enemy_total_damage <= int(math.ceil(player_hp_max * 0.35)):
+                return "体勢維持で受け切った"
+            if player_first and player_traits.get("speed_bias") == "high":
+                return "先手制圧で押し切った"
+            return "装甲差で競り勝った"
+        if enemy_total_damage >= int(math.ceil(player_hp_max * 0.6)):
+            return "火力差を受け切れなかった"
+        if player_miss_count >= 2:
+            return "命中差を返せなかった"
+        if not player_first and enemy_miss_count == 0:
+            return "先手を失って崩れた"
+        return "崩れから立て直せなかった"
+
+    def _step_payload(side, row):
+        row = row or {}
+        if not _row_has_action(side, row):
+            return None
+        actor_name = player_name if side == "player" else enemy_name
+        target_side = "enemy" if side == "player" else "player"
+        target_name = enemy_name if side == "player" else player_name
+        damage = int(row.get(f"{side}_damage") or 0)
+        note = str(row.get(f"{side}_attack_note") or "")
+        crit = bool(row.get("critical")) if side == "player" else False
+        hit_type = "hit"
+        if _battle_replay_is_miss(row.get(f"{side}_action"), damage):
+            hit_type = "miss"
+        elif damage <= 0:
+            hit_type = "block" if any(token in note for token in ("防", "軽減", "受け", "遮断")) else "block"
+        elif crit:
+            hit_type = "crit"
+
+        player_before = int(row.get("player_before") or player_hp_start)
+        enemy_before = int(row.get("enemy_before") or enemy_hp_start)
+        player_after_turn = int(row.get("player_after") or player_before)
+        enemy_after_turn = int(row.get("enemy_after") or enemy_before)
+
+        if player_first:
+            if side == "player":
+                step_player_after = player_before
+                step_enemy_after = enemy_after_turn
+            else:
+                step_player_after = player_after_turn
+                step_enemy_after = enemy_after_turn
+        else:
+            if side == "enemy":
+                step_player_after = player_after_turn
+                step_enemy_after = enemy_after_turn if not _row_has_action("player", row) else enemy_before
+            else:
+                step_player_after = player_after_turn
+                step_enemy_after = enemy_after_turn
+
+        target_after = step_enemy_after if target_side == "enemy" else step_player_after
+        target_max = enemy_hp_max if target_side == "enemy" else player_hp_max
+        is_finisher = damage > 0 and int(target_after or 0) <= 0
+        status_effect, status_target, tactical_label = _infer_step_effect(
+            side=side,
+            row=row,
+            damage=damage,
+            hit_type=hit_type,
+            crit=crit,
+            target_side=target_side,
+            target_after=target_after,
+            target_max=target_max,
+        )
         return {
-            "player_hp": int(player_hp_start),
-            "player_hp_max": int(player_hp_max),
-            "enemy_hp": int(enemy_hp_start),
-            "enemy_hp_max": int(enemy_hp_max),
+            "actor": side,
+            "actor_name": actor_name,
+            "target": target_side,
+            "target_name": target_name,
+            "action_name": str(row.get(f"{side}_action") or "攻撃"),
+            "action_label": _action_label(side, row.get(f"{side}_action"), hit_type, crit=crit, finisher=is_finisher),
+            "result_label": _result_label(hit_type, damage, actor=actor_name, target=target_name),
+            "value_label": _value_label(hit_type, damage),
+            "hit_type": hit_type,
+            "is_finisher": bool(is_finisher),
+            "projectile": ("shot" if hit_type != "block" else "guard"),
+            "status_effect": status_effect,
+            "status_target": status_target,
+            "tactical_label": tactical_label,
+            "player_hp_after": int(step_player_after),
+            "enemy_hp_after": int(step_enemy_after),
+            "player_hp_ratio_after": _ratio(step_player_after, player_hp_max),
+            "enemy_hp_ratio_after": _ratio(step_enemy_after, enemy_hp_max),
+            "critical": bool(crit),
         }
 
-    def _first_hit(side):
-        for row in logs:
-            damage = int(row.get(f"{side}_damage") or 0)
-            if damage > 0:
-                return row
-        return None
+    flattened_steps = []
+    turns = []
+    ordered_sides = ("player", "enemy") if player_first else ("enemy", "player")
+    for index, row in enumerate(logs, start=1):
+        steps = []
+        turn_effect = None
+        turn_tactical = None
+        for side in ordered_sides:
+            step = _step_payload(side, row)
+            if not step:
+                continue
+            steps.append(step)
+            flattened_steps.append(step)
+            if step.get("status_effect") and _effect_priority(step.get("status_effect")) >= _effect_priority(
+                (turn_effect or {}).get("effect")
+            ):
+                turn_effect = {
+                    "effect": step.get("status_effect"),
+                    "target": step.get("status_target"),
+                    "tactical": step.get("tactical_label"),
+                }
+            if step.get("is_finisher"):
+                break
+        brace_effect = _infer_turn_brace(row)
+        if brace_effect and _effect_priority(brace_effect.get("effect")) >= _effect_priority((turn_effect or {}).get("effect")):
+            turn_effect = brace_effect
+        turn_tactical = _turn_tactical(row, turn_effect)
+        effect_meta = _effect_meta((turn_effect or {}).get("effect"))
+        turn_payload = {
+            "turn": index,
+            "opening_actor": ordered_sides[0],
+            "opening_label": f"{player_name if ordered_sides[0] == 'player' else enemy_name} が先手",
+            "steps": steps,
+            "status_effect": (turn_effect or {}).get("effect"),
+            "status_label": effect_meta.get("label"),
+            "status_target": (turn_effect or {}).get("target"),
+            "tactical_label": turn_tactical,
+            "player_hp_ratio_after": _ratio(int(row.get("player_after") or player_hp_start), player_hp_max),
+            "enemy_hp_ratio_after": _ratio(int(row.get("enemy_after") or enemy_hp_start), enemy_hp_max),
+            "player_hp_after": int(row.get("player_after") or player_hp_start),
+            "enemy_hp_after": int(row.get("enemy_after") or enemy_hp_start),
+        }
+        standard_duration, fast_duration = _turn_duration(turn_payload)
+        turn_payload["standard_duration_ms"] = int(standard_duration)
+        turn_payload["fast_duration_ms"] = int(fast_duration)
+        turns.append(turn_payload)
+        if turn_payload["player_hp_after"] <= 0 or turn_payload["enemy_hp_after"] <= 0:
+            break
 
-    def _first_miss(side):
-        for row in logs:
-            if _battle_replay_is_miss(row.get(f"{side}_action"), row.get(f"{side}_damage")):
-                return row
-        return None
-
-    def _finisher(side):
-        target_key = "enemy_after" if side == "player" else "player_after"
-        for row in logs:
-            if int(row.get(target_key) or 0) == 0:
-                return row
-        hit = _first_hit(side)
-        return hit or (logs[-1] if logs else None)
-
-    def _heavy_hit(side, row):
-        if not row:
-            return False
-        damage = int(row.get(f"{side}_damage") or 0)
-        max_hp = int(row.get("enemy_max" if side == "player" else "player_max") or 0)
-        if damage <= 0:
-            return False
-        return damage >= max(4, int(math.ceil(max(1, max_hp) * 0.34)))
-
-    player_hit = _first_hit("player")
-    enemy_hit = _first_hit("enemy")
-    player_miss = _first_miss("player")
-    enemy_miss = _first_miss("enemy")
-    player_finisher = _finisher("player")
-    enemy_finisher = _finisher("enemy")
-    player_braced = any(int(row.get("enemy_damage") or 0) > 0 and int(row.get("player_after") or 0) > 0 for row in logs)
-    player_crit = any(bool(row.get("critical")) for row in logs)
-
-    events = []
-
-    def append_event(event):
-        if not event:
-            return
-        if events and events[-1]["type"] == event["type"] and events[-1]["label"] == event["label"]:
-            return
-        events.append(event)
-
-    def actor_name(side):
-        return player_name if side == "player" else enemy_name
-
-    def target_name(side):
-        return enemy_name if side == "player" else player_name
-
-    def opening_event(side, row=None):
-        return _battle_replay_event(
-            f"{side}_opening",
-            f"{actor_name(side)} が先手！",
-            actor=side,
-            **_hp_kwargs(row, before=True),
-        )
-
-    def miss_event(side, row=None):
-        if side == "player":
-            return _battle_replay_event(
-                "player_miss",
-                f"{actor_name('player')} の右腕攻撃は外れた！",
-                actor="player",
-                target="enemy",
-                projectile="shot",
-                reaction="evade",
-                **_hp_kwargs(row),
-            )
-        return _battle_replay_event(
-            "enemy_miss",
-            f"{actor_name('enemy')} の攻撃を {target_name('enemy')} が回避！",
-            actor="enemy",
-            target="player",
-            projectile="shot",
-            reaction="evade",
-            **_hp_kwargs(row),
-        )
-
-    def strike_event(side, row, *, finisher=False):
-        row = row or {}
-        crit = bool(row.get("critical")) if side == "player" else False
-        heavy = _heavy_hit(side, row)
-        if finisher and side == "player" and crit:
-            caption = f"{actor_name(side)} の会心の一撃！"
-        elif finisher:
-            caption = f"{actor_name(side)} の一撃で決着！"
-        elif side == "player" and crit:
-            caption = f"{actor_name(side)} の右腕攻撃が会心！"
-        elif side == "player":
-            caption = f"{actor_name(side)} の右腕攻撃、命中！"
-        else:
-            caption = f"{actor_name(side)} の攻撃が命中！"
-        return _battle_replay_event(
-            f"{side}_{'finisher' if finisher else 'strike'}",
-            caption,
-            actor=side,
-            target=("enemy" if side == "player" else "player"),
-            projectile="shot",
-            reaction=("critical" if crit else "hit"),
-            **_hp_kwargs(row),
-            crit=crit,
-            heavy=heavy,
-        )
-
-    def brace_event(row=None):
-        return _battle_replay_event(
-            "player_guard",
-            f"{player_name} は踏ん張った！",
-            actor="player",
-            target="player",
-            reaction="brace",
-            **_hp_kwargs(row),
-        )
-
-    summary_style = "standard_finish"
-    if is_boss:
-        summary_style = "boss_duel"
-        append_event(_battle_replay_event("boss_warning", f"{enemy_name} 出現！"))
-        if player_won:
-            if player_first:
-                append_event(opening_event("player", player_hit or player_miss or logs[0]))
-                if player_hit and player_hit is not player_finisher:
-                    append_event(strike_event("player", player_hit))
-            else:
-                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
-                if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy", enemy_miss))
-                    summary_style = "evasion_finish"
-                elif enemy_hit:
-                    append_event(strike_event("enemy", enemy_hit))
-                    if player_braced:
-                        append_event(brace_event(enemy_hit))
-                        summary_style = "brace_finish"
-                if player_hit and player_hit is not player_finisher:
-                    append_event(strike_event("player", player_hit))
-            finisher = player_finisher or player_hit
-            if finisher:
-                append_event(strike_event("player", finisher, finisher=True))
-            append_event(
-                _battle_replay_event(
-                    "boss_defeated",
-                    "BOSS DEFEATED",
-                    target="enemy",
-                    reaction="finish",
-                    **_hp_kwargs(finisher),
-                )
-            )
-        else:
-            if player_first and (player_hit or player_miss):
-                append_event(opening_event("player", player_hit or player_miss or logs[0]))
-                if player_miss:
-                    append_event(miss_event("player", player_miss))
-                elif player_hit:
-                    append_event(strike_event("player", player_hit))
-            else:
-                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
-                if enemy_hit:
-                    append_event(strike_event("enemy", enemy_hit))
-                    if player_braced:
-                        append_event(brace_event(enemy_hit))
-                elif enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy", enemy_miss))
-            finisher = enemy_finisher or enemy_hit or logs[-1]
-            append_event(strike_event("enemy", finisher, finisher=True))
-    else:
-        if player_won:
-            if player_traits["speed_bias"] == "high":
-                summary_style = "speed_finish"
-            elif player_traits["defense_bias"] == "high":
-                summary_style = "brace_finish"
-            elif player_traits["accuracy_bias"] == "high":
-                summary_style = "lock_finish"
-
-            if player_first and (player_hit or player_miss):
-                append_event(opening_event("player", player_hit or player_miss or logs[0]))
-                if player_miss:
-                    append_event(miss_event("player", player_miss))
-                elif player_hit and player_hit is not player_finisher:
-                    append_event(strike_event("player", player_hit))
-            else:
-                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
-                if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy", enemy_miss))
-                    summary_style = "evasion_finish"
-                elif enemy_hit:
-                    append_event(strike_event("enemy", enemy_hit))
-                    if player_braced:
-                        append_event(brace_event(enemy_hit))
-                        summary_style = "brace_finish"
-
-            finisher = player_finisher or player_hit
-            if finisher:
-                append_event(strike_event("player", finisher, finisher=True))
-        else:
-            summary_style = "enemy_finish"
-            if player_first and (player_hit or player_miss):
-                append_event(opening_event("player", player_hit or player_miss or logs[0]))
-                if player_miss:
-                    append_event(miss_event("player", player_miss))
-                elif player_hit and player_hit is not player_finisher:
-                    append_event(strike_event("player", player_hit))
-            else:
-                append_event(opening_event("enemy", enemy_hit or enemy_miss or logs[0]))
-                if enemy_miss and player_traits["speed_bias"] == "high":
-                    append_event(miss_event("enemy", enemy_miss))
-                elif enemy_hit:
-                    append_event(strike_event("enemy", enemy_hit))
-                    if player_braced:
-                        append_event(brace_event(enemy_hit))
-            finisher = enemy_finisher or enemy_hit or logs[-1]
-            append_event(strike_event("enemy", finisher, finisher=True))
-
-    if not is_boss:
-        events = events[:4]
-    if is_boss:
-        events = events[:6]
-        if player_won and not any(item.get("type") == "boss_defeated" for item in events):
-            events = [item for item in events if item.get("type") != "boss_defeated"]
-            if len(events) >= 6:
-                events = events[:5]
-            events.append(
-                _battle_replay_event(
-                    "boss_defeated",
-                    "BOSS DEFEATED",
-                    target="enemy",
-                    reaction="finish",
-                    **_hp_kwargs(player_finisher or player_hit or logs[-1]),
-                )
-            )
-    if not events:
-        append_event(
-            _battle_replay_event(
-                "player_finisher" if player_won else "enemy_finisher",
-                f"{player_name if player_won else enemy_name} が決着！",
-            )
-        )
-
-    event_duration_ms = 480 if not is_boss else 760
-    intro_delay_ms = 220 if not is_boss else 420
-    outro_hold_ms = 460 if not is_boss else 980
+    summary_label = _summary_label()
+    summary_heading = "今回の勝ち筋" if player_won else "今回の崩れ筋"
+    intro_delay_ms = 520 if not is_boss else 760
+    outro_hold_ms = 860 if not is_boss else 1320
+    fast_intro_delay_ms = 220 if not is_boss else 340
+    fast_outro_hold_ms = 380 if not is_boss else 520
     return {
+        "version": "v1",
         "battle_type": ("boss" if is_boss else "normal"),
         "is_boss": bool(is_boss),
         "player_won": bool(player_won),
-        "summary_style": summary_style,
         "stage_theme": _battle_replay_theme(area_key, is_boss=is_boss),
+        "area_key": str(area_key or ""),
         "area_label": str(area_label or ""),
-        "enemy_name": str(enemy_name or "謎の敵"),
+        "turn_count": int(len(turns)),
+        "winner": ("player" if player_won else "enemy"),
+        "summary_heading": summary_heading,
+        "summary_label": summary_label,
+        "result_label": ("BOSS DEFEATED" if is_boss and player_won else ("WIN" if player_won else "LOSE")),
+        "result_sub_label": ("勝利" if player_won else "敗北"),
         "player_name": str(player_name or "あなた"),
+        "enemy_name": str(enemy_name or "謎の敵"),
         "player_image_url": player_image_url,
         "enemy_image_url": enemy_image_url,
         "player_hp_start": int(player_hp_start),
@@ -3993,21 +4070,14 @@ def _build_battle_replay_summary(
         "player_visual_traits": player_traits,
         "enemy_visual_traits": {
             "trait": enemy_trait or "normal",
-            "speed_bias": _battle_replay_bias(enemy_speed, low=8, high=13),
+            "speed_bias": enemy_speed_bias,
         },
-        "highlight_events": list(events),
-        "events": list(events),
+        "events": list(flattened_steps),
+        "turns": turns,
         "intro_delay_ms": int(intro_delay_ms),
-        "event_duration_ms": int(event_duration_ms),
         "outro_hold_ms": int(outro_hold_ms),
-        "result_label": (
-            "BOSS DEFEATED"
-            if is_boss and player_won
-            else ("WIN" if player_won else "LOSE")
-        ),
-        "result_sub_label": (
-            "会心で決着" if player_crit and player_won else ("勝利" if player_won else "敗北")
-        ),
+        "fast_intro_delay_ms": int(fast_intro_delay_ms),
+        "fast_outro_hold_ms": int(fast_outro_hold_ms),
     }
 
 
@@ -5391,6 +5461,7 @@ def _ranking_rows_from_event_log(db, *, event_type, limit=50, start_ts=None, end
             GROUP BY user_id
         ) metrics
         JOIN users u ON u.id = metrics.user_id
+        WHERE COALESCE(u.is_admin, 0) = 0
         ORDER BY metrics.metric_value DESC, u.username ASC
         LIMIT ?
         """,
@@ -5409,6 +5480,7 @@ def _ranking_rows(db, metric_key, limit=50, week_key=None):
             """
             SELECT id, username, wins AS metric_value
             FROM users
+            WHERE COALESCE(is_admin, 0) = 0
             ORDER BY wins DESC, username ASC
             LIMIT ?
             """,
@@ -13582,8 +13654,10 @@ def _weekly_mvp_snapshot(db, week_key):
         """
         SELECT wel.user_id, COUNT(*) AS wins
         FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
         WHERE wel.event_type = ?
           AND wel.user_id IS NOT NULL
+          AND COALESCE(u.is_admin, 0) = 0
           AND wel.created_at >= ?
           AND wel.created_at < ?
           AND CAST(COALESCE(json_extract(wel.payload_json, '$.result.win'), 0) AS INTEGER) = 1
@@ -16276,6 +16350,26 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.28",
+            "date": "2026/04/04",
+            "title": "戦闘演出をターンカード式の battle-cinematic-v1 へ刷新",
+            "notes": [
+                "battle結果画面の前に `1ターン = 1カード` の battle-cinematic-v1 を追加し、誰が動いたか / 何が当たったか / どちらが優勢か を turn card で読みやすく整理",
+                "表示モードを `標準 / 高速 / 即結果` の3種に整理し、標準モードでは通常戦 6〜10秒 / ボス戦 10〜16秒 目安で戦況を見返せるよう調整",
+                "戦闘中は `装甲亀裂 / センサー異常 / 駆動低下 / 武装不安定 / 出力暴走 / 体勢維持` の機構状態と、最後の `勝ち筋 / 崩れ筋` 要約を表示",
+            ],
+        },
+        {
+            "version": "0.1.27",
+            "date": "2026/04/03",
+            "title": "戦闘演出のHPフィードバックとランキング整理を改善",
+            "notes": [
+                "ショート戦闘演出に細いHPバーと遅延ゲージを追加し、被弾後にHPが減る流れや踏ん張りのギリ残りが追いやすくなるよう改善",
+                "弾道の発射位置を左右ユニット寄りへ調整し、戦闘ログの長さに応じて replay のイベント数と再生時間が自然に伸びるよう変更",
+                "管理者アカウントは勝利数 / 探索数 / 週次ランキング / 週次MVP から除外し、一般ユーザー向けの競争表示へ整理",
+            ],
+        },
         {
             "version": "0.1.26",
             "date": "2026/04/03",
@@ -20916,7 +21010,7 @@ def explore():
         "cri": int(enemy_cri or 0),
         "trait": enemy_trait_key,
     }
-    summary["battle_replay"] = (
+    summary["battle_cinematic"] = (
         _build_battle_replay_summary(
             area_key=area["key"],
             area_label=area["label"],
@@ -20945,6 +21039,7 @@ def explore():
         if _battle_short_replay_open_for_viewer(db, user_row=user, user_id=user_id)
         else None
     )
+    summary["battle_replay"] = summary["battle_cinematic"]
     return render_template(
         "battle.html",
         state={"active": 0, "enemy_name": summary["enemy_name"], "enemy_hp": 0},

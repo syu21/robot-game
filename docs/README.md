@@ -1,6 +1,6 @@
 # ロボらぼ ドキュメント入口
 
-最終更新日: 2026-04-03
+最終更新日: 2026-04-04
 
 このディレクトリは、`ロボらぼ` の実装仕様・運用仕様・監査仕様の正本です。
 実装変更時は、関連仕様を必ず同時更新してください。
@@ -26,6 +26,7 @@
 - 決済基盤: `docs/PAYMENT_SPEC.md`
 - 全体: `docs/PROJECT_STATUS.md`
 - 出撃: `docs/EXPLORATION_SPEC.md`
+- 戦闘仕様（現行実装の正本）: `docs/BATTLE_SPEC.md`
 - 戦闘設計: `docs/BATTLE_DESIGN_SHEET.md`
 - 編成/強化/進化: `docs/COMPOSITION_SPEC.md`
 - パーツ計算: `docs/PART_STATS_SPEC.md`
@@ -36,7 +37,6 @@
 - 実験室レース: `docs/LAB_RACE_SPEC.md`
 - エネミーレース: `docs/LAB_ENEMY_RACE_SPEC.md`
 - 実験室投稿: `docs/LAB_SUBMISSION_SPEC.md`
-- 決済/ショップ: `docs/PAYMENT_SPEC.md`
 - 運用チェック: `docs/OPERATIONS_CHECKLIST.md`
 - バックアップ/復元: `docs/BACKUP_RESTORE.md`
 - 公開後ランブック: `docs/OPERATIONS_RUNBOOK.md`
@@ -85,8 +85,8 @@ FLASK_APP=app.py FLASK_ENV=development flask run --host 127.0.0.1 --port 5050
   - `/admin/login`（管理者保護アカウント用）
   - `/logout`
   - `/guide`
-  - `/shop`（サンドボックスの出撃ブースト購入）
   - `/support`
+  - `/shop`（出撃ブースター購入）
   - `/payment/success`, `/payment/cancel`
   - `/terms`
   - `/privacy`

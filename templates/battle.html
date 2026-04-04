@@ -5,7 +5,7 @@
 {% set battle_bg_url = summary.get('battle_bg_url') if summary else None %}
 {% set boss_victory = summary and summary.get('is_area_boss') and summary.get('outcome') == '勝利' %}
 {% set show_battle_ritual_overlay = ui_effects_enabled and battle_ritual_overlay_enabled and boss_victory %}
-{% set battle_replay = summary.get('battle_replay') if summary else None %}
+{% set battle_cinematic = summary.get('battle_cinematic') if summary else (summary.get('battle_replay') if summary else None) %}
 <div class="battle-scene{% if battle_bg_url %} has-boss-bg{% endif %}{% if boss_victory %} boss-victory-ritual{% endif %}"{% if battle_bg_url %} data-battle-bg-url="{{ battle_bg_url }}"{% endif %}>
 {% if show_battle_ritual_overlay %}
 <div id="battle-ritual-overlay" class="battle-ritual-overlay{% if summary.get('unlocked_layer') %} layer-theme-{{ summary['unlocked_layer'] }}{% endif %}" aria-hidden="true"></div>
@@ -31,94 +31,8 @@
 {% endif %}
 
 {% if explore_mode and summary %}
-  {% if ui_effects_enabled and battle_short_replay_enabled and battle_replay %}
-  <section
-    id="battle-short-replay"
-    class="card battle-short-replay theme-{{ battle_replay.get('stage_theme', 'hangar') }}{% if battle_replay.get('is_boss') %} is-boss{% endif %}"
-    data-event-duration-ms="{{ battle_replay.get('event_duration_ms', 380) }}"
-    data-intro-delay-ms="{{ battle_replay.get('intro_delay_ms', 120) }}"
-    data-outro-hold-ms="{{ battle_replay.get('outro_hold_ms', 340) }}"
-    hidden
-  >
-    <div class="battle-short-replay-head">
-      <div>
-        <div class="battle-short-replay-area">{{ battle_replay.get('area_label') or explore_area_label or '探索宙域' }}</div>
-        {% if battle_replay.get('is_boss') %}
-        <div class="battle-short-replay-alert">BOSS WARNING</div>
-        {% else %}
-        <div class="battle-short-replay-style">{{ battle_replay.get('summary_style', 'standard_finish')|replace('_', ' ')|upper }}</div>
-        {% endif %}
-      </div>
-      <button type="button" class="battle-short-replay-skip" data-replay-skip="1">SKIP</button>
-    </div>
-
-    <div
-      class="battle-short-replay-stage"
-      data-replay-stage="1"
-      data-stage-theme="{{ battle_replay.get('stage_theme', 'hangar') }}"
-      data-battle-type="{{ battle_replay.get('battle_type', 'normal') }}"
-    >
-      <div class="battle-short-replay-ground" aria-hidden="true"></div>
-      <div class="battle-short-replay-projectile" data-replay-projectile="1" aria-hidden="true"></div>
-      <div class="battle-short-replay-hitflash" data-replay-hitflash="1" aria-hidden="true"></div>
-      <div class="battle-short-replay-sparks" data-replay-sparks="1" aria-hidden="true"></div>
-      <div
-        class="battle-short-replay-unit is-player trait-speed-{{ battle_replay.get('player_visual_traits', {}).get('speed_bias', 'normal') }} trait-accuracy-{{ battle_replay.get('player_visual_traits', {}).get('accuracy_bias', 'normal') }} trait-burst-{{ battle_replay.get('player_visual_traits', {}).get('burst_bias', 'normal') }} trait-defense-{{ battle_replay.get('player_visual_traits', {}).get('defense_bias', 'normal') }}"
-        data-replay-unit="player"
-      >
-        <div class="battle-short-replay-frame">
-          <img src="{{ battle_replay.get('player_image_url') }}" alt="{{ battle_replay.get('player_name', player_name) }}" loading="eager" decoding="async" />
-          <span class="battle-short-replay-part part-head" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-right" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-left" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-legs" aria-hidden="true"></span>
-        </div>
-        <div class="battle-short-replay-status">
-          <div class="battle-short-replay-name">{{ battle_replay.get('player_name', player_name) }}</div>
-          <div class="battle-short-replay-hp" data-replay-hp="player" aria-hidden="true">
-            <span class="battle-short-replay-hp-track"></span>
-            <span class="battle-short-replay-hp-lag" data-replay-hp-lag="player"></span>
-            <span class="battle-short-replay-hp-fill" data-replay-hp-fill="player"></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="battle-short-replay-center" aria-hidden="true">
-        <div class="battle-short-replay-impact"></div>
-      </div>
-
-      <div
-        class="battle-short-replay-unit is-enemy trait-enemy-{{ battle_replay.get('enemy_visual_traits', {}).get('trait', 'normal') }}"
-        data-replay-unit="enemy"
-      >
-        <div class="battle-short-replay-frame">
-          <img src="{{ battle_replay.get('enemy_image_url') }}" alt="{{ battle_replay.get('enemy_name', enemy_name) }}" loading="eager" decoding="async" />
-          <span class="battle-short-replay-part part-head" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-right" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-left" aria-hidden="true"></span>
-          <span class="battle-short-replay-part part-legs" aria-hidden="true"></span>
-        </div>
-        <div class="battle-short-replay-status">
-          <div class="battle-short-replay-name">{{ battle_replay.get('enemy_name', enemy_name) }}</div>
-          <div class="battle-short-replay-hp" data-replay-hp="enemy" aria-hidden="true">
-            <span class="battle-short-replay-hp-track"></span>
-            <span class="battle-short-replay-hp-lag" data-replay-hp-lag="enemy"></span>
-            <span class="battle-short-replay-hp-fill" data-replay-hp-fill="enemy"></span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="battle-short-replay-bottom">
-      <div class="battle-short-replay-caption" data-replay-caption="1">戦闘開始</div>
-      <div class="battle-short-replay-result" data-replay-result="1" hidden>
-        <div class="battle-short-replay-result-main">{{ battle_replay.get('result_label', 'WIN') }}</div>
-        <div class="battle-short-replay-result-sub">{{ battle_replay.get('result_sub_label', summary.get('outcome', '勝利')) }}</div>
-      </div>
-    </div>
-
-    <script id="battle-short-replay-data" type="application/json">{{ battle_replay|tojson }}</script>
-  </section>
+  {% if ui_effects_enabled and battle_short_replay_enabled and battle_cinematic %}
+  {% include '_battle_cinematic_v1.html' %}
   {% endif %}
 
   <div id="battle-replay-followup">
@@ -441,4 +355,5 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
 {% endblock %}
