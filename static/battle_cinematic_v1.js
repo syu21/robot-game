@@ -27,6 +27,7 @@
     const projectile = root.querySelector("[data-cinematic-projectile]");
     const hitflash = root.querySelector("[data-cinematic-hitflash]");
     const sparks = root.querySelector("[data-cinematic-sparks]");
+    const finishCall = root.querySelector("[data-cinematic-finish-call]");
     const modeButtons = Array.from(root.querySelectorAll("[data-cinematic-mode]"));
     const skipButton = root.querySelector("[data-cinematic-skip]");
     const turnIndicator = root.querySelector("[data-cinematic-turn-indicator]");
@@ -169,6 +170,11 @@
           .filter((className) => !/^is-/.test(className) && !/^from-/.test(className) && !/^to-/.test(className) && !/^target-/.test(className))
           .join(" ");
       });
+      if (finishCall) {
+        finishCall.hidden = true;
+        finishCall.textContent = "";
+        finishCall.className = "battle-cinematic-v1-finish-call";
+      }
       Object.values(hpBars).forEach((bar) => {
         if (!bar || !bar.root) return;
         bar.root.classList.remove("is-hurt", "is-critical-damage", "is-bracing");
@@ -219,13 +225,15 @@
 
     const applyHpAnimation = (side, nextHp, step, runId) => {
       const bar = hpBars[side];
-      if (!bar || !bar.root) return;
+      if (!bar || !bar.root) return { hasDrop: false, dropDelay: 0, lagDelay: 0, hpValue: hpState[side] };
       const hpValue = Math.max(0, Math.min(hpMax[side], Number(nextHp)));
       const previousHp = hpState[side];
       const hasDrop = hpValue !== previousHp;
       const isCrit = String(step.hit_type || "") === "crit";
       const isBrace = side === "player" && hpValue > 0 && hpRatio(side, hpValue) <= 0.12 && hasDrop;
-      if (!hasDrop) return;
+      if (!hasDrop) {
+        return { hasDrop: false, dropDelay: 0, lagDelay: 0, hpValue };
+      }
 
       bar.root.classList.add("is-hurt");
       if (isCrit) bar.root.classList.add("is-critical-damage");
@@ -241,6 +249,7 @@
         lagHpState[side] = hpValue;
         paintHp(side, hpState[side], lagHpState[side]);
       }, lagDelay, runId);
+      return { hasDrop: true, dropDelay, lagDelay, hpValue };
     };
 
     const applyStepVisuals = (step, runId) => {
@@ -280,10 +289,52 @@
       }
       if (step.is_finisher) {
         root.classList.add("is-finisher");
-        targetUnit && targetUnit.classList.add("is-finished");
       }
-      applyHpAnimation("player", step.player_hp_after, step, runId);
-      applyHpAnimation("enemy", step.enemy_hp_after, step, runId);
+      const playerHpAnim = applyHpAnimation("player", step.player_hp_after, step, runId);
+      const enemyHpAnim = applyHpAnimation("enemy", step.enemy_hp_after, step, runId);
+      return {
+        actorUnit,
+        targetUnit,
+        playerHpAnim,
+        enemyHpAnim,
+      };
+    };
+
+    const playFinisherMoment = async (step, visuals, baseStepDelay, runId) => {
+      const targetSide = step.target === "player" ? "player" : "enemy";
+      const targetAnim = targetSide === "player" ? visuals.playerHpAnim : visuals.enemyHpAnim;
+      const collapseDelay = Math.max(260, Number(targetAnim?.dropDelay || 120) + 140);
+      const callDelay = collapseDelay + (step.hit_type === "crit" ? 200 : 140);
+      const holdDelay = Math.max(baseStepDelay + 320, callDelay + 520);
+      const finishText =
+        payload.is_boss && targetSide === "enemy"
+          ? "BOSS DEFEATED"
+          : (targetSide === "enemy" ? "決着！" : "押し切られた");
+      const finishResult =
+        targetSide === "enemy" ? `${step.target_name} を撃破` : `${step.target_name} が崩れた`;
+      const finishTactical =
+        targetSide === "enemy" ? "最後の一撃が通った" : "最後の一撃を受け切れなかった";
+
+      queueTimeout(() => {
+        visuals.targetUnit && visuals.targetUnit.classList.add("is-finished");
+      }, collapseDelay, runId);
+      queueTimeout(() => {
+        if (!finishCall) return;
+        finishCall.hidden = false;
+        finishCall.textContent = finishText;
+        finishCall.classList.add("is-visible");
+      }, callDelay, runId);
+      queueTimeout(() => {
+        setCardText({
+          actorText: `${step.actor_name} が押し切る`,
+          actionText: step.hit_type === "crit" ? "会心の決着" : "決着の一撃",
+          resultText: finishResult,
+          valueText: step.value_label,
+          statusText: "",
+          tacticalText: finishTactical,
+        });
+      }, callDelay, runId);
+      await delay(holdDelay, runId);
     };
 
     const effectiveDelay = (delayMs) => {
@@ -329,8 +380,12 @@
           statusText: "",
           tacticalText: step.tactical_label || turn.tactical_label,
         });
-        applyStepVisuals(step, runId);
-        await delay(stepDelay, runId);
+        const visuals = applyStepVisuals(step, runId);
+        if (step.is_finisher) {
+          await playFinisherMoment(step, visuals, stepDelay, runId);
+        } else {
+          await delay(stepDelay, runId);
+        }
         if (runId !== activeRunId || finished) return;
       }
 

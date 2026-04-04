@@ -9046,6 +9046,30 @@ body#page-world .world-competition-grid {
   z-index: 4;
 }
 
+.battle-cinematic-v1-finish-call {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  z-index: 6;
+  transform: translateX(-50%) scale(0.9);
+  min-width: 132px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: rgba(10, 12, 24, 0.86);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  color: #fff3d1;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  opacity: 0;
+}
+
+.battle-cinematic-v1-finish-call.is-visible {
+  animation: battleCinematicFinishCall 420ms ease-out forwards;
+}
+
 .battle-cinematic-v1-projectile {
   top: 50%;
   width: 100px;
@@ -9141,12 +9165,18 @@ body#page-world .world-competition-grid {
 }
 
 .battle-cinematic-v1-unit.is-finished .battle-cinematic-v1-frame img {
-  transform: translateY(10px) scale(0.94);
+  animation: battleCinematicCollapse 420ms ease-out forwards;
   filter: grayscale(0.2) brightness(0.84);
 }
 
 .battle-cinematic-v1.is-hit-stop .battle-cinematic-v1-stage {
   transform: scale(1.01);
+}
+
+.battle-cinematic-v1.is-finisher .battle-cinematic-v1-stage::after {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.14), transparent 58%),
+    radial-gradient(circle at 50% 50%, rgba(251, 146, 60, 0.16), transparent 64%);
 }
 
 .battle-cinematic-v1-card,
@@ -9310,6 +9340,36 @@ body#page-world .world-competition-grid {
   }
 }
 
+@keyframes battleCinematicCollapse {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  42% {
+    transform: translateY(8px) scale(0.97);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(16px) scale(0.92);
+    opacity: 0.66;
+  }
+}
+
+@keyframes battleCinematicFinishCall {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.86);
+  }
+  40% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
 @media (max-width: 720px) {
   .battle-cinematic-v1 {
     padding: 14px;
@@ -9373,6 +9433,13 @@ body#page-world .world-competition-grid {
   .battle-cinematic-v1-hitflash.target-enemy,
   .battle-cinematic-v1-sparks.target-enemy {
     right: 10%;
+  }
+
+  .battle-cinematic-v1-finish-call {
+    bottom: 18px;
+    min-width: 116px;
+    padding: 7px 14px;
+    font-size: 13px;
   }
 
   .battle-cinematic-v1-card-action {

@@ -16351,6 +16351,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.29",
+            "date": "2026/04/04",
+            "title": "戦闘演出のトドメを分かりやすく改善",
+            "notes": [
+                "battle-cinematic-v1 の最後の一撃は `着弾 -> HPゼロ -> 敵が沈む -> 決着表示` の順に見えるよう、トドメ専用の停止とコール演出を追加",
+                "通常戦は `決着！`、ボス撃破時は `BOSS DEFEATED` を中央で短く見せ、最後の一撃が入ったことを把握しやすく調整",
+                "静的JS/CSSのキャッシュ切り替えのためアプリ版を更新",
+            ],
+        },
+        {
             "version": "0.1.28",
             "date": "2026/04/04",
             "title": "戦闘演出をターンカード式の battle-cinematic-v1 へ刷新",

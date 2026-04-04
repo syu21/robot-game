@@ -369,12 +369,11 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.28 - 2026/04/04", html)
-        self.assertIn("戦闘演出をターンカード式の battle-cinematic-v1 へ刷新", html)
-        self.assertIn("標準 / 高速 / 即結果", html)
-        self.assertIn("装甲亀裂 / センサー異常 / 駆動低下 / 武装不安定 / 出力暴走 / 体勢維持", html)
-        self.assertIn("機構状態と、最後の `勝ち筋 / 崩れ筋` 要約を表示", html)
-        self.assertLess(html.index("v0.1.28 - 2026/04/04"), html.index("v0.1.27 - 2026/04/03"))
+        self.assertIn("v0.1.29 - 2026/04/04", html)
+        self.assertIn("戦闘演出のトドメを分かりやすく改善", html)
+        self.assertIn("着弾 -&gt; HPゼロ -&gt; 敵が沈む -&gt; 決着表示", html)
+        self.assertIn("通常戦は `決着！`、ボス撃破時は `BOSS DEFEATED`", html)
+        self.assertLess(html.index("v0.1.29 - 2026/04/04"), html.index("v0.1.28 - 2026/04/04"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
