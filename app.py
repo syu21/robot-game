@@ -3811,6 +3811,13 @@ def _build_battle_replay_summary(
             return f"-{damage}"
         return ""
 
+    def _row_int(row, key, fallback=0):
+        row = row or {}
+        value = row.get(key)
+        if value in (None, ""):
+            return int(fallback)
+        return int(value)
+
     def _infer_step_effect(*, side, row, damage, hit_type, crit, target_side, target_after, target_max):
         row = row or {}
         if hit_type == "miss":
@@ -3819,7 +3826,7 @@ def _build_battle_replay_summary(
             return "output_surge", side, _effect_meta("output_surge").get("tactical")
         if side == "enemy" and enemy_trait == "unstable" and damage > 0:
             return "weapon_unstable", side, _effect_meta("weapon_unstable").get("tactical")
-        if side == "enemy" and enemy_trait == "berserk" and damage > 0 and int(row.get("enemy_before") or enemy_hp_start) * 2 <= enemy_hp_max:
+        if side == "enemy" and enemy_trait == "berserk" and damage > 0 and _row_int(row, "enemy_before", enemy_hp_start) * 2 <= enemy_hp_max:
             return "output_surge", side, _effect_meta("output_surge").get("tactical")
         damage_ratio = float(damage) / max(1, int(target_max or 1))
         if damage_ratio >= 0.34 or (damage > 0 and int(target_after or 0) <= 0):
@@ -3835,10 +3842,10 @@ def _build_battle_replay_summary(
     def _infer_turn_brace(row):
         row = row or {}
         damage = int(row.get("enemy_damage") or 0)
-        player_after = int(row.get("player_after") or 0)
+        player_after = _row_int(row, "player_after", 0)
         if damage <= 0 or player_after <= 0:
             return None
-        player_before = int(row.get("player_before") or player_hp_start)
+        player_before = _row_int(row, "player_before", player_hp_start)
         severe_drop = (player_before - player_after) >= max(4, int(math.ceil(player_hp_max * 0.22)))
         near_break = player_after <= max(1, int(math.ceil(player_hp_max * 0.1)))
         if severe_drop or near_break:
@@ -3935,10 +3942,10 @@ def _build_battle_replay_summary(
         elif crit:
             hit_type = "crit"
 
-        player_before = int(row.get("player_before") or player_hp_start)
-        enemy_before = int(row.get("enemy_before") or enemy_hp_start)
-        player_after_turn = int(row.get("player_after") or player_before)
-        enemy_after_turn = int(row.get("enemy_after") or enemy_before)
+        player_before = _row_int(row, "player_before", player_hp_start)
+        enemy_before = _row_int(row, "enemy_before", enemy_hp_start)
+        player_after_turn = _row_int(row, "player_after", player_before)
+        enemy_after_turn = _row_int(row, "enemy_after", enemy_before)
 
         if player_first:
             if side == "player":
@@ -4027,10 +4034,10 @@ def _build_battle_replay_summary(
             "status_label": effect_meta.get("label"),
             "status_target": (turn_effect or {}).get("target"),
             "tactical_label": turn_tactical,
-            "player_hp_ratio_after": _ratio(int(row.get("player_after") or player_hp_start), player_hp_max),
-            "enemy_hp_ratio_after": _ratio(int(row.get("enemy_after") or enemy_hp_start), enemy_hp_max),
-            "player_hp_after": int(row.get("player_after") or player_hp_start),
-            "enemy_hp_after": int(row.get("enemy_after") or enemy_hp_start),
+            "player_hp_ratio_after": _ratio(_row_int(row, "player_after", player_hp_start), player_hp_max),
+            "enemy_hp_ratio_after": _ratio(_row_int(row, "enemy_after", enemy_hp_start), enemy_hp_max),
+            "player_hp_after": _row_int(row, "player_after", player_hp_start),
+            "enemy_hp_after": _row_int(row, "enemy_after", enemy_hp_start),
         }
         standard_duration, fast_duration = _turn_duration(turn_payload)
         turn_payload["standard_duration_ms"] = int(standard_duration)
@@ -16350,6 +16357,16 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.32",
+            "date": "2026/04/04",
+            "title": "戦闘演出でHP 0 の決着ターンが欠ける不具合を修正",
+            "notes": [
+                "battle-cinematic-v1 の演出用データ生成で `enemy_after=0` や `player_after=0` が途中HPへ戻ってしまう経路を修正",
+                "最後の一撃が replay payload に正しく入り、`あと一発` のところで結果へ飛びやすかった問題を改善",
+                "反映確認しやすいようアプリ版を更新",
+            ],
+        },
         {
             "version": "0.1.31",
             "date": "2026/04/04",

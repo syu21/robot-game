@@ -369,11 +369,11 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.31 - 2026/04/04", html)
-        self.assertIn("戦闘演出の決着待ちをHPバー完了基準へ調整", html)
-        self.assertIn("HPバーの見た目がゼロになる完了タイミング基準", html)
-        self.assertIn("撃破時の残像ゲージは通常より早く追従", html)
-        self.assertLess(html.index("v0.1.31 - 2026/04/04"), html.index("v0.1.30 - 2026/04/04"))
+        self.assertIn("v0.1.32 - 2026/04/04", html)
+        self.assertIn("戦闘演出でHP 0 の決着ターンが欠ける不具合を修正", html)
+        self.assertIn("enemy_after=0", html)
+        self.assertIn("最後の一撃が replay payload に正しく入り", html)
+        self.assertLess(html.index("v0.1.32 - 2026/04/04"), html.index("v0.1.31 - 2026/04/04"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
