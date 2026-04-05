@@ -11934,6 +11934,11 @@ def _versioned_static_url(rel_path, fallback_url=None):
     return url_for("static", filename=rel)
 
 
+def _enemy_static_url(image_path, fallback_url=None):
+    rel = _enemy_image_rel(image_path)
+    return _versioned_static_url(rel, fallback_url=fallback_url)
+
+
 def _composed_image_url(rel_path, updated_at=None):
     if not rel_path:
         return None
@@ -14744,7 +14749,7 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"戦域: {area_label}")
         enemy_row = _feed_enemy_row(db, row, payload)
         if enemy_row:
-            card["image_url"] = url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
+            card["image_url"] = _enemy_static_url(enemy_row["image_path"])
     elif event_type == "LAB_RACE_WIN":
         username = str(payload.get("username") or "LAB ENEMY").strip() or "LAB ENEMY"
         robot_name = str(payload.get("robot_name") or "実験機").strip() or "実験機"
@@ -14947,7 +14952,7 @@ def _world_first_boss_card(db, row, payload):
         "time_jst": _format_jst_ts(row["created_at"]),
         "text": text,
         "image_url": (
-            url_for("static", filename=_enemy_image_rel(enemy_row["image_path"]))
+            _enemy_static_url(enemy_row["image_path"])
             if enemy_row
             else None
         ),
@@ -21485,7 +21490,10 @@ def explore():
         "enemy_name": (last_enemy["name_ja"] if last_enemy else "謎の敵"),
         "enemy_key": (last_enemy["key"] if last_enemy else None),
         "enemy_tier": int(last_enemy["tier"]) if last_enemy and "tier" in last_enemy.keys() else None,
-        "enemy_image_url": url_for("static", filename=_enemy_image_rel(enemy_image_path)),
+        "enemy_image_url": _enemy_static_url(
+            enemy_image_path,
+            fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+        ),
         "enemy_faction": ((last_enemy["faction"] if last_enemy and "faction" in last_enemy.keys() else "neutral") or "neutral").lower(),
         "enemy_faction_label": FACTION_LABELS.get(((last_enemy["faction"] if last_enemy and "faction" in last_enemy.keys() else "neutral") or "neutral").lower(), "旧文明"),
         "enemy_faction_icon": FACTION_ICONS.get(((last_enemy["faction"] if last_enemy and "faction" in last_enemy.keys() else "neutral") or "neutral").lower()),
@@ -23701,7 +23709,7 @@ def enemy_dex():
         )
         name_ja = display_name if int(row["defeat_count"] or 0) > 0 else "？？？"
         image_path = display_enemy["image_path"] if display_enemy else row["image_path"]
-        image_url = url_for("static", filename=_enemy_image_rel(image_path))
+        image_url = _enemy_static_url(image_path)
         is_boss = (
             bool(int(display_enemy["is_boss"] or 0))
             if display_enemy is not None
@@ -23740,7 +23748,7 @@ def enemy_dex_detail(enemy_key):
     enemy_dict = dict(enemy)
     enemy_dict["display_key"] = str(enemy_key or enemy_dict.get("key") or "").strip()
     show_stats = int(dex_row["defeat_count"] or 0) > 0
-    image_url = url_for("static", filename=_enemy_image_rel(enemy_dict["image_path"]))
+    image_url = _enemy_static_url(enemy_dict["image_path"])
     return render_template(
         "enemy_dex_detail.html",
         enemy=enemy_dict,

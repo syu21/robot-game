@@ -43,7 +43,9 @@
   {% if summary.get('enemy_image_url') %}
   <div class="battle-section-title">敵情報</div>
   <div class="card enemy-card">
-    <img class="battle-enemy-thumb" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
+    <div class="enemy-sprite-frame battle-enemy-thumb-frame">
+      <img class="battle-enemy-thumb" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
+    </div>
     <div>
       <div>
         <b>{{ summary.get('enemy_name', enemy_name) }}</b>
