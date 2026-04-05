@@ -68,7 +68,7 @@
 
   {% if enemy %}
   <label>現在画像</label>
-  <img class="robot-thumb" src="{{ url_for('static', filename=enemy['display_image_path']) }}" alt="{{ enemy['key'] }}" loading="lazy" />
+  <img class="robot-thumb" src="{{ enemy['display_image_url'] }}" alt="{{ enemy['key'] }}" loading="lazy" />
   {% endif %}
   <label>画像アップロード（PNG/128x128/透過必須）</label>
   <input type="file" name="image" accept="image/png" />

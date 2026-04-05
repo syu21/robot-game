@@ -26224,6 +26224,10 @@ def admin_enemies():
     for row in rows:
         d = dict(row)
         d["display_image_path"] = _enemy_image_rel(d.get("image_path"))
+        d["display_image_url"] = _enemy_static_url(
+            d.get("image_path"),
+            fallback_url=url_for("static", filename="enemies/_placeholder.png"),
+        )
         enemies.append(d)
     return render_template(
         "admin_enemies.html",
@@ -26504,6 +26508,10 @@ def admin_enemy_edit(key):
                 return redirect(url_for("admin_enemy_edit", key=enemy["key"]))
     enemy_dict = dict(enemy)
     enemy_dict["display_image_path"] = _enemy_image_rel(enemy_dict.get("image_path"))
+    enemy_dict["display_image_url"] = _enemy_static_url(
+        enemy_dict.get("image_path"),
+        fallback_url=url_for("static", filename="enemies/_placeholder.png"),
+    )
     return render_template(
         "admin_enemy_form.html",
         mode="edit",

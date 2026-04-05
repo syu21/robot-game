@@ -65,7 +65,7 @@
       <tbody>
       {% for e in enemies %}
         <tr>
-          <td><img class="part-thumb admin-thumb" src="{{ url_for('static', filename=e['display_image_path']) }}" alt="{{ e['key'] }}" loading="lazy" /></td>
+          <td><img class="part-thumb admin-thumb" src="{{ e['display_image_url'] }}" alt="{{ e['key'] }}" loading="lazy" /></td>
           <td>{{ e['key'] }}</td>
           <td>{{ e['name_ja'] }}</td>
           <td>{{ e['tier'] }}</td>
