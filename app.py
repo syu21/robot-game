@@ -223,6 +223,18 @@ OFFICIAL_X_URL = (os.getenv("OFFICIAL_X_URL") or "").strip()
 GOOGLE_OAUTH_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 GOOGLE_OAUTH_PROVIDER = "google"
 DISPLAY_NAME_MAX_LENGTH = 20
+STARTER_ROBOT_NAME_MAX_LENGTH = 12
+STARTER_ROBOT_DEFAULT_NAME = "スターターユニット"
+STARTER_ROBOT_DEFAULT_NAMES = frozenset(
+    {
+        "starter unit",
+        "starterunit",
+        "スターターユニット",
+        "初号機",
+        "テスト機",
+        "無名機",
+    }
+)
 GOOGLE_OAUTH_SCOPE = "openid email profile"
 _google_oauth_discovery_cache = {"loaded_at": 0.0, "data": None}
 STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
@@ -3239,6 +3251,133 @@ def _default_explore_area_key(user_row, available_areas, db=None):
     if not available_areas:
         return None
     return str(available_areas[0].get("key") or "").strip() or None
+
+
+def _find_explore_area(available_areas, area_key):
+    key = str(area_key or "").strip()
+    if not key:
+        return None
+    return next((area for area in (available_areas or ()) if str(area.get("key") or "").strip() == key), None)
+
+
+def _area_home_desc_line(area_key):
+    info = EXPLORE_AREA_MAP_INFO.get(str(area_key or "").strip()) or {}
+    desc = info.get("desc") or []
+    if not desc:
+        return ""
+    return str(desc[0] or "").strip()
+
+
+def _build_home_primary_explore_cta(
+    *,
+    has_any_robot,
+    is_admin,
+    ct_remain,
+    total_explores,
+    available_areas,
+    selected_area_key,
+    saved_area_key,
+    next_action_card=None,
+):
+    if not has_any_robot:
+        return {
+            "title": "最初の出撃準備",
+            "destination_label": "ロボ編成",
+            "helper_text": "これから一緒に出撃するロボを1体完成させよう。",
+            "status_text": "出撃準備中",
+            "button_label": "ロボを編成する",
+            "button_current_label": "ロボを編成する",
+            "is_post": False,
+            "cta_url": url_for("build"),
+            "area_key": None,
+            "boss_enter": False,
+            "disabled": False,
+            "show_map_link": False,
+            "map_link_label": "",
+            "map_href": "",
+            "context_line": "完成後はそのまま第1層へ出撃できます。",
+        }
+
+    ready = bool(is_admin or int(ct_remain or 0) <= 0)
+    selected_area = _find_explore_area(available_areas, selected_area_key)
+    saved_area = _find_explore_area(available_areas, saved_area_key)
+    use_next_action = bool(
+        next_action_card
+        and next_action_card.get("is_post")
+        and str(next_action_card.get("cta_url") or "") == url_for("explore")
+        and str(next_action_card.get("area_key") or "").strip()
+    )
+    next_action_area_key = (
+        str(next_action_card.get("area_key") or "").strip() if use_next_action else ""
+    )
+    next_action_priority = bool(
+        use_next_action
+        and (
+            bool(next_action_card.get("boss_enter"))
+            or next_action_area_key in {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
+        )
+    )
+    if next_action_priority:
+        area = _find_explore_area(available_areas, next_action_card.get("area_key")) or selected_area or saved_area
+        button_label = str(next_action_card.get("cta_label") or "出撃する")
+        helper_text = str(next_action_card.get("desc") or "").strip() or _area_home_desc_line(area["key"] if area else "")
+        title = str(next_action_card.get("title") or "次の出撃")
+        context_line = "ボス警報や解放直後の目標を優先表示しています。"
+        boss_enter = bool(next_action_card.get("boss_enter"))
+        area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
+    elif saved_area:
+        area = saved_area
+        button_label = "前回の出撃先で出撃"
+        helper_text = _area_home_desc_line(area["key"]) or "前回の探索先から、そのまま再出撃できます。"
+        title = "前回の出撃先"
+        context_line = "前回の探索先を覚えています。"
+        boss_enter = False
+        area_key = area["key"]
+    elif int(total_explores or 0) <= 0:
+        area = _find_explore_area(available_areas, "layer_1") or selected_area or saved_area
+        button_label = "第1層へ出撃"
+        helper_text = "まずは1勝してパーツを持ち帰ろう。"
+        title = "最初の出撃"
+        context_line = "最初の1勝までは、このボタンだけ見れば大丈夫です。"
+        boss_enter = False
+        area_key = area["key"] if area else "layer_1"
+    elif use_next_action:
+        area = _find_explore_area(available_areas, next_action_card.get("area_key")) or selected_area or saved_area
+        button_label = str(next_action_card.get("cta_label") or "出撃する")
+        helper_text = str(next_action_card.get("desc") or "").strip() or _area_home_desc_line(area["key"] if area else "")
+        title = str(next_action_card.get("title") or "次の出撃")
+        context_line = "ボス警報や解放直後の目標を優先表示しています。"
+        boss_enter = bool(next_action_card.get("boss_enter"))
+        area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
+    else:
+        area = selected_area or (available_areas[0] if available_areas else None)
+        button_label = "出撃する"
+        helper_text = _area_home_desc_line(area["key"] if area else "") or "次の探索先を決めて出撃しよう。"
+        title = "次の出撃"
+        context_line = "探索先はあとでマップから変えられます。"
+        boss_enter = False
+        area_key = area["key"] if area else None
+
+    current_label = button_label if ready else f"クールタイム中 あと{int(ct_remain)}秒"
+    status_text = "出撃可能" if ready else f"クールタイム中 あと{int(ct_remain)}秒"
+    map_link_label = "マップで出撃先を変える" if not use_next_action else "いったんマップを見る"
+    return {
+        "title": title,
+        "destination_label": area["label"] if area else "探索先未設定",
+        "helper_text": helper_text,
+        "status_text": status_text,
+        "button_label": button_label,
+        "button_current_label": current_label,
+        "is_post": True,
+        "cta_url": url_for("explore"),
+        "area_key": area_key,
+        "boss_enter": boss_enter,
+        "disabled": not ready,
+        "show_map_link": True,
+        "map_link_label": map_link_label,
+        "map_href": url_for("map_view"),
+        "context_line": context_line,
+    }
 
 
 def _locked_layer_lines(user_row, db=None):
@@ -7015,6 +7154,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "starter_robot_name_pending" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN starter_robot_name_pending INTEGER NOT NULL DEFAULT 0")
     if "lab_coin" not in cols:
         db.execute(f"ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT {LAB_CASINO_STARTING_COINS}")
     if "lab_coin_last_daily_at" not in cols:
@@ -7053,6 +7194,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
+    db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE starter_robot_name_pending IS NULL")
     db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_STARTING_COINS} WHERE lab_coin IS NULL OR lab_coin < 0")
     db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_COIN_CAP} WHERE lab_coin > {LAB_CASINO_COIN_CAP}")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
@@ -8535,7 +8677,10 @@ def initialize_new_user(db, user_id, *, apply_admin_setup=True):
             except Exception:
                 # 初期化の本質は「行動可能な初期ロボ付与」。画像生成失敗ではロールバックしない。
                 pass
-        db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (robot_id, user_id))
+        db.execute(
+            "UPDATE users SET active_robot_id = ?, starter_robot_name_pending = 1 WHERE id = ?",
+            (robot_id, user_id),
+        )
         active_robot_id = robot_id
         created_robot = True
     elif not active_robot_id:
@@ -16511,6 +16656,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.36",
+            "date": "2026/04/05",
+            "title": "ホームの出撃導線と初回機体命名をスマホ向けに改善",
+            "notes": [
+                "ホーム上部に `出撃可能 / 次に行く場所 / 主出撃ボタン` をまとめた主CTAカードを追加し、スマホでも最初に押す場所が迷いにくいよう整理",
+                "主出撃ボタンはクールタイム中でも同じ場所に残り、`クールタイム中 あとxx秒` の状態表示に切り替わるよう改善",
+                "新規スターター機体には初回だけ命名モーダルを表示し、名前を付けるかスキップして進めるかを軽く選べるよう対応",
+            ],
+        },
+        {
             "version": "0.1.35",
             "date": "2026/04/05",
             "title": "スマホで戦闘アニメを最優先表示",
@@ -17873,6 +18028,15 @@ def _normalize_display_name(raw_value):
     return text
 
 
+def _normalize_robot_name(raw_value):
+    return re.sub(r"\s+", " ", str(raw_value or "").strip())
+
+
+def _is_starter_robot_default_name(robot_name):
+    normalized = _normalize_robot_name(robot_name).lower().replace(" ", "")
+    return normalized in {name.replace(" ", "") for name in STARTER_ROBOT_DEFAULT_NAMES}
+
+
 def _render_auth_gateway(
     db,
     *,
@@ -18445,10 +18609,30 @@ def home():
     just_registered = bool(session.pop("just_registered", None))
     show_display_name_setup = bool(session.get("needs_display_name_setup"))
     current_display_name = _display_username_for_user_row(db, user)
+    show_starter_robot_name_setup = False
+    starter_robot_name_prefill = STARTER_ROBOT_DEFAULT_NAME
+    starter_robot_instance_id = int(main_robot["id"]) if main_robot else None
+    starter_name_pending = int(user["starter_robot_name_pending"] or 0) == 1 if "starter_robot_name_pending" in user.keys() else False
+    if starter_name_pending and main_robot:
+        normalized_robot_name = _normalize_robot_name(main_robot.get("name") or "")
+        if _is_starter_robot_default_name(normalized_robot_name):
+            show_starter_robot_name_setup = not show_display_name_setup
+        else:
+            db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE id = ?", (int(user["id"]),))
     if has_any_robot and int(total_explores or 0) <= 0:
         beginner_mission_text = "最初の出撃へ。\nまずは第1層でパーツを集めよう。"
         beginner_mission_cta_label = "第1層へ出撃"
     show_intro_modal = (not intro_modal_seen) and (just_registered or total_explores == 0)
+    home_primary_explore_cta = _build_home_primary_explore_cta(
+        has_any_robot=has_any_robot,
+        is_admin=bool(user["is_admin"] == 1),
+        ct_remain=int(ct_remain or 0),
+        total_explores=int(total_explores or 0),
+        available_areas=unlocked_explore_areas,
+        selected_area_key=selected_explore_area_key,
+        saved_area_key=saved_explore_area_key,
+        next_action_card=next_action_card,
+    )
     intro_npc_image = "images/ui/robonavi.png"
     explore_submission_id = _issue_explore_submission_id()
     referral_counts = _referral_counts_for_referrer(db, user["id"])
@@ -18519,6 +18703,7 @@ def home():
             ct_ready_at=int(ct_ready_at),
             personality_labels=PERSONALITY_LABELS,
             explore_areas=unlocked_explore_areas,
+            home_primary_explore_cta=home_primary_explore_cta,
             home_return_explore_cta=home_return_explore_cta,
             selected_explore_area_key=selected_explore_area_key,
             home_area_cards=home_area_cards,
@@ -18574,6 +18759,9 @@ def home():
             show_intro_modal=show_intro_modal,
             show_display_name_setup=show_display_name_setup,
             display_name_setup_prefill=current_display_name,
+            show_starter_robot_name_setup=show_starter_robot_name_setup,
+            starter_robot_name_prefill=starter_robot_name_prefill,
+            starter_robot_instance_id=starter_robot_instance_id,
             intro_npc_image=intro_npc_image,
             main_robot_weekly_fit=main_robot_weekly_fit,
             today_progress=today_progress,
@@ -18670,6 +18858,120 @@ def home_display_name_update():
     )
     session.pop("needs_display_name_setup", None)
     flash("表示名を登録しました。", "notice")
+    return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+
+@app.route("/home/starter-robot-name", methods=["POST"])
+@login_required
+def home_starter_robot_name_update():
+    robot_name = _normalize_robot_name(request.form.get("robot_name"))
+    next_path = (request.form.get("next") or "").strip()
+    if not robot_name:
+        flash("機体名を入力してください。", "error")
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+    if len(robot_name) > STARTER_ROBOT_NAME_MAX_LENGTH:
+        flash(f"機体名は{STARTER_ROBOT_NAME_MAX_LENGTH}文字以内で入力してください。", "error")
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+    db = get_db()
+    user = db.execute(
+        "SELECT id, active_robot_id, starter_robot_name_pending FROM users WHERE id = ?",
+        (int(session["user_id"]),),
+    ).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    if int(user["starter_robot_name_pending"] or 0) != 1:
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+    try:
+        target_id = int(request.form.get("robot_instance_id") or 0)
+    except (TypeError, ValueError):
+        target_id = 0
+    if target_id <= 0:
+        target_id = int(user["active_robot_id"] or 0)
+    target = db.execute(
+        "SELECT id, name FROM robot_instances WHERE id = ? AND user_id = ?",
+        (target_id, int(user["id"])),
+    ).fetchone()
+    if not target:
+        flash("命名対象の機体が見つかりませんでした。", "error")
+        return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+    db.execute(
+        "UPDATE robot_instances SET name = ?, updated_at = ? WHERE id = ?",
+        (robot_name, int(time.time()), int(target["id"])),
+    )
+    db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE id = ?", (int(user["id"]),))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_RENAME"],
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="starter_name_setup",
+        entity_type="robot_instance",
+        entity_id=int(target["id"]),
+        delta_coins=0,
+        payload={
+            "robot_instance_id": int(target["id"]),
+            "old_name": target["name"],
+            "new_name": robot_name,
+            "coin_cost": 0,
+            "source": "starter_prompt",
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "最初の機体に名前をつけました。"
+    return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+
+@app.route("/home/starter-robot-name/skip", methods=["POST"])
+@login_required
+def home_starter_robot_name_skip():
+    db = get_db()
+    next_path = (request.form.get("next") or "").strip()
+    user = db.execute(
+        "SELECT id, active_robot_id, starter_robot_name_pending FROM users WHERE id = ?",
+        (int(session["user_id"]),),
+    ).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    if int(user["starter_robot_name_pending"] or 0) == 1:
+        target_id = int(user["active_robot_id"] or 0)
+        target = None
+        if target_id > 0:
+            target = db.execute(
+                "SELECT id, name FROM robot_instances WHERE id = ? AND user_id = ?",
+                (target_id, int(user["id"])),
+            ).fetchone()
+        if target and _is_starter_robot_default_name(target["name"] or "") and _normalize_robot_name(target["name"]) != STARTER_ROBOT_DEFAULT_NAME:
+            db.execute(
+                "UPDATE robot_instances SET name = ?, updated_at = ? WHERE id = ?",
+                (STARTER_ROBOT_DEFAULT_NAME, int(time.time()), int(target["id"])),
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ROBOT_RENAME"],
+                user_id=int(user["id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="starter_name_skip",
+                entity_type="robot_instance",
+                entity_id=int(target["id"]),
+                delta_coins=0,
+                payload={
+                    "robot_instance_id": int(target["id"]),
+                    "old_name": target["name"],
+                    "new_name": STARTER_ROBOT_DEFAULT_NAME,
+                    "coin_cost": 0,
+                    "source": "starter_prompt_skip",
+                },
+                ip=request.remote_addr,
+            )
+        db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE id = ?", (int(user["id"]),))
+        db.commit()
+    session["message"] = "機体名はあとから変更できます。"
     return redirect(next_path if next_path.startswith("/") else url_for("home"))
 
 

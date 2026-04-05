@@ -3261,6 +3261,74 @@ body.battle-page .layer-boss-victory-sub {
   background: linear-gradient(180deg, rgba(228, 245, 243, 0.85), rgba(255, 255, 255, 0.98));
 }
 
+.home-explore-card .card {
+  display: grid;
+  gap: 10px;
+}
+
+.home-explore-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-explore-kicker {
+  color: var(--accent-cyan);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.home-explore-status {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  background: rgba(18, 24, 43, 0.84);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.home-explore-context {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.home-primary-explore-form {
+  width: 100%;
+  margin: 0;
+}
+
+.home-primary-explore-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(180deg, rgba(49, 39, 84, 0.98), rgba(31, 57, 86, 0.98));
+  color: var(--text-main);
+  font-size: 16px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 10px 22px rgba(3, 7, 18, 0.24);
+}
+
+button.home-primary-explore-cta:disabled {
+  opacity: 0.82;
+  cursor: not-allowed;
+}
+
+.home-explore-card-link {
+  margin: 0;
+}
+
 #battle-short-replay[hidden] {
   display: none !important;
 }
@@ -5450,6 +5518,27 @@ body.home-page .locked-layer-card {
     padding: 14px;
   }
 
+  .home-explore-card .card {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .home-explore-card-head {
+    gap: 8px;
+  }
+
+  .home-primary-explore-cta {
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .home-explore-utility-form,
+  .home-explore-utility-link {
+    display: none !important;
+  }
+
   .home-priority-stack,
   .home-layout-grid,
   .home-layout-grid > *,
@@ -5731,6 +5820,22 @@ body.home-page.home-mobile select {
   width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
+}
+
+body.home-page.home-mobile .home-explore-card .card {
+  padding: 12px !important;
+  gap: 8px !important;
+}
+
+body.home-page.home-mobile .home-primary-explore-cta {
+  width: 100% !important;
+  min-height: 52px !important;
+  font-size: 16px !important;
+}
+
+body.home-page.home-mobile .home-explore-utility-form,
+body.home-page.home-mobile .home-explore-utility-link {
+  display: none !important;
 }
 
 @media (max-width: 640px) {
@@ -7147,7 +7252,8 @@ h2 {
 .research-unlock-banner,
 .beginner-mission-panel,
 .priority-boss-alert,
-.home-return-explore-panel {
+.home-return-explore-panel,
+.home-explore-card {
   background: rgba(18, 24, 43, 0.94);
 }
 

@@ -50,9 +50,13 @@
 
     const isAdmin = String(ctStatus.dataset.isAdmin || "0") === "1";
     const ctaButtons = Array.from(document.querySelectorAll("[data-explore-cta='1']"));
+    const ctCopies = Array.from(document.querySelectorAll("[data-home-ct-copy='1']"));
 
     const setReady = () => {
       ctStatus.textContent = "出撃可能！";
+      ctCopies.forEach((el) => {
+        el.textContent = "出撃可能";
+      });
       ctaButtons.forEach((btn) => {
         btn.disabled = false;
         btn.textContent = String(btn.dataset.ctaReadyLabel || "出撃する");
@@ -62,9 +66,12 @@
     const setCooling = (remain) => {
       const sec = Math.max(0, Number(remain) || 0);
       ctStatus.textContent = `出撃まであと${sec}秒！`;
+      ctCopies.forEach((el) => {
+        el.textContent = `クールタイム中 あと${sec}秒`;
+      });
       ctaButtons.forEach((btn) => {
         btn.disabled = true;
-        btn.textContent = `あと${sec}秒`;
+        btn.textContent = `クールタイム中 あと${sec}秒`;
       });
     };
 
@@ -163,6 +170,21 @@
     });
   };
 
+  const bindStarterRobotNameModal = () => {
+    const modal = document.getElementById("starter-robot-name-modal");
+    if (!modal) return;
+    const input = document.getElementById("starter-robot-name-input");
+    if (!input) return;
+    window.setTimeout(() => {
+      try {
+        input.focus();
+        input.select();
+      } catch (_err) {
+        // no-op
+      }
+    }, 60);
+  };
+
   const init = () => {
     markStep("home:init:start");
     if (!isHomePage()) {
@@ -200,6 +222,13 @@
       markStep("home:init:intro-modal-bind");
     } catch (err) {
       reportCaught("home:init:intro-modal-bind", err);
+    }
+
+    try {
+      bindStarterRobotNameModal();
+      markStep("home:init:starter-name-bind");
+    } catch (err) {
+      reportCaught("home:init:starter-name-bind", err);
     }
 
     markStep("home:init:done");

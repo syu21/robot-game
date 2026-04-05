@@ -336,7 +336,7 @@ class HomeNextActionTests(unittest.TestCase):
             db.execute(
                 """
                 INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
-                VALUES (?, ?, ?, 1, 0, 1)
+                VALUES (?, ?, ?, 0, 0, 1)
                 """,
                 ("ranking_rival", "x", now),
             )
@@ -373,9 +373,10 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("会議室", html)
         self.assertIn("今週のランキング", html)
         self.assertIn("表示調整", html)
-        self.assertIn("1位 ranking_rival", html)
+        self.assertRegex(html, re.compile(r"1位.*ranking_rival", re.S))
         self.assertIn("4回", html)
-        self.assertIn("2位 home_next_tester", html)
+        self.assertNotIn("2位", html)
+        self.assertNotIn("home_next_tester", m.group(1) if (m := re.search(r'<section class="panel home-ranking-panel">(.*?)</section>', html, re.DOTALL)) else html)
         self.assertIn('/ranking?metric=weekly_explores', html)
         self.assertNotIn("?comm_tab=", html)
         self.assertIn('id="home-comms-panel"', html)
@@ -383,11 +384,10 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("home-invite-panel", html)
         self.assertLess(html.index("通信"), html.index("今週のランキング"))
         self.assertLess(html.index("今週のMVP"), html.index('id="home-comms-panel"'))
-        m = re.search(r'<section class="panel home-ranking-panel">(.*?)</section>', html, re.DOTALL)
         self.assertIsNotNone(m)
         panel_html = m.group(1)
         self.assertIn('class="user-chip mini is-robot-icon', panel_html)
-        self.assertIn("1位 ranking_rival", panel_html)
+        self.assertRegex(panel_html, re.compile(r"1位.*ranking_rival", re.S))
         self.assertIn("user-chip-robot", panel_html)
         nav = re.search(r'<section class="panel home-nav-panel">(.*?)</section>', html, re.DOTALL)
         self.assertIsNotNone(nav)
@@ -413,6 +413,9 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertRegex(html, r'<option value="layer_1" selected>')
+        self.assertIn('class="panel home-explore-card"', html)
+        self.assertIn("最初の出撃", html)
+        self.assertIn("第1層へ出撃", html)
         self.assertNotIn("前回の出撃先で出撃", html)
 
     def test_home_uses_last_selected_explore_area_when_unlocked(self):
@@ -429,7 +432,8 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertRegex(html, r'<option value="layer_2_rush" selected>')
-        self.assertIn('class="panel home-return-explore-panel"', html)
+        self.assertIn('class="panel home-explore-card"', html)
+        self.assertIn("前回の出撃先", html)
         self.assertIn("前回の出撃先で出撃", html)
         self.assertIn('name="area_key" value="layer_2_rush"', html)
         self.assertLess(html.index("前回の出撃先"), html.index("最初のミッション"))
@@ -485,6 +489,98 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("表示名を決めよう", html)
         self.assertIn('action="/home/display-name"', html)
         self.assertIn('name="display_name"', html)
+
+    def test_home_primary_explore_cta_shows_cooldown_state_without_moving(self):
+        self._create_active_robot()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._new_client()
+        with mock.patch.object(game_app, "_explore_remaining_seconds_for_user", return_value=(18, None)):
+            resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn('class="panel home-explore-card"', html)
+        self.assertIn("クールタイム中 あと18秒", html)
+        self.assertIn("home-primary-explore-cta", html)
+        self.assertIn("disabled", html)
+
+    def test_home_shows_starter_robot_name_modal_once_for_new_starter(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.initialize_new_user(db, self.user_id)
+            db.commit()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("最初の機体に名前をつけよう", html)
+        self.assertIn('action="/home/starter-robot-name"', html)
+        self.assertIn('action="/home/starter-robot-name/skip"', html)
+        self.assertIn('name="robot_name"', html)
+
+    def test_home_can_save_starter_robot_name_from_modal(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.initialize_new_user(db, self.user_id)
+            robot = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()
+            db.commit()
+        client = self._new_client()
+        resp = client.post(
+            "/home/starter-robot-name",
+            data={
+                "robot_name": "アカツキ",
+                "robot_instance_id": robot["active_robot_id"],
+                "next": "/home",
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            renamed = db.execute(
+                "SELECT name FROM robot_instances WHERE id = ?",
+                (robot["active_robot_id"],),
+            ).fetchone()
+            user = db.execute(
+                "SELECT starter_robot_name_pending FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(renamed["name"], "アカツキ")
+            self.assertEqual(int(user["starter_robot_name_pending"] or 0), 0)
+
+    def test_home_can_skip_starter_robot_name_and_keep_progress_flowing(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.initialize_new_user(db, self.user_id)
+            robot = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()
+            db.commit()
+        client = self._new_client()
+        resp = client.post(
+            "/home/starter-robot-name/skip",
+            data={"next": "/home"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            renamed = db.execute(
+                "SELECT name FROM robot_instances WHERE id = ?",
+                (robot["active_robot_id"],),
+            ).fetchone()
+            user = db.execute(
+                "SELECT starter_robot_name_pending FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(renamed["name"], game_app.STARTER_ROBOT_DEFAULT_NAME)
+            self.assertEqual(int(user["starter_robot_name_pending"] or 0), 0)
+        html = client.get("/home").get_data(as_text=True)
+        self.assertNotIn("最初の機体に名前をつけよう", html)
 
     def test_home_comms_tabs_switch_room_and_personal_views(self):
         with game_app.app.app_context():

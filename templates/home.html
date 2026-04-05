@@ -9,23 +9,43 @@
 </div>
 {% else %}
 <div class="home-priority-stack">
-{% if home_return_explore_cta %}
-<div class="panel home-return-explore-panel">
+{% if home_primary_explore_cta %}
+<div class="panel home-explore-card">
   <div class="card">
-    <div><b>前回の出撃先</b></div>
-    <div class="upgrade-cost">{{ home_return_explore_cta['area_label'] }}</div>
-    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
-      <input type="hidden" name="area_key" value="{{ home_return_explore_cta['area_key'] }}" />
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">{{ home_primary_explore_cta['title'] }}</div>
+        <div><b>{{ home_primary_explore_cta['destination_label'] }}</b></div>
+      </div>
+      <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
+    </div>
+    <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
+    <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
+    {% if home_primary_explore_cta['is_post'] %}
+    <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
+      {% if home_primary_explore_cta['area_key'] %}
+      <input type="hidden" name="area_key" value="{{ home_primary_explore_cta['area_key'] }}" />
+      {% endif %}
       {% if explore_submission_id %}
       <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
       {% endif %}
+      {% if home_primary_explore_cta['boss_enter'] %}
+      <input type="hidden" name="boss_enter" value="1" />
+      {% endif %}
       <button
         type="submit"
+        class="home-primary-explore-cta"
         data-explore-cta="1"
-        data-cta-ready-label="{{ home_return_explore_cta['button_label'] }}"
-        {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
-      >{% if not is_admin and ct_remain > 0 %}あと{{ ct_remain }}秒{% else %}{{ home_return_explore_cta['button_label'] }}{% endif %}</button>
+        data-cta-ready-label="{{ home_primary_explore_cta['button_label'] }}"
+        {% if home_primary_explore_cta['disabled'] %}disabled{% endif %}
+      >{{ home_primary_explore_cta['button_current_label'] }}</button>
     </form>
+    {% else %}
+    <p class="link"><a class="battle-home-link battle-next-cta home-primary-explore-cta" href="{{ home_primary_explore_cta['cta_url'] }}">{{ home_primary_explore_cta['button_label'] }}</a></p>
+    {% endif %}
+    {% if home_primary_explore_cta['show_map_link'] %}
+    <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">{{ home_primary_explore_cta['map_link_label'] }}</a></p>
+    {% endif %}
   </div>
 </div>
 {% endif %}
@@ -113,6 +133,31 @@
       <div class="intro-guide-subcopy">20文字以内。ランキングや世界ログではこの名前が表示されます。</div>
       <div class="intro-guide-footer">
         <button type="submit">この名前で始める</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% if show_starter_robot_name_setup %}
+<div id="starter-robot-name-modal" class="intro-guide-modal display-name-setup-modal" role="dialog" aria-modal="true" aria-labelledby="starter-robot-name-title">
+  <div class="intro-guide-backdrop"></div>
+  <div class="intro-guide-card display-name-setup-card">
+    <div class="intro-guide-head">
+      <img class="intro-guide-npc" src="{{ url_for('static', filename=intro_npc_image) }}" alt="案内役" loading="eager" decoding="async" width="56" height="56" />
+      <div>
+        <div id="starter-robot-name-title"><b>最初の機体に名前をつけよう</b> <span class="intro-guide-badge">初回だけ</span></div>
+        <div class="intro-guide-subcopy">これから一緒に出撃するロボです。あとで変更もできます。</div>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('home_starter_robot_name_update') }}" class="display-name-setup-form">
+      <input type="hidden" name="next" value="{{ url_for('home') }}" />
+      <input type="hidden" name="robot_instance_id" value="{{ starter_robot_instance_id }}" />
+      <label for="starter-robot-name-input">機体名</label>
+      <input id="starter-robot-name-input" type="text" name="robot_name" maxlength="12" value="{{ starter_robot_name_prefill }}" autocomplete="off" />
+      <div class="intro-guide-subcopy">12文字以内。ランキングや記録にも機体名が残ります。</div>
+      <div class="intro-guide-footer">
+        <button type="submit">この名前で始める</button>
+        <button type="submit" class="btn-secondary" formaction="{{ url_for('home_starter_robot_name_skip') }}">あとで決める</button>
       </div>
     </form>
   </div>
@@ -492,7 +537,7 @@
       </div>
     {% endif %}
     {% if has_any_robot %}
-      <form method="post" action="{{ url_for('explore') }}" class="inline-form">
+      <form method="post" action="{{ url_for('explore') }}" class="inline-form home-explore-utility-form">
         <label>出撃先:</label>
         <select id="explore-area-select" name="area_key" required>
           {% for area in explore_areas %}
@@ -513,7 +558,7 @@
         <button type="submit" name="boss_enter" value="1" class="btn-secondary">ボスへ直行</button>
         {% endif %}
       </form>
-      <p class="link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
+      <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
       {% if home_area_cards %}
       <div class="home-nav-section-title">探索先メモ</div>
       <div class="home-area-card-grid">
