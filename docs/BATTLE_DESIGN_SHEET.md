@@ -1,6 +1,10 @@
 # 戦闘・経済 設計シート
 
-最終更新日: 2026-03-28
+最終更新日: 2026-04-06
+
+注記:
+- このファイルは設計意図と調整方針のメモです
+- 現在の実装仕様は `docs/BATTLE_SPEC.md` を正本とします
 
 ## 1. 設計目的
 - 短時間で1周できるテンポ
@@ -66,3 +70,14 @@
 - CT表示とサーバ判定は一致
 - JSエラー時でも白画面を避ける
 - overlay演出はページ跨ぎで残留させない
+
+## 9. 型相性シミュレーション方針
+- 実戦導線を壊さずに型相性を検証するため、`services/balance_simulator.py` と `tools/run_balance_simulation.py` を開発用の純シミュレーション基盤として持つ
+- 検証は `鉄壁 / 安定 / 命中 / 会心 / 爆発 / 背水 / バランス` の7型を対象にし、各型3テンプレ以上の群平均で見る
+- 戦闘条件は本番と同じく `8ターン上限` を使い、時間切れは残HP割合判定まで含めて再現する
+- 理想勝率は有利側 `55〜65%`、強め相性でも `70%前後` までを目安とし、`75%超` は危険対面として明示する
+- 目標は万能最強を作ることではなく、`周回向き / ボス向き / 記録向き / 模擬戦向き` の用途差を確認すること
+- CLI 例:
+  - `python3 tools/run_balance_simulation.py --n 1000`
+  - `python3 tools/run_balance_simulation.py --pair tank burst --n 5000`
+  - `python3 tools/run_balance_simulation.py --export csv --output tmp/balance_matrix.csv`
