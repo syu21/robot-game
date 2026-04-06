@@ -159,6 +159,42 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(user_after.status_code, 200)
         self.assertIn('id="battle-short-replay"', user_after.get_data(as_text=True))
 
+    def test_weekly_champion_is_admin_only_until_released(self):
+        user_client = self._client()
+        admin_client = self._client(admin=True)
+
+        user_home = user_client.get("/home")
+        self.assertEqual(user_home.status_code, 200)
+        self.assertNotIn("今週のチャンプ機体", user_home.get_data(as_text=True))
+
+        admin_home = admin_client.get("/home")
+        self.assertEqual(admin_home.status_code, 200)
+        self.assertIn("今週のチャンプ機体", admin_home.get_data(as_text=True))
+
+        hidden = user_client.get("/champion", follow_redirects=False)
+        self.assertEqual(hidden.status_code, 302)
+        self.assertIn("/home", hidden.headers.get("Location", ""))
+
+        visible_for_admin = admin_client.get("/champion")
+        self.assertEqual(visible_for_admin.status_code, 200)
+        self.assertIn("今週のチャンプ機体", visible_for_admin.get_data(as_text=True))
+
+        toggle = admin_client.post(
+            "/admin/release",
+            data={"feature_key": "weekly_champion", "state": "public"},
+            follow_redirects=True,
+        )
+        self.assertEqual(toggle.status_code, 200)
+        self.assertIn("一般公開しました", toggle.get_data(as_text=True))
+
+        user_home_after = user_client.get("/home")
+        self.assertEqual(user_home_after.status_code, 200)
+        self.assertIn("今週のチャンプ機体", user_home_after.get_data(as_text=True))
+
+        user_champion_after = user_client.get("/champion")
+        self.assertEqual(user_champion_after.status_code, 200)
+        self.assertIn("今週のチャンプ機体", user_champion_after.get_data(as_text=True))
+
     def test_records_hide_unreleased_layer_records(self):
         with game_app.app.app_context():
             db = game_app.get_db()

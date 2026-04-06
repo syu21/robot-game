@@ -307,6 +307,58 @@
         {% endif %}
       </div>
     </section>
+    {% if show_weekly_champion %}
+    <section class="panel home-champion-panel">
+      <div class="world-env-card mvp-hero-card champion-hero-card">
+        <div><b>今週のチャンプ機体</b></div>
+        {% if weekly_champion %}
+        <div class="upgrade-cost">{{ weekly_champion.get('reason_label', '今週の注目機体') }}</div>
+        <div class="presence-user-line user-signal user-signal-hero">
+          {{ render_user_chip(weekly_champion, 'mvp', weekly_champion.get('display_username', 'champion') ~ ' robot', 'lazy', true) }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name-line">{{ render_user_name_badged_html(weekly_champion, weekly_champion.get('display_username') or weekly_champion.get('owner_name') or 'unknown') }}</div>
+            <div class="presence-mini-label">{{ weekly_champion.get('presence_label', '探索待機中') }}</div>
+          </div>
+        </div>
+        <div class="home-champion-title-row">
+          <div><b>{{ weekly_champion.get('robot_name', '無名ロボ') }}</b></div>
+          <span class="weekly-fit-badge">防衛率 {{ weekly_champion.get('champion_win_rate', 100) }}%</span>
+        </div>
+        {% if weekly_champion.get('signature_label') %}
+        <div class="upgrade-cost">思想: {{ weekly_champion.get('signature_label') }}</div>
+        {% endif %}
+        {% if weekly_champion.get('focus_line') %}
+        <div class="upgrade-cost">{{ weekly_champion.get('focus_line') }}</div>
+        {% endif %}
+        {% if weekly_champion.get('robot_image_url') %}
+        <img class="robot-thumb champion-hero-thumb" src="{{ weekly_champion.get('robot_image_url') }}" alt="{{ weekly_champion.get('robot_name', 'champion robot') }}" loading="lazy" decoding="async" />
+        {% endif %}
+        <div class="home-champion-stats">
+          <span>挑戦 {{ weekly_champion.get('challenge_count', 0) }}</span>
+          <span>撃破 {{ weekly_champion.get('defeat_count', 0) }}</span>
+        </div>
+        <div class="home-inline-actions">
+          <a class="battle-home-link" href="{{ url_for('champion_view') }}">詳細を見る</a>
+          {% if weekly_champion.get('can_challenge') and user['active_robot_id'] %}
+          <form method="post" action="{{ url_for('champion_challenge') }}" class="inline-form inline-form-top">
+            <button type="submit">挑戦する</button>
+          </form>
+          {% elif weekly_champion.get('is_owner') %}
+          <a class="battle-home-link" href="{{ url_for('champion_view') }}">あなたの機体です</a>
+          {% else %}
+          <a class="battle-home-link" href="{{ url_for('build') }}">出撃機体を用意</a>
+          {% endif %}
+        </div>
+        {% else %}
+        <div>今週のチャンプは準備中です。</div>
+        <div class="upgrade-cost">候補機体が揃い次第、今週の挑戦ロボを選出します。</div>
+        <div class="home-inline-actions">
+          <a class="battle-home-link" href="{{ url_for('ranking', metric='weekly_explores') }}">週間ランキングを見る</a>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
     <section
       class="panel home-mini-log-panel home-comms-panel"
       id="home-comms-panel"

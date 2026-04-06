@@ -76,6 +76,14 @@ from services.lab_race_engine import (
     load_course as load_lab_race_course,
     visible_course_defs as visible_lab_course_defs,
 )
+from services.weekly_champion import (
+    get_current_week_key as champion_current_week_key,
+    get_or_create_weekly_champion,
+    get_weekly_champion_snapshot,
+    get_weekly_champion_stats,
+    list_weekly_champion_battles,
+)
+from services.champion_battle import build_champion_enemy_payload, run_champion_battle
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
     compute_part_stats,
@@ -901,6 +909,11 @@ RELEASE_FLAG_DEFS = (
         "key": "battle_short_replay",
         "label": "ショート戦闘演出",
         "summary": "探索結果前のショート戦闘演出を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": "weekly_champion",
+        "label": "今週のチャンプ機体",
+        "summary": "ホームのチャンプカードと /champion の非同期挑戦を一般公開します。管理者は非公開中でも確認できます。",
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
@@ -3118,6 +3131,8 @@ def _event_release_feature(event_type, payload):
     text = str(event_type or "").strip()
     if text.startswith("audit.lab.") or text in {"LAB_RACE_WIN", "LAB_RACE_UPSET", "LAB_RACE_POPULAR_ENTRY"}:
         return "lab"
+    if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED"} or text.startswith("audit.champion."):
+        return "weekly_champion"
     unlocked_layer = int((payload or {}).get("unlocked_layer") or 0)
     if unlocked_layer >= 5:
         return "layer5"
@@ -7684,6 +7699,47 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS weekly_champion_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL UNIQUE,
+            robot_instance_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            robot_name TEXT NOT NULL,
+            owner_name TEXT NOT NULL,
+            reason_key TEXT NOT NULL,
+            score_value INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            source_week_key TEXT,
+            created_at INTEGER NOT NULL,
+            challenge_count INTEGER NOT NULL DEFAULT 0,
+            win_count INTEGER NOT NULL DEFAULT 0,
+            loss_count INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weekly_champion_battles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            champion_snapshot_id INTEGER NOT NULL,
+            challenger_user_id INTEGER NOT NULL,
+            challenger_robot_instance_id INTEGER NOT NULL,
+            result TEXT NOT NULL,
+            turn_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            request_id TEXT UNIQUE,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (champion_snapshot_id) REFERENCES weekly_champion_snapshots(id),
+            FOREIGN KEY (challenger_user_id) REFERENCES users(id),
+            FOREIGN KEY (challenger_robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_titles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT UNIQUE NOT NULL,
@@ -8426,6 +8482,22 @@ def ensure_schema(db):
     rh_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_history)").fetchall()}
     if "wins_this_week_key" not in rh_cols:
         db.execute("ALTER TABLE robot_history ADD COLUMN wins_this_week_key TEXT NOT NULL DEFAULT ''")
+    wcs_cols = {row["name"] for row in db.execute("PRAGMA table_info(weekly_champion_snapshots)").fetchall()}
+    if "payload_json" not in wcs_cols and wcs_cols:
+        db.execute("ALTER TABLE weekly_champion_snapshots ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'")
+    if "source_week_key" not in wcs_cols and wcs_cols:
+        db.execute("ALTER TABLE weekly_champion_snapshots ADD COLUMN source_week_key TEXT")
+    if "challenge_count" not in wcs_cols and wcs_cols:
+        db.execute("ALTER TABLE weekly_champion_snapshots ADD COLUMN challenge_count INTEGER NOT NULL DEFAULT 0")
+    if "win_count" not in wcs_cols and wcs_cols:
+        db.execute("ALTER TABLE weekly_champion_snapshots ADD COLUMN win_count INTEGER NOT NULL DEFAULT 0")
+    if "loss_count" not in wcs_cols and wcs_cols:
+        db.execute("ALTER TABLE weekly_champion_snapshots ADD COLUMN loss_count INTEGER NOT NULL DEFAULT 0")
+    wcb_cols = {row["name"] for row in db.execute("PRAGMA table_info(weekly_champion_battles)").fetchall()}
+    if "request_id" not in wcb_cols and wcb_cols:
+        db.execute("ALTER TABLE weekly_champion_battles ADD COLUMN request_id TEXT")
+    if "payload_json" not in wcb_cols and wcb_cols:
+        db.execute("ALTER TABLE weekly_champion_battles ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'")
     _ensure_robot_title_master_rows(db)
     db.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_day_key ON daily_metrics(day_key)")
     db.execute(
@@ -8438,6 +8510,11 @@ def ensure_schema(db):
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_event_id ON payment_orders(stripe_event_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created ON payment_orders(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_status_created ON payment_orders(status, created_at DESC)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_champion_snapshots_week ON weekly_champion_snapshots(week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_snapshots_user_week ON weekly_champion_snapshots(user_id, week_key DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_snapshot_created ON weekly_champion_battles(champion_snapshot_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_user_created ON weekly_champion_battles(challenger_user_id, created_at DESC)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_champion_battles_request ON weekly_champion_battles(request_id)")
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
@@ -14029,6 +14106,308 @@ def _weekly_mvp_snapshot(db, week_key):
     }
 
 
+WEEKLY_CHAMPION_REASON_LABELS = {
+    "weekly_boss": "今週ボス撃破が最多",
+    "weekly_explore": "今週探索数が最多",
+    "carry_over": "前週チャンプ再掲",
+}
+
+
+def _weekly_champion_snapshot_payload(snapshot_row):
+    if not snapshot_row:
+        return {}
+    try:
+        return json.loads((snapshot_row.get("payload_json") if isinstance(snapshot_row, dict) else snapshot_row["payload_json"]) or "{}")
+    except (TypeError, json.JSONDecodeError, KeyError):
+        return {}
+
+
+def _build_weekly_champion_candidate_payload(db, candidate_row):
+    candidate = dict(candidate_row or {})
+    user_id = int(candidate.get("user_id") or 0)
+    robot_instance_id = int(candidate.get("robot_instance_id") or 0)
+    if user_id <= 0 or robot_instance_id <= 0:
+        return None
+    user_row = db.execute(
+        "SELECT id, username, display_name FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    robot_row = db.execute(
+        """
+        SELECT id, user_id, name, composed_image_path, updated_at, style_key
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        """,
+        (robot_instance_id, user_id),
+    ).fetchone()
+    if not user_row or not robot_row:
+        return None
+    robot_data = _refresh_robot_instance_render_assets(
+        db,
+        robot_row,
+        log_label="weekly_champion_payload",
+        preserve_updated_at=True,
+    )
+    stat_obj = _compute_robot_stats_for_instance(db, robot_instance_id)
+    if not stat_obj:
+        return None
+    profile = _robot_profile_view(stat_obj)
+    visuals = _user_visuals(db, user_id, {})
+    return {
+        "week_key": champion_current_week_key(),
+        "user_id": user_id,
+        "robot_instance_id": robot_instance_id,
+        "owner_name": visuals.get("display_username") or str(user_row["username"] or "").strip(),
+        "username": str(user_row["username"] or "").strip(),
+        "robot_name": str(robot_data.get("name") or "無名ロボ"),
+        "composed_image_path": robot_data.get("composed_image_path"),
+        "robot_updated_at": int(robot_data.get("updated_at") or 0),
+        "robot_image_url": _composed_image_url(robot_data.get("composed_image_path"), robot_data.get("updated_at")),
+        "signature_label": str(profile.get("signature_label") or "無印"),
+        "focus_line": str(profile.get("focus_line") or ""),
+        "style_key": str(profile.get("style_key") or "stable"),
+        "style_label": str(profile.get("style_label") or "安定"),
+        "archetype_name": str(profile.get("archetype_name") or "無印"),
+        "boss_count": int(candidate.get("boss_count") or 0),
+        "explore_count": int(candidate.get("explore_count") or 0),
+        "latest_activity_at": int(candidate.get("latest_activity_at") or 0),
+        "stats": {
+            "hp": int((stat_obj.get("stats") or {}).get("hp") or 1),
+            "atk": int((stat_obj.get("stats") or {}).get("atk") or 1),
+            "def": int((stat_obj.get("stats") or {}).get("def") or 1),
+            "spd": int((stat_obj.get("stats") or {}).get("spd") or 1),
+            "acc": int((stat_obj.get("stats") or {}).get("acc") or 1),
+            "cri": int((stat_obj.get("stats") or {}).get("cri") or 1),
+        },
+    }
+
+
+def _weekly_champion_selection_payload(snapshot_row, *, fallback=False):
+    snapshot = dict(snapshot_row or {})
+    payload = _weekly_champion_snapshot_payload(snapshot)
+    return {
+        "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
+        "champion_snapshot_id": int(snapshot.get("id") or 0),
+        "champion_user_id": int(snapshot.get("user_id") or 0),
+        "champion_robot_instance_id": int(snapshot.get("robot_instance_id") or 0),
+        "champion_robot_name": str(snapshot.get("robot_name") or payload.get("robot_name") or "無名ロボ"),
+        "champion_owner_name": str(snapshot.get("owner_name") or payload.get("owner_name") or "unknown"),
+        "reason_key": str(snapshot.get("reason_key") or ""),
+        "reason_label": WEEKLY_CHAMPION_REASON_LABELS.get(str(snapshot.get("reason_key") or ""), "今週の注目機体"),
+        "score_value": int(snapshot.get("score_value") or 0),
+        "source_week_key": str(snapshot.get("source_week_key") or snapshot.get("week_key") or ""),
+        "fallback": bool(fallback),
+        "robot_image_url": payload.get("robot_image_url"),
+        "signature_label": payload.get("signature_label"),
+        "focus_line": payload.get("focus_line"),
+    }
+
+
+def _ensure_current_weekly_champion_snapshot(db, *, request_id=None, ip=None):
+    week_key = champion_current_week_key()
+    result = get_or_create_weekly_champion(
+        db,
+        week_key=week_key,
+        payload_builder=lambda candidate: _build_weekly_champion_candidate_payload(db, candidate),
+        now_ts=_now_ts(),
+    )
+    snapshot = result.get("snapshot")
+    if snapshot and result.get("created"):
+        event_payload = _weekly_champion_selection_payload(snapshot, fallback=bool(result.get("fallback")))
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["CHAMPION_SELECT"],
+            user_id=int(snapshot.get("user_id") or 0) or None,
+            request_id=request_id,
+            action_key="weekly_champion_select",
+            entity_type="robot_instance",
+            entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+            payload=event_payload,
+            ip=ip,
+        )
+        audit_log(
+            db,
+            "CHAMPION_SELECTED",
+            user_id=int(snapshot.get("user_id") or 0) or None,
+            request_id=request_id,
+            action_key="weekly_champion_selected",
+            entity_type="robot_instance",
+            entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+            payload=event_payload,
+            ip=ip,
+        )
+    return snapshot
+
+
+def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
+    if not snapshot_row:
+        return None
+    snapshot = dict(snapshot_row)
+    payload = _weekly_champion_snapshot_payload(snapshot)
+    user_id = int(snapshot.get("user_id") or payload.get("user_id") or 0)
+    robot_instance_id = int(snapshot.get("robot_instance_id") or payload.get("robot_instance_id") or 0)
+    visuals = _user_visuals(db, user_id, {}) if user_id > 0 else {
+        "avatar": DEFAULT_AVATAR_REL,
+        "avatar_url": None,
+        "avatar_kind": "seed",
+        "avatar_is_generated": True,
+        "badge": DEFAULT_BADGE_REL,
+        "display_username": str(snapshot.get("owner_name") or payload.get("owner_name") or "unknown"),
+        "trophy_keys": [],
+        "trophy_badges": [],
+        "presence_state": "idle",
+        "presence_label": "探索待機中",
+        "presence_title": "待機中",
+    }
+    stats_summary = get_weekly_champion_stats(db, int(snapshot["id"]))
+    recent_rows = []
+    for row in list_weekly_champion_battles(db, int(snapshot["id"]), limit=6):
+        challenger_user_id = int(row.get("challenger_user_id") or 0)
+        challenger_robot_id = int(row.get("challenger_robot_instance_id") or 0)
+        challenger_name = _feed_user_label(db, challenger_user_id) if challenger_user_id > 0 else "挑戦者"
+        challenger_robot = None
+        if challenger_robot_id > 0:
+            robot_row = db.execute(
+                "SELECT name FROM robot_instances WHERE id = ?",
+                (challenger_robot_id,),
+            ).fetchone()
+            challenger_robot = str(robot_row["name"] or "").strip() if robot_row else None
+        recent_rows.append(
+            {
+                "challenger_name": challenger_name,
+                "challenger_robot_name": challenger_robot or "挑戦機",
+                "result": str(row.get("result") or "lose"),
+                "result_label": ("撃破" if str(row.get("result") or "") == "win" else "届かず"),
+                "turn_count": int(row.get("turn_count") or 0),
+                "created_at_text": _format_jst_ts(row.get("created_at")),
+            }
+        )
+    robot_image_url = payload.get("robot_image_url")
+    if (not robot_image_url) and payload.get("composed_image_path"):
+        robot_image_url = _composed_image_url(payload.get("composed_image_path"), payload.get("robot_updated_at"))
+    reason_key = str(snapshot.get("reason_key") or "")
+    owner_name = str(payload.get("owner_name") or snapshot.get("owner_name") or visuals.get("display_username") or "unknown")
+    robot_name = str(payload.get("robot_name") or snapshot.get("robot_name") or "無名ロボ")
+    return {
+        "snapshot_id": int(snapshot["id"]),
+        "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
+        "user_id": user_id,
+        "robot_instance_id": robot_instance_id,
+        "owner_name": owner_name,
+        "username": owner_name,
+        "display_username": owner_name,
+        "robot_name": robot_name,
+        "robot_image_url": robot_image_url,
+        "signature_label": str(payload.get("signature_label") or "無印"),
+        "focus_line": str(payload.get("focus_line") or ""),
+        "reason_key": reason_key,
+        "reason_label": WEEKLY_CHAMPION_REASON_LABELS.get(reason_key, "今週の注目機体"),
+        "score_value": int(snapshot.get("score_value") or 0),
+        "source_week_key": str(snapshot.get("source_week_key") or snapshot.get("week_key") or ""),
+        "challenge_count": int(stats_summary.get("challenge_count") or 0),
+        "defeat_count": int(stats_summary.get("defeat_count") or 0),
+        "champion_win_rate": int(stats_summary.get("champion_win_rate") or 0),
+        "challenger_win_count": int(stats_summary.get("challenger_win_count") or 0),
+        "challenger_loss_count": int(stats_summary.get("challenger_loss_count") or 0),
+        "recent_battles": recent_rows,
+        "stats": dict(payload.get("stats") or {}),
+        "is_owner": bool(viewer_user_id and int(viewer_user_id) == user_id),
+        "can_challenge": bool(viewer_user_id and int(viewer_user_id) != user_id),
+        "detail_url": (url_for("robot_detail", instance_id=robot_instance_id) if robot_instance_id > 0 else None),
+        "avatar_path": visuals.get("avatar") or DEFAULT_AVATAR_REL,
+        "avatar_url": visuals.get("avatar_url"),
+        "avatar_kind": visuals.get("avatar_kind", "seed"),
+        "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+        "badge_path": visuals.get("badge") or DEFAULT_BADGE_REL,
+        "trophy_keys": list(visuals.get("trophy_keys") or []),
+        "trophy_badges": list(visuals.get("trophy_badges") or []),
+        "presence_state": visuals.get("presence_state") or "idle",
+        "presence_label": visuals.get("presence_label") or "探索待機中",
+        "presence_title": visuals.get("presence_title") or "待機中",
+    }
+
+
+def _build_champion_robot_payload(db, *, user_id, robot_instance_id):
+    user_id_value = int(user_id or 0)
+    robot_instance_id_value = int(robot_instance_id or 0)
+    if user_id_value <= 0 or robot_instance_id_value <= 0:
+        return None
+    user_row = db.execute(
+        "SELECT id, username, display_name, is_admin FROM users WHERE id = ?",
+        (user_id_value,),
+    ).fetchone()
+    robot_row = db.execute(
+        """
+        SELECT id, user_id, name, composed_image_path, updated_at, style_key
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        """,
+        (robot_instance_id_value, user_id_value),
+    ).fetchone()
+    if not user_row or not robot_row:
+        return None
+    robot_data = _refresh_robot_instance_render_assets(
+        db,
+        robot_row,
+        log_label="champion_robot_payload",
+        preserve_updated_at=True,
+    )
+    stat_obj = _compute_robot_stats_for_instance(db, robot_instance_id_value)
+    if not stat_obj:
+        return None
+    profile = _robot_profile_view(stat_obj)
+    owner_name = _display_username_for_user_row(db, user_row)
+    return {
+        "user_id": user_id_value,
+        "robot_instance_id": robot_instance_id_value,
+        "owner_name": owner_name,
+        "robot_name": str(robot_data.get("name") or "無名ロボ"),
+        "robot_image_url": _composed_image_url(robot_data.get("composed_image_path"), robot_data.get("updated_at")),
+        "signature_label": str(profile.get("signature_label") or "無印"),
+        "focus_line": str(profile.get("focus_line") or ""),
+        "style_key": str(profile.get("style_key") or "stable"),
+        "style_label": str(profile.get("style_label") or "安定"),
+        "stats": {
+            "hp": int((stat_obj.get("stats") or {}).get("hp") or 1),
+            "atk": int((stat_obj.get("stats") or {}).get("atk") or 1),
+            "def": int((stat_obj.get("stats") or {}).get("def") or 1),
+            "spd": int((stat_obj.get("stats") or {}).get("spd") or 1),
+            "acc": int((stat_obj.get("stats") or {}).get("acc") or 1),
+            "cri": int((stat_obj.get("stats") or {}).get("cri") or 1),
+        },
+    }
+
+
+def _sync_weekly_champion_snapshot_counters(db, snapshot_id):
+    snapshot_id_value = int(snapshot_id or 0)
+    if snapshot_id_value <= 0:
+        return {
+            "challenge_count": 0,
+            "champion_win_count": 0,
+            "challenger_win_count": 0,
+            "challenger_loss_count": 0,
+            "champion_win_rate": 100,
+            "defeat_count": 0,
+        }
+    stats = get_weekly_champion_stats(db, snapshot_id_value)
+    db.execute(
+        """
+        UPDATE weekly_champion_snapshots
+        SET challenge_count = ?,
+            win_count = ?,
+            loss_count = ?
+        WHERE id = ?
+        """,
+        (
+            int(stats.get("challenge_count") or 0),
+            int(stats.get("champion_win_count") or 0),
+            int(stats.get("defeat_count") or 0),
+            snapshot_id_value,
+        ),
+    )
+    return stats
+
+
 def _explore_area_label(area_key):
     key = str(area_key or "").strip()
     for area in EXPLORE_AREAS:
@@ -14622,9 +15001,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED"},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK"}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED"}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -14632,6 +15011,8 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "FACTION_WAR_RESULT",
     "daily_title_posted",
     "RESEARCH_UNLOCK",
+    "CHAMPION_SELECTED",
+    "CHAMPION_DEFEATED",
     *LAB_WORLD_EVENT_TYPES,
 }
 WORLD_LOG_RANKING_METRICS = (
@@ -14876,6 +15257,30 @@ def _feed_card_from_event(db, row):
         card["text"] = f"研究解禁: {element_label} 系の {part_label} が解放（{wk}）"
         card["meta_lines"] = [f"属性: {element_label}", f"部位: {part_label}"]
         card["link_url"] = url_for("world_view")
+    elif event_type == "CHAMPION_SELECTED":
+        owner_name = str(payload.get("champion_owner_name") or payload.get("owner_name") or "unknown").strip() or "unknown"
+        robot_name = str(payload.get("champion_robot_name") or payload.get("robot_name") or "無名ロボ").strip() or "無名ロボ"
+        week_key = str(payload.get("week_key") or "-")
+        reason_label = str(payload.get("reason_label") or "今週の注目機体").strip()
+        card["headline"] = "WEEKLY CHAMPION"
+        card["accent"] = "weekly"
+        card["text"] = f"今週のチャンプ機体: {owner_name} の『{robot_name}』が選出"
+        card["meta_lines"] = [f"対象週: {week_key}", reason_label]
+        if payload.get("focus_line"):
+            card["meta_lines"].append(str(payload.get("focus_line")))
+        card["image_url"] = payload.get("robot_image_url")
+        card["link_url"] = url_for("champion_view")
+    elif event_type == "CHAMPION_DEFEATED":
+        challenger_name = str(payload.get("challenger_name") or "挑戦者").strip() or "挑戦者"
+        challenger_robot_name = str(payload.get("challenger_robot_name") or "挑戦機").strip() or "挑戦機"
+        champion_robot_name = str(payload.get("champion_robot_name") or "チャンプ機体").strip() or "チャンプ機体"
+        week_key = str(payload.get("week_key") or "-")
+        card["headline"] = "CHAMPION DOWN"
+        card["accent"] = "boss"
+        card["text"] = f"{challenger_name} の『{challenger_robot_name}』が今週のチャンプ『{champion_robot_name}』を撃破"
+        card["meta_lines"] = [f"対象週: {week_key}", f"{int(payload.get('turn_count') or 0)}ターン決着"]
+        card["image_url"] = payload.get("robot_image_url")
+        card["link_url"] = url_for("champion_view")
     elif event_type == "admin_world_reroll":
         card["headline"] = "世界再抽選"
         wk = payload.get("week_key") or "-"
@@ -16661,6 +17066,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.39",
+            "date": "2026/04/06",
+            "title": "今週のチャンプ機体を管理者先行確認へ切り替え",
+            "notes": [
+                "`今週のチャンプ機体` はまず管理者だけが /home と /champion から確認できる状態にし、公開前の導線確認を進められるよう調整",
+                "ホームのチャンプカード、/champion の挑戦画面、CHAMPION 系の世界ログは同じ release gate でそろえて非公開中の一般表示を抑制",
+                "管理者確認が終わったら /admin/release から一般公開に切り替えられるよう整理",
+            ],
+        },
+        {
             "version": "0.1.37",
             "date": "2026/04/05",
             "title": "敵画像の差し替え反映を全導線で安定化",
@@ -18434,6 +18849,19 @@ def home():
     faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
     weekly_mvp = _weekly_mvp_snapshot(db, week_key)
+    weekly_champion_snapshot = _ensure_current_weekly_champion_snapshot(
+        db,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    show_weekly_champion = _release_open_for_viewer(db, "weekly_champion", user_row=user)
+    weekly_champion = None
+    if show_weekly_champion:
+        weekly_champion = _weekly_champion_view_model(
+            db,
+            weekly_champion_snapshot,
+            viewer_user_id=int(user["id"]),
+        )
     faction_status = {
         "is_joined": bool(user_faction),
         "faction": user_faction,
@@ -18754,6 +19182,8 @@ def home():
             faction_buff_winner=faction_buff_winner,
             faction_buff_active=faction_buff_active,
             weekly_mvp=weekly_mvp,
+            weekly_champion=weekly_champion,
+            show_weekly_champion=show_weekly_champion,
             research_summary=research_summary,
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,
@@ -19043,6 +19473,278 @@ def home_next_action_expand():
     )
     db.commit()
     return _safe_home_next_redirect()
+
+
+@app.route("/champion")
+@login_required
+def champion_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    gate_redirect = _release_gate_redirect(
+        db,
+        "weekly_champion",
+        user_row=user,
+        user_id=int(user["id"]),
+    )
+    if gate_redirect is not None:
+        db.commit()
+        return gate_redirect
+
+    snapshot = _ensure_current_weekly_champion_snapshot(
+        db,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    champion = _weekly_champion_view_model(
+        db,
+        snapshot,
+        viewer_user_id=int(user["id"]),
+    )
+    active_robot = _get_active_robot(db, int(user["id"]))
+    active_robot_stats = (
+        _compute_robot_stats_for_instance(db, int(active_robot["id"]))
+        if active_robot and active_robot.get("id")
+        else None
+    )
+    active_robot_profile = _robot_profile_view(active_robot_stats) if active_robot_stats else None
+    db.commit()
+    return render_template(
+        "champion.html",
+        title="今週のチャンプ機体",
+        user=user,
+        champion=champion,
+        active_robot=active_robot,
+        active_robot_profile=active_robot_profile,
+        active_robot_stats=active_robot_stats,
+    )
+
+
+@app.route("/champion/challenge", methods=["POST"])
+@login_required
+def champion_challenge():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    gate_redirect = _release_gate_redirect(
+        db,
+        "weekly_champion",
+        user_row=user,
+        user_id=int(user["id"]),
+    )
+    if gate_redirect is not None:
+        db.commit()
+        return gate_redirect
+
+    snapshot = _ensure_current_weekly_champion_snapshot(
+        db,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    champion = _weekly_champion_view_model(
+        db,
+        snapshot,
+        viewer_user_id=int(user["id"]),
+    )
+    if not snapshot or not champion:
+        flash("今週のチャンプはまだ準備中です。", "notice")
+        db.commit()
+        return redirect(url_for("champion_view"))
+    if int(champion.get("user_id") or 0) == int(user["id"]):
+        flash("自分のチャンプ機体には挑戦できません。", "notice")
+        db.commit()
+        return redirect(url_for("champion_view"))
+
+    active_robot = _get_active_robot(db, int(user["id"]))
+    if not active_robot:
+        flash("挑戦するには出撃機体を設定してください。", "notice")
+        db.commit()
+        return redirect(url_for("build"))
+
+    challenger_payload = _build_champion_robot_payload(
+        db,
+        user_id=int(user["id"]),
+        robot_instance_id=int(active_robot["id"]),
+    )
+    champion_snapshot_payload = _weekly_champion_snapshot_payload(snapshot)
+    champion_enemy_payload = build_champion_enemy_payload(champion_snapshot_payload)
+    if not challenger_payload or not champion_enemy_payload:
+        flash("挑戦機体の読み込みに失敗しました。少し待ってから再挑戦してください。", "error")
+        db.commit()
+        return redirect(url_for("champion_view"))
+
+    battle_result = run_champion_battle(
+        {
+            "name": str(challenger_payload.get("robot_name") or "あなた"),
+            "stats": dict(challenger_payload.get("stats") or {}),
+        },
+        champion_enemy_payload,
+        max_turns=8,
+    )
+    request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
+    battle_payload = {
+        "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
+        "champion_snapshot_id": int(snapshot.get("id") or 0),
+        "champion_user_id": int(snapshot.get("user_id") or 0),
+        "champion_robot_instance_id": int(snapshot.get("robot_instance_id") or 0),
+        "champion_robot_name": str(champion.get("robot_name") or champion_enemy_payload.get("name") or "チャンプ機体"),
+        "champion_owner_name": str(champion.get("owner_name") or "unknown"),
+        "challenger_user_id": int(user["id"]),
+        "challenger_robot_instance_id": int(active_robot["id"] or 0),
+        "challenger_robot_name": str(challenger_payload.get("robot_name") or active_robot.get("name") or "挑戦機"),
+        "challenger_owner_name": str(challenger_payload.get("owner_name") or _display_username_for_user_row(db, user)),
+        "result": ("win" if battle_result.get("win") else "lose"),
+        "outcome": str(battle_result.get("outcome") or ""),
+        "turn_count": int(battle_result.get("turn_count") or 0),
+        "timeout": bool(battle_result.get("timeout")),
+        "summary_label": str(battle_result.get("summary_label") or ""),
+    }
+    db.execute(
+        """
+        INSERT INTO weekly_champion_battles (
+            week_key,
+            champion_snapshot_id,
+            challenger_user_id,
+            challenger_robot_instance_id,
+            result,
+            turn_count,
+            created_at,
+            request_id,
+            payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            battle_payload["week_key"],
+            int(snapshot.get("id") or 0),
+            int(user["id"]),
+            int(active_robot["id"] or 0),
+            battle_payload["result"],
+            battle_payload["turn_count"],
+            _now_ts(),
+            request_id,
+            json.dumps(battle_payload, ensure_ascii=False),
+        ),
+    )
+    stats_summary = _sync_weekly_champion_snapshot_counters(db, int(snapshot.get("id") or 0))
+    battle_payload["challenge_count"] = int(stats_summary.get("challenge_count") or 0)
+    battle_payload["defeat_count"] = int(stats_summary.get("defeat_count") or 0)
+    battle_payload["champion_win_rate"] = int(stats_summary.get("champion_win_rate") or 0)
+
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["CHAMPION_CHALLENGE"],
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="champion_challenge",
+        entity_type="robot_instance",
+        entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+        payload=battle_payload,
+        ip=request.remote_addr,
+    )
+    if battle_result.get("win"):
+        defeat_payload = dict(battle_payload)
+        defeat_payload.update(
+            {
+                "robot_image_url": challenger_payload.get("robot_image_url"),
+                "challenger_name": str(challenger_payload.get("owner_name") or _display_username_for_user_row(db, user)),
+            }
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"],
+            user_id=int(user["id"]),
+            request_id=request_id,
+            action_key="champion_defeat",
+            entity_type="robot_instance",
+            entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+            payload=defeat_payload,
+            ip=request.remote_addr,
+        )
+        audit_log(
+            db,
+            "CHAMPION_DEFEATED",
+            user_id=int(user["id"]),
+            request_id=request_id,
+            action_key="champion_defeated_public",
+            entity_type="robot_instance",
+            entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+            payload=defeat_payload,
+            ip=request.remote_addr,
+        )
+
+    battle_short_replay_enabled = _battle_short_replay_open_for_viewer(
+        db,
+        user_row=user,
+        user_id=int(user["id"]),
+    )
+    enemy_replay_stats = dict(champion_enemy_payload.get("stats") or {})
+    enemy_replay_stats["trait"] = enemy_replay_stats.get("trait") or "normal"
+    battle_cinematic = (
+        _build_battle_replay_summary(
+            area_key="weekly_champion",
+            area_label="今週のチャンプ機体",
+            enemy_name=str(champion.get("robot_name") or champion_enemy_payload.get("name") or "チャンプ機体"),
+            enemy_image_url=(
+                champion.get("robot_image_url")
+                or champion_enemy_payload.get("image_url")
+                or url_for("static", filename="assets/placeholder_enemy.png")
+            ),
+            player_name=str(challenger_payload.get("robot_name") or active_robot.get("name") or "あなた"),
+            player_image_url=(
+                challenger_payload.get("robot_image_url")
+                or active_robot.get("image_url")
+                or url_for("static", filename="assets/placeholder_player.png")
+            ),
+            player_stats=dict(challenger_payload.get("stats") or {}),
+            enemy_stats=enemy_replay_stats,
+            robot_style={"style_key": str(challenger_payload.get("style_key") or "stable")},
+            turn_logs=list(battle_result.get("turn_logs") or []),
+            outcome=str(battle_result.get("outcome") or ""),
+            is_boss=False,
+        )
+        if battle_short_replay_enabled
+        else None
+    )
+    result_summary = {
+        "outcome": str(battle_result.get("outcome") or ("勝利" if battle_result.get("win") else "敗北")),
+        "outcome_is_win": bool(battle_result.get("win")),
+        "summary_heading": str(battle_result.get("summary_heading") or ("今回の勝ち筋" if battle_result.get("win") else "今回の崩れ筋")),
+        "summary_label": str(battle_result.get("summary_label") or ""),
+        "result_label": str(battle_result.get("result_label") or ("WIN" if battle_result.get("win") else "LOSE")),
+        "turn_count": int(battle_result.get("turn_count") or 0),
+        "timeout_decision_line": (
+            str((battle_result.get("timeout_decision") or {}).get("result_line") or "")
+            if battle_result.get("timeout")
+            else ""
+        ),
+        "battle_cinematic": battle_cinematic,
+        "headline": ("今週のチャンプを撃破！" if battle_result.get("win") else "チャンプには届かなかった"),
+        "subline": (
+            f"今週{int(stats_summary.get('defeat_count') or 0)}人目の撃破者です。"
+            if battle_result.get("win")
+            else "今回は届かなかった。もう少し育てて再挑戦しよう。"
+        ),
+        "challenge_count": int(stats_summary.get("challenge_count") or 0),
+        "defeat_count": int(stats_summary.get("defeat_count") or 0),
+        "champion_win_rate": int(stats_summary.get("champion_win_rate") or 0),
+    }
+    db.commit()
+    return render_template(
+        "champion_battle.html",
+        title="チャンプ挑戦結果",
+        champion=champion,
+        challenger=challenger_payload,
+        active_robot=active_robot,
+        turn_logs=list(battle_result.get("turn_logs") or []),
+        summary=result_summary,
+        battle_cinematic=result_summary["battle_cinematic"],
+        battle_log_mode=(str(user["battle_log_mode"] or "collapsed").strip().lower() if "battle_log_mode" in user.keys() else "collapsed"),
+        battle_short_replay_enabled=battle_short_replay_enabled,
+    )
 
 
 @app.route("/faction/choose", methods=["GET", "POST"])
