@@ -5866,6 +5866,86 @@ def _robot_focus_stat_rows(stats, limit=2):
     return pairs[: max(1, int(limit or 2))]
 
 
+def _build_champion_stat_tier_view(stats):
+    stat_map = stats or {}
+    rows = [
+        {"key": key, "label": _stat_label(key), "value": int(stat_map.get(key) or 0)}
+        for key in ("hp", "atk", "def", "spd", "acc", "cri")
+    ]
+    rows.sort(key=lambda item: (-int(item["value"]), item["label"]))
+    tier_labels = ("とても高い", "高い", "やや高い", "標準", "やや低い", "低め")
+    out = {}
+    for idx, row in enumerate(rows):
+        out[str(row["key"])] = {
+            "label": str(row["label"]),
+            "tier_label": tier_labels[min(idx, len(tier_labels) - 1)],
+            "value": int(row["value"]),
+        }
+    return out
+
+
+def _champion_focus_labels(source, limit=2):
+    data = source if isinstance(source, dict) else {}
+    rows = list(data.get("focus_stats") or [])
+    if not rows:
+        rows = _robot_focus_stat_rows(data.get("stats") or {}, limit=limit)
+    labels = []
+    for row in rows[: max(1, int(limit or 2))]:
+        if isinstance(row, dict):
+            label = str(row.get("label") or _stat_label(row.get("key")) or "").strip()
+        else:
+            label = str(row or "").strip()
+        if label:
+            labels.append(label)
+    return labels
+
+
+def _build_champion_focus_label_line(source):
+    labels = _champion_focus_labels(source, limit=2)
+    if not labels:
+        return ""
+    return "注目能力: " + " / ".join(labels)
+
+
+def _build_champion_trait_summary(source):
+    data = source if isinstance(source, dict) else {}
+    stats = dict(data.get("stats") or {})
+    focus_rows = list(data.get("focus_stats") or _robot_focus_stat_rows(stats, limit=2))
+    focus_keys = frozenset(str(row.get("key") or "").strip() for row in focus_rows if isinstance(row, dict))
+    style_key = str(data.get("style_key") or "stable").strip().lower()
+
+    summary_by_focus = {
+        frozenset({"hp", "def"}): "崩れにくく、短期決戦にも強い",
+        frozenset({"hp", "atk"}): "粘りながら押し切るタイプ",
+        frozenset({"hp", "acc"}): "崩れにくく、取りこぼしが少ない",
+        frozenset({"def", "acc"}): "命中が安定し、事故が少ない",
+        frozenset({"def", "spd"}): "守りながら主導権を握る",
+        frozenset({"atk", "acc"}): "命中を保ちながら押し切る",
+        frozenset({"atk", "spd"}): "速攻で押し切る高火力型",
+        frozenset({"atk", "cri"}): "一撃で流れを変えやすい",
+        frozenset({"acc", "spd"}): "先手と命中で流れを作る",
+        frozenset({"cri", "spd"}): "刺さると一気に持っていく",
+    }
+    if focus_keys in summary_by_focus:
+        return summary_by_focus[focus_keys]
+    if style_key == "burst":
+        return "速攻で押し切る高火力型"
+    if style_key == "desperate":
+        return "刺さると一気に持っていく"
+    return "命中が安定し、事故が少ない"
+
+
+def _build_champion_profile_view(source):
+    data = dict(source or {})
+    focus_rows = list(data.get("focus_stats") or _robot_focus_stat_rows(data.get("stats") or {}, limit=2))
+    data["focus_stats"] = focus_rows
+    data["focus_labels"] = _champion_focus_labels(data, limit=2)
+    data["focus_label_line"] = _build_champion_focus_label_line(data)
+    data["trait_summary"] = _build_champion_trait_summary(data)
+    data["stat_tier_view"] = _build_champion_stat_tier_view(data.get("stats") or {})
+    return data
+
+
 def _robot_profile_view(stat_obj):
     stats = (stat_obj or {}).get("stats") or {}
     archetype = (stat_obj or {}).get("archetype") or {"key": "none", "name_ja": "無印"}
@@ -5881,7 +5961,7 @@ def _robot_profile_view(stat_obj):
         else f"{robot_style['style_label']}寄り"
     )
     focus_line = " / ".join(f"{row['label']} {row['value']}" for row in focus_stats)
-    return {
+    profile = {
         "archetype_name": archetype.get("name_ja") or "無印",
         "archetype_key": archetype.get("key") or "none",
         "style_label": robot_style.get("style_label") or ROBOT_STYLE_LABELS["stable"],
@@ -5891,6 +5971,7 @@ def _robot_profile_view(stat_obj):
         "focus_stats": focus_stats,
         "focus_line": focus_line,
     }
+    return _build_champion_profile_view(profile)
 
 
 def _robot_metric_value(metric_key, stats):
@@ -14164,7 +14245,11 @@ def _build_weekly_champion_candidate_payload(db, candidate_row):
         "robot_updated_at": int(robot_data.get("updated_at") or 0),
         "robot_image_url": _composed_image_url(robot_data.get("composed_image_path"), robot_data.get("updated_at")),
         "signature_label": str(profile.get("signature_label") or "無印"),
+        "focus_stats": list(profile.get("focus_stats") or []),
+        "focus_labels": list(profile.get("focus_labels") or []),
+        "focus_label_line": str(profile.get("focus_label_line") or ""),
         "focus_line": str(profile.get("focus_line") or ""),
+        "trait_summary": str(profile.get("trait_summary") or ""),
         "style_key": str(profile.get("style_key") or "stable"),
         "style_label": str(profile.get("style_label") or "安定"),
         "archetype_name": str(profile.get("archetype_name") or "無印"),
@@ -14199,7 +14284,8 @@ def _weekly_champion_selection_payload(snapshot_row, *, fallback=False):
         "fallback": bool(fallback),
         "robot_image_url": payload.get("robot_image_url"),
         "signature_label": payload.get("signature_label"),
-        "focus_line": payload.get("focus_line"),
+        "focus_label_line": payload.get("focus_label_line"),
+        "trait_summary": payload.get("trait_summary"),
     }
 
 
@@ -14288,6 +14374,15 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
     reason_key = str(snapshot.get("reason_key") or "")
     owner_name = str(payload.get("owner_name") or snapshot.get("owner_name") or visuals.get("display_username") or "unknown")
     robot_name = str(payload.get("robot_name") or snapshot.get("robot_name") or "無名ロボ")
+    display_profile = _build_champion_profile_view(
+        {
+            "stats": dict(payload.get("stats") or {}),
+            "style_key": payload.get("style_key"),
+            "style_label": payload.get("style_label"),
+            "signature_label": payload.get("signature_label"),
+            "focus_stats": list(payload.get("focus_stats") or []),
+        }
+    )
     return {
         "snapshot_id": int(snapshot["id"]),
         "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
@@ -14299,7 +14394,10 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "robot_name": robot_name,
         "robot_image_url": robot_image_url,
         "signature_label": str(payload.get("signature_label") or "無印"),
+        "focus_labels": list(display_profile.get("focus_labels") or []),
+        "focus_label_line": str(display_profile.get("focus_label_line") or ""),
         "focus_line": str(payload.get("focus_line") or ""),
+        "trait_summary": str(payload.get("trait_summary") or display_profile.get("trait_summary") or ""),
         "reason_key": reason_key,
         "reason_label": WEEKLY_CHAMPION_REASON_LABELS.get(reason_key, "今週の注目機体"),
         "score_value": int(snapshot.get("score_value") or 0),
@@ -14364,7 +14462,10 @@ def _build_champion_robot_payload(db, *, user_id, robot_instance_id):
         "robot_name": str(robot_data.get("name") or "無名ロボ"),
         "robot_image_url": _composed_image_url(robot_data.get("composed_image_path"), robot_data.get("updated_at")),
         "signature_label": str(profile.get("signature_label") or "無印"),
+        "focus_labels": list(profile.get("focus_labels") or []),
+        "focus_label_line": str(profile.get("focus_label_line") or ""),
         "focus_line": str(profile.get("focus_line") or ""),
+        "trait_summary": str(profile.get("trait_summary") or ""),
         "style_key": str(profile.get("style_key") or "stable"),
         "style_label": str(profile.get("style_label") or "安定"),
         "stats": {
@@ -14406,6 +14507,34 @@ def _sync_weekly_champion_snapshot_counters(db, snapshot_id):
         ),
     )
     return stats
+
+
+def _reset_weekly_champion_battles_for_public_release(db, *, week_key=None):
+    target_week_key = str(week_key or champion_current_week_key())
+    snapshot = get_weekly_champion_snapshot(db, target_week_key)
+    if not snapshot:
+        return {"week_key": target_week_key, "snapshot_id": 0, "deleted_battles": 0}
+    snapshot_id = int(snapshot.get("id") or 0)
+    deleted_battles = int(
+        (
+            db.execute(
+                "SELECT COUNT(*) AS c FROM weekly_champion_battles WHERE champion_snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()["c"]
+        )
+        or 0
+    )
+    db.execute("DELETE FROM weekly_champion_battles WHERE champion_snapshot_id = ?", (snapshot_id,))
+    db.execute(
+        """
+        UPDATE weekly_champion_snapshots
+        SET challenge_count = 0, win_count = 0, loss_count = 0
+        WHERE id = ?
+        """,
+        (snapshot_id,),
+    )
+    _sync_weekly_champion_snapshot_counters(db, snapshot_id)
+    return {"week_key": target_week_key, "snapshot_id": snapshot_id, "deleted_battles": deleted_battles}
 
 
 def _explore_area_label(area_key):
@@ -25740,6 +25869,13 @@ def admin_release():
                 (key, 1 if is_public else 0, now_ts),
             )
             applied_keys.append({"key": key, "is_public": bool(is_public)})
+        champion_reset = None
+        if (
+            feature_key == "weekly_champion"
+            and target_public
+            and not bool(before_rows.get("weekly_champion"))
+        ):
+            champion_reset = _reset_weekly_champion_battles_for_public_release(db)
         audit_log(
             db,
             AUDIT_EVENT_TYPES["ADMIN_RELEASE_TOGGLE"],
@@ -25753,6 +25889,7 @@ def admin_release():
                 "state": state,
                 "applied": applied_keys,
                 "before": before_rows,
+                "weekly_champion_reset": champion_reset,
             },
             ip=request.remote_addr,
         )
@@ -25760,6 +25897,11 @@ def admin_release():
         changed_labels = " / ".join(RELEASE_FLAG_DEF_BY_KEY[item["key"]]["label"] for item in applied_keys)
         if target_public:
             flash(f"{changed_labels} を一般公開しました。", "notice")
+            if champion_reset and int(champion_reset.get("deleted_battles") or 0) > 0:
+                flash(
+                    f"公開前のチャンプ挑戦 {int(champion_reset['deleted_battles'])} 件をリセットしました。",
+                    "notice",
+                )
         else:
             flash(f"{changed_labels} を管理者限定に戻しました。", "notice")
         return redirect(url_for("admin_release"))

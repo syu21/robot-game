@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import app as game_app
 import init_db
@@ -194,6 +195,79 @@ class ReleaseGateTests(unittest.TestCase):
         user_champion_after = user_client.get("/champion")
         self.assertEqual(user_champion_after.status_code, 200)
         self.assertIn("今週のチャンプ機体", user_champion_after.get_data(as_text=True))
+
+    def test_weekly_champion_public_release_resets_private_test_records(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps({}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.commit()
+
+        admin_client = self._client(admin=True)
+        mocked_battle = {
+            "win": False,
+            "outcome": "敗北",
+            "timeout": False,
+            "timeout_decision": None,
+            "turn_count": 2,
+            "turn_logs": [],
+            "summary_heading": "今回の崩れ筋",
+            "summary_label": "届かなかった",
+            "result_label": "LOSE",
+            "headline": "チャンプには届かなかった",
+            "subline": "今回は届かなかった。もう少し育てて再挑戦しよう。",
+            "critical_hits": 0,
+        }
+        with mock.patch.object(game_app, "run_champion_battle", return_value=mocked_battle):
+            with mock.patch.object(game_app, "_battle_short_replay_open_for_viewer", return_value=False):
+                resp = admin_client.post("/champion/challenge")
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            before_battles = int(
+                db.execute("SELECT COUNT(*) AS c FROM weekly_champion_battles").fetchone()["c"] or 0
+            )
+            snapshot = db.execute(
+                "SELECT challenge_count, win_count, loss_count FROM weekly_champion_snapshots ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertEqual(before_battles, 1)
+        self.assertEqual(int(snapshot["challenge_count"] or 0), 1)
+        self.assertEqual(int(snapshot["win_count"] or 0), 1)
+        self.assertEqual(int(snapshot["loss_count"] or 0), 0)
+
+        toggle = admin_client.post(
+            "/admin/release",
+            data={"feature_key": "weekly_champion", "state": "public"},
+            follow_redirects=True,
+        )
+        self.assertEqual(toggle.status_code, 200)
+        self.assertIn("一般公開しました", toggle.get_data(as_text=True))
+        self.assertIn("公開前のチャンプ挑戦 1 件をリセットしました。", toggle.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            after_battles = int(
+                db.execute("SELECT COUNT(*) AS c FROM weekly_champion_battles").fetchone()["c"] or 0
+            )
+            snapshot = db.execute(
+                "SELECT challenge_count, win_count, loss_count FROM weekly_champion_snapshots ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertEqual(after_battles, 0)
+        self.assertEqual(int(snapshot["challenge_count"] or 0), 0)
+        self.assertEqual(int(snapshot["win_count"] or 0), 0)
+        self.assertEqual(int(snapshot["loss_count"] or 0), 0)
 
     def test_records_hide_unreleased_layer_records(self):
         with game_app.app.app_context():

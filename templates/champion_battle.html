@@ -33,8 +33,11 @@
         {% if champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
         {% endif %}
-        {% if champion.get('focus_line') %}
-        <div class="upgrade-cost">{{ champion.get('focus_line') }}</div>
+        {% if champion.get('focus_label_line') %}
+        <div class="upgrade-cost">{{ champion.get('focus_label_line') }}</div>
+        {% endif %}
+        {% if champion.get('trait_summary') %}
+        <div class="upgrade-cost">特徴: {{ champion.get('trait_summary') }}</div>
         {% endif %}
         <div class="upgrade-cost">挑戦 {{ summary.get('challenge_count', 0) }} / 防衛率 {{ summary.get('champion_win_rate', 100) }}%</div>
         {% endif %}

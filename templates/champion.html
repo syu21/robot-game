@@ -27,8 +27,11 @@
         {% if champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
         {% endif %}
-        {% if champion.get('focus_line') %}
-        <div class="upgrade-cost">{{ champion.get('focus_line') }}</div>
+        {% if champion.get('focus_label_line') %}
+        <div class="upgrade-cost">{{ champion.get('focus_label_line') }}</div>
+        {% endif %}
+        {% if champion.get('trait_summary') %}
+        <div class="upgrade-cost">特徴: {{ champion.get('trait_summary') }}</div>
         {% endif %}
         <div class="champion-stats-grid">
           <div class="card champion-stat-card">
@@ -54,8 +57,11 @@
       {% if active_robot_profile and active_robot_profile.get('signature_label') %}
       <div class="upgrade-cost">思想: {{ active_robot_profile.get('signature_label') }}</div>
       {% endif %}
-      {% if active_robot_profile and active_robot_profile.get('focus_line') %}
-      <div class="upgrade-cost">{{ active_robot_profile.get('focus_line') }}</div>
+      {% if active_robot_profile and active_robot_profile.get('focus_label_line') %}
+      <div class="upgrade-cost">{{ active_robot_profile.get('focus_label_line') }}</div>
+      {% endif %}
+      {% if active_robot_profile and active_robot_profile.get('trait_summary') %}
+      <div class="upgrade-cost">特徴: {{ active_robot_profile.get('trait_summary') }}</div>
       {% endif %}
     </div>
     {% endif %}

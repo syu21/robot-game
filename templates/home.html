@@ -327,8 +327,11 @@
         {% if weekly_champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ weekly_champion.get('signature_label') }}</div>
         {% endif %}
-        {% if weekly_champion.get('focus_line') %}
-        <div class="upgrade-cost">{{ weekly_champion.get('focus_line') }}</div>
+        {% if weekly_champion.get('focus_label_line') %}
+        <div class="upgrade-cost">{{ weekly_champion.get('focus_label_line') }}</div>
+        {% endif %}
+        {% if weekly_champion.get('trait_summary') %}
+        <div class="upgrade-cost">特徴: {{ weekly_champion.get('trait_summary') }}</div>
         {% endif %}
         {% if weekly_champion.get('robot_image_url') %}
         <img class="robot-thumb champion-hero-thumb" src="{{ weekly_champion.get('robot_image_url') }}" alt="{{ weekly_champion.get('robot_name', 'champion robot') }}" loading="lazy" decoding="async" />

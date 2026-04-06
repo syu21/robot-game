@@ -176,8 +176,35 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertIn("今週のチャンプ機体", html)
         self.assertIn("王者零式", html)
         self.assertIn("champ_owner", html)
+        self.assertIn("注目能力:", html)
+        self.assertIn("特徴:", html)
         self.assertIn('action="/champion/challenge"', html)
         self.assertIn('href="/champion"', html)
+
+    def test_champion_views_hide_raw_focus_values(self):
+        owner_id = self._create_user("focus_owner")
+        viewer_id = self._create_user("focus_viewer")
+        self._rename_active_robot(owner_id, "数値隠し機")
+        self._log_week_event(owner_id, game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"], count=1)
+
+        client = game_app.app.test_client()
+        self._login(client, viewer_id, "focus_viewer")
+        resp = client.get("/champion")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("思想:", html)
+        self.assertIn("注目能力:", html)
+        self.assertIn("特徴:", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT payload_json FROM weekly_champion_snapshots ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            payload = json.loads(row["payload_json"] or "{}")
+        self.assertTrue(payload.get("focus_line"))
+        self.assertNotIn(str(payload.get("focus_line")), html)
 
     def test_champion_view_prompts_for_active_robot_when_missing(self):
         owner_id = self._create_user("view_owner")
