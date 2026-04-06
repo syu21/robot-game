@@ -20,7 +20,7 @@
 {% set home_restore_home_page = request.args.get('restore_home_page_js') == '1' %}
 <body
   id="page-{{ (request.endpoint or 'unknown')|replace('.', '-')|replace('_', '-') }}"
-  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore') %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}"
+  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore' or request.endpoint.startswith('champion')) %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}"
   data-page-name="{{ request.endpoint or 'unknown' }}"
   data-page-template="{{ request.endpoint or 'unknown' }}"
   data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"

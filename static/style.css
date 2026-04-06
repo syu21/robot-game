@@ -7295,6 +7295,7 @@ h2 {
 .home-nav-panel,
 .home-visibility-panel,
 .home-mvp-panel,
+.home-champion-panel,
 .research-unlock-banner,
 .beginner-mission-panel,
 .priority-boss-alert,
@@ -7331,6 +7332,102 @@ h2 {
 
 .battle-side.enemy {
   background: rgba(39, 22, 36, 0.94);
+}
+
+.champion-hero-card {
+  display: grid;
+  gap: 12px;
+}
+
+.home-champion-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.home-champion-stats,
+.champion-stats-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.home-champion-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.champion-main-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.champion-page-thumb,
+.champion-hero-thumb {
+  width: min(100%, 220px);
+  max-width: 220px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.champion-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.champion-stat-card,
+.champion-active-robot-card,
+.champion-recent-card,
+.champion-summary-card {
+  background: rgba(20, 27, 47, 0.96);
+}
+
+.champion-stat-card {
+  padding: 12px;
+}
+
+.champion-action-row {
+  align-items: center;
+}
+
+.champion-inline-note {
+  flex: 1 1 220px;
+}
+
+.champion-recent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.champion-page-title {
+  margin: 0 0 6px;
+}
+
+.champion-battle-head {
+  margin-bottom: 12px;
+}
+
+.champion-battle-scene .battle-outcome-banner .upgrade-cost {
+  margin-top: 6px;
+}
+
+@media (max-width: 720px) {
+  .champion-main-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .champion-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-champion-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .battle-turn-head,

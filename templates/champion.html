@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
+{% block content %}
+<section class="panel home-champion-panel champion-page-panel">
+  <div class="world-env-card champion-hero-card champion-page-card">
+    <div class="battle-section-title">今週のチャンプ機体</div>
+    {% if champion %}
+    <div class="upgrade-cost">{{ champion.get('reason_label', '今週の注目機体') }}</div>
+    <div class="presence-user-line user-signal user-signal-hero champion-owner-line">
+      {{ render_user_chip(champion, 'mvp', champion.get('display_username', 'champion') ~ ' robot', 'lazy', true) }}
+      <div class="user-signal-meta">
+        <div class="user-signal-name-line">{{ render_user_name_badged_html(champion, champion.get('display_username') or champion.get('owner_name') or 'unknown') }}</div>
+        <div class="presence-mini-label">{{ champion.get('presence_label', '探索待機中') }}</div>
+      </div>
+    </div>
+
+    <div class="champion-main-row">
+      <div class="champion-robot-visual">
+        {% if champion.get('robot_image_url') %}
+        <img class="robot-thumb champion-page-thumb" src="{{ champion.get('robot_image_url') }}" alt="{{ champion.get('robot_name', 'champion robot') }}" loading="eager" decoding="async" />
+        {% else %}
+        <div class="robot-thumb empty champion-page-thumb">no image</div>
+        {% endif %}
+      </div>
+      <div class="champion-copy">
+        <h1 class="battle-title champion-page-title">{{ champion.get('robot_name', '無名ロボ') }}</h1>
+        {% if champion.get('signature_label') %}
+        <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
+        {% endif %}
+        {% if champion.get('focus_line') %}
+        <div class="upgrade-cost">{{ champion.get('focus_line') }}</div>
+        {% endif %}
+        <div class="champion-stats-grid">
+          <div class="card champion-stat-card">
+            <div class="stat-label">挑戦回数</div>
+            <div class="stat-value">{{ champion.get('challenge_count', 0) }}</div>
+          </div>
+          <div class="card champion-stat-card">
+            <div class="stat-label">防衛率</div>
+            <div class="stat-value">{{ champion.get('champion_win_rate', 100) }}%</div>
+          </div>
+          <div class="card champion-stat-card">
+            <div class="stat-label">撃破数</div>
+            <div class="stat-value">{{ champion.get('defeat_count', 0) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if active_robot %}
+    <div class="card champion-active-robot-card">
+      <div><b>挑戦に使う機体</b></div>
+      <div>{{ active_robot.get('name', '出撃機体') }}</div>
+      {% if active_robot_profile and active_robot_profile.get('signature_label') %}
+      <div class="upgrade-cost">思想: {{ active_robot_profile.get('signature_label') }}</div>
+      {% endif %}
+      {% if active_robot_profile and active_robot_profile.get('focus_line') %}
+      <div class="upgrade-cost">{{ active_robot_profile.get('focus_line') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="home-inline-actions champion-action-row">
+      {% if champion.get('is_owner') %}
+      <div class="upgrade-cost champion-inline-note">あなたの機体が今週のチャンプです。挑戦は受ける側になります。</div>
+      {% elif not active_robot %}
+      <div class="upgrade-cost champion-inline-note">出撃機体がないため挑戦できません。先にロボを編成してください。</div>
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボを編成する</a>
+      {% else %}
+      <form method="post" action="{{ url_for('champion_challenge') }}" class="inline-form inline-form-top">
+        <button type="submit">挑戦する</button>
+      </form>
+      <div class="upgrade-cost champion-inline-note">勝てるかどうか、腕試しできます。</div>
+      {% endif %}
+      <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
+    </div>
+
+    <div class="battle-section-title champion-recent-title">直近の戦績</div>
+    <div class="champion-recent-list">
+      {% for row in champion.get('recent_battles', []) %}
+      <div class="card champion-recent-card">
+        <div><b>{{ row.get('challenger_name', '挑戦者') }}</b> の {{ row.get('challenger_robot_name', '挑戦機') }}</div>
+        <div class="upgrade-cost">{{ row.get('result_label', '結果') }} / {{ row.get('turn_count', 0) }}ターン / {{ row.get('created_at_text', '-') }}</div>
+      </div>
+      {% else %}
+      <div class="card champion-recent-card">
+        <div>まだ挑戦記録はありません。</div>
+        <div class="upgrade-cost">最初の撃破報告が世界ログに載ります。</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <h1 class="battle-title champion-page-title">今週のチャンプ準備中</h1>
+    <div class="upgrade-cost">候補機体がまだ揃っていません。前週分があれば引き継ぎ、なければ準備中になります。</div>
+    <div class="home-inline-actions">
+      <a class="battle-home-link" href="{{ url_for('ranking', metric='weekly_explores') }}">今週のランキングを見る</a>
+      <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

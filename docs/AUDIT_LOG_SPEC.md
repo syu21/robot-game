@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-03-28
+最終更新日: 2026-04-06
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -79,18 +79,28 @@
 - `audit.referral.qualified`
 - `audit.faction.choose`
 
-### 4.7 決済
+### 4.7 チャンプ/非同期挑戦
+- `audit.champion.select`
+- `audit.champion.challenge`
+- `audit.champion.defeat`
+- `CHAMPION_SELECTED`（世界イベント）
+- `CHAMPION_DEFEATED`（世界イベント）
+
+### 4.8 決済
 - `audit.payment.checkout.create`
 - `audit.payment.webhook.received`
 - `audit.payment.completed`
 - `audit.payment.grant.success`
 - `audit.payment.grant.skip_duplicate`
 - `audit.payment.grant.failed`
+- `audit.trophy.grant.success`
+- `audit.trophy.grant.skip_duplicate`
+- `audit.trophy.grant.failed`
 - `audit.explore_boost.grant.success`
 - `audit.explore_boost.grant.skip_duplicate`
 - `audit.explore_boost.grant.failed`
 
-### 4.8 管理者操作（追加）
+### 4.9 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -98,7 +108,7 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.9 システム
+### 4.10 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
@@ -115,6 +125,7 @@
 - 決済系 payload は可能な範囲で以下を保持する
   - `user_id`
   - `product_key`
+  - `trophy_key`
   - `stripe_checkout_session_id`
   - `stripe_payment_intent_id`
   - `stripe_event_id`
@@ -125,6 +136,20 @@
   - `starts_at`
   - `ends_at`
   - `duplicate_reason`
+- チャンプ系 payload は可能な範囲で以下を保持する
+  - `week_key`
+  - `champion_snapshot_id`
+  - `champion_user_id`
+  - `champion_robot_instance_id`
+  - `champion_robot_name`
+  - `champion_owner_name`
+  - `challenger_user_id`
+  - `challenger_robot_instance_id`
+  - `challenger_robot_name`
+  - `result`
+  - `turn_count`
+  - `timeout`
+  - `summary_label`
 
 ## 6. 管理UI
 - `/admin/audit` で検索

@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block content %}
+{% set enemy_name = champion.get('robot_name', '今週のチャンプ') if champion else '今週のチャンプ' %}
+{% set player_name = challenger.get('robot_name', 'あなた') if challenger else (active_robot['name'] if active_robot else 'あなた') %}
+{% set battle_cinematic_enabled = summary and summary.get('battle_cinematic') and ui_effects_enabled and battle_short_replay_enabled %}
+<div class="battle-scene champion-battle-scene">
+  {% if battle_cinematic_enabled %}
+    {% set battle_cinematic = summary.get('battle_cinematic') %}
+    {% set explore_area_label = '今週のチャンプ機体' %}
+    {% include '_battle_cinematic_v1.html' %}
+  {% else %}
+  <div class="card champion-battle-head">
+    <h1 class="battle-title">{{ enemy_name }}へ挑戦！</h1>
+    <div class="upgrade-cost">相手は今週もっとも注目されている機体です。</div>
+  </div>
+  {% endif %}
+
+  <div id="battle-replay-followup">
+    <div class="battle-section-title">今週のチャンプ</div>
+    <div class="card enemy-card champion-summary-card">
+      <div class="enemy-sprite-frame battle-enemy-thumb-frame">
+        {% if champion and champion.get('robot_image_url') %}
+        <img class="battle-enemy-thumb" src="{{ champion.get('robot_image_url') }}" alt="{{ enemy_name }}" loading="lazy" />
+        {% else %}
+        <img class="battle-enemy-thumb" src="{{ url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ enemy_name }}" loading="lazy" />
+        {% endif %}
+      </div>
+      <div>
+        <div><b>{{ enemy_name }}</b></div>
+        {% if champion %}
+        <div class="upgrade-cost">所有者: {{ champion.get('display_username') or champion.get('owner_name') or 'unknown' }}</div>
+        <div class="upgrade-cost">{{ champion.get('reason_label', '今週の注目機体') }}</div>
+        {% if champion.get('signature_label') %}
+        <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
+        {% endif %}
+        {% if champion.get('focus_line') %}
+        <div class="upgrade-cost">{{ champion.get('focus_line') }}</div>
+        {% endif %}
+        <div class="upgrade-cost">挑戦 {{ summary.get('challenge_count', 0) }} / 防衛率 {{ summary.get('champion_win_rate', 100) }}%</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if turn_logs %}
+    <div class="battle-section-title">戦闘ログ</div>
+    <details class="battle-log-fold" {% if battle_log_mode == 'expanded' %}open{% endif %}>
+      <summary>戦闘ログを見る</summary>
+      {% for t in turn_logs %}
+      <div class="card battle-turn">
+        <div class="battle-turn-head">{{ t.get('turn', loop.index) }}ターン</div>
+        <div class="battle-text">
+          <div class="battle-line">{{ t.get('player_action', player_name ~ 'の攻撃') }}</div>
+          <div class="battle-line">{{ t.get('enemy_action', enemy_name ~ 'の攻撃') }}</div>
+          {% if t.get('critical') %}
+          <div class="battle-flag">クリティカル！！</div>
+          {% endif %}
+          {% if t.get('result_line') %}
+          <div class="battle-line"><strong>{{ t.get('result_line') }}</strong></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </details>
+    {% endif %}
+
+    <div class="battle-section-title">結果</div>
+    <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
+      <div class="battle-outcome-label">{{ summary.get('result_label', 'LOSE') }}</div>
+      <div class="battle-outcome-sub">{{ summary.get('outcome', '敗北') }}</div>
+      <div class="upgrade-cost"><b>{{ summary.get('headline', '結果') }}</b></div>
+      <div class="upgrade-cost">{{ summary.get('subline', '') }}</div>
+      {% if summary.get('timeout_decision_line') %}
+      <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
+      {% endif %}
+      <div class="upgrade-cost">{{ summary.get('summary_heading', '今回の勝ち筋') }}: {{ summary.get('summary_label', '') }}</div>
+    </div>
+
+    <div class="battle-section-title">次の行動</div>
+    <div class="battle-next-grid">
+      <section class="card battle-next-card battle-next-card-primary">
+        <div><b>もう一度挑戦</b></div>
+        <div class="upgrade-cost">チャンプ相手に再挑戦して、今の機体の伸びを確かめよう。</div>
+        <form method="post" action="{{ url_for('champion_challenge') }}">
+          <button type="submit" class="battle-next-cta">再挑戦する</button>
+        </form>
+      </section>
+      <section class="card battle-next-card">
+        <div><b>パーツを見る</b></div>
+        <div class="upgrade-cost">挑戦機の調整や強化につなげます。</div>
+        <a class="battle-home-link" href="{{ url_for('parts') }}">パーツ一覧へ</a>
+      </section>
+      <section class="card battle-next-card">
+        <div><b>ホームへ戻る</b></div>
+        <div class="upgrade-cost">今週のチャンプや通常出撃へ戻れます。</div>
+        <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
+{% endblock %}
