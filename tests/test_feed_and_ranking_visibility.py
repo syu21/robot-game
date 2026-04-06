@@ -35,9 +35,21 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
                 ("feed_rank_user",),
             ).fetchone()["id"]
             game_app.initialize_new_user(db, self.user_id)
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 0, 0, 1)
+                """,
+                ("feed_public_actor", "x", now),
+            )
+            self.public_user_id = db.execute(
+                "SELECT id FROM users WHERE username = ?",
+                ("feed_public_actor",),
+            ).fetchone()["id"]
+            game_app.initialize_new_user(db, self.public_user_id)
             self.robot_id = db.execute(
                 "SELECT active_robot_id FROM users WHERE id = ?",
-                (self.user_id,),
+                (self.public_user_id,),
             ).fetchone()["active_robot_id"]
             target_part = db.execute(
                 """
@@ -97,7 +109,7 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
                         },
                         ensure_ascii=False,
                     ),
-                    self.user_id,
+                    self.public_user_id,
                     int(self.boss_id),
                 ),
             )
@@ -118,7 +130,7 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
                         },
                         ensure_ascii=False,
                     ),
-                    self.user_id,
+                    self.public_user_id,
                 ),
             )
             db.commit()
@@ -129,7 +141,7 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("BOSS DEFEATED", html)
         self.assertIn("ボス撃破:", html)
-        self.assertIn("feed_rank_user", html)
+        self.assertIn("feed_public_actor", html)
         self.assertIn(self.boss_name, html)
         self.assertIn("戦域: 第三層", html)
         self.assertIn("進化成功", html)
@@ -151,7 +163,7 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
                     now,
                     game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
                     json.dumps({"enemy_name": self.boss_name}, ensure_ascii=False),
-                    self.user_id,
+                    self.public_user_id,
                 ),
             )
             db.execute(
@@ -164,7 +176,7 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
                     now + 1,
                     game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"],
                     json.dumps({"target_part_name": self.target_part_name}, ensure_ascii=False),
-                    self.user_id,
+                    self.public_user_id,
                 ),
             )
             db.commit()
@@ -181,6 +193,127 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
         evolve_html = evolve_resp.get_data(as_text=True)
         self.assertIn(self.target_part_name, evolve_html)
         self.assertNotIn(self.boss_name, evolve_html)
+
+    def test_feed_hides_admin_world_events(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 0, 0, 1)
+                """,
+                ("feed_viewer", "x", now),
+            )
+            viewer_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("feed_viewer",)).fetchone()["id"]
+            )
+            game_app.initialize_new_user(db, viewer_id)
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps({"enemy_name": "管理者限定ターゲット"}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now + 1,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps({"enemy_name": "一般公開ターゲット"}, ensure_ascii=False),
+                    viewer_id,
+                ),
+            )
+            db.commit()
+
+        client = game_app.app.test_client()
+        with client.session_transaction() as session:
+            session["user_id"] = viewer_id
+            session["username"] = "feed_viewer"
+
+        resp = client.get("/feed?type=boss")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("管理者限定ターゲット", html)
+        self.assertIn("一般公開ターゲット", html)
+
+    def test_feed_hides_legacy_admin_named_champion_events_without_user_id(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 0, 0, 1)
+                """,
+                ("feed_viewer_legacy", "x", now),
+            )
+            viewer_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("feed_viewer_legacy",)).fetchone()["id"]
+            )
+            game_app.initialize_new_user(db, viewer_id)
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json, user_id)
+                VALUES (?, 'CHAMPION_DEFEATED', ?, NULL)
+                """,
+                (
+                    now,
+                    json.dumps(
+                        {
+                            "challenger_name": game_app.MAIN_ADMIN_USERNAME,
+                            "challenger_robot_name": "Starter Unit",
+                            "champion_robot_name": "Robot #329",
+                            "week_key": game_app._world_week_key(),
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json, user_id)
+                VALUES (?, 'CHAMPION_DEFEATED', ?, NULL)
+                """,
+                (
+                    now + 1,
+                    json.dumps(
+                        {
+                            "challenger_name": "一般ユーザー",
+                            "challenger_robot_name": "Blue One",
+                            "champion_robot_name": "Robot #330",
+                            "week_key": game_app._world_week_key(),
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            db.commit()
+
+        client = game_app.app.test_client()
+        with client.session_transaction() as session:
+            session["user_id"] = viewer_id
+            session["username"] = "feed_viewer_legacy"
+
+        resp = client.get("/feed")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn(game_app.MAIN_ADMIN_USERNAME, html)
+        self.assertNotIn("Robot #329", html)
+        self.assertIn("Robot #330", html)
 
     def test_feed_weekly_filter_shows_faction_and_research_events(self):
         with game_app.app.app_context():
@@ -251,16 +384,23 @@ class RankingVisibilityTests(unittest.TestCase):
             db.execute(
                 """
                 INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
-                VALUES (?, ?, ?, 1, 5, 1)
+                VALUES (?, ?, ?, 0, 5, 1)
                 """,
                 ("rank_alpha", "x", now),
             )
             db.execute(
                 """
                 INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
-                VALUES (?, ?, ?, 1, 2, 1)
+                VALUES (?, ?, ?, 0, 2, 1)
                 """,
                 ("rank_beta", "x", now),
+            )
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 1, 99, 1)
+                """,
+                ("rank_admin", "x", now),
             )
             self.alpha_id = db.execute(
                 "SELECT id FROM users WHERE username = ?",
@@ -270,8 +410,13 @@ class RankingVisibilityTests(unittest.TestCase):
                 "SELECT id FROM users WHERE username = ?",
                 ("rank_beta",),
             ).fetchone()["id"]
+            self.admin_id = db.execute(
+                "SELECT id FROM users WHERE username = ?",
+                ("rank_admin",),
+            ).fetchone()["id"]
             game_app.initialize_new_user(db, self.alpha_id)
             game_app.initialize_new_user(db, self.beta_id)
+            game_app.initialize_new_user(db, self.admin_id)
             self.alpha_robot_id = db.execute(
                 "SELECT active_robot_id FROM users WHERE id = ?",
                 (self.alpha_id,),
@@ -324,6 +469,18 @@ class RankingVisibilityTests(unittest.TestCase):
                         current_ts + 100 + offset,
                         game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
                         self.beta_id,
+                    ),
+                )
+            for offset in range(6):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                    VALUES (?, ?, '{}', ?)
+                    """,
+                    (
+                        current_ts + 200 + offset,
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        self.admin_id,
                     ),
                 )
             db.commit()
@@ -401,6 +558,9 @@ class RankingVisibilityTests(unittest.TestCase):
         weekly_boss_html = weekly_boss_resp.get_data(as_text=True)
         self.assertIn("今週ボス撃破ランキング", weekly_boss_html)
         self.assertRegex(weekly_boss_html, re.compile(r"<td>1</td>.*?rank_beta.*?<td>2</td>", re.S))
+        self.assertNotIn("rank_admin", wins_html)
+        self.assertNotIn("rank_admin", explore_html)
+        self.assertNotIn("rank_admin", weekly_explore_html)
 
     def test_ranking_supports_robot_purpose_metrics(self):
         self._set_robot_weights(

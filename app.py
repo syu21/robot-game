@@ -15467,6 +15467,48 @@ def _world_ranking_timeline_items(db):
     return items
 
 
+def _user_is_admin_cached(db, user_id, cache):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return False
+    cached = cache.get(uid)
+    if cached is None:
+        row = db.execute("SELECT is_admin FROM users WHERE id = ?", (uid,)).fetchone()
+        cached = bool(row and int(row["is_admin"] or 0) == 1)
+        cache[uid] = cached
+    return bool(cached)
+
+
+def _world_event_actor_user_id(row, payload=None):
+    if row is not None:
+        try:
+            row_user_id = int(row["user_id"] or 0)
+        except Exception:
+            row_user_id = 0
+        if row_user_id > 0:
+            return row_user_id
+    payload_map = payload if isinstance(payload, dict) else {}
+    for key in ("user_id", "challenger_user_id", "champion_user_id"):
+        try:
+            candidate = int(payload_map.get(key) or 0)
+        except Exception:
+            candidate = 0
+        if candidate > 0:
+            return candidate
+    return 0
+
+
+def _world_event_hidden_for_admin_actor(db, row, payload=None, *, admin_cache):
+    actor_user_id = _world_event_actor_user_id(row, payload)
+    if actor_user_id <= 0:
+        payload_map = payload if isinstance(payload, dict) else {}
+        for key in ("challenger_name", "champion_owner_name", "owner_name", "username", "display_username"):
+            if _normalize_main_admin_username(payload_map.get(key)) == MAIN_ADMIN_USERNAME:
+                return True
+        return False
+    return _user_is_admin_cached(db, actor_user_id, admin_cache)
+
+
 def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admin=False):
     event_types = tuple(sorted(WORLD_LOG_SYSTEM_EVENT_TYPES))
     fetch_limit = max(int(limit) * 12, 120)
@@ -15481,12 +15523,15 @@ def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admi
         (*event_types, fetch_limit),
     ).fetchall()
     items = []
+    admin_cache = {}
     for row in rows:
         event_type = str(row["event_type"] or "")
         try:
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
             payload = {}
+        if _world_event_hidden_for_admin_actor(db, row, payload, admin_cache=admin_cache):
+            continue
         if not _event_visible_for_viewer(db, event_type, payload, is_admin=is_admin):
             continue
         created_ts = int(row["created_at"] or 0)
@@ -15525,9 +15570,12 @@ def _world_system_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admi
 def _world_user_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
     rows = _decorate_user_rows(db, _chat_room_rows(db, COMM_WORLD_ROOM_KEY, limit=limit))
     items = []
+    admin_cache = {}
     for row in rows:
         username = str(row.get("username") or "").strip()
         if username.upper() == "SYSTEM":
+            continue
+        if _user_is_admin_cached(db, row.get("user_id"), admin_cache):
             continue
         created_ts = _chat_created_at_ts(row.get("created_at"))
         items.append(
@@ -15589,9 +15637,12 @@ def _world_legacy_system_message_items(db, limit=COMM_WORLD_TIMELINE_LIMIT):
 def _home_world_user_message_items(db, limit=HOME_COMM_PREVIEW_LIMIT):
     rows = _decorate_user_rows(db, _home_chat_messages(db, limit=limit))
     items = []
+    admin_cache = {}
     for row in rows:
         username = str(row.get("username") or "").strip()
         if username.upper() == "SYSTEM":
+            continue
+        if _user_is_admin_cached(db, row.get("user_id"), admin_cache):
             continue
         created_ts = _chat_created_at_ts(row.get("created_at"))
         items.append(
@@ -15975,11 +16026,14 @@ def _fetch_feed_cards(db, type_filter="", user_id_filter=None, limit=30, is_admi
         params,
     ).fetchall()
     cards = []
+    admin_cache = {}
     for row in rows:
         try:
             payload = json.loads(row["payload_json"] or "{}")
         except json.JSONDecodeError:
             payload = {}
+        if _world_event_hidden_for_admin_actor(db, row, payload, admin_cache=admin_cache):
+            continue
         if not _event_visible_for_viewer(db, row["event_type"], payload, is_admin=is_admin):
             continue
         cards.append(_feed_card_from_event(db, row))

@@ -306,16 +306,26 @@ class HomeNextActionTests(unittest.TestCase):
             db = game_app.get_db()
             now_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             db.execute(
-                "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
-                (self.user_id, "alice", "同一ログ", now_text),
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 0, 0, 1)
+                """,
+                ("home_world_peer", "x", int(time.time())),
+            )
+            peer_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("home_world_peer",)).fetchone()["id"]
             )
             db.execute(
                 "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
-                (self.user_id, "alice", "同一ログ", now_text),
+                (peer_id, "alice", "同一ログ", now_text),
             )
             db.execute(
                 "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
-                (self.user_id, "alice", "同一ログ", now_text),
+                (peer_id, "alice", "同一ログ", now_text),
+            )
+            db.execute(
+                "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
+                (peer_id, "alice", "同一ログ", now_text),
             )
             db.execute(
                 "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",

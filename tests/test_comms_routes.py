@@ -246,6 +246,72 @@ class CommsRoutesTests(unittest.TestCase):
             payload = json.loads(audit_row["payload_json"] or "{}")
             self.assertEqual(payload.get("room_key"), game_app.COMM_WORLD_ROOM_KEY)
 
+    def test_comms_world_hides_admin_activity_and_messages(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 1, 0, 1)
+                """,
+                ("world_admin", "x", now),
+            )
+            admin_id = int(
+                db.execute("SELECT id FROM users WHERE username = ?", ("world_admin",)).fetchone()["id"]
+            )
+            game_app.initialize_new_user(db, admin_id)
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    json.dumps(
+                        {"enemy_name": "管理者専用ボス", "area_key": "layer_1", "area_label": "第一層"},
+                        ensure_ascii=False,
+                    ),
+                    admin_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO chat_messages (user_id, username, room_key, message, created_at, deleted_at)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    admin_id,
+                    "world_admin",
+                    game_app.COMM_WORLD_ROOM_KEY,
+                    "管理者の世界ログ発言",
+                    game_app.now_str(),
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO chat_messages (user_id, username, room_key, message, created_at, deleted_at)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    self.other_user_id,
+                    "roommate",
+                    game_app.COMM_WORLD_ROOM_KEY,
+                    "一般ユーザーの公開メッセージ",
+                    game_app.now_str(),
+                ),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.get("/comms/world")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("管理者専用ボス", html)
+        self.assertNotIn("管理者の世界ログ発言", html)
+        self.assertIn("一般ユーザーの公開メッセージ", html)
+
     def test_comms_rooms_filters_messages_by_room(self):
         client = self._client()
         resp = client.post(
