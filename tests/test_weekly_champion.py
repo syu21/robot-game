@@ -81,6 +81,40 @@ class WeeklyChampionTests(unittest.TestCase):
             sess["user_id"] = int(user_id)
             sess["username"] = str(username)
 
+    def test_run_champion_battle_uses_random_first_even_when_player_is_faster(self):
+        class _SequenceRng:
+            def __init__(self, values):
+                self.values = list(values)
+
+            def random(self):
+                if self.values:
+                    return float(self.values.pop(0))
+                return 0.5
+
+            def randint(self, low, high):
+                return 0
+
+        player = {
+            "name": "fast_player",
+            "stats": {"hp": 18, "atk": 8, "def": 8, "spd": 99, "acc": 20, "cri": 0},
+        }
+        champion = {
+            "name": "slow_champion",
+            "stats": {"hp": 18, "atk": 8, "def": 8, "spd": 1, "acc": 20, "cri": 0},
+        }
+        battle = game_app.run_champion_battle(player, champion, rng=_SequenceRng([0.9] + ([0.5] * 20)))
+        self.assertEqual(battle["first_strike_mode"], "RANDOM_FIRST")
+        self.assertEqual(battle["first_striker"], "champion")
+        self.assertAlmostEqual(float(battle["crit_multiplier"]), 1.65, places=2)
+
+    def test_champion_reward_summary_is_coin_only(self):
+        win_summary = game_app._build_champion_reward_summary(win=True)
+        lose_summary = game_app._build_champion_reward_summary(win=False)
+        self.assertEqual(int(win_summary["reward_coin"]), 20)
+        self.assertEqual(int(lose_summary["reward_coin"]), 5)
+        self.assertNotIn("reward_exp", win_summary)
+        self.assertNotIn("first_week_bonus_coin", win_summary)
+
     def test_select_weekly_champion_prefers_boss_and_excludes_admin_or_missing_active_robot(self):
         admin_id = self._create_user("champ_admin", is_admin=1)
         missing_active_id = self._create_user("inactive_candidate")
@@ -176,8 +210,10 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertIn("今週のチャンプ機体", html)
         self.assertIn("王者零式", html)
         self.assertIn("champ_owner", html)
+        self.assertIn("👑", html)
         self.assertIn("注目能力:", html)
         self.assertIn("特徴:", html)
+        self.assertIn("防衛", html)
         self.assertIn('action="/champion/challenge"', html)
         self.assertIn('href="/champion"', html)
 
@@ -195,6 +231,8 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertIn("思想:", html)
         self.assertIn("注目能力:", html)
         self.assertIn("特徴:", html)
+        self.assertIn("防衛回数", html)
+        self.assertIn("歴代チャンプ履歴", html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -242,6 +280,11 @@ class WeeklyChampionTests(unittest.TestCase):
         owner_robot_id = self._rename_active_robot(owner_id, "王者機")
         challenger_robot_id = self._rename_active_robot(challenger_id, "挑戦機")
         self._log_week_event(owner_id, game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"], count=2)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            coin_before = int(
+                db.execute("SELECT coins FROM users WHERE id = ?", (int(challenger_id),)).fetchone()["coins"] or 0
+            )
 
         mocked_battle = {
             "win": True,
@@ -274,6 +317,9 @@ class WeeklyChampionTests(unittest.TestCase):
             "summary_label": "命中安定で崩した",
             "result_label": "WIN",
             "critical_hits": 0,
+            "first_striker": "champion",
+            "first_strike_mode": "RANDOM_FIRST",
+            "crit_multiplier": 1.65,
         }
 
         client = game_app.app.test_client()
@@ -286,6 +332,9 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertIn("今週のチャンプを撃破！", html)
         self.assertIn("今週1人目の撃破者です。", html)
         self.assertIn("命中安定で崩した", html)
+        self.assertIn("獲得コイン", html)
+        self.assertNotIn("獲得EXP", html)
+        self.assertNotIn("初回週撃破ボーナス", html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -302,6 +351,10 @@ class WeeklyChampionTests(unittest.TestCase):
             self.assertIsNotNone(battle_row)
             self.assertEqual(battle_row["result"], "win")
             self.assertEqual(int(battle_row["challenger_robot_instance_id"]), int(challenger_robot_id))
+            payload = json.loads(battle_row["payload_json"] or "{}")
+            self.assertEqual(payload.get("first_strike_mode"), "RANDOM_FIRST")
+            self.assertEqual(int(payload.get("reward_coin") or 0), 20)
+            self.assertNotIn("reward_exp", payload)
 
             snapshot_row = db.execute(
                 """
@@ -316,6 +369,9 @@ class WeeklyChampionTests(unittest.TestCase):
             self.assertIsNotNone(snapshot_row)
             self.assertEqual(int(snapshot_row["challenge_count"]), 1)
             self.assertEqual(int(snapshot_row["loss_count"]), 1)
+            coin_after = int(
+                db.execute("SELECT coins FROM users WHERE id = ?", (int(challenger_id),)).fetchone()["coins"] or 0
+            )
 
             event_types = {
                 row["event_type"]
@@ -323,6 +379,10 @@ class WeeklyChampionTests(unittest.TestCase):
                     "SELECT event_type FROM world_events_log WHERE request_id IS NOT NULL"
                 ).fetchall()
             }
+        self.assertEqual(
+            coin_after - coin_before,
+            game_app.CHAMPION_CHALLENGE_WIN_COINS,
+        )
         self.assertIn(game_app.AUDIT_EVENT_TYPES["CHAMPION_CHALLENGE"], event_types)
         self.assertIn(game_app.AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"], event_types)
         self.assertIn("CHAMPION_DEFEATED", event_types)

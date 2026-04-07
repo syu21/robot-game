@@ -320,8 +320,8 @@
             <div class="presence-mini-label">{{ weekly_champion.get('presence_label', '探索待機中') }}</div>
           </div>
         </div>
-        <div class="home-champion-title-row">
-          <div><b>{{ weekly_champion.get('robot_name', '無名ロボ') }}</b></div>
+      <div class="home-champion-title-row">
+          <div><b>{{ weekly_champion.get('robot_name', '無名ロボ') }}</b> <span class="champion-crown-mark" aria-hidden="true">👑</span></div>
           <span class="weekly-fit-badge">防衛率 {{ weekly_champion.get('champion_win_rate', 100) }}%</span>
         </div>
         {% if weekly_champion.get('signature_label') %}
@@ -338,6 +338,7 @@
         {% endif %}
         <div class="home-champion-stats">
           <span>挑戦 {{ weekly_champion.get('challenge_count', 0) }}</span>
+          <span>防衛 {{ weekly_champion.get('defense_count', 0) }}</span>
           <span>撃破 {{ weekly_champion.get('defeat_count', 0) }}</span>
         </div>
         <div class="home-inline-actions">

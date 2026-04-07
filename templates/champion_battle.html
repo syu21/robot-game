@@ -17,7 +17,7 @@
 
   <div id="battle-replay-followup">
     <div class="battle-section-title">今週のチャンプ</div>
-    <div class="card enemy-card champion-summary-card">
+    <div class="card enemy-card champion-summary-card champion-honor-card">
       <div class="enemy-sprite-frame battle-enemy-thumb-frame">
         {% if champion and champion.get('robot_image_url') %}
         <img class="battle-enemy-thumb" src="{{ champion.get('robot_image_url') }}" alt="{{ enemy_name }}" loading="lazy" />
@@ -26,7 +26,7 @@
         {% endif %}
       </div>
       <div>
-        <div><b>{{ enemy_name }}</b></div>
+        <div><b>{{ enemy_name }}</b> <span class="champion-crown-mark" aria-hidden="true">👑</span></div>
         {% if champion %}
         <div class="upgrade-cost">所有者: {{ champion.get('display_username') or champion.get('owner_name') or 'unknown' }}</div>
         <div class="upgrade-cost">{{ champion.get('reason_label', '今週の注目機体') }}</div>
@@ -39,7 +39,7 @@
         {% if champion.get('trait_summary') %}
         <div class="upgrade-cost">特徴: {{ champion.get('trait_summary') }}</div>
         {% endif %}
-        <div class="upgrade-cost">挑戦 {{ summary.get('challenge_count', 0) }} / 防衛率 {{ summary.get('champion_win_rate', 100) }}%</div>
+        <div class="upgrade-cost">挑戦 {{ summary.get('challenge_count', 0) }} / 防衛 {{ summary.get('defense_count', 0) }} / 防衛率 {{ summary.get('champion_win_rate', 100) }}%</div>
         {% endif %}
       </div>
     </div>
@@ -76,6 +76,7 @@
       <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
       {% endif %}
       <div class="upgrade-cost">{{ summary.get('summary_heading', '今回の勝ち筋') }}: {{ summary.get('summary_label', '') }}</div>
+      <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ summary.get('reward_coin', 0) }}</b></div>
     </div>
 
     <div class="battle-section-title">次の行動</div>

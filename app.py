@@ -188,6 +188,8 @@ COMM_WORLD_TIMELINE_LIMIT = 50
 COMM_ROOM_TIMELINE_LIMIT = 100
 COMM_PERSONAL_LOG_LIMIT = 30
 COMM_AUTO_REFRESH_SECONDS = 18
+CHAMPION_CHALLENGE_WIN_COINS = 20
+CHAMPION_CHALLENGE_LOSE_COINS = 5
 
 BUILD_OFFSET_CONTROL_DEFS = (
     {"slot": "head", "label": "HEAD（頭）", "preview_target": "head"},
@@ -14470,6 +14472,7 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "score_value": int(snapshot.get("score_value") or 0),
         "source_week_key": str(snapshot.get("source_week_key") or snapshot.get("week_key") or ""),
         "challenge_count": int(stats_summary.get("challenge_count") or 0),
+        "defense_count": int(stats_summary.get("champion_win_count") or 0),
         "defeat_count": int(stats_summary.get("defeat_count") or 0),
         "champion_win_rate": int(stats_summary.get("champion_win_rate") or 0),
         "challenger_win_count": int(stats_summary.get("challenger_win_count") or 0),
@@ -14490,6 +14493,37 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "presence_label": visuals.get("presence_label") or "探索待機中",
         "presence_title": visuals.get("presence_title") or "待機中",
     }
+
+
+def _weekly_champion_history_rows(db, *, limit=6):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM weekly_champion_snapshots
+        ORDER BY week_key DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+    out = []
+    current_week_key = champion_current_week_key()
+    for row in rows:
+        model = _weekly_champion_view_model(db, row)
+        if not model:
+            continue
+        out.append(
+            {
+                "week_key": str(model.get("week_key") or ""),
+                "robot_name": str(model.get("robot_name") or "無名ロボ"),
+                "owner_name": str(model.get("owner_name") or "unknown"),
+                "robot_image_url": model.get("robot_image_url"),
+                "defense_count": int(model.get("defense_count") or 0),
+                "defeat_count": int(model.get("defeat_count") or 0),
+                "champion_win_rate": int(model.get("champion_win_rate") or 0),
+                "is_current": bool(str(model.get("week_key") or "") == str(current_week_key)),
+            }
+        )
+    return out
 
 
 def _build_champion_robot_payload(db, *, user_id, robot_instance_id):
@@ -14602,6 +14636,13 @@ def _reset_weekly_champion_battles_for_public_release(db, *, week_key=None):
     )
     _sync_weekly_champion_snapshot_counters(db, snapshot_id)
     return {"week_key": target_week_key, "snapshot_id": snapshot_id, "deleted_battles": deleted_battles}
+
+
+def _build_champion_reward_summary(*, win):
+    reward_coin = int(CHAMPION_CHALLENGE_WIN_COINS if win else CHAMPION_CHALLENGE_LOSE_COINS)
+    return {
+        "reward_coin": int(reward_coin),
+    }
 
 
 def _explore_area_label(area_key):
@@ -17316,6 +17357,36 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.43",
+            "date": "2026/04/07",
+            "title": "今週のチャンプ戦を実装",
+            "notes": [
+                "`今週のMVP機体` をみんなが挑める `今週のチャンプ戦` としてホームと /champion に追加し、王者へ挑む非同期対戦導線を実装",
+                "チャンプ戦は `RANDOM_FIRST`・8ターン上限で動き、思想 / 注目能力 / 特徴で相手を読めるようにして具体ステータスは前面に出さない方針に整理",
+                "報酬は `勝利 +20コイン / 敗北 +5コイン` の最小構成に留め、チャンプ側は `👑 / 防衛回数 / 履歴表示` を名誉報酬として見える化",
+            ],
+        },
+        {
+            "version": "0.1.42",
+            "date": "2026/04/07",
+            "title": "今週のチャンプ戦を名誉寄りの報酬へ整理",
+            "notes": [
+                "チャンプ戦の報酬は `勝利 +20コイン / 敗北 +5コイン` の最小構成へ寄せ、EXP や素材、進化コアのような戦力直結報酬は出さない方針に整理",
+                "チャンプ機体は `👑` と特別枠で見えるようにし、ホームと /champion で `防衛回数 / 防衛率 / 撃破数` を名誉指標として表示",
+                "週ごとのチャンプは履歴として残り、歴代チャンプ一覧から過去の王者と防衛実績を見返せるよう改善",
+            ],
+        },
+        {
+            "version": "0.1.41",
+            "date": "2026/04/07",
+            "title": "今週のチャンプ戦をRANDOM_FIRST基準で再調整",
+            "notes": [
+                "`今週のチャンプ戦` は先手を `RANDOM_FIRST` で決めるようにし、型相性より先手固定が勝敗を決めすぎないよう調整",
+                "チャンプ戦は既存の 8 ターン戦闘を流用しつつ、結果表示と world log をチャンプ導線に合わせて整理",
+                "会心型は会心倍率 `1.65` と初撃会心補正、テンプレ命中 / 火力の軽い底上げで、バランス型に一方的に消されにくいよう再調整",
+            ],
+        },
+        {
             "version": "0.1.40",
             "date": "2026/04/07",
             "title": "戦闘結果の再出撃導線と進化反映を改善",
@@ -19776,6 +19847,7 @@ def champion_view():
         title="今週のチャンプ機体",
         user=user,
         champion=champion,
+        champion_history_rows=_weekly_champion_history_rows(db, limit=6),
         active_robot=active_robot,
         active_robot_profile=active_robot_profile,
         active_robot_stats=active_robot_stats,
@@ -19841,11 +19913,14 @@ def champion_challenge():
         {
             "name": str(challenger_payload.get("robot_name") or "あなた"),
             "stats": dict(challenger_payload.get("stats") or {}),
+            "signature_label": str(challenger_payload.get("signature_label") or ""),
+            "focus_labels": list(challenger_payload.get("focus_labels") or []),
         },
         champion_enemy_payload,
         max_turns=8,
     )
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
+    reward_summary = _build_champion_reward_summary(win=bool(battle_result.get("win")))
     battle_payload = {
         "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
         "champion_snapshot_id": int(snapshot.get("id") or 0),
@@ -19862,6 +19937,9 @@ def champion_challenge():
         "turn_count": int(battle_result.get("turn_count") or 0),
         "timeout": bool(battle_result.get("timeout")),
         "summary_label": str(battle_result.get("summary_label") or ""),
+        "first_strike_mode": str(battle_result.get("first_strike_mode") or "RANDOM_FIRST"),
+        "first_striker": str(battle_result.get("first_striker") or ""),
+        "reward_coin": int(reward_summary.get("reward_coin") or 0),
     }
     db.execute(
         """
@@ -19890,6 +19968,11 @@ def champion_challenge():
         ),
     )
     stats_summary = _sync_weekly_champion_snapshot_counters(db, int(snapshot.get("id") or 0))
+    if int(reward_summary.get("reward_coin") or 0) > 0:
+        db.execute(
+            "UPDATE users SET coins = coins + ? WHERE id = ?",
+            (int(reward_summary.get("reward_coin") or 0), int(user["id"])),
+        )
     battle_payload["challenge_count"] = int(stats_summary.get("challenge_count") or 0)
     battle_payload["defeat_count"] = int(stats_summary.get("defeat_count") or 0)
     battle_payload["champion_win_rate"] = int(stats_summary.get("champion_win_rate") or 0)
@@ -19903,6 +19986,20 @@ def champion_challenge():
         entity_type="robot_instance",
         entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
         payload=battle_payload,
+        ip=request.remote_addr,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COIN_DELTA"],
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="champion_challenge",
+        delta_coins=int(reward_summary.get("reward_coin") or 0),
+        payload={
+            "champion_snapshot_id": int(snapshot.get("id") or 0),
+            "result": str(battle_payload.get("result") or "lose"),
+            "reward_coin": int(reward_summary.get("reward_coin") or 0),
+        },
         ip=request.remote_addr,
     )
     if battle_result.get("win"):
@@ -19981,6 +20078,7 @@ def champion_challenge():
             if battle_result.get("timeout")
             else ""
         ),
+        "reward_coin": int(reward_summary.get("reward_coin") or 0),
         "battle_cinematic": battle_cinematic,
         "headline": ("今週のチャンプを撃破！" if battle_result.get("win") else "チャンプには届かなかった"),
         "subline": (
@@ -19989,6 +20087,7 @@ def champion_challenge():
             else "今回は届かなかった。もう少し育てて再挑戦しよう。"
         ),
         "challenge_count": int(stats_summary.get("challenge_count") or 0),
+        "defense_count": int(stats_summary.get("champion_win_count") or 0),
         "defeat_count": int(stats_summary.get("defeat_count") or 0),
         "champion_win_rate": int(stats_summary.get("champion_win_rate") or 0),
     }

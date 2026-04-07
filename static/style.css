@@ -7400,6 +7400,21 @@ h2 {
   gap: 12px;
 }
 
+.champion-honor-card {
+  box-shadow: 0 0 0 1px rgba(255, 212, 92, 0.28), 0 18px 36px rgba(14, 20, 38, 0.34);
+  border: 1px solid rgba(255, 212, 92, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 212, 92, 0.08), rgba(20, 27, 47, 0.96) 28%),
+    rgba(20, 27, 47, 0.96);
+}
+
+.champion-crown-mark {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  filter: drop-shadow(0 0 6px rgba(255, 212, 92, 0.28));
+}
+
 .home-champion-title-row {
   display: flex;
   align-items: center;
@@ -7414,7 +7429,7 @@ h2 {
 }
 
 .home-champion-stats {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   font-size: 13px;
   color: var(--text-sub);
 }
@@ -7436,7 +7451,7 @@ h2 {
 }
 
 .champion-stats-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
 .champion-stat-card,
@@ -7459,6 +7474,11 @@ h2 {
 }
 
 .champion-recent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.champion-history-list {
   display: grid;
   gap: 10px;
 }
@@ -9927,4 +9947,118 @@ body#page-world .world-competition-grid {
     line-height: 1.2;
   }
 
-  .battle-cin
+  .battle-cinematic-v1-progress-row {
+    display: grid;
+    gap: 4px;
+  }
+
+  .battle-cinematic-v1-meta {
+    gap: 4px 8px;
+  }
+
+  .battle-cinematic-v1-area,
+  .battle-cinematic-v1-battle-type,
+  .battle-cinematic-v1-progress,
+  .battle-cinematic-v1-card-turn {
+    font-size: 11px;
+  }
+
+  .battle-cinematic-v1-controls {
+    width: 100%;
+    margin-top: 2px;
+    padding: 6px 0 0;
+  }
+
+  .battle-cinematic-v1-stage {
+    grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+    min-height: 184px;
+    gap: 6px;
+    padding: 10px 6px 12px;
+  }
+
+  .battle-cinematic-v1-unit.is-player {
+    transform: translateX(2px);
+  }
+
+  .battle-cinematic-v1-unit.is-enemy {
+    transform: translateX(-2px);
+  }
+
+  .battle-cinematic-v1-frame {
+    width: 100%;
+    min-height: 94px;
+  }
+
+  .battle-cinematic-v1-frame img {
+    max-width: 90px;
+    max-height: 90px;
+  }
+
+  .battle-cinematic-v1.is-boss .battle-cinematic-v1-unit.is-enemy .battle-cinematic-v1-frame img {
+    max-width: 100px;
+    max-height: 100px;
+  }
+
+  .battle-cinematic-v1-name {
+    font-size: 12px;
+  }
+
+  .battle-cinematic-v1-hp {
+    width: min(112px, 96%);
+    height: 7px;
+  }
+
+  .battle-cinematic-v1-hitflash.target-player,
+  .battle-cinematic-v1-sparks.target-player {
+    left: 8%;
+  }
+
+  .battle-cinematic-v1-hitflash.target-enemy,
+  .battle-cinematic-v1-sparks.target-enemy {
+    right: 8%;
+  }
+
+  .battle-cinematic-v1-damage-pop.target-player {
+    left: 8%;
+  }
+
+  .battle-cinematic-v1-damage-pop.target-enemy {
+    right: 8%;
+  }
+
+  .battle-cinematic-v1-damage-pop {
+    top: calc(50% - 40px);
+    min-width: 58px;
+    padding: 5px 10px;
+    font-size: 20px;
+  }
+
+  .battle-cinematic-v1-damage-pop.is-critical {
+    font-size: 24px;
+  }
+
+  .battle-cinematic-v1-finish-call {
+    bottom: 18px;
+    min-width: 116px;
+    padding: 7px 14px;
+    font-size: 13px;
+  }
+
+  .battle-cinematic-v1-card-action {
+    font-size: 16px;
+  }
+
+  .battle-cinematic-v1-card {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .battle-cinematic-v1-card-summary {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .battle-cinematic-v1-final-label {
+    font-size: 20px;
+  }
+}

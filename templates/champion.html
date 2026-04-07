@@ -2,7 +2,7 @@
 {% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <section class="panel home-champion-panel champion-page-panel">
-  <div class="world-env-card champion-hero-card champion-page-card">
+  <div class="world-env-card champion-hero-card champion-page-card champion-honor-card">
     <div class="battle-section-title">今週のチャンプ機体</div>
     {% if champion %}
     <div class="upgrade-cost">{{ champion.get('reason_label', '今週の注目機体') }}</div>
@@ -23,7 +23,7 @@
         {% endif %}
       </div>
       <div class="champion-copy">
-        <h1 class="battle-title champion-page-title">{{ champion.get('robot_name', '無名ロボ') }}</h1>
+        <h1 class="battle-title champion-page-title">{{ champion.get('robot_name', '無名ロボ') }} <span class="champion-crown-mark" aria-hidden="true">👑</span></h1>
         {% if champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
         {% endif %}
@@ -41,6 +41,10 @@
           <div class="card champion-stat-card">
             <div class="stat-label">防衛率</div>
             <div class="stat-value">{{ champion.get('champion_win_rate', 100) }}%</div>
+          </div>
+          <div class="card champion-stat-card">
+            <div class="stat-label">防衛回数</div>
+            <div class="stat-value">{{ champion.get('defense_count', 0) }}</div>
           </div>
           <div class="card champion-stat-card">
             <div class="stat-label">撃破数</div>
@@ -92,6 +96,22 @@
       <div class="card champion-recent-card">
         <div>まだ挑戦記録はありません。</div>
         <div class="upgrade-cost">最初の撃破報告が世界ログに載ります。</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="battle-section-title champion-recent-title">歴代チャンプ履歴</div>
+    <div class="champion-history-list">
+      {% for row in champion_history_rows %}
+      <div class="card champion-recent-card champion-history-card {% if row.get('is_current') %}champion-honor-card{% endif %}">
+        <div><b>{{ row.get('week_key', '-') }}</b>{% if row.get('is_current') %} <span class="champion-crown-mark" aria-hidden="true">👑</span>{% endif %}</div>
+        <div>{{ row.get('robot_name', '無名ロボ') }} / {{ row.get('owner_name', 'unknown') }}</div>
+        <div class="upgrade-cost">防衛 {{ row.get('defense_count', 0) }} / 撃破 {{ row.get('defeat_count', 0) }} / 防衛率 {{ row.get('champion_win_rate', 100) }}%</div>
+      </div>
+      {% else %}
+      <div class="card champion-recent-card">
+        <div>まだ履歴はありません。</div>
+        <div class="upgrade-cost">週が切り替わるごとにチャンプ履歴へ残ります。</div>
       </div>
       {% endfor %}
     </div>

@@ -369,12 +369,12 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.40 - 2026/04/07", html)
-        self.assertIn("戦闘結果の再出撃導線と進化反映を改善", html)
-        self.assertIn("ready_at", html)
-        self.assertIn("合成画像", html)
-        self.assertIn("小型アイコン", html)
-        self.assertLess(html.index("v0.1.40 - 2026/04/07"), html.index("v0.1.39 - 2026/04/06"))
+        self.assertIn("v0.1.43 - 2026/04/07", html)
+        self.assertIn("今週のチャンプ戦を実装", html)
+        self.assertIn("今週のMVP機体", html)
+        self.assertIn("RANDOM_FIRST", html)
+        self.assertIn("勝利 +20コイン / 敗北 +5コイン", html)
+        self.assertLess(html.index("v0.1.43 - 2026/04/07"), html.index("v0.1.42 - 2026/04/07"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()
