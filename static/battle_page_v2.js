@@ -38,13 +38,22 @@
     if (!btn) return;
     const isAdmin = String(btn.dataset.ctAdmin || "") === "1";
     if (isAdmin) return;
-    let remain = Number(btn.dataset.ctRemain || 0);
-    if (!Number.isFinite(remain)) remain = 0;
-    remain = Math.max(0, Math.floor(remain));
     const label = document.getElementById("explore-return-ct-label");
     const readyLabel = String(btn.dataset.ctaReadyLabel || "もう一度出撃");
+    const readyAtRaw = Number(btn.dataset.ctReadyAt || 0);
+    const remainRaw = Number(btn.dataset.ctRemain || 0);
+    const fallbackRemain = Number.isFinite(remainRaw) ? Math.max(0, Math.floor(remainRaw)) : 0;
+    const readyAt = Number.isFinite(readyAtRaw) ? Math.max(0, Math.floor(readyAtRaw)) : 0;
+    let timerId = null;
 
-    const render = () => {
+    const formatRemain = (totalSeconds) => {
+      const remain = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const minutes = Math.floor(remain / 60);
+      const seconds = remain % 60;
+      return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    };
+
+    const render = (remain) => {
       if (remain <= 0) {
         btn.disabled = false;
         btn.textContent = readyLabel;
@@ -53,21 +62,51 @@
         }
         return true;
       }
+      const remainLabel = formatRemain(remain);
       btn.disabled = true;
-      btn.textContent = `もう一度出撃（あと${remain}秒）`;
+      btn.textContent = `あと ${remainLabel} で出撃可能`;
       if (label) {
-        label.textContent = `CT中: あと${remain}秒`;
+        label.textContent = `CT中: あと ${remainLabel}`;
       }
       return false;
     };
 
-    if (render()) return;
-    const timer = window.setInterval(() => {
-      remain -= 1;
-      if (render()) {
-        window.clearInterval(timer);
+    const getRemain = () => {
+      if (readyAt > 0) {
+        return Math.max(0, readyAt - Math.floor(Date.now() / 1000));
       }
-    }, 1000);
+      return fallbackRemain;
+    };
+
+    const stopTicker = () => {
+      if (timerId !== null) {
+        window.clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
+    const sync = () => {
+      const done = render(getRemain());
+      if (done) {
+        stopTicker();
+      }
+      return done;
+    };
+
+    const startTicker = () => {
+      stopTicker();
+      if (sync()) return;
+      timerId = window.setInterval(sync, 1000);
+    };
+
+    startTicker();
+    window.addEventListener("pageshow", startTicker);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        startTicker();
+      }
+    });
+    window.addEventListener("pagehide", stopTicker);
   };
 
   const setupBattleShortReplay = () => {
@@ -353,7 +392,8 @@
       for (const event of replay.events) {
         if (finished) return;
         applyEvent(event);
-        await new Promise((resolve) => window.setTimeout(resolve, Math.max(180, eventDuration)));
+        const stepDuration = Number((event && event.duration_ms) || eventDuration || 380);
+        await new Promise((resolve) => window.setTimeout(resolve, Math.max(180, stepDuration)));
       }
       if (finished) return;
       resetClasses();

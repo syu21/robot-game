@@ -10165,7 +10165,7 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
     r_arm = _get_part_by_key(db, parts_row["r_arm_key"])
     l_arm = _get_part_by_key(db, parts_row["l_arm_key"])
     legs = _get_part_by_key(db, parts_row["legs_key"])
-    decor = _get_decor_asset_by_id(db, parts_row.get("decor_asset_id"))
+    decor = _get_decor_asset_by_id(db, parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None)
     if not all([head, r_arm, l_arm, legs]):
         raise ValueError("パーツ構成が不正です。")
     offsets = _robot_instance_part_offsets(parts_row)
@@ -10207,6 +10207,73 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
         (rel_path, badge_rel, int(time.time()), instance_id),
     )
     return rel_path, badge_rel
+
+
+def _refresh_robot_instances_using_part_instance(db, part_instance_id):
+    if not part_instance_id:
+        return []
+    target_id = int(part_instance_id)
+    part_row = db.execute(
+        """
+        SELECT pi.id, rp.key, rp.part_type
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.id = ?
+        LIMIT 1
+        """,
+        (target_id,),
+    ).fetchone()
+    if not part_row:
+        return []
+
+    slot_specs = (
+        ("head_part_instance_id", "head_key"),
+        ("r_arm_part_instance_id", "r_arm_key"),
+        ("l_arm_part_instance_id", "l_arm_key"),
+        ("legs_part_instance_id", "legs_key"),
+    )
+    affected = []
+    rows = db.execute(
+        """
+        SELECT *
+        FROM robot_instance_parts
+        WHERE head_part_instance_id = ?
+           OR r_arm_part_instance_id = ?
+           OR l_arm_part_instance_id = ?
+           OR legs_part_instance_id = ?
+        ORDER BY robot_instance_id ASC
+        """,
+        (target_id, target_id, target_id, target_id),
+    ).fetchall()
+    for row in rows:
+        key_col = None
+        slot_name = None
+        for instance_id_col, candidate_key_col in slot_specs:
+            if int(row[instance_id_col] or 0) == target_id:
+                key_col = candidate_key_col
+                slot_name = candidate_key_col.replace("_key", "")
+                break
+        if not key_col:
+            continue
+        db.execute(
+            f"UPDATE robot_instance_parts SET {key_col} = ? WHERE robot_instance_id = ?",
+            (str(part_row["key"]), int(row["robot_instance_id"])),
+        )
+        refreshed_parts = db.execute(
+            "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+            (int(row["robot_instance_id"]),),
+        ).fetchone()
+        if refreshed_parts:
+            _compose_instance_assets_no_commit(db, int(row["robot_instance_id"]), refreshed_parts)
+        affected.append(
+            {
+                "robot_instance_id": int(row["robot_instance_id"]),
+                "slot": slot_name,
+                "part_key": str(part_row["key"]),
+                "part_type": str(part_row["part_type"] or ""),
+            }
+        )
+    return affected
 
 
 def _ensure_showcase_slots(db, user_id, max_slots):
@@ -17249,6 +17316,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.40",
+            "date": "2026/04/07",
+            "title": "戦闘結果の再出撃導線と進化反映を改善",
+            "notes": [
+                "battle結果は `結果 / 戦利品 / 次の行動` を先頭に寄せ、スマホでは `もう一度出撃` を太い主CTAとして見つけやすく整理",
+                "battle結果とホームのクールタイム表示は `ready_at` 基準で再同期し、pageshow や復帰後でも 0 秒到達時に自動で押せる状態へ更新",
+                "装備中パーツを進化合成したときも、装備参照キー・合成画像・小型アイコンをその場で再生成して旧見た目が残りにくいよう修正",
+            ],
+        },
+        {
             "version": "0.1.39",
             "date": "2026/04/06",
             "title": "今週のチャンプ機体を管理者先行確認へ切り替え",
@@ -22351,6 +22428,7 @@ def explore():
     battle_bg_path = _boss_battle_bg_path(last_enemy, bool(area_boss_active))
     explore_ct_remain = int(_enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now))
     explore_ct_is_admin = bool(int(user["is_admin"] or 0) == 1)
+    explore_ct_ready_at = 0 if explore_ct_is_admin else int(now + max(0, explore_ct_remain))
     if explore_ct_is_admin:
         explore_ct_button_label = "もう一度出撃"
         explore_ct_status_label = ""
@@ -22443,6 +22521,7 @@ def explore():
         "npc_analysis_line": npc_analysis_line,
         "battle_bg_url": (url_for("static", filename=battle_bg_path) if battle_bg_path else None),
         "explore_ct_remain": int(explore_ct_remain),
+        "explore_ct_ready_at": int(explore_ct_ready_at),
         "explore_ct_is_admin": bool(explore_ct_is_admin),
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
@@ -24940,6 +25019,7 @@ def evolve_parts():
             )
             compare_payload = _part_card_payload(source_row, compare_row=target_preview)
             source_status = str(source_row["status"] or "inventory").strip().lower()
+            refreshed_equipped = []
             if source_status == "equipped":
                 db.execute(
                     """
@@ -24963,6 +25043,7 @@ def evolve_parts():
                         int(user_id),
                     ),
                 )
+                refreshed_equipped = _refresh_robot_instances_using_part_instance(db, int(part_instance_id))
                 created_id = int(part_instance_id)
             else:
                 db.execute(
@@ -25012,6 +25093,7 @@ def evolve_parts():
                     "target_plus": int(source_row["plus"] or 0),
                     "core_key": EVOLUTION_CORE_KEY,
                     "core_consumed": 1,
+                    "refreshed_robot_instances": refreshed_equipped,
                 },
                 ip=request.remote_addr,
             )

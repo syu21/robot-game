@@ -51,6 +51,14 @@
     const isAdmin = String(ctStatus.dataset.isAdmin || "0") === "1";
     const ctaButtons = Array.from(document.querySelectorAll("[data-explore-cta='1']"));
     const ctCopies = Array.from(document.querySelectorAll("[data-home-ct-copy='1']"));
+    let timerId = null;
+
+    const formatRemain = (totalSeconds) => {
+      const remain = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const minutes = Math.floor(remain / 60);
+      const seconds = remain % 60;
+      return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    };
 
     const setReady = () => {
       ctStatus.textContent = "出撃可能！";
@@ -64,14 +72,14 @@
     };
 
     const setCooling = (remain) => {
-      const sec = Math.max(0, Number(remain) || 0);
-      ctStatus.textContent = `出撃まであと${sec}秒！`;
+      const remainLabel = formatRemain(remain);
+      ctStatus.textContent = `出撃まであと ${remainLabel}`;
       ctCopies.forEach((el) => {
-        el.textContent = `クールタイム中 あと${sec}秒`;
+        el.textContent = `クールタイム中 あと ${remainLabel}`;
       });
       ctaButtons.forEach((btn) => {
         btn.disabled = true;
-        btn.textContent = `クールタイム中 あと${sec}秒`;
+        btn.textContent = `あと ${remainLabel} で出撃可能`;
       });
     };
 
@@ -86,22 +94,42 @@
       return;
     }
 
-    let timerId = null;
+    const stopTicker = () => {
+      if (timerId !== null) {
+        window.clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
     const tick = () => {
       const now = Math.floor(Date.now() / 1000);
       const remain = Math.max(0, readyAt - now);
       if (remain > 0) {
         setCooling(remain);
+        return false;
       } else {
         setReady();
-        if (timerId !== null) {
-          window.clearInterval(timerId);
-        }
+        stopTicker();
+        return true;
       }
     };
 
-    tick();
-    timerId = window.setInterval(tick, 1000);
+    const startTicker = () => {
+      stopTicker();
+      if (tick()) return;
+      if (timerId === null) {
+        timerId = window.setInterval(tick, 1000);
+      }
+    };
+
+    startTicker();
+    window.addEventListener("pageshow", startTicker);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        startTicker();
+      }
+    });
+    window.addEventListener("pagehide", stopTicker);
   };
 
   const bindInviteCopy = () => {

@@ -212,6 +212,132 @@ class EvolveRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("このパーツは進化できません", resp.get_data(as_text=True))
 
+    def test_evolve_equipped_part_refreshes_robot_render(self):
+        slot_map = (
+            ("head_part_instance_id", "head_key"),
+            ("r_arm_part_instance_id", "r_arm_key"),
+            ("l_arm_part_instance_id", "l_arm_key"),
+            ("legs_part_instance_id", "legs_key"),
+        )
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            active_robot_id = int(
+                db.execute("SELECT active_robot_id FROM users WHERE id = ?", (self.user_id,)).fetchone()["active_robot_id"]
+            )
+            equipped_parts = db.execute(
+                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+                (active_robot_id,),
+            ).fetchone()
+            self.assertIsNotNone(equipped_parts)
+
+            chosen = None
+            for instance_col, key_col in slot_map:
+                candidate_id = int(equipped_parts[instance_col] or 0)
+                if candidate_id <= 0:
+                    continue
+                candidate_row = db.execute(
+                    """
+                    SELECT
+                        pi.id, pi.part_id, pi.status, pi.plus, pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                        rp.part_type, rp.element, rp.image_path
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.id = ? AND pi.user_id = ?
+                    LIMIT 1
+                    """,
+                    (candidate_id, self.user_id),
+                ).fetchone()
+                if candidate_row:
+                    chosen = (candidate_row, key_col)
+                    break
+            self.assertIsNotNone(chosen)
+            part_row, slot_key_col = chosen
+            source_key = f"{str(part_row['part_type']).lower()}_n_{str(part_row['element'] or 'normal').lower()}"
+            target_key = f"{str(part_row['part_type']).lower()}_r_{str(part_row['element'] or 'normal').lower()}"
+            db.execute("UPDATE robot_parts SET key = ?, rarity = 'N' WHERE id = ?", (source_key, int(part_row["part_id"])))
+            db.execute(
+                """
+                INSERT INTO robot_parts
+                    (part_type, key, image_path, rarity, element, series, display_name_ja, offset_x, offset_y, is_active, is_unlocked, created_at)
+                VALUES (?, ?, ?, 'R', ?, 'S1', ?, 0, 0, 1, 0, ?)
+                ON CONFLICT(key) DO UPDATE SET is_active = 1, rarity = 'R'
+                """,
+                (
+                    str(part_row["part_type"]),
+                    target_key,
+                    str(part_row["image_path"]),
+                    str(part_row["element"] or "NORMAL"),
+                    "装備進化テストR",
+                    int(time.time()),
+                ),
+            )
+            db.execute(
+                """
+                UPDATE part_instances
+                SET plus = 4, rarity = 'N', w_hp = 1111, w_atk = 2111, w_def = 3111, w_spd = 4111, w_acc = 5111, w_cri = 6111
+                WHERE id = ? AND user_id = ?
+                """,
+                (int(part_row["id"]), self.user_id),
+            )
+            core_asset_id = db.execute(
+                "SELECT id FROM core_assets WHERE core_key = ?",
+                (game_app.EVOLUTION_CORE_KEY,),
+            ).fetchone()["id"]
+            db.execute(
+                "INSERT OR REPLACE INTO user_core_inventory (user_id, core_asset_id, quantity, updated_at) VALUES (?, ?, 1, datetime('now'))",
+                (self.user_id, int(core_asset_id)),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.post(
+            "/parts/evolve",
+            data={"part_instance_id": str(int(part_row["id"]))},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("進化成功", resp.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            evolved_row = db.execute(
+                """
+                SELECT id, part_id, rarity, status, plus, w_hp, w_atk, w_def, w_spd, w_acc, w_cri
+                FROM part_instances
+                WHERE id = ? AND user_id = ?
+                """,
+                (int(part_row["id"]), self.user_id),
+            ).fetchone()
+            self.assertIsNotNone(evolved_row)
+            self.assertEqual(str(evolved_row["rarity"]).upper(), "R")
+            self.assertEqual(str(evolved_row["status"]).lower(), "equipped")
+            self.assertEqual(int(evolved_row["plus"]), 4)
+            self.assertEqual(int(evolved_row["w_hp"]), 1111)
+            self.assertEqual(int(evolved_row["w_atk"]), 2111)
+            self.assertEqual(int(evolved_row["w_def"]), 3111)
+            self.assertEqual(int(evolved_row["w_spd"]), 4111)
+            self.assertEqual(int(evolved_row["w_acc"]), 5111)
+            self.assertEqual(int(evolved_row["w_cri"]), 6111)
+
+            parts_row = db.execute(
+                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+                (active_robot_id,),
+            ).fetchone()
+            self.assertEqual(parts_row[slot_key_col], target_key)
+
+            robot_row = db.execute(
+                "SELECT composed_image_path, icon_32_path FROM robot_instances WHERE id = ?",
+                (active_robot_id,),
+            ).fetchone()
+            self.assertTrue(robot_row["composed_image_path"])
+            self.assertTrue(robot_row["icon_32_path"])
+            self.assertTrue(
+                os.path.exists(os.path.join(game_app.BASE_DIR, "static", robot_row["composed_image_path"]))
+            )
+            self.assertTrue(
+                os.path.exists(os.path.join(game_app.BASE_DIR, "static", robot_row["icon_32_path"]))
+            )
+
     def test_evolve_screen_shows_overview_after_unlock(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -237,7 +363,7 @@ class EvolveRouteTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("今の進化状況", html)
         self.assertIn("進化コア進捗 12/100", html)
-        self.assertIn("同じNパーツをRへ進化できます。", html)
+        self.assertIn("Nパーツを、対応するRパーツへ進化できます。", html)
 
 
 if __name__ == "__main__":

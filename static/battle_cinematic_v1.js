@@ -294,14 +294,21 @@
       const node = damagePops[side];
       if (!node || !label) return;
       node.textContent = label;
-      node.classList.remove("is-visible", "is-critical");
-      if (String(step.hit_type || "") === "crit") {
+      node.classList.remove("is-visible", "is-critical", "is-miss", "is-block");
+      const hitType = String(step.hit_type || "");
+      if (hitType === "crit") {
         node.classList.add("is-critical");
+      }
+      if (hitType === "miss") {
+        node.classList.add("is-miss");
+      }
+      if (hitType === "block") {
+        node.classList.add("is-block");
       }
       void node.offsetWidth;
       node.classList.add("is-visible");
       queueTimeout(() => {
-        node.classList.remove("is-visible", "is-critical");
+        node.classList.remove("is-visible", "is-critical", "is-miss", "is-block");
         node.textContent = "";
       }, 520, runId);
     };
@@ -321,8 +328,14 @@
       }
       if (step.hit_type === "miss") {
         targetUnit && targetUnit.classList.add("is-evading");
+        if (step.value_label) {
+          showDamagePop(step.target || "enemy", step.value_label, step, runId);
+        }
       } else if (step.hit_type === "block") {
         targetUnit && targetUnit.classList.add("is-blocking");
+        if (step.value_label) {
+          showDamagePop(step.target || "enemy", step.value_label, step, runId);
+        }
       } else {
         targetUnit && targetUnit.classList.add("is-hit");
         if (step.value_label) {
@@ -504,15 +517,13 @@
         finalBox.hidden = false;
         const finalHeading = finalBox.querySelector(".battle-cinematic-v1-final-heading");
         const finalLabel = finalBox.querySelector(".battle-cinematic-v1-final-label");
-        const finalResult = finalBox.querySelector(".battle-cinematic-v1-final-result");
         if (finalHeading) finalHeading.textContent = payload.summary_heading || "今回の勝ち筋";
         if (finalLabel) finalLabel.textContent = payload.summary_label || "";
-        if (finalResult) finalResult.textContent = payload.result_label || "WIN";
       }
       setCardText({
         actorText: payload.summary_heading || "今回の勝ち筋",
         actionText: payload.summary_label || "",
-        resultText: payload.result_sub_label || "",
+        resultText: "",
         valueText: "",
         statusText: "",
         tacticalText: payload.player_won ? "戦利品へ進みます" : "結果を整理します",

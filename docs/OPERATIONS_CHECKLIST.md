@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-03-30
+最終更新日: 2026-04-07
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -9,6 +9,8 @@
   - 新規20秒
   - 管理者0秒
 - [ ] `もう一度出撃` 表示残秒とサーバ判定が一致
+- [ ] battle結果で `pageshow / visibilitychange` 復帰後も CT 表示が古いまま残らない
+- [ ] battle結果の `もう一度出撃` が 0秒到達でリロードなしに活性化する
 - [ ] 基地のCT状態がリアルタイム更新される
   - CT中: `クールタイム中 あと mm:ss`
   - 0秒到達: `出撃可能`
@@ -62,6 +64,7 @@
 - [ ] `/parts/evolve` で進化前後の比較が6ステで見える
 - [ ] 第2層固定ボス撃破前は基地や個体一覧に進化合成導線が表示されない
 - [ ] 第2層固定ボス撃破後は基地に進化合成カードが表示される
+- [ ] 装備中パーツを進化合成したとき、装備参照キー・合成画像・icon_32 が即時更新される
 
 ## 5. 認証/管理保護
 - [ ] BANユーザーは `/login` 不可
@@ -118,8 +121,4 @@
 - [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
 - [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
 - [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
-- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
-- [ ] `backups/` に当日バックアップがある
-- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
-- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
-- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す
+- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer �

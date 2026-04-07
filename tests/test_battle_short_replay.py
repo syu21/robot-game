@@ -259,6 +259,7 @@ class BattleShortReplayRouteTests(unittest.TestCase):
             self.assertIn('data-cinematic-hp="player"', html)
             self.assertIn('data-cinematic-hp="enemy"', html)
             self.assertIn('id="battle-replay-followup"', html)
+            self.assertNotIn('battle-cinematic-v1-final-result', html)
             self.assertNotIn('class="battle-title"', html)
 
     def test_ui_effects_off_skips_short_replay_markup(self):

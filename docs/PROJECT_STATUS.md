@@ -1,6 +1,6 @@
 # プロジェクト進捗・現行仕様（ロボらぼ）
 
-最終更新日: 2026-04-06
+最終更新日: 2026-04-07
 
 ## 1. プロダクト目標
 - 現在のロボらぼは `チュートリアルフェーズ` と位置付ける
@@ -63,6 +63,7 @@
 - 前回の出撃先を記憶し、ホーム最上部から再出撃できる
 - ホーム最上部に `今の状態 / 次に行く場所 / 主出撃ボタン` をまとめた主CTAカードを置き、スマホではまずこの1つを見れば出撃できる
 - 主出撃ボタンはスマホで太めの主ボタンとして表示し、クールタイム中でも同じ位置に残して `クールタイム中 あとxx秒` を示す
+- ホームのCT表示は `ready_at` 基準で再計算し、`pageshow / visibilitychange` で戻ったあとも 0秒到達時に自動で出撃可能へ戻す
 - 出撃先ごとの特徴文を `探索先メモ` として表示
 - 新規スターター機体には初回だけ命名モーダルを出し、推奨入力 + スキップ可で最初の相棒名を決められる
 - `今週のチャンプ機体` カードをホームに追加し、所有者名 / ロボ名 / 思想 / 挑戦回数 / 防衛率 / `挑戦する` を短く見せる。現状は管理者先行確認中で、一般公開は `/admin/release` から切り替える
@@ -103,6 +104,8 @@
 - ボス抽選・通常敵抽選・報酬抽選を実装
 - 戦利品結果では `獲得コイン / ドロップ結果 / 保証やボス報酬の短い結果` を最小表示で見せ、下部に `もう一度出撃 / 入手したパーツを見る` を置く
 - 戦利品結果の `次の行動` はカード化し、`再出撃 / パーツ確認 / 基地へ戻る` をスマホでも押しやすくする
+- battle結果の followup は `結果 / 戦利品 / 次の行動` を先頭に寄せ、敵情報と詳細ログは折りたたみへ逃がしてスマホで再出撃ボタンが初期表示に入りやすいよう調整
+- battle結果の `もう一度出撃` は `ready_at` ベースで残秒を再同期し、CT中も `あと mm:ss で出撃可能` と分かる表示にする
 - CT:
   - 一般: 40秒
   - 新規ブースト(登録後72h): 20秒
@@ -147,7 +150,8 @@
 - ロボ編成: `/build` + `/build/confirm`
   - パーツ候補カードは `現在装備との差分` を主役にし、初期表示は `パーツ名 / +値 / 個体ID / 総合差分 / 注目2能力差分` に絞る
   - `6ステ実数 / レアリティ / 同名内の並び情報` は `詳細を開く` に退避し、スマホでも縦に伸びすぎないようにする
-  - 編成確定時に `robot_instances.icon_32_path` へ 32x32 の小型機体アイコンを自動生成し、ユーザー表示の主役となる小ロボ画像として使う
+- 編成確定時に `robot_instances.icon_32_path` へ 32x32 の小型機体アイコンを自動生成し、ユーザー表示の主役となる小ロボ画像として使う
+- 装備中パーツを進化合成したときも `robot_instance_parts` の参照キーを更新し、`composed_image_path / icon_32_path` をその場で再生成して旧見た目を残しにくくする
 
 ### 3.5 ボス・層進行
 - ボス出現率 0.5%（エリア条件あり）
@@ -264,108 +268,4 @@
 
 ### 3.9 実験室（/lab）
 - 本編とは分離した遊び場として `実験室` を追加
-- `release_flags.lab` が public のときだけ一般公開し、未公開中は管理者限定で確認できる
-- レース本体は `services/lab_race_engine.py` を中心に共通化し、`/lab/race` を主導線とする
-- 共通レースは `6レーン固定 / 10区間固定 / 特殊区間 2〜5 抽選` を基本とし、見やすさと予想しやすさを優先する
-- `/lab`
-  - `エネミーレース / ロボ投稿 / 投稿ロボ展示 / レース記録` の導線を集約
-  - `今週の実験室話題` を world_events_log から表示
-- `/lab/race`
-  - `lab_coin` を使う敵6体固定の単勝予想モード
-  - 1日1回のデイリー補充、観戦ボーナス、交換所景品、予想履歴を実装
-  - 敵6体は固定キャラだが、各レースで `condition` とステータスが少し揺れ、倍率も毎回変動する
-  - レース自体は共通エンジンで事前シミュレーションし、`/lab/race/watch/<race_id>` で再生する
-  - `/lab/race/result/<race_id>` で結果、`/lab/race/history` で予想履歴を表示
-  - 旧観戦レースは `/lab/race/legacy` と `/lab/race/rankings` に残し、主導線からは外す
-- `/lab/upload`
-  - 見た目ロボ投稿を `pending` で保存
-  - 投稿画像は `PNG / 透過必須 / 正方形 96px〜512px / 1MBまで`
-  - 保存先は `static/user_lab_uploads/...`
-- `/lab/showcase`
-  - 承認済み投稿のみ公開
-  - `新着 / 人気 / 話題 / おすすめ` で閲覧
-  - `いいね / 通報` を実装
-- `/admin/lab`, `/admin/lab/submissions`
-  - `approve / reject / disable`
-  - 通報件数とモデレーションメモを確認可能
-- 実験室で得られるものは `見栄 / 展示 / 記録` に限定し、本編戦力へ影響しない
-
-## 4. 主要データモデル
-- `users`
-  - `active_robot_id`
-  - `max_unlocked_layer`
-  - `faction`
-  - `avatar_path`
-  - `invite_code`
-  - `lab_coin`, `lab_coin_last_daily_at`
-  - `is_banned`, `is_admin_protected`, `banned_at`, `banned_reason`, `banned_by_user_id`
-- `robot_instances`, `robot_instance_parts`
-  - `composed_image_path`, `icon_32_path`
-- `robot_parts`（`display_name_ja`, `offset_x/y`）
-- `part_instances`（`plus`, `w_*`）
-- `core_assets`, `user_core_inventory`
-- `enemies`
-- `world_weekly_environment`, `world_weekly_counters`
-- `world_faction_weekly_scores`, `world_faction_weekly_result`
-- `lab_casino_races`, `lab_casino_entries`, `lab_casino_bets`
-- `lab_casino_frames`, `lab_casino_prizes`, `lab_casino_prize_claims`
-- `lab_races.course_payload_json`, `lab_casino_races.course_payload_json`
-  - 各レースで抽選された 10 区間コースと特殊区間情報を保存
-- `world_events_log`
-- `chat_messages`
-  - `room_key`
-  - `deleted_at`
-- `world_events_log.audit.drop.payload`
-  - `growth_tendency_key`
-  - `growth_tendency_label`
-- `payment_orders`
-  - `stripe_checkout_session_id` UNIQUE
-  - `stripe_event_id` UNIQUE
-  - `status` は `created / completed / granted / failed / expired`
-  - `boost_days / starts_at / ends_at` を保持
-  - Stripe Checkout の生成と webhook 完了処理を追跡
-- `users`
-  - `explore_boost_until`
-  - 出撃ブーストの有効期限を保持
-- `lab_robot_submissions`
-- `lab_submission_likes`
-- `lab_submission_reports`
-- `lab_races`
-- `lab_race_entries`
-- `lab_race_frames`
-- `lab_race_records`
-
-## 5. UI文言方針（運用中）
-- ホーム -> 基地
-- 探索 -> 出撃
-- ロボ組み立て -> ロボ編成
-- パーツ進化 -> 進化合成
-- 報酬サマリー -> 戦利品
-- 公開フィード -> 世界ログ
-- Showcase -> ロボ展示
-
-## 6. 既知課題
-- 一部画像アセットが欠損（プレースホルダ吸収済み）
-- 管理画面の操作確認UI（ダイアログ等）は最小構成
-- docsの更新粒度を継続改善中
-- `SECRET_KEY` は本番用の長いランダム値へ再設定が必要
-- 旧 enemy key からの表示補正は入ったが、敵マスタ自体の整理は継続課題
-
-## 7. 決済サンドボックス状況
-- `/support`
-  - `創設支援パック 100円` と `ラボ維持支援パック 300円` の Stripe Checkout / webhook 付与が動作
-- `/shop`
-  - `出撃ブースター 500円` (`explore_boost_14d`) の購入導線が動作
-- 付与は `success_url` ではなく `checkout.session.completed` webhook を正とする
-- 出撃CT は `admin 0秒 / 新規ブースト20秒 / 課金ブースト20秒 / 通常40秒`
-  - 複数ブーストが同時に効く場合は最短CTを採用
-## 8. 中長期の非目標（現時点）
-- 早期PvP実装
-- 人口が薄い段階での直接対人主導化
-- 戦力販売
-
-## 9. リリース品質ゲート
-- `py_compile` 成功
-- 全テスト緑
-- 監査イベントの主要フロー確認
-- CT/UI整合確認
+- `release_flags.lab` が public のときだけ一般公開し、未公開中は管理者限定で確認

@@ -3157,6 +3157,20 @@ body.battle-page .layer-boss-victory-sub {
 .battle-summary-upgraded {
   margin-top: 8px;
 }
+
+.battle-result-compact-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.battle-summary-upgraded-compact {
+  display: grid;
+  gap: 6px;
+}
+
+.battle-section-title-compact {
+  margin: 2px 0 0;
+}
 .battle-progress-card {
   margin-top: 10px;
   border-left: 4px solid rgba(26, 107, 103, 0.45);
@@ -3256,6 +3270,53 @@ body.battle-page .layer-boss-victory-sub {
 .battle-next-card form {
   margin: 0;
 }
+
+#explore-return-form {
+  display: grid;
+  gap: 8px;
+}
+
+#explore-return-btn {
+  width: 100%;
+  min-height: 50px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.battle-return-ct {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+
+.battle-detail-fold {
+  margin-top: 8px;
+}
+
+.battle-detail-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.battle-detail-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.battle-detail-fold > summary::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--accent-cyan);
+}
+
+.battle-detail-fold[open] > summary::before {
+  content: "▾";
+}
+
 .battle-next-card-primary {
   border-color: rgba(26, 107, 103, 0.22);
   background: linear-gradient(180deg, rgba(228, 245, 243, 0.85), rgba(255, 255, 255, 0.98));
@@ -9449,16 +9510,18 @@ body#page-world .world-competition-grid {
 
 .battle-cinematic-v1-damage-pop {
   top: calc(50% - 44px);
-  min-width: 44px;
-  padding: 2px 8px;
+  min-width: 68px;
+  padding: 6px 12px;
   border-radius: 999px;
   background: rgba(10, 15, 27, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22);
   color: #ffe2ad;
-  font-size: 14px;
+  font-size: 24px;
   font-weight: 900;
   text-align: center;
+  line-height: 1;
+  letter-spacing: 0.02em;
 }
 
 .battle-cinematic-v1-damage-pop.target-player {
@@ -9476,6 +9539,17 @@ body#page-world .world-competition-grid {
 .battle-cinematic-v1-damage-pop.is-critical {
   color: #fff1f1;
   border-color: rgba(248, 113, 113, 0.34);
+  font-size: 28px;
+}
+
+.battle-cinematic-v1-damage-pop.is-miss {
+  color: #d8f6ff;
+  border-color: rgba(103, 232, 249, 0.34);
+}
+
+.battle-cinematic-v1-damage-pop.is-block {
+  color: #dbeafe;
+  border-color: rgba(148, 163, 184, 0.42);
 }
 
 .battle-cinematic-v1-hitflash.target-player,
@@ -9760,6 +9834,61 @@ body#page-world .world-competition-grid {
 }
 
 @media (max-width: 720px) {
+  #battle-replay-followup {
+    display: grid;
+    gap: 8px;
+  }
+
+  .battle-result-compact-stack {
+    gap: 6px;
+  }
+
+  .battle-outcome-banner,
+  .battle-summary-upgraded,
+  .battle-next-card,
+  .battle-detail-fold,
+  .enemy-card {
+    margin-top: 0;
+  }
+
+  .battle-outcome-banner,
+  .battle-summary-upgraded,
+  .battle-next-card,
+  .enemy-card {
+    padding: 10px;
+  }
+
+  .battle-section-title {
+    margin: 6px 0 0;
+    font-size: 12px;
+  }
+
+  .battle-next-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .battle-next-card {
+    gap: 8px;
+  }
+
+  .battle-next-card-primary {
+    position: sticky;
+    bottom: 10px;
+    z-index: 14;
+    box-shadow: 0 10px 26px rgba(2, 6, 23, 0.18);
+  }
+
+  #explore-return-btn {
+    min-height: 54px;
+    font-size: 17px;
+  }
+
+  .battle-home-link,
+  .battle-actions-top button {
+    min-height: 42px;
+  }
+
   .battle-cinematic-v1 {
     margin: 6px 0 10px;
     padding: 10px;
@@ -9798,114 +9927,4 @@ body#page-world .world-competition-grid {
     line-height: 1.2;
   }
 
-  .battle-cinematic-v1-progress-row {
-    display: grid;
-    gap: 4px;
-  }
-
-  .battle-cinematic-v1-meta {
-    gap: 4px 8px;
-  }
-
-  .battle-cinematic-v1-area,
-  .battle-cinematic-v1-battle-type,
-  .battle-cinematic-v1-progress,
-  .battle-cinematic-v1-card-turn {
-    font-size: 11px;
-  }
-
-  .battle-cinematic-v1-controls {
-    width: 100%;
-    margin-top: 2px;
-    padding: 6px 0 0;
-  }
-
-  .battle-cinematic-v1-stage {
-    grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
-    min-height: 184px;
-    gap: 6px;
-    padding: 10px 6px 12px;
-  }
-
-  .battle-cinematic-v1-unit.is-player {
-    transform: translateX(2px);
-  }
-
-  .battle-cinematic-v1-unit.is-enemy {
-    transform: translateX(-2px);
-  }
-
-  .battle-cinematic-v1-frame {
-    width: 100%;
-    min-height: 94px;
-  }
-
-  .battle-cinematic-v1-frame img {
-    max-width: 90px;
-    max-height: 90px;
-  }
-
-  .battle-cinematic-v1.is-boss .battle-cinematic-v1-unit.is-enemy .battle-cinematic-v1-frame img {
-    max-width: 100px;
-    max-height: 100px;
-  }
-
-  .battle-cinematic-v1-name {
-    font-size: 12px;
-  }
-
-  .battle-cinematic-v1-hp {
-    width: min(112px, 96%);
-    height: 7px;
-  }
-
-  .battle-cinematic-v1-hitflash.target-player,
-  .battle-cinematic-v1-sparks.target-player {
-    left: 8%;
-  }
-
-  .battle-cinematic-v1-hitflash.target-enemy,
-  .battle-cinematic-v1-sparks.target-enemy {
-    right: 8%;
-  }
-
-  .battle-cinematic-v1-damage-pop.target-player {
-    left: 8%;
-  }
-
-  .battle-cinematic-v1-damage-pop.target-enemy {
-    right: 8%;
-  }
-
-  .battle-cinematic-v1-damage-pop {
-    top: calc(50% - 38px);
-    min-width: 38px;
-    padding: 2px 7px;
-    font-size: 12px;
-  }
-
-  .battle-cinematic-v1-finish-call {
-    bottom: 18px;
-    min-width: 116px;
-    padding: 7px 14px;
-    font-size: 13px;
-  }
-
-  .battle-cinematic-v1-card-action {
-    font-size: 16px;
-  }
-
-  .battle-cinematic-v1-card {
-    padding: 10px 12px;
-    gap: 6px;
-  }
-
-  .battle-cinematic-v1-card-summary {
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  .battle-cinematic-v1-final-label {
-    font-size: 20px;
-  }
-}
+  .battle-cin

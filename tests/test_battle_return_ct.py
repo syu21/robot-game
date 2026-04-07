@@ -49,6 +49,8 @@ class BattleReturnCooldownTests(unittest.TestCase):
             html = resp.get_data(as_text=True)
             self.assertIn('id="explore-return-btn"', html)
             self.assertIn("もう一度出撃（あと", html)
+            self.assertIn('data-ct-ready-at="', html)
+            self.assertIn("入手したパーツを見る", html)
             self.assertIn("disabled", html)
 
     def test_admin_can_return_to_explore_without_cooldown_lock(self):
@@ -59,6 +61,7 @@ class BattleReturnCooldownTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn('id="explore-return-btn"', html)
+            self.assertIn('data-ct-ready-at="0"', html)
             self.assertIn(">もう一度出撃<", html)
             self.assertNotIn("もう一度出撃（あと", html)
 
