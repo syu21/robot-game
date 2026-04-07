@@ -325,6 +325,9 @@
       actorUnit && actorUnit.classList.add("is-acting");
       if (projectile && step.projectile === "shot") {
         projectile.classList.add("is-live", `from-${step.actor}`, `to-${step.target}`);
+        if (step.hit_type === "crit" || step.is_finisher) {
+          projectile.classList.add("is-critical");
+        }
       }
       if (step.hit_type === "miss") {
         targetUnit && targetUnit.classList.add("is-evading");

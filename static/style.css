@@ -9496,12 +9496,25 @@ body#page-world .world-competition-grid {
 
 .battle-cinematic-v1-projectile {
   top: 50%;
-  width: 100px;
-  height: 3px;
+  width: 136px;
+  height: 6px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(103, 232, 249, 1), rgba(255, 255, 255, 0));
-  box-shadow: 0 0 16px rgba(103, 232, 249, 0.42);
+  background:
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.96), transparent 16%),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0),
+      rgba(125, 247, 255, 0.92) 18%,
+      rgba(103, 232, 249, 1) 52%,
+      rgba(255, 255, 255, 0.72) 76%,
+      rgba(255, 255, 255, 0)
+    );
+  box-shadow:
+    0 0 18px rgba(103, 232, 249, 0.62),
+    0 0 34px rgba(103, 232, 249, 0.28);
   transform-origin: left center;
+  z-index: 5;
+  filter: saturate(1.18);
 }
 
 .battle-cinematic-v1-projectile.from-player {
@@ -9512,12 +9525,28 @@ body#page-world .world-competition-grid {
   right: calc(50% - 34px);
 }
 
+.battle-cinematic-v1-projectile.is-critical {
+  background:
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.98), transparent 18%),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0),
+      rgba(255, 209, 102, 0.94) 14%,
+      rgba(248, 113, 113, 0.96) 48%,
+      rgba(255, 241, 214, 0.84) 76%,
+      rgba(255, 255, 255, 0)
+    );
+  box-shadow:
+    0 0 20px rgba(248, 113, 113, 0.72),
+    0 0 38px rgba(251, 191, 36, 0.34);
+}
+
 .battle-cinematic-v1-projectile.from-player.to-enemy.is-live {
-  animation: battleCinematicProjectilePlayer 260ms ease-out forwards;
+  animation: battleCinematicProjectilePlayer 340ms cubic-bezier(0.18, 0.8, 0.24, 1) forwards;
 }
 
 .battle-cinematic-v1-projectile.from-enemy.to-player.is-live {
-  animation: battleCinematicProjectileEnemy 260ms ease-out forwards;
+  animation: battleCinematicProjectileEnemy 340ms cubic-bezier(0.18, 0.8, 0.24, 1) forwards;
 }
 
 .battle-cinematic-v1-hitflash,
@@ -9727,12 +9756,15 @@ body#page-world .world-competition-grid {
     opacity: 0;
     transform: translateX(0) scaleX(0.2);
   }
-  18% {
+  12% {
+    opacity: 0.9;
+  }
+  42% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: translateX(128px) scaleX(1.16);
+    transform: translateX(156px) scaleX(1.22);
   }
 }
 
@@ -9741,12 +9773,15 @@ body#page-world .world-competition-grid {
     opacity: 0;
     transform: translateX(0) scaleX(0.2);
   }
-  18% {
+  12% {
+    opacity: 0.9;
+  }
+  42% {
     opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: translateX(-128px) scaleX(1.16);
+    transform: translateX(-156px) scaleX(1.22);
   }
 }
 
