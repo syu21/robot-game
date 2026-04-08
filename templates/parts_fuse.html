@@ -55,10 +55,16 @@
       {% if last_fuse_result.get('from_plus') is not none and last_fuse_result.get('to_plus') is not none %}
         / +{{ last_fuse_result.get('from_plus') }} → +{{ last_fuse_result.get('to_plus') }}
       {% endif %}
+      {% if last_fuse_result.get('batch_mode') %}
+        / {{ last_fuse_result.get('batch_count') }}回実行
+      {% endif %}
       {% if last_fuse_result.get('coin_cost') is not none %}
         / -{{ last_fuse_result.get('coin_cost') }}コイン
       {% endif %}
     </div>
+    {% if last_fuse_result.get('power_delta_estimate') %}
+    <div class="part-meta-line">推定戦闘力増分 {{ "%+d"|format(last_fuse_result.get('power_delta_estimate')|int) }}</div>
+    {% endif %}
     <div class="robot-time">素材に使った個体: {% for cid in last_fuse_result.get('consumed_ids', []) %}#{{ cid }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
     {% if last_fuse_result.get('created_part') %}
       {% set cp = last_fuse_result['created_part'] %}
@@ -89,6 +95,75 @@
   {% endif %}
 
   {% if selected_mode == 'select' %}
+  {% if batch_candidates %}
+  <div class="card fuse-batch-panel">
+    <div><b>まとめて強化</b></div>
+    <div class="robot-time">同名・同レアの所持個体だけを使って、安全に成立するぶんだけ一気に強化します。</div>
+    <div class="part-card-grid">
+      {% for candidate in batch_candidates %}
+      <form
+        method="post"
+        class="robot-card part-compare-card fuse-batch-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}"
+        data-submit-lock="1"
+        data-loading-text="まとめて強化中..."
+      >
+        <input type="hidden" name="mode" value="batch" />
+        <input type="hidden" name="base_id" value="{{ candidate['base_id'] }}" />
+        {% if selected_part_type %}
+        <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+        {% endif %}
+        {% if selected_rarity %}
+        <input type="hidden" name="rarity" value="{{ selected_rarity }}" />
+        {% endif %}
+        {% if selected_plus is not none %}
+        <input type="hidden" name="plus" value="{{ selected_plus }}" />
+        {% endif %}
+        <div class="part-card-topline">
+          <span class="part-check"><span>残る個体</span></span>
+          <span class="robot-time">{{ candidate['batch_count'] }}回強化</span>
+        </div>
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ candidate['image_url'] }}" alt="{{ candidate['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div class="robot-id">{{ candidate['display_name'] }}</div>
+            <div class="part-chip-row">
+              <span class="part-chip">{{ candidate['part_type_label'] }}</span>
+              <span class="part-chip rarity-{{ candidate['rarity_label']|lower }}">{{ candidate['rarity_label'] }}</span>
+              <span class="part-chip">{{ candidate['expected_plus_text'] }}</span>
+              {% if candidate.get('is_equipped') %}
+              <span class="part-chip is-equipped">装備中ベース</span>
+              {% endif %}
+            </div>
+            <div class="part-meta-line">消える個体 {{ candidate['consumed_count'] }} / -{{ candidate['cost_total'] }}コイン</div>
+            <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
+            <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
+          </div>
+        </div>
+        {{ stat_grid(candidate['stat_rows']) }}
+        <div class="part-subsection">
+          <div class="part-subsection-title">素材に使う個体</div>
+          <div class="part-mini-grid">
+            {% for material in candidate['material_cards'] %}
+            <div class="part-mini-card">
+              <img class="part-mini-image" src="{{ material['image_url'] }}" alt="{{ material['display_name'] }}" loading="lazy" decoding="async" />
+              <div>
+                <div class="part-mini-name">#{{ material['id'] }} {{ material['display_name'] }}</div>
+                <div class="robot-time">+{{ material['plus'] }} / {{ material['status_label'] }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% if candidate['consumed_count'] > candidate['material_cards']|length %}
+          <div class="robot-time">ほか {{ candidate['consumed_count'] - (candidate['material_cards']|length) }} 個体を素材に使います。</div>
+          {% endif %}
+        </div>
+        <button type="submit" class="fuse-submit-large">この組み合わせをまとめて強化</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <form
     method="post"
     class="card fuse-panel"

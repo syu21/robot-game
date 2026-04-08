@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% from '_part_ui.html' import stat_grid %}
+{% block content %}
+<div class="robot-maintenance-page">
+  <h1>機体整備</h1>
+
+  <section class="card robot-maintenance-hero">
+    <div class="robot-maintenance-hero-copy">
+      <div class="robot-id">{{ robot['name'] }} <span class="robot-part">#{{ robot['id'] }}</span></div>
+      {% if current_profile and current_profile.get('signature_label') %}
+      <div class="robot-part">思想: {{ current_profile['signature_label'] }}</div>
+      {% endif %}
+      {% if current_profile and current_profile.get('focus_line') %}
+      <div class="robot-time">注目能力: {{ current_profile['focus_line'] }}</div>
+      {% endif %}
+      <div class="robot-part">総合値 {{ robot['power']|int }}</div>
+      <div class="upgrade-cost">部位ごとの差分を見ながら、今の機体を壊さずに整えていけます。</div>
+      <div class="home-inline-actions">
+        <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=robot['id']) }}">個別ページへ戻る</a>
+        <a class="battle-home-link" href="{{ url_for('robots') }}">所有ロボ一覧</a>
+      </div>
+    </div>
+    {% if robot.get('image_url') %}
+    <img class="robot-thumb robot-maintenance-thumb" src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
+    {% endif %}
+  </section>
+
+  <section class="card robot-maintenance-loadout">
+    <div><b>現在の構成</b></div>
+    <div class="robot-maintenance-current-grid">
+      {% for slot_key, slot_label in [('HEAD', '頭部'), ('RIGHT_ARM', '右腕'), ('LEFT_ARM', '左腕'), ('LEGS', '脚部')] %}
+      {% set item = current_part_items.get(slot_key) %}
+      <div class="robot-maintenance-current-card">
+        <div class="robot-time">{{ slot_label }}</div>
+        {% if item %}
+        <div class="robot-part">{{ item['display_name_with_plus'] }}</div>
+        <div class="upgrade-cost">総合値 {{ item['total_value'] }} / {{ item['focus_line'] }}</div>
+        {% else %}
+        <div class="robot-part">未装備</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div class="robot-maintenance-current-card">
+        <div class="robot-time">装飾</div>
+        <div class="robot-part">
+          {% if current_decor_id %}
+          装着中
+          {% else %}
+          なし
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <nav class="robot-maintenance-tabs" aria-label="整備部位">
+    {% for tab in slot_tabs %}
+    <a class="robot-maintenance-tab{% if tab['is_active'] %} is-active{% endif %}" href="{{ tab['url'] }}">{{ tab['label'] }}</a>
+    {% endfor %}
+  </nav>
+
+  <section class="card robot-maintenance-panel">
+    <div class="robot-maintenance-panel-head">
+      <div>
+        <div><b>{{ maintenance_slot['label'] }}を整備</b></div>
+        <div class="upgrade-cost">1部位ずつ差分を見て確定します。ロボ名や履歴はそのまま続きます。</div>
+      </div>
+    </div>
+
+    {% if selected_slot == 'DECOR' %}
+    <form method="post" class="robot-maintenance-form">
+      <input type="hidden" name="slot" value="DECOR" />
+      <div class="robot-maintenance-option-grid is-decor">
+        {% for option in decor_options %}
+        <label class="robot-card robot-maintenance-option{% if option['is_selected'] %} is-current{% endif %}">
+          <div class="part-check">
+            <input type="radio" name="decor_asset_id" value="{{ option['id'] }}" {% if option['is_selected'] %}checked{% endif %} />
+            <span>{% if option['is_selected'] %}現在の構成{% else %}この装飾にする{% endif %}</span>
+          </div>
+          <div class="robot-part">{{ option['label'] }}</div>
+          {% if option['image_url'] %}
+          <img class="robot-maintenance-decor-image" src="{{ option['image_url'] }}" alt="{{ option['label'] }}" loading="lazy" />
+          {% else %}
+          <div class="upgrade-cost">見た目を軽くしたい時はこちら。</div>
+          {% endif %}
+        </label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="fuse-submit-large">装飾を更新する</button>
+    </form>
+    {% else %}
+    {% set current_item = current_part_items.get(maintenance_slot['part_type']) %}
+    <div class="robot-maintenance-current-focus">
+      <div class="robot-time">現在装備</div>
+      {% if current_item %}
+      <div class="robot-maintenance-current-focus-card">
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ current_item['display_image_url'] }}" alt="{{ current_item['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div class="robot-id">{{ current_item['display_name_with_plus'] }}</div>
+            <div class="part-meta-line">総合値 {{ current_item['total_value'] }} / 注目 {{ current_item['focus_line'] }}</div>
+          </div>
+        </div>
+        {{ stat_grid(current_item['stat_rows']) }}
+      </div>
+      {% endif %}
+    </div>
+    <form method="post" class="robot-maintenance-form">
+      <input type="hidden" name="slot" value="{{ selected_slot }}" />
+      <div class="robot-maintenance-option-grid">
+        {% for candidate in maintenance_candidates %}
+        <label class="robot-card part-compare-card robot-maintenance-option{% if candidate.get('is_current') %} is-current{% endif %}">
+          <div class="part-card-topline">
+            <span class="part-check">
+              <input type="radio" name="part_instance_id" value="{{ candidate['instance_id'] }}" {% if candidate.get('is_current') %}checked{% endif %} />
+              <span>{% if candidate.get('is_current') %}現在装備{% else %}この候補で整備{% endif %}</span>
+            </span>
+            <span class="robot-time">{{ candidate['status_label'] }}</span>
+          </div>
+          <div class="part-card-main">
+            <img class="part-card-image" src="{{ candidate.get('display_image_url') or candidate.get('image_url') }}" alt="{{ candidate['display_name'] }}" loading="lazy" decoding="async" />
+            <div class="part-card-copy">
+              <div class="robot-id">{{ candidate.get('display_name_with_plus') or candidate['display_name'] }}</div>
+              <div class="part-chip-row">
+                <span class="part-chip">{{ candidate['part_type_label'] }}</span>
+                <span class="part-chip rarity-{{ candidate['rarity_label']|lower }}">{{ candidate['rarity_label'] }}</span>
+                <span class="part-chip">+{{ candidate['plus'] }}</span>
+              </div>
+              <div class="part-meta-line">
+                総合値 {{ candidate['total_value'] }}
+                {% if candidate.get('summary_total') and candidate['summary_total'].get('value_text') %}
+                / {{ candidate['summary_total']['value_text'] }}
+                {% elif candidate.get('compare_total_delta_text') %}
+                / {{ candidate['compare_total_delta_text'] }}
+                {% endif %}
+              </div>
+              <div class="part-meta-line">注目 {{ candidate['focus_line'] }}</div>
+              {% if candidate.get('robot_profile') and candidate['robot_profile'].get('signature_label') %}
+              <div class="part-meta-line">思想: {{ candidate['robot_profile']['signature_label'] }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {{ stat_grid(candidate['stat_rows']) }}
+          <div class="robot-maintenance-delta-block">
+            <div class="part-subsection-title">機体全体の差分</div>
+            <div class="robot-maintenance-delta-grid">
+              {% for row in candidate.get('robot_stat_rows', []) %}
+              <div class="robot-maintenance-delta-item is-{{ row.get('delta_class') or 'flat' }}">
+                <span>{{ row['label'] }}</span>
+                <strong>{{ row['delta_text'] }}</strong>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+      <button type="submit" class="fuse-submit-large">この部位を整備する</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

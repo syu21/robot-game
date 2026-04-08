@@ -1,10 +1,11 @@
 # 編成・強化・進化仕様
 
-最終更新日: 2026-04-07
+最終更新日: 2026-04-08
 
 ## 1. 範囲
 - 所持パーツ一覧: `/parts`
 - ロボ編成: `/build`, `/build/confirm`
+- 機体整備: `/robots/<id>/maintenance`
 - パーツ強化: `/parts/strengthen`（`/parts/fuse`互換）
 - 進化合成: `/parts/evolve`
 
@@ -73,6 +74,13 @@
   - `/records` のユーザー表示
   - `/comms/world`, `/comms/rooms` のユーザー表示
 
+### 3.6 機体整備
+- 編成済みロボを壊さずに `HEAD / RIGHT_ARM / LEFT_ARM / LEGS / DECOR` を1部位ずつ差し替える
+- 前面文言は `機体整備` に統一し、単なる `交換` ではなく整備 / 手入れの文脈で見せる
+- 候補ごとに `総合値差分 / 6ステ差分 / 注目能力 / 思想変化` を確認してから確定できる
+- 確定時は `robot_instance_parts` 更新後に `composed_image_path / icon_32_path` を再生成し、ホーム・ランキング・小型アイコン表示まで即時反映させる
+- 監査は `audit.robot.maintenance` を使い、`robot_instance_id / changed_slots / before_part_ids / after_part_ids / stat_delta / power_delta` を残す
+
 ## 4. DECOR表示方針
 - DECORはバッジ的に小型表示（本体中心を隠さない）
 - 所有DECORのみ選択可
@@ -102,6 +110,15 @@
 ### 5.4 監査
 - `audit.fuse`
 - payloadに成功可否、消費ID、増分などを保持
+- `まとめて強化` でも既存 `audit.fuse` を使い、payload に `batch_mode: true`, `batch_count`, `power_delta_estimate` を追加する
+
+### 5.5 まとめて強化
+- `/parts/strengthen` に `まとめて強化` ブロックを追加する
+- ルール自体は個別強化と同じく `ベース1 + 素材2 -> +1固定` を繰り返すだけで、別ルールは作らない
+- 対象は `同名 / 同レア` グループごと
+- 装備中素材は自動消費しない
+- 実行前に `残る個体 / 消える個体数 / 強化後の +値 / 総コイン` を明示する
+- 実行後は `何回実行したか / 何が消えたか / +値がどうなったか` を結果面に残す
 
 ## 6. 進化合成
 ### 6.1 仕様
@@ -116,4 +133,14 @@
 ### 6.3 比較表示
 - 候補カード上で `進化前 -> 進化後` を見比べられる
 - 必須表示は `パーツ名 / 部位 / レアリティ / +値 / 6ステ`
-- `強�
+- `強化値と個体性能はそのまま引き継がれます` を短く補助表示する
+
+### 6.4 監査
+- `audit.part.evolve`
+
+## 7. 表示名
+- 優先順位:
+  1. `display_name_ja`
+  2. 自動生成名
+  3. 旧name列
+  4. part_key

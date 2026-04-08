@@ -260,6 +260,99 @@ class HomeNextActionTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ在庫: 所持 4 / 4 | 保管 2", html)
 
+    def test_home_today_progress_card_shows_empty_state(self):
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("今日の進捗", html)
+        self.assertIn("まだ動いていません", html)
+
+    def test_home_and_progress_show_today_progress_metrics(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, action_key, payload_json, user_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                    "explore",
+                    json.dumps({"result": {"win": True}}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, action_key, payload_json, user_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                    "explore",
+                    json.dumps({"result": {"win": False}}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            for _ in range(3):
+                db.execute(
+                    "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, ?, ?, ?)",
+                    (now, game_app.AUDIT_EVENT_TYPES["DROP"], json.dumps({}, ensure_ascii=False), self.user_id),
+                )
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, ?, ?, ?)",
+                (now, game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"], json.dumps({}, ensure_ascii=False), self.user_id),
+            )
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, ?, ?, ?)",
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"],
+                    json.dumps({"power_delta_estimate": 9}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, ?, ?, ?)",
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["FUSE"],
+                    json.dumps({"power_delta_estimate": 4}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, action_key, delta_coins, payload_json, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    game_app.AUDIT_EVENT_TYPES["COIN_DELTA"],
+                    "explore",
+                    33,
+                    json.dumps({"area_key": "layer_1"}, ensure_ascii=False),
+                    self.user_id,
+                ),
+            )
+            db.commit()
+
+        client = self._new_client()
+        home_resp = client.get("/home")
+        self.assertEqual(home_resp.status_code, 200)
+        home_html = home_resp.get_data(as_text=True)
+        self.assertIn("今日の探索", home_html)
+        self.assertIn("獲得パーツ", home_html)
+        self.assertIn("戦闘力増分", home_html)
+        self.assertIn("+13", home_html)
+        self.assertIn("獲得コイン +33", home_html)
+
+        progress_resp = client.get("/progress")
+        self.assertEqual(progress_resp.status_code, 200)
+        progress_html = progress_resp.get_data(as_text=True)
+        self.assertIn("ボス撃破", progress_html)
+        self.assertIn("進化回数", progress_html)
+        self.assertIn("強化回数", progress_html)
+        self.assertIn("+13", progress_html)
+
     def test_home_next_action_never_shows_showcase_or_ranking_links(self):
         self._create_active_robot()
         client = self._new_client()

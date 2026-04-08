@@ -28,6 +28,9 @@
         <button type="submit">{% if robot['is_public'] %}展示を非公開{% else %}展示を公開{% endif %}</button>
       </form>
       {% endif %}
+      {% if can_maintain %}
+      <p class="link"><a class="battle-home-link" href="{{ url_for('robot_maintenance', instance_id=robot['id']) }}">機体整備</a></p>
+      {% endif %}
     </div>
     {% if robot.get('image_url') %}
       <img class="robot-thumb" src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />

@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import time
@@ -218,6 +219,53 @@ class PartsFuseRouteTests(unittest.TestCase):
                 (self.user_id,),
             ).fetchone()
             self.assertEqual(int(row["p"] or 0), int(game_app.MAX_PART_PLUS))
+
+    def test_fuse_batch_uses_inventory_materials_only(self):
+        ids = self._seed_same_part_instances([0, 0, 0, 0, 0])
+        base_id = ids[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE part_instances SET status = 'equipped' WHERE id = ?", (base_id,))
+            db.commit()
+
+        client = self._client()
+        resp = client.post("/parts/fuse", data={"mode": "batch", "base_id": str(base_id)}, follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        result_page = client.get(resp.headers["Location"])
+        self.assertEqual(result_page.status_code, 200)
+        html = result_page.get_data(as_text=True)
+        self.assertIn("まとめ強化", html)
+        self.assertIn("2回実行", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            base_row = db.execute(
+                "SELECT plus, status FROM part_instances WHERE id = ?",
+                (base_id,),
+            ).fetchone()
+            self.assertEqual(int(base_row["plus"] or 0), 2)
+            self.assertEqual(str(base_row["status"]), "equipped")
+
+            inventory_count = db.execute(
+                "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(inventory_count["c"] or 0), 0)
+
+            audit_row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = 'audit.fuse'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(audit_row)
+            payload = json.loads(audit_row["payload_json"] or "{}")
+            self.assertTrue(bool(payload.get("batch_mode")))
+            self.assertEqual(int(payload.get("batch_count") or 0), 2)
 
 
 if __name__ == "__main__":

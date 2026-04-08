@@ -1,7 +1,7 @@
 import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.44"
+APP_VERSION = "0.1.45"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
 LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
 LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
@@ -170,6 +170,7 @@ AUDIT_EVENT_TYPES = {
     "BUILD_CONFIRM": "audit.build.confirm",
     "ROBOT_DECOMPOSE": "audit.robot.decompose",
     "ROBOT_RENAME": "audit.robot.rename",
+    "ROBOT_MAINTENANCE": "audit.robot.maintenance",
     "CHAMPION_SELECT": "audit.champion.select",
     "CHAMPION_CHALLENGE": "audit.champion.challenge",
     "CHAMPION_DEFEAT": "audit.champion.defeat",

@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-04-07
+最終更新日: 2026-04-08
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -29,6 +29,8 @@
 - [ ] 画面が縦長化しすぎない
 
 ## 4. 編成/育成
+- [ ] `/home` の `今日の進捗` で `探索 / 獲得パーツ / 戦闘力増分 / ボス撃破 / 進化 / 強化` が見える
+- [ ] 今日まだ動いていないときは `まだ動いていません` の空表示になる
 - [ ] `/parts` で `画像 / 部位 / レアリティ / +値 / 6ステ / 装備中表示 / 総合値` が確認できる
 - [ ] `/parts` の部位フィルター `すべて / 頭 / 右腕 / 左腕 / 脚` が動く
 - [ ] `/parts` のチェック文言が `選択` で統一され、主操作が `見比べる / 破棄` に分かれている
@@ -46,6 +48,9 @@
 - [ ] `/build` で4部位必須 + DECOR任意
 - [ ] `/build` の候補カードで `現在装備との差分` が先頭に出て、必要時だけ `詳細を開く` で 6ステ実数を確認できる
 - [ ] 保存枠満杯時に保存ブロック
+- [ ] `/robots/<id>/maintenance` で1部位ずつ差し替え候補を見て整備できる
+- [ ] 機体整備後に `composed_image_path / icon_32_path` が更新される
+- [ ] `audit.robot.maintenance` が `changed_slots / before_part_ids / after_part_ids / stat_delta / power_delta` つきで残る
 - [ ] `/parts/strengthen` で候補0件時の案内表示
 - [ ] `/parts/strengthen` で保管中個体のため成立していない場合、`/parts` の保管確認導線が出る
 - [ ] `/parts/strengthen` の部位フィルターが動く
@@ -56,6 +61,9 @@
 - [ ] `/parts/strengthen` で `強化前 -> 強化後` 差分が6ステで見える
 - [ ] `/parts/strengthen` で装備中ベースと消える素材2個が分かる
 - [ ] `/parts/strengthen` の失敗時に理由が結果面で分かる
+- [ ] `/parts/strengthen` の `まとめて強化` が装備中素材を勝手に消費しない
+- [ ] `/parts/strengthen` の `まとめて強化` で `残る個体 / 消える個体数 / 強化後 +値 / 実行回数` が事前に分かる
+- [ ] `まとめて強化` 実行後に `batch_mode / batch_count` つきの `audit.fuse` が残る
 - [ ] `/parts/evolve` でコア不足時に500にならない
 - [ ] `/parts/evolve` の部位フィルターが動く
 - [ ] `/parts/evolve` が `N + 進化コア1 -> R` で動作
@@ -121,4 +129,8 @@
 - [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
 - [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
 - [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
-- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer �
+- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
+- [ ] `backups/` に当日バックアップがある
+- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
+- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
+- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す

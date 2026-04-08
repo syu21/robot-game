@@ -364,17 +364,17 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("🏆", header_html)
         self.assertIn("user-trophy-badge", header_html)
 
-    def test_changelog_shows_latest_2026_04_07_entry(self):
+    def test_changelog_shows_latest_2026_04_08_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.44 - 2026/04/07", html)
-        self.assertIn("チャンプ戦の弾演出を見やすく調整", html)
-        self.assertIn("battle-cinematic-v1", html)
-        self.assertIn("projectile", html)
-        self.assertIn("キャッシュ切り替え", html)
-        self.assertLess(html.index("v0.1.44 - 2026/04/07"), html.index("v0.1.43 - 2026/04/07"))
+        self.assertIn("v0.1.45 - 2026/04/08", html)
+        self.assertIn("今日の進捗と機体整備、まとめ強化を追加", html)
+        self.assertIn("今日の進捗", html)
+        self.assertIn("機体整備", html)
+        self.assertIn("まとめて強化", html)
+        self.assertLess(html.index("v0.1.45 - 2026/04/08"), html.index("v0.1.44 - 2026/04/07"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

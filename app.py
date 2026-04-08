@@ -197,6 +197,14 @@ BUILD_OFFSET_CONTROL_DEFS = (
     {"slot": "l_arm", "label": "LEFT_ARM（左腕）", "preview_target": "larm"},
     {"slot": "legs", "label": "LEGS（脚）", "preview_target": "legs"},
 )
+ROBOT_MAINTENANCE_SLOT_DEFS = (
+    {"slot": "HEAD", "slot_key": "head", "label": "頭部", "part_type": "HEAD", "instance_col": "head_part_instance_id", "key_col": "head_key"},
+    {"slot": "RIGHT_ARM", "slot_key": "r_arm", "label": "右腕", "part_type": "RIGHT_ARM", "instance_col": "r_arm_part_instance_id", "key_col": "r_arm_key"},
+    {"slot": "LEFT_ARM", "slot_key": "l_arm", "label": "左腕", "part_type": "LEFT_ARM", "instance_col": "l_arm_part_instance_id", "key_col": "l_arm_key"},
+    {"slot": "LEGS", "slot_key": "legs", "label": "脚部", "part_type": "LEGS", "instance_col": "legs_part_instance_id", "key_col": "legs_key"},
+    {"slot": "DECOR", "slot_key": "decor", "label": "装飾", "part_type": None, "instance_col": None, "key_col": None},
+)
+ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY = {item["slot"]: item for item in ROBOT_MAINTENANCE_SLOT_DEFS}
 HOME_COMM_PREVIEW_LIMIT = 12
 COMM_ROOM_DEFS = (
     {
@@ -4866,6 +4874,9 @@ def _build_picker_part_item(part_row, *, compare_item=None):
     item["estimate_element"] = (preview_payload.get("element") or "NORMAL").upper()
     card = _part_card_payload(item, can_discard=False)
     item["part_type_label"] = card["part_type_label"]
+    item["rarity_label"] = card["rarity_label"]
+    item["status_label"] = card["status_label"]
+    item["image_url"] = card["image_url"]
     item["stat_rows"] = card["stat_rows"]
     item["focus_rows"] = card["focus_rows"]
     item["focus_line"] = card["focus_line"]
@@ -9808,6 +9819,55 @@ def _build_stat_comparison_rows(current_stats, candidate_stats):
     return rows
 
 
+def _normalize_maintenance_slot(slot):
+    value = str(slot or "").strip().upper()
+    return value if value in ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY else "HEAD"
+
+
+def _robot_payload_from_part_picker_item(item):
+    if not item:
+        return None
+    return {
+        "part_type": item.get("part_type"),
+        "key": item.get("key"),
+        "series": (item.get("instance_series") or item.get("series")),
+        "rarity": (item.get("instance_rarity") or item.get("rarity") or "N"),
+        "element": (item.get("instance_element") or item.get("element") or "NORMAL"),
+        "plus": int(item.get("plus") or 0),
+        "w_hp": item.get("w_hp"),
+        "w_atk": item.get("w_atk"),
+        "w_def": item.get("w_def"),
+        "w_spd": item.get("w_spd"),
+        "w_acc": item.get("w_acc"),
+        "w_cri": item.get("w_cri"),
+    }
+
+
+def _robot_profile_from_estimate(estimate):
+    if not estimate:
+        return None
+    stats = dict((estimate or {}).get("stats") or {})
+    stat_obj = {
+        "stats": stats,
+        "power": float((estimate or {}).get("power") or 0.0),
+        "archetype": compute_archetype(stats),
+        "robot_style": _robot_style_from_final_stats(stats),
+    }
+    return _robot_profile_view(stat_obj)
+
+
+def _build_today_progress_cards(today_progress):
+    progress = dict(today_progress or {})
+    return [
+        {"label": "今日の探索", "value": int(progress.get("explore_count") or 0)},
+        {"label": "獲得パーツ", "value": int(progress.get("part_drop_count") or 0)},
+        {"label": "戦闘力増分", "value": str(progress.get("power_gain_text") or "+0"), "accent": "gain"},
+        {"label": "ボス撃破", "value": int(progress.get("boss_defeat_count") or 0)},
+        {"label": "進化回数", "value": int(progress.get("evolve_count") or 0)},
+        {"label": "強化回数", "value": int(progress.get("fuse_count") or 0)},
+    ]
+
+
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
@@ -12805,40 +12865,112 @@ def _today_progress(db, user_id):
         SELECT COUNT(*) AS c
         FROM world_events_log
         WHERE user_id = ?
-          AND event_type = 'audit.explore.end'
+          AND event_type = ?
           AND created_at >= ? AND created_at < ?
         """,
-        (user_id, start_ts, end_ts),
+        (user_id, AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
     ).fetchone()["c"]
     win_count = db.execute(
         """
         SELECT COALESCE(SUM(CASE WHEN CAST(json_extract(payload_json, '$.result.win') AS INTEGER) = 1 THEN 1 ELSE 0 END), 0) AS c
         FROM world_events_log
         WHERE user_id = ?
-          AND event_type = 'audit.explore.end'
+          AND event_type = ?
           AND created_at >= ? AND created_at < ?
         """,
-        (user_id, start_ts, end_ts),
+        (user_id, AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
     ).fetchone()["c"]
     coins = db.execute(
         """
         SELECT COALESCE(SUM(COALESCE(delta_coins, CAST(json_extract(payload_json, '$.reward_coin') AS INTEGER), 0)), 0) AS c
         FROM world_events_log
         WHERE user_id = ?
-          AND event_type = 'audit.coin.delta'
+          AND event_type = ?
           AND (
                 action_key = 'explore'
                 OR CAST(json_extract(payload_json, '$.area_key') AS TEXT) IS NOT NULL
               )
           AND created_at >= ? AND created_at < ?
         """,
-        (user_id, start_ts, end_ts),
+        (user_id, AUDIT_EVENT_TYPES["COIN_DELTA"], start_ts, end_ts),
     ).fetchone()["c"]
-    return {
+    part_drop_count = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ? AND created_at < ?
+        """,
+        (user_id, AUDIT_EVENT_TYPES["DROP"], start_ts, end_ts),
+    ).fetchone()["c"]
+    boss_defeat_count = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ? AND created_at < ?
+        """,
+        (user_id, AUDIT_EVENT_TYPES["BOSS_DEFEAT"], start_ts, end_ts),
+    ).fetchone()["c"]
+    evolve_count = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ? AND created_at < ?
+        """,
+        (user_id, AUDIT_EVENT_TYPES["PART_EVOLVE"], start_ts, end_ts),
+    ).fetchone()["c"]
+    fuse_count = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ? AND created_at < ?
+        """,
+        (user_id, AUDIT_EVENT_TYPES["FUSE"], start_ts, end_ts),
+    ).fetchone()["c"]
+    power_gain = db.execute(
+        """
+        SELECT COALESCE(SUM(COALESCE(
+            CAST(json_extract(payload_json, '$.power_delta_estimate') AS INTEGER),
+            CAST(json_extract(payload_json, '$.power_delta') AS INTEGER),
+            0
+        )), 0) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type IN (?, ?, ?)
+          AND created_at >= ? AND created_at < ?
+        """,
+        (
+            user_id,
+            AUDIT_EVENT_TYPES["FUSE"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            AUDIT_EVENT_TYPES["ROBOT_MAINTENANCE"],
+            start_ts,
+            end_ts,
+        ),
+    ).fetchone()["c"]
+    progress = {
         "explore_count": int(explore_count or 0),
         "win_count": int(win_count or 0),
         "coin_total": int(coins or 0),
+        "part_drop_count": int(part_drop_count or 0),
+        "power_gain": int(power_gain or 0),
+        "boss_defeat_count": int(boss_defeat_count or 0),
+        "evolve_count": int(evolve_count or 0),
+        "fuse_count": int(fuse_count or 0),
     }
+    progress["is_empty"] = not any(
+        int(progress.get(key) or 0)
+        for key in ("explore_count", "win_count", "coin_total", "part_drop_count", "power_gain", "boss_defeat_count", "evolve_count", "fuse_count")
+    )
+    progress["power_gain_text"] = f"{progress['power_gain']:+d}"
+    return progress
 
 
 def _home_boss_pity_status(db, user_id):
@@ -15272,6 +15404,7 @@ PERSONAL_LOG_EVENT_TYPES = (
     AUDIT_EVENT_TYPES["DROP"],
     AUDIT_EVENT_TYPES["FUSE"],
     AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+    AUDIT_EVENT_TYPES["ROBOT_MAINTENANCE"],
     AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
     AUDIT_EVENT_TYPES["EXPLORE_END"],
@@ -16076,6 +16209,30 @@ def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
                     "link_url": url_for("robots"),
                 }
             )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["ROBOT_MAINTENANCE"]:
+            robot_name = str(payload.get("robot_name") or "機体").strip() or "機体"
+            changed_slots = [str(slot) for slot in (payload.get("changed_slots") or []) if str(slot)]
+            slot_labels = [ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY.get(slot, {}).get("label", slot) for slot in changed_slots]
+            stat_delta = payload.get("stat_delta") or {}
+            delta_bits = []
+            for key in ("hp", "atk", "def", "spd", "acc", "cri"):
+                delta_value = int(stat_delta.get(key) or 0)
+                if delta_value:
+                    delta_bits.append(f"{_stat_label(key)} {_delta_text(delta_value)}")
+            item = dict(base)
+            item.update(
+                {
+                    "title": "機体整備",
+                    "text": f"{robot_name} を整備しました。",
+                    "accent": "weekly",
+                    "link_url": url_for("robots"),
+                }
+            )
+            if slot_labels:
+                item["meta_lines"].append("変更部位: " + " / ".join(slot_labels))
+            if delta_bits:
+                item["meta_lines"].append("差分: " + " / ".join(delta_bits[:3]))
             items.append(item)
         elif event_type == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]:
             boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
@@ -17356,6 +17513,16 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.45",
+            "date": "2026/04/08",
+            "title": "今日の進捗と機体整備、まとめ強化を追加",
+            "notes": [
+                "ホーム上部に `今日の進捗` カードを追加し、探索回数 / 獲得パーツ / 戦闘力増分 / ボス撃破 / 進化 / 強化 を数字中心で見える化",
+                "ロボ個別ページから `機体整備` へ入れるようにし、編成済みロボを壊さず 1部位ずつ差し替えて差分確認・画像再生成までできるよう改善",
+                "`/parts/strengthen` に `まとめて強化` を追加し、装備中素材を自動消費せず安全な範囲だけ同名同レアを一括処理できるようにした",
+            ],
+        },
         {
             "version": "0.1.44",
             "date": "2026/04/07",
@@ -19217,6 +19384,7 @@ def home():
         else False
     )
     today_progress = _today_progress(db, user["id"])
+    today_progress_cards = _build_today_progress_cards(today_progress)
     first_win_banner = None
     boss_pity_status = _home_boss_pity_status(db, user["id"])
     boss_alert_status = _home_boss_alert_status(db, user["id"])
@@ -19551,6 +19719,7 @@ def home():
             intro_npc_image=intro_npc_image,
             main_robot_weekly_fit=main_robot_weekly_fit,
             today_progress=today_progress,
+            today_progress_cards=today_progress_cards,
             boss_pity_status=boss_pity_status,
             boss_alert_status=boss_alert_status,
             boss_alert_active=boss_alert_hint["boss_alert_active"],
@@ -20217,7 +20386,11 @@ def progress_view():
     if not user:
         return redirect(url_for("login"))
     today_progress = _today_progress(db, int(user["id"]))
-    return render_template("progress.html", today_progress=today_progress)
+    return render_template(
+        "progress.html",
+        today_progress=today_progress,
+        today_progress_cards=_build_today_progress_cards(today_progress),
+    )
 
 
 @app.route("/research")
@@ -22958,6 +23131,375 @@ def robot_detail(instance_id):
         weekly_fit=weekly_fit,
         primary_title=_robot_primary_title(db, int(robot["id"])),
         can_share=(int(robot["user_id"]) == user_id),
+        can_maintain=(int(robot["user_id"]) == user_id),
+    )
+
+
+@app.route("/robots/<int:instance_id>/maintenance", methods=["GET", "POST"])
+@login_required
+def robot_maintenance(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    robot_row = db.execute(
+        """
+        SELECT
+            ri.*,
+            rip.*
+        FROM robot_instances ri
+        JOIN robot_instance_parts rip ON rip.robot_instance_id = ri.id
+        WHERE ri.id = ?
+          AND ri.user_id = ?
+          AND ri.status = 'active'
+        """,
+        (int(instance_id), user_id),
+    ).fetchone()
+    if not robot_row:
+        abort(404)
+
+    robot = dict(robot_row)
+    active_mapping = _ensure_robot_instance_part_instances(db, int(instance_id)) or {}
+    parts_row = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(instance_id),),
+    ).fetchone()
+    if not parts_row:
+        abort(404)
+
+    slot = _normalize_maintenance_slot(request.values.get("slot"))
+    slot_tabs = [
+        {
+            "slot": item["slot"],
+            "label": item["label"],
+            "is_active": item["slot"] == slot,
+            "url": url_for("robot_maintenance", instance_id=int(instance_id), slot=item["slot"]),
+        }
+        for item in ROBOT_MAINTENANCE_SLOT_DEFS
+    ]
+
+    current_rows = _part_instance_display_rows(
+        db,
+        [
+            active_mapping.get("head"),
+            active_mapping.get("r_arm"),
+            active_mapping.get("l_arm"),
+            active_mapping.get("legs"),
+        ],
+    )
+    current_rows_by_id = {int(row["instance_id"]): row for row in current_rows}
+    current_part_items = {}
+    slot_key_to_part_type = {
+        "head": "HEAD",
+        "r_arm": "RIGHT_ARM",
+        "l_arm": "LEFT_ARM",
+        "legs": "LEGS",
+    }
+    for mapping_key, part_type in slot_key_to_part_type.items():
+        current_row = current_rows_by_id.get(int(active_mapping.get(mapping_key) or 0))
+        if current_row:
+            current_part_items[part_type] = _build_picker_part_item(current_row)
+
+    current_payloads = {
+        part_type: _robot_payload_from_part_picker_item(item)
+        for part_type, item in current_part_items.items()
+        if item
+    }
+    current_estimate = compute_robot_stats(list(current_payloads.values())) if len(current_payloads) == 4 else None
+    current_robot_stats = {
+        "hp": int((current_estimate or {}).get("stats", {}).get("hp") or 0),
+        "atk": int((current_estimate or {}).get("stats", {}).get("atk") or 0),
+        "def": int((current_estimate or {}).get("stats", {}).get("def") or 0),
+        "spd": int((current_estimate or {}).get("stats", {}).get("spd") or 0),
+        "acc": int((current_estimate or {}).get("stats", {}).get("acc") or 0),
+        "cri": int((current_estimate or {}).get("stats", {}).get("cri") or 0),
+        "power": float((current_estimate or {}).get("power") or 0.0),
+    }
+    current_profile = _robot_profile_from_estimate(current_estimate)
+    robot["robot_profile"] = current_profile
+    robot["power"] = current_robot_stats["power"]
+    robot["final_stats"] = (current_estimate or {}).get("stats")
+    robot["set_bonus"] = (current_estimate or {}).get("set_bonus")
+    robot["image_url"] = _composed_image_url(robot.get("composed_image_path"), robot.get("updated_at"))
+
+    decor_assets = db.execute(
+        """
+        SELECT rda.id, rda.key, rda.name_ja, rda.image_path
+        FROM user_decor_inventory udi
+        JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+        WHERE udi.user_id = ? AND rda.is_active = 1
+        ORDER BY udi.acquired_at DESC, rda.id DESC
+        """,
+        (user_id,),
+    ).fetchall()
+    decor_assets = [
+        {
+            **dict(row),
+            "display_image_path": _decor_image_rel(row["image_path"], row["key"]),
+            "image_url": url_for("static", filename=_decor_image_rel(row["image_path"], row["key"]), v=APP_VERSION),
+        }
+        for row in decor_assets
+    ]
+
+    if request.method == "POST":
+        slot = _normalize_maintenance_slot(request.form.get("slot"))
+        slot_def = ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY[slot]
+        request_id = getattr(g, "request_id", None)
+        current_label = slot_def["label"]
+        if slot == "DECOR":
+            decor_raw = (request.form.get("decor_asset_id") or "").strip().lower()
+            next_decor_id = None if decor_raw in {"", "0", "none"} else (int(decor_raw) if decor_raw.isdigit() else None)
+            if decor_raw not in {"", "0", "none"} and next_decor_id is None:
+                flash("装飾候補が不正です。", "error")
+                return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+            if next_decor_id is not None and not any(int(item["id"]) == int(next_decor_id) for item in decor_assets):
+                flash("装飾候補が見つかりません。", "error")
+                return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+            before_decor_id = int(parts_row["decor_asset_id"] or 0) if "decor_asset_id" in parts_row.keys() and parts_row["decor_asset_id"] else None
+            if before_decor_id == next_decor_id:
+                flash("装飾はすでにその構成です。", "notice")
+                return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                db.execute(
+                    "UPDATE robot_instance_parts SET decor_asset_id = ? WHERE robot_instance_id = ?",
+                    (next_decor_id, int(instance_id)),
+                )
+                refreshed_parts = db.execute(
+                    "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+                    (int(instance_id),),
+                ).fetchone()
+                _compose_instance_assets_no_commit(db, int(instance_id), refreshed_parts)
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["ROBOT_MAINTENANCE"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="maintenance",
+                    entity_type="robot_instance",
+                    entity_id=int(instance_id),
+                    payload={
+                        "robot_instance_id": int(instance_id),
+                        "robot_name": robot.get("name"),
+                        "changed_slots": ["DECOR"],
+                        "before_part_ids": {"DECOR": before_decor_id},
+                        "after_part_ids": {"DECOR": next_decor_id},
+                        "stat_delta": {"power": 0, "hp": 0, "atk": 0, "def": 0, "spd": 0, "acc": 0, "cri": 0},
+                        "power_delta": 0,
+                    },
+                    ip=request.remote_addr,
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                app.logger.exception("robot_maintenance.decor_failed instance_id=%s", instance_id)
+                flash("機体整備の更新に失敗しました。", "error")
+                return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+            flash("機体整備を更新しました。", "notice")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+
+        selected_id_raw = (request.form.get("part_instance_id") or "").strip()
+        if not selected_id_raw.isdigit():
+            flash(f"{current_label}の候補を選んでください。", "error")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+        selected_id = int(selected_id_raw)
+        current_id = int(parts_row[slot_def["instance_col"]] or 0)
+        if selected_id == current_id:
+            flash("その部位はすでに現在装備です。", "notice")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+
+        selected_row = db.execute(
+            """
+            SELECT
+                pi.id AS instance_id,
+                pi.plus,
+                pi.status,
+                pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                pi.rarity AS instance_rarity,
+                pi.element AS instance_element,
+                pi.series AS instance_series,
+                rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+                rp.rarity, rp.element, rp.display_name_ja
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.id = ? AND pi.user_id = ? AND rp.is_active = 1
+              AND (pi.status = 'inventory' OR pi.id = ?)
+            LIMIT 1
+            """,
+            (selected_id, user_id, current_id),
+        ).fetchone()
+        if not selected_row or _norm_part_type(selected_row["part_type"]) != slot_def["part_type"]:
+            flash("整備候補が見つかりません。", "error")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+
+        selected_item = _build_picker_part_item(selected_row)
+        candidate_payloads = dict(current_payloads)
+        candidate_payloads[slot_def["part_type"]] = _robot_payload_from_part_picker_item(selected_item)
+        candidate_estimate = compute_robot_stats(list(candidate_payloads.values()))
+        candidate_stats = {
+            "hp": int((candidate_estimate or {}).get("stats", {}).get("hp") or 0),
+            "atk": int((candidate_estimate or {}).get("stats", {}).get("atk") or 0),
+            "def": int((candidate_estimate or {}).get("stats", {}).get("def") or 0),
+            "spd": int((candidate_estimate or {}).get("stats", {}).get("spd") or 0),
+            "acc": int((candidate_estimate or {}).get("stats", {}).get("acc") or 0),
+            "cri": int((candidate_estimate or {}).get("stats", {}).get("cri") or 0),
+            "power": float((candidate_estimate or {}).get("power") or 0.0),
+        }
+        stat_delta = {key: int(candidate_stats[key] - current_robot_stats[key]) for key in ("hp", "atk", "def", "spd", "acc", "cri")}
+        power_delta = int(round(candidate_stats["power"] - current_robot_stats["power"]))
+
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            returned_status = _return_part_instance_to_pool(db, user_id, current_id, user_row=user)
+            db.execute(
+                "UPDATE part_instances SET status = 'equipped', updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+                (selected_id, user_id),
+            )
+            db.execute(
+                f"UPDATE robot_instance_parts SET {slot_def['instance_col']} = ?, {slot_def['key_col']} = ? WHERE robot_instance_id = ?",
+                (selected_id, str(selected_row["key"]), int(instance_id)),
+            )
+            refreshed_parts = db.execute(
+                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+                (int(instance_id),),
+            ).fetchone()
+            _compose_instance_assets_no_commit(db, int(instance_id), refreshed_parts)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ROBOT_MAINTENANCE"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="maintenance",
+                entity_type="robot_instance",
+                entity_id=int(instance_id),
+                payload={
+                    "robot_instance_id": int(instance_id),
+                    "robot_name": robot.get("name"),
+                    "changed_slots": [slot],
+                    "before_part_ids": {slot: current_id},
+                    "after_part_ids": {slot: selected_id},
+                    "before_part_keys": {slot: str(parts_row[slot_def["key_col"]] or "")},
+                    "after_part_keys": {slot: str(selected_row["key"] or "")},
+                    "returned_status": returned_status,
+                    "stat_delta": {**stat_delta, "power": power_delta},
+                    "power_delta": power_delta,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            app.logger.exception("robot_maintenance.part_failed instance_id=%s slot=%s", instance_id, slot)
+            flash("機体整備の更新に失敗しました。", "error")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+        flash(f"{current_label}を整備しました。", "notice")
+        return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+
+    maintenance_slot = ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY[slot]
+    maintenance_candidates = []
+    maintenance_stat_rows = []
+    decor_options = []
+    current_decor_id = int(parts_row["decor_asset_id"] or 0) if "decor_asset_id" in parts_row.keys() and parts_row["decor_asset_id"] else None
+    if slot == "DECOR":
+        decor_options.append(
+            {
+                "id": 0,
+                "label": "装飾なし",
+                "image_url": "",
+                "is_selected": current_decor_id is None,
+            }
+        )
+        for item in decor_assets:
+            decor_options.append(
+                {
+                    "id": int(item["id"]),
+                    "label": str(item["name_ja"] or item["key"] or "装飾"),
+                    "image_url": item["image_url"],
+                    "is_selected": current_decor_id == int(item["id"]),
+                }
+            )
+    else:
+        current_part_type = maintenance_slot["part_type"]
+        current_item = current_part_items.get(current_part_type)
+        inventory_rows = db.execute(
+            """
+            WITH inv AS (
+                SELECT
+                    pi.id AS instance_id,
+                    pi.plus,
+                    pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                    pi.rarity AS instance_rarity,
+                    pi.element AS instance_element,
+                    pi.series AS instance_series,
+                    pi.status,
+                    rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+                    rp.rarity, rp.element, rp.display_name_ja
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1 AND rp.part_type = ?
+            ),
+            ranked AS (
+                SELECT
+                    inv.*,
+                    COUNT(*) OVER (PARTITION BY inv.key, inv.plus) AS qty,
+                    ROW_NUMBER() OVER (PARTITION BY inv.key, inv.plus ORDER BY inv.instance_id ASC) AS rn
+                FROM inv
+            )
+            SELECT *
+            FROM ranked
+            ORDER BY
+                plus DESC,
+                CASE UPPER(COALESCE(instance_rarity, rarity, 'N'))
+                    WHEN 'UR' THEN 5
+                    WHEN 'SSR' THEN 4
+                    WHEN 'SR' THEN 3
+                    WHEN 'R' THEN 2
+                    ELSE 1
+                END DESC,
+                instance_id ASC
+            """,
+            (user_id, current_part_type),
+        ).fetchall()
+        if current_item:
+            maintenance_candidates.append(
+                {
+                    **current_item,
+                    "is_current": True,
+                    "robot_stat_rows": _build_stat_comparison_rows(current_robot_stats, current_robot_stats),
+                    "robot_profile": current_profile,
+                }
+            )
+        for row in inventory_rows:
+            item = _build_picker_part_item(row, compare_item=current_item)
+            candidate_payloads = dict(current_payloads)
+            candidate_payloads[current_part_type] = _robot_payload_from_part_picker_item(item)
+            candidate_estimate = compute_robot_stats(list(candidate_payloads.values()))
+            candidate_stats = {
+                "hp": int((candidate_estimate or {}).get("stats", {}).get("hp") or 0),
+                "atk": int((candidate_estimate or {}).get("stats", {}).get("atk") or 0),
+                "def": int((candidate_estimate or {}).get("stats", {}).get("def") or 0),
+                "spd": int((candidate_estimate or {}).get("stats", {}).get("spd") or 0),
+                "acc": int((candidate_estimate or {}).get("stats", {}).get("acc") or 0),
+                "cri": int((candidate_estimate or {}).get("stats", {}).get("cri") or 0),
+                "power": float((candidate_estimate or {}).get("power") or 0.0),
+            }
+            item["is_current"] = False
+            item["robot_stat_rows"] = _build_stat_comparison_rows(current_robot_stats, candidate_stats)
+            item["robot_profile"] = _robot_profile_from_estimate(candidate_estimate)
+            maintenance_candidates.append(item)
+        maintenance_stat_rows = _build_stat_comparison_rows(current_robot_stats, current_robot_stats)
+
+    return render_template(
+        "robot_maintenance.html",
+        robot=robot,
+        current_profile=current_profile,
+        current_part_items=current_part_items,
+        slot_tabs=slot_tabs,
+        selected_slot=slot,
+        maintenance_slot=maintenance_slot,
+        maintenance_candidates=maintenance_candidates,
+        decor_options=decor_options,
+        current_decor_id=current_decor_id,
+        maintenance_stat_rows=maintenance_stat_rows,
     )
 
 
@@ -25203,6 +25745,7 @@ def evolve_parts():
                     "core_key": EVOLUTION_CORE_KEY,
                     "core_consumed": 1,
                     "refreshed_robot_instances": refreshed_equipped,
+                    "power_delta_estimate": int(compare_payload.get("compare_total_delta") or 0),
                 },
                 ip=request.remote_addr,
             )
@@ -25408,6 +25951,9 @@ def _strengthen_parts_selected(db, user_id, base_id):
         )
 
     material_ids = [int(material_rows[0]["id"]), int(material_rows[1]["id"])]
+    preview_row = dict(base_row)
+    preview_row["plus"] = min(int(MAX_PART_PLUS), int(base_row["plus"] or 0) + 1)
+    compare_payload = _part_card_payload(base_row, compare_row=preview_row)
 
     coin_cost = int(FUSE_COST_BY_PLUS.get(int(base_row["plus"] or 0), 20))
     user_row = db.execute("SELECT coins FROM users WHERE id = ?", (int(user_id),)).fetchone()
@@ -25471,6 +26017,178 @@ def _strengthen_parts_selected(db, user_id, base_id):
         "coin_cost": coin_cost,
         "base_id": int(base_id_int),
         "base_status": str(base_row["status"] or "inventory"),
+        "power_delta_estimate": int(compare_payload.get("compare_total_delta") or 0),
+    }
+
+
+def _strengthen_parts_batch_plan(db, user_id, base_row):
+    base_id = int(base_row["id"])
+    material_rows = db.execute(
+        """
+        SELECT
+            pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+            rp.part_type, rp.key AS part_key, rp.display_name_ja, rp.image_path
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ?
+          AND pi.status = 'inventory'
+          AND pi.id != ?
+          AND rp.key = ?
+          AND UPPER(COALESCE(pi.rarity, '')) = UPPER(COALESCE(?, ''))
+        ORDER BY pi.plus ASC, pi.id ASC
+        """,
+        (
+            int(user_id),
+            base_id,
+            str(base_row["part_key"] or ""),
+            str(base_row["rarity"] or ""),
+        ),
+    ).fetchall()
+    current_plus = int(base_row["plus"] or 0)
+    runs = []
+    consumed_rows = []
+    cursor = 0
+    while current_plus < int(MAX_PART_PLUS) and len(material_rows) - cursor >= 2:
+        pair = [dict(material_rows[cursor]), dict(material_rows[cursor + 1])]
+        cursor += 2
+        next_plus = min(int(MAX_PART_PLUS), current_plus + 1)
+        cost = int(FUSE_COST_BY_PLUS.get(int(current_plus), 20))
+        runs.append(
+            {
+                "from_plus": int(current_plus),
+                "to_plus": int(next_plus),
+                "coin_cost": int(cost),
+                "consumed_ids": [int(pair[0]["id"]), int(pair[1]["id"])],
+            }
+        )
+        consumed_rows.extend(pair)
+        current_plus = int(next_plus)
+    preview_row = dict(base_row)
+    preview_row["plus"] = int(current_plus)
+    compare_payload = _part_card_payload(base_row, compare_row=preview_row)
+    return {
+        "base_id": base_id,
+        "base_status": str(base_row["status"] or "inventory"),
+        "batch_count": len(runs),
+        "from_plus": int(base_row["plus"] or 0),
+        "to_plus": int(current_plus),
+        "coin_cost_total": int(sum(run["coin_cost"] for run in runs)),
+        "consumed_ids": [int(row["id"]) for row in consumed_rows],
+        "consumed_rows": consumed_rows,
+        "runs": runs,
+        "power_delta_estimate": int(compare_payload.get("compare_total_delta") or 0),
+    }
+
+
+def _strengthen_parts_batch_selected(db, user_id, base_id):
+    try:
+        base_id_int = int(base_id)
+    except Exception:
+        return {
+            "ok": False,
+            "outcome": "fail",
+            "message": "ベース個体を選択してください。",
+        }
+    base_row = db.execute(
+        """
+        SELECT
+            pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+            rp.part_type, rp.key AS part_key
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND pi.id = ?
+        """,
+        (int(user_id), base_id_int),
+    ).fetchone()
+    if not base_row:
+        return {
+            "ok": False,
+            "outcome": "fail",
+            "message": "ベース個体が見つかりません。",
+        }
+    plan = _strengthen_parts_batch_plan(db, user_id, base_row)
+    if int(plan["batch_count"] or 0) <= 0:
+        return {
+            "ok": False,
+            "outcome": "fail",
+            "message": "まとめて強化できる素材が不足しています。",
+            "part_type": base_row["part_type"],
+            "rarity": base_row["rarity"],
+            "part_key": base_row["part_key"],
+            "base_plus": int(base_row["plus"] or 0),
+            "new_plus": int(base_row["plus"] or 0),
+            "base_id": int(base_row["id"]),
+            "base_status": str(base_row["status"] or "inventory"),
+            "batch_count": 0,
+        }
+    user_row = db.execute("SELECT coins FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not user_row or int(user_row["coins"] or 0) < int(plan["coin_cost_total"]):
+        return {
+            "ok": False,
+            "outcome": "fail",
+            "message": f"コイン不足です（必要: {int(plan['coin_cost_total'])}）",
+            "part_type": base_row["part_type"],
+            "rarity": base_row["rarity"],
+            "part_key": base_row["part_key"],
+            "base_plus": int(base_row["plus"] or 0),
+            "new_plus": int(base_row["plus"] or 0),
+            "base_id": int(base_row["id"]),
+            "base_status": str(base_row["status"] or "inventory"),
+            "batch_count": int(plan["batch_count"] or 0),
+            "coin_cost": int(plan["coin_cost_total"] or 0),
+        }
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        placeholders = ",".join(["?"] * len(plan["consumed_ids"]))
+        db.execute("UPDATE users SET coins = coins - ? WHERE id = ?", (int(plan["coin_cost_total"]), int(user_id)))
+        db.execute(
+            f"DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory' AND id IN ({placeholders})",
+            [int(user_id), *[int(pid) for pid in plan["consumed_ids"]]],
+        )
+        db.execute(
+            """
+            UPDATE part_instances
+            SET plus = ?, updated_at = datetime('now')
+            WHERE id = ? AND user_id = ?
+            """,
+            (int(plan["to_plus"]), int(base_id_int), int(user_id)),
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        return {
+            "ok": False,
+            "outcome": "fail",
+            "message": f"まとめ強化に失敗しました: {exc}",
+            "part_type": base_row["part_type"],
+            "rarity": base_row["rarity"],
+            "part_key": base_row["part_key"],
+            "base_plus": int(base_row["plus"] or 0),
+            "new_plus": int(base_row["plus"] or 0),
+            "base_id": int(base_row["id"]),
+            "base_status": str(base_row["status"] or "inventory"),
+            "batch_count": int(plan["batch_count"] or 0),
+            "coin_cost": int(plan["coin_cost_total"] or 0),
+        }
+    return {
+        "ok": True,
+        "outcome": "success",
+        "part_type": base_row["part_type"],
+        "rarity": base_row["rarity"],
+        "part_key": base_row["part_key"],
+        "base_plus": int(plan["from_plus"]),
+        "new_plus": int(plan["to_plus"]),
+        "consumed_ids": [int(pid) for pid in plan["consumed_ids"]],
+        "created_id": int(base_id_int),
+        "updated_id": int(base_id_int),
+        "coin_cost": int(plan["coin_cost_total"]),
+        "base_id": int(base_id_int),
+        "base_status": str(base_row["status"] or "inventory"),
+        "batch_mode": True,
+        "batch_count": int(plan["batch_count"]),
+        "power_delta_estimate": int(plan["power_delta_estimate"] or 0),
     }
 
 
@@ -25496,18 +26214,19 @@ def parts_strengthen():
     filter_plus = int(plus_raw) if plus_raw.isdigit() else None
     if request.method == "POST":
         result = {}
-        mode = "select"
+        mode = (request.form.get("mode") or "select").strip().lower()
+        if mode not in {"select", "batch"}:
+            mode = "select"
         redirect_plus = filter_plus
         base_id_raw = (request.form.get("base_id") or "").strip()
         if not base_id_raw.isdigit():
             flash("ベース個体を選択してください。", "error")
         else:
             try:
-                result = _strengthen_parts_selected(
-                    db,
-                    user_id,
-                    base_id=int(base_id_raw),
-                )
+                if mode == "batch":
+                    result = _strengthen_parts_batch_selected(db, user_id, base_id=int(base_id_raw))
+                else:
+                    result = _strengthen_parts_selected(db, user_id, base_id=int(base_id_raw))
             except Exception:
                 app.logger.exception(
                     "parts_strengthen.failed user_id=%s mode=%s args=%s form=%s",
@@ -25528,7 +26247,7 @@ def parts_strengthen():
                     """,
                     (
                         user_id,
-                        "select",
+                        mode,
                         result.get("part_type"),
                         result.get("rarity"),
                         result.get("base_plus"),
@@ -25537,7 +26256,7 @@ def parts_strengthen():
                         0,
                         json.dumps(result.get("consumed_ids", []), ensure_ascii=False),
                         int(time.time()),
-                        "強化",
+                        ("まとめ強化" if mode == "batch" else "強化"),
                     ),
                 )
                 db.commit()
@@ -25551,7 +26270,7 @@ def parts_strengthen():
                 entity_id=result.get("created_id"),
                 delta_coins=-(int(result.get("coin_cost") or 0)) if result.get("coin_cost") is not None else None,
                 payload={
-                    "mode": "select",
+                    "mode": mode,
                     "success": bool(result.get("ok")),
                     "base_part_instance_id": result.get("base_id"),
                     "outcome": result.get("outcome"),
@@ -25565,12 +26284,15 @@ def parts_strengthen():
                     "mat_plus_sum": result.get("mat_plus_sum"),
                     "bonus": result.get("bonus"),
                     "inc": result.get("inc"),
+                    "batch_mode": bool(result.get("batch_mode")),
+                    "batch_count": int(result.get("batch_count") or 0),
+                    "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
                 },
                 ip=request.remote_addr,
             )
             db.commit()
             session["last_fuse_result"] = {
-                "mode": "select",
+                "mode": mode,
                 "outcome": result.get("outcome"),
                 "message": result.get("message"),
                 "part_type": result.get("part_type"),
@@ -25587,8 +26309,11 @@ def parts_strengthen():
                 "inc": result.get("inc"),
                 "material_pluses": result.get("material_pluses", []),
                 "ok": bool(result.get("ok")),
+                "batch_mode": bool(result.get("batch_mode")),
+                "batch_count": int(result.get("batch_count") or 0),
+                "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
             }
-            mode_label = "強化"
+            mode_label = "まとめ強化" if mode == "batch" else "強化"
             consumed_ids = ",".join([f"#{x}" for x in result.get("consumed_ids", [])])
             part_type = result.get("part_type") or "-"
             rarity = result.get("rarity") or "-"
@@ -25605,7 +26330,7 @@ def parts_strengthen():
                 )
                 detail = (
                     f"{mode_label}{status_label}：{part_type} / {rarity} / {plus_text} "
-                    f"（上昇量 +1 / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
+                    f"（{('実行 ' + str(int(result.get('batch_count') or 0)) + '回 / ') if mode == 'batch' else ''}上昇量 +1 / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
                     f"-{coin_cost if coin_cost is not None else 0}コイン"
                 )
                 flash(detail, "notice")
@@ -25641,7 +26366,7 @@ def parts_strengthen():
             "success": "成功",
             "fail": "失敗",
         }.get(outcome_key, "不明")
-        mode_label = "強化"
+        mode_label = "まとめ強化" if raw_last.get("mode") == "batch" else "強化"
         last_fuse_result = dict(raw_last)
         last_fuse_result["outcome_label"] = outcome_label
         last_fuse_result["mode_label"] = mode_label
@@ -25738,6 +26463,7 @@ def parts_strengthen():
         part_type_options = ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"]
     stat_labels = {k: _stat_label(k) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
     base_candidates = []
+    batch_candidates = []
     for group_row in group_rows:
         ids_csv = group_row["ids"] or ""
         sample_rows = db.execute(
@@ -25862,6 +26588,41 @@ def parts_strengthen():
             )
             candidate_item["stack_key"] = f"{group_row['part_key']}|{group_row['rarity']}|{int(row_dict['id'])}"
             base_candidates.append(candidate_item)
+        batch_base_rows = sorted(
+            eligible_base_rows,
+            key=lambda item: (
+                0 if str(item["status"] or "").strip().lower() == "equipped" else 1,
+                -int(item["plus"] or 0),
+                int(item["id"] or 0),
+            ),
+        )
+        if batch_base_rows:
+            batch_base_row = dict(batch_base_rows[0])
+            batch_plan = _strengthen_parts_batch_plan(db, user_id, batch_base_row)
+            if int(batch_plan.get("batch_count") or 0) > 0:
+                batch_preview = dict(batch_base_row)
+                batch_preview["plus"] = int(batch_plan["to_plus"])
+                batch_item = _part_card_payload(batch_base_row, compare_row=batch_preview)
+                batch_item["group_display_name"] = group_display_name
+                batch_item["part_key"] = group_row["part_key"]
+                batch_item["qty_total"] = int(group_row["qty_total"] or 0)
+                batch_item["qty_inventory"] = int(group_row["qty_inventory"] or 0)
+                batch_item["cost_total"] = int(batch_plan["coin_cost_total"] or 0)
+                batch_item["batch_count"] = int(batch_plan["batch_count"] or 0)
+                batch_item["consumed_count"] = len(batch_plan["consumed_ids"])
+                batch_item["consumed_ids"] = list(batch_plan["consumed_ids"])
+                batch_item["material_cards"] = [
+                    _part_card_payload(material, can_discard=False) for material in batch_plan["consumed_rows"][:4]
+                ]
+                batch_item["expected_plus_text"] = f"+{int(batch_plan['from_plus'])} → +{int(batch_plan['to_plus'])}"
+                batch_item["material_notice"] = (
+                    "装備中ベースを残したまま、成立するぶんだけまとめて強化します。"
+                    if str(batch_base_row.get("status") or "").strip().lower() == "equipped"
+                    else "この個体を残して、成立するぶんだけまとめて強化します。"
+                )
+                batch_item["base_id"] = int(batch_base_row["id"])
+                batch_item["base_status"] = str(batch_base_row.get("status") or "inventory")
+                batch_candidates.append(batch_item)
     storage_blocked_rows = db.execute(
         """
         SELECT
@@ -25931,6 +26692,15 @@ def parts_strengthen():
             int(item.get("id") or 0),
         )
     )
+    batch_candidates.sort(
+        key=lambda item: (
+            0 if item.get("is_equipped") else 1,
+            ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"].index(item.get("part_type")) if item.get("part_type") in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else 9,
+            -int(item.get("batch_count") or 0),
+            -int(item.get("plus") or 0),
+            int(item.get("base_id") or 0),
+        )
+    )
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
     storage_list_params = {}
     if filter_part_type:
@@ -25940,6 +26710,7 @@ def parts_strengthen():
     return render_template(
         "parts_fuse.html",
         base_candidates=base_candidates,
+        batch_candidates=batch_candidates,
         storage_blocked_groups=storage_blocked_groups,
         storage_manage_url=storage_manage_url,
         inventory_space_remaining=inventory_space_remaining,

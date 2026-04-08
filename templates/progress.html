@@ -2,11 +2,25 @@
 {% block content %}
 <div class="panel">
   <h1>今日の進捗（JST）</h1>
+  {% if today_progress.get('is_empty') %}
+  <div class="card home-today-progress-empty">
+    <div class="robot-part">まだ動いていません</div>
+    <div class="upgrade-cost">まずは第1層へ出撃して、今日の前進を作ろう。</div>
+  </div>
+  {% else %}
+  <div class="home-today-progress-grid is-page">
+    {% for item in today_progress_cards %}
+    <div class="home-today-progress-stat{% if item.get('accent') %} is-{{ item['accent'] }}{% endif %}">
+      <div class="home-today-progress-label">{{ item['label'] }}</div>
+      <div class="home-today-progress-value">{{ item['value'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
   <div class="stat-grid">
-    <div class="stat-card"><div class="stat-label">探索回数</div><div class="stat-value">{{ today_progress['explore_count'] }}</div></div>
     <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ today_progress['win_count'] }}</div></div>
     <div class="stat-card"><div class="stat-label">獲得コイン</div><div class="stat-value">+{{ today_progress['coin_total'] }}</div></div>
   </div>
+  {% endif %}
   <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
 </div>
 {% endblock %}
