@@ -5,14 +5,32 @@
   <h1>パーツ強化</h1>
   <div id="fuse-filter-error" class="error is-hidden" role="alert"></div>
 
-  <div class="card">
-    <div><b>同じパーツ3個で +1</b></div>
-    <div class="robot-time">ベース1つを選ぶと、同じパーツの所持中2個を素材として使います。上昇量は必ず +1 です。</div>
-    <div class="robot-time">素材にできるのは所持中だけです。装備中の個体は素材として消えません。</div>
+  <div class="card strengthen-hub-card">
+    <div><b>強化メニュー</b></div>
+    <div class="robot-time">通常ルールはすべて共通です。ベース1 + 素材2 / 成功率100% / +1固定で進みます。</div>
+    <div class="robot-time">装備中の個体は素材に使いません。保管中の個体は候補に混ぜません。</div>
+    <div class="actions-grid strengthen-entry-grid">
+      <a class="action-card{% if selected_mode == 'select' %} is-active{% endif %}" href="{{ url_for('parts_strengthen', mode='select', part_type=selected_part_type or '', rarity=selected_rarity or '', plus=selected_plus if selected_plus is not none else '') }}#individual-strengthen">
+        <div class="action-title">個別強化</div>
+        <div class="action-desc">1個体を選んで強化</div>
+      </a>
+      <a class="action-card{% if selected_mode == 'select' %} is-active{% endif %}" href="{{ url_for('parts_strengthen', mode='select', part_type=selected_part_type or '', rarity=selected_rarity or '', plus=selected_plus if selected_plus is not none else '') }}#group-strengthen">
+        <div class="action-title">まとめて強化</div>
+        <div class="action-desc">1種類をまとめて強化</div>
+      </a>
+      <a class="action-card{% if selected_mode in ('warehouse_preview', 'warehouse_result') %} is-active{% endif %}" href="{{ url_for('parts_strengthen', mode='select') }}#warehouse-batch">
+        <div class="action-title">倉庫整理合成</div>
+        <div class="action-desc">所持中全体をまとめて整理</div>
+      </a>
+    </div>
+    <div class="robot-time">個別強化は1体ずつ、まとめて強化は1種類ずつ、倉庫整理合成は所持中全体をまとめて整理します。</div>
+    {% if selected_mode in ('select', 'warehouse_preview') %}
     {{ render_part_type_filters(part_type_filters) }}
+    <div class="robot-time">部位フィルターは個別強化 / まとめて強化の候補一覧に反映されます。倉庫整理合成は所持中全体を対象にします。</div>
+    {% endif %}
   </div>
 
-  {% if storage_blocked_groups %}
+  {% if storage_blocked_groups and selected_mode in ('select', 'warehouse_preview') %}
   <div class="card">
     <div><b>保管中の個体があるため、今は強化に使えない組み合わせがあります</b></div>
     <div class="robot-time">保管中の個体は強化素材に使えません。先に所持へ戻すと候補に出ます。</div>
@@ -42,7 +60,7 @@
   {% if last_fuse_result %}
   <div class="card fuse-result-card">
     <div class="fuse-result-head">
-      <strong>強化結果</strong>
+      <strong>{{ last_fuse_result.get('mode_label') or '強化' }}結果</strong>
       <span class="fuse-outcome {% if last_fuse_result['outcome'] == 'success' %}success{% else %}fail{% endif %}">
         {{ last_fuse_result['outcome_label'] }}
       </span>
@@ -94,11 +112,164 @@
   </div>
   {% endif %}
 
+  {% if warehouse_result %}
+  <div class="card fuse-result-card" id="warehouse-batch">
+    <div class="fuse-result-head">
+      <strong>倉庫整理合成の結果</strong>
+      <span class="fuse-outcome success">成功</span>
+    </div>
+    <div class="part-summary-pills">
+      <span class="part-summary-pill">対象 {{ warehouse_result['group_count'] }}種類</span>
+      <span class="part-summary-pill">合計強化 {{ warehouse_result['fuse_count'] }}回</span>
+      <span class="part-summary-pill">消費素材 {{ warehouse_result['total_material_count'] }}個</span>
+      <span class="part-summary-pill">合計 {{ warehouse_result['total_coin_cost'] }}コイン</span>
+    </div>
+    <div class="robot-time">装備中・保管中の個体は素材に使っていません。通常の強化ルールだけを、所持中全体へまとめて適用しました。</div>
+    <div class="part-card-grid warehouse-group-grid">
+      {% for group in warehouse_result['groups'] %}
+      <div class="robot-card part-compare-card warehouse-group-card{% if group.get('is_equipped') %} is-equipped{% endif %}">
+        <div class="part-card-topline">
+          <span class="part-check"><span>{{ group['batch_count'] }}回整理</span></span>
+          <span class="robot-time">残り {{ group['remaining_count_after'] }} 個</span>
+        </div>
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ group['image_url'] }}" alt="{{ group['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div class="robot-id">{{ group['display_name'] }}</div>
+            <div class="part-chip-row">
+              <span class="part-chip">{{ group['part_type_label'] }}</span>
+              <span class="part-chip rarity-{{ group['rarity_label']|lower }}">{{ group['rarity_label'] }}</span>
+              <span class="part-chip">+{{ group['from_plus'] }} → +{{ group['to_plus'] }}</span>
+              {% if group.get('is_equipped') %}
+              <span class="part-chip is-equipped">装備中ベース</span>
+              {% else %}
+              <span class="part-chip">{{ group.get('base_status_label') or '所持中' }}</span>
+              {% endif %}
+            </div>
+            <div class="part-meta-line">対象 {{ group['target_count_before'] }}個 / 消える素材 {{ group['consumed_count'] }}個 / -{{ group['coin_cost'] }}コイン</div>
+            {% if group.get('compare_total_value') is not none %}
+            <div class="part-meta-line">総合値 {{ group['total_value'] }} → {{ group['compare_total_value'] }} ({{ group['compare_total_delta_text'] }})</div>
+            {% endif %}
+          </div>
+        </div>
+        {% if group.get('stat_rows') %}
+        {{ stat_grid(group['stat_rows']) }}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="actions-grid">
+      <a class="action-card" href="{{ url_for('parts_strengthen', mode='select') }}#warehouse-batch">
+        <div class="action-title">倉庫整理合成に戻る</div>
+        <div class="action-desc">もう一度内容を確認する</div>
+      </a>
+    </div>
+    <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  </div>
+  {% endif %}
+
+  {% if selected_mode in ('select', 'warehouse_preview') %}
+  <div class="card fuse-warehouse-panel" id="warehouse-batch">
+    <div><b>倉庫整理合成</b></div>
+    <div class="robot-time">所持中の装備をまとめて整理し、成立する強化を一括で実行します。</div>
+    <div class="robot-time">装備中のパーツは対象外です / 保管中のパーツは対象外です / ルールは通常の強化と同じです</div>
+
+    {% if selected_mode == 'warehouse_preview' and warehouse_preview %}
+    <div class="part-summary-pills">
+      <span class="part-summary-pill">対象 {{ warehouse_preview['group_count'] }}種類</span>
+      <span class="part-summary-pill">合計強化 {{ warehouse_preview['fuse_count'] }}回</span>
+      <span class="part-summary-pill">消費素材 {{ warehouse_preview['total_material_count'] }}個</span>
+      <span class="part-summary-pill">合計 {{ warehouse_preview['total_coin_cost'] }}コイン</span>
+    </div>
+    <div class="robot-time">一覧で内容を確認してから整理できます。ワンクリックで即実行はされません。</div>
+
+    {% if warehouse_preview['groups_view'] %}
+    <div class="part-card-grid warehouse-group-grid">
+      {% for group in warehouse_preview['groups_view'] %}
+      <div class="robot-card part-compare-card warehouse-group-card{% if group.get('is_equipped') %} is-equipped{% endif %}">
+        <div class="part-card-topline">
+          <span class="part-check"><span>{{ group['batch_count'] }}回整理</span></span>
+          <span class="robot-time">残り {{ group['remaining_count_after'] }} 個</span>
+        </div>
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ group['image_url'] }}" alt="{{ group['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div class="robot-id">{{ group['display_name'] }}</div>
+            <div class="part-chip-row">
+              <span class="part-chip">{{ group['part_type_label'] }}</span>
+              <span class="part-chip rarity-{{ group['rarity_label']|lower }}">{{ group['rarity_label'] }}</span>
+              <span class="part-chip">{{ group['expected_plus_text'] }}</span>
+              {% if group.get('is_equipped') %}
+              <span class="part-chip is-equipped">装備中ベース</span>
+              {% else %}
+              <span class="part-chip">{{ group.get('base_status_label') or '所持中' }}</span>
+              {% endif %}
+            </div>
+            <div class="part-meta-line">対象 {{ group['target_count_before'] }}個 / 所持 {{ group['inventory_count_before'] }} / 装備 {{ group['equipped_count_before'] }}</div>
+            <div class="part-meta-line">消える素材 {{ group['consumed_count'] }}個 / 残る個体 {{ group['remaining_count_after'] }}個 / -{{ group['cost_total'] }}コイン</div>
+            <div class="part-meta-line">総合値 {{ group['total_value'] }} → {{ group['compare_total_value'] }} ({{ group['compare_total_delta_text'] }})</div>
+          </div>
+        </div>
+        {{ stat_grid(group['stat_rows']) }}
+        {% if group['material_cards'] %}
+        <div class="part-subsection">
+          <div class="part-subsection-title">先に消える素材</div>
+          <div class="part-mini-grid">
+            {% for material in group['material_cards'] %}
+            <div class="part-mini-card">
+              <img class="part-mini-image" src="{{ material['image_url'] }}" alt="{{ material['display_name'] }}" loading="lazy" decoding="async" />
+              <div>
+                <div class="part-mini-name">#{{ material['id'] }} {{ material['display_name'] }}</div>
+                <div class="robot-time">+{{ material['plus'] }} / {{ material['status_label'] }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% if group['consumed_count'] > group['material_cards']|length %}
+          <div class="robot-time">ほか {{ group['consumed_count'] - (group['material_cards']|length) }} 個体を素材に使います。</div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <form method="post" class="warehouse-actions" data-submit-lock="1" data-loading-text="整理合成中...">
+      <input type="hidden" name="mode" value="warehouse_execute" />
+      <input type="hidden" name="plan_signature" value="{{ warehouse_preview['signature'] }}" />
+      <button type="submit" class="fuse-submit-large">この内容で整理する</button>
+      <a class="fuse-secondary-link" href="{{ url_for('parts_strengthen', mode='select') }}#warehouse-batch">キャンセル</a>
+    </form>
+    {% else %}
+    <div class="warehouse-empty">
+      <div><b>{{ warehouse_preview['empty_message'] }}</b></div>
+      <div class="robot-time">所持中だけで成立する組み合わせが見つからないときは、何も消費されません。</div>
+    </div>
+    <div class="actions-grid">
+      <a class="action-card" href="{{ url_for('parts_strengthen', mode='select') }}#warehouse-batch">
+        <div class="action-title">候補一覧へ戻る</div>
+        <div class="action-desc">他の強化方法を見る</div>
+      </a>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="warehouse-summary-note">
+      <div class="warehouse-note-item"><b>対象:</b> 所持中の個体だけ</div>
+      <div class="warehouse-note-item"><b>除外:</b> 装備中 / 保管中 / 強化対象外の個体</div>
+      <div class="warehouse-note-item"><b>残す基準:</b> 装備中ベース優先 → +値が高い個体 → 古い個体</div>
+    </div>
+    <form method="post" data-submit-lock="1" data-loading-text="内容を確認中...">
+      <input type="hidden" name="mode" value="warehouse_preview" />
+      <button type="submit" class="fuse-submit-large">内容を確認する</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if selected_mode == 'select' %}
   {% if batch_candidates %}
-  <div class="card fuse-batch-panel">
+  <div class="card fuse-batch-panel" id="group-strengthen">
     <div><b>まとめて強化</b></div>
-    <div class="robot-time">同名・同レアの所持個体だけを使って、安全に成立するぶんだけ一気に強化します。</div>
+    <div class="robot-time">同名・同レアの所持個体だけを使って、安全に成立するぶんだけ1種類ずつ一気に強化します。</div>
     <div class="part-card-grid">
       {% for candidate in batch_candidates %}
       <form
@@ -120,7 +291,7 @@
         {% endif %}
         <div class="part-card-topline">
           <span class="part-check"><span>残る個体</span></span>
-          <span class="robot-time">{{ candidate['batch_count'] }}回強化</span>
+          <span class="robot-time">{{ candidate['batch_count'] }}回強化 / 残り {{ candidate['remaining_count_after'] }} 個</span>
         </div>
         <div class="part-card-main">
           <img class="part-card-image" src="{{ candidate['image_url'] }}" alt="{{ candidate['display_name'] }}" loading="lazy" decoding="async" />
@@ -181,13 +352,14 @@
     {% if selected_plus is not none %}
       <input type="hidden" name="plus" value="{{ selected_plus }}" />
     {% endif %}
+    <div id="individual-strengthen"><b>個別強化</b></div>
     <div class="fuse-selection-summary" id="fuse-selection-summary">
       <div>ベース: <span id="fuse-base-selected">未選択</span></div>
       <div>素材: <span id="fuse-material-selected">同じパーツの所持中2個を使います</span></div>
       <div>結果: <span id="fuse-result-expected">+1固定</span></div>
     </div>
     <div class="fuse-select-status">選択数 <b id="fuse-selected-count">0</b>/1</div>
-    <p class="robot-time">強化するとどう変わるかを見比べてから選べます。</p>
+    <p class="robot-time">1個体を選んで、強化するとどう変わるかを見比べてから実行できます。</p>
 
     {% if base_candidates %}
       <div class="part-card-grid">
@@ -262,13 +434,12 @@
       </div>
     {% endif %}
   </form>
-  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
   {% endif %}
 
   <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v=0.2.0"></script>
+<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v={{ app_version }}"></script>
 <script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
 {% endblock %}

@@ -1104,6 +1104,55 @@ body.lightbox-open .lightbox-overlay {
 .fuse-result-card {
   margin-top: 10px;
 }
+.strengthen-hub-card,
+.fuse-warehouse-panel,
+.warehouse-actions,
+.warehouse-summary-note {
+  display: grid;
+  gap: 12px;
+}
+.strengthen-entry-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.strengthen-entry-grid .action-card.is-active {
+  border-color: rgba(26, 107, 103, 0.38);
+  box-shadow: 0 14px 28px rgba(26, 107, 103, 0.12);
+  background: rgba(227, 247, 245, 0.98);
+}
+.warehouse-note-item,
+.warehouse-empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(33, 28, 20, 0.14);
+  background: rgba(255, 250, 240, 0.94);
+}
+.warehouse-group-grid {
+  margin-top: 10px;
+}
+.warehouse-group-card {
+  display: grid;
+  gap: 10px;
+}
+.warehouse-actions {
+  justify-items: start;
+}
+.fuse-secondary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(33, 28, 20, 0.18);
+  background: rgba(255, 250, 240, 0.96);
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+.fuse-secondary-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(33, 28, 20, 0.10);
+}
 .fuse-result-head {
   display: flex;
   align-items: center;

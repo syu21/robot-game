@@ -167,6 +167,8 @@ AUDIT_EVENT_TYPES = {
     "DROP": "audit.drop",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "FUSE": "audit.fuse",
+    "FUSE_BATCH_PREVIEW": "audit.fuse.batch_preview",
+    "FUSE_BATCH_EXECUTE": "audit.fuse.batch_execute",
     "BUILD_CONFIRM": "audit.build.confirm",
     "ROBOT_DECOMPOSE": "audit.robot.decompose",
     "ROBOT_RENAME": "audit.robot.rename",

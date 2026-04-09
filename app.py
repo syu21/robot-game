@@ -26021,31 +26021,168 @@ def _strengthen_parts_selected(db, user_id, base_id):
     }
 
 
-def _strengthen_parts_batch_plan(db, user_id, base_row):
-    base_id = int(base_row["id"])
-    material_rows = db.execute(
+def _strengthen_part_type_sort_value(part_type):
+    return {
+        "HEAD": 1,
+        "RIGHT_ARM": 2,
+        "LEFT_ARM": 3,
+        "LEGS": 4,
+    }.get(str(part_type or "").strip().upper(), 9)
+
+
+def _strengthen_base_sort_key(row):
+    created_at = int(row.get("created_at") or 0)
+    return (
+        0 if str(row.get("status") or "").strip().lower() == "equipped" else 1,
+        -int(row.get("plus") or 0),
+        created_at,
+        int(row.get("id") or 0),
+    )
+
+
+def _strengthen_material_sort_key(row):
+    created_at = int(row.get("created_at") or 0)
+    return (
+        int(row.get("plus") or 0),
+        created_at,
+        int(row.get("id") or 0),
+    )
+
+
+def _strengthen_is_eligible_base(row, inventory_count):
+    status_key = str(row.get("status") or "").strip().lower()
+    if int(row.get("plus") or 0) >= int(MAX_PART_PLUS):
+        return False
+    if status_key == "equipped":
+        return int(inventory_count or 0) >= 2
+    if status_key == "inventory":
+        return int(inventory_count or 0) >= 3
+    return False
+
+
+def _strengthen_group_rows(db, user_id, part_key, rarity):
+    return db.execute(
         """
         SELECT
-            pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
+            pi.id,
+            pi.part_id,
+            pi.rarity,
+            pi.element,
+            pi.series,
+            pi.plus,
+            pi.status,
+            pi.created_at,
+            pi.updated_at,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.part_type, rp.key AS part_key, rp.display_name_ja, rp.image_path
+            rp.part_type,
+            rp.key AS part_key,
+            rp.image_path,
+            rp.display_name_ja
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.user_id = ?
-          AND pi.status = 'inventory'
-          AND pi.id != ?
+          AND pi.status IN ('inventory', 'equipped')
           AND rp.key = ?
           AND UPPER(COALESCE(pi.rarity, '')) = UPPER(COALESCE(?, ''))
-        ORDER BY pi.plus ASC, pi.id ASC
+        ORDER BY
+            CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC,
+            pi.plus DESC,
+            COALESCE(pi.created_at, 0) ASC,
+            pi.id ASC
         """,
-        (
-            int(user_id),
-            base_id,
-            str(base_row["part_key"] or ""),
-            str(base_row["rarity"] or ""),
-        ),
+        (int(user_id), str(part_key or ""), str(rarity or "")),
     ).fetchall()
-    current_plus = int(base_row["plus"] or 0)
+
+
+def _strengthen_group_summary(plan):
+    base_row = dict(plan.get("base_row") or {})
+    return {
+        "part_key": str(plan.get("part_key") or ""),
+        "display_name": str(plan.get("display_name") or ""),
+        "part_type": str(plan.get("part_type") or ""),
+        "part_type_label": _part_type_ui_label(plan.get("part_type")),
+        "rarity": str(plan.get("rarity") or ""),
+        "image_path": str(base_row.get("image_path") or plan.get("image_path") or ""),
+        "base_id": int(plan.get("base_id") or 0),
+        "base_status": str(plan.get("base_status") or "inventory"),
+        "from_plus": int(plan.get("from_plus") or 0),
+        "to_plus": int(plan.get("to_plus") or 0),
+        "batch_count": int(plan.get("batch_count") or 0),
+        "coin_cost": int(plan.get("coin_cost_total") or 0),
+        "consumed_count": len(plan.get("consumed_ids") or []),
+        "consumed_ids": [int(pid) for pid in (plan.get("consumed_ids") or [])],
+        "target_count_before": int(plan.get("target_count_before") or 0),
+        "inventory_count_before": int(plan.get("inventory_count_before") or 0),
+        "equipped_count_before": int(plan.get("equipped_count_before") or 0),
+        "remaining_count_after": int(plan.get("remaining_count_after") or 0),
+        "power_delta_estimate": int(plan.get("power_delta_estimate") or 0),
+    }
+
+
+def _strengthen_plan_signature(payload):
+    raw = json.dumps(payload or [], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
+    rows = [dict(row) for row in (group_rows or [])]
+    sample_row = dict(rows[0]) if rows else {}
+    inventory_rows = [row for row in rows if str(row.get("status") or "").strip().lower() == "inventory"]
+    inventory_count = len(inventory_rows)
+    base_row = None
+
+    if base_id is not None:
+        try:
+            base_id_int = int(base_id)
+        except Exception:
+            base_id_int = 0
+        for row in rows:
+            if int(row.get("id") or 0) == base_id_int:
+                base_row = dict(row)
+                break
+    else:
+        eligible_base_rows = [row for row in rows if _strengthen_is_eligible_base(row, inventory_count)]
+        if eligible_base_rows:
+            base_row = dict(sorted(eligible_base_rows, key=_strengthen_base_sort_key)[0])
+
+    anchor_row = dict(base_row or sample_row)
+    base_status = str((base_row or {}).get("status") or "inventory")
+    from_plus = int((base_row or {}).get("plus") or 0)
+    if not base_row or not _strengthen_is_eligible_base(base_row, inventory_count):
+        return {
+            "ok": False,
+            "part_key": str(anchor_row.get("part_key") or ""),
+            "part_type": anchor_row.get("part_type"),
+            "rarity": anchor_row.get("rarity"),
+            "display_name": _part_display_name_ja(anchor_row) if anchor_row else "",
+            "image_path": str(anchor_row.get("image_path") or ""),
+            "base_row": base_row,
+            "base_id": int((base_row or {}).get("id") or 0),
+            "base_status": base_status,
+            "batch_count": 0,
+            "from_plus": from_plus,
+            "to_plus": from_plus,
+            "coin_cost_total": 0,
+            "consumed_ids": [],
+            "consumed_rows": [],
+            "runs": [],
+            "target_count_before": len(rows),
+            "inventory_count_before": inventory_count,
+            "equipped_count_before": sum(
+                1 for row in rows if str(row.get("status") or "").strip().lower() == "equipped"
+            ),
+            "remaining_count_after": len(rows),
+            "power_delta_estimate": 0,
+        }
+
+    material_rows = [
+        dict(row)
+        for row in inventory_rows
+        if int(row.get("id") or 0) != int(base_row.get("id") or 0)
+    ]
+    material_rows.sort(key=_strengthen_material_sort_key)
+
+    current_plus = int(base_row.get("plus") or 0)
     runs = []
     consumed_rows = []
     cursor = 0
@@ -26064,20 +26201,133 @@ def _strengthen_parts_batch_plan(db, user_id, base_row):
         )
         consumed_rows.extend(pair)
         current_plus = int(next_plus)
+
     preview_row = dict(base_row)
     preview_row["plus"] = int(current_plus)
     compare_payload = _part_card_payload(base_row, compare_row=preview_row)
+    consumed_ids = [int(row["id"]) for row in consumed_rows]
     return {
-        "base_id": base_id,
-        "base_status": str(base_row["status"] or "inventory"),
+        "ok": bool(runs),
+        "part_key": str(base_row.get("part_key") or ""),
+        "part_type": base_row.get("part_type"),
+        "rarity": base_row.get("rarity"),
+        "display_name": _part_display_name_ja(base_row),
+        "image_path": str(base_row.get("image_path") or ""),
+        "base_row": dict(base_row),
+        "preview_row": preview_row,
+        "base_id": int(base_row.get("id") or 0),
+        "base_status": str(base_row.get("status") or "inventory"),
         "batch_count": len(runs),
-        "from_plus": int(base_row["plus"] or 0),
+        "from_plus": int(base_row.get("plus") or 0),
         "to_plus": int(current_plus),
         "coin_cost_total": int(sum(run["coin_cost"] for run in runs)),
-        "consumed_ids": [int(row["id"]) for row in consumed_rows],
+        "consumed_ids": consumed_ids,
         "consumed_rows": consumed_rows,
         "runs": runs,
+        "target_count_before": len(rows),
+        "inventory_count_before": inventory_count,
+        "equipped_count_before": sum(
+            1 for row in rows if str(row.get("status") or "").strip().lower() == "equipped"
+        ),
+        "remaining_count_after": len(rows) - len(consumed_rows),
         "power_delta_estimate": int(compare_payload.get("compare_total_delta") or 0),
+    }
+
+
+def _strengthen_warehouse_plan(db, user_id):
+    rows = db.execute(
+        """
+        SELECT
+            pi.id,
+            pi.part_id,
+            pi.rarity,
+            pi.element,
+            pi.series,
+            pi.plus,
+            pi.status,
+            pi.created_at,
+            pi.updated_at,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+            rp.part_type,
+            rp.key AS part_key,
+            rp.image_path,
+            rp.display_name_ja
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ?
+          AND pi.status IN ('inventory', 'equipped')
+        ORDER BY
+            CASE rp.part_type
+                WHEN 'HEAD' THEN 1
+                WHEN 'RIGHT_ARM' THEN 2
+                WHEN 'LEFT_ARM' THEN 3
+                WHEN 'LEGS' THEN 4
+                ELSE 9
+            END ASC,
+            rp.key ASC,
+            UPPER(COALESCE(pi.rarity, '')) ASC,
+            CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC,
+            pi.plus DESC,
+            COALESCE(pi.created_at, 0) ASC,
+            pi.id ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+
+    grouped_rows = {}
+    for row in rows:
+        key = (str(row["part_key"] or ""), str(row["rarity"] or "").upper())
+        grouped_rows.setdefault(key, []).append(dict(row))
+
+    group_plans = []
+    for (part_key, rarity), group_rows in grouped_rows.items():
+        inventory_count = sum(
+            1 for row in group_rows if str(row.get("status") or "").strip().lower() == "inventory"
+        )
+        if len(group_rows) < 3 or inventory_count < 2:
+            continue
+        plan = _strengthen_group_plan_from_rows(group_rows)
+        if int(plan.get("batch_count") or 0) > 0:
+            group_plans.append(plan)
+
+    group_plans.sort(
+        key=lambda item: (
+            _strengthen_part_type_sort_value(item.get("part_type")),
+            str(item.get("display_name") or ""),
+            str(item.get("rarity") or ""),
+        )
+    )
+    group_summaries = [_strengthen_group_summary(plan) for plan in group_plans]
+    return {
+        "mode": "warehouse_batch",
+        "groups": group_plans,
+        "group_summaries": group_summaries,
+        "group_count": len(group_plans),
+        "fuse_count": int(sum(plan.get("batch_count") or 0 for plan in group_plans)),
+        "total_material_count": int(sum(len(plan.get("consumed_ids") or []) for plan in group_plans)),
+        "total_coin_cost": int(sum(plan.get("coin_cost_total") or 0 for plan in group_plans)),
+        "consumed_part_ids": [int(pid) for plan in group_plans for pid in (plan.get("consumed_ids") or [])],
+        "result_part_ids": [int(plan.get("base_id") or 0) for plan in group_plans if int(plan.get("base_id") or 0) > 0],
+        "signature": _strengthen_plan_signature(group_summaries),
+    }
+
+
+def _strengthen_parts_batch_plan(db, user_id, base_row):
+    plan = _strengthen_group_plan_from_rows(
+        _strengthen_group_rows(db, user_id, base_row["part_key"], base_row["rarity"]),
+        base_id=base_row["id"],
+    )
+    return {
+        "base_id": int(plan.get("base_id") or 0),
+        "base_status": str(plan.get("base_status") or "inventory"),
+        "batch_count": int(plan.get("batch_count") or 0),
+        "from_plus": int(plan.get("from_plus") or 0),
+        "to_plus": int(plan.get("to_plus") or 0),
+        "coin_cost_total": int(plan.get("coin_cost_total") or 0),
+        "consumed_ids": [int(pid) for pid in (plan.get("consumed_ids") or [])],
+        "consumed_rows": [dict(row) for row in (plan.get("consumed_rows") or [])],
+        "runs": [dict(run) for run in (plan.get("runs") or [])],
+        "power_delta_estimate": int(plan.get("power_delta_estimate") or 0),
     }
 
 
@@ -26192,6 +26442,117 @@ def _strengthen_parts_batch_selected(db, user_id, base_id):
     }
 
 
+def _strengthen_warehouse_result_from_request(db, user_id, request_id):
+    if not request_id:
+        return None
+    event_row = db.execute(
+        """
+        SELECT payload_json
+        FROM world_events_log
+        WHERE user_id = ?
+          AND request_id = ?
+          AND event_type = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user_id), str(request_id), AUDIT_EVENT_TYPES["FUSE_BATCH_EXECUTE"]),
+    ).fetchone()
+    if not event_row:
+        return None
+
+    try:
+        payload = json.loads(event_row["payload_json"] or "{}")
+    except Exception:
+        payload = {}
+
+    result_part_ids = [int(pid) for pid in (payload.get("result_part_ids") or []) if int(pid or 0) > 0]
+    group_rows = []
+    if result_part_ids:
+        placeholders = ",".join("?" for _ in result_part_ids)
+        group_rows = db.execute(
+            f"""
+            SELECT
+                pi.id,
+                pi.part_id,
+                pi.rarity,
+                pi.element,
+                pi.series,
+                pi.plus,
+                pi.status,
+                pi.created_at,
+                pi.updated_at,
+                pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                rp.part_type,
+                rp.key AS part_key,
+                rp.image_path,
+                rp.display_name_ja
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.user_id = ?
+              AND pi.id IN ({placeholders})
+            """,
+            [int(user_id), *result_part_ids],
+        ).fetchall()
+    row_by_id = {int(row["id"]): dict(row) for row in group_rows}
+
+    groups = []
+    for item in payload.get("groups") or []:
+        group_item = dict(item or {})
+        base_id = int(group_item.get("base_id") or 0)
+        base_row = row_by_id.get(base_id)
+        if base_row:
+            before_row = dict(base_row)
+            before_row["plus"] = int(group_item.get("from_plus") or 0)
+            card = _part_card_payload(before_row, compare_row=base_row)
+            group_item["image_url"] = card["image_url"]
+            group_item["display_name"] = card["display_name"]
+            group_item["part_type_label"] = card["part_type_label"]
+            group_item["rarity_label"] = card["rarity_label"]
+            group_item["stat_rows"] = card["stat_rows"]
+            group_item["base_status_label"] = card["status_label"]
+            group_item["is_equipped"] = bool(card.get("is_equipped"))
+            group_item["total_value"] = int(card.get("total_value") or 0)
+            group_item["compare_total_value"] = int(card.get("compare_total_value") or 0)
+            group_item["compare_total_delta_text"] = str(card.get("compare_total_delta_text") or "±0")
+        else:
+            fallback_row = {
+                "part_type": group_item.get("part_type"),
+                "rarity": group_item.get("rarity"),
+                "element": group_item.get("element") or "NORMAL",
+                "series": group_item.get("series") or "default",
+                "status": group_item.get("base_status") or "inventory",
+                "plus": int(group_item.get("to_plus") or 0),
+                "image_path": group_item.get("image_path"),
+                "display_name_ja": group_item.get("display_name"),
+            }
+            group_item["image_url"] = url_for("static", filename=_part_image_rel(fallback_row), v=APP_VERSION)
+            group_item["display_name"] = group_item.get("display_name") or _part_display_name_ja(
+                group_item.get("part_key"),
+                rarity=group_item.get("rarity"),
+                part_type=group_item.get("part_type"),
+            )
+            group_item["part_type_label"] = _part_type_ui_label(group_item.get("part_type"))
+            group_item["rarity_label"] = str(group_item.get("rarity") or "N").upper()
+            group_item["stat_rows"] = []
+            group_item["base_status_label"] = "装備中" if str(group_item.get("base_status") or "") == "equipped" else "所持中"
+            group_item["is_equipped"] = str(group_item.get("base_status") or "") == "equipped"
+            group_item["total_value"] = None
+            group_item["compare_total_value"] = None
+            group_item["compare_total_delta_text"] = None
+        groups.append(group_item)
+
+    return {
+        "mode": str(payload.get("mode") or "warehouse_batch"),
+        "group_count": int(payload.get("group_count") or 0),
+        "fuse_count": int(payload.get("fuse_count") or 0),
+        "total_material_count": int(payload.get("total_material_count") or 0),
+        "total_coin_cost": int(payload.get("total_coin_cost") or 0),
+        "consumed_part_ids": [int(pid) for pid in (payload.get("consumed_part_ids") or [])],
+        "result_part_ids": [int(pid) for pid in (payload.get("result_part_ids") or [])],
+        "groups": groups,
+    }
+
+
 @app.route("/parts/strengthen", methods=["GET", "POST"])
 @app.route("/parts/fuse", methods=["GET", "POST"])
 @login_required
@@ -26204,157 +26565,337 @@ def parts_strengthen():
         request_id = getattr(flask_g, "request_id", None)
     except Exception:
         request_id = None
+    request_id = request_id or str(uuid.uuid4())
     last_fuse_result = None
+    warehouse_preview = None
+    warehouse_result = None
     selected_mode = (request.args.get("mode") or "select").strip().lower()
-    if selected_mode not in {"select", "result"}:
+    if selected_mode not in {"select", "result", "warehouse_preview", "warehouse_result"}:
         selected_mode = "select"
     filter_part_type = _normalize_part_type_filter(request.values.get("part_type"))
     filter_rarity = (request.values.get("rarity") or "").strip().upper()
     plus_raw = (request.values.get("plus") or "").strip()
     filter_plus = int(plus_raw) if plus_raw.isdigit() else None
     if request.method == "POST":
-        result = {}
         mode = (request.form.get("mode") or "select").strip().lower()
-        if mode not in {"select", "batch"}:
-            mode = "select"
-        redirect_plus = filter_plus
-        base_id_raw = (request.form.get("base_id") or "").strip()
-        if not base_id_raw.isdigit():
-            flash("ベース個体を選択してください。", "error")
-        else:
-            try:
-                if mode == "batch":
-                    result = _strengthen_parts_batch_selected(db, user_id, base_id=int(base_id_raw))
-                else:
-                    result = _strengthen_parts_selected(db, user_id, base_id=int(base_id_raw))
-            except Exception:
-                app.logger.exception(
-                    "parts_strengthen.failed user_id=%s mode=%s args=%s form=%s",
-                    user_id,
-                    mode,
-                    dict(request.args),
-                    dict(request.form),
-                )
-                flash("条件が不正です。URLを作り直してください。", "error")
-                return redirect(url_for("parts_strengthen"))
-        if result:
-            if result.get("ok"):
-                db.execute(
-                    """
-                    INSERT INTO fusion_audit_logs
-                    (user_id, mode, part_type, rarity, from_plus, to_plus, outcome, use_protect_core, consumed_ids, created_at, message)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user_id,
-                        mode,
-                        result.get("part_type"),
-                        result.get("rarity"),
-                        result.get("base_plus"),
-                        result.get("new_plus"),
-                        result.get("outcome"),
-                        0,
-                        json.dumps(result.get("consumed_ids", []), ensure_ascii=False),
-                        int(time.time()),
-                        ("まとめ強化" if mode == "batch" else "強化"),
-                    ),
-                )
-                db.commit()
+        if mode == "warehouse_preview":
+            selected_mode = "warehouse_preview"
+            warehouse_preview = _strengthen_warehouse_plan(db, user_id)
             audit_log(
                 db,
-                AUDIT_EVENT_TYPES["FUSE"],
+                AUDIT_EVENT_TYPES["FUSE_BATCH_PREVIEW"],
                 user_id=user_id,
                 request_id=request_id,
                 action_key="fuse",
                 entity_type="part_instance",
-                entity_id=result.get("created_id"),
-                delta_coins=-(int(result.get("coin_cost") or 0)) if result.get("coin_cost") is not None else None,
+                entity_id=(warehouse_preview.get("result_part_ids") or [None])[0],
+                delta_count=int(warehouse_preview.get("fuse_count") or 0),
                 payload={
-                    "mode": mode,
-                    "success": bool(result.get("ok")),
-                    "base_part_instance_id": result.get("base_id"),
-                    "outcome": result.get("outcome"),
-                    "part_type": result.get("part_type"),
-                    "rarity": result.get("rarity"),
-                    "from_plus": result.get("base_plus"),
-                    "to_plus": result.get("new_plus"),
-                    "consumed_ids": result.get("consumed_ids", []),
-                    "created_id": result.get("created_id"),
-                    "coin_cost": result.get("coin_cost"),
-                    "mat_plus_sum": result.get("mat_plus_sum"),
-                    "bonus": result.get("bonus"),
-                    "inc": result.get("inc"),
-                    "batch_mode": bool(result.get("batch_mode")),
-                    "batch_count": int(result.get("batch_count") or 0),
-                    "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
+                    "mode": "warehouse_batch",
+                    "group_count": int(warehouse_preview.get("group_count") or 0),
+                    "fuse_count": int(warehouse_preview.get("fuse_count") or 0),
+                    "consumed_part_ids": warehouse_preview.get("consumed_part_ids", []),
+                    "result_part_ids": warehouse_preview.get("result_part_ids", []),
+                    "total_coin_cost": int(warehouse_preview.get("total_coin_cost") or 0),
+                    "total_material_count": int(warehouse_preview.get("total_material_count") or 0),
+                    "signature": warehouse_preview.get("signature"),
+                    "groups": warehouse_preview.get("group_summaries", []),
                 },
                 ip=request.remote_addr,
             )
             db.commit()
-            session["last_fuse_result"] = {
-                "mode": mode,
-                "outcome": result.get("outcome"),
-                "message": result.get("message"),
-                "part_type": result.get("part_type"),
-                "part_key": result.get("part_key"),
-                "rarity": result.get("rarity"),
-                "from_plus": result.get("base_plus"),
-                "to_plus": result.get("new_plus"),
-                "coin_cost": result.get("coin_cost"),
-                "consumed_ids": result.get("consumed_ids", []),
-                "created_id": result.get("created_id"),
-                "base_id": result.get("base_id"),
-                "mat_plus_sum": result.get("mat_plus_sum"),
-                "bonus": result.get("bonus"),
-                "inc": result.get("inc"),
-                "material_pluses": result.get("material_pluses", []),
-                "ok": bool(result.get("ok")),
-                "batch_mode": bool(result.get("batch_mode")),
-                "batch_count": int(result.get("batch_count") or 0),
-                "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
-            }
-            mode_label = "まとめ強化" if mode == "batch" else "強化"
-            consumed_ids = ",".join([f"#{x}" for x in result.get("consumed_ids", [])])
-            part_type = result.get("part_type") or "-"
-            rarity = result.get("rarity") or "-"
-            from_plus = result.get("base_plus")
-            to_plus = result.get("new_plus")
-            coin_cost = result.get("coin_cost")
-            outcome = result.get("outcome")
-            if result.get("ok"):
-                status_label = "成功"
-                plus_text = (
-                    f"+{from_plus} → +{to_plus}"
-                    if to_plus is not None and from_plus is not None
-                    else (f"+{from_plus}" if from_plus is not None else "-")
+        elif mode == "warehouse_execute":
+            expected_signature = (request.form.get("plan_signature") or "").strip()
+            execute_plan = None
+            error_message = None
+            if not expected_signature:
+                error_message = "内容を確認してから整理してください。"
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                execute_plan = _strengthen_warehouse_plan(db, user_id)
+                if error_message:
+                    db.rollback()
+                elif int(execute_plan.get("group_count") or 0) <= 0:
+                    error_message = "整理できるパーツはありません。"
+                    db.rollback()
+                elif expected_signature != str(execute_plan.get("signature") or ""):
+                    error_message = "プレビュー内容が変わりました。もう一度確認してください。"
+                    db.rollback()
+                else:
+                    user_row = db.execute("SELECT coins FROM users WHERE id = ?", (int(user_id),)).fetchone()
+                    if not user_row or int(user_row["coins"] or 0) < int(execute_plan["total_coin_cost"]):
+                        error_message = f"コイン不足です（必要: {int(execute_plan['total_coin_cost'])}）"
+                        db.rollback()
+                    else:
+                        db.execute(
+                            "UPDATE users SET coins = coins - ? WHERE id = ?",
+                            (int(execute_plan["total_coin_cost"]), int(user_id)),
+                        )
+                        now_ts = int(time.time())
+                        for group_plan in execute_plan["groups"]:
+                            consumed_ids = [int(pid) for pid in group_plan.get("consumed_ids", [])]
+                            if consumed_ids:
+                                placeholders = ",".join("?" for _ in consumed_ids)
+                                db.execute(
+                                    f"DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory' AND id IN ({placeholders})",
+                                    [int(user_id), *consumed_ids],
+                                )
+                            db.execute(
+                                """
+                                UPDATE part_instances
+                                SET plus = ?, updated_at = datetime('now')
+                                WHERE id = ? AND user_id = ?
+                                """,
+                                (
+                                    int(group_plan.get("to_plus") or 0),
+                                    int(group_plan.get("base_id") or 0),
+                                    int(user_id),
+                                ),
+                            )
+                            group_summary = _strengthen_group_summary(group_plan)
+                            db.execute(
+                                """
+                                INSERT INTO fusion_audit_logs
+                                (user_id, mode, part_type, rarity, from_plus, to_plus, outcome, use_protect_core, consumed_ids, created_at, message)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    int(user_id),
+                                    "warehouse_batch",
+                                    group_summary.get("part_type"),
+                                    group_summary.get("rarity"),
+                                    group_summary.get("from_plus"),
+                                    group_summary.get("to_plus"),
+                                    "success",
+                                    0,
+                                    json.dumps(group_summary.get("consumed_ids", []), ensure_ascii=False),
+                                    now_ts,
+                                    "倉庫整理合成",
+                                ),
+                            )
+                            audit_log(
+                                db,
+                                AUDIT_EVENT_TYPES["FUSE"],
+                                user_id=user_id,
+                                request_id=request_id,
+                                action_key="fuse",
+                                entity_type="part_instance",
+                                entity_id=group_summary.get("base_id"),
+                                delta_coins=-int(group_summary.get("coin_cost") or 0),
+                                delta_count=int(group_summary.get("batch_count") or 0),
+                                payload={
+                                    "mode": "warehouse_batch",
+                                    "success": True,
+                                    "base_part_instance_id": group_summary.get("base_id"),
+                                    "outcome": "success",
+                                    "part_type": group_summary.get("part_type"),
+                                    "rarity": group_summary.get("rarity"),
+                                    "from_plus": group_summary.get("from_plus"),
+                                    "to_plus": group_summary.get("to_plus"),
+                                    "consumed_ids": group_summary.get("consumed_ids", []),
+                                    "created_id": group_summary.get("base_id"),
+                                    "coin_cost": group_summary.get("coin_cost"),
+                                    "mat_plus_sum": None,
+                                    "bonus": 0,
+                                    "inc": 1,
+                                    "batch_mode": True,
+                                    "batch_count": int(group_summary.get("batch_count") or 0),
+                                    "power_delta_estimate": int(group_summary.get("power_delta_estimate") or 0),
+                                    "warehouse_batch": True,
+                                    "group_count": int(execute_plan.get("group_count") or 0),
+                                },
+                                ip=request.remote_addr,
+                            )
+                        audit_log(
+                            db,
+                            AUDIT_EVENT_TYPES["FUSE_BATCH_EXECUTE"],
+                            user_id=user_id,
+                            request_id=request_id,
+                            action_key="fuse",
+                            entity_type="part_instance",
+                            entity_id=(execute_plan.get("result_part_ids") or [None])[0],
+                            delta_count=int(execute_plan.get("fuse_count") or 0),
+                            payload={
+                                "mode": "warehouse_batch",
+                                "group_count": int(execute_plan.get("group_count") or 0),
+                                "fuse_count": int(execute_plan.get("fuse_count") or 0),
+                                "consumed_part_ids": execute_plan.get("consumed_part_ids", []),
+                                "result_part_ids": execute_plan.get("result_part_ids", []),
+                                "total_coin_cost": int(execute_plan.get("total_coin_cost") or 0),
+                                "total_material_count": int(execute_plan.get("total_material_count") or 0),
+                                "groups": execute_plan.get("group_summaries", []),
+                            },
+                            ip=request.remote_addr,
+                        )
+                        db.commit()
+                        flash(
+                            f"{int(execute_plan.get('group_count') or 0)}種類を整理しました。"
+                            f" 合計{int(execute_plan.get('fuse_count') or 0)}回強化 / "
+                            f"素材{int(execute_plan.get('total_material_count') or 0)}個 / "
+                            f"-{int(execute_plan.get('total_coin_cost') or 0)}コイン",
+                            "notice",
+                        )
+                        return redirect(
+                            url_for(
+                                "parts_strengthen",
+                                mode="warehouse_result",
+                                request_id=request_id,
+                            )
+                        )
+            except Exception:
+                db.rollback()
+                app.logger.exception(
+                    "parts_strengthen.warehouse_execute_failed user_id=%s args=%s form=%s",
+                    user_id,
+                    dict(request.args),
+                    dict(request.form),
                 )
-                detail = (
-                    f"{mode_label}{status_label}：{part_type} / {rarity} / {plus_text} "
-                    f"（{('実行 ' + str(int(result.get('batch_count') or 0)) + '回 / ') if mode == 'batch' else ''}上昇量 +1 / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
-                    f"-{coin_cost if coin_cost is not None else 0}コイン"
-                )
-                flash(detail, "notice")
-            else:
-                flash(result["message"], "error")
+                error_message = "倉庫整理合成に失敗しました。もう一度内容を確認してください。"
+            if error_message:
+                flash(error_message, "error")
+            selected_mode = "warehouse_preview"
+            warehouse_preview = execute_plan or _strengthen_warehouse_plan(db, user_id)
         else:
-            app.logger.warning(
-                "parts_strengthen.invalid_selection user_id=%s mode=%s args=%s form=%s",
-                user_id,
-                "select",
-                dict(request.args),
-                dict(request.form),
+            result = {}
+            if mode not in {"select", "batch"}:
+                mode = "select"
+            redirect_plus = filter_plus
+            base_id_raw = (request.form.get("base_id") or "").strip()
+            if not base_id_raw.isdigit():
+                flash("ベース個体を選択してください。", "error")
+            else:
+                try:
+                    if mode == "batch":
+                        result = _strengthen_parts_batch_selected(db, user_id, base_id=int(base_id_raw))
+                    else:
+                        result = _strengthen_parts_selected(db, user_id, base_id=int(base_id_raw))
+                except Exception:
+                    app.logger.exception(
+                        "parts_strengthen.failed user_id=%s mode=%s args=%s form=%s",
+                        user_id,
+                        mode,
+                        dict(request.args),
+                        dict(request.form),
+                    )
+                    flash("条件が不正です。URLを作り直してください。", "error")
+                    return redirect(url_for("parts_strengthen"))
+            if result:
+                if result.get("ok"):
+                    db.execute(
+                        """
+                        INSERT INTO fusion_audit_logs
+                        (user_id, mode, part_type, rarity, from_plus, to_plus, outcome, use_protect_core, consumed_ids, created_at, message)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user_id,
+                            mode,
+                            result.get("part_type"),
+                            result.get("rarity"),
+                            result.get("base_plus"),
+                            result.get("new_plus"),
+                            result.get("outcome"),
+                            0,
+                            json.dumps(result.get("consumed_ids", []), ensure_ascii=False),
+                            int(time.time()),
+                            ("まとめ強化" if mode == "batch" else "強化"),
+                        ),
+                    )
+                    db.commit()
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["FUSE"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="fuse",
+                    entity_type="part_instance",
+                    entity_id=result.get("created_id"),
+                    delta_coins=-(int(result.get("coin_cost") or 0)) if result.get("coin_cost") is not None else None,
+                    payload={
+                        "mode": mode,
+                        "success": bool(result.get("ok")),
+                        "base_part_instance_id": result.get("base_id"),
+                        "outcome": result.get("outcome"),
+                        "part_type": result.get("part_type"),
+                        "rarity": result.get("rarity"),
+                        "from_plus": result.get("base_plus"),
+                        "to_plus": result.get("new_plus"),
+                        "consumed_ids": result.get("consumed_ids", []),
+                        "created_id": result.get("created_id"),
+                        "coin_cost": result.get("coin_cost"),
+                        "mat_plus_sum": result.get("mat_plus_sum"),
+                        "bonus": result.get("bonus"),
+                        "inc": result.get("inc"),
+                        "batch_mode": bool(result.get("batch_mode")),
+                        "batch_count": int(result.get("batch_count") or 0),
+                        "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
+                    },
+                    ip=request.remote_addr,
+                )
+                db.commit()
+                session["last_fuse_result"] = {
+                    "mode": mode,
+                    "outcome": result.get("outcome"),
+                    "message": result.get("message"),
+                    "part_type": result.get("part_type"),
+                    "part_key": result.get("part_key"),
+                    "rarity": result.get("rarity"),
+                    "from_plus": result.get("base_plus"),
+                    "to_plus": result.get("new_plus"),
+                    "coin_cost": result.get("coin_cost"),
+                    "consumed_ids": result.get("consumed_ids", []),
+                    "created_id": result.get("created_id"),
+                    "base_id": result.get("base_id"),
+                    "mat_plus_sum": result.get("mat_plus_sum"),
+                    "bonus": result.get("bonus"),
+                    "inc": result.get("inc"),
+                    "material_pluses": result.get("material_pluses", []),
+                    "ok": bool(result.get("ok")),
+                    "batch_mode": bool(result.get("batch_mode")),
+                    "batch_count": int(result.get("batch_count") or 0),
+                    "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
+                }
+                mode_label = "まとめ強化" if mode == "batch" else "強化"
+                consumed_ids = ",".join([f"#{x}" for x in result.get("consumed_ids", [])])
+                part_type = result.get("part_type") or "-"
+                rarity = result.get("rarity") or "-"
+                from_plus = result.get("base_plus")
+                to_plus = result.get("new_plus")
+                coin_cost = result.get("coin_cost")
+                if result.get("ok"):
+                    status_label = "成功"
+                    plus_text = (
+                        f"+{from_plus} → +{to_plus}"
+                        if to_plus is not None and from_plus is not None
+                        else (f"+{from_plus}" if from_plus is not None else "-")
+                    )
+                    detail = (
+                        f"{mode_label}{status_label}：{part_type} / {rarity} / {plus_text} "
+                        f"（{('実行 ' + str(int(result.get('batch_count') or 0)) + '回 / ') if mode == 'batch' else ''}上昇量 +1 / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
+                        f"-{coin_cost if coin_cost is not None else 0}コイン"
+                    )
+                    flash(detail, "notice")
+                else:
+                    flash(result["message"], "error")
+            else:
+                app.logger.warning(
+                    "parts_strengthen.invalid_selection user_id=%s mode=%s args=%s form=%s",
+                    user_id,
+                    "select",
+                    dict(request.args),
+                    dict(request.form),
+                )
+                flash("強化対象を選択してください。", "error")
+                session.pop("last_fuse_result", None)
+            return redirect(
+                url_for(
+                    "parts_strengthen",
+                    part_type=((result.get("part_type") if isinstance(result, dict) else filter_part_type) or ""),
+                    rarity=((result.get("rarity") if isinstance(result, dict) else filter_rarity) or ""),
+                    plus=redirect_plus if redirect_plus is not None else "",
+                    mode="result",
+                )
             )
-            flash("強化対象を選択してください。", "error")
-            session.pop("last_fuse_result", None)
-        return redirect(
-            url_for(
-                "parts_strengthen",
-                part_type=((result.get("part_type") if isinstance(result, dict) else filter_part_type) or ""),
-                rarity=((result.get("rarity") if isinstance(result, dict) else filter_rarity) or ""),
-                plus=redirect_plus if redirect_plus is not None else "",
-                mode="result",
-            )
-        )
 
     raw_last = session.pop("last_fuse_result", None) if selected_mode == "result" else None
     if selected_mode == "result" and not raw_last:
@@ -26394,6 +26935,16 @@ def parts_strengthen():
         if filter_plus is not None:
             retry_params["plus"] = filter_plus
         last_fuse_result["retry_url"] = url_for("parts_strengthen", **retry_params)
+    if selected_mode == "warehouse_result":
+        warehouse_result = _strengthen_warehouse_result_from_request(
+            db,
+            user_id,
+            (request.args.get("request_id") or "").strip(),
+        )
+        if not warehouse_result:
+            selected_mode = "select"
+    elif selected_mode == "warehouse_preview" and warehouse_preview is None:
+        warehouse_preview = _strengthen_warehouse_plan(db, user_id)
 
     where_clauses = ["pi.user_id = ?", "pi.status IN ('inventory', 'equipped')"]
     params = [user_id]
@@ -26405,27 +26956,29 @@ def parts_strengthen():
         params.append(filter_rarity)
     where_sql = " AND ".join(where_clauses)
 
-    group_rows = db.execute(
-        """
-        SELECT
-            rp.part_type,
-            rp.key AS part_key,
-            pi.rarity,
-            COUNT(*) AS qty_total,
-            SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) AS qty_inventory,
-            GROUP_CONCAT(pi.id) AS ids,
-            MIN(pi.element) AS element
-        FROM part_instances pi
-        JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE """
-        + where_sql
-        + """
-        GROUP BY rp.part_type, rp.key, pi.rarity
-        HAVING COUNT(*) >= 3 AND SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 2
-        ORDER BY rp.part_type, rp.key, pi.rarity
-        """,
-        params,
-    ).fetchall()
+    group_rows = []
+    if selected_mode in {"select", "warehouse_preview"}:
+        group_rows = db.execute(
+            """
+            SELECT
+                rp.part_type,
+                rp.key AS part_key,
+                pi.rarity,
+                COUNT(*) AS qty_total,
+                SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) AS qty_inventory,
+                GROUP_CONCAT(pi.id) AS ids,
+                MIN(pi.element) AS element
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE """
+            + where_sql
+            + """
+            GROUP BY rp.part_type, rp.key, pi.rarity
+            HAVING COUNT(*) >= 3 AND SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 2
+            ORDER BY rp.part_type, rp.key, pi.rarity
+            """,
+            params,
+        ).fetchall()
     plus_rows = db.execute(
         """
         SELECT DISTINCT plus
@@ -26461,11 +27014,9 @@ def parts_strengthen():
     part_type_options = [str(r["part_type"]) for r in part_type_rows if r["part_type"]]
     if not part_type_options:
         part_type_options = ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"]
-    stat_labels = {k: _stat_label(k) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
     base_candidates = []
     batch_candidates = []
     for group_row in group_rows:
-        ids_csv = group_row["ids"] or ""
         sample_rows = db.execute(
             """
             SELECT
@@ -26476,6 +27027,7 @@ def parts_strengthen():
                 pi.series,
                 pi.plus,
                 pi.status,
+                pi.created_at,
                 pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
                 rp.part_type,
                 rp.key AS part_key,
@@ -26488,7 +27040,7 @@ def parts_strengthen():
               AND rp.part_type = ?
               AND rp.key = ?
               AND pi.rarity = ?
-            ORDER BY CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC, pi.plus DESC, pi.id ASC
+            ORDER BY CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC, pi.plus DESC, COALESCE(pi.created_at, 0) ASC, pi.id ASC
             LIMIT 50
             """,
             (user_id, group_row["part_type"], group_row["part_key"], group_row["rarity"]),
@@ -26501,52 +27053,10 @@ def parts_strengthen():
             base_rows = [r for r in sample_rows if int(r["plus"] or 0) == int(filter_plus)]
         if not base_rows:
             continue
-        eligible_base_rows = []
-        for row in base_rows:
-            row_status = (row["status"] or "").strip().lower()
-            if row_status == "equipped" and inventory_count >= 2:
-                eligible_base_rows.append(row)
-            elif row_status == "inventory" and inventory_count >= 3:
-                eligible_base_rows.append(row)
+        eligible_base_rows = [row for row in base_rows if _strengthen_is_eligible_base(dict(row), inventory_count)]
         if not eligible_base_rows:
             continue
-        stat_ranges = {}
-        for s in ("hp", "atk", "def", "spd", "acc", "cri"):
-            cur_vals = []
-            next_vals = []
-            for row in eligible_base_rows:
-                current = compute_part_stats(dict(row))
-                next_row = dict(row)
-                next_row["plus"] = int(next_row["plus"]) + 1
-                nxt = compute_part_stats(next_row)
-                cur_vals.append(int(current[s]))
-                next_vals.append(int(nxt[s]))
-            if cur_vals and next_vals:
-                cmin = min(cur_vals)
-                cmax = max(cur_vals)
-                nmin = min(next_vals)
-                nmax = max(next_vals)
-                stat_ranges[s] = {
-                    "label": stat_labels[s],
-                    "current_min": cmin,
-                    "current_max": cmax,
-                    "next_min": nmin,
-                    "next_max": nmax,
-                    "delta_min": nmin - cmin,
-                    "delta_max": nmax - cmax,
-                }
         group_display_name = _part_display_name_ja(sample_rows[0]) if sample_rows else (group_row["part_type"] or "-")
-        instance_options = []
-        for row in eligible_base_rows:
-            row_status = (row["status"] or "inventory").strip().lower()
-            instance_options.append(
-                {
-                    "id": int(row["id"]),
-                    "label": f"#{int(row['id'])} {group_display_name} +{int(row['plus'] or 0)}" + (" [装備中]" if row_status == "equipped" else ""),
-                    "plus": int(row["plus"] or 0),
-                    "status": row_status,
-                }
-            )
         plus_values = [int(row["plus"] or 0) for row in sample_rows]
         plus_min = min(plus_values) if plus_values else 0
         plus_max = max(plus_values) if plus_values else 0
@@ -26590,11 +27100,7 @@ def parts_strengthen():
             base_candidates.append(candidate_item)
         batch_base_rows = sorted(
             eligible_base_rows,
-            key=lambda item: (
-                0 if str(item["status"] or "").strip().lower() == "equipped" else 1,
-                -int(item["plus"] or 0),
-                int(item["id"] or 0),
-            ),
+            key=lambda item: _strengthen_base_sort_key(dict(item)),
         )
         if batch_base_rows:
             batch_base_row = dict(batch_base_rows[0])
@@ -26611,6 +27117,10 @@ def parts_strengthen():
                 batch_item["batch_count"] = int(batch_plan["batch_count"] or 0)
                 batch_item["consumed_count"] = len(batch_plan["consumed_ids"])
                 batch_item["consumed_ids"] = list(batch_plan["consumed_ids"])
+                batch_item["remaining_count_after"] = max(
+                    0,
+                    int(group_row["qty_total"] or 0) - len(batch_plan["consumed_ids"]),
+                )
                 batch_item["material_cards"] = [
                     _part_card_payload(material, can_discard=False) for material in batch_plan["consumed_rows"][:4]
                 ]
@@ -26683,10 +27193,36 @@ def parts_strengthen():
         item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
         item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
         storage_blocked_groups.append(item)
+    if warehouse_preview is not None:
+        warehouse_preview["empty_message"] = (
+            "装備中を除くと成立する組み合わせがありません"
+            if int(warehouse_preview.get("group_count") or 0) <= 0 and storage_blocked_groups
+            else "整理できるパーツはありません"
+        )
+        warehouse_preview["groups_view"] = []
+        for group_plan in warehouse_preview.get("groups", []):
+            preview_row = dict(group_plan.get("base_row") or {})
+            preview_row["plus"] = int(group_plan.get("to_plus") or 0)
+            group_card = _part_card_payload(group_plan.get("base_row") or {}, compare_row=preview_row)
+            group_card["base_id"] = int(group_plan.get("base_id") or 0)
+            group_card["base_status"] = str(group_plan.get("base_status") or "inventory")
+            group_card["base_status_label"] = "装備中" if group_card.get("is_equipped") else "所持中"
+            group_card["batch_count"] = int(group_plan.get("batch_count") or 0)
+            group_card["consumed_count"] = len(group_plan.get("consumed_ids") or [])
+            group_card["remaining_count_after"] = int(group_plan.get("remaining_count_after") or 0)
+            group_card["cost_total"] = int(group_plan.get("coin_cost_total") or 0)
+            group_card["target_count_before"] = int(group_plan.get("target_count_before") or 0)
+            group_card["inventory_count_before"] = int(group_plan.get("inventory_count_before") or 0)
+            group_card["equipped_count_before"] = int(group_plan.get("equipped_count_before") or 0)
+            group_card["expected_plus_text"] = f"+{int(group_plan.get('from_plus') or 0)} → +{int(group_plan.get('to_plus') or 0)}"
+            group_card["material_cards"] = [
+                _part_card_payload(material, can_discard=False) for material in (group_plan.get("consumed_rows") or [])[:4]
+            ]
+            warehouse_preview["groups_view"].append(group_card)
     base_candidates.sort(
         key=lambda item: (
             0 if item.get("is_equipped") else 1,
-            ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"].index(item.get("part_type")) if item.get("part_type") in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else 9,
+            _strengthen_part_type_sort_value(item.get("part_type")),
             -int(item.get("total_value") or 0),
             -int(item.get("plus") or 0),
             int(item.get("id") or 0),
@@ -26695,7 +27231,7 @@ def parts_strengthen():
     batch_candidates.sort(
         key=lambda item: (
             0 if item.get("is_equipped") else 1,
-            ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"].index(item.get("part_type")) if item.get("part_type") in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else 9,
+            _strengthen_part_type_sort_value(item.get("part_type")),
             -int(item.get("batch_count") or 0),
             -int(item.get("plus") or 0),
             int(item.get("base_id") or 0),
@@ -26733,6 +27269,8 @@ def parts_strengthen():
         plus_options=plus_options,
         element_labels=ELEMENT_LABEL_MAP,
         last_fuse_result=last_fuse_result,
+        warehouse_preview=warehouse_preview,
+        warehouse_result=warehouse_result,
     )
 
 

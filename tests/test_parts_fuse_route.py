@@ -85,6 +85,62 @@ class PartsFuseRouteTests(unittest.TestCase):
             db.commit()
         return ids
 
+    def _clear_part_instances(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("DELETE FROM part_instances WHERE user_id = ?", (self.user_id,))
+            db.commit()
+
+    def _active_part_seeds(self, limit=3):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            return db.execute(
+                """
+                SELECT rp.id AS part_id, rp.part_type, rp.rarity, rp.element, rp.series
+                FROM robot_parts rp
+                WHERE rp.is_active = 1
+                ORDER BY rp.id ASC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+
+    def _seed_part_instances_for_seed(self, seed_row, plus_values, *, statuses=None, created_at_start=1000):
+        statuses = statuses or ["inventory"] * len(plus_values)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            ids = []
+            for index, plus in enumerate(plus_values):
+                status = statuses[index] if index < len(statuses) else "inventory"
+                created_at = int(created_at_start) + index
+                cur = db.execute(
+                    """
+                    INSERT INTO part_instances
+                    (part_id, user_id, part_type, rarity, element, series, plus, w_hp, w_atk, w_def, w_spd, w_acc, w_cri, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    (
+                        int(seed_row["part_id"]),
+                        int(self.user_id),
+                        seed_row["part_type"],
+                        seed_row["rarity"],
+                        seed_row["element"],
+                        seed_row["series"],
+                        int(plus),
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0,
+                        status,
+                        created_at,
+                    ),
+                )
+                ids.append(int(cur.lastrowid))
+            db.commit()
+        return ids
+
     def test_parts_fuse_select_without_ids_does_not_500(self):
         client = self._client()
         resp = client.post("/parts/fuse?mode=select", data={"mode": "select"}, follow_redirects=False)
@@ -266,6 +322,141 @@ class PartsFuseRouteTests(unittest.TestCase):
             payload = json.loads(audit_row["payload_json"] or "{}")
             self.assertTrue(bool(payload.get("batch_mode")))
             self.assertEqual(int(payload.get("batch_count") or 0), 2)
+
+    def test_warehouse_plan_prefers_equipped_then_oldest_high_plus(self):
+        self._clear_part_instances()
+        seed = self._active_part_seeds(limit=1)[0]
+        ids = self._seed_part_instances_for_seed(seed, [0, 3, 3, 0, 0], created_at_start=2000)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            with game_app.app.test_request_context():
+                plan = game_app._strengthen_warehouse_plan(db, self.user_id)
+            self.assertEqual(int(plan["group_count"] or 0), 1)
+            self.assertEqual(int(plan["groups"][0]["base_id"] or 0), ids[1])
+
+            db.execute("UPDATE part_instances SET status = 'equipped' WHERE id = ?", (ids[0],))
+            db.commit()
+
+            with game_app.app.test_request_context():
+                plan = game_app._strengthen_warehouse_plan(db, self.user_id)
+            self.assertEqual(int(plan["group_count"] or 0), 1)
+            self.assertEqual(int(plan["groups"][0]["base_id"] or 0), ids[0])
+
+    def test_warehouse_preview_and_execute_across_groups(self):
+        self._clear_part_instances()
+        seeds = self._active_part_seeds(limit=3)
+        head_ids = self._seed_part_instances_for_seed(
+            seeds[0],
+            [0, 0, 0, 0, 0],
+            statuses=["equipped", "inventory", "inventory", "inventory", "inventory"],
+            created_at_start=3000,
+        )
+        arm_ids = self._seed_part_instances_for_seed(
+            seeds[1],
+            [1, 0, 0],
+            created_at_start=4000,
+        )
+        self._seed_part_instances_for_seed(
+            seeds[2],
+            [0, 0, 0],
+            statuses=["inventory", "inventory", "overflow"],
+            created_at_start=5000,
+        )
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                plan = game_app._strengthen_warehouse_plan(db, self.user_id)
+            self.assertEqual(int(plan["group_count"] or 0), 2)
+            self.assertEqual(int(plan["fuse_count"] or 0), 3)
+            self.assertEqual(int(plan["total_material_count"] or 0), 6)
+
+        client = self._client()
+        preview = client.post("/parts/fuse", data={"mode": "warehouse_preview"}, follow_redirects=True)
+        self.assertEqual(preview.status_code, 200)
+        preview_html = preview.get_data(as_text=True)
+        self.assertIn("倉庫整理合成", preview_html)
+        self.assertIn("この内容で整理する", preview_html)
+        self.assertIn("対象 2種類", preview_html)
+
+        execute = client.post(
+            "/parts/fuse",
+            data={"mode": "warehouse_execute", "plan_signature": plan["signature"]},
+            follow_redirects=False,
+        )
+        self.assertIn(execute.status_code, (302, 303))
+        self.assertIn("mode=warehouse_result", execute.headers.get("Location", ""))
+
+        result_page = client.get(execute.headers["Location"])
+        self.assertEqual(result_page.status_code, 200)
+        result_html = result_page.get_data(as_text=True)
+        self.assertIn("倉庫整理合成の結果", result_html)
+        self.assertIn("対象 2種類", result_html)
+        self.assertIn("合計強化 3回", result_html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            head_row = db.execute(
+                "SELECT plus, status FROM part_instances WHERE id = ?",
+                (head_ids[0],),
+            ).fetchone()
+            self.assertEqual(int(head_row["plus"] or 0), 2)
+            self.assertEqual(str(head_row["status"]), "equipped")
+
+            arm_plus = db.execute(
+                "SELECT plus FROM part_instances WHERE id = ?",
+                (arm_ids[0],),
+            ).fetchone()
+            self.assertEqual(int(arm_plus["plus"] or 0), 2)
+
+            inventory_count = db.execute(
+                "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(inventory_count["c"] or 0), 3)
+
+            overflow_count = db.execute(
+                "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'overflow'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(overflow_count["c"] or 0), 1)
+
+            fuse_events = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = 'audit.fuse'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(fuse_events["c"] or 0), 2)
+
+            preview_events = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = 'audit.fuse.batch_preview'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(preview_events["c"] or 0), 1)
+
+            execute_event = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = 'audit.fuse.batch_execute'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(execute_event)
+            payload = json.loads(execute_event["payload_json"] or "{}")
+            self.assertEqual(str(payload.get("mode")), "warehouse_batch")
+            self.assertEqual(int(payload.get("group_count") or 0), 2)
+            self.assertEqual(int(payload.get("fuse_count") or 0), 3)
+            self.assertEqual(int(payload.get("total_material_count") or 0), 6)
+
+            fusion_rows = db.execute(
+                "SELECT COUNT(*) AS c FROM fusion_audit_logs WHERE user_id = ? AND mode = 'warehouse_batch'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(fusion_rows["c"] or 0), 2)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-04-08
+最終更新日: 2026-04-09
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -64,6 +64,11 @@
 - [ ] `/parts/strengthen` の `まとめて強化` が装備中素材を勝手に消費しない
 - [ ] `/parts/strengthen` の `まとめて強化` で `残る個体 / 消える個体数 / 強化後 +値 / 実行回数` が事前に分かる
 - [ ] `まとめて強化` 実行後に `batch_mode / batch_count` つきの `audit.fuse` が残る
+- [ ] `/parts/strengthen` の `倉庫整理合成` がワンクリック即実行ではなく、必ず一覧プレビューを挟む
+- [ ] `/parts/strengthen` の `倉庫整理合成` が装備中 / 保管中個体を素材に混ぜない
+- [ ] `/parts/strengthen` の `倉庫整理合成` で `対象種類数 / 合計強化回数 / 消費素材数 / 合計コイン` が事前に分かる
+- [ ] `/parts/strengthen` の `倉庫整理合成` 実行後に `何種類整理したか / 合計何回強化したか / 素材消費数 / 合計コイン` が結果面で分かる
+- [ ] `倉庫整理合成` で `装備中ベース優先 -> 高 +値 -> 古い個体` のベース選択が保たれる
 - [ ] `/parts/evolve` でコア不足時に500にならない
 - [ ] `/parts/evolve` の部位フィルターが動く
 - [ ] `/parts/evolve` が `N + 進化コア1 -> R` で動作
@@ -87,6 +92,7 @@
 ## 6. 監査
 - [ ] 主要フローで `request_id` が埋まる
 - [ ] `audit.fuse`, `audit.part.evolve`, `audit.core.drop` が残る
+- [ ] `audit.fuse.batch_preview`, `audit.fuse.batch_execute` が `warehouse_batch` payload つきで残る
 - [ ] 管理操作監査が残る
   - `audit.admin.user.ban`
   - `audit.admin.user.unban`

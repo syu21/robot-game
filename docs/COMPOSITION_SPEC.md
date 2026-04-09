@@ -1,6 +1,6 @@
 # 編成・強化・進化仕様
 
-最終更新日: 2026-04-08
+最終更新日: 2026-04-09
 
 ## 1. 範囲
 - 所持パーツ一覧: `/parts`
@@ -110,7 +110,8 @@
 ### 5.4 監査
 - `audit.fuse`
 - payloadに成功可否、消費ID、増分などを保持
-- `まとめて強化` でも既存 `audit.fuse` を使い、payload に `batch_mode: true`, `batch_count`, `power_delta_estimate` を追加する
+- `まとめて強化` と `倉庫整理合成` でも既存 `audit.fuse` を使い、payload に `batch_mode: true`, `batch_count`, `power_delta_estimate` を追加する
+- `倉庫整理合成` は補助イベントとして `audit.fuse.batch_preview`, `audit.fuse.batch_execute` を追加し、`mode: "warehouse_batch"`, `group_count`, `fuse_count`, `consumed_part_ids`, `result_part_ids`, `total_coin_cost`, `total_material_count` を残す
 
 ### 5.5 まとめて強化
 - `/parts/strengthen` に `まとめて強化` ブロックを追加する
@@ -119,6 +120,14 @@
 - 装備中素材は自動消費しない
 - 実行前に `残る個体 / 消える個体数 / 強化後の +値 / 総コイン` を明示する
 - 実行後は `何回実行したか / 何が消えたか / +値がどうなったか` を結果面に残す
+
+### 5.6 倉庫整理合成
+- `/parts/strengthen` に `倉庫整理合成` 導線を追加する
+- `まとめて強化` との違いは、1種類単位ではなく `所持中全体` を走査して成立分を一覧プレビューする点
+- 対象は `part_instances.status='inventory'` の所持中個体だけで、装備中 / 保管中 / 強化対象外個体は候補に混ぜない
+- 実行前プレビューを必須にし、`対象種類数 / 合計強化回数 / 消費素材数 / 合計コイン / 各グループの残るベース / 最終 +値 / 残り個数` を一覧で見せる
+- ベース選択優先は `装備中ベース -> +値が高い個体 -> 作成日時が古い個体 -> id` の順で固定する
+- 実行後は `何種類整理したか / 合計何回強化したか / 消費素材数 / 合計コイン` と各グループの `+値変化` を結果面に残す
 
 ## 6. 進化合成
 ### 6.1 仕様
