@@ -1150,8 +1150,9 @@ body.lightbox-open .lightbox-overlay {
 .warehouse-empty {
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(33, 28, 20, 0.14);
-  background: rgba(255, 250, 240, 0.94);
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  background: rgba(18, 30, 58, 0.72);
+  color: var(--text-main);
 }
 .warehouse-group-grid {
   margin-top: 10px;
