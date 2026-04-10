@@ -2,61 +2,124 @@
 {% block content %}
 <h1>試作機登録</h1>
 
-<div class="card">
+<div class="card lab-upload-hero">
   <div><b>研究機体を提出する</b></div>
   <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px / 最大1MB。公開は研究所審査後です。</div>
   {% if message %}
   <div class="flash">{{ message }}</div>
   {% endif %}
-  <form method="post" enctype="multipart/form-data" class="post-form">
-    <label for="title">タイトル</label>
-    <input id="title" type="text" name="title" maxlength="80" required />
-    <label for="comment">一言コメント</label>
-    <textarea id="comment" name="comment" rows="4" maxlength="200" required></textarea>
-    <label for="credit_name">表示用クレジット名</label>
-    <input id="credit_name" type="text" name="credit_name" maxlength="40" placeholder="空欄ならユーザー名を使います" />
-    <label for="ai_generation_declared">生成AIの利用申告</label>
-    <select id="ai_generation_declared" name="ai_generation_declared" required>
-      <option value="">選択してください</option>
-      {% for key, label in ai_generation_defs %}
-      <option value="{{ key }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-    <label for="source_note">制作メモ / 出所メモ（任意）</label>
-    <textarea id="source_note" name="source_note" rows="3" maxlength="240" placeholder="自作、生成AIで下絵作成後に手直し、など"></textarea>
-    <label>任意タグ</label>
-    <div class="lab-checkbox-grid">
-      {% for key, label in tag_defs %}
-      <label class="lab-check-card">
-        <input type="checkbox" name="tags" value="{{ key }}" />
+</div>
+
+<form method="post" enctype="multipart/form-data" class="lab-upload-form" data-lab-stat-form data-max-total="{{ chart_max_total }}">
+  <section class="card lab-upload-section">
+    <h2>基本情報</h2>
+    <div class="lab-field-stack">
+      <label for="title">タイトル</label>
+      <input id="title" type="text" name="title" maxlength="80" required />
+    </div>
+    <div class="lab-field-stack">
+      <label for="comment">一言コメント</label>
+      <textarea id="comment" name="comment" rows="4" maxlength="200" required></textarea>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <h2>制作情報</h2>
+    <div class="lab-upload-two-col">
+      <div class="lab-field-stack">
+        <label for="credit_name">表示用クレジット名</label>
+        <input id="credit_name" type="text" name="credit_name" maxlength="40" placeholder="空欄ならユーザー名を使います" />
+      </div>
+      <div class="lab-field-stack">
+        <label for="ai_generation_declared">生成AIの利用申告</label>
+        <select id="ai_generation_declared" name="ai_generation_declared" required>
+          <option value="">選択してください</option>
+          {% for key, label in ai_generation_defs %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="lab-field-stack">
+      <label for="source_note">制作メモ / 出所メモ（任意）</label>
+      <textarea id="source_note" name="source_note" rows="3" maxlength="240" placeholder="自作、生成AIで下絵作成後に手直し、など"></textarea>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <h2>機体分類</h2>
+    <div class="robot-part">展示一覧や研究所の確認で使う分類です。主役は画像なので、気軽に選んでください。</div>
+    <div class="lab-upload-classification">
+      <div class="lab-field-stack">
+        <label>任意タグ</label>
+        <div class="lab-checkbox-grid">
+          {% for key, label in tag_defs %}
+          <label class="lab-check-card">
+            <input type="checkbox" name="tags" value="{{ key }}" />
+            <span>{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="lab-field-stack lab-compact-field">
+        <label for="intended_style_key">想定タイプ</label>
+        <select id="intended_style_key" name="intended_style_key">
+          <option value="">未設定</option>
+          {% for key, label in style_defs %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <div class="lab-stat-header">
+      <div>
+        <h2>参考スペック（任意）</h2>
+        <div class="robot-part">実験室用の参考値です。本編性能とは一致しません。各項目1〜10、合計{{ chart_max_total }}まで。</div>
+      </div>
+      <div class="lab-stat-total" data-lab-stat-total>現在合計: 30 / {{ chart_max_total }}</div>
+    </div>
+    <div class="lab-stat-grid">
+      {% for chart_col, label in chart_defs %}
+      <label class="lab-stat-card" for="{{ chart_col }}_score">
         <span>{{ label }}</span>
+        <select id="{{ chart_col }}_score" name="{{ chart_col }}_score" data-lab-stat-select>
+          {% for score in range(1, 11) %}
+          <option value="{{ score }}" {% if score == 5 %}selected{% endif %}>{{ score }}</option>
+          {% endfor %}
+        </select>
       </label>
       {% endfor %}
     </div>
-    <label for="intended_style_key">想定タイプ（任意）</label>
-    <select id="intended_style_key" name="intended_style_key">
-      <option value="">未設定</option>
-      {% for key, label in style_defs %}
-      <option value="{{ key }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-    <label for="image">PNG画像</label>
-    <input id="image" type="file" name="image" accept="image/png" required />
+  </section>
+
+  <section class="card lab-upload-section">
+    <h2>画像</h2>
+    <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px / 最大1MB。</div>
+    <div class="lab-field-stack lab-image-field">
+      <label for="image">PNG画像アップロード</label>
+      <input id="image" type="file" name="image" accept="image/png" required />
+    </div>
+  </section>
+
+  <section class="card lab-upload-section lab-submit-section">
+    <h2>投稿前にご確認ください</h2>
     <div class="lab-terms-box">
-      <div><b>投稿前にご確認ください</b></div>
       <div class="robot-part">利用条件バージョン: {{ lab_terms_version }}</div>
       {% for line in lab_terms_summary %}
       <div class="robot-part">{{ line }}</div>
       {% endfor %}
       <p class="link"><a href="{{ url_for('lab_terms') }}" target="_blank" rel="noopener">詳細利用条件を見る</a></p>
-      <label class="lab-terms-check">
-        <input type="checkbox" name="terms_accept" value="1" required />
-        <span>上記および詳細利用条件に同意して投稿する</span>
-      </label>
     </div>
-    <button type="submit">審査待ちで提出する</button>
-  </form>
-</div>
+    <label class="lab-terms-check">
+      <input type="checkbox" name="terms_accept" value="1" required />
+      <span>上記および詳細利用条件に同意して投稿する</span>
+    </label>
+    <button type="submit" data-lab-submit>審査待ちで提出する</button>
+  </section>
+</form>
 
 <div class="card">
   <h2>自分の投稿</h2>
@@ -84,4 +147,26 @@
 </div>
 
 <p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+<script>
+(() => {
+  const form = document.querySelector("[data-lab-stat-form]");
+  if (!form) return;
+  const maxTotal = Number(form.dataset.maxTotal || "36");
+  const selects = Array.from(form.querySelectorAll("[data-lab-stat-select]"));
+  const totalBox = form.querySelector("[data-lab-stat-total]");
+  const submitButton = form.querySelector("[data-lab-submit]");
+  const updateTotal = () => {
+    const total = selects.reduce((sum, select) => sum + Number(select.value || "0"), 0);
+    if (totalBox) {
+      totalBox.textContent = `現在合計: ${total} / ${maxTotal}`;
+      totalBox.classList.toggle("is-over", total > maxTotal);
+    }
+    if (submitButton) {
+      submitButton.disabled = total > maxTotal;
+    }
+  };
+  selects.forEach((select) => select.addEventListener("change", updateTotal));
+  updateTotal();
+})();
+</script>
 {% endblock %}

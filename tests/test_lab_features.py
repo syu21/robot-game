@@ -334,6 +334,26 @@ class LabRouteTests(unittest.TestCase):
         self.assertEqual(no_terms_resp.status_code, 200)
         self.assertIn("利用条件への同意が必要です", no_terms_resp.get_data(as_text=True))
 
+        over_stat_resp = client.post(
+            "/lab/upload",
+            data={
+                "title": "TooStrong",
+                "comment": "too much",
+                "ai_generation_declared": "no_ai",
+                "terms_accept": "1",
+                "chart_hp_score": "10",
+                "chart_atk_score": "10",
+                "chart_def_score": "10",
+                "chart_spd_score": "10",
+                "chart_acc_score": "10",
+                "chart_cri_score": "10",
+                "image": (io.BytesIO(_png_bytes()), "toostrong.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(over_stat_resp.status_code, 200)
+        self.assertIn("参考スペックの合計は36までです", over_stat_resp.get_data(as_text=True))
+
         good_resp = client.post(
             "/lab/upload",
             data={
@@ -361,6 +381,7 @@ class LabRouteTests(unittest.TestCase):
             self.assertEqual(row["terms_version"], game_app.LAB_TERMS_VERSION)
             self.assertEqual(row["ai_generation_declared"], "no_ai")
             self.assertIn("prototype", row["tags_json"])
+            self.assertEqual(int(row["chart_hp"]), 50)
             self.created_files.extend([row["image_path"], row["thumb_path"]])
 
         showcase_before = client.get("/lab/showcase")

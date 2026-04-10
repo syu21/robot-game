@@ -810,6 +810,7 @@ LAB_SUBMISSION_CHART_DEFS = (
     ("chart_acc", "命中"),
     ("chart_cri", "会心"),
 )
+LAB_SUBMISSION_UPLOAD_CHART_MAX_TOTAL = 36
 LAB_ADOPTION_STAGE_DEFS = (
     ("none", "採用未設定"),
     ("candidate", "採用候補"),
@@ -11638,6 +11639,24 @@ def _lab_clamped_chart_value(value, default=50):
     except (TypeError, ValueError):
         num = int(default)
     return max(1, min(100, num))
+
+
+def _lab_upload_chart_from_form():
+    chart_values = {}
+    total = 0
+    for chart_col, label in LAB_SUBMISSION_CHART_DEFS:
+        raw_value = (request.form.get(f"{chart_col}_score") or "5").strip()
+        try:
+            score = int(raw_value)
+        except ValueError:
+            return False, f"{label}は1〜10で選択してください。", None, 0
+        if score < 1 or score > 10:
+            return False, f"{label}は1〜10で選択してください。", None, 0
+        chart_values[chart_col] = score * 10
+        total += score
+    if total > LAB_SUBMISSION_UPLOAD_CHART_MAX_TOTAL:
+        return False, f"参考スペックの合計は{LAB_SUBMISSION_UPLOAD_CHART_MAX_TOTAL}までです。", None, total
+    return True, None, chart_values, total
 
 
 def _lab_chart_rows(item):
@@ -25658,6 +25677,7 @@ def lab_upload():
         intended_style_key = (request.form.get("intended_style_key") or "").strip().lower()
         if intended_style_key not in LAB_SUBMISSION_STYLE_OPTIONS:
             intended_style_key = ""
+        chart_ok, chart_message, chart_values, _chart_total = _lab_upload_chart_from_form()
         image = request.files.get("image")
         if not title:
             message = "タイトルを入力してください。"
@@ -25665,6 +25685,8 @@ def lab_upload():
             message = "一言コメントを入力してください。"
         elif ai_generation_declared not in LAB_AI_GENERATION_OPTIONS:
             message = "生成AIの利用有無を選択してください。"
+        elif not chart_ok:
+            message = chart_message
         elif not _lab_form_bool("terms_accept"):
             message = "利用条件への同意が必要です。"
         else:
@@ -25679,11 +25701,12 @@ def lab_upload():
                     (
                         user_id, title, comment, image_path, thumb_path,
                         status, moderation_note, tags_json, intended_style_key, credit_name,
+                        chart_hp, chart_atk, chart_def, chart_spd, chart_acc, chart_cri,
                         terms_version, terms_accepted_at, terms_snapshot_text,
                         ai_generation_declared, source_note,
                         created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
@@ -25694,6 +25717,12 @@ def lab_upload():
                         json.dumps(tag_keys, ensure_ascii=False) if tag_keys else None,
                         intended_style_key or None,
                         credit_name or None,
+                        chart_values["chart_hp"],
+                        chart_values["chart_atk"],
+                        chart_values["chart_def"],
+                        chart_values["chart_spd"],
+                        chart_values["chart_acc"],
+                        chart_values["chart_cri"],
                         LAB_TERMS_VERSION,
                         now_ts,
                         LAB_TERMS_SNAPSHOT_TEXT,
@@ -25724,6 +25753,8 @@ def lab_upload():
         recent_rows=_lab_submission_recent_rows(db, user_id),
         tag_defs=LAB_SUBMISSION_TAG_DEFS,
         style_defs=LAB_SUBMISSION_STYLE_DEFS,
+        chart_defs=LAB_SUBMISSION_CHART_DEFS,
+        chart_max_total=LAB_SUBMISSION_UPLOAD_CHART_MAX_TOTAL,
         ai_generation_defs=LAB_AI_GENERATION_DEFS,
         lab_terms_version=LAB_TERMS_VERSION,
         lab_terms_summary=LAB_TERMS_SUMMARY_LINES,
