@@ -202,9 +202,10 @@
 - 独自ドメイン `https://robolabo.site` で公開中
 - `/` は公開入口として `/register` へ流し、ヒーローバナーと登録カードからそのまま第1層導線へつなぐ
 - ヘッダー左上の `ロボらぼ` ロゴ全体は、ログイン中 `/home`、未ログイン時 `/register` へ戻る共通導線として扱う
-- 軽量メンテナンスモードを `MAINTENANCE_MODE=off|partial|full` で切り替える
+- 軽量メンテナンスモードを `/admin/release` から `通常運用 / 軽量メンテ / 全面メンテ` で切り替えられる
   - `partial`: 閲覧系は残しつつ、出撃 / 育成 / 購入などの更新系POSTだけをサーバー側で停止し、全ページ上部に告知帯を出す
   - `full`: 非管理者は専用メンテ画面へ案内し、管理者だけ通常確認を続行できる
+  - `MAINTENANCE_MODE=partial/full` を入れると緊急時の環境変数上書きも可能
   - ブロック時は `audit.system.maintenance_block` に `path / method / mode / user_id` を残す
 - `/feed` の公開世界ログで、ボス撃破 / 進化成功 / パーツ入手 / 強化 / ロボ完成 / 週更新を閲覧可能
 - `/feed?type=weekly` で `週更新 / 研究解禁 / 陣営戦決着` を見返せる
@@ -343,4 +344,51 @@
 - `payment_orders`
   - `stripe_checkout_session_id` UNIQUE
   - `stripe_event_id` UNIQUE
-  - `status` は `created / c
+  - `status` は `created / completed / granted / failed / expired`
+  - `boost_days / starts_at / ends_at` を保持
+  - Stripe Checkout の生成と webhook 完了処理を追跡
+- `users`
+  - `explore_boost_until`
+  - 出撃ブーストの有効期限を保持
+- `lab_robot_submissions`
+- `lab_submission_likes`
+- `lab_submission_reports`
+- `lab_races`
+- `lab_race_entries`
+- `lab_race_frames`
+- `lab_race_records`
+
+## 5. UI文言方針（運用中）
+- ホーム -> 基地
+- 探索 -> 出撃
+- ロボ組み立て -> ロボ編成
+- パーツ進化 -> 進化合成
+- 報酬サマリー -> 戦利品
+- 公開フィード -> 世界ログ
+- Showcase -> ロボ展示
+
+## 6. 既知課題
+- 一部画像アセットが欠損（プレースホルダ吸収済み）
+- 管理画面の操作確認UI（ダイアログ等）は最小構成
+- docsの更新粒度を継続改善中
+- `SECRET_KEY` は本番用の長いランダム値へ再設定が必要
+- 旧 enemy key からの表示補正は入ったが、敵マスタ自体の整理は継続課題
+
+## 7. 決済サンドボックス状況
+- `/support`
+  - `創設支援パック 100円` と `ラボ維持支援パック 300円` の Stripe Checkout / webhook 付与が動作
+- `/shop`
+  - `出撃ブースター 500円` (`explore_boost_14d`) の購入導線が動作
+- 付与は `success_url` ではなく `checkout.session.completed` webhook を正とする
+- 出撃CT は `admin 0秒 / 新規ブースト20秒 / 課金ブースト20秒 / 通常40秒`
+  - 複数ブーストが同時に効く場合は最短CTを採用
+## 8. 中長期の非目標（現時点）
+- 早期PvP実装
+- 人口が薄い段階での直接対人主導化
+- 戦力販売
+
+## 9. リリース品質ゲート
+- `py_compile` 成功
+- 全テスト緑
+- 監査イベントの主要フロー確認
+- CT/UI整合確認

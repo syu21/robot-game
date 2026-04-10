@@ -1,10 +1,44 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>段階公開の切り替え</h1>
+<h1>公開 / メンテ切り替え</h1>
 
 <div class="card">
-  <p>ローカル確認が終わった機能を、管理者だけ先に触ったまま一般公開へ切り替えるための画面です。</p>
+  <p>ローカル確認が終わった機能の段階公開と、運用中のメンテナンスモード切り替えをまとめて扱う画面です。</p>
   <p class="robot-part">第5層を公開すると第4層も一緒に公開します。第4層を閉じると第5層も閉じます。</p>
+</div>
+
+<div class="card">
+  <div><b>メンテナンスモード</b></div>
+  <div class="robot-part">現在: {{ maintenance_control['effective_label'] }}</div>
+  <div class="robot-part">保存済み設定: {{ maintenance_control['stored_label'] }}</div>
+  <div class="robot-part">
+    反映元:
+    {% if maintenance_control['is_env_override'] %}
+      環境変数で上書き中（{{ maintenance_control['env_override_label'] }}）
+    {% else %}
+      管理画面の保存設定
+    {% endif %}
+  </div>
+  <div class="robot-part">更新: {{ maintenance_control['stored_updated_text'] }}</div>
+  <div class="robot-part">更新者: {{ maintenance_control['stored_updated_by_label'] }}</div>
+  <div class="robot-part">`partial` は閲覧を残して更新操作だけ停止、`full` は非管理者を専用メンテ画面へ案内します。</div>
+  <div class="home-inline-actions">
+    {% for option in maintenance_control['mode_options'] %}
+    <form method="post" class="inline-form inline-form-top">
+      <input type="hidden" name="action" value="maintenance_mode" />
+      <input type="hidden" name="maintenance_mode" value="{{ option['key'] }}" />
+      <button type="submit" {% if maintenance_control['stored_mode'] == option['key'] %}class="btn-secondary"{% endif %}>{{ option['label'] }}にする</button>
+    </form>
+    {% endfor %}
+  </div>
+  <div class="robot-part">
+    {% for option in maintenance_control['mode_options'] %}
+    <div><b>{{ option['label'] }}</b>: {{ option['summary'] }}</div>
+    {% endfor %}
+  </div>
+  {% if maintenance_control['is_env_override'] %}
+  <p class="robot-part">※ `MAINTENANCE_MODE=partial/full` が入っている間は、管理画面で保存した設定より環境変数が優先されます。</p>
+  {% endif %}
 </div>
 
 {% for row in release_rows %}
@@ -16,12 +50,14 @@
   <div class="home-inline-actions">
     {% if row['is_public'] %}
     <form method="post" class="inline-form inline-form-top">
+      <input type="hidden" name="action" value="release_toggle" />
       <input type="hidden" name="feature_key" value="{{ row['key'] }}" />
       <input type="hidden" name="state" value="private" />
       <button type="submit" class="btn-secondary">管理者だけに戻す</button>
     </form>
     {% else %}
     <form method="post" class="inline-form inline-form-top">
+      <input type="hidden" name="action" value="release_toggle" />
       <input type="hidden" name="feature_key" value="{{ row['key'] }}" />
       <input type="hidden" name="state" value="public" />
       <button type="submit">一般公開する</button>

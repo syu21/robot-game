@@ -1963,6 +1963,29 @@ def prune_db_backups(keep_latest=7):
 
 
 MAINTENANCE_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+MAINTENANCE_MODE_VALUES = {"off", "partial", "full"}
+MAINTENANCE_MODE_LABELS = {
+    "off": "通常運用",
+    "partial": "軽量メンテ",
+    "full": "全面メンテ",
+}
+MAINTENANCE_MODE_OPTION_ROWS = (
+    {
+        "key": "off",
+        "label": "通常運用",
+        "summary": "通常どおり全機能を開放します。",
+    },
+    {
+        "key": "partial",
+        "label": "軽量メンテ",
+        "summary": "閲覧を残したまま、出撃・育成・購入などの更新操作だけを止めます。",
+    },
+    {
+        "key": "full",
+        "label": "全面メンテ",
+        "summary": "非管理者を専用メンテ画面へ案内し、管理者だけ通常確認を続けます。",
+    },
+)
 MAINTENANCE_FULL_ALLOWED_ENDPOINTS = {
     "index",
     "login",
@@ -1985,20 +2008,101 @@ MAINTENANCE_PARTIAL_ALLOWED_MUTATION_ENDPOINTS = {
 }
 
 
-def _maintenance_mode():
-    raw_mode = str(os.getenv("MAINTENANCE_MODE", "off") or "").strip().lower()
-    raw_scope = str(os.getenv("MAINTENANCE_SCOPE", "") or "").strip().lower()
-    if raw_mode in {"", "0", "off", "false", "no"}:
+def _normalize_maintenance_mode(raw_mode, *, raw_scope=""):
+    mode = str(raw_mode or "").strip().lower()
+    scope = str(raw_scope or "").strip().lower()
+    if mode in {"", "0", "off", "false", "no"}:
         return "off"
-    if raw_mode in {"partial", "full"}:
-        return raw_mode
-    if raw_mode in {"1", "true", "yes", "on"}:
-        return raw_scope if raw_scope in {"partial", "full"} else "partial"
+    if mode in {"partial", "full"}:
+        return mode
+    if mode in {"1", "true", "yes", "on"}:
+        return scope if scope in {"partial", "full"} else "partial"
     return "off"
+
+
+def _maintenance_env_override_mode():
+    raw_mode = os.getenv("MAINTENANCE_MODE")
+    raw_scope = os.getenv("MAINTENANCE_SCOPE")
+    if raw_mode is None:
+        return None
+    if str(raw_mode).strip() == "":
+        return None
+    override_mode = _normalize_maintenance_mode(raw_mode, raw_scope=raw_scope)
+    if override_mode in {"partial", "full"}:
+        return override_mode
+    return None
+
+
+def _seed_maintenance_state(db):
+    db.execute(
+        """
+        INSERT INTO maintenance_state (id, mode, updated_at, updated_by_user_id)
+        VALUES (1, 'off', 0, NULL)
+        ON CONFLICT(id) DO NOTHING
+        """
+    )
+
+
+def _maintenance_state_row(db):
+    _seed_maintenance_state(db)
+    row = db.execute(
+        """
+        SELECT ms.mode, ms.updated_at, ms.updated_by_user_id,
+               u.username, u.display_name, u.is_admin
+        FROM maintenance_state ms
+        LEFT JOIN users u ON u.id = ms.updated_by_user_id
+        WHERE ms.id = 1
+        LIMIT 1
+        """
+    ).fetchone()
+    mode = _normalize_maintenance_mode(row["mode"] if row else "off")
+    updated_by_label = ""
+    if row and row["updated_by_user_id"]:
+        updated_by_label = _display_username(
+            row["username"],
+            display_name=(row["display_name"] if "display_name" in row.keys() else None),
+            is_admin=bool(int(row["is_admin"] or 0)) if "is_admin" in row.keys() else False,
+        )
+    return {
+        "mode": mode,
+        "updated_at": int(row["updated_at"] or 0) if row else 0,
+        "updated_text": (_format_jst_ts(row["updated_at"]) if row and int(row["updated_at"] or 0) > 0 else "未変更"),
+        "updated_by_user_id": int(row["updated_by_user_id"]) if row and row["updated_by_user_id"] else None,
+        "updated_by_label": updated_by_label,
+    }
+
+
+def _maintenance_mode(db=None):
+    override_mode = _maintenance_env_override_mode()
+    if override_mode in {"partial", "full"}:
+        return override_mode
+    if db is None:
+        if not has_request_context():
+            return "off"
+        db = get_db()
+    return _maintenance_state_row(db)["mode"]
 
 
 def _is_maintenance_mode():
     return _maintenance_mode() != "off"
+
+
+def _maintenance_control_view(db):
+    stored = _maintenance_state_row(db)
+    override_mode = _maintenance_env_override_mode()
+    effective_mode = override_mode or stored["mode"]
+    return {
+        "effective_mode": effective_mode,
+        "effective_label": MAINTENANCE_MODE_LABELS.get(effective_mode, MAINTENANCE_MODE_LABELS["off"]),
+        "stored_mode": stored["mode"],
+        "stored_label": MAINTENANCE_MODE_LABELS.get(stored["mode"], MAINTENANCE_MODE_LABELS["off"]),
+        "stored_updated_text": stored["updated_text"],
+        "stored_updated_by_label": stored["updated_by_label"] or "未設定",
+        "is_env_override": bool(override_mode),
+        "env_override_mode": override_mode,
+        "env_override_label": MAINTENANCE_MODE_LABELS.get(override_mode or "", ""),
+        "mode_options": list(MAINTENANCE_MODE_OPTION_ROWS),
+    }
 
 
 def _maintenance_banner_text():
@@ -3312,6 +3416,25 @@ def _release_flag_rows(db):
             }
         )
     return items
+
+
+def _save_maintenance_mode(db, mode, *, actor_user_id):
+    normalized = str(mode or "").strip().lower()
+    if normalized not in MAINTENANCE_MODE_VALUES:
+        raise ValueError(f"invalid maintenance mode: {mode}")
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO maintenance_state (id, mode, updated_at, updated_by_user_id)
+        VALUES (1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            mode = excluded.mode,
+            updated_at = excluded.updated_at,
+            updated_by_user_id = excluded.updated_by_user_id
+        """,
+        (normalized, now_ts, int(actor_user_id)),
+    )
+    return now_ts
 
 
 def _layer4_trial_bosses_cleared(db, user_id):
@@ -7491,6 +7614,18 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS maintenance_state (
+            id INTEGER PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT 'off',
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            updated_by_user_id INTEGER,
+            FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    _seed_maintenance_state(db)
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     if "is_admin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
@@ -17814,6 +17949,16 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.46",
+            "date": "2026/04/10",
+            "title": "メンテモードと育成UIの分かりやすさを改善",
+            "notes": [
+                "`/admin/release` から `通常運用 / 軽量メンテ / 全面メンテ` を管理者が切り替えられるようにし、必要なら `MAINTENANCE_MODE=partial/full` で緊急上書きできる軽量メンテ運用に対応",
+                "ヘッダー左上の `ロボらぼ` ロゴ全体からホームへ戻れるようにし、`/parts` には `新しい順 / 総合値順 / +値順` などのソートを追加して探しやすく改善",
+                "`/guide / home / build / ロボ個別 / ロボ展示` で `思想の戦い方` と `セットボーナスの条件・効果` を短く分かりやすく表示するよう整理",
+            ],
+        },
+        {
             "version": "0.1.45",
             "date": "2026/04/08",
             "title": "今日の進捗と機体整備、まとめ強化を追加",
@@ -27670,6 +27815,46 @@ def admin_release():
         return redirect(url_for("home"))
     _seed_release_flags(db)
     if request.method == "POST":
+        action = str(request.form.get("action") or "release_toggle").strip().lower()
+        if action == "maintenance_mode":
+            requested_mode = str(request.form.get("maintenance_mode") or "").strip().lower()
+            if requested_mode not in MAINTENANCE_MODE_VALUES:
+                flash("メンテモードの変更内容が不正です。", "error")
+                return redirect(url_for("admin_release"))
+            before = _maintenance_state_row(db)
+            _save_maintenance_mode(db, requested_mode, actor_user_id=int(user["id"]))
+            override_mode = _maintenance_env_override_mode()
+            effective_mode = override_mode or requested_mode
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ADMIN_MAINTENANCE_MODE_SET"],
+                user_id=int(user["id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="admin_maintenance_mode_set",
+                entity_type="maintenance_mode",
+                entity_id=1,
+                payload={
+                    "before_mode": before["mode"],
+                    "after_mode": requested_mode,
+                    "effective_mode": effective_mode,
+                    "effective_source": ("env_override" if override_mode else "admin_release"),
+                    "env_override_mode": override_mode,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            flash(f"メンテモードを {MAINTENANCE_MODE_LABELS[requested_mode]} に切り替えました。", "notice")
+            if override_mode and override_mode != requested_mode:
+                flash(
+                    f"現在は環境変数の {MAINTENANCE_MODE_LABELS[override_mode]} が優先されています。解除後に保存済み設定が反映されます。",
+                    "notice",
+                )
+            elif override_mode:
+                flash(
+                    f"現在は環境変数の {MAINTENANCE_MODE_LABELS[override_mode]} で上書き中です。",
+                    "notice",
+                )
+            return redirect(url_for("admin_release"))
         feature_key = str(request.form.get("feature_key") or "").strip().lower()
         state = str(request.form.get("state") or "").strip().lower()
         if feature_key not in RELEASE_FLAG_DEF_BY_KEY or state not in {"public", "private"}:
@@ -27735,7 +27920,11 @@ def admin_release():
         else:
             flash(f"{changed_labels} を管理者限定に戻しました。", "notice")
         return redirect(url_for("admin_release"))
-    return render_template("admin_release.html", release_rows=_release_flag_rows(db))
+    return render_template(
+        "admin_release.html",
+        release_rows=_release_flag_rows(db),
+        maintenance_control=_maintenance_control_view(db),
+    )
 
 
 def _admin_user_delete_summary(db, target_user_id):

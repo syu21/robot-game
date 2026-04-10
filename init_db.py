@@ -198,6 +198,17 @@ def main():
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS maintenance_state (
+            id INTEGER PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT 'off',
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            updated_by_user_id INTEGER,
+            FOREIGN KEY (updated_by_user_id) REFERENCES users(id)
+        )
+        """
+    )
 
     cur.execute(
         """
@@ -1115,6 +1126,13 @@ def main():
             """,
             (release_key,),
         )
+    cur.execute(
+        """
+        INSERT INTO maintenance_state (id, mode, updated_at, updated_by_user_id)
+        VALUES (1, 'off', 0, NULL)
+        ON CONFLICT(id) DO NOTHING
+        """
+    )
     cur.execute(
         "UPDATE users SET faction = NULL WHERE faction IS NOT NULL AND LOWER(TRIM(faction)) NOT IN ('ignis','ventra','aurix')"
     )

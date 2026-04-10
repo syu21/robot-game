@@ -241,6 +241,54 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertEqual(allowed.status_code, 200)
         self.assertIn("所持パーツ", allowed.get_data(as_text=True))
 
+    def test_admin_release_page_shows_maintenance_controls(self):
+        client = self._client_with_user(self.admin_id, "ops_admin")
+        with patch.dict(os.environ, {"MAINTENANCE_MODE": ""}, clear=False):
+            resp = client.get("/admin/release")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("メンテナンスモード", html)
+        self.assertIn("通常運用", html)
+        self.assertIn("軽量メンテ", html)
+        self.assertIn("全面メンテ", html)
+
+    def test_admin_can_switch_maintenance_mode_from_admin_release_page(self):
+        admin_client = self._client_with_user(self.admin_id, "ops_admin")
+        user_client = self._client_with_user(self.user_id, "ops_user")
+        with patch.dict(os.environ, {"MAINTENANCE_MODE": "", "MAINTENANCE_SCOPE": ""}, clear=False):
+            resp = admin_client.post(
+                "/admin/release",
+                data={"action": "maintenance_mode", "maintenance_mode": "partial"},
+                follow_redirects=False,
+            )
+            self.assertEqual(resp.status_code, 302)
+            blocked = user_client.post("/explore")
+        self.assertEqual(blocked.status_code, 503)
+        self.assertIn("現在アップデート中です。一部機能を停止しています。", blocked.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            state_row = db.execute(
+                "SELECT mode, updated_by_user_id FROM maintenance_state WHERE id = 1"
+            ).fetchone()
+            self.assertIsNotNone(state_row)
+            self.assertEqual(state_row["mode"], "partial")
+            self.assertEqual(int(state_row["updated_by_user_id"]), int(self.admin_id))
+            audit_row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (game_app.AUDIT_EVENT_TYPES["ADMIN_MAINTENANCE_MODE_SET"],),
+            ).fetchone()
+            self.assertIsNotNone(audit_row)
+            payload = json.loads(audit_row["payload_json"])
+            self.assertEqual(payload["after_mode"], "partial")
+            self.assertEqual(payload["effective_mode"], "partial")
+            self.assertEqual(payload["effective_source"], "admin_release")
+
     def test_header_logo_links_to_home_for_logged_in_and_register_for_guest(self):
         user_client = self._client_with_user(self.user_id, "ops_user")
         logged_in_html = user_client.get("/parts").get_data(as_text=True)
@@ -412,17 +460,18 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("🏆", header_html)
         self.assertIn("user-trophy-badge", header_html)
 
-    def test_changelog_shows_latest_2026_04_08_entry(self):
+    def test_changelog_shows_latest_2026_04_10_entry(self):
         client = game_app.app.test_client()
         resp = client.get("/changelog")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("v0.1.45 - 2026/04/08", html)
-        self.assertIn("今日の進捗と機体整備、まとめ強化を追加", html)
-        self.assertIn("今日の進捗", html)
-        self.assertIn("機体整備", html)
-        self.assertIn("まとめて強化", html)
-        self.assertLess(html.index("v0.1.45 - 2026/04/08"), html.index("v0.1.44 - 2026/04/07"))
+        self.assertIn("v0.1.46 - 2026/04/10", html)
+        self.assertIn("メンテモードと育成UIの分かりやすさを改善", html)
+        self.assertIn("/admin/release", html)
+        self.assertIn("MAINTENANCE_MODE=partial/full", html)
+        self.assertIn("/parts", html)
+        self.assertIn("セットボーナス", html)
+        self.assertLess(html.index("v0.1.46 - 2026/04/10"), html.index("v0.1.45 - 2026/04/08"))
 
     def test_sitemap_xml_is_public(self):
         client = game_app.app.test_client()

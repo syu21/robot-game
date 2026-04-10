@@ -1,7 +1,7 @@
 import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.45"
+APP_VERSION = "0.1.46"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
 LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
 LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
@@ -204,6 +204,7 @@ AUDIT_EVENT_TYPES = {
     "REFERRAL_QUALIFIED": "audit.referral.qualified",
     "FACTION_CHOOSE": "audit.faction.choose",
     "SYSTEM_MAINTENANCE_BLOCK": "audit.system.maintenance_block",
+    "ADMIN_MAINTENANCE_MODE_SET": "audit.admin.maintenance_mode.set",
     "ADMIN_USER_BAN": "audit.admin.user.ban",
     "ADMIN_USER_UNBAN": "audit.admin.user.unban",
     "ADMIN_USER_PROTECT_LOGIN": "audit.admin.user.protect_login",

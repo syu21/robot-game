@@ -123,4 +123,34 @@
 - [ ] `/world` の `今週のMVP` に `小ロボ主役 + 補助アバター` と機体画像が出る
 - [ ] `/records` の `初達成記録 / 今週の記録 / 話題ロボ` にユーザー表示と機体表示が出る
 - [ ] `/ranking` の user系は `小ロボ主役 + 補助アバター`、robot系は機体サムネで表示される
-- [ ] `/
+- [ ] `/ranking` の robot系でプレースホルダ顔のまま残る古い機体画像があれば、自動で再生成される
+
+## 10. 公開運用
+- [ ] `MAINTENANCE_MODE=partial` で閲覧は残り、更新系POSTだけがサーバー側で止まる
+- [ ] `MAINTENANCE_MODE=partial` 中に全ページ上部へメンテ告知帯が出る
+- [ ] `MAINTENANCE_MODE=full` で非管理者はメンテ画面へ案内される
+- [ ] `MAINTENANCE_MODE=full` でも管理者は通常確認を続けられる
+- [ ] `/admin/release` から `通常運用 / 軽量メンテ / 全面メンテ` を切り替えられる
+- [ ] `MAINTENANCE_MODE=partial/full` を入れると、管理画面設定より環境変数が優先される
+- [ ] ヘッダー左上の `ロボらぼ` ロゴから、ログイン中は `/home`、未ログイン時は `/register` に戻れる
+- [ ] `GET http://127.0.0.1:8000/healthz` が `200`
+- [ ] `GET https://robolabo.site/healthz` が `200`
+- [ ] `GET /sitemap.xml` が `200` で `application/xml`
+- [ ] `https://robolabo.site/terms` が利用規約として表示される
+- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
+- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
+- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
+- [ ] favicon が配信される
+  - `GET /static/favicon.png` が `200`
+- [ ] `robot-game.service` が active
+- [ ] `robot-game-healthcheck.timer` が active
+- [ ] `robot-game-backup.timer` が active
+- [ ] `robot-game-portal-online.timer` が active
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
+- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
+- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
+- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
+- [ ] `backups/` に当日バックアップがある
+- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
+- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
+- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す
