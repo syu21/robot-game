@@ -103,7 +103,10 @@ DEV_MODE = (
     or os.getenv("FLASK_ENV") == "development"
     or os.getenv("FLASK_DEBUG") == "1"
 )
+SESSION_LIFETIME_DAYS = max(1, int(os.getenv("PERMANENT_SESSION_LIFETIME_DAYS", "14")))
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=SESSION_LIFETIME_DAYS)
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = (os.getenv("SESSION_COOKIE_SAMESITE") or "Lax").strip() or "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (
     os.getenv("SESSION_COOKIE_SECURE", "0").strip().lower() in {"1", "true", "yes", "on"}
@@ -19248,6 +19251,7 @@ def client_error_js():
 
 def _login_user_session(db, user_row):
     session.clear()
+    session.permanent = True
     session["user_id"] = int(user_row["id"])
     session["username"] = _display_username_for_user_row(db, user_row)
     session["battle_log"] = []
