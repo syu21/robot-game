@@ -13,12 +13,16 @@
     <div class="action-desc">敵6体の障害物レースを予想して遊ぶ</div>
   </a>
   <a class="action-card home-nav-card" href="{{ url_for('lab_upload') }}">
-    <div class="action-title">ロボ投稿</div>
-    <div class="action-desc">見た目ロボを承認制で投稿</div>
+    <div class="action-title">試作機登録</div>
+    <div class="action-desc">創作ロボを研究所審査へ提出</div>
   </a>
   <a class="action-card home-nav-card" href="{{ url_for('lab_showcase') }}">
     <div class="action-title">投稿ロボ展示</div>
     <div class="action-desc">新着・人気・話題を眺める</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_my_submissions') }}">
+    <div class="action-title">自分の研究機体</div>
+    <div class="action-desc">審査待ち・公開中・差し戻しを確認</div>
   </a>
   <a class="action-card home-nav-card" href="{{ url_for('lab_race_history') }}">
     <div class="action-title">レース記録</div>
@@ -81,6 +85,11 @@
       {% if row.get('thumb_url') %}
       <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
       {% endif %}
+      <div class="lab-badge-row">
+        {% for badge in row.get('badges', []) %}
+        <span class="lab-badge">{{ badge }}</span>
+        {% endfor %}
+      </div>
       <div class="robot-id">{{ row['title'] }}</div>
       <div class="robot-part">{{ row['username'] }}</div>
       <div class="robot-time">いいね {{ row['likes_count'] }}</div>

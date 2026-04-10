@@ -1,32 +1,81 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>ロボ投稿</h1>
+<h1>試作機登録</h1>
 
 <div class="card">
-  <div><b>投稿する</b></div>
-  <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px。公開は管理承認後です。</div>
+  <div><b>研究機体を提出する</b></div>
+  <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px / 最大1MB。公開は研究所審査後です。</div>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
   <form method="post" enctype="multipart/form-data" class="post-form">
     <label for="title">タイトル</label>
     <input id="title" type="text" name="title" maxlength="80" required />
     <label for="comment">一言コメント</label>
     <textarea id="comment" name="comment" rows="4" maxlength="200" required></textarea>
+    <label for="credit_name">表示用クレジット名</label>
+    <input id="credit_name" type="text" name="credit_name" maxlength="40" placeholder="空欄ならユーザー名を使います" />
+    <label for="ai_generation_declared">生成AIの利用申告</label>
+    <select id="ai_generation_declared" name="ai_generation_declared" required>
+      <option value="">選択してください</option>
+      {% for key, label in ai_generation_defs %}
+      <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="source_note">制作メモ / 出所メモ（任意）</label>
+    <textarea id="source_note" name="source_note" rows="3" maxlength="240" placeholder="自作、生成AIで下絵作成後に手直し、など"></textarea>
+    <label>任意タグ</label>
+    <div class="lab-checkbox-grid">
+      {% for key, label in tag_defs %}
+      <label class="lab-check-card">
+        <input type="checkbox" name="tags" value="{{ key }}" />
+        <span>{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <label for="intended_style_key">想定タイプ（任意）</label>
+    <select id="intended_style_key" name="intended_style_key">
+      <option value="">未設定</option>
+      {% for key, label in style_defs %}
+      <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
     <label for="image">PNG画像</label>
     <input id="image" type="file" name="image" accept="image/png" required />
-    <button type="submit">pending で投稿する</button>
+    <div class="lab-terms-box">
+      <div><b>投稿前にご確認ください</b></div>
+      <div class="robot-part">利用条件バージョン: {{ lab_terms_version }}</div>
+      {% for line in lab_terms_summary %}
+      <div class="robot-part">{{ line }}</div>
+      {% endfor %}
+      <p class="link"><a href="{{ url_for('lab_terms') }}" target="_blank" rel="noopener">詳細利用条件を見る</a></p>
+      <label class="lab-terms-check">
+        <input type="checkbox" name="terms_accept" value="1" required />
+        <span>上記および詳細利用条件に同意して投稿する</span>
+      </label>
+    </div>
+    <button type="submit">審査待ちで提出する</button>
   </form>
 </div>
 
 <div class="card">
   <h2>自分の投稿</h2>
+  <p class="link"><a href="{{ url_for('lab_my_submissions') }}">投稿状態をまとめて確認する</a></p>
   <div class="lab-showcase-grid">
     {% for row in recent_rows %}
     <div class="robot-card lab-showcase-card">
-      {% if row.get('image_url') %}
-      <img class="robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+      {% if row.get('thumb_url') %}
+      <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
       {% endif %}
+      <div class="lab-badge-row">
+        {% for badge in row.get('badges', []) %}
+        <span class="lab-badge">{{ badge }}</span>
+        {% endfor %}
+      </div>
       <div class="robot-id">{{ row['title'] }}</div>
       <div class="robot-part">{{ row['status_label'] }}</div>
       <div class="robot-time">{{ row['comment'] }}</div>
+      <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を見る</a></p>
     </div>
     {% else %}
     <div class="robot-part">まだ投稿はありません。</div>

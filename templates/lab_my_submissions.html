@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>自分の研究機体</h1>
+
+<div class="card">
+  <div><b>審査状態</b></div>
+  <div class="robot-part">投稿後の無音を避けるため、研究所での状態をここにまとめて表示します。</div>
+</div>
+
+<div class="lab-showcase-grid">
+  {% for row in rows %}
+  <article class="robot-card lab-showcase-card">
+    {% if row.get('thumb_url') %}
+    <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+    {% endif %}
+    <div class="lab-badge-row">
+      {% for badge in row.get('badges', []) %}
+      <span class="lab-badge">{{ badge }}</span>
+      {% endfor %}
+    </div>
+    <div class="robot-id">{{ row['title'] }}</div>
+    <div class="robot-part">状態: {{ row['status_label'] }}</div>
+    {% if row['status'] == 'rejected' %}
+    <div class="robot-part">差し戻し: {{ row['reject_reason_label'] }}</div>
+    {% endif %}
+    <div class="robot-time">{{ row['comment'] }}</div>
+    <div class="robot-part">提出: {{ row['created_text'] }}</div>
+    {% if row.get('approved_text') %}
+    <div class="robot-part">公開: {{ row['approved_text'] }}</div>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を見る</a></p>
+  </article>
+  {% else %}
+  <div class="card">まだ研究機体は提出されていません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('lab_upload') }}">試作機登録へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

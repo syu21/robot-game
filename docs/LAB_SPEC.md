@@ -1,11 +1,13 @@
 # 実験室仕様
 
-最終更新日: 2026-03-28
+最終更新日: 2026-04-11
 
 ## 1. 位置づけ
 - `基地 = 本編の成長`
 - `実験室 = 観戦 / 展示 / 語り`
 - 本編の `強さ / コイン / 層進行 / 出撃 / 進化 / 強化` には影響しない
+- 実験室UGC投稿、展示、採用候補管理の詳細は `docs/LAB_UGC_ADOPTION_SPEC.md` を正本とする
+- 本編展示は実戦機の展示、実験室展示は創作ロボ / 試作機の展示として分離する
 
 ## 2. レース共通基盤
 - 実験室のレースは `services/lab_race_engine.py` を中心に共通化する
@@ -15,6 +17,8 @@
 - 予想・lab_coin・払い戻しなどの経済要素はレース周辺サービス側に分離し、レースシミュレーション自体は知らない
 
 ## 3. 主要ルート
+現行ルート:
+
 - `/lab`
 - `/lab/race`
 - `/lab/race/watch/<race_id>`
@@ -31,10 +35,21 @@
 - `/admin/lab`
 - `/admin/lab/submissions`
 
+UGC拡張予定ルート:
+
+- `/lab/my-submissions`
+- `/admin/lab/submissions/<id>/approve`
+- `/admin/lab/submissions/<id>/reject`
+- `/admin/lab/submissions/<id>/disable`
+- `/admin/lab/submissions/<id>/feature`
+- `/admin/lab/submissions/<id>/adoption-candidate`
+- `/admin/lab/submissions/<id>/adoption-update`
+
 ## 4. データモデル
 - `lab_robot_submissions`
 - `lab_submission_likes`
 - `lab_submission_reports`
+- `lab_submission_adoptions`
 - `lab_races`
 - `lab_race_entries`
 - `lab_race_frames`
@@ -50,8 +65,13 @@
 - `LAB_RACE_WIN`
 - `LAB_RACE_UPSET`
 - `LAB_RACE_POPULAR_ENTRY`
+- `LAB_SUBMISSION_APPROVED`
+- `LAB_SUBMISSION_FEATURED`
+- `LAB_SUBMISSION_ADOPTION_CANDIDATE`
+- `LAB_SUBMISSION_ADOPTION_RELEASED`
 
 実験室トップでは上記の話題を `今週の実験室話題` として表示する。
+本編世界ログに混ぜすぎず、まずは `/lab` トップに集約する。
 
 ## 6. 監査
 - `audit.lab.submission.*`

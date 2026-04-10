@@ -790,6 +790,26 @@ def main():
             thumb_path TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             moderation_note TEXT,
+            reject_reason_key TEXT,
+            tags_json TEXT,
+            intended_style_key TEXT,
+            chart_hp INTEGER NOT NULL DEFAULT 50,
+            chart_atk INTEGER NOT NULL DEFAULT 50,
+            chart_def INTEGER NOT NULL DEFAULT 50,
+            chart_spd INTEGER NOT NULL DEFAULT 50,
+            chart_acc INTEGER NOT NULL DEFAULT 50,
+            chart_cri INTEGER NOT NULL DEFAULT 50,
+            is_featured INTEGER NOT NULL DEFAULT 0,
+            is_trending_boosted INTEGER NOT NULL DEFAULT 0,
+            is_adoption_candidate INTEGER NOT NULL DEFAULT 0,
+            adoption_stage TEXT NOT NULL DEFAULT 'none',
+            adoption_type TEXT,
+            credit_name TEXT,
+            terms_version TEXT,
+            terms_accepted_at INTEGER,
+            terms_snapshot_text TEXT,
+            ai_generation_declared TEXT,
+            source_note TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             approved_at INTEGER,
@@ -817,7 +837,24 @@ def main():
             submission_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             reason TEXT NOT NULL,
+            note TEXT,
             created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_adoptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            source_user_id INTEGER NOT NULL,
+            adoption_type TEXT,
+            internal_asset_key TEXT,
+            credit_name TEXT,
+            implementation_note TEXT,
+            status TEXT NOT NULL DEFAULT 'candidate',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
         )
         """
     )
@@ -1324,8 +1361,11 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_user_created ON lab_robot_submissions(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_featured ON lab_robot_submissions(status, is_featured, approved_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_adoption ON lab_robot_submissions(status, is_adoption_candidate, adoption_stage, approved_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_likes_submission ON lab_submission_likes(submission_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_reports_submission ON lab_submission_reports(submission_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_adoptions_submission ON lab_submission_adoptions(submission_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_races_status_created ON lab_races(status, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")

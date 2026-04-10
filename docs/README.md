@@ -1,6 +1,6 @@
 # ロボらぼ ドキュメント入口
 
-最終更新日: 2026-04-04
+最終更新日: 2026-04-11
 
 このディレクトリは、`ロボらぼ` の実装仕様・運用仕様・監査仕様の正本です。
 実装変更時は、関連仕様を必ず同時更新してください。
@@ -37,6 +37,7 @@
 - 実験室レース: `docs/LAB_RACE_SPEC.md`
 - エネミーレース: `docs/LAB_ENEMY_RACE_SPEC.md`
 - 実験室投稿: `docs/LAB_SUBMISSION_SPEC.md`
+- 実験室UGC投稿・展示・採用: `docs/LAB_UGC_ADOPTION_SPEC.md`
 - 運用チェック: `docs/OPERATIONS_CHECKLIST.md`
 - バックアップ/復元: `docs/BACKUP_RESTORE.md`
 - 公開後ランブック: `docs/OPERATIONS_RUNBOOK.md`

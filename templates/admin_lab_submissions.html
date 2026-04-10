@@ -14,20 +14,96 @@
 <div class="card">
   <div><b>{{ row['title'] }}</b> / {{ row['username'] }}</div>
   <div class="robot-part">状態: {{ row['status_label'] }} / いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
+  <div class="lab-badge-row">
+    {% for badge in row.get('badges', []) %}
+    <span class="lab-badge">{{ badge }}</span>
+    {% endfor %}
+  </div>
   {% if row.get('thumb_url') %}
   <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
   {% endif %}
   <div class="robot-time">{{ row['comment'] }}</div>
+  <div class="robot-part">利用条件: {{ row.get('terms_version') or '未記録' }} / AI申告: {{ row['ai_generation_label'] }}</div>
+  {% if row.get('source_note') %}
+  <div class="robot-part">制作メモ: {{ row['source_note'] }}</div>
+  {% endif %}
   <form method="post" class="post-form">
     <input type="hidden" name="status" value="{{ status_filter }}" />
     <label for="note-{{ row['id'] }}">メモ</label>
     <textarea id="note-{{ row['id'] }}" name="moderation_note" rows="3" maxlength="200">{{ row['moderation_note'] or '' }}</textarea>
+    <label for="reject-{{ row['id'] }}">差し戻し理由</label>
+    <select id="reject-{{ row['id'] }}" name="reject_reason_key">
+      <option value="">未設定</option>
+      {% for key, label in reject_reason_defs %}
+      <option value="{{ key }}" {% if row.get('reject_reason_key') == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label>タグ</label>
+    <div class="lab-checkbox-grid">
+      {% for key, label in tag_defs %}
+      <label class="lab-check-card">
+        <input type="checkbox" name="tags" value="{{ key }}" {% for tag in row.get('tags', []) %}{% if tag['key'] == key %}checked{% endif %}{% endfor %} />
+        <span>{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <label for="style-{{ row['id'] }}">想定タイプ</label>
+    <select id="style-{{ row['id'] }}" name="intended_style_key">
+      <option value="">未設定</option>
+      {% for key, label in style_defs %}
+      <option value="{{ key }}" {% if row.get('intended_style_key') == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <div class="lab-admin-grid">
+      {% for chart_col, label in chart_defs %}
+      <label for="{{ chart_col }}-{{ row['id'] }}">{{ label }}
+        <input id="{{ chart_col }}-{{ row['id'] }}" type="number" name="{{ chart_col }}" min="1" max="100" value="{{ row.get(chart_col) or 50 }}" />
+      </label>
+      {% endfor %}
+    </div>
+    <div class="lab-checkbox-grid">
+      <label class="lab-check-card">
+        <input type="checkbox" name="is_featured" value="1" {% if row.get('is_featured') %}checked{% endif %} />
+        <span>研究員おすすめ</span>
+      </label>
+      <label class="lab-check-card">
+        <input type="checkbox" name="is_trending_boosted" value="1" {% if row.get('is_trending_boosted') %}checked{% endif %} />
+        <span>話題ブースト</span>
+      </label>
+      <label class="lab-check-card">
+        <input type="checkbox" name="is_adoption_candidate" value="1" {% if row.get('is_adoption_candidate') %}checked{% endif %} />
+        <span>採用候補</span>
+      </label>
+    </div>
+    <label for="adoption-stage-{{ row['id'] }}">採用段階</label>
+    <select id="adoption-stage-{{ row['id'] }}" name="adoption_stage">
+      {% for key, label in adoption_stage_defs %}
+      <option value="{{ key }}" {% if row.get('adoption_stage') == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="adoption-type-{{ row['id'] }}">採用種別</label>
+    <select id="adoption-type-{{ row['id'] }}" name="adoption_type">
+      <option value="">未設定</option>
+      {% for key, label in adoption_type_defs %}
+      <option value="{{ key }}" {% if row.get('adoption_type') == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label for="credit-{{ row['id'] }}">原案クレジット</label>
+    <input id="credit-{{ row['id'] }}" type="text" name="credit_name" maxlength="40" value="{{ row.get('credit_name') or row['username'] }}" />
+    <label for="asset-{{ row['id'] }}">内部アセットキー</label>
+    <input id="asset-{{ row['id'] }}" type="text" name="internal_asset_key" maxlength="80" />
+    <label for="implementation-note-{{ row['id'] }}">採用運用メモ</label>
+    <textarea id="implementation-note-{{ row['id'] }}" name="implementation_note" rows="2" maxlength="300"></textarea>
     <div class="home-inline-actions">
       <button type="submit" formaction="{{ url_for('admin_lab_submission_approve', submission_id=row['id']) }}">approve</button>
       <button type="submit" formaction="{{ url_for('admin_lab_submission_reject', submission_id=row['id']) }}" class="btn-secondary">reject</button>
       <button type="submit" formaction="{{ url_for('admin_lab_submission_disable', submission_id=row['id']) }}" class="btn-secondary">disable</button>
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_feature', submission_id=row['id']) }}" class="btn-secondary">表示更新</button>
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_adoption_candidate', submission_id=row['id']) }}" class="btn-secondary">採用候補化</button>
+      <button type="submit" formaction="{{ url_for('admin_lab_submission_adoption_update', submission_id=row['id']) }}" class="btn-secondary">採用情報更新</button>
     </div>
   </form>
+  <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を確認</a></p>
 </div>
 {% else %}
 <div class="card">対象の投稿はありません。</div>

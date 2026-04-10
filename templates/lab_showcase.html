@@ -16,9 +16,29 @@
     {% if row.get('thumb_url') %}
     <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
     {% endif %}
+    <div class="lab-badge-row">
+      {% for badge in row.get('badges', []) %}
+      <span class="lab-badge">{{ badge }}</span>
+      {% endfor %}
+    </div>
     <div class="robot-id">{{ row['title'] }}</div>
     <div class="robot-part">投稿者: {{ row['username'] }}</div>
     <div class="robot-time">{{ row['comment'] }}</div>
+    {% if row.get('tags') %}
+    <div class="lab-tag-list">
+      {% for tag in row['tags'] %}
+      <span class="lab-tag">{{ tag['label'] }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="lab-mini-chart">
+      {% for stat in row.get('chart_rows', []) %}
+      <div class="lab-mini-chart-row" title="{{ stat['label'] }} {{ stat['value'] }}">
+        <span>{{ stat['label'] }}</span>
+        <i style="--value: {{ stat['value'] }}%"></i>
+      </div>
+      {% endfor %}
+    </div>
     <div class="robot-part">いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
     <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を見る</a></p>
   </div>
@@ -27,5 +47,5 @@
   {% endfor %}
 </div>
 
-<p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+<p class="link"><a href="{{ url_for('lab_upload') }}">試作機登録へ</a> | <a href="{{ url_for('lab_my_submissions') }}">自分の投稿へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
 {% endblock %}

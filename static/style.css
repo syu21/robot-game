@@ -6525,6 +6525,127 @@ body.home-page.home-mobile .invite-link-row {
   color: inherit;
 }
 
+.lab-badge-row,
+.lab-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.lab-badge,
+.lab-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  background: rgba(20, 34, 64, 0.82);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.lab-tag {
+  border-color: rgba(168, 85, 247, 0.26);
+  background: rgba(41, 30, 70, 0.78);
+  color: rgba(232, 221, 255, 0.94);
+}
+
+.lab-checkbox-grid,
+.lab-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.lab-check-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 25, 49, 0.76);
+  color: var(--text-main);
+}
+
+.lab-terms-box,
+.lab-adoption-note {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  background:
+    linear-gradient(180deg, rgba(18, 31, 58, 0.92), rgba(12, 20, 39, 0.94));
+  color: var(--text-main);
+}
+
+.lab-terms-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-weight: 800;
+}
+
+.lab-terms-snapshot {
+  white-space: pre-wrap;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  background: rgba(6, 12, 25, 0.72);
+  color: var(--text-sub);
+  line-height: 1.7;
+}
+
+.lab-chart-grid,
+.lab-mini-chart {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lab-chart-row,
+.lab-mini-chart-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-sub);
+}
+
+.lab-mini-chart-row {
+  grid-template-columns: 58px minmax(0, 1fr);
+  font-size: 12px;
+}
+
+.lab-chart-bar,
+.lab-mini-chart-row i {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.lab-chart-bar i,
+.lab-mini-chart-row i::before {
+  display: block;
+  width: var(--value);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.82), rgba(250, 204, 21, 0.78));
+  content: "";
+}
+
+.lab-admin-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-sub);
+}
+
 .lab-detail-thumb {
   max-width: 256px;
   margin-top: 12px;

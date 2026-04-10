@@ -312,6 +312,8 @@ class LabRouteTests(unittest.TestCase):
             data={
                 "title": "Bad",
                 "comment": "opaque",
+                "ai_generation_declared": "no_ai",
+                "terms_accept": "1",
                 "image": (io.BytesIO(_png_bytes(transparent=False)), "bad.png"),
             },
             content_type="multipart/form-data",
@@ -319,11 +321,30 @@ class LabRouteTests(unittest.TestCase):
         self.assertEqual(bad_resp.status_code, 200)
         self.assertIn("透過付きPNGのみ投稿できます", bad_resp.get_data(as_text=True))
 
+        no_terms_resp = client.post(
+            "/lab/upload",
+            data={
+                "title": "NoTerms",
+                "comment": "transparent bot",
+                "ai_generation_declared": "no_ai",
+                "image": (io.BytesIO(_png_bytes()), "noterms.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(no_terms_resp.status_code, 200)
+        self.assertIn("利用条件への同意が必要です", no_terms_resp.get_data(as_text=True))
+
         good_resp = client.post(
             "/lab/upload",
             data={
                 "title": "GlassBot",
                 "comment": "transparent bot",
+                "credit_name": "Glass Lab",
+                "ai_generation_declared": "no_ai",
+                "source_note": "自作PNG",
+                "tags": "prototype",
+                "intended_style_key": "prototype",
+                "terms_accept": "1",
                 "image": (io.BytesIO(_png_bytes()), "glassbot.png"),
             },
             content_type="multipart/form-data",
@@ -337,6 +358,9 @@ class LabRouteTests(unittest.TestCase):
             row = db.execute("SELECT * FROM lab_robot_submissions WHERE title = ?", ("GlassBot",)).fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(row["status"], "pending")
+            self.assertEqual(row["terms_version"], game_app.LAB_TERMS_VERSION)
+            self.assertEqual(row["ai_generation_declared"], "no_ai")
+            self.assertIn("prototype", row["tags_json"])
             self.created_files.extend([row["image_path"], row["thumb_path"]])
 
         showcase_before = client.get("/lab/showcase")
@@ -345,13 +369,55 @@ class LabRouteTests(unittest.TestCase):
         admin_client = self._client(admin=True)
         approve_resp = admin_client.post(
             f"/admin/lab/submissions/{row['id']}/approve",
-            data={"moderation_note": "[pick]", "status": "pending"},
+            data={
+                "moderation_note": "[pick]",
+                "status": "pending",
+                "tags": "prototype",
+                "intended_style_key": "prototype",
+                "chart_hp": "80",
+                "chart_atk": "60",
+                "chart_def": "55",
+                "chart_spd": "40",
+                "chart_acc": "70",
+                "chart_cri": "45",
+                "is_featured": "1",
+                "is_adoption_candidate": "1",
+                "adoption_stage": "candidate",
+                "adoption_type": "enemy",
+                "credit_name": "Glass Lab",
+            },
             follow_redirects=True,
         )
         self.assertEqual(approve_resp.status_code, 200)
+        admin_approved = admin_client.get("/admin/lab/submissions?status=approved")
+        self.assertEqual(admin_approved.status_code, 200)
+        self.assertIn("採用情報更新", admin_approved.get_data(as_text=True))
 
         showcase_after = client.get("/lab/showcase")
-        self.assertIn("GlassBot", showcase_after.get_data(as_text=True))
+        showcase_html = showcase_after.get_data(as_text=True)
+        self.assertIn("GlassBot", showcase_html)
+        self.assertIn("採用候補", showcase_html)
+        self.assertIn("試作", showcase_html)
+        candidate_resp = client.get("/lab/showcase?sort=candidate")
+        self.assertIn("GlassBot", candidate_resp.get_data(as_text=True))
+        my_resp = client.get("/lab/my-submissions")
+        self.assertIn("GlassBot", my_resp.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            approved_row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ?", (row["id"],)).fetchone()
+            self.assertEqual(int(approved_row["is_featured"]), 1)
+            self.assertEqual(int(approved_row["is_adoption_candidate"]), 1)
+            self.assertEqual(approved_row["adoption_stage"], "candidate")
+            self.assertEqual(approved_row["adoption_type"], "enemy")
+            self.assertEqual(int(approved_row["chart_hp"]), 80)
+            adoption = db.execute(
+                "SELECT * FROM lab_submission_adoptions WHERE submission_id = ?",
+                (row["id"],),
+            ).fetchone()
+            self.assertIsNotNone(adoption)
+            self.assertEqual(adoption["status"], "candidate")
+            self.assertEqual(adoption["adoption_type"], "enemy")
 
         disable_resp = admin_client.post(
             f"/admin/lab/submissions/{row['id']}/disable",

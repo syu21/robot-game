@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>実験室投稿 利用条件</h1>
+
+<div class="card">
+  <div><b>{{ lab_terms_version }}</b></div>
+  {% for line in lab_terms_summary %}
+  <div class="robot-part">{{ line }}</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>保存される同意内容</h2>
+  <pre class="lab-terms-snapshot">{{ lab_terms_snapshot }}</pre>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_upload') }}">試作機登録へ戻る</a></p>
+{% endblock %}

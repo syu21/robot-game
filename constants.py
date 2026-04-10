@@ -1,7 +1,7 @@
 import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.48"
+APP_VERSION = "0.1.49"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
 LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
 LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
@@ -218,6 +218,9 @@ AUDIT_EVENT_TYPES = {
     "LAB_SUBMISSION_DISABLE": "audit.lab.submission.disable",
     "LAB_SUBMISSION_LIKE": "audit.lab.submission.like",
     "LAB_SUBMISSION_REPORT": "audit.lab.submission.report",
+    "LAB_SUBMISSION_FEATURE": "audit.lab.submission.feature",
+    "LAB_SUBMISSION_ADOPTION_CANDIDATE": "audit.lab.submission.adoption_candidate",
+    "LAB_SUBMISSION_ADOPTION_UPDATE": "audit.lab.submission.adoption_update",
     "LAB_RACE_ENTRY": "audit.lab.race.entry",
     "LAB_RACE_START": "audit.lab.race.start",
     "LAB_RACE_FINISH": "audit.lab.race.finish",

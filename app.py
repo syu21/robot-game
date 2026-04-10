@@ -735,12 +735,17 @@ LAB_WORLD_EVENT_TYPES = {
     "LAB_RACE_WIN",
     "LAB_RACE_UPSET",
     "LAB_RACE_POPULAR_ENTRY",
+    "LAB_SUBMISSION_APPROVED",
+    "LAB_SUBMISSION_FEATURED",
+    "LAB_SUBMISSION_ADOPTION_CANDIDATE",
+    "LAB_SUBMISSION_ADOPTION_RELEASED",
 }
 LAB_SUBMISSION_SORT_DEFS = (
     {"key": "new", "label": "新着"},
     {"key": "popular", "label": "人気"},
     {"key": "talk", "label": "話題"},
     {"key": "pick", "label": "おすすめ"},
+    {"key": "candidate", "label": "採用候補"},
 )
 LAB_SUBMISSION_SORT_OPTIONS = tuple(item["key"] for item in LAB_SUBMISSION_SORT_DEFS)
 LAB_REPORT_REASON_DEFS = (
@@ -749,6 +754,79 @@ LAB_REPORT_REASON_DEFS = (
     ("spam", "スパム"),
     ("other", "その他"),
 )
+LAB_REJECT_REASON_DEFS = (
+    ("transparent_required", "透過条件を満たしていません"),
+    ("size_invalid", "サイズ条件を満たしていません"),
+    ("worldview_mismatch", "ロボらぼの掲載方針と合いませんでした"),
+    ("rights_unclear", "権利面の確認ができませんでした"),
+    ("content_issue", "画像内容に問題がありました"),
+    ("resubmit", "再提出をお願いします"),
+)
+LAB_TERMS_VERSION = "lab_ugc_terms_v1"
+LAB_TERMS_SUMMARY_LINES = (
+    "投稿画像は、実験室での展示や紹介に利用されます。",
+    "運営は表示のために縮小・トリミングなどの軽微な調整を行う場合があります。",
+    "投稿画像は将来的に本編実装の原案候補として検討される場合がありますが、採用や報酬を保証するものではありません。",
+    "本編に採用される場合、運営側で再構成・再制作した正式版として実装されることがあります。",
+    "他者の権利を侵害する画像は投稿できません。",
+)
+LAB_TERMS_SNAPSHOT_TEXT = "\n".join(
+    (
+        f"利用条件バージョン: {LAB_TERMS_VERSION}",
+        *LAB_TERMS_SUMMARY_LINES,
+        "投稿者は、投稿画像について自分が権利を持つ、または適法に利用可能な素材のみを用いていることを保証します。",
+        "運営は、投稿画像を実験室およびロボらぼ関連画面で展示・縮小・トリミング・紹介・ランキング表示・話題表示に利用できます。",
+        "投稿画像は本編実装・敵化・イベント化・外装化・ドロップ機体化等の候補原案として検討される場合があります。",
+        "正式採用時は、投稿画像そのものではなく、運営が再構成・再デザイン・再生成・再描画した正式版として扱う場合があります。",
+        "投稿により本編採用・商品化・特典付与・報酬・対価を保証しません。",
+        "運営は、投稿者名または表示用クレジット名を、展示ページおよび採用時の紹介文に掲載できます。",
+        "投稿が展示停止や非公開となっても、監査・履歴・権利確認のため最小限の記録を保持できます。",
+    )
+)
+LAB_AI_GENERATION_DEFS = (
+    ("no_ai", "生成AIは使っていない"),
+    ("ai_used", "生成AIを利用した"),
+    ("mixed", "生成AIと自作素材を併用した"),
+)
+LAB_AI_GENERATION_OPTIONS = tuple(key for key, _label in LAB_AI_GENERATION_DEFS)
+LAB_SUBMISSION_TAG_DEFS = (
+    ("stable", "安定"),
+    ("last_stand", "背水"),
+    ("burst", "爆発"),
+    ("accuracy", "命中"),
+    ("durable", "耐久"),
+    ("prototype", "試作"),
+    ("joke", "ネタ"),
+    ("anomaly", "異常機"),
+)
+LAB_SUBMISSION_TAG_OPTIONS = tuple(key for key, _label in LAB_SUBMISSION_TAG_DEFS)
+LAB_SUBMISSION_STYLE_DEFS = LAB_SUBMISSION_TAG_DEFS
+LAB_SUBMISSION_STYLE_OPTIONS = tuple(key for key, _label in LAB_SUBMISSION_STYLE_DEFS)
+LAB_SUBMISSION_CHART_DEFS = (
+    ("chart_hp", "耐久"),
+    ("chart_atk", "攻撃"),
+    ("chart_def", "防御"),
+    ("chart_spd", "素早さ"),
+    ("chart_acc", "命中"),
+    ("chart_cri", "会心"),
+)
+LAB_ADOPTION_STAGE_DEFS = (
+    ("none", "採用未設定"),
+    ("candidate", "採用候補"),
+    ("selected", "選定中"),
+    ("adapted", "再構成済み"),
+    ("implemented", "実装済み原案"),
+)
+LAB_ADOPTION_STAGE_OPTIONS = tuple(key for key, _label in LAB_ADOPTION_STAGE_DEFS)
+LAB_ADOPTION_TYPE_DEFS = (
+    ("enemy", "敵機"),
+    ("drop_robot", "ドロップ機体"),
+    ("event_reward", "イベント報酬機"),
+    ("decor", "DECOR / 外装"),
+    ("shop_skin", "ショップ外装"),
+    ("other", "その他"),
+)
+LAB_ADOPTION_TYPE_OPTIONS = tuple(key for key, _label in LAB_ADOPTION_TYPE_DEFS)
 LAB_CASINO_PRIZE_SEEDS = (
     {
         "prize_key": "lab_title_hot_streak",
@@ -3357,7 +3435,7 @@ def _visible_user_max_unlocked_layer(user_row, db=None):
 
 def _event_release_feature(event_type, payload):
     text = str(event_type or "").strip()
-    if text.startswith("audit.lab.") or text in {"LAB_RACE_WIN", "LAB_RACE_UPSET", "LAB_RACE_POPULAR_ENTRY"}:
+    if text.startswith("audit.lab.") or text.startswith("LAB_RACE_") or text.startswith("LAB_SUBMISSION_"):
         return "lab"
     if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED"} or text.startswith("audit.champion."):
         return "weekly_champion"
@@ -8331,6 +8409,26 @@ def ensure_schema(db):
             thumb_path TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             moderation_note TEXT,
+            reject_reason_key TEXT,
+            tags_json TEXT,
+            intended_style_key TEXT,
+            chart_hp INTEGER NOT NULL DEFAULT 50,
+            chart_atk INTEGER NOT NULL DEFAULT 50,
+            chart_def INTEGER NOT NULL DEFAULT 50,
+            chart_spd INTEGER NOT NULL DEFAULT 50,
+            chart_acc INTEGER NOT NULL DEFAULT 50,
+            chart_cri INTEGER NOT NULL DEFAULT 50,
+            is_featured INTEGER NOT NULL DEFAULT 0,
+            is_trending_boosted INTEGER NOT NULL DEFAULT 0,
+            is_adoption_candidate INTEGER NOT NULL DEFAULT 0,
+            adoption_stage TEXT NOT NULL DEFAULT 'none',
+            adoption_type TEXT,
+            credit_name TEXT,
+            terms_version TEXT,
+            terms_accepted_at INTEGER,
+            terms_snapshot_text TEXT,
+            ai_generation_declared TEXT,
+            source_note TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             approved_at INTEGER,
@@ -8361,9 +8459,28 @@ def ensure_schema(db):
             submission_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             reason TEXT NOT NULL,
+            note TEXT,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id),
             FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lab_submission_adoptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            source_user_id INTEGER NOT NULL,
+            adoption_type TEXT,
+            internal_asset_key TEXT,
+            credit_name TEXT,
+            implementation_note TEXT,
+            status TEXT NOT NULL DEFAULT 'candidate',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id),
+            FOREIGN KEY (source_user_id) REFERENCES users(id)
         )
         """
     )
@@ -8970,6 +9087,41 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
+    lab_submission_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_robot_submissions)").fetchall()}
+    lab_submission_column_defs = {
+        "reject_reason_key": "reject_reason_key TEXT",
+        "tags_json": "tags_json TEXT",
+        "intended_style_key": "intended_style_key TEXT",
+        "chart_hp": "chart_hp INTEGER NOT NULL DEFAULT 50",
+        "chart_atk": "chart_atk INTEGER NOT NULL DEFAULT 50",
+        "chart_def": "chart_def INTEGER NOT NULL DEFAULT 50",
+        "chart_spd": "chart_spd INTEGER NOT NULL DEFAULT 50",
+        "chart_acc": "chart_acc INTEGER NOT NULL DEFAULT 50",
+        "chart_cri": "chart_cri INTEGER NOT NULL DEFAULT 50",
+        "is_featured": "is_featured INTEGER NOT NULL DEFAULT 0",
+        "is_trending_boosted": "is_trending_boosted INTEGER NOT NULL DEFAULT 0",
+        "is_adoption_candidate": "is_adoption_candidate INTEGER NOT NULL DEFAULT 0",
+        "adoption_stage": "adoption_stage TEXT NOT NULL DEFAULT 'none'",
+        "adoption_type": "adoption_type TEXT",
+        "credit_name": "credit_name TEXT",
+        "terms_version": "terms_version TEXT",
+        "terms_accepted_at": "terms_accepted_at INTEGER",
+        "terms_snapshot_text": "terms_snapshot_text TEXT",
+        "ai_generation_declared": "ai_generation_declared TEXT",
+        "source_note": "source_note TEXT",
+    }
+    for column_name, column_sql in lab_submission_column_defs.items():
+        if column_name not in lab_submission_cols:
+            db.execute(f"ALTER TABLE lab_robot_submissions ADD COLUMN {column_sql}")
+    db.execute("UPDATE lab_robot_submissions SET adoption_stage = 'none' WHERE adoption_stage IS NULL OR TRIM(adoption_stage) = ''")
+    for chart_col, _label in LAB_SUBMISSION_CHART_DEFS:
+        db.execute(f"UPDATE lab_robot_submissions SET {chart_col} = 50 WHERE {chart_col} IS NULL")
+    db.execute("UPDATE lab_robot_submissions SET is_featured = 0 WHERE is_featured IS NULL")
+    db.execute("UPDATE lab_robot_submissions SET is_trending_boosted = 0 WHERE is_trending_boosted IS NULL")
+    db.execute("UPDATE lab_robot_submissions SET is_adoption_candidate = 0 WHERE is_adoption_candidate IS NULL")
+    lab_report_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_submission_reports)").fetchall()}
+    if "note" not in lab_report_cols:
+        db.execute("ALTER TABLE lab_submission_reports ADD COLUMN note TEXT")
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
@@ -8981,8 +9133,11 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_user_created ON lab_robot_submissions(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_featured ON lab_robot_submissions(status, is_featured, approved_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_adoption ON lab_robot_submissions(status, is_adoption_candidate, adoption_stage, approved_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_likes_submission ON lab_submission_likes(submission_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_reports_submission ON lab_submission_reports(submission_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submission_adoptions_submission ON lab_submission_adoptions(submission_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_races_status_created ON lab_races(status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")
@@ -11412,12 +11567,131 @@ def _lab_submission_status_label(status):
     }.get(str(status or "").strip().lower(), str(status or "-"))
 
 
-def _lab_report_reason_label(reason):
-    reason_key = str(reason or "").strip().lower()
-    for key, label in LAB_REPORT_REASON_DEFS:
-        if key == reason_key:
+def _lab_label_from_defs(defs, key, default=None):
+    key = str(key or "").strip().lower()
+    for item_key, label in defs:
+        if item_key == key:
             return label
-    return "その他"
+    return default if default is not None else (key or "-")
+
+
+def _lab_report_reason_label(reason):
+    return _lab_label_from_defs(LAB_REPORT_REASON_DEFS, reason, "その他")
+
+
+def _lab_reject_reason_label(reason):
+    return _lab_label_from_defs(LAB_REJECT_REASON_DEFS, reason, "差し戻し理由未設定")
+
+
+def _lab_ai_generation_label(value):
+    return _lab_label_from_defs(LAB_AI_GENERATION_DEFS, value, "未申告")
+
+
+def _lab_submission_style_label(value):
+    return _lab_label_from_defs(LAB_SUBMISSION_STYLE_DEFS, value, "")
+
+
+def _lab_adoption_stage_label(value):
+    return _lab_label_from_defs(LAB_ADOPTION_STAGE_DEFS, value, "採用未設定")
+
+
+def _lab_adoption_type_label(value):
+    return _lab_label_from_defs(LAB_ADOPTION_TYPE_DEFS, value, "")
+
+
+def _lab_normalize_tags(values):
+    valid = set(LAB_SUBMISSION_TAG_OPTIONS)
+    normalized = []
+    for raw_value in values or ():
+        for raw_key in re.split(r"[\s,，]+", str(raw_value or "").strip().lower()):
+            key = raw_key.strip()
+            if key in valid and key not in normalized:
+                normalized.append(key)
+    return normalized[:6]
+
+
+def _lab_parse_submission_tags(tags_json):
+    raw = str(tags_json or "").strip()
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return _lab_normalize_tags([raw])
+    if isinstance(loaded, dict):
+        loaded = loaded.keys()
+    if not isinstance(loaded, (list, tuple)):
+        return []
+    return _lab_normalize_tags(loaded)
+
+
+def _lab_tag_items(tags_json):
+    return [
+        {"key": key, "label": _lab_label_from_defs(LAB_SUBMISSION_TAG_DEFS, key, key)}
+        for key in _lab_parse_submission_tags(tags_json)
+    ]
+
+
+def _lab_clamped_chart_value(value, default=50):
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        num = int(default)
+    return max(1, min(100, num))
+
+
+def _lab_chart_rows(item):
+    return [
+        {"key": key, "label": label, "value": _lab_clamped_chart_value(item.get(key), 50)}
+        for key, label in LAB_SUBMISSION_CHART_DEFS
+    ]
+
+
+def _lab_form_bool(name, default=False):
+    value = request.form.get(name)
+    if value is None:
+        return bool(default)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _lab_submission_badges(item):
+    badges = []
+    status = str(item.get("status") or "").strip().lower()
+    if status != "approved":
+        badges.append(item.get("status_label") or _lab_submission_status_label(status))
+    elif item.get("approved_at") and int(time.time()) - int(item.get("approved_at") or 0) <= 3 * 86400:
+        badges.append("新着")
+    if int(item.get("is_featured") or 0):
+        badges.append("研究員おすすめ")
+    if int(item.get("is_trending_boosted") or 0):
+        badges.append("話題")
+    adoption_stage = str(item.get("adoption_stage") or "none").strip().lower()
+    if adoption_stage == "implemented":
+        badges.append("実装済み原案")
+    elif int(item.get("is_adoption_candidate") or 0) or adoption_stage in {"candidate", "selected", "adapted"}:
+        badges.append("採用候補")
+    return badges
+
+
+def _lab_decorate_submission_item(item):
+    item["status_label"] = _lab_submission_status_label(item.get("status"))
+    item["reject_reason_label"] = _lab_reject_reason_label(item.get("reject_reason_key"))
+    item["tags"] = _lab_tag_items(item.get("tags_json"))
+    item["intended_style_label"] = _lab_submission_style_label(item.get("intended_style_key"))
+    item["ai_generation_label"] = _lab_ai_generation_label(item.get("ai_generation_declared"))
+    item["adoption_stage_label"] = _lab_adoption_stage_label(item.get("adoption_stage"))
+    item["adoption_type_label"] = _lab_adoption_type_label(item.get("adoption_type"))
+    item["chart_rows"] = _lab_chart_rows(item)
+    item["badges"] = _lab_submission_badges(item)
+    item["created_text"] = _format_jst_ts(item.get("created_at")) if item.get("created_at") else ""
+    item["updated_text"] = _format_jst_ts(item.get("updated_at")) if item.get("updated_at") else ""
+    item["approved_text"] = _format_jst_ts(item.get("approved_at")) if item.get("approved_at") else ""
+    item["terms_accepted_text"] = _format_jst_ts(item.get("terms_accepted_at")) if item.get("terms_accepted_at") else ""
+    if item.get("thumb_path"):
+        item["thumb_url"] = url_for("static", filename=item["thumb_path"])
+    if item.get("image_path"):
+        item["image_url"] = url_for("static", filename=item["image_path"])
+    return item
 
 
 def _lab_world_event_log(db, event_type, payload):
@@ -11519,10 +11793,7 @@ def _lab_submission_recent_rows(db, user_id, *, limit=12):
     ).fetchall()
     out = []
     for row in rows:
-        item = dict(row)
-        item["status_label"] = _lab_submission_status_label(item.get("status"))
-        item["image_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
-        out.append(item)
+        out.append(_lab_decorate_submission_item(dict(row)))
     return out
 
 
@@ -11534,8 +11805,12 @@ def _lab_showcase_query_rows(db, *, viewer_user_id, sort_key="new", limit=48):
         "new": "s.approved_at DESC, s.id DESC",
         "popular": "COALESCE(l.likes_count, 0) DESC, s.approved_at DESC, s.id DESC",
         "talk": "COALESCE(l.recent_likes, 0) DESC, COALESCE(l.likes_count, 0) DESC, s.approved_at DESC, s.id DESC",
-        "pick": "CASE WHEN LOWER(COALESCE(s.moderation_note, '')) LIKE '%[pick]%' THEN 0 ELSE 1 END, s.approved_at DESC, s.id DESC",
+        "pick": "CASE WHEN COALESCE(s.is_featured, 0) = 1 OR LOWER(COALESCE(s.moderation_note, '')) LIKE '%[pick]%' THEN 0 ELSE 1 END, s.approved_at DESC, s.id DESC",
+        "candidate": "COALESCE(s.is_adoption_candidate, 0) DESC, s.approved_at DESC, s.id DESC",
     }[current_sort]
+    extra_where = ""
+    if current_sort == "candidate":
+        extra_where = "AND COALESCE(s.is_adoption_candidate, 0) = 1"
     recent_cutoff = int(time.time()) - 7 * 86400
     rows = db.execute(
         f"""
@@ -11565,6 +11840,7 @@ def _lab_showcase_query_rows(db, *, viewer_user_id, sort_key="new", limit=48):
           ON my_like.submission_id = s.id
          AND my_like.user_id = ?
         WHERE s.status = 'approved'
+          {extra_where}
         ORDER BY {order_by}
         LIMIT ?
         """,
@@ -11572,11 +11848,7 @@ def _lab_showcase_query_rows(db, *, viewer_user_id, sort_key="new", limit=48):
     ).fetchall()
     out = []
     for row in rows:
-        item = dict(row)
-        item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
-        item["image_url"] = url_for("static", filename=item["image_path"]) if item.get("image_path") else None
-        item["status_label"] = _lab_submission_status_label(item.get("status"))
-        out.append(item)
+        out.append(_lab_decorate_submission_item(dict(row)))
     return _decorate_user_rows(db, out, user_key="user_id")
 
 
@@ -11615,9 +11887,7 @@ def _lab_submission_detail_row(db, submission_id, *, viewer_user_id=None, is_adm
     can_view = item["status"] == "approved" or bool(is_admin) or (viewer_user_id and int(item["user_id"]) == int(viewer_user_id))
     if not can_view:
         return None
-    item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
-    item["image_url"] = url_for("static", filename=item["image_path"]) if item.get("image_path") else None
-    item["status_label"] = _lab_submission_status_label(item.get("status"))
+    item = _lab_decorate_submission_item(item)
     item = _decorate_user_rows(db, [item], user_key="user_id")[0]
     return item
 
@@ -11651,10 +11921,7 @@ def _lab_submission_pending_rows(db, *, status_filter="pending", limit=80):
     ).fetchall()
     out = []
     for row in rows:
-        item = dict(row)
-        item["thumb_url"] = url_for("static", filename=item["thumb_path"]) if item.get("thumb_path") else None
-        item["status_label"] = _lab_submission_status_label(item.get("status"))
-        out.append(item)
+        out.append(_lab_decorate_submission_item(dict(row)))
     return _decorate_user_rows(db, out, user_key="user_id")
 
 
@@ -15964,6 +16231,31 @@ def _feed_card_from_event(db, row):
         card["accent"] = "build"
         card["text"] = f"投稿ロボ『{title}』が実験室で話題に浮上"
         card["meta_lines"] = [f"投稿者: {username}", f"いいね: {likes_count}"]
+        if payload.get("submission_id"):
+            card["link_url"] = url_for("lab_submission_detail", submission_id=int(payload["submission_id"]))
+    elif event_type in {
+        "LAB_SUBMISSION_APPROVED",
+        "LAB_SUBMISSION_FEATURED",
+        "LAB_SUBMISSION_ADOPTION_CANDIDATE",
+        "LAB_SUBMISSION_ADOPTION_RELEASED",
+    }:
+        title = str(payload.get("title") or "投稿ロボ").strip() or "投稿ロボ"
+        username = str(payload.get("username") or "unknown").strip() or "unknown"
+        card["headline"] = "LAB SHOWCASE"
+        card["accent"] = "build"
+        card["text"] = f"研究機体『{title}』が実験室に公開されました"
+        if event_type == "LAB_SUBMISSION_FEATURED":
+            card["headline"] = "LAB PICK"
+            card["text"] = f"研究員おすすめに『{title}』が選ばれました"
+        elif event_type == "LAB_SUBMISSION_ADOPTION_CANDIDATE":
+            card["headline"] = "LAB CANDIDATE"
+            card["text"] = f"『{title}』が本編採用候補として記録されました"
+        elif event_type == "LAB_SUBMISSION_ADOPTION_RELEASED":
+            card["headline"] = "LAB ADOPTED"
+            card["text"] = f"『{title}』由来の正式版が実装済み原案として記録されました"
+        card["meta_lines"] = [f"投稿者: {username}"]
+        if payload.get("adoption_type"):
+            card["meta_lines"].append(f"採用種別: {_lab_adoption_type_label(payload.get('adoption_type'))}")
         if payload.get("submission_id"):
             card["link_url"] = url_for("lab_submission_detail", submission_id=int(payload["submission_id"]))
     elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
@@ -25359,11 +25651,22 @@ def lab_upload():
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
         comment = (request.form.get("comment") or "").strip()
+        credit_name = (request.form.get("credit_name") or session.get("username") or "").strip()[:40]
+        ai_generation_declared = (request.form.get("ai_generation_declared") or "").strip().lower()
+        source_note = (request.form.get("source_note") or "").strip()[:240]
+        tag_keys = _lab_normalize_tags(request.form.getlist("tags"))
+        intended_style_key = (request.form.get("intended_style_key") or "").strip().lower()
+        if intended_style_key not in LAB_SUBMISSION_STYLE_OPTIONS:
+            intended_style_key = ""
         image = request.files.get("image")
         if not title:
             message = "タイトルを入力してください。"
         elif not comment:
             message = "一言コメントを入力してください。"
+        elif ai_generation_declared not in LAB_AI_GENERATION_OPTIONS:
+            message = "生成AIの利用有無を選択してください。"
+        elif not _lab_form_bool("terms_accept"):
+            message = "利用条件への同意が必要です。"
         else:
             ok, err, image_path, thumb_path = _lab_save_submission_image(image)
             if not ok:
@@ -25373,10 +25676,32 @@ def lab_upload():
                 cur = db.execute(
                     """
                     INSERT INTO lab_robot_submissions
-                    (user_id, title, comment, image_path, thumb_path, status, moderation_note, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)
+                    (
+                        user_id, title, comment, image_path, thumb_path,
+                        status, moderation_note, tags_json, intended_style_key, credit_name,
+                        terms_version, terms_accepted_at, terms_snapshot_text,
+                        ai_generation_declared, source_note,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (user_id, title[:80], comment[:200], image_path, thumb_path, now_ts, now_ts),
+                    (
+                        user_id,
+                        title[:80],
+                        comment[:200],
+                        image_path,
+                        thumb_path,
+                        json.dumps(tag_keys, ensure_ascii=False) if tag_keys else None,
+                        intended_style_key or None,
+                        credit_name or None,
+                        LAB_TERMS_VERSION,
+                        now_ts,
+                        LAB_TERMS_SNAPSHOT_TEXT,
+                        ai_generation_declared,
+                        source_note or None,
+                        now_ts,
+                        now_ts,
+                    ),
                 )
                 submission_id = int(cur.lastrowid)
                 audit_log(
@@ -25397,6 +25722,32 @@ def lab_upload():
         "lab_upload.html",
         message=message,
         recent_rows=_lab_submission_recent_rows(db, user_id),
+        tag_defs=LAB_SUBMISSION_TAG_DEFS,
+        style_defs=LAB_SUBMISSION_STYLE_DEFS,
+        ai_generation_defs=LAB_AI_GENERATION_DEFS,
+        lab_terms_version=LAB_TERMS_VERSION,
+        lab_terms_summary=LAB_TERMS_SUMMARY_LINES,
+    )
+
+
+@app.route("/lab/my-submissions")
+@login_required
+def lab_my_submissions():
+    db = get_db()
+    return render_template(
+        "lab_my_submissions.html",
+        rows=_lab_submission_recent_rows(db, int(session["user_id"]), limit=100),
+    )
+
+
+@app.route("/lab/terms")
+@login_required
+def lab_terms():
+    return render_template(
+        "lab_terms.html",
+        lab_terms_version=LAB_TERMS_VERSION,
+        lab_terms_summary=LAB_TERMS_SUMMARY_LINES,
+        lab_terms_snapshot=LAB_TERMS_SNAPSHOT_TEXT,
     )
 
 
@@ -25432,7 +25783,7 @@ def lab_submission_detail(submission_id):
     if is_admin:
         reports = db.execute(
             """
-            SELECT user_id, reason, created_at
+            SELECT user_id, reason, note, created_at
             FROM lab_submission_reports
             WHERE submission_id = ?
             ORDER BY created_at DESC, id DESC
@@ -25448,6 +25799,7 @@ def lab_submission_detail(submission_id):
             {
                 "user_label": _feed_user_label(db, report["user_id"]),
                 "reason_label": _lab_report_reason_label(report["reason"]),
+                "note": report["note"],
                 "created_at": _format_jst_ts(report["created_at"]),
             }
             for report in reports
@@ -25543,12 +25895,13 @@ def lab_submission_report(submission_id):
     reason = (request.form.get("reason") or "").strip().lower()
     if reason not in {item[0] for item in LAB_REPORT_REASON_DEFS}:
         reason = "other"
+    note = (request.form.get("note") or "").strip()[:300]
     db.execute(
         """
-        INSERT INTO lab_submission_reports (submission_id, user_id, reason, created_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO lab_submission_reports (submission_id, user_id, reason, note, created_at)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (int(submission_id), int(session["user_id"]), reason, int(time.time())),
+        (int(submission_id), int(session["user_id"]), reason, note or None, int(time.time())),
     )
     audit_log(
         db,
@@ -25558,7 +25911,7 @@ def lab_submission_report(submission_id):
         action_key="lab_submission_report",
         entity_type="lab_submission",
         entity_id=int(submission_id),
-        payload={"submission_id": int(submission_id), "reason": reason},
+        payload={"submission_id": int(submission_id), "reason": reason, "has_note": bool(note)},
         ip=request.remote_addr,
     )
     db.commit()
@@ -25576,6 +25929,8 @@ def admin_lab():
         "pending": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'pending'").fetchone()["c"] or 0),
         "approved": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'approved'").fetchone()["c"] or 0),
         "disabled": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'disabled'").fetchone()["c"] or 0),
+        "featured": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'approved' AND is_featured = 1").fetchone()["c"] or 0),
+        "adoption_candidates": int(db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE is_adoption_candidate = 1").fetchone()["c"] or 0),
         "races": int(db.execute("SELECT COUNT(*) AS c FROM lab_races").fetchone()["c"] or 0),
         "casino_races": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races").fetchone()["c"] or 0),
     }
@@ -25676,6 +26031,152 @@ def admin_lab_casino():
     return redirect(url_for("admin_lab_race"))
 
 
+def _lab_admin_submission_meta_from_form(row):
+    current = dict(row)
+    adoption_stage = (request.form.get("adoption_stage") or current.get("adoption_stage") or "none").strip().lower()
+    if adoption_stage not in LAB_ADOPTION_STAGE_OPTIONS:
+        adoption_stage = "none"
+    adoption_type = (request.form.get("adoption_type") or current.get("adoption_type") or "").strip().lower()
+    if adoption_type not in LAB_ADOPTION_TYPE_OPTIONS:
+        adoption_type = ""
+    is_adoption_candidate = _lab_form_bool(
+        "is_adoption_candidate",
+        bool(int(current.get("is_adoption_candidate") or 0)) or adoption_stage in {"candidate", "selected", "adapted", "implemented"},
+    )
+    if adoption_stage != "none":
+        is_adoption_candidate = True
+    elif is_adoption_candidate:
+        adoption_stage = "candidate"
+    meta = {
+        "moderation_note": (request.form.get("moderation_note") or "").strip()[:200] or None,
+        "reject_reason_key": (request.form.get("reject_reason_key") or current.get("reject_reason_key") or "").strip().lower() or None,
+        "tags_json": json.dumps(_lab_normalize_tags(request.form.getlist("tags")), ensure_ascii=False),
+        "intended_style_key": (request.form.get("intended_style_key") or "").strip().lower() or None,
+        "is_featured": 1 if _lab_form_bool("is_featured", bool(int(current.get("is_featured") or 0))) else 0,
+        "is_trending_boosted": 1 if _lab_form_bool("is_trending_boosted", bool(int(current.get("is_trending_boosted") or 0))) else 0,
+        "is_adoption_candidate": 1 if is_adoption_candidate else 0,
+        "adoption_stage": adoption_stage,
+        "adoption_type": adoption_type or None,
+        "credit_name": (request.form.get("credit_name") or current.get("credit_name") or "").strip()[:40] or None,
+        "internal_asset_key": (request.form.get("internal_asset_key") or "").strip()[:80] or None,
+        "implementation_note": (request.form.get("implementation_note") or "").strip()[:300] or None,
+    }
+    if meta["intended_style_key"] not in LAB_SUBMISSION_STYLE_OPTIONS:
+        meta["intended_style_key"] = None
+    if meta["reject_reason_key"] not in {key for key, _label in LAB_REJECT_REASON_DEFS}:
+        meta["reject_reason_key"] = None
+    for chart_col, _label in LAB_SUBMISSION_CHART_DEFS:
+        meta[chart_col] = _lab_clamped_chart_value(request.form.get(chart_col), current.get(chart_col) or 50)
+    return meta
+
+
+def _lab_update_submission_meta(db, submission_id, meta, now_ts):
+    db.execute(
+        """
+        UPDATE lab_robot_submissions
+        SET moderation_note = ?,
+            reject_reason_key = ?,
+            tags_json = ?,
+            intended_style_key = ?,
+            chart_hp = ?,
+            chart_atk = ?,
+            chart_def = ?,
+            chart_spd = ?,
+            chart_acc = ?,
+            chart_cri = ?,
+            is_featured = ?,
+            is_trending_boosted = ?,
+            is_adoption_candidate = ?,
+            adoption_stage = ?,
+            adoption_type = ?,
+            credit_name = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            meta["moderation_note"],
+            meta["reject_reason_key"],
+            meta["tags_json"],
+            meta["intended_style_key"],
+            meta["chart_hp"],
+            meta["chart_atk"],
+            meta["chart_def"],
+            meta["chart_spd"],
+            meta["chart_acc"],
+            meta["chart_cri"],
+            meta["is_featured"],
+            meta["is_trending_boosted"],
+            meta["is_adoption_candidate"],
+            meta["adoption_stage"],
+            meta["adoption_type"],
+            meta["credit_name"],
+            int(now_ts),
+            int(submission_id),
+        ),
+    )
+
+
+def _lab_adoption_status_from_stage(stage):
+    return {
+        "candidate": "candidate",
+        "selected": "planned",
+        "adapted": "adapted",
+        "implemented": "released",
+    }.get(str(stage or "").strip().lower(), "cancelled")
+
+
+def _lab_upsert_submission_adoption(db, row, meta, now_ts):
+    stage = str(meta.get("adoption_stage") or "none").strip().lower()
+    existing = db.execute(
+        "SELECT id FROM lab_submission_adoptions WHERE submission_id = ? ORDER BY id DESC LIMIT 1",
+        (int(row["id"]),),
+    ).fetchone()
+    status = _lab_adoption_status_from_stage(stage)
+    if stage == "none" and not existing:
+        return
+    if existing:
+        db.execute(
+            """
+            UPDATE lab_submission_adoptions
+            SET adoption_type = ?,
+                internal_asset_key = ?,
+                credit_name = ?,
+                implementation_note = ?,
+                status = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                meta.get("adoption_type"),
+                meta.get("internal_asset_key"),
+                meta.get("credit_name"),
+                meta.get("implementation_note"),
+                status,
+                int(now_ts),
+                int(existing["id"]),
+            ),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO lab_submission_adoptions
+            (submission_id, source_user_id, adoption_type, internal_asset_key, credit_name, implementation_note, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(row["id"]),
+                int(row["user_id"]),
+                meta.get("adoption_type"),
+                meta.get("internal_asset_key"),
+                meta.get("credit_name"),
+                meta.get("implementation_note"),
+                status,
+                int(now_ts),
+                int(now_ts),
+            ),
+        )
+
+
 @app.route("/admin/lab/submissions")
 @login_required
 def admin_lab_submissions():
@@ -25690,6 +26191,12 @@ def admin_lab_submissions():
         rows=_lab_submission_pending_rows(db, status_filter=status_filter, limit=100),
         status_filter=status_filter,
         status_options=("pending", "approved", "rejected", "disabled"),
+        tag_defs=LAB_SUBMISSION_TAG_DEFS,
+        style_defs=LAB_SUBMISSION_STYLE_DEFS,
+        chart_defs=LAB_SUBMISSION_CHART_DEFS,
+        adoption_stage_defs=LAB_ADOPTION_STAGE_DEFS,
+        adoption_type_defs=LAB_ADOPTION_TYPE_DEFS,
+        reject_reason_defs=LAB_REJECT_REASON_DEFS,
     )
 
 
@@ -25701,7 +26208,8 @@ def _admin_lab_submission_mutate(submission_id, *, action):
     if not row:
         abort(404)
     now_ts = int(time.time())
-    note = (request.form.get("moderation_note") or "").strip()[:200]
+    meta = _lab_admin_submission_meta_from_form(row)
+    note = meta["moderation_note"] or ""
     event_key = None
     if action == "approve":
         db.execute(
@@ -25716,7 +26224,47 @@ def _admin_lab_submission_mutate(submission_id, *, action):
             """,
             (note or None, now_ts, int(session["user_id"]), now_ts, int(submission_id)),
         )
+        _lab_update_submission_meta(db, submission_id, meta, now_ts)
+        if int(meta["is_adoption_candidate"]):
+            _lab_upsert_submission_adoption(db, row, meta, now_ts)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["LAB_SUBMISSION_ADOPTION_CANDIDATE"],
+                user_id=int(session["user_id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="lab_submission_adoption_candidate",
+                entity_type="lab_submission",
+                entity_id=int(submission_id),
+                payload={
+                    "submission_id": int(submission_id),
+                    "title": row["title"],
+                    "adoption_stage": meta["adoption_stage"],
+                    "adoption_type": meta.get("adoption_type"),
+                    "credit_name": meta.get("credit_name"),
+                },
+                ip=request.remote_addr,
+            )
         event_key = "LAB_SUBMISSION_APPROVE"
+        _lab_world_event_log(
+            db,
+            "LAB_SUBMISSION_APPROVED",
+            {
+                "submission_id": int(submission_id),
+                "title": row["title"],
+                "username": _feed_user_label(db, row["user_id"]),
+            },
+        )
+        if int(meta["is_adoption_candidate"]):
+            _lab_world_event_log(
+                db,
+                "LAB_SUBMISSION_ADOPTION_CANDIDATE",
+                {
+                    "submission_id": int(submission_id),
+                    "title": row["title"],
+                    "username": _feed_user_label(db, row["user_id"]),
+                    "adoption_type": meta.get("adoption_type"),
+                },
+            )
         flash("投稿を承認しました。", "notice")
     elif action == "reject":
         db.execute(
@@ -25724,10 +26272,11 @@ def _admin_lab_submission_mutate(submission_id, *, action):
             UPDATE lab_robot_submissions
             SET status = 'rejected',
                 moderation_note = ?,
+                reject_reason_key = ?,
                 updated_at = ?
             WHERE id = ?
             """,
-            (note or None, now_ts, int(submission_id)),
+            (note or None, meta["reject_reason_key"], now_ts, int(submission_id)),
         )
         event_key = "LAB_SUBMISSION_REJECT"
         flash("投稿を差し戻しました。", "notice")
@@ -25754,11 +26303,153 @@ def _admin_lab_submission_mutate(submission_id, *, action):
         action_key=f"lab_submission_{action}",
         entity_type="lab_submission",
         entity_id=int(submission_id),
-        payload={"submission_id": int(submission_id), "title": row["title"], "note": note or None},
+        payload={
+            "submission_id": int(submission_id),
+            "title": row["title"],
+            "note": note or None,
+            "reject_reason_key": meta.get("reject_reason_key"),
+            "tags": _lab_parse_submission_tags(meta.get("tags_json")),
+            "is_featured": bool(meta.get("is_featured")),
+            "is_adoption_candidate": bool(meta.get("is_adoption_candidate")),
+        },
         ip=request.remote_addr,
     )
     db.commit()
     return redirect(url_for("admin_lab_submissions", status=(request.args.get("status") or request.form.get("status") or "pending")))
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/feature", methods=["POST"])
+@login_required
+def admin_lab_submission_feature(submission_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ? LIMIT 1", (int(submission_id),)).fetchone()
+    if not row:
+        abort(404)
+    now_ts = int(time.time())
+    meta = _lab_admin_submission_meta_from_form(row)
+    _lab_update_submission_meta(db, submission_id, meta, now_ts)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SUBMISSION_FEATURE"],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_submission_feature",
+        entity_type="lab_submission",
+        entity_id=int(submission_id),
+        payload={"submission_id": int(submission_id), "title": row["title"], "is_featured": bool(meta["is_featured"])},
+        ip=request.remote_addr,
+    )
+    if int(meta["is_featured"]) and row["status"] == "approved":
+        _lab_world_event_log(
+            db,
+            "LAB_SUBMISSION_FEATURED",
+            {
+                "submission_id": int(submission_id),
+                "title": row["title"],
+                "username": _feed_user_label(db, row["user_id"]),
+            },
+        )
+    db.commit()
+    flash("おすすめ表示を更新しました。", "notice")
+    return redirect(url_for("admin_lab_submissions", status=(request.form.get("status") or "approved")))
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/adoption-candidate", methods=["POST"])
+@login_required
+def admin_lab_submission_adoption_candidate(submission_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ? LIMIT 1", (int(submission_id),)).fetchone()
+    if not row:
+        abort(404)
+    now_ts = int(time.time())
+    meta = _lab_admin_submission_meta_from_form(row)
+    meta["is_adoption_candidate"] = 1
+    if meta["adoption_stage"] == "none":
+        meta["adoption_stage"] = "candidate"
+    _lab_update_submission_meta(db, submission_id, meta, now_ts)
+    _lab_upsert_submission_adoption(db, row, meta, now_ts)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SUBMISSION_ADOPTION_CANDIDATE"],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_submission_adoption_candidate",
+        entity_type="lab_submission",
+        entity_id=int(submission_id),
+        payload={
+            "submission_id": int(submission_id),
+            "title": row["title"],
+            "adoption_stage": meta["adoption_stage"],
+            "adoption_type": meta.get("adoption_type"),
+            "credit_name": meta.get("credit_name"),
+        },
+        ip=request.remote_addr,
+    )
+    if row["status"] == "approved":
+        _lab_world_event_log(
+            db,
+            "LAB_SUBMISSION_ADOPTION_CANDIDATE",
+            {
+                "submission_id": int(submission_id),
+                "title": row["title"],
+                "username": _feed_user_label(db, row["user_id"]),
+                "adoption_type": meta.get("adoption_type"),
+            },
+        )
+    db.commit()
+    flash("採用候補として記録しました。", "notice")
+    return redirect(url_for("admin_lab_submissions", status=(request.form.get("status") or "approved")))
+
+
+@app.route("/admin/lab/submissions/<int:submission_id>/adoption-update", methods=["POST"])
+@login_required
+def admin_lab_submission_adoption_update(submission_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ? LIMIT 1", (int(submission_id),)).fetchone()
+    if not row:
+        abort(404)
+    now_ts = int(time.time())
+    meta = _lab_admin_submission_meta_from_form(row)
+    _lab_update_submission_meta(db, submission_id, meta, now_ts)
+    _lab_upsert_submission_adoption(db, row, meta, now_ts)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SUBMISSION_ADOPTION_UPDATE"],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_submission_adoption_update",
+        entity_type="lab_submission",
+        entity_id=int(submission_id),
+        payload={
+            "submission_id": int(submission_id),
+            "title": row["title"],
+            "adoption_stage": meta["adoption_stage"],
+            "adoption_type": meta.get("adoption_type"),
+            "credit_name": meta.get("credit_name"),
+            "internal_asset_key": meta.get("internal_asset_key"),
+        },
+        ip=request.remote_addr,
+    )
+    if meta["adoption_stage"] == "implemented" and row["status"] == "approved":
+        _lab_world_event_log(
+            db,
+            "LAB_SUBMISSION_ADOPTION_RELEASED",
+            {
+                "submission_id": int(submission_id),
+                "title": row["title"],
+                "username": _feed_user_label(db, row["user_id"]),
+                "adoption_type": meta.get("adoption_type"),
+            },
+        )
+    db.commit()
+    flash("採用管理情報を更新しました。", "notice")
+    return redirect(url_for("admin_lab_submissions", status=(request.form.get("status") or "approved")))
 
 
 @app.route("/admin/lab/submissions/<int:submission_id>/approve", methods=["POST"])

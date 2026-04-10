@@ -6,11 +6,48 @@
   <div><b>{{ row['title'] }}</b></div>
   <div class="robot-part">投稿者: {{ row['username'] }}</div>
   <div class="robot-part">状態: {{ row['status_label'] }}</div>
+  <div class="lab-badge-row">
+    {% for badge in row.get('badges', []) %}
+    <span class="lab-badge">{{ badge }}</span>
+    {% endfor %}
+  </div>
   {% if row.get('image_url') %}
   <img class="robot-thumb lab-detail-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
   {% endif %}
   <div class="robot-time">{{ row['comment'] }}</div>
+  {% if row.get('tags') %}
+  <div class="lab-tag-list">
+    {% for tag in row['tags'] %}
+    <span class="lab-tag">{{ tag['label'] }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if row.get('intended_style_label') %}
+  <div class="robot-part">想定タイプ: {{ row['intended_style_label'] }}</div>
+  {% endif %}
   <div class="robot-part">いいね {{ row['likes_count'] }} / 通報 {{ row['report_count'] }}</div>
+  <div class="robot-part">提出: {{ row['created_text'] }}{% if row.get('approved_text') %} / 公開: {{ row['approved_text'] }}{% endif %}</div>
+</div>
+
+<div class="card">
+  <h2>研究参考スペック</h2>
+  <div class="robot-part">実験室用の参考スペックです。本編戦闘性能とは連動しません。</div>
+  <div class="lab-chart-grid">
+    {% for stat in row.get('chart_rows', []) %}
+    <div class="lab-chart-row">
+      <span>{{ stat['label'] }}</span>
+      <div class="lab-chart-bar"><i style="--value: {{ stat['value'] }}%"></i></div>
+      <strong>{{ stat['value'] }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  {% if row.get('adoption_stage') and row['adoption_stage'] != 'none' %}
+  <div class="lab-adoption-note">
+    <b>{{ row['adoption_stage_label'] }}</b>
+    {% if row.get('adoption_type_label') %}<span> / {{ row['adoption_type_label'] }}</span>{% endif %}
+    {% if row.get('credit_name') %}<span> / 原案提供: {{ row['credit_name'] }}</span>{% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {% if row['status'] == 'approved' %}
@@ -25,8 +62,24 @@
       <option value="{{ key }}">{{ label }}</option>
       {% endfor %}
     </select>
+    <label for="note">補足（任意）</label>
+    <textarea id="note" name="note" rows="2" maxlength="300"></textarea>
     <button type="submit" class="btn-secondary">通報する</button>
   </form>
+</div>
+{% endif %}
+
+{% if is_admin %}
+<div class="card">
+  <h2>管理者向け投稿情報</h2>
+  <div class="robot-part">利用条件: {{ row.get('terms_version') or '未記録' }} / 同意: {{ row.get('terms_accepted_text') or '未記録' }}</div>
+  <div class="robot-part">生成AI申告: {{ row['ai_generation_label'] }}</div>
+  {% if row.get('source_note') %}
+  <div class="robot-part">制作メモ: {{ row['source_note'] }}</div>
+  {% endif %}
+  {% if row['status'] == 'rejected' %}
+  <div class="robot-part">差し戻し理由: {{ row['reject_reason_label'] }}</div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -34,10 +87,10 @@
 <div class="card">
   <h2>管理者向け通報ログ</h2>
   {% for item in admin_reports %}
-  <div class="robot-part">{{ item['created_at'] }} / {{ item['user_label'] }} / {{ item['reason_label'] }}</div>
+  <div class="robot-part">{{ item['created_at'] }} / {{ item['user_label'] }} / {{ item['reason_label'] }}{% if item.get('note') %} / {{ item['note'] }}{% endif %}</div>
   {% endfor %}
 </div>
 {% endif %}
 
-<p class="link"><a href="{{ url_for('lab_showcase') }}">展示一覧へ</a></p>
+<p class="link"><a href="{{ url_for('lab_showcase') }}">展示一覧へ</a> | <a href="{{ url_for('lab_my_submissions') }}">自分の投稿へ</a></p>
 {% endblock %}
