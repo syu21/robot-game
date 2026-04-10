@@ -1141,9 +1141,10 @@ body.lightbox-open .lightbox-overlay {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 .strengthen-entry-grid .action-card.is-active {
-  border-color: rgba(26, 107, 103, 0.38);
-  box-shadow: 0 14px 28px rgba(26, 107, 103, 0.12);
-  background: rgba(227, 247, 245, 0.98);
+  border-color: rgba(103, 232, 249, 0.34);
+  box-shadow: 0 14px 28px rgba(3, 7, 18, 0.26);
+  background: linear-gradient(180deg, rgba(32, 48, 82, 0.98), rgba(22, 33, 58, 0.98));
+  color: var(--text-main);
 }
 .warehouse-note-item,
 .warehouse-empty {
