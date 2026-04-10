@@ -333,6 +333,20 @@ ROBOT_STYLE_WEIGHTS = {
     "burst": {"atk": 0.35, "cri": 0.35, "acc": 0.10, "spd": 0.10, "inv_def": 0.10},
     "desperate": {"atk": 0.30, "spd": 0.25, "cri": 0.15, "acc": 0.10, "inv_hp": 0.20},
 }
+ROBOT_STYLE_PLAY_GUIDE = {
+    "stable": {
+        "battle_line": "耐久や命中を活かして、崩れにくく勝つ型",
+        "support_line": "守りと命中で試合を安定させやすい思想です。",
+    },
+    "desperate": {
+        "battle_line": "打たれ弱いぶん、先手や逆転で押し切る型",
+        "support_line": "短期決着やギリギリの逆転を狙いやすい思想です。",
+    },
+    "burst": {
+        "battle_line": "攻撃や会心で一気に勝負を決める型",
+        "support_line": "高火力で流れをひっくり返しやすい思想です。",
+    },
+}
 AREA_GROWTH_TENDENCY_DEFS = {
     "layer_1": {
         "key": "durable",
@@ -509,19 +523,19 @@ GUIDE_SECTIONS = (
         "items": (
             {
                 "term": "性格",
-                "body": "ロボの育ち方の傾向を、ひとことで表した言葉です。どんな戦い方をしやすいかの目安になります。",
+                "body": "ロボの戦い方のクセを、ひとことで表した言葉です。何で勝ちやすいかを読む目印になります。",
             },
             {
                 "term": "安定",
-                "body": "防御や命中が高く、長く戦いやすいタイプです。ミスが少なく、じっくり戦いたい人向けです。",
+                "body": "耐久や命中を活かして、崩れにくく勝つタイプです。長く戦って取りこぼしを減らしたいときに向いています。",
             },
             {
                 "term": "背水",
-                "body": "耐久は低いが素早く攻めるタイプです。短期決戦やギリギリの勝負が好きな人向けです。",
+                "body": "打たれ弱いぶん、先手や逆転で押し切るタイプです。短期決戦やギリギリの勝負が好きな人向けです。",
             },
             {
                 "term": "爆発",
-                "body": "攻撃力や会心が高く、一撃で流れを変えるタイプです。運や火力で突破したい人向けです。",
+                "body": "攻撃や会心で一気に勝負を決めるタイプです。大ダメージで流れをひっくり返したい人向けです。",
             },
             {
                 "term": "型",
@@ -556,6 +570,10 @@ GUIDE_SECTIONS = (
             {
                 "term": "進化コア",
                 "body": "進化に必要な素材です。探索や勝利数の達成で手に入ります。",
+            },
+            {
+                "term": "セットボーナス",
+                "body": "同属性パーツ 4部位で発動します。属性ごとに上がる能力が決まっていて、現在の効果は編成画面やロボ詳細で確認できます。",
             },
             {
                 "term": "育成傾向",
@@ -1944,8 +1962,101 @@ def prune_db_backups(keep_latest=7):
     return pruned
 
 
+MAINTENANCE_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+MAINTENANCE_FULL_ALLOWED_ENDPOINTS = {
+    "index",
+    "login",
+    "register",
+    "maintenance",
+    "contact",
+    "terms",
+    "privacy",
+    "commerce",
+    "healthz",
+    "stripe_webhook",
+}
+MAINTENANCE_PARTIAL_ALLOWED_MUTATION_ENDPOINTS = {
+    "build",
+    "contact",
+    "login",
+    "logout",
+    "parts_compare",
+    "stripe_webhook",
+}
+
+
+def _maintenance_mode():
+    raw_mode = str(os.getenv("MAINTENANCE_MODE", "off") or "").strip().lower()
+    raw_scope = str(os.getenv("MAINTENANCE_SCOPE", "") or "").strip().lower()
+    if raw_mode in {"", "0", "off", "false", "no"}:
+        return "off"
+    if raw_mode in {"partial", "full"}:
+        return raw_mode
+    if raw_mode in {"1", "true", "yes", "on"}:
+        return raw_scope if raw_scope in {"partial", "full"} else "partial"
+    return "off"
+
+
 def _is_maintenance_mode():
-    return os.getenv("MAINTENANCE_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
+    return _maintenance_mode() != "off"
+
+
+def _maintenance_banner_text():
+    return "現在アップデート中です。一部機能を停止しています。閲覧は可能ですが、出撃・育成・購入などの操作は一時停止中です。"
+
+
+def _maintenance_is_admin_viewer():
+    user_id = session.get("user_id")
+    if not user_id:
+        return False
+    try:
+        return _is_admin_user(int(user_id))
+    except Exception:
+        app.logger.exception("maintenance.admin_lookup_failed user_id=%s", user_id)
+        return False
+
+
+def _maintenance_should_allow_full_request():
+    if request.endpoint == "static" or request.path.startswith("/static/"):
+        return True
+    if request.endpoint in MAINTENANCE_FULL_ALLOWED_ENDPOINTS:
+        if request.endpoint in {"login", "register", "index"} and request.method not in MAINTENANCE_SAFE_METHODS:
+            return False
+        return True
+    return False
+
+
+def _maintenance_should_block_partial_request():
+    if request.method in MAINTENANCE_SAFE_METHODS:
+        return False
+    endpoint = request.endpoint or ""
+    if endpoint in MAINTENANCE_PARTIAL_ALLOWED_MUTATION_ENDPOINTS:
+        return False
+    return True
+
+
+def _maintenance_block_response(mode):
+    status_code = 503
+    return render_template("maintenance.html", maintenance_page_mode=mode), status_code
+
+
+def _audit_maintenance_block(db, mode):
+    user_id = session.get("user_id")
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["SYSTEM_MAINTENANCE_BLOCK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key=(request.endpoint or "unknown"),
+        payload={
+            "path": request.path,
+            "method": request.method,
+            "mode": str(mode or "off"),
+            "endpoint": request.endpoint or "unknown",
+            "user_id": int(user_id) if user_id else None,
+        },
+        ip=request.remote_addr,
+    )
 
 
 def _jst_day_key_to_bounds(day_key):
@@ -4433,6 +4544,93 @@ def _humanize_stat_text(text):
     return out
 
 
+def _robot_style_battle_line(style_key):
+    key = _normalize_style_key(style_key)
+    info = ROBOT_STYLE_PLAY_GUIDE.get(key) or ROBOT_STYLE_PLAY_GUIDE["stable"]
+    return str(info.get("battle_line") or "")
+
+
+def _robot_style_support_line(style_key):
+    key = _normalize_style_key(style_key)
+    info = ROBOT_STYLE_PLAY_GUIDE.get(key) or ROBOT_STYLE_PLAY_GUIDE["stable"]
+    return str(info.get("support_line") or "")
+
+
+def _set_bonus_catalog_rows():
+    rows = []
+    for element_key, element_label in ELEMENTS:
+        bonus = SET_BONUS_TABLE.get(str(element_key or "").upper())
+        if not bonus:
+            continue
+        stat_key, rate = bonus
+        rows.append(
+            {
+                "element_key": str(element_key),
+                "element_label": str(element_label),
+                "stat_key": str(stat_key),
+                "stat_label": _stat_label(stat_key),
+                "rate": float(rate),
+                "rate_text": f"+{int(round(float(rate) * 100))}%",
+                "summary_text": f"{element_label}: {_stat_label(stat_key)} +{int(round(float(rate) * 100))}%",
+            }
+        )
+    return rows
+
+
+def _set_bonus_base_stats(parts):
+    total = {key: 0 for key in PART_STAT_KEYS}
+    for part in parts or ():
+        if not part:
+            continue
+        computed = compute_part_stats(part)
+        for key in PART_STAT_KEYS:
+            total[key] += int(computed.get(key) or 0)
+    return total
+
+
+def _set_bonus_view_for_loadout(parts, set_bonus_key=None):
+    active_key = str(set_bonus_key or "").strip().upper()
+    rows = _set_bonus_catalog_rows()
+    if active_key and active_key in SET_BONUS_TABLE:
+        stat_key, rate = SET_BONUS_TABLE[active_key]
+        base_stats = _set_bonus_base_stats(parts)
+        before_value = int(base_stats.get(stat_key) or 0)
+        boosted_value = int(math.ceil(before_value * (1.0 + float(rate))))
+        if before_value > 0:
+            boosted_value = max(before_value + 1, boosted_value)
+        delta_value = max(0, int(boosted_value - before_value))
+        return {
+            "active": True,
+            "status_label": "発動中",
+            "condition_text": "同属性パーツ 4部位で発動",
+            "element_key": active_key,
+            "element_label": ELEMENT_LABEL_MAP.get(active_key, active_key),
+            "stat_key": str(stat_key),
+            "stat_label": _stat_label(stat_key),
+            "rate_text": f"+{int(round(float(rate) * 100))}%",
+            "delta_value": int(delta_value),
+            "effect_text": f"{_stat_label(stat_key)} +{int(delta_value)}",
+            "detail_text": f"{ELEMENT_LABEL_MAP.get(active_key, active_key)}統一で {_stat_label(stat_key)} が {before_value} → {boosted_value}",
+            "hint_text": "4部位が同じ属性なら、対応能力が自動で伸びます。",
+            "catalog_rows": rows,
+        }
+    return {
+        "active": False,
+        "status_label": "未発動",
+        "condition_text": "同属性パーツ 4部位で発動",
+        "element_key": None,
+        "element_label": None,
+        "stat_key": None,
+        "stat_label": None,
+        "rate_text": "",
+        "delta_value": 0,
+        "effect_text": "属性ごとに上がる能力が変わります",
+        "detail_text": "無=耐久 / 炎=攻撃 / 水=素早さ / 雷=会心 / 風=命中 / 氷・鋼=防御 / 機械=命中 / 鉱石=会心",
+        "hint_text": "今の構成は未発動です。",
+        "catalog_rows": rows,
+    }
+
+
 def _normalize_part_type_key(part_type):
     key = str(part_type or "").strip().lower()
     if key in PART_TYPE_TITLES_JA:
@@ -4532,6 +4730,95 @@ def _part_type_ui_label(part_type):
     if norm:
         return PART_TYPE_FILTER_LABELS_JA[norm]
     return str(part_type or "パーツ")
+
+
+PARTS_SORT_DEFS = (
+    {"key": "recommended", "label": "おすすめ順"},
+    {"key": "new", "label": "新しい順"},
+    {"key": "old", "label": "古い順"},
+    {"key": "total", "label": "総合値が高い順"},
+    {"key": "plus", "label": "+値が高い順"},
+    {"key": "rarity", "label": "レアリティ順"},
+    {"key": "part_type", "label": "部位順"},
+)
+PARTS_SORT_DEF_BY_KEY = {item["key"]: item for item in PARTS_SORT_DEFS}
+PART_TYPE_DISPLAY_SORT_ORDER = {
+    "HEAD": 1,
+    "RIGHT_ARM": 2,
+    "LEFT_ARM": 3,
+    "LEGS": 4,
+}
+RARITY_DISPLAY_SORT_ORDER = {
+    "N": 1,
+    "R": 2,
+    "SR": 3,
+    "SSR": 4,
+    "UR": 5,
+}
+
+
+def _normalize_parts_sort(raw_value):
+    key = str(raw_value or "").strip().lower()
+    return key if key in PARTS_SORT_DEF_BY_KEY else "recommended"
+
+
+def _part_item_part_type_rank(item):
+    part_type = _normalize_part_type_filter(item.get("part_type") or item.get("part_type_key"))
+    return int(PART_TYPE_DISPLAY_SORT_ORDER.get(part_type, 99))
+
+
+def _part_item_rarity_rank(item):
+    rarity = str(item.get("rarity_label") or item.get("instance_rarity") or item.get("rarity") or "N").upper()
+    return int(RARITY_DISPLAY_SORT_ORDER.get(rarity, 0))
+
+
+def _part_item_status_rank(item):
+    if item.get("is_equipped"):
+        return 0
+    return 1
+
+
+def _part_item_sort_key(item, sort_key):
+    item_id = int(item.get("id") or item.get("instance_id") or 0)
+    total_value = int(item.get("total_value") or 0)
+    plus = int(item.get("plus") or 0)
+    part_type_rank = _part_item_part_type_rank(item)
+    rarity_rank = _part_item_rarity_rank(item)
+    status_rank = _part_item_status_rank(item)
+    display_name = str(item.get("display_name") or "")
+    if sort_key == "new":
+        return (-item_id, part_type_rank, -rarity_rank, -plus)
+    if sort_key == "old":
+        return (item_id, part_type_rank, -rarity_rank, -plus)
+    if sort_key == "total":
+        return (-total_value, -plus, -rarity_rank, part_type_rank, status_rank, -item_id)
+    if sort_key == "plus":
+        return (-plus, -total_value, -rarity_rank, part_type_rank, status_rank, -item_id)
+    if sort_key == "rarity":
+        return (-rarity_rank, -plus, -total_value, part_type_rank, status_rank, -item_id)
+    if sort_key == "part_type":
+        return (part_type_rank, -rarity_rank, -plus, -total_value, status_rank, display_name, -item_id)
+    return (status_rank, part_type_rank, -rarity_rank, -plus, -total_value, -item_id)
+
+
+def _sort_part_card_items(items, sort_key):
+    normalized_sort = _normalize_parts_sort(sort_key)
+    return sorted(list(items or []), key=lambda item: _part_item_sort_key(item, normalized_sort))
+
+
+def _parts_sort_rows(selected_sort, *, selected_part_type=""):
+    params = {}
+    if selected_part_type:
+        params["part_type"] = selected_part_type
+    return [
+        {
+            "key": item["key"],
+            "label": item["label"],
+            "is_active": selected_sort == item["key"],
+            "url": url_for("parts", sort=item["key"], **params),
+        }
+        for item in PARTS_SORT_DEFS
+    ]
 
 
 def _part_type_filter_rows(selected_part_type, endpoint, *, extra_params=None):
@@ -5631,6 +5918,10 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
         item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
         stat_obj = _compute_robot_stats_for_instance(db, int(item["id"]))
         item["profile"] = _robot_profile_view(stat_obj)
+        item["set_bonus_view"] = _set_bonus_view_for_loadout(
+            (stat_obj or {}).get("parts"),
+            (stat_obj or {}).get("set_bonus"),
+        )
         item["metric_fastest"] = _robot_metric_value("fastest", stat_obj["stats"] if stat_obj else None)
         item["metric_durable"] = _robot_metric_value("durable", stat_obj["stats"] if stat_obj else None)
         item["metric_precision"] = _robot_metric_value("precision", stat_obj["stats"] if stat_obj else None)
@@ -5955,6 +6246,8 @@ def _build_champion_profile_view(source):
     data["focus_labels"] = _champion_focus_labels(data, limit=2)
     data["focus_label_line"] = _build_champion_focus_label_line(data)
     data["trait_summary"] = _build_champion_trait_summary(data)
+    data["battle_style_line"] = _robot_style_battle_line(data.get("style_key"))
+    data["style_support_line"] = _robot_style_support_line(data.get("style_key"))
     data["stat_tier_view"] = _build_champion_stat_tier_view(data.get("stats") or {})
     return data
 
@@ -5983,6 +6276,8 @@ def _robot_profile_view(stat_obj):
         "signature_label": signature_label,
         "focus_stats": focus_stats,
         "focus_line": focus_line,
+        "battle_style_line": _robot_style_battle_line(robot_style.get("style_key")),
+        "style_support_line": _robot_style_support_line(robot_style.get("style_key")),
     }
     return _build_champion_profile_view(profile)
 
@@ -17353,6 +17648,7 @@ def inject_ui_effects():
 
 @app.context_processor
 def inject_app_meta():
+    maintenance_mode = _maintenance_mode()
     return {
         "app_version": APP_VERSION,
         "support_email": SUPPORT_EMAIL,
@@ -17362,6 +17658,10 @@ def inject_app_meta():
         "legal_brand_name": LEGAL_BRAND_NAME,
         "legal_disclosure_policy": LEGAL_DISCLOSURE_POLICY,
         "stat_ui_labels": STAT_UI_LABELS,
+        "maintenance_mode": maintenance_mode,
+        "maintenance_is_partial": maintenance_mode == "partial",
+        "maintenance_is_full": maintenance_mode == "full",
+        "maintenance_banner_text": _maintenance_banner_text(),
     }
 
 
@@ -17399,6 +17699,30 @@ def enforce_banned_user_logout():
     session.clear()
     flash("このアカウントは利用停止されています。", "error")
     return redirect(url_for("login"))
+
+
+@app.before_request
+def enforce_maintenance_mode():
+    mode = _maintenance_mode()
+    if mode == "off":
+        return None
+    if request.endpoint == "static" or request.path.startswith("/static/"):
+        return None
+    if _maintenance_is_admin_viewer():
+        return None
+    if mode == "full":
+        if _maintenance_should_allow_full_request():
+            return None
+        db = get_db()
+        _audit_maintenance_block(db, "full")
+        db.commit()
+        return _maintenance_block_response("full")
+    if not _maintenance_should_block_partial_request():
+        return None
+    db = get_db()
+    _audit_maintenance_block(db, "partial")
+    db.commit()
+    return _maintenance_block_response("partial")
 
 
 @app.before_request
@@ -17449,30 +17773,6 @@ def auto_close_faction_war_weekly():
         # Auto-close is best effort and must not block gameplay.
         app.logger.exception("faction_war.auto_close_failed")
     return None
-
-
-@app.before_request
-def block_maintenance_posts():
-    if request.method != "POST":
-        return None
-    if not _is_maintenance_mode():
-        return None
-    blocked = {"explore", "parts_strengthen", "parts_fuse", "build", "build_confirm"}
-    if request.endpoint not in blocked:
-        return None
-    db = get_db()
-    user_id = session.get("user_id")
-    audit_log(
-        db,
-        AUDIT_EVENT_TYPES["SYSTEM_MAINTENANCE_BLOCK"],
-        user_id=user_id,
-        request_id=getattr(g, "request_id", None),
-        action_key=(request.endpoint or "unknown"),
-        payload={"path": request.path, "method": request.method, "maintenance_mode": True},
-        ip=request.remote_addr,
-    )
-    db.commit()
-    return render_template("maintenance.html"), 503
 
 
 @app.after_request
@@ -17952,7 +18252,7 @@ def index():
 
 @app.route("/maintenance")
 def maintenance():
-    return render_template("maintenance.html"), 503
+    return render_template("maintenance.html", maintenance_page_mode=_maintenance_mode()), 503
 
 
 @app.route("/terms")
@@ -17983,7 +18283,23 @@ def contact():
 
 @app.route("/guide")
 def guide():
-    return render_template("guide.html", title="用語", sections=GUIDE_SECTIONS)
+    return render_template(
+        "guide.html",
+        title="用語",
+        sections=GUIDE_SECTIONS,
+        style_guide_rows=[
+            {
+                "key": key,
+                "label": ROBOT_STYLE_LABELS.get(key, key),
+                "description": _robot_style_description(key),
+                "battle_line": _robot_style_battle_line(key),
+                "support_line": _robot_style_support_line(key),
+            }
+            for key in ("stable", "desperate", "burst")
+        ],
+        set_bonus_catalog=_set_bonus_catalog_rows(),
+        set_bonus_condition_text="同属性パーツ 4部位で発動",
+    )
 
 
 @app.route("/shop")
@@ -19316,6 +19632,10 @@ def home():
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
     main_robot_profile = _robot_profile_view(main_robot_stats)
+    main_robot_set_bonus_view = _set_bonus_view_for_loadout(
+        (main_robot_stats or {}).get("parts"),
+        (main_robot_stats or {}).get("set_bonus"),
+    )
     style_achievements = _style_achievements_progress(main_robot)
     idle_line = None
     if main_robot:
@@ -19646,6 +19966,7 @@ def home():
             main_robot_stats=main_robot_stats,
             main_robot_style=main_robot_style,
             main_robot_profile=main_robot_profile,
+            main_robot_set_bonus_view=main_robot_set_bonus_view,
             style_achievements=style_achievements,
             idle_line=idle_line,
             ct_text=ct_text,
@@ -20868,10 +21189,13 @@ def milestone_claim():
 def parts_discard():
     db = get_db()
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    selected_sort = _normalize_parts_sort(request.form.get("sort"))
     page = max(1, int(request.form.get("page", "1")))
     redirect_params = {}
     if selected_part_type:
         redirect_params["part_type"] = selected_part_type
+    if selected_sort != "recommended":
+        redirect_params["sort"] = selected_sort
     if page > 1:
         redirect_params["page"] = page
     instance_ids = request.form.getlist("instance_ids")
@@ -20928,10 +21252,13 @@ def parts_discard():
 @login_required
 def parts_compare():
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    selected_sort = _normalize_parts_sort(request.form.get("sort"))
     page = max(1, int(request.form.get("page", "1")))
     redirect_params = {}
     if selected_part_type:
         redirect_params["part_type"] = selected_part_type
+    if selected_sort != "recommended":
+        redirect_params["sort"] = selected_sort
     if page > 1:
         redirect_params["page"] = page
     selected_ids = _normalize_instance_id_values(request.form.getlist("instance_ids"))
@@ -20951,7 +21278,10 @@ def parts_restore():
     db = get_db()
     user_id = int(session["user_id"])
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    selected_sort = _normalize_parts_sort(request.form.get("sort"))
     redirect_params = {"part_type": selected_part_type} if selected_part_type else {}
+    if selected_sort != "recommended":
+        redirect_params["sort"] = selected_sort
     overflow_instance_ids = [pid for pid in request.form.getlist("overflow_instance_ids") if pid.isdigit()]
     if not overflow_instance_ids:
         session["message"] = "所持へ戻す保管個体を選択してください。"
@@ -23055,6 +23385,10 @@ def robot_detail(instance_id):
     robot["final_stats"] = stat_obj["stats"] if stat_obj else None
     robot["power"] = stat_obj["power"] if stat_obj else None
     robot["set_bonus"] = stat_obj["set_bonus"] if stat_obj else None
+    robot["set_bonus_view"] = _set_bonus_view_for_loadout(
+        (stat_obj or {}).get("parts"),
+        (stat_obj or {}).get("set_bonus"),
+    )
     robot["archetype"] = stat_obj.get("archetype") if stat_obj else None
     robot["robot_profile"] = _robot_profile_view(stat_obj)
     if robot.get("decor_asset_id"):
@@ -23896,6 +24230,14 @@ def build():
             "legacy_build_type": "STABLE",
         }
     )
+    candidate_set_bonus_view = _set_bonus_view_for_loadout(
+        selected_payloads,
+        (estimate or {}).get("set_bonus"),
+    )
+    current_set_bonus_view = _set_bonus_view_for_loadout(
+        (current_robot_stats_obj or {}).get("parts"),
+        (current_robot_stats_obj or {}).get("set_bonus"),
+    )
     boss_alert_status = _home_boss_alert_status(db, user_id, now_ts=now)
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
 
@@ -23911,6 +24253,8 @@ def build():
         selected_decor_id=selected_decor_id,
         candidate_build_style=candidate_build_style,
         current_build_style=current_build_style,
+        candidate_set_bonus_view=candidate_set_bonus_view,
+        current_set_bonus_view=current_set_bonus_view,
         current_robot_stats=current_robot_stats,
         stat_comparison_rows=stat_comparison_rows,
         selected_offsets=selected_offsets,
@@ -25394,7 +25738,11 @@ def parts():
     ).fetchone()
     selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
     selected_compare_ids = _normalize_instance_id_values((request.args.get("compare_ids"),), limit=6)
-    page = max(1, int(request.args.get("page", "1")))
+    selected_sort = _normalize_parts_sort(request.args.get("sort"))
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except (TypeError, ValueError):
+        page = 1
     per_page = 24
     offset = (page - 1) * per_page
     where_clauses = ["pi.user_id = ?", "pi.status IN ('inventory', 'equipped')"]
@@ -25412,37 +25760,9 @@ def parts():
         WHERE """
         + where_sql
         + """
-        ORDER BY
-            CASE WHEN pi.status = 'equipped' THEN 0 ELSE 1 END ASC,
-            CASE rp.part_type
-                WHEN 'HEAD' THEN 1
-                WHEN 'RIGHT_ARM' THEN 2
-                WHEN 'LEFT_ARM' THEN 3
-                WHEN 'LEGS' THEN 4
-                ELSE 9
-            END ASC,
-            CASE UPPER(COALESCE(pi.rarity, 'N'))
-                WHEN 'UR' THEN 5
-                WHEN 'SSR' THEN 4
-                WHEN 'SR' THEN 3
-                WHEN 'R' THEN 2
-                ELSE 1
-            END DESC,
-            pi.plus DESC,
-            pi.id DESC
-        LIMIT ? OFFSET ?
         """,
-        [*params, per_page, offset],
-    ).fetchall()
-    total = db.execute(
-        """
-        SELECT COUNT(*) AS c
-        FROM part_instances pi
-        JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE """
-        + where_sql,
         params,
-    ).fetchone()["c"]
+    ).fetchall()
     summary = db.execute(
         """
         SELECT
@@ -25454,7 +25774,9 @@ def parts():
         + where_sql,
         params,
     ).fetchone()
-    items = [_part_card_payload(r) for r in rows]
+    all_items = _sort_part_card_items([_part_card_payload(r) for r in rows], selected_sort)
+    total = len(all_items)
+    items = all_items[offset : offset + per_page]
     compare_items = []
     if selected_compare_ids:
         placeholders = ",".join(["?"] * len(selected_compare_ids))
@@ -25504,7 +25826,7 @@ def parts():
         """,
         ([user_id, selected_part_type] if selected_part_type else [user_id]),
     ).fetchall()
-    overflow_items = [_part_card_payload(r, can_discard=False) for r in overflow_rows]
+    overflow_items = _sort_part_card_items([_part_card_payload(r, can_discard=False) for r in overflow_rows], selected_sort)
     overflow_total = len(overflow_items)
     legacy_where = ["upi.user_id = ?"]
     legacy_params = [user_id]
@@ -25542,6 +25864,8 @@ def parts():
     list_params = {}
     if selected_part_type:
         list_params["part_type"] = selected_part_type
+    if selected_sort != "recommended":
+        list_params["sort"] = selected_sort
     prev_url = url_for("parts", page=page - 1, **list_params) if page > 1 else None
     next_url = url_for("parts", page=page + 1, **list_params) if total > page * per_page else None
     compare_clear_params = dict(list_params)
@@ -25569,7 +25893,13 @@ def parts():
         protect_core=protect_core,
         storage_total=storage_total,
         selected_part_type=selected_part_type,
-        part_type_filters=_part_type_filter_rows(selected_part_type, "parts"),
+        selected_sort=selected_sort,
+        parts_sort_defs=PARTS_SORT_DEFS,
+        part_type_filters=_part_type_filter_rows(
+            selected_part_type,
+            "parts",
+            extra_params={"sort": (selected_sort if selected_sort != "recommended" else None)},
+        ),
         show_evolution_actions=_evolution_feature_unlocked(db, user=user_row, user_id=user_id),
     )
 

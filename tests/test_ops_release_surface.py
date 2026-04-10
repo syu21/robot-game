@@ -168,6 +168,9 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("背水", html)
         self.assertIn("進化コア", html)
         self.assertIn("世界ログ", html)
+        self.assertIn("思想ごとの戦い方", html)
+        self.assertIn("セットボーナス", html)
+        self.assertIn("同属性パーツ 4部位で発動", html)
 
     def test_terms_privacy_and_commerce_are_separate_legal_pages(self):
         client = game_app.app.test_client()
@@ -193,12 +196,57 @@ class OpsReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("KAS Development", commerce_html)
         self.assertIn("pochirobo021@gmail.com", commerce_html)
 
-    def test_maintenance_mode_blocks_explore_post_with_503(self):
+    def test_partial_maintenance_mode_blocks_explore_post_with_503_and_logs_mode(self):
         client = self._client_with_user(self.user_id, "ops_user")
-        with patch.dict(os.environ, {"MAINTENANCE_MODE": "true"}):
+        with patch.dict(os.environ, {"MAINTENANCE_MODE": "partial"}):
             resp = client.post("/explore", data={"area_key": "layer_1"})
         self.assertEqual(resp.status_code, 503)
-        self.assertIn("メンテナンス中", resp.get_data(as_text=True))
+        self.assertIn("アップデート中です", resp.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (game_app.AUDIT_EVENT_TYPES["SYSTEM_MAINTENANCE_BLOCK"],),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            payload = json.loads(row["payload_json"])
+            self.assertEqual(payload["mode"], "partial")
+            self.assertEqual(payload["path"], "/explore")
+            self.assertEqual(payload["method"], "POST")
+            self.assertEqual(payload["user_id"], self.user_id)
+
+    def test_partial_maintenance_keeps_guide_readable_with_banner(self):
+        client = game_app.app.test_client()
+        with patch.dict(os.environ, {"MAINTENANCE_MODE": "partial"}):
+            resp = client.get("/guide")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("現在アップデート中です。一部機能を停止しています。", html)
+        self.assertIn("思想ごとの戦い方", html)
+
+    def test_full_maintenance_blocks_non_admin_but_admin_can_still_use_protected_page(self):
+        user_client = self._client_with_user(self.user_id, "ops_user")
+        admin_client = self._client_with_user(self.admin_id, "ops_admin")
+        with patch.dict(os.environ, {"MAINTENANCE_MODE": "full"}):
+            blocked = user_client.get("/parts")
+            allowed = admin_client.get("/parts")
+        self.assertEqual(blocked.status_code, 503)
+        self.assertIn("ただいまメンテナンス中です", blocked.get_data(as_text=True))
+        self.assertEqual(allowed.status_code, 200)
+        self.assertIn("所持パーツ", allowed.get_data(as_text=True))
+
+    def test_header_logo_links_to_home_for_logged_in_and_register_for_guest(self):
+        user_client = self._client_with_user(self.user_id, "ops_user")
+        logged_in_html = user_client.get("/parts").get_data(as_text=True)
+        guest_html = game_app.app.test_client().get("/guide").get_data(as_text=True)
+        self.assertIn('class="logo logo-link" href="/home"', logged_in_html)
+        self.assertIn('class="logo logo-link" href="/register"', guest_html)
 
     def test_admin_metrics_is_admin_only(self):
         with game_app.app.app_context():

@@ -1,10 +1,17 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card error-box">
-  <h1>メンテナンス中</h1>
-  <p>現在メンテナンスのため、この操作は一時停止しています。</p>
-  <p>しばらくしてから再度お試しください。</p>
-  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  {% set page_mode = maintenance_page_mode or maintenance_mode %}
+  {% if page_mode == 'partial' %}
+  <h1>アップデート中です</h1>
+  <p>現在アップデート中のため、出撃・育成・購入などの操作を一時停止しています。</p>
+  <p>閲覧は順次戻しています。しばらくしてからもう一度お試しください。</p>
+  {% else %}
+  <h1>ただいまメンテナンス中です</h1>
+  <p>しばらくしてからもう一度お試しください。</p>
+  <p>管理者確認のあいだ、一般ユーザー向けの操作を停止しています。</p>
+  {% endif %}
+  <p class="link"><a href="{{ url_for('home') if session.get('user_id') else url_for('register') }}">入口へ戻る</a></p>
   <p class="link"><a href="{{ url_for('contact') }}">お問い合わせ</a></p>
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-04-09
+最終更新日: 2026-04-10
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -33,6 +33,8 @@
 - [ ] 今日まだ動いていないときは `まだ動いていません` の空表示になる
 - [ ] `/parts` で `画像 / 部位 / レアリティ / +値 / 6ステ / 装備中表示 / 総合値` が確認できる
 - [ ] `/parts` の部位フィルター `すべて / 頭 / 右腕 / 左腕 / 脚` が動く
+- [ ] `/parts` のソート `おすすめ順 / 新しい順 / 古い順 / 総合値順 / +値順 / レアリティ順 / 部位順` が分かりやすく切り替わる
+- [ ] `/parts` のソートが部位フィルターやページ送りと併用しても落ちない
 - [ ] `/parts` のチェック文言が `選択` で統一され、主操作が `見比べる / 破棄` に分かれている
 - [ ] `/parts` の `見比べる` で選択した個体だけの比較セクションが出る
 - [ ] `/parts` の `次へ` が無反応にならない
@@ -47,6 +49,7 @@
 - [ ] N画像が見つからないときに broken image ではなくプレースホルダへ落ちる
 - [ ] `/build` で4部位必須 + DECOR任意
 - [ ] `/build` の候補カードで `現在装備との差分` が先頭に出て、必要時だけ `詳細を開く` で 6ステ実数を確認できる
+- [ ] `/build` のセットボーナス表示で `発動中/未発動 / 同属性パーツ 4部位で発動 / 何が上がるか` が分かる
 - [ ] 保存枠満杯時に保存ブロック
 - [ ] `/robots/<id>/maintenance` で1部位ずつ差し替え候補を見て整備できる
 - [ ] 機体整備後に `composed_image_path / icon_32_path` が更新される
@@ -78,6 +81,9 @@
 - [ ] 第2層固定ボス撃破前は基地や個体一覧に進化合成導線が表示されない
 - [ ] 第2層固定ボス撃破後は基地に進化合成カードが表示される
 - [ ] 装備中パーツを進化合成したとき、装備参照キー・合成画像・icon_32 が即時更新される
+- [ ] `/guide` に `思想ごとの戦い方` と `セットボーナス一覧` が出る
+- [ ] `/home` や `/robots/<id>` で `思想` が短い戦い方説明つきで見える
+- [ ] `/home` や `/robots/<id>` でセットボーナスの `条件 / 効果 / 発動有無` が見える
 
 ## 5. 認証/管理保護
 - [ ] BANユーザーは `/login` 不可
@@ -93,6 +99,7 @@
 - [ ] 主要フローで `request_id` が埋まる
 - [ ] `audit.fuse`, `audit.part.evolve`, `audit.core.drop` が残る
 - [ ] `audit.fuse.batch_preview`, `audit.fuse.batch_execute` が `warehouse_batch` payload つきで残る
+- [ ] `audit.system.maintenance_block` が `path / method / mode / user_id` つきで残る
 - [ ] 管理操作監査が残る
   - `audit.admin.user.ban`
   - `audit.admin.user.unban`
@@ -116,27 +123,4 @@
 - [ ] `/world` の `今週のMVP` に `小ロボ主役 + 補助アバター` と機体画像が出る
 - [ ] `/records` の `初達成記録 / 今週の記録 / 話題ロボ` にユーザー表示と機体表示が出る
 - [ ] `/ranking` の user系は `小ロボ主役 + 補助アバター`、robot系は機体サムネで表示される
-- [ ] `/ranking` の robot系でプレースホルダ顔のまま残る古い機体画像があれば、自動で再生成される
-
-## 10. 公開運用
-- [ ] `GET http://127.0.0.1:8000/healthz` が `200`
-- [ ] `GET https://robolabo.site/healthz` が `200`
-- [ ] `GET /sitemap.xml` が `200` で `application/xml`
-- [ ] `https://robolabo.site/terms` が利用規約として表示される
-- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
-- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
-- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
-- [ ] favicon が配信される
-  - `GET /static/favicon.png` が `200`
-- [ ] `robot-game.service` が active
-- [ ] `robot-game-healthcheck.timer` が active
-- [ ] `robot-game-backup.timer` が active
-- [ ] `robot-game-portal-online.timer` が active
-- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
-- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
-- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
-- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
-- [ ] `backups/` に当日バックアップがある
-- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
-- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
-- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す
+- [ ] `/

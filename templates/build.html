@@ -126,6 +126,50 @@
         <img id="pv-larm" data-layer="LEFT_ARM" class="layer{% if not larm_default %} is-hidden{% endif %}" src="{{ larm_default['display_image_url'] if larm_default else '' }}" alt="left arm preview" />
         <img id="pv-decor" data-layer="DECORATION" class="layer{% if not decor_default %} is-hidden{% endif %}" src="{{ url_for('static', filename=decor_default['display_image_path']) if decor_default else '' }}" alt="decor preview" />
       </div>
+      <section class="card build-offset-panel">
+        <h3>位置の微調整</h3>
+        <div class="upgrade-cost">完成後の見た目に反映されます。各部位を ±{{ build_offset_max }}px まで動かせます。</div>
+        <div class="build-offset-grid">
+          {% for control in build_offset_control_defs %}
+          <div class="build-offset-card" data-offset-slot="{{ control['slot'] }}" data-preview-target="{{ control['preview_target'] }}">
+            <div class="build-offset-head">
+              <b>{{ control['label'] }}</b>
+              <button type="button" class="build-offset-reset" data-offset-reset="{{ control['slot'] }}">リセット</button>
+            </div>
+            <label class="build-offset-row" for="{{ control['slot'] }}_offset_x">
+              <span>左右</span>
+              <input
+                type="range"
+                id="{{ control['slot'] }}_offset_x"
+                name="{{ control['slot'] }}_offset_x"
+                min="{{ build_offset_min }}"
+                max="{{ build_offset_max }}"
+                step="1"
+                value="{{ selected_offsets[control['slot'] ~ '_offset_x'] }}"
+                data-offset-slot="{{ control['slot'] }}"
+                data-offset-axis="x"
+              />
+              <output id="{{ control['slot'] }}_offset_x_value" for="{{ control['slot'] }}_offset_x">{{ selected_offsets[control['slot'] ~ '_offset_x'] }}</output>
+            </label>
+            <label class="build-offset-row" for="{{ control['slot'] }}_offset_y">
+              <span>上下</span>
+              <input
+                type="range"
+                id="{{ control['slot'] }}_offset_y"
+                name="{{ control['slot'] }}_offset_y"
+                min="{{ build_offset_min }}"
+                max="{{ build_offset_max }}"
+                step="1"
+                value="{{ selected_offsets[control['slot'] ~ '_offset_y'] }}"
+                data-offset-slot="{{ control['slot'] }}"
+                data-offset-axis="y"
+              />
+              <output id="{{ control['slot'] }}_offset_y_value" for="{{ control['slot'] }}_offset_y">{{ selected_offsets[control['slot'] ~ '_offset_y'] }}</output>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
       <div class="build-estimate card">
         <h3>ステータス比較</h3>
         <div class="upgrade-cost"><b>組み立て中（プレビュー）</b></div>
@@ -139,11 +183,10 @@
         </div>
         <div class="upgrade-cost">総合: <b id="est-power">{{ estimate['power'] if estimate else 0 }}</b></div>
         <div class="estimate-bonus" id="est-bonus">
-          {% if estimate and estimate['set_bonus'] %}
-            セットボーナス: {{ element_label_map.get(estimate['set_bonus'], estimate['set_bonus']) }} (+5%)
-          {% else %}
-            セットボーナス: なし
-          {% endif %}
+          <div><b>セットボーナス: <span id="est-bonus-status">{{ candidate_set_bonus_view['status_label'] }}</span></b></div>
+          <div id="est-bonus-condition">{{ candidate_set_bonus_view['condition_text'] }}</div>
+          <div id="est-bonus-effect">{{ candidate_set_bonus_view['effect_text'] }}</div>
+          <div class="robot-time" id="est-bonus-detail">{{ candidate_set_bonus_view['detail_text'] }}</div>
         </div>
         <hr />
         <div class="upgrade-cost"><b>現装備（起動中ロボ）</b></div>
@@ -156,6 +199,12 @@
           <div class="estimate-item">会心 <b id="cur-cri">{{ current_robot_stats['cri'] }}</b></div>
         </div>
         <div class="upgrade-cost">総合: <b id="cur-power">{{ current_robot_stats['power'] }}</b></div>
+        <div class="estimate-bonus is-current">
+          <div><b>セットボーナス: {{ current_set_bonus_view['status_label'] }}</b></div>
+          <div>{{ current_set_bonus_view['condition_text'] }}</div>
+          <div>{{ current_set_bonus_view['effect_text'] }}</div>
+          <div class="robot-time">{{ current_set_bonus_view['detail_text'] }}</div>
+        </div>
         <hr />
         {% for row in stat_comparison_rows %}
         <div class="upgrade-cost">
@@ -245,6 +294,7 @@
   </div>
 </form>
 <input type="hidden" id="build-set-bonus-table" value='{{ set_bonus_table | tojson }}' />
+<input type="hidden" id="build-element-label-map" value='{{ element_label_map | tojson }}' />
 <input type="hidden" id="build-current-hp" value="{{ current_robot_stats['hp'] }}" />
 <input type="hidden" id="build-current-atk" value="{{ current_robot_stats['atk'] }}" />
 <input type="hidden" id="build-current-def" value="{{ current_robot_stats['def'] }}" />

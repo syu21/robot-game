@@ -253,12 +253,19 @@
               </div>
             </div>
             {% endif %}
-            {% if main_robot_stats and main_robot_stats['set_bonus'] %}
-              <div class="upgrade-cost">セットボーナス: {{ main_robot_stats['set_bonus'] }}</div>
-            {% endif %}
+            <div class="upgrade-cost">セットボーナス: {{ main_robot_set_bonus_view['status_label'] }}</div>
+            <div class="upgrade-cost">{{ main_robot_set_bonus_view['condition_text'] }}</div>
+            <div class="upgrade-cost">{{ main_robot_set_bonus_view['effect_text'] }}</div>
+            <div class="robot-time">{{ main_robot_set_bonus_view['detail_text'] }}</div>
             <div class="upgrade-cost">思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</div>
+            {% if main_robot_profile and main_robot_profile.get('battle_style_line') %}
+            <div class="upgrade-cost">{{ main_robot_profile['battle_style_line'] }}</div>
+            {% endif %}
             {% if main_robot_profile and main_robot_profile.get('focus_line') %}
-            <div class="upgrade-cost">{{ main_robot_profile['focus_line'] }}</div>
+            <div class="upgrade-cost">注目能力: {{ main_robot_profile['focus_line'] }}</div>
+            {% endif %}
+            {% if main_robot_profile and main_robot_profile.get('style_support_line') %}
+            <div class="robot-time">{{ main_robot_profile['style_support_line'] }}</div>
             {% endif %}
             <div class="upgrade-cost">総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</div>
             {% if main_robot_weekly_fit %}

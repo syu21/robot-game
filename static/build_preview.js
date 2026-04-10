@@ -6,6 +6,16 @@
   const pickerSections = Array.from(document.querySelectorAll("details.picker-section[data-picker-section]"));
   const pickerStorageKey = "build_open_picker_section";
   const SLOT_NAMES = ["head_key", "r_arm_key", "l_arm_key", "legs_key", "decor_asset_id"];
+  const STAT_LABELS = {
+    hp: "耐久",
+    atk: "攻撃",
+    def: "防御",
+    spd: "素早さ",
+    acc: "命中",
+    cri: "会心",
+  };
+  const INACTIVE_SET_BONUS_DETAIL =
+    "無=耐久 / 炎=攻撃 / 水=素早さ / 雷=会心 / 風=命中 / 氷・鋼=防御 / 機械=命中 / 鉱石=会心";
   const comparePulseTargets = [
     document.querySelector(".build-preview-primary"),
     document.querySelector(".build-estimate"),
@@ -18,8 +28,31 @@
     legs: document.getElementById("pv-legs"),
     decor: document.getElementById("pv-decor"),
   };
+  const previewTargetToInputName = {
+    head: "head_key",
+    rarm: "r_arm_key",
+    larm: "l_arm_key",
+    legs: "legs_key",
+    decor: "decor_asset_id",
+  };
+  const previewTargetToOffsetSlot = {
+    head: "head",
+    rarm: "r_arm",
+    larm: "l_arm",
+    legs: "legs",
+    decor: null,
+  };
   const partImageMap = {};
   const partOffsetMap = {};
+  const offsetInputMap = {};
+  const offsetInputs = Array.from(document.querySelectorAll("input[type='range'][data-offset-slot][data-offset-axis]"));
+  offsetInputs.forEach((input) => {
+    const slot = String(input.dataset.offsetSlot || "").trim();
+    const axis = String(input.dataset.offsetAxis || "").trim();
+    if (!slot || !axis) return;
+    offsetInputMap[slot] = offsetInputMap[slot] || {};
+    offsetInputMap[slot][axis] = input;
+  });
   document
     .querySelectorAll("input[type='radio'][data-part-key][data-img]")
     .forEach((input) => {
@@ -33,6 +66,18 @@
     });
   window.PART_IMAGE_MAP = partImageMap;
   window.PART_OFFSET_MAP = partOffsetMap;
+
+  function currentUserOffset(target) {
+    const slot = previewTargetToOffsetSlot[target];
+    if (!slot) return { x: 0, y: 0 };
+    const slotInputs = offsetInputMap[slot] || {};
+    const x = Number((slotInputs.x || {}).value || 0);
+    const y = Number((slotInputs.y || {}).value || 0);
+    return {
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+    };
+  }
 
   function applyPreview(target, imgUrl, offsetX, offsetY) {
     const el = targetMap[target];
@@ -48,10 +93,13 @@
     const sep = imgUrl.includes("?") ? "&" : "?";
     el.src = `${imgUrl}${sep}v=${stamp}`;
     el.classList.remove("is-hidden");
-    const dx = Number(offsetX);
-    const dy = Number(offsetY);
-    el.style.setProperty("--layer-offset-x", Number.isFinite(dx) ? String(dx) : "0");
-    el.style.setProperty("--layer-offset-y", Number.isFinite(dy) ? String(dy) : "0");
+    const baseX = Number(offsetX);
+    const baseY = Number(offsetY);
+    const userOffset = currentUserOffset(target);
+    const dx = (Number.isFinite(baseX) ? baseX : 0) + userOffset.x;
+    const dy = (Number.isFinite(baseY) ? baseY : 0) + userOffset.y;
+    el.style.setProperty("--layer-offset-x", String(dx));
+    el.style.setProperty("--layer-offset-y", String(dy));
   }
 
   function selectedInput(name) {
@@ -106,9 +154,14 @@
       total.cri += statOf(slot, "Cri");
     }
 
-    let bonusText = "セットボーナス: なし";
+    let bonusStatus = "未発動";
+    let bonusCondition = "同属性パーツ 4部位で発動";
+    let bonusEffect = "属性ごとに上がる能力が変わります";
+    let bonusDetail = INACTIVE_SET_BONUS_DETAIL;
     const configEl = document.getElementById("build-set-bonus-table");
     const setBonusTable = configEl ? JSON.parse(configEl.value || "{}") : {};
+    const elementLabelEl = document.getElementById("build-element-label-map");
+    const elementLabelMap = elementLabelEl ? JSON.parse(elementLabelEl.value || "{}") : {};
     const elements = slots.map((s) => (s.dataset.element || "").toUpperCase());
     if (elements.every((e) => e && e === elements[0])) {
       const bonus = setBonusTable[elements[0]];
@@ -116,9 +169,12 @@
         const stat = String(bonus[0] || "").toLowerCase();
         const rate = Number(bonus[1]) || 0;
         if (Object.prototype.hasOwnProperty.call(total, stat) && rate > 0) {
-          const boosted = Math.max(total[stat] + 1, Math.ceil(total[stat] * (1 + rate)));
+          const before = total[stat];
+          const boosted = Math.max(before + 1, Math.ceil(before * (1 + rate)));
           total[stat] = boosted;
-          bonusText = `セットボーナス: ${elements[0]} (+${Math.round(rate * 100)}%)`;
+          bonusStatus = "発動中";
+          bonusEffect = `${STAT_LABELS[stat] || stat} +${boosted - before}`;
+          bonusDetail = `${elementLabelMap[elements[0]] || elements[0]}統一で ${STAT_LABELS[stat] || stat} が ${before} → ${boosted}`;
         }
       }
     }
@@ -142,8 +198,10 @@
     bind("est-acc", total.acc);
     bind("est-cri", total.cri);
     bind("est-power", Math.round(power * 10) / 10);
-    const bonusEl = document.getElementById("est-bonus");
-    if (bonusEl) bonusEl.textContent = bonusText;
+    setText("est-bonus-status", bonusStatus);
+    setText("est-bonus-condition", bonusCondition);
+    setText("est-bonus-effect", bonusEffect);
+    setText("est-bonus-detail", bonusDetail);
     updateComparisonRows({
       hp: total.hp,
       atk: total.atk,
@@ -247,6 +305,21 @@
     });
   }
 
+  function syncOffsetOutput(slot, axis) {
+    const input = (((offsetInputMap[slot] || {})[axis]) || null);
+    const output = document.getElementById(`${slot}_offset_${axis}_value`);
+    if (!input || !output) return;
+    const val = Number(input.value || 0);
+    output.textContent = String(Number.isFinite(val) ? val : 0);
+  }
+
+  function syncAllOffsetOutputs() {
+    Object.keys(offsetInputMap).forEach((slot) => {
+      syncOffsetOutput(slot, "x");
+      syncOffsetOutput(slot, "y");
+    });
+  }
+
   pickerSections.forEach((section) => {
     section.addEventListener("toggle", () => {
       if (!section.open) return;
@@ -285,6 +358,12 @@
     );
   }
 
+  function refreshPreviewTarget(target) {
+    const inputName = previewTargetToInputName[target];
+    if (!inputName) return;
+    syncPreviewFromSelection(selectedInput(inputName));
+  }
+
   function syncAllPreviews() {
     SLOT_NAMES.forEach((slotName) => {
       syncPreviewFromSelection(selectedInput(slotName));
@@ -306,17 +385,21 @@
     });
   });
 
-  syncSelectedCards();
-  syncAllPreviews();
-
-  updateEstimate();
-  window.addEventListener("pageshow", () => {
-    try {
-      syncSelectedCards();
-      syncAllPreviews();
-      updateEstimate();
-    } catch (err) {
-      console.error("[build_preview] pageshow sync failed", err);
-    }
+  offsetInputs.forEach((input) => {
+    input.addEventListener("input", () => {
+      const slot = String(input.dataset.offsetSlot || "").trim();
+      const axis = String(input.dataset.offsetAxis || "").trim();
+      syncOffsetOutput(slot, axis);
+      const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
+      if (target) refreshPreviewTarget(target[0]);
+    });
+    input.addEventListener("change", () => {
+      const slot = String(input.dataset.offsetSlot || "").trim();
+      const axis = String(input.dataset.offsetAxis || "").trim();
+      syncOffsetOutput(slot, axis);
+      const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
+      if (target) refreshPreviewTarget(target[0]);
+    });
   });
-})();
+
+  formEl.querySelectorAll("button[data-offset-reset]").f

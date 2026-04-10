@@ -336,6 +336,29 @@ class PartsUiTests(unittest.TestCase):
             self.assertEqual(str(equipped_status), "equipped")
             self.assertIsNone(removed_row)
 
+    def test_parts_sort_orders_by_plus_and_keeps_sort_in_pagination_and_forms(self):
+        strong_head = self._create_custom_part("HEAD", "sort_head_strong", "高強化ヘッド")
+        weak_head = self._create_custom_part("HEAD", "sort_head_weak", "低強化ヘッド")
+        self._create_extra_instance(strong_head, plus=5, status="inventory")
+        self._create_extra_instance(weak_head, plus=1, status="inventory")
+        for _ in range(26):
+            self._create_extra_instance(weak_head, plus=0, status="inventory")
+
+        client = self._client()
+        first_page = client.get("/parts?part_type=HEAD&sort=plus")
+        self.assertEqual(first_page.status_code, 200)
+        first_html = first_page.get_data(as_text=True)
+        self.assertIn("並び替え", first_html)
+        self.assertIn("高強化ヘッド", first_html)
+        self.assertIn("低強化ヘッド", first_html)
+        self.assertLess(first_html.index("高強化ヘッド"), first_html.index("低強化ヘッド"))
+
+        second_page = client.get("/parts?part_type=HEAD&sort=plus&page=2")
+        self.assertEqual(second_page.status_code, 200)
+        second_html = second_page.get_data(as_text=True)
+        self.assertIn("/parts?page=1&amp;part_type=HEAD&amp;sort=plus", second_html)
+        self.assertIn('name="sort" value="plus"', second_html)
+
     def test_battle_drop_over_capacity_goes_to_overflow(self):
         with game_app.app.app_context():
             db = game_app.get_db()

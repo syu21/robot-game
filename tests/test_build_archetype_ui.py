@@ -77,6 +77,9 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("思想:", home_html)
         self.assertIn("出撃機体", home_html)
         self.assertIn("スタイル実績", home_html)
+        self.assertIn("セットボーナス:", home_html)
+        self.assertIn("同属性パーツ 4部位で発動", home_html)
+        self.assertIn("注目能力:", home_html)
         self.assertRegex(home_html, "思想: .+")
         self.assertRegex(home_html, "(耐久|攻撃|防御|素早さ|命中|会心) [0-9]+ / (耐久|攻撃|防御|素早さ|命中|会心) [0-9]+")
 
@@ -88,8 +91,23 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("現装備（起動中ロボ）", build_html)
         self.assertIn("現在装備", build_html)
         self.assertIn("総合差分", build_html)
+        self.assertIn("位置の微調整", build_html)
+        self.assertIn("セットボーナス:", build_html)
+        self.assertIn("同属性パーツ 4部位で発動", build_html)
+        self.assertIn('name="head_offset_x"', build_html)
+        self.assertIn('name="r_arm_offset_y"', build_html)
+        self.assertIn("リセット", build_html)
         self.assertNotIn('style="', build_html)
         self.assertNotIn('type="application/json"', build_html)
+
+    def test_robot_detail_shows_battle_style_and_set_bonus_explanation(self):
+        client = self._new_client()
+        resp = client.get(f"/robots/{int(self.robot_id)}")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("セットボーナス:", html)
+        self.assertIn("同属性パーツ 4部位で発動", html)
+        self.assertIn("戦い方:", html)
 
     def test_build_stat_comparison_rows(self):
         rows = game_app._build_stat_comparison_rows(

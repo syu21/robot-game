@@ -26,8 +26,9 @@
   data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"
   data-js-diag="{{ '1' if js_diag else '0' }}"
 >
+  {% set logo_href = url_for('home') if session.get('user_id') else url_for('register') %}
   <header class="top topbar site-header" id="site-header">
-    <div class="logo">ロボらぼ</div>
+    <a class="logo logo-link" href="{{ logo_href }}" data-busy-link="1" aria-label="ロボらぼ ホームへ戻る">ロボらぼ</a>
     {% if session.get('user_id') %}
       <div class="user">
         {% if header_user_visual %}{{ render_user_chip(header_user_visual, 'header', 'current robot icon', 'eager') }}{% endif %}
@@ -57,6 +58,11 @@
       </div>
     {% endif %}
   </header>
+  {% if maintenance_is_partial %}
+  <div class="maintenance-banner" role="status" aria-live="polite">
+    <div class="maintenance-banner-inner">{{ maintenance_banner_text }}</div>
+  </div>
+  {% endif %}
   <main class="container">
     {% if message %}<div class="notice">{{ message }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}

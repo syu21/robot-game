@@ -51,8 +51,14 @@
         {% if r.get('profile') and r['profile'].get('signature_label') %}
         <div class="robot-part">思想: {{ r['profile']['signature_label'] }}</div>
         {% endif %}
+        {% if r.get('profile') and r['profile'].get('battle_style_line') %}
+        <div class="robot-time">{{ r['profile']['battle_style_line'] }}</div>
+        {% endif %}
         {% if r.get('profile') and r['profile'].get('focus_line') %}
-        <div class="robot-time">{{ r['profile']['focus_line'] }}</div>
+        <div class="robot-time">注目能力: {{ r['profile']['focus_line'] }}</div>
+        {% endif %}
+        {% if r.get('set_bonus_view') %}
+        <div class="robot-time">セット: {{ r['set_bonus_view']['status_label'] }} / {{ r['set_bonus_view']['effect_text'] }}</div>
         {% endif %}
         {% if r.get('image_url') %}
           <img class="robot-thumb" src="{{ r['image_url'] }}" alt="{{ r['name'] }}" loading="lazy" />

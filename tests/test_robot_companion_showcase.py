@@ -183,6 +183,7 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
         self.assertIn("最速", html)
         self.assertIn("思想:", html)
         self.assertIn("注目記録:", html)
+        self.assertIn("セット:", html)
         self.assertIn("Velocity Liker", html)
         self.assertIn("Bastion Owner", html)
         public_section = html.split("公開ロボ", 1)[1]

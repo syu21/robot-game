@@ -33,6 +33,19 @@
       {% endif %}
     </div>
     {{ render_part_type_filters(part_type_filters) }}
+    <form method="get" class="part-sort-form">
+      {% if selected_part_type %}
+      <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+      {% endif %}
+      <label class="part-sort-label" for="parts-sort-select">並び替え</label>
+      <select id="parts-sort-select" name="sort">
+        {% for sort_def in parts_sort_defs %}
+        <option value="{{ sort_def['key'] }}" {% if selected_sort == sort_def['key'] %}selected{% endif %}>{{ sort_def['label'] }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">適用</button>
+    </form>
+    <div class="robot-time">所持中と装備中を並び替えます。保管中の個体は下の保管欄で分けて表示します。</div>
   </div>
 
   {% if compare_items %}
@@ -88,6 +101,7 @@
     {% if selected_part_type %}
     <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
     {% endif %}
+    <input type="hidden" name="sort" value="{{ selected_sort }}" />
     <input type="hidden" name="page" value="{{ page }}" />
     <div class="part-list-header">
       <div class="robot-time">見比べたい個体、破棄したい個体を選べます。装備中も選べますが、破棄はされません。</div>
@@ -169,6 +183,7 @@
     {% if selected_part_type %}
     <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
     {% endif %}
+    <input type="hidden" name="sort" value="{{ selected_sort }}" />
     <div class="part-list-header">
       <div>
         <div><b>保管中の個体パーツ</b></div>
@@ -230,6 +245,7 @@
     {% if selected_part_type %}
     <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
     {% endif %}
+    <input type="hidden" name="sort" value="{{ selected_sort }}" />
     <input type="hidden" name="page" value="{{ page }}" />
     <div class="part-list-header">
       <div>

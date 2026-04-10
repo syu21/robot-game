@@ -8,8 +8,43 @@
     {% for section in sections %}
     <a href="#{{ section['key'] }}">{{ section['title'] }}</a>{% if not loop.last %} | {% endif %}
     {% endfor %}
+    {% if style_guide_rows %} | <a href="#style-guide">思想の戦い方</a>{% endif %}
+    {% if set_bonus_catalog %} | <a href="#set-bonus-guide">セットボーナス</a>{% endif %}
   </div>
 </div>
+
+{% if style_guide_rows %}
+<div class="card" id="style-guide">
+  <h2>思想ごとの戦い方</h2>
+  <div class="guide-style-grid">
+    {% for row in style_guide_rows %}
+    <div class="guide-style-card">
+      <div class="guide-term-name">{{ row['label'] }}</div>
+      <div class="guide-style-line">{{ row['battle_line'] }}</div>
+      <div class="guide-term-body">{{ row['description'] }}</div>
+      <div class="robot-time">{{ row['support_line'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if set_bonus_catalog %}
+<div class="card" id="set-bonus-guide">
+  <h2>セットボーナス</h2>
+  <p>{{ set_bonus_condition_text }}</p>
+  <div class="robot-time">いま発動しているかは、編成画面とロボ詳細で確認できます。</div>
+  <div class="guide-set-bonus-grid">
+    {% for row in set_bonus_catalog %}
+    <div class="guide-set-bonus-card">
+      <div class="guide-term-name">{{ row['element_label'] }}</div>
+      <div class="guide-style-line">{{ row['stat_label'] }} {{ row['rate_text'] }}</div>
+      <div class="guide-term-body">{{ row['summary_text'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% for section in sections %}
 <div class="card" id="{{ section['key'] }}">
