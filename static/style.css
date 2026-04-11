@@ -6420,6 +6420,14 @@ body.home-page.home-mobile .invite-link-row {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.lab-top-action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lab-top-action-wide {
+  grid-column: 1 / -1;
+}
+
 .lab-entry-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -6509,6 +6517,10 @@ body.home-page.home-mobile .invite-link-row {
 }
 
 @media (max-width: 640px) {
+  .lab-top-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .lab-entry-grid {
     grid-template-columns: minmax(0, 1fr);
   }

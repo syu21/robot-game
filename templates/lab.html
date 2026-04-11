@@ -3,41 +3,8 @@
 <h1>実験室</h1>
 
 <div class="card">
-  <div><b>基地の外で遊ぶ場所</b></div>
-  <div class="robot-part">本編の強さ・コイン・層進行とは切り離された、観戦と展示の遊び場です。</div>
-</div>
-
-<div class="lab-card-grid">
-  <a class="action-card home-nav-card" href="{{ url_for('lab_race') }}">
-    <div class="action-title">エネミーレース</div>
-    <div class="action-desc">敵6体の障害物レースを予想して遊ぶ</div>
-  </a>
-  <a class="action-card home-nav-card" href="{{ url_for('lab_upload') }}">
-    <div class="action-title">試作機登録</div>
-    <div class="action-desc">創作ロボを研究所審査へ提出</div>
-  </a>
-  <a class="action-card home-nav-card" href="{{ url_for('lab_showcase') }}">
-    <div class="action-title">投稿ロボ展示</div>
-    <div class="action-desc">新着・人気・話題を眺める</div>
-  </a>
-  <a class="action-card home-nav-card" href="{{ url_for('lab_my_submissions') }}">
-    <div class="action-title">自分の研究機体</div>
-    <div class="action-desc">審査待ち・公開中・差し戻しを確認</div>
-  </a>
-  <a class="action-card home-nav-card" href="{{ url_for('lab_race_history') }}">
-    <div class="action-title">レース記録</div>
-    <div class="action-desc">結果と予想履歴をふり返る</div>
-  </a>
-</div>
-
-<div class="card">
-  <h2>実験室メモ</h2>
-  <div class="robot-part">公開中の投稿: {{ counts['approved_submissions'] }}</div>
-  <div class="robot-part">審査待ち: {{ counts['pending_submissions'] }}</div>
-  <div class="robot-part">開催レース数: {{ counts['race_count'] }}</div>
-  {% if is_admin %}
-  <p class="link"><a href="{{ url_for('admin_lab') }}">管理メニューへ</a></p>
-  {% endif %}
+  <div><b>研究機体を見たり遊んだりできる特別エリア</b></div>
+  <div class="robot-part">本編とは別に、試作機や投稿ロボを見たり、レースや展示を楽しめる遊び場です。</div>
 </div>
 
 <div class="card">
@@ -61,24 +28,32 @@
   {% endfor %}
 </div>
 
-<div class="card">
-  <h2>最新レース</h2>
-  {% if latest_race %}
-  <div class="robot-part">{{ latest_race['course_key'] }} / {{ latest_race['status'] }}</div>
-  {% for row in latest_results %}
-  <div class="home-ranking-row">
-    <span>{{ row['final_rank'] }}位 {{ row['display_name'] }}</span>
-    <span class="weekly-fit-badge">{{ row['condition_label'] }}</span>
-  </div>
-  {% endfor %}
-  <p class="link"><a href="{{ url_for('lab_race_watch', race_id=latest_race['id']) }}">観戦する</a> | <a href="{{ url_for('lab_race_result', race_id=latest_race['id']) }}">結果へ</a></p>
-  {% else %}
-  <div class="robot-part">まだレースはありません。</div>
-  {% endif %}
+<div class="lab-card-grid lab-top-action-grid">
+  <a class="action-card home-nav-card" href="{{ url_for('lab_race') }}">
+    <div class="action-title">エネミーレース</div>
+    <div class="action-desc">敵ロボ6体のレースを予想して遊ぶ</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_showcase') }}">
+    <div class="action-title">投稿ロボ展示</div>
+    <div class="action-desc">みんなのロボを見る</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_upload') }}">
+    <div class="action-title">試作機登録</div>
+    <div class="action-desc">自分のロボを投稿する</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_my_submissions') }}">
+    <div class="action-title">自分の研究機体</div>
+    <div class="action-desc">自分の投稿ロボを確認する</div>
+  </a>
+  <a class="action-card home-nav-card lab-top-action-wide" href="{{ url_for('lab_race_history') }}">
+    <div class="action-title">レース記録</div>
+    <div class="action-desc">レース結果と予想履歴を見る</div>
+  </a>
 </div>
 
 <div class="card">
   <h2>注目の投稿ロボ</h2>
+  <div class="robot-part">研究所で公開中の注目機体</div>
   <div class="lab-showcase-grid">
     {% for row in showcase_rows %}
     <a class="robot-card lab-showcase-card" href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">
@@ -99,6 +74,32 @@
     {% endfor %}
   </div>
 </div>
+
+<div class="card">
+  <h2>最新レース</h2>
+  {% if latest_race %}
+  <div class="robot-part">{{ latest_race['course_key'] }} / {{ latest_race['status'] }}</div>
+  {% for row in latest_results %}
+  <div class="home-ranking-row">
+    <span>{{ row['final_rank'] }}位 {{ row['display_name'] }}</span>
+    <span class="weekly-fit-badge">{{ row['condition_label'] }}</span>
+  </div>
+  {% endfor %}
+  <p class="link"><a href="{{ url_for('lab_race_watch', race_id=latest_race['id']) }}">観戦する</a> | <a href="{{ url_for('lab_race_result', race_id=latest_race['id']) }}">結果へ</a></p>
+  {% else %}
+  <div class="robot-part">まだレースはありません。</div>
+  {% endif %}
+</div>
+
+{% if is_admin %}
+<div class="card">
+  <h2>管理メモ</h2>
+  <div class="robot-part">公開中の投稿数: {{ counts['approved_submissions'] }}</div>
+  <div class="robot-part">審査待ち: {{ counts['pending_submissions'] }}</div>
+  <div class="robot-part">開催レース数: {{ counts['race_count'] }}</div>
+  <p class="link"><a href="{{ url_for('admin_lab') }}">管理メニューへ</a></p>
+</div>
+{% endif %}
 
 <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
 {% endblock %}
