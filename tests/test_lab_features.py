@@ -336,6 +336,7 @@ class LabRouteTests(unittest.TestCase):
         self.assertIn("利用条件への同意が必要です", no_terms_html)
         self.assertIn('data-lab-radar-polygon', no_terms_html)
         self.assertIn("現在合計: 30 / 36", no_terms_html)
+        self.assertIn("lab_upload.js", no_terms_html)
 
         over_stat_resp = client.post(
             "/lab/upload",
