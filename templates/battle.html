@@ -360,4 +360,31 @@
               <div class="battle-flag">クリティカル！！</div>
             {% endif %}
             {% if t.get('result_line') %}
-          
+              <div class="battle-line"><strong>{{ t['result_line'] }}</strong></div>
+            {% endif %}
+            {% if t.get('core_drop_line') %}
+              <div class="battle-line drop"><strong>{{ t['core_drop_line'] }}</strong></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </details>
+    {% endif %}
+  </details>
+  {% endif %}
+  </div>
+{% else %}
+  <div class="card">
+    <p>探索結果がありません。行動メニューから探索してください。</p>
+  </div>
+{% endif %}
+{% if not (explore_mode and summary) %}
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
+<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
+{% endblock %}
