@@ -21,6 +21,9 @@
 {% endif %}
 {% if battle_cinematic_enabled %}
   {% include '_battle_cinematic_v1.html' %}
+  {% if summary and summary.get('is_area_boss') %}
+  <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>
+  {% endif %}
 {% endif %}
 {% if not battle_cinematic_enabled %}
 <h1 class="battle-title">{{ enemy_name }}が襲いかかってきた！！！</h1>
@@ -49,6 +52,16 @@
     <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
     {% endif %}
   </div>
+  {% if summary.get('tutorial_layer1_result_card') %}
+  {% set t1 = summary['tutorial_layer1_result_card'] %}
+  <div class="card notice">
+    <div><b>{{ t1['title'] }}</b></div>
+    <div class="upgrade-cost">{{ t1['text'] }}</div>
+    {% if t1.get('cta_url') %}
+    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ t1['cta_url'] }}">{{ t1.get('cta_label', '次へ') }}</a></p>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <div class="battle-section-title battle-section-title-compact">戦利品</div>
   <div class="card battle-summary-upgraded battle-summary-upgraded-compact">
@@ -107,9 +120,12 @@
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
-      <div><b>{% if summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
-      <div class="upgrade-cost">{% if summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
-      {% if summary.get('unlocked_layer') %}
+      {% set tutorial_next = summary.get('tutorial_layer1_next_action') %}
+      <div><b>{% if tutorial_next %}{{ tutorial_next['title'] }}{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
+      <div class="upgrade-cost">{% if tutorial_next %}{{ tutorial_next['desc'] }}{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
+      {% if tutorial_next %}
+      <a class="battle-home-link battle-next-cta" href="{{ tutorial_next['cta_url'] }}">{{ tutorial_next['cta_label'] }}</a>
+      {% elif summary.get('unlocked_layer') %}
       <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
       {% else %}
       <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
@@ -344,31 +360,4 @@
               <div class="battle-flag">クリティカル！！</div>
             {% endif %}
             {% if t.get('result_line') %}
-              <div class="battle-line"><strong>{{ t['result_line'] }}</strong></div>
-            {% endif %}
-            {% if t.get('core_drop_line') %}
-              <div class="battle-line drop"><strong>{{ t['core_drop_line'] }}</strong></div>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-      {% endfor %}
-    </details>
-    {% endif %}
-  </details>
-  {% endif %}
-  </div>
-{% else %}
-  <div class="card">
-    <p>探索結果がありません。行動メニューから探索してください。</p>
-  </div>
-{% endif %}
-{% if not (explore_mode and summary) %}
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endif %}
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
-<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
-{% endblock %}
+          

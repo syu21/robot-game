@@ -1,7 +1,7 @@
 import os
 
 RARITIES = ("N", "R", "SR", "SSR", "UR")
-APP_VERSION = "0.1.51"
+APP_VERSION = "0.1.53"
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "pochirobo021@gmail.com").strip() or "pochirobo021@gmail.com"
 LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "大谷周平").strip() or "大谷周平"
 LEGAL_BRAND_NAME = os.getenv("LEGAL_BRAND_NAME", "KAS Development").strip() or "KAS Development"
@@ -231,4 +231,7 @@ AUDIT_EVENT_TYPES = {
     "LAB_CASINO_RACE_START": "audit.lab.casino.race.start",
     "LAB_CASINO_RACE_FINISH": "audit.lab.casino.race.finish",
     "LAB_CASINO_PRIZE_CLAIM": "audit.lab.casino.prize.claim",
+    "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change",
+    "TUTORIAL_LAYER1_FORCED_BOSS": "audit.tutorial.layer1.forced_boss",
+    "TUTORIAL_LAYER1_BOSS_FAIL_GUIDED": "audit.tutorial.layer1.boss_fail_guided",
 }

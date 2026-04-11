@@ -256,7 +256,7 @@ STARTER_ROBOT_DEFAULT_NAMES = frozenset(
         "無名機",
     }
 )
-GOOGLE_OAUTH_SCOPE = "openid email profile"
+GOOGLE_OAUTH_SCOPE = "openid email"
 _google_oauth_discovery_cache = {"loaded_at": 0.0, "data": None}
 STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
 STRIPE_PUBLISHABLE_KEY = (os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()
@@ -1381,6 +1381,18 @@ L1_BOSS_PREMONITION_LINES = [
     "奥から重い振動が響く…",
     "警告音のようなノイズが混じる…",
 ]
+TUTORIAL_LAYER1_STATE_NEW = "new"
+TUTORIAL_LAYER1_STATE_WON_NORMAL_ONCE = "won_normal_once"
+TUTORIAL_LAYER1_STATE_SAW_BOSS = "saw_boss"
+TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE = "boss_failed_once"
+TUTORIAL_LAYER1_STATE_CLEARED = "cleared_layer1"
+TUTORIAL_LAYER1_STATES = {
+    TUTORIAL_LAYER1_STATE_NEW,
+    TUTORIAL_LAYER1_STATE_WON_NORMAL_ONCE,
+    TUTORIAL_LAYER1_STATE_SAW_BOSS,
+    TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE,
+    TUTORIAL_LAYER1_STATE_CLEARED,
+}
 AREA_BOSS_KEYS = (
     "layer_1",
     "layer_2",
@@ -3640,6 +3652,24 @@ def _build_home_primary_explore_cta(
         }
 
     ready = bool(is_admin or int(ct_remain or 0) <= 0)
+    if next_action_card and next_action_card.get("home_primary") and not next_action_card.get("is_post"):
+        return {
+            "title": str(next_action_card.get("title") or "次の行動"),
+            "destination_label": str(next_action_card.get("destination_label") or "パーツ強化"),
+            "helper_text": str(next_action_card.get("desc") or "").strip(),
+            "status_text": "準備OK",
+            "button_label": str(next_action_card.get("cta_label") or "開く"),
+            "button_current_label": str(next_action_card.get("cta_label") or "開く"),
+            "is_post": False,
+            "cta_url": str(next_action_card.get("cta_url") or url_for("home")),
+            "area_key": None,
+            "boss_enter": False,
+            "disabled": False,
+            "show_map_link": False,
+            "map_link_label": "",
+            "map_href": "",
+            "context_line": str(next_action_card.get("context_line") or "次の目標を優先表示しています。"),
+        }
     selected_area = _find_explore_area(available_areas, selected_area_key)
     saved_area = _find_explore_area(available_areas, saved_area_key)
     use_next_action = bool(
@@ -7777,6 +7807,20 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     if "starter_robot_name_pending" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN starter_robot_name_pending INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_state" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_state TEXT NOT NULL DEFAULT 'new'")
+    if "tutorial_layer1_normal_win_count" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_boss_seen_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_seen_at INTEGER")
+    if "tutorial_layer1_boss_fail_count" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_fail_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_forced_boss_ready" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_fuse_after_boss_fail_count" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_updated_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
     if "lab_coin" not in cols:
         db.execute(f"ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT {LAB_CASINO_STARTING_COINS}")
     if "lab_coin_last_daily_at" not in cols:
@@ -7816,6 +7860,20 @@ def ensure_schema(db):
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE starter_robot_name_pending IS NULL")
+    db.execute(
+        """
+        UPDATE users
+        SET tutorial_layer1_state = 'new'
+        WHERE tutorial_layer1_state IS NULL
+           OR tutorial_layer1_state NOT IN ('new','won_normal_once','saw_boss','boss_failed_once','cleared_layer1')
+        """
+    )
+    db.execute("UPDATE users SET tutorial_layer1_state = 'cleared_layer1' WHERE max_unlocked_layer >= 2")
+    db.execute("UPDATE users SET tutorial_layer1_normal_win_count = 0 WHERE tutorial_layer1_normal_win_count IS NULL OR tutorial_layer1_normal_win_count < 0")
+    db.execute("UPDATE users SET tutorial_layer1_boss_fail_count = 0 WHERE tutorial_layer1_boss_fail_count IS NULL OR tutorial_layer1_boss_fail_count < 0")
+    db.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
+    db.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
+    db.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
     db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_STARTING_COINS} WHERE lab_coin IS NULL OR lab_coin < 0")
     db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_COIN_CAP} WHERE lab_coin > {LAB_CASINO_COIN_CAP}")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
@@ -14043,6 +14101,19 @@ def _build_unique_social_username(db, *seed_values):
     return candidate
 
 
+def _build_unique_anonymous_google_username(db):
+    rng = random.SystemRandom()
+    for _attempt in range(100):
+        candidate = f"robo_{rng.randint(1000, 9999)}"
+        if not _find_user_for_login(db, candidate):
+            return candidate
+    return _build_unique_social_username(db, f"robo_{uuid.uuid4().hex[:8]}", "google")
+
+
+def _google_default_display_name():
+    return f"研究員{random.SystemRandom().randint(1000, 9999)}"
+
+
 def _find_user_identity(db, provider, provider_user_id):
     provider_value = str(provider or "").strip().lower()
     sub_value = str(provider_user_id or "").strip()
@@ -15040,17 +15111,16 @@ def _weekly_mvp_snapshot(db, week_key):
     end_ts = int(end_dt.timestamp())
     row = db.execute(
         """
-        SELECT wel.user_id, COUNT(*) AS wins
+        SELECT wel.user_id, COUNT(*) AS wins, COALESCE(u.is_admin, 0) AS is_admin
         FROM world_events_log wel
         JOIN users u ON u.id = wel.user_id
         WHERE wel.event_type = ?
           AND wel.user_id IS NOT NULL
-          AND COALESCE(u.is_admin, 0) = 0
           AND wel.created_at >= ?
           AND wel.created_at < ?
           AND CAST(COALESCE(json_extract(wel.payload_json, '$.result.win'), 0) AS INTEGER) = 1
         GROUP BY wel.user_id
-        ORDER BY wins DESC, wel.user_id ASC
+        ORDER BY CASE WHEN COALESCE(u.is_admin, 0) = 0 THEN 0 ELSE 1 END ASC, wins DESC, wel.user_id ASC
         LIMIT 1
         """,
         (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
@@ -15855,6 +15925,250 @@ def _dex_upsert_enemy(db, *, user_id, enemy_key, is_defeat=False):
     )
 
 
+def _tutorial_layer1_state(user_row):
+    raw = ""
+    if user_row and hasattr(user_row, "keys") and "tutorial_layer1_state" in user_row.keys():
+        raw = str(user_row["tutorial_layer1_state"] or "").strip()
+    return raw if raw in TUTORIAL_LAYER1_STATES else TUTORIAL_LAYER1_STATE_NEW
+
+
+def _tutorial_layer1_is_subject(db, user_row, area_key="layer_1"):
+    if not user_row or not hasattr(user_row, "keys"):
+        return False
+    if str(area_key or "").strip() != "layer_1":
+        return False
+    if int(user_row["is_admin"] or 0) == 1:
+        return False
+    if _user_max_unlocked_layer(user_row) > 1:
+        return False
+    return not _has_fixed_boss_defeat_in_area(db, int(user_row["id"]), "layer_1")
+
+
+def _tutorial_layer1_snapshot(user_row):
+    if not user_row:
+        return {}
+    keys = set(user_row.keys()) if hasattr(user_row, "keys") else set()
+    return {
+        "state": _tutorial_layer1_state(user_row),
+        "normal_win_count": int(user_row["tutorial_layer1_normal_win_count"] or 0)
+        if "tutorial_layer1_normal_win_count" in keys
+        else 0,
+        "boss_seen_at": int(user_row["tutorial_layer1_boss_seen_at"] or 0)
+        if "tutorial_layer1_boss_seen_at" in keys and user_row["tutorial_layer1_boss_seen_at"]
+        else None,
+        "boss_fail_count": int(user_row["tutorial_layer1_boss_fail_count"] or 0)
+        if "tutorial_layer1_boss_fail_count" in keys
+        else 0,
+        "forced_boss_ready": int(user_row["tutorial_layer1_forced_boss_ready"] or 0)
+        if "tutorial_layer1_forced_boss_ready" in keys
+        else 0,
+        "fuse_after_boss_fail_count": int(user_row["tutorial_layer1_fuse_after_boss_fail_count"] or 0)
+        if "tutorial_layer1_fuse_after_boss_fail_count" in keys
+        else 0,
+    }
+
+
+def _tutorial_layer1_fetch_user(db, user_id):
+    return db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+
+
+def _tutorial_layer1_transition(
+    db,
+    user_id,
+    *,
+    state=None,
+    forced_boss_ready=None,
+    normal_win_delta=0,
+    boss_fail_delta=0,
+    fuse_after_boss_fail_delta=0,
+    boss_seen=False,
+    now_ts=None,
+    request_id=None,
+    ip=None,
+    reason="",
+    extra_payload=None,
+):
+    before_row = _tutorial_layer1_fetch_user(db, int(user_id))
+    if not before_row:
+        return None
+    before = _tutorial_layer1_snapshot(before_row)
+    assignments = []
+    params = []
+    if state is not None:
+        next_state = str(state or "").strip()
+        if next_state not in TUTORIAL_LAYER1_STATES:
+            next_state = TUTORIAL_LAYER1_STATE_NEW
+        assignments.append("tutorial_layer1_state = ?")
+        params.append(next_state)
+    if forced_boss_ready is not None:
+        assignments.append("tutorial_layer1_forced_boss_ready = ?")
+        params.append(1 if forced_boss_ready else 0)
+    if int(normal_win_delta or 0) != 0:
+        assignments.append("tutorial_layer1_normal_win_count = MAX(0, COALESCE(tutorial_layer1_normal_win_count, 0) + ?)")
+        params.append(int(normal_win_delta))
+    if int(boss_fail_delta or 0) != 0:
+        assignments.append("tutorial_layer1_boss_fail_count = MAX(0, COALESCE(tutorial_layer1_boss_fail_count, 0) + ?)")
+        params.append(int(boss_fail_delta))
+    if int(fuse_after_boss_fail_delta or 0) != 0:
+        assignments.append(
+            "tutorial_layer1_fuse_after_boss_fail_count = "
+            "MAX(0, COALESCE(tutorial_layer1_fuse_after_boss_fail_count, 0) + ?)"
+        )
+        params.append(int(fuse_after_boss_fail_delta))
+    if boss_seen:
+        seen_ts = int(now_ts or time.time())
+        assignments.append("tutorial_layer1_boss_seen_at = COALESCE(tutorial_layer1_boss_seen_at, ?)")
+        params.append(seen_ts)
+    if not assignments:
+        return before_row
+    assignments.append("tutorial_layer1_updated_at = ?")
+    params.append(int(now_ts or time.time()))
+    params.append(int(user_id))
+    db.execute(f"UPDATE users SET {', '.join(assignments)} WHERE id = ?", params)
+    after_row = _tutorial_layer1_fetch_user(db, int(user_id))
+    after = _tutorial_layer1_snapshot(after_row)
+    event_type = AUDIT_EVENT_TYPES.get("TUTORIAL_LAYER1_STATE_CHANGE")
+    if event_type:
+        payload = {
+            "reason": str(reason or ""),
+            "before": before,
+            "after": after,
+        }
+        if extra_payload:
+            payload.update(dict(extra_payload))
+        audit_log(
+            db,
+            event_type,
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="tutorial_layer1",
+            entity_type="user",
+            entity_id=int(user_id),
+            payload=payload,
+            ip=ip,
+        )
+    return after_row
+
+
+def _tutorial_layer1_mark_normal_win(db, user_row, *, request_id=None, ip=None):
+    if not _tutorial_layer1_is_subject(db, user_row, "layer_1"):
+        return None
+    state = _tutorial_layer1_state(user_row)
+    next_state = state
+    forced_ready = None
+    if state == TUTORIAL_LAYER1_STATE_NEW:
+        next_state = TUTORIAL_LAYER1_STATE_WON_NORMAL_ONCE
+        forced_ready = True
+    return _tutorial_layer1_transition(
+        db,
+        int(user_row["id"]),
+        state=next_state,
+        forced_boss_ready=forced_ready,
+        normal_win_delta=1,
+        request_id=request_id,
+        ip=ip,
+        reason="normal_win",
+    )
+
+
+def _tutorial_layer1_mark_fuse_success(db, user_id, *, request_id=None, ip=None):
+    user_row = _tutorial_layer1_fetch_user(db, int(user_id))
+    if not _tutorial_layer1_is_subject(db, user_row, "layer_1"):
+        return None
+    if _tutorial_layer1_state(user_row) != TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE:
+        return None
+    return _tutorial_layer1_transition(
+        db,
+        int(user_id),
+        forced_boss_ready=True,
+        fuse_after_boss_fail_delta=1,
+        request_id=request_id,
+        ip=ip,
+        reason="fuse_after_boss_fail",
+    )
+
+
+def _tutorial_layer1_home_next_action_card(db, user):
+    if not _tutorial_layer1_is_subject(db, user, "layer_1"):
+        return None
+    state = _tutorial_layer1_state(user)
+    explore_action = {
+        "label": "第1層へ出撃",
+        "url": url_for("explore"),
+        "is_post": True,
+        "area_key": "layer_1",
+        "boss_enter": False,
+    }
+    strengthen_action = {
+        "label": "パーツ強化へ",
+        "url": url_for("parts_strengthen", mode="select"),
+        "is_post": False,
+        "area_key": None,
+        "boss_enter": False,
+    }
+    if state == TUTORIAL_LAYER1_STATE_NEW:
+        return {
+            "title": "まずは第1層へ出撃",
+            "desc": "まずは第1層でパーツを集めよう。最初の1勝でパーツを持ち帰りましょう。",
+            "cta_label": explore_action["label"],
+            "cta_url": explore_action["url"],
+            "is_post": True,
+            "area_key": "layer_1",
+            "boss_enter": False,
+            "home_primary": True,
+            "destination_label": "第1層",
+            "context_line": "最初の1勝までは、このボタンだけ見れば大丈夫です。",
+            "secondary_actions": [],
+            "force_open": True,
+        }
+    if state == TUTORIAL_LAYER1_STATE_WON_NORMAL_ONCE:
+        return {
+            "title": "強化してボスに備えよう",
+            "desc": "素材2つでパーツを強化できます。第1層ボスに備えましょう。",
+            "cta_label": strengthen_action["label"],
+            "cta_url": strengthen_action["url"],
+            "is_post": False,
+            "area_key": None,
+            "boss_enter": False,
+            "home_primary": True,
+            "destination_label": "パーツ強化",
+            "context_line": "1回強化しても、そのまま出撃してボスを見に行ってもOKです。",
+            "secondary_actions": [explore_action],
+            "force_open": True,
+        }
+    if state == TUTORIAL_LAYER1_STATE_SAW_BOSS:
+        return {
+            "title": "第1層ボスに挑もう",
+            "desc": "ボスが確認されています。今の機体でどこまで戦えるか試しましょう。",
+            "cta_label": explore_action["label"],
+            "cta_url": explore_action["url"],
+            "is_post": True,
+            "area_key": "layer_1",
+            "boss_enter": False,
+            "home_primary": True,
+            "destination_label": "第1層ボス",
+            "context_line": "ボス確認済みです。次の第1層出撃で突破を狙いましょう。",
+            "secondary_actions": [],
+            "force_open": True,
+        }
+    if state == TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE:
+        return {
+            "title": "強化して再挑戦",
+            "desc": "あと一歩です。強化後に再挑戦すると突破が近づきます。",
+            "cta_label": strengthen_action["label"],
+            "cta_url": strengthen_action["url"],
+            "is_post": False,
+            "area_key": None,
+            "boss_enter": False,
+            "home_primary": True,
+            "destination_label": "第1層突破まで",
+            "context_line": "1回強化するだけでも突破率が上がります。",
+            "secondary_actions": [explore_action],
+            "force_open": True,
+        }
+    return None
+
+
 def _home_next_action_card(
     db,
     user,
@@ -15905,6 +16219,9 @@ def _home_next_action_card(
             "area_key": alert["area_key"],
             "boss_enter": True,
         }
+    tutorial_layer1_card = _tutorial_layer1_home_next_action_card(db, user)
+    if tutorial_layer1_card:
+        return tutorial_layer1_card
     unlocked_layer = int(new_layer_badge or 0) or int(unlocked_layer_recent or 0)
     if unlocked_layer:
         return {
@@ -17249,22 +17566,8 @@ def _display_username(username, *, display_name=None, is_admin=False):
 
 
 def _user_identity_display_name(db, user_id):
-    if not user_id:
-        return ""
-    row = db.execute(
-        """
-        SELECT display_name
-        FROM user_auth_identities
-        WHERE user_id = ?
-          AND COALESCE(TRIM(display_name), '') <> ''
-        ORDER BY CASE WHEN provider = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
-        LIMIT 1
-        """,
-        (int(user_id), GOOGLE_OAUTH_PROVIDER),
-    ).fetchone()
-    if not row:
-        return ""
-    return str(row["display_name"] or "").strip()
+    # OAuth provider profile names can be real names. Keep them out of all public display fallbacks.
+    return ""
 
 
 def _display_username_for_user_row(db, user_row):
@@ -18262,6 +18565,56 @@ def handle_500(err):
 
 def _public_changelog_entries():
     return [
+        {
+            "version": "0.1.53",
+            "date": "2026/04/11",
+            "title": "第1層突破までの初心者導線を強化",
+            "notes": [
+                "第1層未突破ユーザー向けに `まず1勝 → ボス遭遇 → 強化 → 再挑戦 → 第1層突破` の流れをホームと戦闘結果で案内するよう改善",
+                "初回通常戦勝利後と、ボス敗北後の強化成功後は、第1層ボスへ再挑戦しやすいよう内部状態で遭遇を保証",
+                "第1層ボス敗北時は強化導線を短く表示し、突破時は第2層解放を分かりやすく祝う表示へ調整",
+            ],
+        },
+        {
+            "version": "0.1.52",
+            "date": "2026/04/11",
+            "title": "Googleログインの表示名を匿名優先に変更",
+            "notes": [
+                "Google OAuth では email を内部識別に使い、Googleアカウントの本名や display name をゲーム内表示名に使わない方針へ変更",
+                "初回Google登録時の公開表示名は匿名デフォルトで自動生成し、ユーザーが後から自由に変更できるよう維持",
+                "公開画面、ランキング、世界ログではゲーム内の匿名表示名のみを使い、管理画面では内部確認用に email を保持",
+            ],
+        },
+        {
+            "version": "0.1.51",
+            "date": "2026/04/11",
+            "title": "実験室投稿フォームを研究登録フォームとして整理",
+            "notes": [
+                "`/lab/upload` を基本情報 / 制作情報 / 機体分類 / 参考スペック / 画像 / 同意と送信の順に整理し、PCでは2列で入力しやすいレイアウトへ改善",
+                "実験室用の参考スペック6軸を 1〜10、合計36までで入力できるようにし、軽量SVGのレーダーチャートでリアルタイム表示",
+                "投稿前確認と同意チェック、提出ボタンを下部にまとめ、試作機登録らしい見通しのよい画面へ調整",
+            ],
+        },
+        {
+            "version": "0.1.49",
+            "date": "2026/04/11",
+            "title": "実験室UGC投稿・展示・採用候補管理を追加",
+            "notes": [
+                "実験室に、試作機投稿、承認制展示、いいね、通報、マイ投稿状態確認を備えたUGC展示導線を追加",
+                "投稿時に利用条件への同意、同意バージョン、同意本文スナップショット、AI生成申告、制作メモを保存するように整理",
+                "管理者向けに承認 / 差し戻し / 停止 / 注目 / 採用候補 / 採用種別の運用項目を追加し、本編採用時は原案として扱える形にした",
+            ],
+        },
+        {
+            "version": "0.1.47",
+            "date": "2026/04/11",
+            "title": "ログイン保持とパーツ強化画面の視認性を改善",
+            "notes": [
+                "ログイン時に永続セッションを使い、初期14日間の `PERMANENT_SESSION_LIFETIME` と操作時の自然延長に対応",
+                "管理者 / 一般ユーザーとも同じ保持方針にし、Secure / HttpOnly / SameSite のCookie設定は従来どおり維持",
+                "パーツ強化画面で選択中カードや注意カードが白く浮いて読みにくくなる箇所を、既存の暗色UIに合わせて調整",
+            ],
+        },
         {
             "version": "0.1.46",
             "date": "2026/04/10",
@@ -19639,8 +19992,6 @@ def google_oauth_callback():
     provider_user_id = str(profile.get("sub") or "").strip()
     email = str(profile.get("email") or "").strip()
     email_verified = bool(profile.get("email_verified"))
-    display_name = str(profile.get("name") or "").strip()
-    avatar_url = str(profile.get("picture") or "").strip()
     if not expected_nonce or not provider_user_id or not email or not email_verified:
         flash("Googleアカウント情報を確認できませんでした。", "error")
         return redirect(url_for("register", mode="login"))
@@ -19664,22 +20015,23 @@ def google_oauth_callback():
             provider=GOOGLE_OAUTH_PROVIDER,
             provider_user_id=provider_user_id,
             email=email,
-            display_name=display_name,
-            avatar_url=avatar_url,
+            display_name=None,
+            avatar_url=None,
         )
         db.commit()
     else:
-        username_seed = email.split("@", 1)[0] if "@" in email else email
-        username = _build_unique_social_username(db, username_seed, display_name, expected_nonce[:8], "pilot")
+        username = _build_unique_anonymous_google_username(db)
+        anonymous_display_name = _google_default_display_name()
         is_admin = 1 if _is_main_admin_username(username) else 0
         cur = db.execute(
             """
             INSERT INTO users
-            (username, password_hash, coins, created_at, last_seen_at, is_admin, is_admin_protected)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (username, display_name, password_hash, coins, created_at, last_seen_at, is_admin, is_admin_protected)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 username,
+                anonymous_display_name,
                 generate_password_hash(uuid.uuid4().hex),
                 0,
                 int(time.time()),
@@ -19705,8 +20057,8 @@ def google_oauth_callback():
             provider=GOOGLE_OAUTH_PROVIDER,
             provider_user_id=provider_user_id,
             email=email,
-            display_name=display_name,
-            avatar_url=avatar_url,
+            display_name=None,
+            avatar_url=None,
         )
         db.commit()
         user_row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -19719,7 +20071,6 @@ def google_oauth_callback():
     _login_user_session(db, user_row)
     if created_new_user:
         session["just_registered"] = 1
-        session["needs_display_name_setup"] = 1
         flash("Googleアカウントで登録しました。第1層からすぐ出撃できます。", "notice")
     if next_path:
         return redirect(next_path)
@@ -20320,7 +20671,10 @@ def home():
         if "home_next_action_collapsed" in user.keys()
         else False
     )
-    home_next_action_force_open = bool(home_next_action_collapsed and boss_alert_status)
+    home_next_action_force_open = bool(
+        home_next_action_collapsed
+        and (boss_alert_status or (next_action_card and next_action_card.get("force_open")))
+    )
     show_next_action_card = bool(next_action_card) and (not home_next_action_collapsed or home_next_action_force_open)
     show_home_visibility_controls = bool(
         (beginner_mission_available and beginner_mission_hidden)
@@ -20354,6 +20708,14 @@ def home():
     if has_any_robot and int(total_explores or 0) <= 0:
         beginner_mission_text = "最初の出撃へ。\nまずは第1層でパーツを集めよう。"
         beginner_mission_cta_label = "第1層へ出撃"
+    if next_action_card and next_action_card.get("home_primary"):
+        beginner_mission_text = (
+            f"{str(next_action_card.get('title') or '次の行動')}\n"
+            f"{str(next_action_card.get('desc') or '').strip()}"
+        ).strip()
+        beginner_mission_cta_label = str(next_action_card.get("cta_label") or beginner_mission_cta_label)
+        beginner_mission_is_post = bool(next_action_card.get("is_post"))
+        beginner_mission_cta_url = str(next_action_card.get("cta_url") or beginner_mission_cta_url)
     show_intro_modal = (not intro_modal_seen) and (just_registered or total_explores == 0)
     home_primary_explore_cta = _build_home_primary_explore_cta(
         has_any_robot=has_any_robot,
@@ -22165,17 +22527,7 @@ def explore():
     if area is None:
         session["message"] = "探索先が不正です。"
         return redirect(url_for("home"))
-    user = db.execute(
-        """
-        SELECT id, is_admin, click_power, wins, battle_log_mode,
-               boss_meter_explore_l1, boss_meter_win_l1, layer2_unlocked, max_unlocked_layer, created_at,
-               explore_boost_until,
-               last_explore_area_key
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,),
-    ).fetchone()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     user_is_main_admin = _is_main_admin_user_id(db, user_id)
     battle_log_mode = _battle_log_mode_for_user(user)
     if not _area_visible_for_viewer(db, area_key, user_row=user):
@@ -22298,12 +22650,171 @@ def explore():
     npc_analysis_line = None
     layer1_boss_hint_line = None
     layer1_boss_spawn_p = 0.0
+    tutorial_layer1_subject = _tutorial_layer1_is_subject(db, user, area_key)
+    tutorial_layer1_state_before = _tutorial_layer1_state(user)
+    tutorial_layer1_snapshot_before = _tutorial_layer1_snapshot(user)
+    tutorial_layer1_forced_boss = bool(
+        tutorial_layer1_subject
+        and int(user["tutorial_layer1_forced_boss_ready"] or 0) == 1
+        and area_key == "layer_1"
+        and not boss_enter_requested
+    )
+    tutorial_layer1_first_boss = bool(
+        tutorial_layer1_subject
+        and not tutorial_layer1_snapshot_before.get("boss_seen_at")
+    )
+    tutorial_layer1_retry_after_fuse = bool(
+        tutorial_layer1_forced_boss
+        and tutorial_layer1_state_before == TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE
+        and int(tutorial_layer1_snapshot_before.get("fuse_after_boss_fail_count") or 0) > 0
+    )
+    tutorial_layer1_skip_random_boss = bool(
+        tutorial_layer1_subject
+        and (not tutorial_layer1_forced_boss)
+        and tutorial_layer1_state_before in {
+            TUTORIAL_LAYER1_STATE_NEW,
+            TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE,
+        }
+    )
+    tutorial_layer1_boss_softened = False
+    tutorial_layer1_result_card = None
     active_alert = _get_active_boss_alert(db, user_id, area_key, now_ts=now) if _area_supports_boss_alert(area_key) else None
     last_enemy_tendency_tag = None
     last_enemy_trait_label = None
     last_enemy_trait_desc = None
     last_enemy_variant_label = None
-    if boss_enter_requested and _area_supports_boss_alert(area_key):
+    if tutorial_layer1_forced_boss:
+        area_boss_active = True
+        total_fights = 1
+        area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
+        if area_boss_enemy is None:
+            tutorial_layer1_forced_boss = False
+            _tutorial_layer1_transition(
+                db,
+                user_id,
+                forced_boss_ready=False,
+                request_id=request_id,
+                ip=request.remote_addr,
+                reason="forced_boss_missing",
+            )
+        else:
+            area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
+            area_boss_template_id = (
+                int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
+            )
+            area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
+            area_boss_spawn_p = 1.0
+            area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
+            _tutorial_layer1_transition(
+                db,
+                user_id,
+                state=TUTORIAL_LAYER1_STATE_SAW_BOSS,
+                forced_boss_ready=False,
+                boss_seen=True,
+                now_ts=now,
+                request_id=request_id,
+                ip=request.remote_addr,
+                reason="forced_boss_encounter",
+                extra_payload={
+                    "is_forced_layer1_boss": True,
+                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                    "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                },
+            )
+            forced_event = AUDIT_EVENT_TYPES.get("TUTORIAL_LAYER1_FORCED_BOSS")
+            if forced_event:
+                audit_log(
+                    db,
+                    forced_event,
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="explore",
+                    entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                    entity_id=(
+                        area_boss_template_id
+                        if area_boss_kind == "npc"
+                        else (
+                            int(area_boss_enemy["id"])
+                            if "id" in area_boss_enemy.keys() and area_boss_enemy["id"]
+                            else None
+                        )
+                    ),
+                    payload={
+                        "area_key": area_key,
+                        "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                        "enemy_name": area_boss_enemy["name_ja"] if "name_ja" in area_boss_enemy.keys() else "第1層ボス",
+                        "tutorial_layer1_state_before": tutorial_layer1_state_before,
+                        "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                        "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                    },
+                    ip=request.remote_addr,
+                )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    area_boss_template_id
+                    if area_boss_kind == "npc"
+                    else (
+                        int(area_boss_enemy["id"])
+                        if "id" in area_boss_enemy.keys() and area_boss_enemy["id"]
+                        else None
+                    )
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "is_forced_layer1_boss": True,
+                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                    "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                    "boss_kind": area_boss_kind,
+                    "npc_boss_template_id": area_boss_template_id,
+                    "attempts_before": None,
+                    "attempts_after": None,
+                },
+                ip=request.remote_addr,
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    area_boss_template_id
+                    if area_boss_kind == "npc"
+                    else (
+                        int(area_boss_enemy["id"])
+                        if "id" in area_boss_enemy.keys() and area_boss_enemy["id"]
+                        else None
+                    )
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "is_boss": True,
+                    "boss_kind": area_boss_kind,
+                    "area_label": _boss_area_label(area_key),
+                    "enemy_name": area_boss_enemy["name_ja"] if "name_ja" in area_boss_enemy.keys() else "第1層ボス",
+                    "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
+                    "spawn_probability": 1.0,
+                    "pity_forced": False,
+                    "streak_before": int(area_boss_streak_before),
+                    "is_forced_layer1_boss": True,
+                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                    "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                },
+                ip=request.remote_addr,
+            )
+            layer1_boss_hint_line = "第1層ボス反応。突破の手応えを試す時です。"
+    if (not area_boss_active) and boss_enter_requested and _area_supports_boss_alert(area_key):
         if user_is_main_admin and _has_area_boss_candidates(db, area_key):
             area_boss_active = True
             total_fights = 1
@@ -22393,7 +22904,11 @@ def explore():
                 },
                 ip=request.remote_addr,
             )
-    elif _area_supports_boss_alert(area_key) and _has_area_boss_candidates(db, area_key):
+    elif (
+        (not tutorial_layer1_skip_random_boss)
+        and _area_supports_boss_alert(area_key)
+        and _has_area_boss_candidates(db, area_key)
+    ):
         if not active_alert:
             boss_roll = _area_boss_spawn_check(db, user_id, area_key, rng=random)
             area_boss_spawn_p = float(boss_roll["probability"])
@@ -22451,6 +22966,23 @@ def explore():
                         f"挑戦権{AREA_BOSS_ALERT_ATTEMPTS}回（約{AREA_BOSS_ALERT_MINUTES}分）"
                     )
                     return redirect(url_for("home"))
+    if area_boss_active and tutorial_layer1_subject and not tutorial_layer1_forced_boss:
+        _tutorial_layer1_transition(
+            db,
+            user_id,
+            state=TUTORIAL_LAYER1_STATE_SAW_BOSS,
+            forced_boss_ready=False,
+            boss_seen=True,
+            now_ts=now,
+            request_id=request_id,
+            ip=request.remote_addr,
+            reason="boss_encounter",
+            extra_payload={
+                "is_forced_layer1_boss": False,
+                "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                "is_retry_after_fuse": False,
+            },
+        )
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
     if build_type == "BERSERK":
@@ -22469,6 +23001,11 @@ def explore():
         enemy = dict(enemy) if not isinstance(enemy, dict) else dict(enemy)
         if area_boss_active and battle_no == 1 and str(enemy.get("_boss_kind") or area_boss_kind) == "fixed":
             enemy = _apply_boss_type_modifiers(enemy)
+            if tutorial_layer1_subject and area_key == "layer_1" and tutorial_layer1_first_boss:
+                enemy["hp"] = max(1, int(round(int(enemy.get("hp") or 1) * 0.88)))
+                enemy["acc"] = max(1, int(round(int(enemy.get("acc") or 1) * 0.92)))
+                enemy["_special_line"] = "初回解析補助: 防衛機の出力が少し不安定です"
+                tutorial_layer1_boss_softened = True
         elif (not app.config.get("TESTING")) and area_key in MINI_BOSS_AREA_KEYS and random.random() < float(MINI_BOSS_SPAWN_RATE):
             enemy["hp"] = max(1, int(round(int(enemy.get("hp") or 1) * float(MINI_BOSS_HP_MULT))))
             enemy["atk"] = max(1, int(round(int(enemy.get("atk") or 1) * float(MINI_BOSS_ATK_MULT))))
@@ -23011,6 +23548,10 @@ def explore():
                         "attempts_before": area_boss_attempt_before,
                         "attempts_after": area_boss_attempt_after,
                         "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
+                        "tutorial_layer1_state_before": tutorial_layer1_state_before,
+                        "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
+                        "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                        "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
                     },
                     ip=request.remote_addr,
                 )
@@ -23274,6 +23815,87 @@ def explore():
             user_id,
         ),
     )
+    if tutorial_layer1_subject:
+        if area_boss_active:
+            if final_outcome == "win":
+                _tutorial_layer1_transition(
+                    db,
+                    user_id,
+                    state=TUTORIAL_LAYER1_STATE_CLEARED,
+                    forced_boss_ready=False,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                    reason="boss_defeat",
+                    extra_payload={
+                        "area_key": area_key,
+                        "enemy_key": last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None,
+                        "unlocked_layer": int(unlocked_layer) if unlocked_layer else None,
+                        "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
+                        "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                        "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                    },
+                )
+                tutorial_layer1_result_card = {
+                    "kind": "clear",
+                    "title": "第1層突破！ 第2層への道が開かれました",
+                    "text": "初めての突破です。ロボらぼの本格育成がここから始まります。",
+                }
+                world_bonus_notes.append("第1層突破: 第2層への道が開かれました")
+            else:
+                _tutorial_layer1_transition(
+                    db,
+                    user_id,
+                    state=TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE,
+                    forced_boss_ready=False,
+                    boss_fail_delta=1,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                    reason="boss_failed",
+                    extra_payload={
+                        "area_key": area_key,
+                        "enemy_key": last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None,
+                        "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
+                        "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                        "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                        "boss_softened": bool(tutorial_layer1_boss_softened),
+                    },
+                )
+                guide_event = AUDIT_EVENT_TYPES.get("TUTORIAL_LAYER1_BOSS_FAIL_GUIDED")
+                if guide_event:
+                    audit_log(
+                        db,
+                        guide_event,
+                        user_id=user_id,
+                        request_id=request_id,
+                        action_key="explore",
+                        entity_type="enemy",
+                        entity_id=(
+                            int(last_enemy["id"])
+                            if last_enemy and "id" in last_enemy.keys() and last_enemy["id"]
+                            else None
+                        ),
+                        payload={
+                            "area_key": area_key,
+                            "enemy_key": last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None,
+                            "next_action": "parts_strengthen",
+                            "message": "強化して再挑戦",
+                        },
+                        ip=request.remote_addr,
+                    )
+                tutorial_layer1_result_card = {
+                    "kind": "guide",
+                    "title": "第1層ボスの圧力に押し切られました",
+                    "text": "あと一歩です。素材2つでパーツを強化してからもう一度挑めば突破が見えてきます。",
+                    "cta_label": "パーツ強化へ",
+                    "cta_url": url_for("parts_strengthen", mode="select"),
+                }
+        elif final_outcome == "win":
+            _tutorial_layer1_mark_normal_win(
+                db,
+                user,
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
     _apply_style_achievement_progress_once(
         db,
         user_id=user_id,
@@ -23388,6 +24010,14 @@ def explore():
                 "attempts_after": area_boss_attempt_after,
                 "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
                 "reward": area_boss_reward,
+            },
+            "tutorial_layer1": {
+                "eligible": bool(tutorial_layer1_subject),
+                "state_before": tutorial_layer1_state_before,
+                "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
+                "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                "boss_softened": bool(tutorial_layer1_boss_softened),
             },
         },
         ip=request.remote_addr,
@@ -23597,6 +24227,18 @@ def explore():
         "explore_ct_is_admin": bool(explore_ct_is_admin),
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
+        "tutorial_layer1_result_card": tutorial_layer1_result_card,
+        "tutorial_layer1_next_action": (
+            {
+                "title": "パーツ強化へ",
+                "desc": "第1層ボスに挑戦済みです。素材2つでパーツを強化し、もう一度挑みましょう。",
+                "cta_label": "パーツ強化へ",
+                "cta_url": url_for("parts_strengthen", mode="select"),
+                "is_post": False,
+            }
+            if tutorial_layer1_result_card and tutorial_layer1_result_card.get("kind") == "guide"
+            else None
+        ),
     }
     summary["reward_front"] = _build_battle_reward_front(
         reward_coin=reward_coin,
@@ -27928,6 +28570,12 @@ def parts_strengthen():
                             },
                             ip=request.remote_addr,
                         )
+                        _tutorial_layer1_mark_fuse_success(
+                            db,
+                            user_id,
+                            request_id=request_id,
+                            ip=request.remote_addr,
+                        )
                         db.commit()
                         flash(
                             f"{int(execute_plan.get('group_count') or 0)}種類を整理しました。"
@@ -28033,6 +28681,13 @@ def parts_strengthen():
                     },
                     ip=request.remote_addr,
                 )
+                if result.get("ok"):
+                    _tutorial_layer1_mark_fuse_success(
+                        db,
+                        user_id,
+                        request_id=request_id,
+                        ip=request.remote_addr,
+                    )
                 db.commit()
                 session["last_fuse_result"] = {
                     "mode": mode,
@@ -28444,6 +29099,16 @@ def parts_strengthen():
         storage_list_params["part_type"] = filter_part_type
     storage_manage_url = url_for("parts", **storage_list_params) + "#part-storage"
     inventory_space_remaining = _inventory_space_remaining(db, user_id)
+    tutorial_user = _tutorial_layer1_fetch_user(db, user_id)
+    tutorial_layer1_strengthen_hint = None
+    if (
+        _tutorial_layer1_is_subject(db, tutorial_user, "layer_1")
+        and _tutorial_layer1_state(tutorial_user) == TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE
+    ):
+        tutorial_layer1_strengthen_hint = {
+            "title": "第1層ボス再挑戦に向けて",
+            "text": "まずは1回強化してみましょう。成功後の第1層出撃で、ボス再挑戦に進みやすくなります。",
+        }
     return render_template(
         "parts_fuse.html",
         base_candidates=base_candidates,
@@ -28472,6 +29137,7 @@ def parts_strengthen():
         last_fuse_result=last_fuse_result,
         warehouse_preview=warehouse_preview,
         warehouse_result=warehouse_result,
+        tutorial_layer1_strengthen_hint=tutorial_layer1_strengthen_hint,
     )
 
 
@@ -28953,6 +29619,24 @@ def admin_users():
     for row in rows_raw:
         item = dict(row)
         item["display_username"] = _display_username_for_user_row(db, row)
+        identities = db.execute(
+            """
+            SELECT provider, email
+            FROM user_auth_identities
+            WHERE user_id = ?
+              AND COALESCE(TRIM(email), '') <> ''
+            ORDER BY CASE WHEN provider = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
+            """,
+            (int(row["id"]), GOOGLE_OAUTH_PROVIDER),
+        ).fetchall()
+        item["identity_emails"] = [
+            {
+                "provider": str(identity["provider"] or "").strip(),
+                "email": str(identity["email"] or "").strip(),
+            }
+            for identity in identities
+            if str(identity["email"] or "").strip()
+        ]
         item["has_custom_display_name"] = bool(
             str(item.get("display_name") or "").strip()
             and str(item.get("display_name") or "").strip() != str(item.get("username") or "").strip()

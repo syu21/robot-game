@@ -164,6 +164,13 @@ def main():
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_state TEXT NOT NULL DEFAULT 'new',
+            tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_boss_seen_at INTEGER,
+            tutorial_layer1_boss_fail_count INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0,
             lab_coin INTEGER NOT NULL DEFAULT 1000,
             lab_coin_last_daily_at TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
@@ -1150,6 +1157,20 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_state" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_state TEXT NOT NULL DEFAULT 'new'")
+    if "tutorial_layer1_normal_win_count" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_boss_seen_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_seen_at INTEGER")
+    if "tutorial_layer1_boss_fail_count" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_fail_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_forced_boss_ready" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_fuse_after_boss_fail_count" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_updated_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
     if "lab_coin" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 1000")
     if "lab_coin_last_daily_at" not in users_cols:
@@ -1173,6 +1194,20 @@ def main():
     cur.execute(
         "UPDATE users SET faction = NULL WHERE faction IS NOT NULL AND LOWER(TRIM(faction)) NOT IN ('ignis','ventra','aurix')"
     )
+    cur.execute(
+        """
+        UPDATE users
+        SET tutorial_layer1_state = 'new'
+        WHERE tutorial_layer1_state IS NULL
+           OR tutorial_layer1_state NOT IN ('new','won_normal_once','saw_boss','boss_failed_once','cleared_layer1')
+        """
+    )
+    cur.execute("UPDATE users SET tutorial_layer1_state = 'cleared_layer1' WHERE max_unlocked_layer >= 2")
+    cur.execute("UPDATE users SET tutorial_layer1_normal_win_count = 0 WHERE tutorial_layer1_normal_win_count IS NULL OR tutorial_layer1_normal_win_count < 0")
+    cur.execute("UPDATE users SET tutorial_layer1_boss_fail_count = 0 WHERE tutorial_layer1_boss_fail_count IS NULL OR tutorial_layer1_boss_fail_count < 0")
+    cur.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
+    cur.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
+    cur.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
     cur.execute("UPDATE users SET is_banned = 0 WHERE is_banned IS NULL")
     cur.execute("UPDATE users SET is_admin_protected = 0 WHERE is_admin_protected IS NULL")
     cur.execute("UPDATE users SET banned_at = NULL WHERE banned_at IS NOT NULL AND TRIM(banned_at) = ''")

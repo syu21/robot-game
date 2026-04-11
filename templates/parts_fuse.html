@@ -5,6 +5,13 @@
   <h1>パーツ強化</h1>
   <div id="fuse-filter-error" class="error is-hidden" role="alert"></div>
 
+  {% if tutorial_layer1_strengthen_hint %}
+  <div class="card notice">
+    <div><b>{{ tutorial_layer1_strengthen_hint['title'] }}</b></div>
+    <div class="robot-time">{{ tutorial_layer1_strengthen_hint['text'] }}</div>
+  </div>
+  {% endif %}
+
   <div class="card strengthen-hub-card">
     <div><b>強化メニュー</b></div>
     <div class="robot-time">通常ルールはすべて共通です。ベース1 + 素材2 / 成功率100% / +1固定で進みます。</div>
@@ -437,9 +444,4 @@
   {% endif %}
 
   <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v={{ app_version }}"></script>
-<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+</

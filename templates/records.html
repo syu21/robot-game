@@ -98,7 +98,7 @@
       <div><b>{{ group['metric']['title'] }}</b></div>
       <ul class="ranking-mini">
         {% for row in group['rows'] %}
-        <li class="record-ranking-item{% if group['metric'].get('row_kind') == 'robot' %} is-robot{% endif %}{% if loop.index <= 3 %} is-podium{% endif %}">
+        <li class="record-ranking-item{% if loop.index <= 3 %} is-podium{% endif %}{% if group['metric'].get('row_kind') == 'robot' %} is-robot{% endif %}">
           <div class="record-ranking-main">
             {% if group['metric'].get('row_kind') == 'robot' %}
             <div class="ranking-robot-cell">
