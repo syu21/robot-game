@@ -6428,6 +6428,13 @@ body.home-page.home-mobile .invite-link-row {
   grid-column: 1 / -1;
 }
 
+.lab-live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
 .lab-entry-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -6518,6 +6525,10 @@ body.home-page.home-mobile .invite-link-row {
 
 @media (max-width: 640px) {
   .lab-top-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab-live-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

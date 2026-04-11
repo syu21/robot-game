@@ -222,11 +222,14 @@ class LabCasinoRouteTests(unittest.TestCase):
         self.assertIn("自分の投稿ロボを確認する", html)
         self.assertIn("レース結果と予想履歴を見る", html)
         self.assertIn("エネミーレース", html)
-        self.assertLess(html.index("今週の実験室話題"), html.index("エネミーレース"))
+        self.assertLess(html.index("研究機体を見たり遊んだりできる特別エリア"), html.index("注目の投稿ロボ"))
+        self.assertLess(html.index("注目の投稿ロボ"), html.index("エネミーレース"))
         self.assertLess(html.index("エネミーレース"), html.index("投稿ロボ展示"))
         self.assertLess(html.index("投稿ロボ展示"), html.index("試作機登録"))
         self.assertLess(html.index("試作機登録"), html.index("自分の研究機体"))
         self.assertLess(html.index("自分の研究機体"), html.index("レース記録"))
+        self.assertLess(html.index("レース記録"), html.index("今週の実験室話題"))
+        self.assertLess(html.index("今週の実験室話題"), html.index("最新レース"))
         self.assertNotIn("実験室メモ", html)
         self.assertNotIn("管理メモ", html)
         self.assertNotIn("ロボカジノ", html)
@@ -234,8 +237,8 @@ class LabCasinoRouteTests(unittest.TestCase):
 
         admin_client = self._client(admin=True)
         admin_html = admin_client.get("/lab").get_data(as_text=True)
-        self.assertIn("管理メモ", admin_html)
-        self.assertIn("管理メニューへ", admin_html)
+        self.assertNotIn("管理メモ", admin_html)
+        self.assertNotIn("管理メニューへ", admin_html)
 
     def test_old_lab_casino_routes_redirect_to_enemy_race_routes(self):
         client = self._client()

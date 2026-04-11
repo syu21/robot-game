@@ -8,24 +8,27 @@
 </div>
 
 <div class="card">
-  <h2>今週の実験室話題</h2>
-  {% for item in world_items %}
-  <article class="card feed-card home-comms-item{% if item.get('accent') %} feed-card-{{ item['accent'] }}{% endif %}">
-    <div class="feed-kicker-row">
-      <div class="feed-kicker">{{ item['headline'] }}</div>
-      <div class="feed-time">{{ item['time_jst'] }} JST</div>
-    </div>
-    <div class="feed-text">{{ item['text'] }}</div>
-    {% for line in item.get('meta_lines', []) %}
-    <div class="feed-meta">{{ line }}</div>
+  <h2>注目の投稿ロボ</h2>
+  <div class="robot-part">研究所で公開中の注目機体</div>
+  <div class="lab-showcase-grid">
+    {% for row in showcase_rows %}
+    <a class="robot-card lab-showcase-card" href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">
+      {% if row.get('thumb_url') %}
+      <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+      {% endif %}
+      <div class="lab-badge-row">
+        {% for badge in row.get('badges', []) %}
+        <span class="lab-badge">{{ badge }}</span>
+        {% endfor %}
+      </div>
+      <div class="robot-id">{{ row['title'] }}</div>
+      <div class="robot-part">{{ row.get('credit_name') or row.get('display_username') or row['username'] }}</div>
+      <div class="robot-time">いいね {{ row['likes_count'] }}</div>
+    </a>
+    {% else %}
+    <div class="robot-part">まだ公開作品がありません。</div>
     {% endfor %}
-    {% if item.get('link_url') %}
-    <div class="link"><a href="{{ item['link_url'] }}">詳細を見る</a></div>
-    {% endif %}
-  </article>
-  {% else %}
-  <div class="robot-part">まだ実験室の話題はありません。</div>
-  {% endfor %}
+  </div>
 </div>
 
 <div class="lab-card-grid lab-top-action-grid">
@@ -51,55 +54,44 @@
   </a>
 </div>
 
-<div class="card">
-  <h2>注目の投稿ロボ</h2>
-  <div class="robot-part">研究所で公開中の注目機体</div>
-  <div class="lab-showcase-grid">
-    {% for row in showcase_rows %}
-    <a class="robot-card lab-showcase-card" href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">
-      {% if row.get('thumb_url') %}
-      <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
-      {% endif %}
-      <div class="lab-badge-row">
-        {% for badge in row.get('badges', []) %}
-        <span class="lab-badge">{{ badge }}</span>
-        {% endfor %}
+<div class="lab-live-grid">
+  <div class="card">
+    <h2>今週の実験室話題</h2>
+    {% for item in world_items %}
+    <article class="card feed-card home-comms-item{% if item.get('accent') %} feed-card-{{ item['accent'] }}{% endif %}">
+      <div class="feed-kicker-row">
+        <div class="feed-kicker">{{ item['headline'] }}</div>
+        <div class="feed-time">{{ item['time_jst'] }} JST</div>
       </div>
-      <div class="robot-id">{{ row['title'] }}</div>
-      <div class="robot-part">{{ row.get('credit_name') or row.get('display_username') or row['username'] }}</div>
-      <div class="robot-time">いいね {{ row['likes_count'] }}</div>
-    </a>
+      <div class="feed-text">{{ item['text'] }}</div>
+      {% for line in item.get('meta_lines', []) %}
+      <div class="feed-meta">{{ line }}</div>
+      {% endfor %}
+      {% if item.get('link_url') %}
+      <div class="link"><a href="{{ item['link_url'] }}">詳細を見る</a></div>
+      {% endif %}
+    </article>
     {% else %}
-    <div class="robot-part">まだ公開作品がありません。</div>
+    <div class="robot-part">まだ実験室の話題はありません。</div>
     {% endfor %}
   </div>
-</div>
 
-<div class="card">
-  <h2>最新レース</h2>
-  {% if latest_race %}
-  <div class="robot-part">{{ latest_race['course_key'] }} / {{ latest_race['status'] }}</div>
-  {% for row in latest_results %}
-  <div class="home-ranking-row">
-    <span>{{ row['final_rank'] }}位 {{ row['display_name'] }}</span>
-    <span class="weekly-fit-badge">{{ row['condition_label'] }}</span>
+  <div class="card">
+    <h2>最新レース</h2>
+    {% if latest_race %}
+    <div class="robot-part">{{ latest_race['course_key'] }} / {{ latest_race['status'] }}</div>
+    {% for row in latest_results %}
+    <div class="home-ranking-row">
+      <span>{{ row['final_rank'] }}位 {{ row['display_name'] }}</span>
+      <span class="weekly-fit-badge">{{ row['condition_label'] }}</span>
+    </div>
+    {% endfor %}
+    <p class="link"><a href="{{ url_for('lab_race_watch', race_id=latest_race['id']) }}">観戦する</a> | <a href="{{ url_for('lab_race_result', race_id=latest_race['id']) }}">結果へ</a></p>
+    {% else %}
+    <div class="robot-part">まだレースはありません。</div>
+    {% endif %}
   </div>
-  {% endfor %}
-  <p class="link"><a href="{{ url_for('lab_race_watch', race_id=latest_race['id']) }}">観戦する</a> | <a href="{{ url_for('lab_race_result', race_id=latest_race['id']) }}">結果へ</a></p>
-  {% else %}
-  <div class="robot-part">まだレースはありません。</div>
-  {% endif %}
 </div>
-
-{% if is_admin %}
-<div class="card">
-  <h2>管理メモ</h2>
-  <div class="robot-part">公開中の投稿数: {{ counts['approved_submissions'] }}</div>
-  <div class="robot-part">審査待ち: {{ counts['pending_submissions'] }}</div>
-  <div class="robot-part">開催レース数: {{ counts['race_count'] }}</div>
-  <p class="link"><a href="{{ url_for('admin_lab') }}">管理メニューへ</a></p>
-</div>
-{% endif %}
 
 <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
 {% endblock %}
