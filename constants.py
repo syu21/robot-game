@@ -224,4 +224,11 @@ AUDIT_EVENT_TYPES = {
     "LAB_RACE_ENTRY": "audit.lab.race.entry",
     "LAB_RACE_START": "audit.lab.race.start",
     "LAB_RACE_FINISH": "audit.lab.race.finish",
-    "LAB_RACE_
+    "LAB_RACE_RESULT": "audit.lab.race.result",
+    "LAB_CASINO_DAILY_GRANT": "audit.lab.casino.daily_grant",
+    "LAB_CASINO_BET_PLACE": "audit.lab.casino.bet.place",
+    "LAB_CASINO_BET_RESOLVE": "audit.lab.casino.bet.resolve",
+    "LAB_CASINO_RACE_START": "audit.lab.casino.race.start",
+    "LAB_CASINO_RACE_FINISH": "audit.lab.casino.race.finish",
+    "LAB_CASINO_PRIZE_CLAIM": "audit.lab.casino.prize.claim",
+}

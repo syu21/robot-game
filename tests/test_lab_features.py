@@ -415,4 +415,100 @@ class LabRouteTests(unittest.TestCase):
         self.assertEqual(approve_resp.status_code, 200)
         admin_approved = admin_client.get("/admin/lab/submissions?status=approved")
         self.assertEqual(admin_approved.status_code, 200)
-        self.a
+        self.assertIn("採用情報更新", admin_approved.get_data(as_text=True))
+
+        showcase_after = client.get("/lab/showcase")
+        showcase_html = showcase_after.get_data(as_text=True)
+        self.assertIn("GlassBot", showcase_html)
+        self.assertIn("採用候補", showcase_html)
+        self.assertIn("試作", showcase_html)
+        candidate_resp = client.get("/lab/showcase?sort=candidate")
+        self.assertIn("GlassBot", candidate_resp.get_data(as_text=True))
+        my_resp = client.get("/lab/my-submissions")
+        self.assertIn("GlassBot", my_resp.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            approved_row = db.execute("SELECT * FROM lab_robot_submissions WHERE id = ?", (row["id"],)).fetchone()
+            self.assertEqual(int(approved_row["is_featured"]), 1)
+            self.assertEqual(int(approved_row["is_adoption_candidate"]), 1)
+            self.assertEqual(approved_row["adoption_stage"], "candidate")
+            self.assertEqual(approved_row["adoption_type"], "enemy")
+            self.assertEqual(int(approved_row["chart_hp"]), 80)
+            adoption = db.execute(
+                "SELECT * FROM lab_submission_adoptions WHERE submission_id = ?",
+                (row["id"],),
+            ).fetchone()
+            self.assertIsNotNone(adoption)
+            self.assertEqual(adoption["status"], "candidate")
+            self.assertEqual(adoption["adoption_type"], "enemy")
+
+        disable_resp = admin_client.post(
+            f"/admin/lab/submissions/{row['id']}/disable",
+            data={"moderation_note": "hide", "status": "approved"},
+            follow_redirects=True,
+        )
+        self.assertEqual(disable_resp.status_code, 200)
+        showcase_disabled = client.get("/lab/showcase")
+        self.assertNotIn("GlassBot", showcase_disabled.get_data(as_text=True))
+
+    def test_lab_like_is_not_duplicated_and_report_is_saved(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            cur = db.execute(
+                """
+                INSERT INTO lab_robot_submissions
+                (user_id, title, comment, image_path, thumb_path, status, created_at, updated_at, approved_at, approved_by_user_id)
+                VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?)
+                """,
+                (
+                    self.user_id,
+                    "LikeBot",
+                    "ready",
+                    game_app.DEFAULT_BADGE_REL,
+                    game_app.DEFAULT_BADGE_REL,
+                    now,
+                    now,
+                    now,
+                    self.admin_id,
+                ),
+            )
+            self.submission_id = int(cur.lastrowid)
+            db.commit()
+
+        client = self._client()
+        first = client.post(f"/lab/showcase/{self.submission_id}/like", follow_redirects=True)
+        second = client.post(f"/lab/showcase/{self.submission_id}/like", follow_redirects=True)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertIn("既にいいねしています", second.get_data(as_text=True))
+        report = client.post(
+            f"/lab/showcase/{self.submission_id}/report",
+            data={"reason": "spam"},
+            follow_redirects=True,
+        )
+        self.assertEqual(report.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            likes = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM lab_submission_likes WHERE submission_id = ?",
+                    (self.submission_id,),
+                ).fetchone()["c"]
+                or 0
+            )
+            reports = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM lab_submission_reports WHERE submission_id = ?",
+                    (self.submission_id,),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(likes, 1)
+            self.assertEqual(reports, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -32,4 +32,191 @@
       </div>
       <div class="lab-field-stack">
         <label for="ai_generation_declared">生成AIの利用申告</label>
-        <select id="ai_generation_declared" name="ai_generat
+        <select id="ai_generation_declared" name="ai_generation_declared" required>
+          <option value="">選択してください</option>
+          {% for key, label in ai_generation_defs %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="lab-field-stack">
+      <label for="source_note">制作メモ / 出所メモ（任意）</label>
+      <textarea id="source_note" name="source_note" rows="3" maxlength="240" placeholder="自作、生成AIで下絵作成後に手直し、など"></textarea>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <h2>機体分類</h2>
+    <div class="robot-part">展示一覧や研究所の確認で使う分類です。主役は画像なので、気軽に選んでください。</div>
+    <div class="lab-upload-classification">
+      <div class="lab-field-stack">
+        <label>任意タグ</label>
+        <div class="lab-checkbox-grid">
+          {% for key, label in tag_defs %}
+          <label class="lab-check-card">
+            <input type="checkbox" name="tags" value="{{ key }}" />
+            <span>{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="lab-field-stack lab-compact-field">
+        <label for="intended_style_key">想定タイプ</label>
+        <select id="intended_style_key" name="intended_style_key">
+          <option value="">未設定</option>
+          {% for key, label in style_defs %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <div class="lab-stat-header">
+      <div>
+        <h2>参考スペック（任意）</h2>
+        <div class="robot-part">実験室用の参考値です。本編性能とは一致しません。各項目1〜10、合計{{ chart_max_total }}まで。</div>
+      </div>
+    </div>
+    <div class="lab-stat-body">
+      <div class="lab-stat-grid">
+        {% for chart_col, label in chart_defs %}
+        <label class="lab-stat-card" for="{{ chart_col }}_score">
+          <span>{{ label }}</span>
+          <select id="{{ chart_col }}_score" name="{{ chart_col }}_score" data-lab-stat-select data-stat-label="{{ label }}">
+            {% for score in range(1, 11) %}
+            <option value="{{ score }}" {% if score == 5 %}selected{% endif %}>{{ score }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="lab-radar-panel">
+        <svg class="lab-radar-chart" viewBox="0 0 200 200" role="img" aria-label="参考スペックのレーダーチャート">
+          <polygon class="lab-radar-ring" points="100,30 160.6,65 160.6,135 100,170 39.4,135 39.4,65"></polygon>
+          <polygon class="lab-radar-ring is-mid" points="100,53.3 140.4,76.7 140.4,123.3 100,146.7 59.6,123.3 59.6,76.7"></polygon>
+          <polygon class="lab-radar-ring is-low" points="100,76.7 120.2,88.3 120.2,111.7 100,123.3 79.8,111.7 79.8,88.3"></polygon>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="100" y2="30"></line>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="160.6" y2="65"></line>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="160.6" y2="135"></line>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="100" y2="170"></line>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="39.4" y2="135"></line>
+          <line class="lab-radar-axis" x1="100" y1="100" x2="39.4" y2="65"></line>
+          <polygon class="lab-radar-fill" data-lab-radar-polygon points="100,65 130.3,82.5 130.3,117.5 100,135 69.7,117.5 69.7,82.5"></polygon>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <circle class="lab-radar-dot" data-lab-radar-dot r="3"></circle>
+          <text class="lab-radar-label" x="100" y="18" text-anchor="middle">耐久</text>
+          <text class="lab-radar-label" x="174" y="62" text-anchor="start">攻撃</text>
+          <text class="lab-radar-label" x="174" y="144" text-anchor="start">防御</text>
+          <text class="lab-radar-label" x="100" y="190" text-anchor="middle">素早さ</text>
+          <text class="lab-radar-label" x="26" y="144" text-anchor="end">命中</text>
+          <text class="lab-radar-label" x="26" y="62" text-anchor="end">会心</text>
+        </svg>
+        <div class="lab-stat-total" data-lab-stat-total>現在合計: 30 / {{ chart_max_total }}</div>
+        <div class="robot-part">入力に合わせてリアルタイム更新されます。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card lab-upload-section">
+    <h2>画像</h2>
+    <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px / 最大1MB。</div>
+    <div class="lab-field-stack lab-image-field">
+      <label for="image">PNG画像アップロード</label>
+      <input id="image" type="file" name="image" accept="image/png" required />
+    </div>
+  </section>
+
+  <section class="card lab-upload-section lab-submit-section">
+    <h2>投稿前にご確認ください</h2>
+    <div class="lab-terms-box">
+      <div class="robot-part">利用条件バージョン: {{ lab_terms_version }}</div>
+      {% for line in lab_terms_summary %}
+      <div class="robot-part">{{ line }}</div>
+      {% endfor %}
+      <p class="link"><a href="{{ url_for('lab_terms') }}" target="_blank" rel="noopener">詳細利用条件を見る</a></p>
+    </div>
+    <label class="lab-terms-check">
+      <input type="checkbox" name="terms_accept" value="1" required />
+      <span>上記および詳細利用条件に同意して投稿する</span>
+    </label>
+    <button type="submit" data-lab-submit>審査待ちで提出する</button>
+  </section>
+</form>
+
+<div class="card">
+  <h2>自分の投稿</h2>
+  <p class="link"><a href="{{ url_for('lab_my_submissions') }}">投稿状態をまとめて確認する</a></p>
+  <div class="lab-showcase-grid">
+    {% for row in recent_rows %}
+    <div class="robot-card lab-showcase-card">
+      {% if row.get('thumb_url') %}
+      <img class="robot-thumb" src="{{ row['thumb_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+      {% endif %}
+      <div class="lab-badge-row">
+        {% for badge in row.get('badges', []) %}
+        <span class="lab-badge">{{ badge }}</span>
+        {% endfor %}
+      </div>
+      <div class="robot-id">{{ row['title'] }}</div>
+      <div class="robot-part">{{ row['status_label'] }}</div>
+      <div class="robot-time">{{ row['comment'] }}</div>
+      <p class="link"><a href="{{ url_for('lab_submission_detail', submission_id=row['id']) }}">詳細を見る</a></p>
+    </div>
+    {% else %}
+    <div class="robot-part">まだ投稿はありません。</div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+<script>
+(() => {
+  const form = document.querySelector("[data-lab-stat-form]");
+  if (!form) return;
+  const maxTotal = Number(form.dataset.maxTotal || "36");
+  const selects = Array.from(form.querySelectorAll("[data-lab-stat-select]"));
+  const totalBox = form.querySelector("[data-lab-stat-total]");
+  const submitButton = form.querySelector("[data-lab-submit]");
+  const polygon = form.querySelector("[data-lab-radar-polygon]");
+  const dots = Array.from(form.querySelectorAll("[data-lab-radar-dot]"));
+  const center = 100;
+  const radius = 70;
+  const radarPoint = (value, index) => {
+    const angle = -Math.PI / 2 + index * (Math.PI * 2 / selects.length);
+    const scale = Math.max(0.1, Math.min(1, Number(value || "1") / 10));
+    const x = center + Math.cos(angle) * radius * scale;
+    const y = center + Math.sin(angle) * radius * scale;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  const updateTotal = () => {
+    const values = selects.map((select) => Number(select.value || "0"));
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (totalBox) {
+      totalBox.textContent = `現在合計: ${total} / ${maxTotal}`;
+      totalBox.classList.toggle("is-over", total > maxTotal);
+    }
+    if (polygon) {
+      const points = values.map((value, index) => radarPoint(value, index));
+      polygon.setAttribute("points", points.join(" "));
+      dots.forEach((dot, index) => {
+        const [x, y] = points[index].split(",");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", y);
+      });
+    }
+    if (submitButton) {
+      submitButton.disabled = total > maxTotal;
+    }
+  };
+  selects.forEach((select) => select.addEventListener("change", updateTotal));
+  updateTotal();
+})();
+</script>
+{% endblock %}
