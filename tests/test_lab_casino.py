@@ -152,7 +152,7 @@ class LabCasinoRouteTests(unittest.TestCase):
             self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_CASINO_RACE_FINISH"], event_types)
             self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_CASINO_BET_RESOLVE"], event_types)
 
-    def test_lab_race_prize_claim_deducts_coin_and_records_audit(self):
+    def test_lab_race_prize_claim_is_disabled_while_prizes_are_preparing(self):
         client = self._client()
         home = client.get("/lab/race")
         self.assertEqual(home.status_code, 200)
@@ -163,13 +163,17 @@ class LabCasinoRouteTests(unittest.TestCase):
                 "SELECT * FROM lab_casino_prizes WHERE prize_key = 'lab_title_hot_streak' LIMIT 1"
             ).fetchone()
             self.assertIsNotNone(prize)
+            self.assertEqual(int(prize["is_active"]), 0)
 
         resp = client.post(
             f"/lab/race/prizes/{int(prize['id'])}/claim",
             follow_redirects=True,
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("交換しました", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn("景品交換は準備中です", html)
+        self.assertNotIn("交換しました", html)
+        self.assertNotIn("交換する", html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -177,16 +181,16 @@ class LabCasinoRouteTests(unittest.TestCase):
                 "SELECT * FROM lab_casino_prize_claims WHERE user_id = ? AND prize_id = ?",
                 (self.user_id, int(prize["id"])),
             ).fetchone()
-            self.assertIsNotNone(claim)
+            self.assertIsNone(claim)
             wallet = db.execute("SELECT lab_coin FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(wallet["lab_coin"]), 1000)
+            self.assertEqual(int(wallet["lab_coin"]), 1500)
             event_types = {
                 row["event_type"]
                 for row in db.execute(
                     "SELECT event_type FROM world_events_log WHERE event_type LIKE 'audit.lab.casino.%'"
                 ).fetchall()
             }
-            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_CASINO_PRIZE_CLAIM"], event_types)
+            self.assertNotIn(game_app.AUDIT_EVENT_TYPES["LAB_CASINO_PRIZE_CLAIM"], event_types)
 
     def test_lab_race_history_page_shows_resolved_bet(self):
         client = self._client()

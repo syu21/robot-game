@@ -862,6 +862,8 @@ LAB_CASINO_PRIZE_SEEDS = (
         "grant_key": "lab_skin_flash",
     },
 )
+LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
+LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。ラボコインはそのまま保持されます。"
 STYLE_ACHIEVEMENT_DEFS = (
     {
         "key": "stable_no_damage_wins",
@@ -7145,19 +7147,20 @@ def _seed_core_definitions(db):
 
 def _seed_lab_casino_prizes(db):
     now_ts = int(time.time())
+    is_active = 1 if LAB_CASINO_PRIZE_EXCHANGE_ENABLED else 0
     for seed in LAB_CASINO_PRIZE_SEEDS:
         db.execute(
             """
             INSERT INTO lab_casino_prizes
             (prize_key, name, description, cost_lab_coin, prize_type, grant_key, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(prize_key) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
                 cost_lab_coin = excluded.cost_lab_coin,
                 prize_type = excluded.prize_type,
                 grant_key = excluded.grant_key,
-                is_active = 1,
+                is_active = excluded.is_active,
                 updated_at = excluded.updated_at
             """,
             (
@@ -7167,6 +7170,7 @@ def _seed_lab_casino_prizes(db):
                 int(seed["cost_lab_coin"]),
                 seed["prize_type"],
                 seed.get("grant_key"),
+                is_active,
                 now_ts,
                 now_ts,
             ),
@@ -26200,7 +26204,9 @@ def lab_race_prizes():
         "lab_casino_prizes.html",
         wallet=_lab_casino_wallet_row(db, user_id),
         daily_info=daily_info,
-        prizes=_lab_casino_prize_rows(db, user_id=user_id),
+        prize_exchange_enabled=LAB_CASINO_PRIZE_EXCHANGE_ENABLED,
+        prize_exchange_disabled_message=LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE,
+        prizes=_lab_casino_prize_rows(db, user_id=user_id) if LAB_CASINO_PRIZE_EXCHANGE_ENABLED else [],
         claim_rows=[
             {"name": row["name"], "prize_type": row["prize_type"], "created_text": _format_jst_ts(row["created_at"])}
             for row in claim_rows
@@ -26213,6 +26219,9 @@ def lab_race_prizes():
 def lab_race_prize_claim(prize_id):
     db = get_db()
     user_id = int(session["user_id"])
+    if not LAB_CASINO_PRIZE_EXCHANGE_ENABLED:
+        flash(LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE, "notice")
+        return redirect(url_for("lab_race_prizes"))
     prize = db.execute(
         "SELECT * FROM lab_casino_prizes WHERE id = ? AND is_active = 1 LIMIT 1",
         (int(prize_id),),

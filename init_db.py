@@ -12,6 +12,7 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_badge_jackpot", "プロフィールバッジ: JACKPOT", "実験室での大当たり記念バッジ。", 1800, "badge", "lab_badge_jackpot"),
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
+LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
 RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
@@ -1552,22 +1553,33 @@ def main():
         ),
     )
     now_ts = int(time.time())
+    lab_casino_prize_is_active = 1 if LAB_CASINO_PRIZE_EXCHANGE_ENABLED else 0
     for prize_key, name, description, cost_lab_coin, prize_type, grant_key in LAB_CASINO_PRIZE_SEEDS:
         cur.execute(
             """
             INSERT INTO lab_casino_prizes
             (prize_key, name, description, cost_lab_coin, prize_type, grant_key, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(prize_key) DO UPDATE SET
                 name = excluded.name,
                 description = excluded.description,
                 cost_lab_coin = excluded.cost_lab_coin,
                 prize_type = excluded.prize_type,
                 grant_key = excluded.grant_key,
-                is_active = 1,
+                is_active = excluded.is_active,
                 updated_at = excluded.updated_at
             """,
-            (prize_key, name, description, int(cost_lab_coin), prize_type, grant_key, now_ts, now_ts),
+            (
+                prize_key,
+                name,
+                description,
+                int(cost_lab_coin),
+                prize_type,
+                grant_key,
+                lab_casino_prize_is_active,
+                now_ts,
+                now_ts,
+            ),
         )
     rh_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_history)").fetchall()}
     if "wins_this_week_key" not in rh_cols:
