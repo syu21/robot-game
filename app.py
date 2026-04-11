@@ -11724,6 +11724,33 @@ def _lab_chart_rows(item):
     ]
 
 
+def _lab_radar_chart(chart_rows):
+    rows = list(chart_rows or [])
+    if not rows:
+        return None
+    center = 100.0
+    radius = 70.0
+    points = []
+    for index, row in enumerate(rows):
+        angle = -math.pi / 2 + index * ((math.pi * 2) / len(rows))
+        scale = max(0.1, min(1.0, float(row.get("value") or 0) / 100.0))
+        x = center + math.cos(angle) * radius * scale
+        y = center + math.sin(angle) * radius * scale
+        points.append(
+            {
+                "key": row.get("key"),
+                "label": row.get("label"),
+                "value": int(row.get("value") or 0),
+                "x": f"{x:.1f}",
+                "y": f"{y:.1f}",
+            }
+        )
+    return {
+        "points": points,
+        "polygon_points": " ".join(f"{point['x']},{point['y']}" for point in points),
+    }
+
+
 def _lab_form_bool(name, default=False):
     value = request.form.get(name)
     if value is None:
@@ -11759,6 +11786,7 @@ def _lab_decorate_submission_item(item):
     item["adoption_stage_label"] = _lab_adoption_stage_label(item.get("adoption_stage"))
     item["adoption_type_label"] = _lab_adoption_type_label(item.get("adoption_type"))
     item["chart_rows"] = _lab_chart_rows(item)
+    item["radar_chart"] = _lab_radar_chart(item["chart_rows"])
     item["badges"] = _lab_submission_badges(item)
     item["created_text"] = _format_jst_ts(item.get("created_at")) if item.get("created_at") else ""
     item["updated_text"] = _format_jst_ts(item.get("updated_at")) if item.get("updated_at") else ""

@@ -1,0 +1,39 @@
+{% macro render_lab_radar_chart(chart, variant='detail', show_values=false) -%}
+{% if chart %}
+<div class="lab-radar-panel is-{{ variant }}">
+  <svg class="lab-radar-chart" viewBox="0 0 200 200" role="img" aria-label="研究参考スペックのレーダーチャート">
+    <polygon class="lab-radar-ring" points="100,30 160.6,65 160.6,135 100,170 39.4,135 39.4,65"></polygon>
+    <polygon class="lab-radar-ring is-mid" points="100,53.3 140.4,76.7 140.4,123.3 100,146.7 59.6,123.3 59.6,76.7"></polygon>
+    <polygon class="lab-radar-ring is-low" points="100,76.7 120.2,88.3 120.2,111.7 100,123.3 79.8,111.7 79.8,88.3"></polygon>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="100" y2="30"></line>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="160.6" y2="65"></line>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="160.6" y2="135"></line>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="100" y2="170"></line>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="39.4" y2="135"></line>
+    <line class="lab-radar-axis" x1="100" y1="100" x2="39.4" y2="65"></line>
+    <polygon class="lab-radar-fill" points="{{ chart['polygon_points'] }}"></polygon>
+    {% for point in chart['points'] %}
+    <circle class="lab-radar-dot" cx="{{ point['x'] }}" cy="{{ point['y'] }}" r="3">
+      <title>{{ point['label'] }} {{ point['value'] }}</title>
+    </circle>
+    {% endfor %}
+    <text class="lab-radar-label" x="100" y="18" text-anchor="middle">耐久</text>
+    <text class="lab-radar-label" x="174" y="62" text-anchor="start">攻撃</text>
+    <text class="lab-radar-label" x="174" y="144" text-anchor="start">防御</text>
+    <text class="lab-radar-label" x="100" y="190" text-anchor="middle">素早さ</text>
+    <text class="lab-radar-label" x="26" y="144" text-anchor="end">命中</text>
+    <text class="lab-radar-label" x="26" y="62" text-anchor="end">会心</text>
+  </svg>
+  {% if show_values %}
+  <div class="lab-radar-values">
+    {% for point in chart['points'] %}
+    <div class="lab-radar-value-row">
+      <span>{{ point['label'] }}</span>
+      <strong>{{ point['value'] }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
