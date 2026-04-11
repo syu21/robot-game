@@ -6615,6 +6615,11 @@ body.home-page.home-mobile .invite-link-row {
   gap: 10px 14px;
 }
 
+.lab-stat-body {
+  display: grid;
+  gap: 14px;
+}
+
 .lab-stat-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 96px;
@@ -6650,6 +6655,60 @@ body.home-page.home-mobile .invite-link-row {
   cursor: not-allowed;
   opacity: 0.55;
   box-shadow: none;
+}
+
+.lab-radar-panel {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(103, 232, 249, 0.16);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(103, 232, 249, 0.12), transparent 48%),
+    rgba(7, 15, 30, 0.58);
+}
+
+.lab-radar-chart {
+  width: min(220px, 100%);
+  height: auto;
+  overflow: visible;
+}
+
+.lab-radar-ring {
+  fill: none;
+  stroke: rgba(103, 232, 249, 0.22);
+  stroke-width: 1.2;
+}
+
+.lab-radar-ring.is-mid,
+.lab-radar-ring.is-low {
+  stroke: rgba(148, 163, 184, 0.16);
+}
+
+.lab-radar-axis {
+  stroke: rgba(148, 163, 184, 0.16);
+  stroke-width: 1;
+}
+
+.lab-radar-fill {
+  fill: rgba(103, 232, 249, 0.18);
+  stroke: rgba(103, 232, 249, 0.78);
+  stroke-width: 2;
+}
+
+.lab-radar-dot {
+  fill: #67e8f9;
+  stroke: rgba(6, 12, 25, 0.92);
+  stroke-width: 1.5;
+}
+
+.lab-radar-label {
+  fill: rgba(220, 229, 247, 0.72);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .lab-badge-row,
@@ -6784,9 +6843,46 @@ body.home-page.home-mobile .invite-link-row {
   color: var(--text-sub);
 }
 
+@media (min-width: 1024px) {
+  .lab-upload-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .lab-upload-section:nth-of-type(n + 5) {
+    grid-column: 1 / -1;
+  }
+
+  .lab-upload-section {
+    min-height: 100%;
+  }
+
+  .lab-upload-classification {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 240px);
+  }
+
+  .lab-upload-classification .lab-checkbox-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lab-stat-body {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 220px);
+    align-items: start;
+  }
+
+  .lab-stat-card {
+    padding: 10px 12px;
+  }
+
+  .lab-stat-card select {
+    min-height: 40px;
+  }
+}
+
 @media (max-width: 760px) {
   .lab-upload-two-col,
   .lab-upload-classification,
+  .lab-stat-body,
   .lab-stat-grid {
     grid-template-columns: minmax(0, 1fr);
   }
