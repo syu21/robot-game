@@ -23,7 +23,7 @@
       {% endfor %}
     </div>
     <div class="robot-id">{{ row['title'] }}</div>
-    <div class="robot-part">投稿者: {{ row['username'] }}</div>
+    <div class="robot-part">投稿者: {{ row.get('credit_name') or row.get('display_username') or row['username'] }}</div>
     <div class="robot-time">{{ row['comment'] }}</div>
     {% if row.get('tags') %}
     <div class="lab-tag-list">

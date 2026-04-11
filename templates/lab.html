@@ -91,7 +91,7 @@
         {% endfor %}
       </div>
       <div class="robot-id">{{ row['title'] }}</div>
-      <div class="robot-part">{{ row['username'] }}</div>
+      <div class="robot-part">{{ row.get('credit_name') or row.get('display_username') or row['username'] }}</div>
       <div class="robot-time">いいね {{ row['likes_count'] }}</div>
     </a>
     {% else %}
