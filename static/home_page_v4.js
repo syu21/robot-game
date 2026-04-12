@@ -132,6 +132,47 @@
     window.addEventListener("pagehide", stopTicker);
   };
 
+  const bindResearchBoostTimers = () => {
+    const nodes = Array.from(document.querySelectorAll("[data-research-boost-until]"));
+    if (!nodes.length) return;
+    let timerId = null;
+
+    const formatRemain = (totalSeconds) => {
+      const remain = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const minutes = Math.floor(remain / 60);
+      const seconds = remain % 60;
+      return `${minutes}分${String(seconds).padStart(2, "0")}秒`;
+    };
+
+    const tick = () => {
+      const now = Math.floor(Date.now() / 1000);
+      let hasActive = false;
+      nodes.forEach((node) => {
+        const until = Number(node.dataset.researchBoostUntil || "0");
+        const remain = Math.max(0, until - now);
+        if (remain > 0) {
+          hasActive = true;
+          node.textContent = `残り ${formatRemain(remain)}`;
+        } else {
+          node.textContent = "残り 0分00秒";
+        }
+      });
+      if (!hasActive && timerId !== null) {
+        window.clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
+    tick();
+    timerId = window.setInterval(tick, 1000);
+    window.addEventListener("pagehide", () => {
+      if (timerId !== null) {
+        window.clearInterval(timerId);
+        timerId = null;
+      }
+    });
+  };
+
   const bindInviteCopy = () => {
     const btn = document.getElementById("invite-copy-btn");
     if (!btn) return;
@@ -236,6 +277,13 @@
       markStep("home:init:cooldown-bind");
     } catch (err) {
       reportCaught("home:init:cooldown-bind", err);
+    }
+
+    try {
+      bindResearchBoostTimers();
+      markStep("home:init:research-boost-bind");
+    } catch (err) {
+      reportCaught("home:init:research-boost-bind", err);
     }
 
     try {

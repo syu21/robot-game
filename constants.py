@@ -199,6 +199,8 @@ AUDIT_EVENT_TYPES = {
     "EXPLORE_BOOST_GRANT_SUCCESS": "audit.explore_boost.grant.success",
     "EXPLORE_BOOST_GRANT_SKIP_DUPLICATE": "audit.explore_boost.grant.skip_duplicate",
     "EXPLORE_BOOST_GRANT_FAILED": "audit.explore_boost.grant.failed",
+    "LAB_SMALL_BOOST_GRANT": "audit.lab.small_boost.grant",
+    "LAB_SMALL_BOOST_USE": "audit.lab.small_boost.use",
     "SHARE_CLICK": "audit.share.click",
     "REFERRAL_ATTACH": "audit.referral.attach",
     "REFERRAL_QUALIFIED": "audit.referral.qualified",

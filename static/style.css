@@ -3467,6 +3467,47 @@ body.battle-page .layer-boss-victory-sub {
   font-size: 13px;
 }
 
+.home-research-boost {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.72);
+}
+
+.home-research-boost-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.home-research-boost-timer,
+.home-research-boost-active-inline {
+  color: var(--accent-cyan);
+  font-weight: 800;
+}
+
+.home-research-boost-form {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.home-research-boost-button {
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.home-research-boost-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .home-primary-explore-form {
   width: 100%;
   margin: 0;
@@ -6068,6 +6109,17 @@ body.home-page.home-mobile .home-explore-card .card {
 body.home-page.home-mobile .home-primary-explore-cta {
   width: 100% !important;
   min-height: 52px !important;
+  font-size: 16px !important;
+}
+
+body.home-page.home-mobile .home-research-boost {
+  align-items: stretch !important;
+  flex-direction: column !important;
+}
+
+body.home-page.home-mobile .home-research-boost-button {
+  width: 100% !important;
+  min-height: 48px !important;
   font-size: 16px !important;
 }
 
@@ -10778,4 +10830,116 @@ body#page-world .world-competition-grid {
   height: auto;
 }
 .robot-maintenance-loadout,
-.robot-maintenance-pan
+.robot-maintenance-panel {
+  display: grid;
+  gap: 12px;
+}
+.robot-maintenance-current-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+.robot-maintenance-current-card,
+.robot-maintenance-current-focus-card {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(115, 143, 196, 0.24);
+  background: rgba(18, 30, 58, 0.52);
+}
+.robot-maintenance-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.robot-maintenance-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(27, 44, 83, 0.88);
+  border: 1px solid rgba(115, 143, 196, 0.24);
+  font-weight: 700;
+}
+.robot-maintenance-tab.is-active {
+  background: rgba(81, 111, 195, 0.28);
+  border-color: rgba(129, 165, 255, 0.44);
+}
+.robot-maintenance-form,
+.robot-maintenance-current-focus,
+.robot-maintenance-panel-head {
+  display: grid;
+  gap: 12px;
+}
+.robot-maintenance-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.robot-maintenance-option-grid.is-decor {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.robot-maintenance-option {
+  display: grid;
+  gap: 10px;
+}
+.robot-maintenance-option.is-current {
+  border-color: rgba(90, 189, 166, 0.42);
+  box-shadow: 0 16px 32px rgba(38, 86, 143, 0.18);
+}
+.robot-maintenance-delta-block {
+  display: grid;
+  gap: 8px;
+}
+.robot-maintenance-delta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.robot-maintenance-delta-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(18, 30, 58, 0.66);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.robot-maintenance-delta-item.is-up strong {
+  color: #86efac;
+}
+.robot-maintenance-delta-item.is-down strong {
+  color: #fca5a5;
+}
+.robot-maintenance-delta-item.is-flat strong {
+  color: rgba(220, 229, 247, 0.82);
+}
+.robot-maintenance-decor-image {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+@media (max-width: 768px) {
+  .home-today-progress-grid {
+    gap: 8px;
+  }
+  .home-today-progress-stat {
+    padding: 10px;
+  }
+  .home-today-progress-value {
+    font-size: 19px;
+  }
+  .robot-maintenance-hero {
+    grid-template-columns: 1fr;
+  }
+  .robot-maintenance-thumb {
+    width: 120px;
+  }
+  .robot-maintenance-delta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -13,7 +13,7 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
-RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5")
+RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -162,6 +162,8 @@ def main():
             intro_guide_closed_at TEXT,
             last_explore_area_key TEXT,
             explore_boost_until INTEGER NOT NULL DEFAULT 0,
+            lab_small_boost_count INTEGER NOT NULL DEFAULT 0,
+            lab_small_boost_until INTEGER NOT NULL DEFAULT 0,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -1154,6 +1156,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
     if "explore_boost_until" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN explore_boost_until INTEGER NOT NULL DEFAULT 0")
+    if "lab_small_boost_count" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_small_boost_count INTEGER NOT NULL DEFAULT 0")
+    if "lab_small_boost_until" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_small_boost_until INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -1217,6 +1223,9 @@ def main():
     cur.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     cur.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
     cur.execute("UPDATE users SET explore_boost_until = 0 WHERE explore_boost_until IS NULL")
+    cur.execute("UPDATE users SET lab_small_boost_count = 0 WHERE lab_small_boost_count IS NULL OR lab_small_boost_count < 0")
+    cur.execute("UPDATE users SET lab_small_boost_count = 3 WHERE lab_small_boost_count > 3")
+    cur.execute("UPDATE users SET lab_small_boost_until = 0 WHERE lab_small_boost_until IS NULL OR lab_small_boost_until < 0")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     cur.execute("UPDATE users SET lab_coin = 1000 WHERE lab_coin IS NULL OR lab_coin < 0")

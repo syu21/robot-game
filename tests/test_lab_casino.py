@@ -273,9 +273,4 @@ class LabCasinoRouteTests(unittest.TestCase):
         result_redirect = client.get(f"/lab/casino/race/result/{int(race['id'])}", follow_redirects=False)
         self.assertEqual(watch_redirect.status_code, 302)
         self.assertEqual(result_redirect.status_code, 302)
-        self.assertIn(f"/lab/race/watch/{int(race['id'])}", watch_redirect.headers["Location"])
-        self.assertIn(f"/lab/race/result/{int(race['id'])}", result_redirect.headers["Location"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertIn(f"/lab/race/watch/{int(r

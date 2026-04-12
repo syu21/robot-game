@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-04-06
+最終更新日: 2026-04-12
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -99,6 +99,8 @@
 - `audit.explore_boost.grant.success`
 - `audit.explore_boost.grant.skip_duplicate`
 - `audit.explore_boost.grant.failed`
+- `audit.lab.small_boost.grant`
+- `audit.lab.small_boost.use`
 
 ### 4.9 管理者操作（追加）
 - `audit.admin.user.ban`

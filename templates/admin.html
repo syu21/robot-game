@@ -16,6 +16,25 @@
     <p>{{ message }}</p>
   {% endif %}
 </div>
+{% if research_boost_release %}
+<div class="card">
+  <p><b>研究ブースト公開設定</b></p>
+  <p>現在: {% if research_boost_release['is_public'] %}一般公開中{% else %}管理者のみ{% endif %}</p>
+  <p class="robot-part">{{ research_boost_release['summary'] }}</p>
+  <form method="post" action="{{ url_for('admin_release') }}" class="inline-form inline-form-top">
+    <input type="hidden" name="action" value="release_toggle" />
+    <input type="hidden" name="feature_key" value="{{ research_boost_release['key'] }}" />
+    {% if research_boost_release['is_public'] %}
+    <input type="hidden" name="state" value="private" />
+    <button type="submit" class="btn-secondary">管理者だけに戻す</button>
+    {% else %}
+    <input type="hidden" name="state" value="public" />
+    <button type="submit">研究ブーストを一般公開する</button>
+    {% endif %}
+  </form>
+  <p class="link"><a href="{{ url_for('admin_release') }}">公開 / メンテ切り替えへ</a></p>
+</div>
+{% endif %}
 <div class="card">
   <p>画像登録</p>
   <p><a href="{{ url_for('admin_parts') }}">パーツ登録</a></p>

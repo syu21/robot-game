@@ -21,6 +21,29 @@
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
     <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
+    {% if research_boost %}
+    <div class="home-research-boost">
+      <div class="home-research-boost-copy">
+        <div><b>{% if research_boost['active'] %}研究ブースト中{% else %}研究ブースト {{ research_boost['count'] }} / {{ research_boost['cap'] }}{% endif %}</b></div>
+        {% if research_boost['active'] %}
+        <div
+          class="home-research-boost-timer"
+          data-research-boost-until="{{ research_boost['until'] }}"
+        >残り {{ research_boost['remain_label'] }}</div>
+        <div class="upgrade-cost">出撃CT {{ research_boost['ct_seconds'] }}秒</div>
+        {% elif research_boost['paid_boost_active'] %}
+        <div class="upgrade-cost">{{ research_boost['paid_boost_message'] }}</div>
+        {% else %}
+        <div class="upgrade-cost">15分間 出撃CT半減</div>
+        {% endif %}
+      </div>
+      {% if not research_boost['active'] %}
+      <form method="post" action="{{ url_for('home_research_boost_use') }}" class="inline-form inline-form-top home-research-boost-form">
+        <button type="submit" class="home-research-boost-button" {% if not research_boost['can_use'] %}disabled{% endif %}>15分使う</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if home_primary_explore_cta['is_post'] %}
     <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
       {% if home_primary_explore_cta['area_key'] %}
@@ -279,6 +302,13 @@
               data-ct-remain="{{ ct_remain }}"
               data-is-admin="{{ 1 if is_admin else 0 }}"
             >{{ ct_text }}</div>
+            {% if research_boost and research_boost['active'] %}
+            <div class="upgrade-cost home-research-boost-active-inline">
+              研究ブースト中 /
+              <span data-research-boost-until="{{ research_boost['until'] }}">残り {{ research_boost['remain_label'] }}</span>
+              / 出撃CT {{ research_boost['ct_seconds'] }}秒
+            </div>
+            {% endif %}
             <div class="upgrade-cost">
               保存枠: {{ slot_display_used }} / {{ limits['robot_slots'] }}
               {% if slot_overflow > 0 %}

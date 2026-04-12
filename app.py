@@ -298,6 +298,14 @@ SUPPORTER_LAB_TROPHY_KEY = "supporter_lab"
 EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
 EXPLORE_BOOST_DURATION_DAYS = 14
 EXPLORE_BOOST_CT_SECONDS = 20
+LAB_SMALL_BOOST_FEATURE_KEY = "research_boost"
+LAB_SMALL_BOOST_MAX_COUNT = 3
+LAB_SMALL_BOOST_DURATION_SECONDS = 15 * 60
+LAB_SMALL_BOOST_SOURCE_LABELS = {
+    "daily_login": "デイリーログイン",
+    "lab_participation": "実験室参加",
+    "feedback": "フィードバック投稿",
+}
 PAYMENT_STATUS_CREATED = "created"
 PAYMENT_STATUS_COMPLETED = "completed"
 PAYMENT_STATUS_GRANTED = "granted"
@@ -1026,6 +1034,11 @@ RELEASE_FLAG_DEFS = (
         "key": "weekly_champion",
         "label": "今週のチャンプ機体",
         "summary": "ホームのチャンプカードと /champion の非同期挑戦を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": LAB_SMALL_BOOST_FEATURE_KEY,
+        "label": "研究ブースト",
+        "summary": "無料で入手できる15分間の出撃CT半減ブーストを一般公開します。管理者は非公開中でも確認できます。",
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
@@ -5734,6 +5747,10 @@ def _submit_chat_message(db, *, user_id, username, room_key, surface):
         },
         ip=request.remote_addr,
     )
+    if settings["key"] == "feedback_room":
+        _flash_lab_small_boost_result(
+            _grant_lab_small_boost_if_available(db, int(user_id), "feedback")
+        )
     db.commit()
     return redirect(redirect_target)
 
@@ -7803,6 +7820,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN last_explore_area_key TEXT")
     if "explore_boost_until" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN explore_boost_until INTEGER NOT NULL DEFAULT 0")
+    if "lab_small_boost_count" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_small_boost_count INTEGER NOT NULL DEFAULT 0")
+    if "lab_small_boost_until" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_small_boost_until INTEGER NOT NULL DEFAULT 0")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -7860,6 +7881,9 @@ def ensure_schema(db):
     db.execute("UPDATE users SET intro_guide_closed_at = NULL WHERE intro_guide_closed_at IS NOT NULL AND TRIM(intro_guide_closed_at) = ''")
     db.execute("UPDATE users SET last_explore_area_key = NULL WHERE last_explore_area_key IS NOT NULL AND TRIM(last_explore_area_key) = ''")
     db.execute("UPDATE users SET explore_boost_until = 0 WHERE explore_boost_until IS NULL")
+    db.execute("UPDATE users SET lab_small_boost_count = 0 WHERE lab_small_boost_count IS NULL OR lab_small_boost_count < 0")
+    db.execute(f"UPDATE users SET lab_small_boost_count = {LAB_SMALL_BOOST_MAX_COUNT} WHERE lab_small_boost_count > {LAB_SMALL_BOOST_MAX_COUNT}")
+    db.execute("UPDATE users SET lab_small_boost_until = 0 WHERE lab_small_boost_until IS NULL OR lab_small_boost_until < 0")
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
@@ -14561,6 +14585,171 @@ def _explore_boost_status_for_user(user_row, now_ts=None):
     }
 
 
+def _lab_small_boost_count(user_row):
+    if not user_row or "lab_small_boost_count" not in user_row.keys():
+        return 0
+    return max(0, min(int(LAB_SMALL_BOOST_MAX_COUNT), int(user_row["lab_small_boost_count"] or 0)))
+
+
+def _lab_small_boost_until_ts(user_row):
+    if not user_row or "lab_small_boost_until" not in user_row.keys():
+        return 0
+    return max(0, int(user_row["lab_small_boost_until"] or 0))
+
+
+def _is_lab_small_boost_active(user_row, now_ts=None):
+    until_ts = _lab_small_boost_until_ts(user_row)
+    if until_ts <= 0:
+        return False
+    now = _now_ts() if now_ts is None else int(now_ts)
+    return until_ts > now
+
+
+def _lab_small_boost_remaining_seconds(user_row, now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    return max(0, _lab_small_boost_until_ts(user_row) - now)
+
+
+def _lab_small_boost_remaining_label(remain_seconds):
+    remain = max(0, int(remain_seconds or 0))
+    minutes = remain // 60
+    seconds = remain % 60
+    return f"{minutes}分{seconds:02d}秒"
+
+
+def _lab_small_boost_feature_open(db, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        LAB_SMALL_BOOST_FEATURE_KEY,
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
+def _lab_small_boost_day_key(now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    return _jst_day_key_from_ts(now)
+
+
+def _lab_small_boost_source_key(raw_source):
+    source = str(raw_source or "").strip().lower()
+    return source if source in LAB_SMALL_BOOST_SOURCE_LABELS else ""
+
+
+def _lab_small_boost_grant_already_logged(db, *, user_id, source, day_key):
+    start_ts, end_ts = _jst_day_key_to_bounds(day_key)
+    rows = db.execute(
+        """
+        SELECT payload_json
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ?
+          AND created_at < ?
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"], int(start_ts), int(end_ts)),
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except Exception:
+            payload = {}
+        if payload.get("source") == source and payload.get("day_key") == day_key:
+            return True
+    return False
+
+
+def _grant_lab_small_boost_if_available(db, user_id, source, *, user_row=None, now_ts=None):
+    source_key = _lab_small_boost_source_key(source)
+    if not source_key:
+        return {"handled": False, "granted": False, "message": ""}
+    if not _lab_small_boost_feature_open(db, user_row=user_row, user_id=int(user_id)):
+        return {"handled": False, "granted": False, "message": ""}
+    now = _now_ts() if now_ts is None else int(now_ts)
+    day_key = _lab_small_boost_day_key(now)
+    if _lab_small_boost_grant_already_logged(db, user_id=int(user_id), source=source_key, day_key=day_key):
+        return {"handled": False, "granted": False, "already_received": True, "message": ""}
+    if user_row is None or "lab_small_boost_count" not in user_row.keys():
+        user_row = db.execute(
+            "SELECT id, is_admin, lab_small_boost_count, lab_small_boost_until FROM users WHERE id = ?",
+            (int(user_id),),
+        ).fetchone()
+    if not user_row:
+        return {"handled": False, "granted": False, "message": ""}
+    before_count = _lab_small_boost_count(user_row)
+    granted = before_count < int(LAB_SMALL_BOOST_MAX_COUNT)
+    after_count = min(int(LAB_SMALL_BOOST_MAX_COUNT), before_count + (1 if granted else 0))
+    if int(user_row["lab_small_boost_count"] or 0) != after_count:
+        db.execute(
+            "UPDATE users SET lab_small_boost_count = ? WHERE id = ?",
+            (int(after_count), int(user_id)),
+        )
+    message = (
+        f"研究ブーストを1個獲得しました（{after_count}/{LAB_SMALL_BOOST_MAX_COUNT}）"
+        if granted
+        else f"研究ブーストは上限です（{LAB_SMALL_BOOST_MAX_COUNT}/{LAB_SMALL_BOOST_MAX_COUNT}）"
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"],
+        user_id=int(user_id),
+        request_id=(getattr(g, "request_id", None) if has_request_context() else None),
+        action_key="lab_small_boost_grant",
+        entity_type="user",
+        entity_id=int(user_id),
+        delta_count=(1 if granted else 0),
+        payload={
+            "source": source_key,
+            "source_label": LAB_SMALL_BOOST_SOURCE_LABELS[source_key],
+            "day_key": day_key,
+            "granted": bool(granted),
+            "count_before": int(before_count),
+            "count_after": int(after_count),
+            "cap": int(LAB_SMALL_BOOST_MAX_COUNT),
+        },
+        ip=(request.remote_addr if has_request_context() else None),
+    )
+    return {
+        "handled": True,
+        "granted": bool(granted),
+        "already_received": False,
+        "count": int(after_count),
+        "message": message,
+    }
+
+
+def _flash_lab_small_boost_result(result):
+    message = str((result or {}).get("message") or "").strip()
+    if message:
+        flash(message, "notice")
+
+
+def _lab_small_boost_ct_seconds_for_user(user_row, now_ts=None):
+    base_ct = int(NEWBIE_EXPLORE_CT_SECONDS) if _is_newbie_boost_active(user_row, now_ts=now_ts) else int(EXPLORE_COOLDOWN_SECONDS)
+    return max(1, int(math.ceil(base_ct / 2.0)))
+
+
+def _lab_small_boost_status_for_user(user_row, *, now_ts=None, paid_boost_active=False, ct_seconds=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    count = _lab_small_boost_count(user_row)
+    remain = _lab_small_boost_remaining_seconds(user_row, now_ts=now)
+    active = remain > 0
+    paid_active = bool(paid_boost_active)
+    return {
+        "count": int(count),
+        "cap": int(LAB_SMALL_BOOST_MAX_COUNT),
+        "active": bool(active),
+        "until": (_lab_small_boost_until_ts(user_row) if active else 0),
+        "remain_seconds": int(remain),
+        "remain_label": _lab_small_boost_remaining_label(remain),
+        "ct_seconds": int(ct_seconds or _lab_small_boost_ct_seconds_for_user(user_row, now_ts=now)),
+        "paid_boost_active": paid_active,
+        "paid_boost_message": "現在ラボブースターが有効です" if paid_active else "",
+        "can_use": bool(count > 0 and not active and not paid_active),
+    }
+
+
 def _grant_explore_boost_reward(db, user_id, product):
     boost_days = max(1, int((product or {}).get("boost_days") or EXPLORE_BOOST_DURATION_DAYS))
     user_row = db.execute(
@@ -17939,12 +18128,13 @@ def _is_newbie_boost_active(user_row, now_ts=None):
 def _explore_ct_seconds_for_user(user_row, now_ts=None):
     if user_row and int(user_row["is_admin"] or 0) == 1:
         return 0
-    ct_candidates = [int(EXPLORE_COOLDOWN_SECONDS)]
-    if _is_newbie_boost_active(user_row, now_ts=now_ts):
-        ct_candidates.append(int(NEWBIE_EXPLORE_CT_SECONDS))
     if _is_paid_explore_boost_active(user_row, now_ts=now_ts):
-        ct_candidates.append(int(EXPLORE_BOOST_CT_SECONDS))
-    return min(ct_candidates)
+        return int(EXPLORE_BOOST_CT_SECONDS)
+    if _is_lab_small_boost_active(user_row, now_ts=now_ts):
+        return int(_lab_small_boost_ct_seconds_for_user(user_row, now_ts=now_ts))
+    if _is_newbie_boost_active(user_row, now_ts=now_ts):
+        return int(NEWBIE_EXPLORE_CT_SECONDS)
+    return int(EXPLORE_COOLDOWN_SECONDS)
 
 
 def _remaining_cooldown_seconds(user_row, last_action_at, now_ts=None):
@@ -20408,6 +20598,57 @@ def settings_battle_log_mode():
     return redirect(url_for("home"))
 
 
+@app.route("/home/research-boost/use", methods=["POST"])
+@login_required
+def home_research_boost_use():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    if not _lab_small_boost_feature_open(db, user_row=user, user_id=user_id):
+        flash("研究ブーストはまだ公開準備中です。", "notice")
+        return redirect(url_for("home"))
+    now = _now_ts()
+    if _is_paid_explore_boost_active(user, now_ts=now):
+        flash("現在ラボブースターが有効です", "notice")
+        return redirect(url_for("home"))
+    if _is_lab_small_boost_active(user, now_ts=now):
+        flash("研究ブースト中です。", "notice")
+        return redirect(url_for("home"))
+    before_count = _lab_small_boost_count(user)
+    if before_count <= 0:
+        flash("研究ブーストがありません。", "error")
+        return redirect(url_for("home"))
+    after_count = max(0, before_count - 1)
+    until_ts = now + int(LAB_SMALL_BOOST_DURATION_SECONDS)
+    db.execute(
+        "UPDATE users SET lab_small_boost_count = ?, lab_small_boost_until = ? WHERE id = ?",
+        (int(after_count), int(until_ts), user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_USE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_small_boost_use",
+        entity_type="user",
+        entity_id=user_id,
+        delta_count=-1,
+        payload={
+            "count_before": int(before_count),
+            "count_after": int(after_count),
+            "duration_seconds": int(LAB_SMALL_BOOST_DURATION_SECONDS),
+            "until": int(until_ts),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("研究ブーストを発動しました。15分間 出撃CT半減", "notice")
+    return redirect(url_for("home"))
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -20553,6 +20794,17 @@ def home():
     boss_alert_status = _home_boss_alert_status(db, user["id"])
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
     recent_drop_items = _recent_drop_items(db, user["id"], limit=5)
+    research_boost_visible = _lab_small_boost_feature_open(db, user_row=user, user_id=int(user["id"]))
+    if research_boost_visible and int(user["is_admin"] or 0) != 1:
+        daily_boost_result = _grant_lab_small_boost_if_available(
+            db,
+            int(user["id"]),
+            "daily_login",
+            user_row=user,
+        )
+        _flash_lab_small_boost_result(daily_boost_result)
+        if daily_boost_result.get("handled"):
+            user = db.execute("SELECT * FROM users WHERE id = ?", (int(user["id"]),)).fetchone()
     now = _now_ts()
     explore_ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
     ct_remain, _ = _explore_remaining_seconds_for_user(db, user, user["id"], now_ts=now)
@@ -20575,6 +20827,14 @@ def home():
             "ct_seconds": int(explore_ct_seconds),
             "hours_left": _newbie_boost_hours_left(user, now_ts=now),
         }
+    research_boost = None
+    if research_boost_visible:
+        research_boost = _lab_small_boost_status_for_user(
+            user,
+            now_ts=now,
+            paid_boost_active=_is_paid_explore_boost_active(user, now_ts=now),
+            ct_seconds=explore_ct_seconds,
+        )
     home_comm_initial_tab = "world"
     home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
     home_active_user_count = count_active_users(
@@ -20904,6 +21164,7 @@ def home():
             show_lab_menu=show_lab_menu,
             recent_drop_items=recent_drop_items,
             newbie_boost=newbie_boost,
+            research_boost=research_boost,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
             explore_submission_id=explore_submission_id,
@@ -22585,6 +22846,7 @@ def explore():
     now = _now_ts()
     ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
     newbie_boost_active = _is_newbie_boost_active(user, now_ts=now)
+    research_boost_active = _is_lab_small_boost_active(user, now_ts=now)
     wait = _enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now)
     if wait > 0:
         return redirect(url_for("home"))
@@ -22594,7 +22856,14 @@ def explore():
         user_id=user_id,
         request_id=request_id,
         action_key="explore",
-        payload={"area_key": area_key, "at": now, "newbie_boost": bool(newbie_boost_active), "ct_seconds": int(ct_seconds)},
+        payload={
+            "area_key": area_key,
+            "at": now,
+            "newbie_boost": bool(newbie_boost_active),
+            "research_boost": bool(research_boost_active),
+            "paid_boost": bool(_is_paid_explore_boost_active(user, now_ts=now)),
+            "ct_seconds": int(ct_seconds),
+        },
         ip=request.remote_addr,
     )
 
@@ -25963,6 +26232,9 @@ def lab_race_entry():
         },
         ip=request.remote_addr,
     )
+    _flash_lab_small_boost_result(
+        _grant_lab_small_boost_if_available(db, user_id, "lab_participation")
+    )
     _lab_start_race(db, race_id, actor_user_id=user_id)
     db.commit()
     flash("観戦レースを開始しました。固定6レーンで、空き枠は LAB ENEMY が補完します。", "notice")
@@ -26113,6 +26385,9 @@ def lab_race_place_bet():
             "lab_coin_after": int(after_coin),
         },
         ip=request.remote_addr,
+    )
+    _flash_lab_small_boost_result(
+        _grant_lab_small_boost_if_available(db, user_id, "lab_participation")
     )
     _lab_casino_resolve_race(db, race_id, actor_user_id=user_id)
     db.commit()
@@ -26423,6 +26698,9 @@ def lab_upload():
                     payload={"submission_id": submission_id, "title": title[:80]},
                     ip=request.remote_addr,
                 )
+                _flash_lab_small_boost_result(
+                    _grant_lab_small_boost_if_available(db, user_id, "lab_participation")
+                )
                 db.commit()
                 flash("投稿を受け付けました。公開は承認後です。", "notice")
                 return redirect(url_for("lab_upload"))
@@ -26468,6 +26746,10 @@ def lab_showcase():
     sort_key = (request.args.get("sort") or "new").strip().lower()
     if sort_key not in LAB_SUBMISSION_SORT_OPTIONS:
         sort_key = "new"
+    boost_result = _grant_lab_small_boost_if_available(db, int(session["user_id"]), "lab_participation")
+    _flash_lab_small_boost_result(boost_result)
+    if boost_result.get("handled"):
+        db.commit()
     return render_template(
         "lab_showcase.html",
         rows=_lab_showcase_query_rows(db, viewer_user_id=int(session["user_id"]), sort_key=sort_key, limit=48),
@@ -26489,6 +26771,10 @@ def lab_submission_detail(submission_id):
     )
     if not row:
         abort(404)
+    boost_result = _grant_lab_small_boost_if_available(db, int(session["user_id"]), "lab_participation")
+    _flash_lab_small_boost_result(boost_result)
+    if boost_result.get("handled"):
+        db.commit()
     reports = []
     if is_admin:
         reports = db.execute(
@@ -29232,7 +29518,18 @@ def admin():
         if key in referral_counts:
             referral_counts[key] = int(row["c"] or 0)
     missing_assets = _collect_missing_assets(db, limit=120)
-    return render_template("admin.html", message=message, referral_counts=referral_counts, missing_assets=missing_assets)
+    release_rows = _release_flag_rows(db)
+    research_boost_release = next(
+        (row for row in release_rows if row["key"] == LAB_SMALL_BOOST_FEATURE_KEY),
+        None,
+    )
+    return render_template(
+        "admin.html",
+        message=message,
+        referral_counts=referral_counts,
+        missing_assets=missing_assets,
+        research_boost_release=research_boost_release,
+    )
 
 
 @app.route("/admin/release", methods=["GET", "POST"])
