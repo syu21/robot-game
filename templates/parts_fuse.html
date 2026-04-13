@@ -444,4 +444,9 @@
   {% endif %}
 
   <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
-</
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
+{% endblock %}
