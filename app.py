@@ -287,12 +287,7 @@ USER_PRESENCE_WARM_WINDOW_MINUTES = max(
 PRESENCE_WITHIN_MINUTES = max(1, int(os.getenv("PRESENCE_WITHIN_MINUTES", "20")))
 PRESENCE_PREVIEW_LIMIT = max(1, min(int(os.getenv("PRESENCE_PREVIEW_LIMIT", "8")), 8))
 PRESENCE_MODAL_LIMIT = max(PRESENCE_PREVIEW_LIMIT, min(int(os.getenv("PRESENCE_MODAL_LIMIT", "24")), 24))
-PRESENCE_INCLUDE_ADMIN = os.getenv("PRESENCE_INCLUDE_ADMIN", "true").strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}
+PRESENCE_INCLUDE_ADMIN = False
 COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     5,
     int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
@@ -29957,17 +29952,11 @@ def admin():
         if key in referral_counts:
             referral_counts[key] = int(row["c"] or 0)
     missing_assets = _collect_missing_assets(db, limit=120)
-    release_rows = _release_flag_rows(db)
-    research_boost_release = next(
-        (row for row in release_rows if row["key"] == LAB_SMALL_BOOST_FEATURE_KEY),
-        None,
-    )
     return render_template(
         "admin.html",
         message=message,
         referral_counts=referral_counts,
         missing_assets=missing_assets,
-        research_boost_release=research_boost_release,
     )
 
 

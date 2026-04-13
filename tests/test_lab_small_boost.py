@@ -331,15 +331,21 @@ class LabSmallBoostTests(unittest.TestCase):
             user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(int(user["lab_small_boost_count"]), 0)
 
-    def test_admin_menu_shows_research_boost_release_control(self):
+    def test_research_boost_release_control_only_lives_on_release_page(self):
         game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
         admin_client = self._client(admin=True)
 
-        resp = admin_client.get("/admin")
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn("研究ブースト公開設定", html)
-        self.assertIn("研究ブーストを一般公開する", html)
+        menu_resp = admin_client.get("/admin")
+        self.assertEqual(menu_resp.status_code, 200)
+        menu_html = menu_resp.get_data(as_text=True)
+        self.assertNotIn("研究ブースト公開設定", menu_html)
+        self.assertNotIn("研究ブーストを一般公開する", menu_html)
+
+        release_resp = admin_client.get("/admin/release")
+        self.assertEqual(release_resp.status_code, 200)
+        release_html = release_resp.get_data(as_text=True)
+        self.assertIn("研究ブースト", release_html)
+        self.assertIn("一般公開する", release_html)
 
     def test_research_boost_release_flag_controls_public_home_surface(self):
         game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False

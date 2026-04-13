@@ -182,6 +182,11 @@ class PresenceTests(unittest.TestCase):
         self.assertEqual(anonymous.get("/api/presence/recent").status_code, 302)
 
         client = self._client()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            touch_presence(db, self.admin_id, "home", "home.view")
+            db.commit()
+
         home = client.get("/home")
         self.assertEqual(home.status_code, 200)
         html = home.get_data(as_text=True)
