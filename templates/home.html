@@ -8,6 +8,7 @@
   <p><a href="{{ url_for('login') }}">ログインへ</a></p>
 </div>
 {% else %}
+{% include '_presence_bar.html' %}
 <div class="home-priority-stack">
 {% if home_primary_explore_cta %}
 <div class="panel home-explore-card">
@@ -894,4 +895,5 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}"></script>
 <script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='js/presence_bar.js') }}?v={{ app_version }}"></script>
 {% endblock %}

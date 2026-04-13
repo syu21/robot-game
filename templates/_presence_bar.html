@@ -1,0 +1,56 @@
+{% if presence_summary %}
+<section
+  class="presence-bar-shell"
+  data-presence-root
+  data-presence-api-url="{{ url_for('api_presence_recent') }}"
+  data-presence-modal-limit="{{ presence_summary['modal_limit'] }}"
+>
+  <button type="button" class="presence-bar" data-presence-open aria-haspopup="dialog">
+    <div class="presence-bar-copy">
+      <div class="presence-bar-title" data-presence-title>{{ presence_summary['title'] }}</div>
+      <div class="presence-bar-subtitle" data-presence-subtitle>
+        {% if presence_summary['count'] > 0 %}{{ presence_summary['subtitle'] }}{% else %}{{ presence_summary['empty_line'] }}{% endif %}
+      </div>
+    </div>
+    <div class="presence-avatar-row" data-presence-icons>
+      {% for entry in presence_summary['entries'][:8] %}
+      <span class="presence-avatar is-{{ entry['tone'] }}" title="{{ entry['display_name'] }} / {{ entry['state_label'] }}">
+        <img src="{{ entry['robot_icon_32_url'] }}" alt="{{ entry['display_name'] }}のロボ" loading="lazy" width="32" height="32" />
+      </span>
+      {% endfor %}
+      {% if presence_summary['extra_count'] > 0 %}
+      <span class="presence-avatar-more">+{{ presence_summary['extra_count'] }}</span>
+      {% endif %}
+    </div>
+  </button>
+
+  <div class="presence-modal-backdrop" data-presence-modal hidden>
+    <section class="presence-modal" role="dialog" aria-modal="true" aria-labelledby="presence-modal-title">
+      <div class="presence-modal-head">
+        <div>
+          <h2 id="presence-modal-title">現在の参加研究員</h2>
+          <div class="presence-modal-sub">最近{{ presence_summary['within_minutes'] }}分以内に活動した研究員です</div>
+        </div>
+        <button type="button" class="presence-modal-close" data-presence-close aria-label="閉じる">×</button>
+      </div>
+      <div class="presence-modal-grid" data-presence-list>
+        {% for entry in presence_summary['entries'] %}
+        <article class="presence-member-card is-{{ entry['tone'] }}">
+          <div class="presence-member-visual">
+            <img class="presence-member-robot" src="{{ entry['robot_icon_32_url'] }}" alt="{{ entry['display_name'] }}のロボ" loading="lazy" width="48" height="48" />
+            <img class="presence-member-avatar" src="{{ entry['avatar_url'] }}" alt="" loading="lazy" width="20" height="20" />
+          </div>
+          <div class="presence-member-meta">
+            <div class="presence-member-name">{{ entry['display_name'] }}</div>
+            <div class="presence-member-state">{{ entry['state_label'] }}</div>
+            <div class="presence-member-time">{{ entry['minutes_ago_label'] }}</div>
+          </div>
+        </article>
+        {% else %}
+        <div class="presence-empty">まだ参加研究員はいません</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endif %}

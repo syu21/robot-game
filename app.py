@@ -54,6 +54,7 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.archetype import compute_archetype
+from services.presence import get_presence_count, get_recent_presence, touch_presence
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
@@ -283,6 +284,15 @@ USER_PRESENCE_WARM_WINDOW_MINUTES = max(
     USER_PRESENCE_ACTIVE_WINDOW_MINUTES + 1,
     int(os.getenv("USER_PRESENCE_WARM_WINDOW_MINUTES", "60")),
 )
+PRESENCE_WITHIN_MINUTES = max(1, int(os.getenv("PRESENCE_WITHIN_MINUTES", "20")))
+PRESENCE_PREVIEW_LIMIT = max(1, min(int(os.getenv("PRESENCE_PREVIEW_LIMIT", "8")), 8))
+PRESENCE_MODAL_LIMIT = max(PRESENCE_PREVIEW_LIMIT, min(int(os.getenv("PRESENCE_MODAL_LIMIT", "24")), 24))
+PRESENCE_INCLUDE_ADMIN = os.getenv("PRESENCE_INCLUDE_ADMIN", "true").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
 COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     5,
     int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
@@ -7755,6 +7765,21 @@ def ensure_schema(db):
         """
     )
     _seed_maintenance_state(db)
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_presence (
+            user_id INTEGER PRIMARY KEY,
+            last_active_at TEXT NOT NULL,
+            last_surface TEXT,
+            last_action_key TEXT,
+            last_path TEXT,
+            last_room_key TEXT,
+            last_robot_instance_id INTEGER,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     if "is_admin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
@@ -9214,6 +9239,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_user_created ON lab_robot_submissions(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_featured ON lab_robot_submissions(status, is_featured, approved_at DESC)")
@@ -13645,6 +13671,56 @@ def _user_visuals(db, user_id, cache):
             "presence_title": presence["title"],
         }
     return cache[user_id]
+
+
+def _presence_entry_view_model(db, entry):
+    item = dict(entry or {})
+    robot_icon_rel = _safe_static_rel(item.get("robot_icon_32_path")) if item.get("robot_icon_32_path") else None
+    composed_rel = _safe_static_rel(item.get("robot_composed_image_path")) if item.get("robot_composed_image_path") else None
+    if not robot_icon_rel and composed_rel and item.get("active_robot_id"):
+        try:
+            robot_icon_rel = _ensure_robot_instance_badge(db, int(item["active_robot_id"]), composed_rel)
+        except Exception:
+            app.logger.warning("presence.badge_fallback_failed user_id=%s", item.get("user_id"), exc_info=True)
+            robot_icon_rel = None
+    if not robot_icon_rel:
+        robot_icon_rel = DEFAULT_BADGE_REL
+    avatar_rel = _safe_static_rel(item.get("avatar_path")) if item.get("avatar_path") else None
+    if not avatar_rel:
+        avatar_rel = DEFAULT_AVATAR_REL
+    minutes = max(0, int(item.get("minutes_ago") or 0))
+    item["display_name"] = str(item.get("display_name") or "研究員").strip()
+    item["robot_icon_32_url"] = _versioned_static_url(robot_icon_rel, fallback_url=url_for("static", filename=DEFAULT_BADGE_REL))
+    item["avatar_url"] = _versioned_static_url(avatar_rel, fallback_url=url_for("static", filename=DEFAULT_AVATAR_REL))
+    item["minutes_ago"] = minutes
+    item["minutes_ago_label"] = f"{minutes}分前" if minutes > 0 else "たった今"
+    return item
+
+
+def _presence_summary_view(db, *, limit=PRESENCE_PREVIEW_LIMIT):
+    count = get_presence_count(
+        db,
+        within_minutes=PRESENCE_WITHIN_MINUTES,
+        include_admin=PRESENCE_INCLUDE_ADMIN,
+    )
+    raw_entries = get_recent_presence(
+        db,
+        limit=limit,
+        within_minutes=PRESENCE_WITHIN_MINUTES,
+        include_admin=PRESENCE_INCLUDE_ADMIN,
+    )
+    entries = [_presence_entry_view_model(db, entry) for entry in raw_entries]
+    return {
+        "count": int(count),
+        "within_minutes": int(PRESENCE_WITHIN_MINUTES),
+        "preview_limit": int(limit),
+        "modal_limit": int(PRESENCE_MODAL_LIMIT),
+        "entries": entries,
+        "extra_count": max(0, int(count) - len(entries)),
+        "title": (f"研究員 {int(count)}名 参加中" if int(count) > 0 else "今は静かです"),
+        "subtitle": f"最近{int(PRESENCE_WITHIN_MINUTES)}分で動いた研究員",
+        "empty_line": "最初の研究員になってみましょう",
+    }
 
 
 def _decorate_user_rows(db, rows, user_key="user_id"):
@@ -18742,6 +18818,83 @@ def touch_user_last_seen():
     return None
 
 
+def _presence_context_for_request():
+    path = request.path or ""
+    if (
+        request.endpoint == "static"
+        or path.startswith("/static/")
+        or path.startswith("/api/")
+        or path.startswith("/admin")
+        or path.startswith("/healthz")
+    ):
+        return None
+    method = request.method.upper()
+    if path == "/home":
+        return {"surface": "home", "action_key": "home.view"}
+    if path == "/explore" and method == "POST":
+        return {"surface": "explore", "action_key": "explore.start"}
+    if path.startswith("/parts"):
+        return {"surface": "parts", "action_key": "parts.view"}
+    if path == "/build" and method == "GET":
+        return {"surface": "build", "action_key": "build.view"}
+    if path == "/build":
+        return {"surface": "build", "action_key": "build.edit"}
+    if path.startswith("/build/confirm"):
+        return {"surface": "build", "action_key": "build.confirm"}
+    if path.startswith("/lab/showcase"):
+        return {"surface": "lab", "action_key": "lab.showcase"}
+    if path.startswith("/lab/race/watch") or "/race/watch/" in path:
+        return {"surface": "lab", "action_key": "lab.race.watch"}
+    if path.startswith("/lab/race"):
+        return {"surface": "lab", "action_key": "lab.race"}
+    if path.startswith("/lab"):
+        return {"surface": "lab", "action_key": "lab.view"}
+    if path.startswith("/comms/world"):
+        return {"surface": "comms", "action_key": "chat.post" if method == "POST" else "comms.world"}
+    if path.startswith("/comms/rooms"):
+        return {"surface": "comms", "action_key": "chat.post" if method == "POST" else "comms.rooms"}
+    if path.startswith("/comms"):
+        return {"surface": "comms", "action_key": "comms.view"}
+    if path.startswith("/showcase"):
+        return {"surface": "showcase", "action_key": "showcase.view"}
+    if path.startswith("/world"):
+        return {"surface": "world", "action_key": "world.view"}
+    if path.startswith("/records"):
+        return {"surface": "records", "action_key": "records.view"}
+    return None
+
+
+@app.before_request
+def touch_user_presence():
+    context = _presence_context_for_request()
+    if not context:
+        return None
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    try:
+        db = get_db()
+        user = db.execute(
+            "SELECT id, active_robot_id FROM users WHERE id = ?",
+            (int(user_id),),
+        ).fetchone()
+        if not user:
+            return None
+        touch_presence(
+            db,
+            int(user["id"]),
+            context["surface"],
+            context["action_key"],
+            path=request.path,
+            room_key=(request.values.get("room_key") or request.values.get("room")),
+            robot_instance_id=(int(user["active_robot_id"]) if user["active_robot_id"] else None),
+        )
+        db.commit()
+    except Exception:
+        app.logger.exception("presence.touch_failed user_id=%s path=%s", user_id, request.path)
+    return None
+
+
 @app.before_request
 def enforce_release_gates():
     if request.endpoint == "static" or request.path.startswith("/static/"):
@@ -20732,6 +20885,25 @@ def home_research_boost_x_share():
     return redirect(intent_url)
 
 
+@app.route("/api/presence/recent")
+@login_required
+def api_presence_recent():
+    db = get_db()
+    try:
+        limit = max(1, min(int(request.args.get("limit", PRESENCE_PREVIEW_LIMIT)), int(PRESENCE_MODAL_LIMIT)))
+    except ValueError:
+        limit = int(PRESENCE_PREVIEW_LIMIT)
+    summary = _presence_summary_view(db, limit=limit)
+    return jsonify(
+        {
+            "ok": True,
+            "count": int(summary["count"]),
+            "within_minutes": int(summary["within_minutes"]),
+            "entries": summary["entries"],
+        }
+    )
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -20923,6 +21095,7 @@ def home():
         if research_boost_visible
         else None
     )
+    presence_summary = _presence_summary_view(db, limit=PRESENCE_PREVIEW_LIMIT)
     home_comm_initial_tab = "world"
     home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
     home_active_user_count = count_active_users(
@@ -21254,6 +21427,7 @@ def home():
             newbie_boost=newbie_boost,
             research_boost=research_boost,
             research_boost_x_share=research_boost_x_share,
+            presence_summary=presence_summary,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
             explore_submission_id=explore_submission_id,

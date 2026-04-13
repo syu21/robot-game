@@ -3478,6 +3478,212 @@ body.battle-page .layer-boss-victory-sub {
   background: rgba(11, 18, 32, 0.72);
 }
 
+.presence-bar-shell {
+  position: relative;
+  z-index: 5;
+  margin-bottom: 10px;
+}
+
+.presence-bar {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  background: rgba(9, 18, 27, 0.86);
+  color: #e8f5f3;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.presence-bar-title {
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.presence-bar-subtitle,
+.presence-modal-sub,
+.presence-member-time {
+  color: #9fb4ba;
+  font-size: 0.86rem;
+}
+
+.presence-avatar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 120px;
+}
+
+.presence-avatar,
+.presence-avatar-more {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: -7px;
+  border-radius: 8px;
+  border: 2px solid #10202b;
+  background: #172533;
+  overflow: hidden;
+}
+
+.presence-avatar:first-child {
+  margin-left: 0;
+}
+
+.presence-avatar img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.presence-avatar.is-active {
+  border-color: #22c55e;
+}
+
+.presence-avatar.is-warm {
+  border-color: #f59e0b;
+}
+
+.presence-avatar.is-idle {
+  border-color: #64748b;
+}
+
+.presence-avatar-more {
+  color: #e2e8f0;
+  font-weight: 900;
+  font-size: 0.82rem;
+}
+
+.presence-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.66);
+}
+
+.presence-modal-backdrop[hidden] {
+  display: none;
+}
+
+.presence-modal {
+  width: min(920px, 100%);
+  max-height: min(720px, 86vh);
+  overflow: auto;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #0f172a;
+  color: #eef6f8;
+}
+
+.presence-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.presence-modal-head h2 {
+  margin: 0 0 4px;
+}
+
+.presence-modal-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: #1f2937;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.presence-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.presence-member-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.94);
+}
+
+.presence-member-card.is-active {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.presence-member-card.is-warm {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.presence-member-card.is-idle {
+  border-color: rgba(100, 116, 139, 0.5);
+}
+
+.presence-member-visual {
+  position: relative;
+  flex: 0 0 52px;
+}
+
+.presence-member-robot {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #172533;
+}
+
+.presence-member-avatar {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 8px;
+  border: 1px solid #0f172a;
+  background: #111827;
+}
+
+.presence-member-meta {
+  min-width: 0;
+}
+
+.presence-member-name {
+  overflow: hidden;
+  color: #f8fafc;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presence-member-state {
+  color: #c4d5da;
+  font-size: 0.9rem;
+}
+
+.presence-empty {
+  grid-column: 1 / -1;
+  padding: 16px;
+  color: #9fb4ba;
+}
+
 .home-research-boost-copy {
   display: grid;
   gap: 3px;
@@ -6174,6 +6380,27 @@ body.home-page.home-mobile .home-primary-explore-cta {
   width: 100% !important;
   min-height: 52px !important;
   font-size: 16px !important;
+}
+
+body.home-page.home-mobile .presence-bar {
+  align-items: flex-start !important;
+  flex-direction: column !important;
+}
+
+body.home-page.home-mobile .presence-avatar-row {
+  justify-content: flex-start !important;
+  min-width: 0 !important;
+  padding-left: 7px !important;
+}
+
+body.home-page.home-mobile .presence-modal-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 420px) {
+  body.home-page.home-mobile .presence-modal-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 body.home-page.home-mobile .home-research-boost {

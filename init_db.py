@@ -219,6 +219,21 @@ def main():
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_presence (
+            user_id INTEGER PRIMARY KEY,
+            last_active_at TEXT NOT NULL,
+            last_surface TEXT,
+            last_action_key TEXT,
+            last_path TEXT,
+            last_room_key TEXT,
+            last_robot_instance_id INTEGER,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
 
     cur.execute(
         """
@@ -1387,6 +1402,7 @@ def main():
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
     )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
