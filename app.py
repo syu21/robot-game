@@ -9132,10 +9132,13 @@ def ensure_schema(db):
     if "created_at" not in rda_cols:
         db.execute("ALTER TABLE robot_decor_assets ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
     pi_cols = {row["name"] for row in db.execute("PRAGMA table_info(part_instances)").fetchall()}
+    if "status" not in pi_cols:
+        db.execute("ALTER TABLE part_instances ADD COLUMN status TEXT NOT NULL DEFAULT 'inventory'")
     if "part_type" not in pi_cols:
         db.execute("ALTER TABLE part_instances ADD COLUMN part_type TEXT")
     if "updated_at" not in pi_cols:
         db.execute("ALTER TABLE part_instances ADD COLUMN updated_at TEXT")
+    db.execute("UPDATE part_instances SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     db.execute(
         """
         UPDATE part_instances

@@ -1440,8 +1440,13 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_claims_user_created ON lab_casino_prize_claims(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_core_inventory_user_core ON user_core_inventory(user_id, core_asset_id)")
     pi_cols = {row[1] for row in cur.execute("PRAGMA table_info(part_instances)").fetchall()}
+    if "status" not in pi_cols:
+        cur.execute("ALTER TABLE part_instances ADD COLUMN status TEXT NOT NULL DEFAULT 'inventory'")
     if "part_type" not in pi_cols:
         cur.execute("ALTER TABLE part_instances ADD COLUMN part_type TEXT")
+    if "updated_at" not in pi_cols:
+        cur.execute("ALTER TABLE part_instances ADD COLUMN updated_at TEXT")
+    cur.execute("UPDATE part_instances SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     cur.execute(
         """
         UPDATE part_instances
