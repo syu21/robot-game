@@ -75,6 +75,7 @@
 ### 4.6 共有/招待/陣営
 - `audit.chat.post`
 - `audit.share.click`
+  - Xシェア導線では payload に `surface`, `share_target`, `robot_instance_id`, `boost_granted`, `boost_before`, `boost_after`, `reason=daily_x_share` を含める
 - `audit.referral.attach`
 - `audit.referral.qualified`
 - `audit.faction.choose`

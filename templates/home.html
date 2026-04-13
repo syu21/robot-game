@@ -34,15 +34,23 @@
         {% elif research_boost['paid_boost_active'] %}
         <div class="upgrade-cost">{{ research_boost['paid_boost_message'] }}</div>
         {% else %}
-        <div class="upgrade-cost">15分間 出撃CT半減</div>
+        <div class="upgrade-cost">10分間 出撃CT半減</div>
         {% endif %}
       </div>
       {% if not research_boost['active'] %}
       <form method="post" action="{{ url_for('home_research_boost_use') }}" class="inline-form inline-form-top home-research-boost-form">
-        <button type="submit" class="home-research-boost-button" {% if not research_boost['can_use'] %}disabled{% endif %}>15分使う</button>
+        <button type="submit" class="home-research-boost-button" {% if not research_boost['can_use'] %}disabled{% endif %}>10分使う</button>
       </form>
       {% endif %}
     </div>
+    {% if research_boost_x_share %}
+    <div class="home-research-share">
+      <form method="post" action="{{ url_for('home_research_boost_x_share') }}" class="inline-form inline-form-top home-research-share-form" target="_blank">
+        <button type="submit" class="home-research-share-button">{{ research_boost_x_share['button_label'] }}</button>
+      </form>
+      <div class="home-research-share-note">{{ research_boost_x_share['status_line'] }}</div>
+    </div>
+    {% endif %}
     {% endif %}
     {% if home_primary_explore_cta['is_post'] %}
     <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">

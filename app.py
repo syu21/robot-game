@@ -300,11 +300,11 @@ EXPLORE_BOOST_DURATION_DAYS = 14
 EXPLORE_BOOST_CT_SECONDS = 20
 LAB_SMALL_BOOST_FEATURE_KEY = "research_boost"
 LAB_SMALL_BOOST_MAX_COUNT = 3
-LAB_SMALL_BOOST_DURATION_SECONDS = 15 * 60
+LAB_SMALL_BOOST_DURATION_SECONDS = 10 * 60
 LAB_SMALL_BOOST_SOURCE_LABELS = {
     "daily_login": "デイリーログイン",
     "lab_participation": "実験室参加",
-    "feedback": "フィードバック投稿",
+    "x_share": "Xシェア",
 }
 PAYMENT_STATUS_CREATED = "created"
 PAYMENT_STATUS_COMPLETED = "completed"
@@ -1038,7 +1038,7 @@ RELEASE_FLAG_DEFS = (
     {
         "key": LAB_SMALL_BOOST_FEATURE_KEY,
         "label": "研究ブースト",
-        "summary": "無料で入手できる15分間の出撃CT半減ブーストを一般公開します。管理者は非公開中でも確認できます。",
+        "summary": "無料で入手できる10分間の出撃CT半減ブーストを一般公開します。管理者は非公開中でも確認できます。",
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
@@ -5747,10 +5747,6 @@ def _submit_chat_message(db, *, user_id, username, room_key, surface):
         },
         ip=request.remote_addr,
     )
-    if settings["key"] == "feedback_room":
-        _flash_lab_small_boost_result(
-            _grant_lab_small_boost_if_available(db, int(user_id), "feedback")
-        )
     db.commit()
     return redirect(redirect_target)
 
@@ -14009,6 +14005,17 @@ def _public_game_root_url():
     return "https://example.com"
 
 
+def _absolute_public_url(path_or_url):
+    text = str(path_or_url or "").strip()
+    if not text:
+        return _public_game_root_url()
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    if not text.startswith("/"):
+        text = "/" + text
+    return _public_game_root_url().rstrip("/") + text
+
+
 def _google_oauth_client_id():
     return (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
 
@@ -14660,6 +14667,19 @@ def _lab_small_boost_grant_already_logged(db, *, user_id, source, day_key):
     return False
 
 
+def _lab_small_boost_source_received_today(db, *, user_id, source, now_ts=None):
+    source_key = _lab_small_boost_source_key(source)
+    if not source_key:
+        return False
+    day_key = _lab_small_boost_day_key(now_ts)
+    return _lab_small_boost_grant_already_logged(
+        db,
+        user_id=int(user_id),
+        source=source_key,
+        day_key=day_key,
+    )
+
+
 def _grant_lab_small_boost_if_available(db, user_id, source, *, user_row=None, now_ts=None):
     source_key = _lab_small_boost_source_key(source)
     if not source_key:
@@ -14714,6 +14734,8 @@ def _grant_lab_small_boost_if_available(db, user_id, source, *, user_row=None, n
         "handled": True,
         "granted": bool(granted),
         "already_received": False,
+        "source": source_key,
+        "before_count": int(before_count),
         "count": int(after_count),
         "message": message,
     }
@@ -20645,8 +20667,69 @@ def home_research_boost_use():
         ip=request.remote_addr,
     )
     db.commit()
-    flash("研究ブーストを発動しました。15分間 出撃CT半減", "notice")
+    flash("研究ブーストを発動しました。10分間 出撃CT半減", "notice")
     return redirect(url_for("home"))
+
+
+@app.route("/home/research-boost/x-share", methods=["POST"])
+@login_required
+def home_research_boost_x_share():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    if not _lab_small_boost_feature_open(db, user_row=user, user_id=user_id):
+        flash("研究ブーストはまだ公開準備中です。", "notice")
+        return redirect(url_for("home"))
+
+    share_robot = _public_share_robot_for_user(db, user_id)
+    if share_robot:
+        share_path = url_for("share_robot_public", robot_instance_id=int(share_robot["id"]))
+    else:
+        share_path = url_for("share_robot_generic")
+    share_url = _absolute_public_url(share_path)
+    share_text = _robot_x_share_text(db, user_row=user, robot_row=share_robot, share_url=share_url)
+
+    before_count = _lab_small_boost_count(user)
+    grant_result = _grant_lab_small_boost_if_available(
+        db,
+        user_id,
+        "x_share",
+        user_row=user,
+    )
+    if grant_result.get("already_received"):
+        flash("本日のXシェア報酬は受け取り済み", "notice")
+    else:
+        _flash_lab_small_boost_result(grant_result)
+    after_count = int(grant_result.get("count") if grant_result.get("handled") else before_count)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["SHARE_CLICK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="share",
+        entity_type=("robot_instance" if share_robot else "game"),
+        entity_id=(int(share_robot["id"]) if share_robot else None),
+        payload={
+            "surface": "home",
+            "share_target": "x",
+            "share_type": "active_robot",
+            "robot_instance_id": (int(share_robot["id"]) if share_robot else None),
+            "share_url": share_url,
+            "boost_granted": bool(grant_result.get("granted")),
+            "boost_already_received": bool(grant_result.get("already_received")),
+            "boost_before": int(grant_result.get("before_count", before_count)),
+            "boost_after": int(after_count),
+            "boost_cap": int(LAB_SMALL_BOOST_MAX_COUNT),
+            "reason": "daily_x_share",
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    intent_url = "https://x.com/intent/tweet?" + urlencode({"text": share_text})
+    return redirect(intent_url)
 
 
 @app.route("/home")
@@ -20835,6 +20918,11 @@ def home():
             paid_boost_active=_is_paid_explore_boost_active(user, now_ts=now),
             ct_seconds=explore_ct_seconds,
         )
+    research_boost_x_share = (
+        _home_x_share_view_model(db, user, research_boost=research_boost, now_ts=now)
+        if research_boost_visible
+        else None
+    )
     home_comm_initial_tab = "world"
     home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
     home_active_user_count = count_active_users(
@@ -21165,6 +21253,7 @@ def home():
             recent_drop_items=recent_drop_items,
             newbie_boost=newbie_boost,
             research_boost=research_boost,
+            research_boost_x_share=research_boost_x_share,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
             explore_submission_id=explore_submission_id,
@@ -22512,6 +22601,104 @@ def _get_active_robot(db, user_id):
         if row:
             return _refresh_robot_instance_render_assets(db, row, log_label="get_active_robot")
     return None
+
+
+def _public_share_robot_for_user(db, user_id):
+    row = db.execute(
+        """
+        SELECT ri.id, ri.user_id, ri.name, ri.personality, ri.composed_image_path, ri.icon_32_path,
+               ri.combat_mode, ri.updated_at, ri.style_key, ri.style_stats_json, ri.is_public
+        FROM users u
+        JOIN robot_instances ri ON ri.id = u.active_robot_id
+        WHERE u.id = ?
+          AND ri.user_id = u.id
+          AND ri.status = 'active'
+          AND COALESCE(ri.is_public, 1) = 1
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if not row:
+        return None
+    return _refresh_robot_instance_render_assets(db, row, log_label="public_share_robot")
+
+
+def _share_robot_profile_line(db, robot_row):
+    if not robot_row:
+        return ""
+    stat_obj = _compute_robot_stats_for_instance(db, int(robot_row["id"]))
+    profile = _robot_profile_view(stat_obj) if stat_obj else None
+    return str((profile or {}).get("signature_label") or "").strip()
+
+
+def _home_x_share_view_model(db, user_row, *, research_boost=None, now_ts=None):
+    if not user_row:
+        return None
+    now = _now_ts() if now_ts is None else int(now_ts)
+    count = int((research_boost or {}).get("count") if research_boost else _lab_small_boost_count(user_row))
+    cap = int((research_boost or {}).get("cap") if research_boost else LAB_SMALL_BOOST_MAX_COUNT)
+    received = _lab_small_boost_source_received_today(
+        db,
+        user_id=int(user_row["id"]),
+        source="x_share",
+        now_ts=now,
+    )
+    share_robot = _public_share_robot_for_user(db, int(user_row["id"]))
+    if received:
+        button_label = "Xで今の機体をシェア"
+        status_line = "本日のXシェア報酬は受け取り済み"
+    elif count >= cap:
+        button_label = "Xで今の機体をシェア"
+        status_line = f"研究ブーストは上限です（{cap}/{cap}）"
+    else:
+        button_label = "Xでシェアして研究ブースト +1"
+        status_line = "1日1回 / 現在機体画像つき"
+    if not share_robot:
+        status_line = "現在機体がないため、ロボらぼ紹介文でシェアします"
+        if not received and count < cap:
+            button_label = "Xでシェアして研究ブースト +1"
+        else:
+            button_label = "Xでロボらぼをシェア"
+    return {
+        "button_label": button_label,
+        "status_line": status_line,
+        "received": bool(received),
+        "at_cap": bool(count >= cap),
+        "has_robot": bool(share_robot),
+        "robot_id": (int(share_robot["id"]) if share_robot else None),
+    }
+
+
+def _robot_x_share_text(db, *, user_row=None, robot_row=None, share_url=None):
+    url = str(share_url or _public_game_root_url()).strip()
+    if robot_row:
+        layer = 1
+        if user_row and hasattr(user_row, "keys") and "max_unlocked_layer" in user_row.keys():
+            layer = int(user_row["max_unlocked_layer"] or 1)
+        robot_name = str(robot_row.get("name") or "相棒ロボ").strip()
+        profile_label = _share_robot_profile_line(db, robot_row)
+        robot_line = f"{robot_name}でボス挑戦中"
+        if profile_label:
+            robot_line = f"{robot_name}（{profile_label}）でボス挑戦中"
+        return "\n".join(
+            [
+                "今日のロボらぼ🤖",
+                f"第{layer}層攻略中！",
+                robot_line,
+                "",
+                url,
+                "#ロボらぼ",
+            ]
+        )
+    return "\n".join(
+        [
+            "今日のロボらぼをプレイ中🤖",
+            "自分だけの機体で探索中",
+            "",
+            url,
+            "#ロボらぼ",
+        ]
+    )
 
 
 def _select_battle_narrator(db, user_id):
@@ -24671,6 +24858,84 @@ def share_boss_defeat():
     db.commit()
     intent_url = "https://x.com/intent/tweet?" + urlencode({"text": share_text})
     return redirect(intent_url)
+
+
+def _share_default_image_url():
+    rel = DEFAULT_AVATAR_REL if _safe_static_rel(DEFAULT_AVATAR_REL) else "favicon.png"
+    return _absolute_public_url(url_for("static", filename=rel))
+
+
+@app.route("/share/robot")
+def share_robot_generic():
+    share_url = _absolute_public_url(url_for("share_robot_generic"))
+    image_url = _share_default_image_url()
+    return render_template(
+        "share_robot.html",
+        title="今日のロボらぼ | ロボらぼ",
+        og_title="今日のロボらぼ | ロボらぼ",
+        og_description="ロボらぼで自分だけの機体を育成中",
+        og_image=image_url,
+        og_url=share_url,
+        share_url=share_url,
+        robot=None,
+        owner_name="",
+        profile_label="",
+        max_layer=None,
+        image_url=image_url,
+    )
+
+
+@app.route("/share/robot/<int:robot_instance_id>")
+def share_robot_public(robot_instance_id):
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT
+            ri.id, ri.user_id, ri.name, ri.personality, ri.composed_image_path, ri.icon_32_path,
+            ri.combat_mode, ri.updated_at, ri.style_key, ri.style_stats_json, ri.is_public,
+            u.username, u.display_name, u.is_admin, u.max_unlocked_layer
+        FROM robot_instances ri
+        JOIN users u ON u.id = ri.user_id
+        WHERE ri.id = ?
+          AND ri.status = 'active'
+          AND COALESCE(ri.is_public, 1) = 1
+        LIMIT 1
+        """,
+        (int(robot_instance_id),),
+    ).fetchone()
+    if not row:
+        abort(404)
+    robot = _refresh_robot_instance_render_assets(db, row, log_label="share_robot_public") or dict(row)
+    stat_obj = _compute_robot_stats_for_instance(db, int(robot["id"]))
+    profile = _robot_profile_view(stat_obj) if stat_obj else None
+    profile_label = str((profile or {}).get("signature_label") or "").strip()
+    share_url = _absolute_public_url(url_for("share_robot_public", robot_instance_id=int(robot["id"])))
+    image_url = (
+        _absolute_public_url(_composed_image_url(robot.get("composed_image_path"), robot.get("updated_at")))
+        if robot.get("composed_image_path")
+        else _share_default_image_url()
+    )
+    owner_name = _display_username(
+        str(row["username"] or "").strip(),
+        display_name=str(row["display_name"] or "").strip(),
+        is_admin=bool(int(row["is_admin"] or 0)),
+    )
+    robot_name = str(robot.get("name") or "相棒ロボ").strip()
+    title = f"{robot_name} | ロボらぼ"
+    return render_template(
+        "share_robot.html",
+        title=title,
+        og_title=title,
+        og_description="ロボらぼで育てた機体を公開中",
+        og_image=image_url,
+        og_url=share_url,
+        share_url=share_url,
+        robot=robot,
+        owner_name=owner_name,
+        profile_label=profile_label,
+        max_layer=int(row["max_unlocked_layer"] or 1),
+        image_url=image_url,
+    )
 
 
 @app.route("/robots")

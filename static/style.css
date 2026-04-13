@@ -3508,6 +3508,70 @@ body.battle-page .layer-boss-victory-sub {
   cursor: not-allowed;
 }
 
+.home-research-share {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.home-research-share-form {
+  width: 100%;
+}
+
+.home-research-share-button {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid rgba(18, 24, 38, 0.16);
+  background: #111827;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.home-research-share-note {
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.share-robot-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+  gap: 24px;
+  align-items: center;
+  padding: 24px 0;
+}
+
+.share-robot-visual {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #17202a 0%, #25313f 48%, #113f45 100%);
+  overflow: hidden;
+}
+
+.share-robot-image {
+  width: min(72vw, 520px);
+  max-height: 520px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.share-robot-copy h1 {
+  margin: 8px 0 12px;
+}
+
+@media (max-width: 720px) {
+  .share-robot-page {
+    grid-template-columns: 1fr;
+  }
+
+  .share-robot-visual {
+    min-height: 260px;
+  }
+}
+
 .home-primary-explore-form {
   width: 100%;
   margin: 0;
@@ -6119,6 +6183,11 @@ body.home-page.home-mobile .home-research-boost {
 
 body.home-page.home-mobile .home-research-boost-button {
   width: 100% !important;
+  min-height: 48px !important;
+  font-size: 16px !important;
+}
+
+body.home-page.home-mobile .home-research-share-button {
   min-height: 48px !important;
   font-size: 16px !important;
 }

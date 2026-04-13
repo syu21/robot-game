@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 import app as game_app
 import init_db
@@ -40,7 +41,7 @@ class LabSmallBoostTests(unittest.TestCase):
             self.user_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("research_boost_user",)).fetchone()["id"])
             self.admin_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("research_boost_admin",)).fetchone()["id"])
             db.commit()
-        self._create_active_robot(self.user_id)
+        self.active_robot_id = self._create_active_robot(self.user_id)
 
     def tearDown(self):
         game_app.DB_PATH = self.old_db_path
@@ -103,6 +104,7 @@ class LabSmallBoostTests(unittest.TestCase):
             )
             db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (robot_id, int(user_id)))
             db.commit()
+            return robot_id
 
     def _set_last_action_at(self, user_id, last_action_at):
         with game_app.app.app_context():
@@ -128,7 +130,9 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         html = first.get_data(as_text=True)
         self.assertIn("研究ブースト 1 / 3", html)
-        self.assertIn("15分使う", html)
+        self.assertIn("10分使う", html)
+        self.assertIn("Xでシェアして研究ブースト +1", html)
+        self.assertIn("1日1回 / 現在機体画像つき", html)
         self.assertIn("研究ブーストを1個獲得しました（1/3）", html)
 
         second = client.get("/home")
@@ -186,6 +190,64 @@ class LabSmallBoostTests(unittest.TestCase):
             self.assertEqual(int(user["lab_small_boost_count"]), 1)
             self.assertEqual(event_count, 1)
 
+    def test_x_share_grants_daily_stock_once_and_redirects_to_intent(self):
+        client = self._client()
+
+        first = client.post("/home/research-boost/x-share", follow_redirects=False)
+        self.assertEqual(first.status_code, 302)
+        location = first.headers.get("Location", "")
+        self.assertTrue(location.startswith("https://x.com/intent/tweet?"))
+        text = parse_qs(urlparse(location).query).get("text", [""])[0]
+        self.assertIn("今日のロボらぼ", text)
+        self.assertIn(f"/share/robot/{self.active_robot_id}", text)
+
+        second = client.post("/home/research-boost/x-share", follow_redirects=False)
+        self.assertEqual(second.status_code, 302)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            grant_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            share_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["SHARE_CLICK"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            payload_row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["SHARE_CLICK"]),
+            ).fetchone()
+            self.assertEqual(int(user["lab_small_boost_count"]), 1)
+            self.assertEqual(grant_count, 1)
+            self.assertEqual(share_count, 2)
+            self.assertIn('"reason": "daily_x_share"', payload_row["payload_json"])
+            self.assertIn('"boost_granted": true', payload_row["payload_json"])
+
+    def test_share_robot_public_page_has_ogp_image(self):
+        client = game_app.app.test_client()
+
+        resp = client.get(f"/share/robot/{self.active_robot_id}")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ResearchRunner | ロボらぼ", html)
+        self.assertIn('property="og:image"', html)
+        self.assertIn('property="og:url"', html)
+        self.assertIn("ロボらぼで育てた機体を公開中", html)
+
     def test_using_research_boost_consumes_stock_and_halves_normal_ct(self):
         client = self._client()
         client.get("/home")
@@ -203,6 +265,7 @@ class LabSmallBoostTests(unittest.TestCase):
             user = db.execute("SELECT lab_small_boost_count, lab_small_boost_until FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(int(user["lab_small_boost_count"]), 0)
             self.assertGreater(int(user["lab_small_boost_until"]), now_before)
+            self.assertLessEqual(int(user["lab_small_boost_until"]), now_before + 610)
 
         self._set_last_action_at(self.user_id, int(time.time()) - 10)
         blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
@@ -251,7 +314,7 @@ class LabSmallBoostTests(unittest.TestCase):
             self.assertEqual(int(user["lab_small_boost_count"]), 1)
             self.assertEqual(int(user["lab_small_boost_until"] or 0), 0)
 
-    def test_feedback_post_grants_daily_feedback_stock(self):
+    def test_feedback_post_does_not_grant_research_boost_stock(self):
         client = self._client()
         resp = client.post(
             "/comms/rooms?room=feedback_room",
@@ -266,7 +329,7 @@ class LabSmallBoostTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 1)
+            self.assertEqual(int(user["lab_small_boost_count"]), 0)
 
     def test_admin_menu_shows_research_boost_release_control(self):
         game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False

@@ -3,7 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>{{ title or "ロボらぼ" }}</title>
+  {% set page_title = title|default("ロボらぼ", true) %}
+  <title>{{ page_title }}</title>
+  {% if og_title or og_description or og_image or og_url %}
+  <meta property="og:type" content="{{ og_type|default('website', true) }}" />
+  <meta property="og:title" content="{{ og_title|default(page_title, true) }}" />
+  <meta property="og:description" content="{{ og_description|default('ロボらぼ', true) }}" />
+  {% if og_image %}<meta property="og:image" content="{{ og_image }}" />{% endif %}
+  {% if og_url %}<meta property="og:url" content="{{ og_url }}" />{% endif %}
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ og_title|default(page_title, true) }}" />
+  <meta name="twitter:description" content="{{ og_description|default('ロボらぼ', true) }}" />
+  {% if og_image %}<meta name="twitter:image" content="{{ og_image }}" />{% endif %}
+  {% endif %}
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}-ui3" />

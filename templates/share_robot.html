@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="share-robot-page">
+  <div class="share-robot-visual">
+    {% if image_url %}
+    <img class="share-robot-image" src="{{ image_url }}" alt="{{ robot['name'] if robot else 'ロボらぼ' }}" />
+    {% endif %}
+  </div>
+  <div class="share-robot-copy">
+    {% if robot %}
+    <div class="home-explore-kicker">ロボらぼ公開機体</div>
+    <h1>{{ robot['name'] }}</h1>
+    <div class="robot-part">オーナー: {{ owner_name }}</div>
+    {% if profile_label %}
+    <div class="robot-part">思想: {{ profile_label }}</div>
+    {% endif %}
+    {% if max_layer %}
+    <div class="robot-part">第{{ max_layer }}層攻略中</div>
+    {% endif %}
+    <p class="robot-time">育てた機体で探索とボス戦に挑戦中。</p>
+    {% else %}
+    <div class="home-explore-kicker">ロボらぼ</div>
+    <h1>今日のロボらぼ</h1>
+    <p class="robot-part">自分だけの機体で探索中。</p>
+    {% endif %}
+    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('register') }}">ロボらぼを始める</a></p>
+  </div>
+</section>
+{% endblock %}
