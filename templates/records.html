@@ -6,6 +6,42 @@
   <div class="upgrade-cost">{{ week_key }} の記録と、世界に残った初達成を見返せます。</div>
 </div>
 
+{% if boss_medal_summary %}
+<section class="panel boss-medal-records-panel">
+  <div class="boss-medal-head">
+    <div>
+      <h2>ボス撃破の勲章</h2>
+      <div class="upgrade-cost">獲得した勲章は、機体整備の装飾でロボに付けられます。</div>
+    </div>
+    <div class="boss-medal-count">{{ boss_medal_summary['earned_count'] }} / {{ boss_medal_summary['total_count'] }}</div>
+  </div>
+  <div class="boss-medal-grid">
+    {% for medal in boss_medal_summary['rows'] %}
+    <div class="boss-medal-tile{% if not medal['earned'] %} is-locked{% endif %}">
+      <div class="boss-medal-frame">
+        <img src="{{ medal['image_url'] }}" alt="{{ medal['name'] }}" loading="lazy" decoding="async" />
+      </div>
+      <div class="boss-medal-copy">
+        <div><b>{{ medal['name'] }}</b></div>
+        <div class="robot-part">{{ medal['detail'] }}</div>
+        <div class="robot-time">
+          {{ medal['status_label'] }}{% if medal['earned'] and medal['acquired_text'] %} / {{ medal['acquired_text'] }} JST{% endif %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="boss-medal-empty">まだ勲章はありません。</div>
+    {% endfor %}
+  </div>
+  <div class="home-inline-actions">
+    {% if boss_medal_summary['maintenance_url'] %}
+    <a class="battle-home-link" href="{{ boss_medal_summary['maintenance_url'] }}">機体に付ける</a>
+    {% endif %}
+    <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
+  </div>
+</section>
+{% endif %}
+
 <div class="world-competition-grid">
   <section class="panel">
     <h2>初達成記録</h2>

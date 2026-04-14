@@ -7142,6 +7142,116 @@ def _seed_default_decor_assets(db):
         )
 
 
+def _boss_medal_reward_pairs():
+    pairs = []
+    seen_keys = set()
+    for area_key, decor_keys in AREA_BOSS_DECOR_REWARD_KEYS.items():
+        for decor_key in decor_keys:
+            key = str(decor_key or "").strip()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            pairs.append((str(area_key or "").strip(), key))
+    return pairs
+
+
+def _boss_medal_summary(db, user_id, *, include_unearned=False, preview_limit=4, user_row=None):
+    pairs = [
+        (area_key, decor_key)
+        for area_key, decor_key in _boss_medal_reward_pairs()
+        if user_row is None or _area_visible_for_viewer(db, area_key, user_row=user_row)
+    ]
+    total_count = len(pairs)
+    if not pairs:
+        return {
+            "earned_count": 0,
+            "total_count": 0,
+            "rows": [],
+            "preview_rows": [],
+            "maintenance_url": None,
+        }
+
+    keys = [decor_key for _, decor_key in pairs]
+    placeholders = ",".join(["?"] * len(keys))
+    asset_rows = db.execute(
+        f"""
+        SELECT id, key, name_ja, image_path
+        FROM robot_decor_assets
+        WHERE key IN ({placeholders})
+        """,
+        keys,
+    ).fetchall()
+    assets_by_key = {str(row["key"]): row for row in asset_rows}
+    inventory_rows = db.execute(
+        f"""
+        SELECT rda.key, udi.acquired_at
+        FROM user_decor_inventory udi
+        JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+        WHERE udi.user_id = ? AND rda.key IN ({placeholders})
+        ORDER BY udi.acquired_at DESC, rda.id DESC
+        """,
+        [int(user_id), *keys],
+    ).fetchall()
+    acquired_by_key = {str(row["key"]): row["acquired_at"] for row in inventory_rows}
+
+    rows = []
+    for area_key, decor_key in pairs:
+        asset = assets_by_key.get(decor_key)
+        acquired_at = acquired_by_key.get(decor_key)
+        earned = acquired_at is not None
+        if not include_unearned and not earned:
+            continue
+        image_rel = _decor_image_rel(asset["image_path"] if asset else "", decor_key)
+        try:
+            acquired_text = _format_jst_ts(int(acquired_at)) if acquired_at is not None else ""
+        except Exception:
+            acquired_text = str(acquired_at or "")
+        area_label = _boss_area_label(area_key)
+        rows.append(
+            {
+                "key": decor_key,
+                "area_key": area_key,
+                "area_label": area_label,
+                "name": (str(asset["name_ja"]).strip() if asset and asset["name_ja"] else decor_key),
+                "image_url": url_for("static", filename=image_rel, v=APP_VERSION),
+                "earned": earned,
+                "acquired_at": acquired_at,
+                "acquired_text": acquired_text,
+                "status_label": "獲得済み" if earned else "未獲得",
+                "detail": f"{area_label}ボス撃破の証",
+            }
+        )
+
+    if include_unearned:
+        earned_count = len(acquired_by_key)
+        preview_rows = [row for row in rows if row["earned"]][: int(preview_limit)]
+    else:
+        earned_count = len(rows)
+        preview_rows = rows[: int(preview_limit)]
+
+    maintenance_url = None
+    active_robot = db.execute(
+        """
+        SELECT ri.id
+        FROM users u
+        JOIN robot_instances ri ON ri.id = u.active_robot_id
+        WHERE u.id = ? AND ri.user_id = u.id AND ri.status = 'active'
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if active_robot:
+        maintenance_url = url_for("robot_maintenance", instance_id=int(active_robot["id"]), slot="DECOR")
+
+    return {
+        "earned_count": int(earned_count),
+        "total_count": int(total_count),
+        "rows": rows,
+        "preview_rows": preview_rows,
+        "maintenance_url": maintenance_url,
+    }
+
+
 def _seed_core_definitions(db):
     now_ts = int(time.time())
     db.execute(
@@ -21301,6 +21411,7 @@ def home():
     }
     is_main_admin = _is_main_admin_user_row(user)
     show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
+    boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -21425,6 +21536,7 @@ def home():
             newbie_boost=newbie_boost,
             research_boost=research_boost,
             research_boost_x_share=research_boost_x_share,
+            boss_medal_summary=boss_medal_summary,
             presence_summary=presence_summary,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
@@ -22203,6 +22315,13 @@ def records_view():
         first_evolve_records=_first_evolve_record_rows(db),
         weekly_record_groups=weekly_record_groups,
         showcase_highlights=_record_showcase_highlights(db, user["id"]),
+        boss_medal_summary=_boss_medal_summary(
+            db,
+            int(user["id"]),
+            include_unearned=True,
+            preview_limit=8,
+            user_row=user,
+        ),
         week_key=week_key,
     )
 
