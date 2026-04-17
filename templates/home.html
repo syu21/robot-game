@@ -24,29 +24,6 @@
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
     <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
-    {% if research_boost %}
-    <div class="home-research-boost">
-      <div class="home-research-boost-copy">
-        <div><b>研究ブースト {{ research_boost['count'] }} / {{ research_boost['cap'] }}</b></div>
-        <div class="upgrade-cost">{{ research_boost['status_line'] }}</div>
-        <div class="robot-time">{{ research_boost['helper_line'] }}</div>
-      </div>
-    </div>
-    {% if research_boost_x_share %}
-    <div class="home-research-share">
-      <form method="post" action="{{ url_for('home_research_boost_x_share') }}" class="inline-form inline-form-top home-research-share-form" target="_blank">
-        <button type="submit" class="home-research-share-button">{{ research_boost_x_share['button_label'] }}</button>
-      </form>
-      <div class="home-research-share-note">{{ research_boost_x_share['status_line'] }}</div>
-    </div>
-    {% endif %}
-    <div class="home-research-toggle">
-      <div class="home-research-toggle-status">{{ research_boost['toggle_status'] }}</div>
-      <form method="post" action="{{ url_for('home_research_boost_toggle') }}" class="inline-form inline-form-top home-research-boost-form">
-        <button type="submit" class="home-research-boost-button">{{ research_boost['toggle_label'] }}</button>
-      </form>
-    </div>
-    {% endif %}
     {% if home_primary_explore_cta['is_post'] %}
     <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
       {% if home_primary_explore_cta['area_key'] %}
@@ -723,6 +700,29 @@
         <button type="submit" name="boss_enter" value="1" class="btn-secondary">ボスへ直行</button>
         {% endif %}
       </form>
+      {% if research_boost %}
+      <div class="home-research-boost">
+        <div class="home-research-boost-copy">
+          <div><b>研究ブースト {{ research_boost['count'] }} / {{ research_boost['cap'] }}</b></div>
+          <div class="upgrade-cost">{{ research_boost['status_line'] }}</div>
+          <div class="robot-time">{{ research_boost['helper_line'] }}</div>
+        </div>
+      </div>
+      {% if research_boost_x_share %}
+      <div class="home-research-share">
+        <form method="post" action="{{ url_for('home_research_boost_x_share') }}" class="inline-form inline-form-top home-research-share-form" target="_blank">
+          <button type="submit" class="home-research-share-button">{{ research_boost_x_share['button_label'] }}</button>
+        </form>
+        <div class="home-research-share-note">{{ research_boost_x_share['status_line'] }}</div>
+      </div>
+      {% endif %}
+      <div class="home-research-toggle">
+        <div class="home-research-toggle-status">{{ research_boost['toggle_status'] }}</div>
+        <form method="post" action="{{ url_for('home_research_boost_toggle') }}" class="inline-form inline-form-top home-research-boost-form">
+          <button type="submit" class="home-research-boost-button">{{ research_boost['toggle_label'] }}</button>
+        </form>
+      </div>
+      {% endif %}
       <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
       {% if home_area_cards %}
       <div class="home-nav-section-title">探索先メモ</div>

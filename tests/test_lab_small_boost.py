@@ -140,6 +140,9 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertIn("Xでシェアして研究ブースト +1回", html)
         self.assertIn("1日1回 / 現在機体画像つき", html)
         self.assertIn("研究ブーストを1回分獲得しました（1/3）", html)
+        self.assertEqual(html.count("研究ブースト 1 / 3"), 1)
+        self.assertGreater(html.index("研究ブースト 1 / 3"), html.index("home-explore-utility-form"))
+        self.assertGreater(html.index("研究ブースト 1 / 3"), html.index("出撃先:"))
 
         second = client.get("/home")
         self.assertEqual(second.status_code, 200)
