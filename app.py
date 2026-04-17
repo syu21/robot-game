@@ -323,8 +323,8 @@ EXPLORE_BOOST_PRODUCT_KEY = "explore_boost_14d"
 EXPLORE_BOOST_DURATION_DAYS = 14
 EXPLORE_BOOST_CT_SECONDS = 20
 LAB_SMALL_BOOST_FEATURE_KEY = "research_boost"
-LAB_SMALL_BOOST_MAX_COUNT = 3
-LAB_SMALL_BOOST_DURATION_SECONDS = 10 * 60
+RESEARCH_BOOST_MAX_CHARGES = 3
+LAB_SMALL_BOOST_MAX_COUNT = RESEARCH_BOOST_MAX_CHARGES
 LAB_SMALL_BOOST_SOURCE_LABELS = {
     "daily_login": "デイリーログイン",
     "lab_participation": "実験室参加",
@@ -595,6 +595,10 @@ GUIDE_SECTIONS = (
             {
                 "term": "育成傾向",
                 "body": "探索場所によって伸びやすい能力が少し変わります。自分の作りたいロボに合わせて周回先を選べます。",
+            },
+            {
+                "term": "研究ブースト",
+                "body": "1回分につき出撃CTを1回だけ省略します。ログイン・実験室参加・Xシェアで獲得でき、最大3回分まで貯められます。ONのときだけ出撃時に自動で使われます。",
             },
         ),
     },
@@ -1044,7 +1048,7 @@ RELEASE_FLAG_DEFS = (
     {
         "key": LAB_SMALL_BOOST_FEATURE_KEY,
         "label": "研究ブースト",
-        "summary": "無料で入手できる10分間の出撃CT半減ブーストを一般公開します。管理者は非公開中でも確認できます。",
+        "summary": "無料で入手できる出撃CT省略回数を一般公開します。管理者は非公開中でも確認できます。",
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
@@ -8076,6 +8080,7 @@ def ensure_schema(db):
         """
     )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+    added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     if "display_name" not in cols:
@@ -8140,6 +8145,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN lab_small_boost_count INTEGER NOT NULL DEFAULT 0")
     if "lab_small_boost_until" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN lab_small_boost_until INTEGER NOT NULL DEFAULT 0")
+    if added_research_boost_charges:
+        db.execute("ALTER TABLE users ADD COLUMN research_boost_charges INTEGER NOT NULL DEFAULT 0")
+    if "research_boost_auto_use_enabled" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -8200,6 +8209,25 @@ def ensure_schema(db):
     db.execute("UPDATE users SET lab_small_boost_count = 0 WHERE lab_small_boost_count IS NULL OR lab_small_boost_count < 0")
     db.execute(f"UPDATE users SET lab_small_boost_count = {LAB_SMALL_BOOST_MAX_COUNT} WHERE lab_small_boost_count > {LAB_SMALL_BOOST_MAX_COUNT}")
     db.execute("UPDATE users SET lab_small_boost_until = 0 WHERE lab_small_boost_until IS NULL OR lab_small_boost_until < 0")
+    if added_research_boost_charges:
+        db.execute(
+            f"""
+            UPDATE users
+            SET research_boost_charges = MIN(
+                {RESEARCH_BOOST_MAX_CHARGES},
+                MAX(
+                    COALESCE(research_boost_charges, 0),
+                    COALESCE(lab_small_boost_count, 0),
+                    CASE WHEN COALESCE(lab_small_boost_until, 0) > ? THEN 1 ELSE 0 END
+                )
+            )
+            """,
+            (_now_ts(),),
+        )
+    db.execute("UPDATE users SET research_boost_charges = 0 WHERE research_boost_charges IS NULL OR research_boost_charges < 0")
+    db.execute(f"UPDATE users SET research_boost_charges = {RESEARCH_BOOST_MAX_CHARGES} WHERE research_boost_charges > {RESEARCH_BOOST_MAX_CHARGES}")
+    db.execute("UPDATE users SET research_boost_auto_use_enabled = 1 WHERE research_boost_auto_use_enabled IS NULL")
+    db.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
@@ -14981,29 +15009,38 @@ def _explore_boost_status_for_user(user_row, now_ts=None):
     }
 
 
-def _lab_small_boost_count(user_row):
-    if not user_row or "lab_small_boost_count" not in user_row.keys():
+def _research_boost_charges(user_row):
+    if not user_row:
         return 0
-    return max(0, min(int(LAB_SMALL_BOOST_MAX_COUNT), int(user_row["lab_small_boost_count"] or 0)))
+    if "research_boost_charges" in user_row.keys():
+        raw_count = user_row["research_boost_charges"]
+    elif "lab_small_boost_count" in user_row.keys():
+        raw_count = user_row["lab_small_boost_count"]
+    else:
+        raw_count = 0
+    return max(0, min(int(RESEARCH_BOOST_MAX_CHARGES), int(raw_count or 0)))
+
+
+def _research_boost_auto_use_enabled(user_row):
+    if not user_row or "research_boost_auto_use_enabled" not in user_row.keys():
+        return True
+    return int(user_row["research_boost_auto_use_enabled"] if user_row["research_boost_auto_use_enabled"] is not None else 1) == 1
+
+
+def _lab_small_boost_count(user_row):
+    return _research_boost_charges(user_row)
 
 
 def _lab_small_boost_until_ts(user_row):
-    if not user_row or "lab_small_boost_until" not in user_row.keys():
-        return 0
-    return max(0, int(user_row["lab_small_boost_until"] or 0))
+    return 0
 
 
 def _is_lab_small_boost_active(user_row, now_ts=None):
-    until_ts = _lab_small_boost_until_ts(user_row)
-    if until_ts <= 0:
-        return False
-    now = _now_ts() if now_ts is None else int(now_ts)
-    return until_ts > now
+    return False
 
 
 def _lab_small_boost_remaining_seconds(user_row, now_ts=None):
-    now = _now_ts() if now_ts is None else int(now_ts)
-    return max(0, _lab_small_boost_until_ts(user_row) - now)
+    return 0
 
 
 def _lab_small_boost_remaining_label(remain_seconds):
@@ -15040,18 +15077,24 @@ def _lab_small_boost_grant_already_logged(db, *, user_id, source, day_key):
         SELECT payload_json
         FROM world_events_log
         WHERE user_id = ?
-          AND event_type = ?
+          AND event_type IN (?, ?)
           AND created_at >= ?
           AND created_at < ?
         """,
-        (int(user_id), AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"], int(start_ts), int(end_ts)),
+        (
+            int(user_id),
+            AUDIT_EVENT_TYPES["RESEARCH_BOOST_GRANT"],
+            AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"],
+            int(start_ts),
+            int(end_ts),
+        ),
     ).fetchall()
     for row in rows:
         try:
             payload = json.loads(row["payload_json"] or "{}")
         except Exception:
             payload = {}
-        if payload.get("source") == source and payload.get("day_key") == day_key:
+        if (payload.get("source") == source or payload.get("reason") == source) and payload.get("day_key") == day_key:
             return True
     return False
 
@@ -15079,51 +15122,65 @@ def _grant_lab_small_boost_if_available(db, user_id, source, *, user_row=None, n
     day_key = _lab_small_boost_day_key(now)
     if _lab_small_boost_grant_already_logged(db, user_id=int(user_id), source=source_key, day_key=day_key):
         return {"handled": False, "granted": False, "already_received": True, "message": ""}
-    if user_row is None or "lab_small_boost_count" not in user_row.keys():
+    if user_row is None or "research_boost_charges" not in user_row.keys():
         user_row = db.execute(
-            "SELECT id, is_admin, lab_small_boost_count, lab_small_boost_until FROM users WHERE id = ?",
+            """
+            SELECT id, is_admin, research_boost_charges, lab_small_boost_count, lab_small_boost_until
+            FROM users
+            WHERE id = ?
+            """,
             (int(user_id),),
         ).fetchone()
     if not user_row:
         return {"handled": False, "granted": False, "message": ""}
     before_count = _lab_small_boost_count(user_row)
-    granted = before_count < int(LAB_SMALL_BOOST_MAX_COUNT)
-    after_count = min(int(LAB_SMALL_BOOST_MAX_COUNT), before_count + (1 if granted else 0))
-    if int(user_row["lab_small_boost_count"] or 0) != after_count:
+    grant_amount = 1 if before_count < int(RESEARCH_BOOST_MAX_CHARGES) else 0
+    after_count = min(int(RESEARCH_BOOST_MAX_CHARGES), before_count + grant_amount)
+    if _research_boost_charges(user_row) != after_count:
         db.execute(
-            "UPDATE users SET lab_small_boost_count = ? WHERE id = ?",
+            "UPDATE users SET research_boost_charges = ? WHERE id = ?",
             (int(after_count), int(user_id)),
         )
     message = (
-        f"研究ブーストを1個獲得しました（{after_count}/{LAB_SMALL_BOOST_MAX_COUNT}）"
-        if granted
-        else f"研究ブーストは上限です（{LAB_SMALL_BOOST_MAX_COUNT}/{LAB_SMALL_BOOST_MAX_COUNT}）"
+        f"研究ブーストを1回分獲得しました（{after_count}/{RESEARCH_BOOST_MAX_CHARGES}）"
+        if grant_amount > 0
+        else f"研究ブーストは上限です（{RESEARCH_BOOST_MAX_CHARGES}/{RESEARCH_BOOST_MAX_CHARGES}）"
     )
     audit_log(
         db,
-        AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"],
+        AUDIT_EVENT_TYPES["RESEARCH_BOOST_GRANT"],
         user_id=int(user_id),
         request_id=(getattr(g, "request_id", None) if has_request_context() else None),
-        action_key="lab_small_boost_grant",
+        action_key="research_boost_grant",
         entity_type="user",
         entity_id=int(user_id),
-        delta_count=(1 if granted else 0),
+        delta_count=int(grant_amount),
         payload={
+            "reason": source_key,
             "source": source_key,
             "source_label": LAB_SMALL_BOOST_SOURCE_LABELS[source_key],
             "day_key": day_key,
-            "granted": bool(granted),
+            "amount": 1,
+            "granted": int(grant_amount),
+            "before": int(before_count),
+            "after": int(after_count),
+            "capped": bool(grant_amount <= 0),
             "count_before": int(before_count),
             "count_after": int(after_count),
-            "cap": int(LAB_SMALL_BOOST_MAX_COUNT),
+            "cap": int(RESEARCH_BOOST_MAX_CHARGES),
         },
         ip=(request.remote_addr if has_request_context() else None),
     )
     return {
         "handled": True,
-        "granted": bool(granted),
+        "granted": bool(grant_amount > 0),
+        "grant_amount": int(grant_amount),
         "already_received": False,
+        "capped": bool(grant_amount <= 0),
         "source": source_key,
+        "reason": source_key,
+        "before": int(before_count),
+        "after": int(after_count),
         "before_count": int(before_count),
         "count": int(after_count),
         "message": message,
@@ -15137,28 +15194,133 @@ def _flash_lab_small_boost_result(result):
 
 
 def _lab_small_boost_ct_seconds_for_user(user_row, now_ts=None):
-    base_ct = int(NEWBIE_EXPLORE_CT_SECONDS) if _is_newbie_boost_active(user_row, now_ts=now_ts) else int(EXPLORE_COOLDOWN_SECONDS)
-    return max(1, int(math.ceil(base_ct / 2.0)))
+    return int(_explore_ct_seconds_for_user(user_row, now_ts=now_ts))
 
 
 def _lab_small_boost_status_for_user(user_row, *, now_ts=None, paid_boost_active=False, ct_seconds=None):
     now = _now_ts() if now_ts is None else int(now_ts)
     count = _lab_small_boost_count(user_row)
-    remain = _lab_small_boost_remaining_seconds(user_row, now_ts=now)
-    active = remain > 0
     paid_active = bool(paid_boost_active)
+    auto_use_enabled = _research_boost_auto_use_enabled(user_row)
+    if count <= 0:
+        status_line = "ログイン・実験室・Xシェアで補充できます"
+    elif auto_use_enabled:
+        status_line = f"次の{count}回はCTなしで出撃できます"
+    else:
+        status_line = "OFF中です。ONにすると出撃時に使います"
     return {
         "count": int(count),
-        "cap": int(LAB_SMALL_BOOST_MAX_COUNT),
-        "active": bool(active),
-        "until": (_lab_small_boost_until_ts(user_row) if active else 0),
-        "remain_seconds": int(remain),
-        "remain_label": _lab_small_boost_remaining_label(remain),
-        "ct_seconds": int(ct_seconds or _lab_small_boost_ct_seconds_for_user(user_row, now_ts=now)),
+        "cap": int(RESEARCH_BOOST_MAX_CHARGES),
+        "active": False,
+        "until": 0,
+        "remain_seconds": 0,
+        "remain_label": "",
+        "ct_seconds": int(ct_seconds or _explore_ct_seconds_for_user(user_row, now_ts=now)),
         "paid_boost_active": paid_active,
-        "paid_boost_message": "現在ラボブースターが有効です" if paid_active else "",
-        "can_use": bool(count > 0 and not active and not paid_active),
+        "paid_boost_message": "",
+        "can_use": False,
+        "auto_use": bool(auto_use_enabled),
+        "toggle_label": ("OFFにする" if auto_use_enabled else "ONにする"),
+        "toggle_status": ("自動使用: ON" if auto_use_enabled else "自動使用: OFF"),
+        "status_line": status_line,
+        "helper_line": "1回の出撃で1つ消費します",
     }
+
+
+def _research_boost_submission_already_consumed(submission_id):
+    sid = str(submission_id or "").strip()
+    if not sid:
+        return False
+    mapping = session.get("research_boost_consumed_submissions") if has_request_context() else None
+    return bool(isinstance(mapping, dict) and mapping.get(sid))
+
+
+def _mark_research_boost_submission_consumed(submission_id):
+    if not has_request_context():
+        return
+    sid = str(submission_id or "").strip()
+    if not sid:
+        return
+    mapping = session.get("research_boost_consumed_submissions")
+    if not isinstance(mapping, dict):
+        mapping = {}
+    mapping[sid] = 1
+    if len(mapping) > 32:
+        mapping = {k: v for k, v in list(mapping.items())[-32:]}
+    session["research_boost_consumed_submissions"] = mapping
+
+
+def _consume_research_boost_if_available(db, user_id, *, user_row=None, area_key="", submission_id="", now_ts=None):
+    if (
+        user_row is None
+        or "research_boost_charges" not in user_row.keys()
+        or "research_boost_auto_use_enabled" not in user_row.keys()
+    ):
+        user_row = db.execute(
+            "SELECT id, is_admin, research_boost_charges, research_boost_auto_use_enabled FROM users WHERE id = ?",
+            (int(user_id),),
+        ).fetchone()
+    if not user_row:
+        return {"used": False, "before": 0, "after": 0}
+    before_count = _research_boost_charges(user_row)
+    if int(user_row["is_admin"] or 0) == 1:
+        return {"used": False, "before": int(before_count), "after": int(before_count), "admin": True}
+    if not _lab_small_boost_feature_open(db, user_row=user_row, user_id=int(user_id)):
+        return {"used": False, "before": int(before_count), "after": int(before_count), "feature_closed": True}
+    if _research_boost_submission_already_consumed(submission_id):
+        return {
+            "used": True,
+            "already_consumed": True,
+            "before": int(before_count),
+            "after": int(before_count),
+            "skip_cooldown": True,
+        }
+    if not _research_boost_auto_use_enabled(user_row):
+        return {"used": False, "before": int(before_count), "after": int(before_count), "auto_use": False}
+    if before_count <= 0:
+        return {"used": False, "before": 0, "after": 0}
+    cur = db.execute(
+        """
+        UPDATE users
+        SET research_boost_charges = research_boost_charges - 1
+        WHERE id = ?
+          AND research_boost_charges > 0
+        """,
+        (int(user_id),),
+    )
+    if cur.rowcount <= 0:
+        fresh = db.execute(
+            "SELECT research_boost_charges FROM users WHERE id = ?",
+            (int(user_id),),
+        ).fetchone()
+        after_count = _research_boost_charges(fresh)
+        return {"used": False, "before": int(after_count), "after": int(after_count)}
+    fresh = db.execute(
+        "SELECT research_boost_charges FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    after_count = _research_boost_charges(fresh)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["RESEARCH_BOOST_CONSUME"],
+        user_id=int(user_id),
+        request_id=(getattr(g, "request_id", None) if has_request_context() else None),
+        action_key="research_boost_consume",
+        entity_type="user",
+        entity_id=int(user_id),
+        delta_count=-1,
+        payload={
+            "user_id": int(user_id),
+            "before": int(before_count),
+            "after": int(after_count),
+            "used_for": "explore",
+            "area_key": str(area_key or ""),
+            "submission_id": str(submission_id or ""),
+        },
+        ip=(request.remote_addr if has_request_context() else None),
+    )
+    _mark_research_boost_submission_consumed(submission_id)
+    return {"used": True, "before": int(before_count), "after": int(after_count), "skip_cooldown": True}
 
 
 def _grant_explore_boost_reward(db, user_id, product):
@@ -18573,8 +18735,6 @@ def _explore_ct_seconds_for_user(user_row, now_ts=None):
         return 0
     if _is_paid_explore_boost_active(user_row, now_ts=now_ts):
         return int(EXPLORE_BOOST_CT_SECONDS)
-    if _is_lab_small_boost_active(user_row, now_ts=now_ts):
-        return int(_lab_small_boost_ct_seconds_for_user(user_row, now_ts=now_ts))
     if _is_newbie_boost_active(user_row, now_ts=now_ts):
         return int(NEWBIE_EXPLORE_CT_SECONDS)
     return int(EXPLORE_COOLDOWN_SECONDS)
@@ -18622,6 +18782,21 @@ def _touch_explore_cooldown(db, user_id, now_ts):
             active = 0
         """,
         (int(user_id), now),
+    )
+
+
+def _clear_explore_cooldown(db, user_id):
+    db.execute(
+        """
+        INSERT INTO battle_state (user_id, enemy_name, enemy_hp, last_action_at, active)
+        VALUES (?, '', 0, 0, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+            enemy_name = '',
+            enemy_hp = 0,
+            last_action_at = 0,
+            active = 0
+        """,
+        (int(user_id),),
     )
 
 
@@ -21139,42 +21314,45 @@ def home_research_boost_use():
     if not _lab_small_boost_feature_open(db, user_row=user, user_id=user_id):
         flash("研究ブーストはまだ公開準備中です。", "notice")
         return redirect(url_for("home"))
-    now = _now_ts()
-    if _is_paid_explore_boost_active(user, now_ts=now):
-        flash("現在ラボブースターが有効です", "notice")
+    flash("研究ブーストは出撃時に自動で使われます。", "notice")
+    return redirect(url_for("home"))
+
+
+@app.route("/home/research-boost/toggle", methods=["POST"])
+@login_required
+def home_research_boost_toggle():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    if not _lab_small_boost_feature_open(db, user_row=user, user_id=user_id):
+        flash("研究ブーストはまだ公開準備中です。", "notice")
         return redirect(url_for("home"))
-    if _is_lab_small_boost_active(user, now_ts=now):
-        flash("研究ブースト中です。", "notice")
-        return redirect(url_for("home"))
-    before_count = _lab_small_boost_count(user)
-    if before_count <= 0:
-        flash("研究ブーストがありません。", "error")
-        return redirect(url_for("home"))
-    after_count = max(0, before_count - 1)
-    until_ts = now + int(LAB_SMALL_BOOST_DURATION_SECONDS)
+    before_enabled = _research_boost_auto_use_enabled(user)
+    after_enabled = not before_enabled
     db.execute(
-        "UPDATE users SET lab_small_boost_count = ?, lab_small_boost_until = ? WHERE id = ?",
-        (int(after_count), int(until_ts), user_id),
+        "UPDATE users SET research_boost_auto_use_enabled = ? WHERE id = ?",
+        (1 if after_enabled else 0, user_id),
     )
     audit_log(
         db,
-        AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_USE"],
+        AUDIT_EVENT_TYPES["RESEARCH_BOOST_TOGGLE"],
         user_id=user_id,
         request_id=getattr(g, "request_id", None),
-        action_key="lab_small_boost_use",
+        action_key="research_boost_toggle",
         entity_type="user",
         entity_id=user_id,
-        delta_count=-1,
         payload={
-            "count_before": int(before_count),
-            "count_after": int(after_count),
-            "duration_seconds": int(LAB_SMALL_BOOST_DURATION_SECONDS),
-            "until": int(until_ts),
+            "before": bool(before_enabled),
+            "after": bool(after_enabled),
+            "charges": int(_research_boost_charges(user)),
         },
         ip=request.remote_addr,
     )
     db.commit()
-    flash("研究ブーストを発動しました。10分間 出撃CT半減", "notice")
+    flash(f"研究ブースト自動使用を{'ON' if after_enabled else 'OFF'}にしました。", "notice")
     return redirect(url_for("home"))
 
 
@@ -21229,7 +21407,7 @@ def home_research_boost_x_share():
             "boost_already_received": bool(grant_result.get("already_received")),
             "boost_before": int(grant_result.get("before_count", before_count)),
             "boost_after": int(after_count),
-            "boost_cap": int(LAB_SMALL_BOOST_MAX_COUNT),
+            "boost_cap": int(RESEARCH_BOOST_MAX_CHARGES),
             "reason": "daily_x_share",
         },
         ip=request.remote_addr,
@@ -23179,7 +23357,7 @@ def _home_x_share_view_model(db, user_row, *, research_boost=None, now_ts=None):
         return None
     now = _now_ts() if now_ts is None else int(now_ts)
     count = int((research_boost or {}).get("count") if research_boost else _lab_small_boost_count(user_row))
-    cap = int((research_boost or {}).get("cap") if research_boost else LAB_SMALL_BOOST_MAX_COUNT)
+    cap = int((research_boost or {}).get("cap") if research_boost else RESEARCH_BOOST_MAX_CHARGES)
     received = _lab_small_boost_source_received_today(
         db,
         user_id=int(user_row["id"]),
@@ -23194,12 +23372,12 @@ def _home_x_share_view_model(db, user_row, *, research_boost=None, now_ts=None):
         button_label = "Xで今の機体をシェア"
         status_line = f"研究ブーストは上限です（{cap}/{cap}）"
     else:
-        button_label = "Xでシェアして研究ブースト +1"
+        button_label = "Xでシェアして研究ブースト +1回"
         status_line = "1日1回 / 現在機体画像つき"
     if not share_robot:
         status_line = "現在機体がないため、ロボらぼ紹介文でシェアします"
         if not received and count < cap:
-            button_label = "Xでシェアして研究ブースト +1"
+            button_label = "Xでシェアして研究ブースト +1回"
         else:
             button_label = "Xでロボらぼをシェア"
     return {
@@ -23544,6 +23722,7 @@ def explore():
     user_id = session["user_id"]
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
+    explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_debug = (request.args.get("debug") or "").strip() == "1"
     boss_enter_requested = (request.form.get("boss_enter") or "").strip().lower() in {"1", "true", "on", "yes"}
     area = next((a for a in EXPLORE_AREAS if a["key"] == area_key), None)
@@ -23576,8 +23755,21 @@ def explore():
     now = _now_ts()
     ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
     newbie_boost_active = _is_newbie_boost_active(user, now_ts=now)
-    research_boost_active = _is_lab_small_boost_active(user, now_ts=now)
-    wait = _enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now)
+    research_boost_result = _consume_research_boost_if_available(
+        db,
+        user_id,
+        user_row=user,
+        area_key=area_key,
+        submission_id=explore_submission_id,
+        now_ts=now,
+    )
+    research_boost_used = bool(research_boost_result.get("used"))
+    if research_boost_used:
+        wait = 0
+        ct_seconds_effective = 0
+    else:
+        wait = _enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now)
+        ct_seconds_effective = int(ct_seconds)
     if wait > 0:
         return redirect(url_for("home"))
     audit_log(
@@ -23590,9 +23782,14 @@ def explore():
             "area_key": area_key,
             "at": now,
             "newbie_boost": bool(newbie_boost_active),
-            "research_boost": bool(research_boost_active),
+            "research_boost": bool(research_boost_used),
+            "research_boost_used": bool(research_boost_used),
+            "research_boost_before": int(research_boost_result.get("before") or 0),
+            "research_boost_after": int(research_boost_result.get("after") or 0),
+            "research_boost_already_consumed": bool(research_boost_result.get("already_consumed")),
             "paid_boost": bool(_is_paid_explore_boost_active(user, now_ts=now)),
-            "ct_seconds": int(ct_seconds),
+            "ct_seconds": int(ct_seconds_effective),
+            "base_ct_seconds": int(ct_seconds),
         },
         ip=request.remote_addr,
     )
@@ -23651,7 +23848,6 @@ def explore():
     spawned_bonus_applied = False
     promoted_drop_applied = False
     battle_results = []
-    explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_id = _battle_id_for_explore_submission(explore_submission_id)
     damage_taken_total = 0
     crit_finisher_kills = 0
@@ -24978,7 +25174,10 @@ def explore():
         },
         ip=request.remote_addr,
     )
-    _touch_explore_cooldown(db, user_id, now)
+    if research_boost_used:
+        _clear_explore_cooldown(db, user_id)
+    else:
+        _touch_explore_cooldown(db, user_id, now)
     audit_log(
         db,
         AUDIT_EVENT_TYPES["EXPLORE_END"],
@@ -25028,6 +25227,12 @@ def explore():
                 "is_area_boss": bool(area_boss_active),
                 "battle_id": battle_id,
                 "damage_taken_total": int(damage_taken_total),
+            },
+            "research_boost": {
+                "used": bool(research_boost_used),
+                "before": int(research_boost_result.get("before") or 0),
+                "after": int(research_boost_result.get("after") or 0),
+                "already_consumed": bool(research_boost_result.get("already_consumed")),
             },
             "battles": battle_results,
             "rewards": {

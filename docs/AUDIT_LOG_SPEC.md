@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-04-12
+最終更新日: 2026-04-17
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -76,6 +76,12 @@
 - `audit.chat.post`
 - `audit.share.click`
   - Xシェア導線では payload に `surface`, `share_target`, `robot_instance_id`, `boost_granted`, `boost_before`, `boost_after`, `reason=daily_x_share` を含める
+- `audit.research_boost.grant`
+  - 研究ブースト付与時に記録する。payload は `user_id`, `reason`, `amount`, `before`, `after`, `capped`, `day_key` を含める
+- `audit.research_boost.consume`
+  - 出撃時の自動消費で記録する。payload は `user_id`, `before`, `after`, `used_for=explore`, `area_key` を含める
+- `audit.research_boost.toggle`
+  - ホームのON/OFF切替で記録する。payload は `before`, `after`, `charges` を含める
 - `audit.referral.attach`
 - `audit.referral.qualified`
 - `audit.faction.choose`
@@ -100,8 +106,8 @@
 - `audit.explore_boost.grant.success`
 - `audit.explore_boost.grant.skip_duplicate`
 - `audit.explore_boost.grant.failed`
-- `audit.lab.small_boost.grant`
-- `audit.lab.small_boost.use`
+- `audit.lab.small_boost.grant`（旧研究ブースト付与イベント。新規記録は `audit.research_boost.grant`）
+- `audit.lab.small_boost.use`（旧時間制研究ブースト使用イベント。新規記録は `audit.research_boost.consume`）
 
 ### 4.9 管理者操作（追加）
 - `audit.admin.user.ban`

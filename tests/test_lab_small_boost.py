@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import app as game_app
@@ -130,32 +131,37 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         html = first.get_data(as_text=True)
         self.assertIn("研究ブースト 1 / 3", html)
-        self.assertIn("10分使う", html)
-        self.assertIn("Xでシェアして研究ブースト +1", html)
+        self.assertIn("次の1回はCTなしで出撃できます", html)
+        self.assertIn("1回の出撃で1つ消費します", html)
+        self.assertIn("自動使用: ON", html)
+        self.assertIn("OFFにする", html)
+        self.assertNotIn("10分使う", html)
+        self.assertNotIn("10分間 出撃CT半減", html)
+        self.assertIn("Xでシェアして研究ブースト +1回", html)
         self.assertIn("1日1回 / 現在機体画像つき", html)
-        self.assertIn("研究ブーストを1個獲得しました（1/3）", html)
+        self.assertIn("研究ブーストを1回分獲得しました（1/3）", html)
 
         second = client.get("/home")
         self.assertEqual(second.status_code, 200)
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
             event_count = int(
                 db.execute(
                     "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
-                    (self.user_id, game_app.AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"]),
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_GRANT"]),
                 ).fetchone()["c"]
                 or 0
             )
-            self.assertEqual(int(user["lab_small_boost_count"]), 1)
+            self.assertEqual(int(user["research_boost_charges"]), 1)
             self.assertEqual(event_count, 1)
 
     def test_daily_login_does_not_exceed_stock_cap(self):
         client = self._client()
         with game_app.app.app_context():
             db = game_app.get_db()
-            db.execute("UPDATE users SET lab_small_boost_count = 3 WHERE id = ?", (self.user_id,))
+            db.execute("UPDATE users SET research_boost_charges = 3 WHERE id = ?", (self.user_id,))
             db.commit()
 
         resp = client.get("/home")
@@ -166,8 +172,74 @@ class LabSmallBoostTests(unittest.TestCase):
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 3)
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["research_boost_charges"]), 3)
+
+    def test_research_boost_toggle_disables_auto_use_and_preserves_stock(self):
+        client = self._client()
+        client.get("/home")
+
+        toggled = client.post("/home/research-boost/toggle", follow_redirects=True)
+        self.assertEqual(toggled.status_code, 200)
+        html = toggled.get_data(as_text=True)
+        self.assertIn("研究ブースト自動使用をOFFにしました。", html)
+        self.assertIn("自動使用: OFF", html)
+        self.assertIn("ONにする", html)
+        self.assertIn("OFF中です。ONにすると出撃時に使います", html)
+
+        self._set_last_action_at(self.user_id, int(time.time()))
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=False)
+        self.assertEqual(blocked.status_code, 302)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute(
+                "SELECT research_boost_charges, research_boost_auto_use_enabled FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()
+            consume_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_CONSUME"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            toggle_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_TOGGLE"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(int(user["research_boost_charges"]), 1)
+            self.assertEqual(int(user["research_boost_auto_use_enabled"]), 0)
+            self.assertEqual(consume_count, 0)
+            self.assertEqual(toggle_count, 1)
+
+        restored = client.post("/home/research-boost/toggle", follow_redirects=True)
+        self.assertEqual(restored.status_code, 200)
+        self.assertIn("研究ブースト自動使用をONにしました。", restored.get_data(as_text=True))
+        self.assertIn("自動使用: ON", restored.get_data(as_text=True))
+
+    def test_schema_compat_does_not_restore_consumed_charges_from_legacy_columns(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                UPDATE users
+                SET lab_small_boost_count = 3,
+                    lab_small_boost_until = ?,
+                    research_boost_charges = 0
+                WHERE id = ?
+                """,
+                (int(time.time()) + 600, self.user_id),
+            )
+            db.commit()
+
+            game_app.ensure_schema(db)
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["research_boost_charges"]), 0)
 
     def test_lab_participation_grants_stock_once_per_day(self):
         client = self._client()
@@ -179,15 +251,15 @@ class LabSmallBoostTests(unittest.TestCase):
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
             event_count = int(
                 db.execute(
                     "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
-                    (self.user_id, game_app.AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"]),
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_GRANT"]),
                 ).fetchone()["c"]
                 or 0
             )
-            self.assertEqual(int(user["lab_small_boost_count"]), 1)
+            self.assertEqual(int(user["research_boost_charges"]), 1)
             self.assertEqual(event_count, 1)
 
     def test_x_share_grants_daily_stock_once_and_redirects_to_intent(self):
@@ -206,11 +278,11 @@ class LabSmallBoostTests(unittest.TestCase):
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
             grant_count = int(
                 db.execute(
                     "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
-                    (self.user_id, game_app.AUDIT_EVENT_TYPES["LAB_SMALL_BOOST_GRANT"]),
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_GRANT"]),
                 ).fetchone()["c"]
                 or 0
             )
@@ -231,7 +303,7 @@ class LabSmallBoostTests(unittest.TestCase):
                 """,
                 (self.user_id, game_app.AUDIT_EVENT_TYPES["SHARE_CLICK"]),
             ).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 1)
+            self.assertEqual(int(user["research_boost_charges"]), 1)
             self.assertEqual(grant_count, 1)
             self.assertEqual(share_count, 2)
             self.assertIn('"reason": "daily_x_share"', payload_row["payload_json"])
@@ -248,44 +320,53 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertIn('property="og:url"', html)
         self.assertIn("ロボらぼで育てた機体を公開中", html)
 
-    def test_using_research_boost_consumes_stock_and_halves_normal_ct(self):
+    def test_explore_consumes_research_boost_charge_and_skips_ct(self):
         client = self._client()
-        client.get("/home")
-        now_before = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET research_boost_charges = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+        self._set_last_action_at(self.user_id, int(time.time()))
 
-        used = client.post("/home/research-boost/use", follow_redirects=True)
-        self.assertEqual(used.status_code, 200)
-        used_html = used.get_data(as_text=True)
-        self.assertIn("研究ブーストを発動しました", used_html)
-        self.assertIn("研究ブースト中", used_html)
-        self.assertIn("出撃CT 20秒", used_html)
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp = client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(resp.status_code, 200)
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count, lab_small_boost_until FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 0)
-            self.assertGreater(int(user["lab_small_boost_until"]), now_before)
-            self.assertLessEqual(int(user["lab_small_boost_until"]), now_before + 610)
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            state = db.execute("SELECT last_action_at FROM battle_state WHERE user_id = ?", (self.user_id,)).fetchone()
+            consume_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_CONSUME"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(int(user["research_boost_charges"]), 0)
+            self.assertEqual(int(state["last_action_at"] or 0), 0)
+            self.assertEqual(consume_count, 1)
 
-        self._set_last_action_at(self.user_id, int(time.time()) - 10)
-        blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
-        self.assertEqual(blocked.status_code, 200)
-        self.assertRegex(blocked.get_data(as_text=True), r"あと ?(9|10)秒")
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            next_resp = client.post("/explore", data={"area_key": "layer_1"})
+            blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=False)
+        self.assertEqual(next_resp.status_code, 200)
+        self.assertEqual(blocked.status_code, 302)
 
-    def test_research_boost_halves_newbie_ct_but_paid_boost_has_priority(self):
+    def test_research_boost_does_not_change_newbie_or_paid_ct_seconds(self):
         now = int(time.time())
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute(
                 """
                 UPDATE users
-                SET created_at = ?, lab_small_boost_until = ?, explore_boost_until = 0
+                SET created_at = ?, research_boost_charges = 2, explore_boost_until = 0
                 WHERE id = ?
                 """,
-                (now, now + 900, self.user_id),
+                (now, self.user_id),
             )
             user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(game_app._explore_ct_seconds_for_user(user, now_ts=now), 10)
+            self.assertEqual(game_app._explore_ct_seconds_for_user(user, now_ts=now), 20)
 
             db.execute(
                 "UPDATE users SET explore_boost_until = ? WHERE id = ?",
@@ -294,25 +375,52 @@ class LabSmallBoostTests(unittest.TestCase):
             paid_user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(game_app._explore_ct_seconds_for_user(paid_user, now_ts=now), 20)
 
-    def test_paid_booster_blocks_research_boost_use(self):
+    def test_paid_booster_still_consumes_research_boost_for_this_explore(self):
         client = self._client()
-        client.get("/home")
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute(
-                "UPDATE users SET lab_small_boost_count = 1, explore_boost_until = ? WHERE id = ?",
+                "UPDATE users SET research_boost_charges = 1, explore_boost_until = ? WHERE id = ?",
                 (int(time.time()) + 86400, self.user_id),
             )
             db.commit()
+        self._set_last_action_at(self.user_id, int(time.time()))
 
-        resp = client.post("/home/research-boost/use", follow_redirects=True)
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp = client.post("/explore", data={"area_key": "layer_1"})
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("現在ラボブースターが有効です", resp.get_data(as_text=True))
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count, lab_small_boost_until FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 1)
-            self.assertEqual(int(user["lab_small_boost_until"] or 0), 0)
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            state = db.execute("SELECT last_action_at FROM battle_state WHERE user_id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["research_boost_charges"]), 0)
+            self.assertEqual(int(state["last_action_at"] or 0), 0)
+
+    def test_admin_explore_does_not_consume_research_boost(self):
+        self._create_active_robot(self.admin_id)
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET research_boost_charges = 1 WHERE id = ?", (self.admin_id,))
+            db.commit()
+        self._set_last_action_at(self.admin_id, int(time.time()))
+
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+            resp = client.post("/explore", data={"area_key": "layer_1"})
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            consume_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.admin_id, game_app.AUDIT_EVENT_TYPES["RESEARCH_BOOST_CONSUME"]),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(int(user["research_boost_charges"]), 1)
+            self.assertEqual(consume_count, 0)
 
     def test_feedback_post_does_not_grant_research_boost_stock(self):
         client = self._client()
@@ -328,8 +436,8 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 302)
         with game_app.app.app_context():
             db = game_app.get_db()
-            user = db.execute("SELECT lab_small_boost_count FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(user["lab_small_boost_count"]), 0)
+            user = db.execute("SELECT research_boost_charges FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["research_boost_charges"]), 0)
 
     def test_research_boost_release_control_only_lives_on_release_page(self):
         game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False

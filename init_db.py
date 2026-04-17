@@ -164,6 +164,8 @@ def main():
             explore_boost_until INTEGER NOT NULL DEFAULT 0,
             lab_small_boost_count INTEGER NOT NULL DEFAULT 0,
             lab_small_boost_until INTEGER NOT NULL DEFAULT 0,
+            research_boost_charges INTEGER NOT NULL DEFAULT 0,
+            research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -1146,6 +1148,7 @@ def main():
     )
 
     users_cols = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
+    added_research_boost_charges = "research_boost_charges" not in users_cols
     if "avatar_path" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
     if "active_robot_id" not in users_cols:
@@ -1180,6 +1183,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN lab_small_boost_count INTEGER NOT NULL DEFAULT 0")
     if "lab_small_boost_until" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN lab_small_boost_until INTEGER NOT NULL DEFAULT 0")
+    if added_research_boost_charges:
+        cur.execute("ALTER TABLE users ADD COLUMN research_boost_charges INTEGER NOT NULL DEFAULT 0")
+    if "research_boost_auto_use_enabled" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -1246,6 +1253,26 @@ def main():
     cur.execute("UPDATE users SET lab_small_boost_count = 0 WHERE lab_small_boost_count IS NULL OR lab_small_boost_count < 0")
     cur.execute("UPDATE users SET lab_small_boost_count = 3 WHERE lab_small_boost_count > 3")
     cur.execute("UPDATE users SET lab_small_boost_until = 0 WHERE lab_small_boost_until IS NULL OR lab_small_boost_until < 0")
+    if added_research_boost_charges:
+        now_ts = int(time.time())
+        cur.execute(
+            """
+            UPDATE users
+            SET research_boost_charges = MIN(
+                3,
+                MAX(
+                    COALESCE(research_boost_charges, 0),
+                    COALESCE(lab_small_boost_count, 0),
+                    CASE WHEN COALESCE(lab_small_boost_until, 0) > ? THEN 1 ELSE 0 END
+                )
+            )
+            """,
+            (now_ts,),
+        )
+    cur.execute("UPDATE users SET research_boost_charges = 0 WHERE research_boost_charges IS NULL OR research_boost_charges < 0")
+    cur.execute("UPDATE users SET research_boost_charges = 3 WHERE research_boost_charges > 3")
+    cur.execute("UPDATE users SET research_boost_auto_use_enabled = 1 WHERE research_boost_auto_use_enabled IS NULL")
+    cur.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
     cur.execute("UPDATE users SET lab_coin = 1000 WHERE lab_coin IS NULL OR lab_coin < 0")
