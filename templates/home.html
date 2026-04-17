@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% from '_user_chip.html' import render_user_chip %}
+{% from '_style_gauge.html' import render_style_gauge %}
+{% from '_style_rank.html' import render_style_rank %}
 {% block content %}
 {% if not user %}
 <div class="card">
@@ -327,6 +329,8 @@
             {% if main_robot_profile and main_robot_profile.get('style_support_line') %}
             <div class="robot-time">{{ main_robot_profile['style_support_line'] }}</div>
             {% endif %}
+            {{ render_style_gauge(main_robot_style_state, compact=True) }}
+            {{ render_style_rank(main_robot_style_state, compact=True) }}
             <div class="upgrade-cost">総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</div>
             {% if main_robot_weekly_fit %}
               <div class="upgrade-cost"><span class="weekly-fit-badge">WEEK適合</span></div>

@@ -55,6 +55,25 @@ from services.personality_logs import generate_exploration_log, get_idle_line, g
 from services.audit import audit_log
 from services.archetype import compute_archetype
 from services.presence import get_presence_count, get_recent_presence, touch_presence
+from services.style import (
+    STYLE_DEFINITIONS as ROBOT_STYLE_DEFINITIONS,
+    STYLE_KEYS,
+    STYLE_LABELS as ROBOT_STYLE_LABELS,
+    STYLE_PLAY_GUIDE as ROBOT_STYLE_PLAY_GUIDE,
+    STYLE_TIE_BREAK as ROBOT_STYLE_TIE_BREAK,
+    STYLE_WEIGHTS as ROBOT_STYLE_WEIGHTS,
+    award_style_xp_state,
+    build_style_snapshot,
+    decode_style_rank_state,
+    empty_style_rank_state,
+    encode_style_rank_state,
+    get_style_rank_label,
+    normalize_style_scores,
+    resolve_current_style,
+    resolve_next_style,
+    style_rank_view_rows,
+    style_score_payload_from_stats,
+)
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
@@ -337,32 +356,6 @@ BUILD_ARCHETYPE_LABELS = {
     "STABLE": "安定型",
     "NONE": "なし",
 }
-ROBOT_STYLE_DEFINITIONS = {
-    "stable": {"label_jp": "安定", "description_jp": "防御・命中寄り（長期戦向き）"},
-    "desperate": {"label_jp": "背水", "description_jp": "低耐久寄り（速攻・リスク）"},
-    "burst": {"label_jp": "爆発", "description_jp": "攻撃・会心寄り（一撃型）"},
-}
-ROBOT_STYLE_LABELS = {k: v["label_jp"] for k, v in ROBOT_STYLE_DEFINITIONS.items()}
-ROBOT_STYLE_TIE_BREAK = ("stable", "burst", "desperate")
-ROBOT_STYLE_WEIGHTS = {
-    "stable": {"def": 0.35, "hp": 0.25, "acc": 0.20, "spd": 0.10, "atk": 0.05, "inv_cri": 0.05},
-    "burst": {"atk": 0.35, "cri": 0.35, "acc": 0.10, "spd": 0.10, "inv_def": 0.10},
-    "desperate": {"atk": 0.30, "spd": 0.25, "cri": 0.15, "acc": 0.10, "inv_hp": 0.20},
-}
-ROBOT_STYLE_PLAY_GUIDE = {
-    "stable": {
-        "battle_line": "耐久や命中を活かして、崩れにくく勝つ型",
-        "support_line": "守りと命中で試合を安定させやすい思想です。",
-    },
-    "desperate": {
-        "battle_line": "打たれ弱いぶん、先手や逆転で押し切る型",
-        "support_line": "短期決着やギリギリの逆転を狙いやすい思想です。",
-    },
-    "burst": {
-        "battle_line": "攻撃や会心で一気に勝負を決める型",
-        "support_line": "高火力で流れをひっくり返しやすい思想です。",
-    },
-}
 AREA_GROWTH_TENDENCY_DEFS = {
     "layer_1": {
         "key": "durable",
@@ -552,6 +545,14 @@ GUIDE_SECTIONS = (
             {
                 "term": "爆発",
                 "body": "攻撃や会心で一気に勝負を決めるタイプです。大ダメージで流れをひっくり返したい人向けです。",
+            },
+            {
+                "term": "思想ゲージ",
+                "body": "思想は直接選ぶものではなく、最終ステータスから自動で決まります。ゲージを見ると、今のロボが安定・爆発・背水のどれに寄っているか分かります。",
+            },
+            {
+                "term": "思想ランク",
+                "body": "その思想で勝利すると、ロボごとにランクが育ちます。I から始まり、MASTER はその思想を極めた証です。",
             },
             {
                 "term": "型",
@@ -6173,6 +6174,11 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
         item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
         stat_obj = _compute_robot_stats_for_instance(db, int(item["id"]))
         item["profile"] = _robot_profile_view(stat_obj)
+        item["style_state"] = (
+            _robot_style_state_for_view(db, int(item["id"]), stat_obj=stat_obj)
+            if stat_obj
+            else None
+        )
         item["set_bonus_view"] = _set_bonus_view_for_loadout(
             (stat_obj or {}).get("parts"),
             (stat_obj or {}).get("set_bonus"),
@@ -6315,49 +6321,15 @@ def _robot_style_description(style_key):
 
 
 def _pick_robot_style_key(style_scores):
-    best = ROBOT_STYLE_TIE_BREAK[0]
-    best_score = float((style_scores or {}).get(best) or 0.0)
-    for key in ROBOT_STYLE_TIE_BREAK[1:]:
-        score = float((style_scores or {}).get(key) or 0.0)
-        if score > best_score + 1e-12:
-            best = key
-            best_score = score
-    return best
-
-
-def _score_style_from_norm(norm, weights):
-    score = 0.0
-    for key, weight in (weights or {}).items():
-        if key.startswith("inv_"):
-            stat_key = key[4:]
-            score += float(weight) * (1.0 - float(norm.get(stat_key, 0.0)))
-        else:
-            score += float(weight) * float(norm.get(key, 0.0))
-    return score
+    return resolve_current_style(style_scores)
 
 
 def _style_scores_from_final_stats(stats):
-    hp = float((stats or {}).get("hp") or 0.0)
-    atk = float((stats or {}).get("atk") or 0.0)
-    defe = float((stats or {}).get("def") or 0.0)
-    spd = float((stats or {}).get("spd") or 0.0)
-    acc = float((stats or {}).get("acc") or 0.0)
-    cri = float((stats or {}).get("cri") or 0.0)
-    total = hp + atk + defe + spd + acc + cri
-    if total <= 0:
+    payload = style_score_payload_from_stats(stats)
+    if not payload:
         return None
-    hp_n = hp / total
-    atk_n = atk / total
-    def_n = defe / total
-    spd_n = spd / total
-    acc_n = acc / total
-    cri_n = cri / total
-    norm = {"hp": hp_n, "atk": atk_n, "def": def_n, "spd": spd_n, "acc": acc_n, "cri": cri_n}
-    scores = {style_key: _score_style_from_norm(norm, weights) for style_key, weights in ROBOT_STYLE_WEIGHTS.items()}
-    return {
-        "scores": scores,
-        "norm": norm,
-    }
+    payload["normalized_scores"] = normalize_style_scores(payload["scores"])
+    return payload
 
 
 def _robot_style_from_final_stats(stats):
@@ -6369,6 +6341,7 @@ def _robot_style_from_final_stats(stats):
             "style_description": _robot_style_description("stable"),
             "reason": "ステータス不足",
             "style_scores": {"stable": 0.0, "desperate": 0.0, "burst": 0.0},
+            "style_score_gauge": {"stable": 0, "burst": 0, "desperate": 0},
             "legacy_build_type": "STABLE",
         }
     scores = payload["scores"]
@@ -6389,6 +6362,8 @@ def _robot_style_from_final_stats(stats):
         "style_description": _robot_style_description(best),
         "reason": reason,
         "style_scores": scores,
+        "style_score_gauge": payload.get("normalized_scores") or normalize_style_scores(scores),
+        "next_style_key": resolve_next_style(scores, best),
         "legacy_build_type": legacy,
     }
 
@@ -6401,8 +6376,223 @@ def _robot_style_from_instance_key(style_key):
         "style_description": _robot_style_description(key),
         "reason": "出撃機体の型",
         "style_scores": {"stable": 0.0, "desperate": 0.0, "burst": 0.0},
+        "style_score_gauge": {"stable": 0, "burst": 0, "desperate": 0},
+        "next_style_key": resolve_next_style({"stable": 0.0, "burst": 0.0, "desperate": 0.0}, key),
         "legacy_build_type": ("STABLE" if key == "stable" else "BURST"),
     }
+
+
+def _style_json_loads(raw, fallback):
+    try:
+        data = json.loads(raw or "")
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+    return data if isinstance(data, dict) else fallback
+
+
+def _style_score_rows(scores, current_key=None, next_key=None):
+    normalized_scores = {
+        key: max(0, min(100, int((scores or {}).get(key) or 0)))
+        for key in STYLE_KEYS
+    }
+    current = _normalize_style_key(current_key)
+    next_style = str(next_key or "").strip().lower()
+    return [
+        {
+            "key": key,
+            "label": ROBOT_STYLE_LABELS[key],
+            "score": int(normalized_scores.get(key) or 0),
+            "is_current": key == current,
+            "is_next": key == next_style,
+        }
+        for key in STYLE_KEYS
+    ]
+
+
+def _style_rank_summary(rank_state, current_key=None):
+    rows = style_rank_view_rows(rank_state, current_key=current_key)
+    return " / ".join(f"{row['label']} {row['rank_label']}" for row in rows)
+
+
+def _style_view_model(snapshot, rank_state=None):
+    snap = dict(snapshot or {})
+    scores = {key: int((snap.get("scores") or {}).get(key) or 0) for key in STYLE_KEYS}
+    current_key = _normalize_style_key(snap.get("current_key"))
+    next_key = str(snap.get("next_key") or "").strip().lower()
+    if next_key not in STYLE_KEYS or next_key == current_key:
+        next_key = resolve_next_style(scores, current_key)
+    rank_state = decode_style_rank_state(rank_state) if rank_state is not None else empty_style_rank_state()
+    current_score = int(scores.get(current_key) or 0)
+    next_score = int(scores.get(next_key) or 0) if next_key else 0
+    return {
+        "scores": scores,
+        "raw_scores": snap.get("raw_scores") or {},
+        "score_rows": _style_score_rows(scores, current_key=current_key, next_key=next_key),
+        "current_key": current_key,
+        "current_label": ROBOT_STYLE_LABELS[current_key],
+        "next_key": next_key,
+        "next_label": (ROBOT_STYLE_LABELS.get(next_key) if next_key else ""),
+        "is_close": bool(next_key and abs(current_score - next_score) < 5),
+        "rank_state": rank_state,
+        "rank_rows": style_rank_view_rows(rank_state, current_key=current_key),
+        "rank_summary": _style_rank_summary(rank_state, current_key=current_key),
+    }
+
+
+def _style_view_from_stats(stats, rank_state=None):
+    return _style_view_model(build_style_snapshot(stats or {}), rank_state=rank_state)
+
+
+def _ensure_style_rank_json(db, robot_instance_id, row=None):
+    robot_row = row
+    if robot_row is None:
+        robot_row = db.execute(
+            "SELECT style_rank_json FROM robot_instances WHERE id = ?",
+            (int(robot_instance_id),),
+        ).fetchone()
+    raw = None
+    if robot_row is not None:
+        if isinstance(robot_row, dict):
+            raw = robot_row.get("style_rank_json")
+        elif hasattr(robot_row, "keys") and "style_rank_json" in robot_row.keys():
+            raw = robot_row["style_rank_json"]
+    state = decode_style_rank_state(raw)
+    encoded = encode_style_rank_state(state)
+    if str(raw or "").strip() != encoded:
+        db.execute(
+            "UPDATE robot_instances SET style_rank_json = ? WHERE id = ?",
+            (encoded, int(robot_instance_id)),
+        )
+    return state
+
+
+def _ensure_style_snapshot(db, robot_instance_id, *, stat_obj=None, force=False, audit_context=None):
+    row = db.execute(
+        """
+        SELECT id, style_scores_json, style_rank_json, style_current_key, style_next_key
+        FROM robot_instances
+        WHERE id = ?
+        """,
+        (int(robot_instance_id),),
+    ).fetchone()
+    if not row:
+        return _style_view_model({}, rank_state=empty_style_rank_state())
+    if not force and stat_obj is None and row["style_scores_json"] and row["style_current_key"]:
+        scores = _style_json_loads(row["style_scores_json"], {})
+        snapshot = {
+            "scores": {key: int(scores.get(key) or 0) for key in STYLE_KEYS},
+            "current_key": _normalize_style_key(row["style_current_key"]),
+            "next_key": str(row["style_next_key"] or "").strip().lower() or None,
+            "raw_scores": {},
+        }
+        rank_state = _ensure_style_rank_json(db, robot_instance_id, row=row)
+        return _style_view_model(snapshot, rank_state=rank_state)
+    stats_obj = stat_obj if stat_obj is not None else _compute_robot_stats_for_instance(db, int(robot_instance_id))
+    stats = (stats_obj or {}).get("stats") or {}
+    snapshot = build_style_snapshot(stats)
+    rank_state = _ensure_style_rank_json(db, robot_instance_id, row=row)
+    updated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    db.execute(
+        """
+        UPDATE robot_instances
+        SET style_scores_json = ?,
+            style_current_key = ?,
+            style_next_key = ?,
+            style_updated_at = ?,
+            style_key = ?
+        WHERE id = ?
+        """,
+        (
+            json.dumps(snapshot["scores"], ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            snapshot["current_key"],
+            snapshot["next_key"],
+            updated_at,
+            snapshot["current_key"],
+            int(robot_instance_id),
+        ),
+    )
+    if audit_context:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES.get("STYLE_SNAPSHOT", "audit.style.snapshot"),
+            user_id=audit_context.get("user_id"),
+            request_id=audit_context.get("request_id"),
+            action_key=audit_context.get("action_key") or "style.snapshot",
+            entity_type="robot_instance",
+            entity_id=int(robot_instance_id),
+            payload={
+                "robot_instance_id": int(robot_instance_id),
+                "style_current_key": snapshot["current_key"],
+                "style_next_key": snapshot["next_key"],
+                "scores": snapshot["scores"],
+            },
+            ip=audit_context.get("ip"),
+        )
+    return _style_view_model(snapshot, rank_state=rank_state)
+
+
+def _robot_style_state_for_view(db, robot_instance_id, *, stat_obj=None, force=False):
+    return _ensure_style_snapshot(db, int(robot_instance_id), stat_obj=stat_obj, force=force)
+
+
+def _award_robot_style_xp(db, robot_instance_id, style_key, *, amount=1):
+    row = db.execute(
+        "SELECT style_rank_json FROM robot_instances WHERE id = ?",
+        (int(robot_instance_id),),
+    ).fetchone()
+    state = _ensure_style_rank_json(db, robot_instance_id, row=row)
+    result = award_style_xp_state(state, style_key, amount=amount)
+    db.execute(
+        "UPDATE robot_instances SET style_rank_json = ? WHERE id = ?",
+        (encode_style_rank_state(result["state"]), int(robot_instance_id)),
+    )
+    result["style_label"] = ROBOT_STYLE_LABELS.get(result["style_key"], result["style_key"])
+    result["old_rank_label"] = get_style_rank_label(result["old_rank"])
+    result["new_rank_label"] = get_style_rank_label(result["new_rank"])
+    return result
+
+
+def _record_style_rank_result(db, *, user_id, robot, award_result, request_id=None, ip=None):
+    if not award_result or not award_result.get("rank_up"):
+        return
+    robot_id = int(robot["id"]) if robot and "id" in robot.keys() else None
+    robot_name = str((robot["name"] if robot and "name" in robot.keys() else "") or "機体").strip() or "機体"
+    payload = {
+        "robot_instance_id": robot_id,
+        "robot_name": robot_name,
+        "style_key": award_result["style_key"],
+        "style_label": award_result["style_label"],
+        "old_rank": int(award_result["old_rank"]),
+        "old_rank_label": award_result["old_rank_label"],
+        "new_rank": int(award_result["new_rank"]),
+        "new_rank_label": award_result["new_rank_label"],
+        "xp": int(award_result["xp"]),
+        "wins": int(award_result["wins"]),
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES.get("STYLE_RANK_UP", "audit.style.rank_up"),
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="style.rank_up",
+        entity_type="robot_instance",
+        entity_id=robot_id,
+        payload=payload,
+        ip=ip,
+    )
+    new_rank = int(award_result["new_rank"])
+    if new_rank >= 4:
+        audit_log(
+            db,
+            "STYLE_MASTER" if new_rank >= 5 else "STYLE_RANK_UP",
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="style.rank_up.public",
+            entity_type="robot_instance",
+            entity_id=robot_id,
+            payload=payload,
+            ip=ip,
+        )
 
 
 def _area_growth_tendency(area_key):
@@ -8141,6 +8331,11 @@ def ensure_schema(db):
             combat_mode TEXT NOT NULL DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
+            style_scores_json TEXT,
+            style_rank_json TEXT,
+            style_current_key TEXT,
+            style_next_key TEXT,
+            style_updated_at TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -9114,6 +9309,16 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN style_key TEXT NOT NULL DEFAULT 'stable'")
     if "style_stats_json" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN style_stats_json TEXT NOT NULL DEFAULT '{}'")
+    if "style_scores_json" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_scores_json TEXT")
+    if "style_rank_json" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_rank_json TEXT")
+    if "style_current_key" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_current_key TEXT")
+    if "style_next_key" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_next_key TEXT")
+    if "style_updated_at" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_updated_at TEXT")
     db.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     db.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     db.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
@@ -9938,10 +10143,12 @@ def _create_robot_instance(
         personality = pick_personality()
     cur = db.execute(
         """
-        INSERT INTO robot_instances (user_id, name, status, personality, combat_mode, style_key, style_stats_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'stable', '{}', ?, ?)
+        INSERT INTO robot_instances (
+            user_id, name, status, personality, combat_mode, style_key, style_stats_json, style_rank_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, 'stable', '{}', ?, ?, ?)
         """,
-        (user_id, robot_name, status, personality, _normalize_combat_mode(combat_mode), now, now),
+        (user_id, robot_name, status, personality, _normalize_combat_mode(combat_mode), encode_style_rank_state(empty_style_rank_state()), now, now),
     )
     instance_id = cur.lastrowid
     offsets = offsets or {}
@@ -10538,15 +10745,13 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
             "UPDATE robot_instances SET style_key = ? WHERE id = ?",
             (computed_style["style_key"], int(robot_instance_id)),
         )
-        stored_style_key = computed_style["style_key"]
-    robot_style = _robot_style_from_instance_key(stored_style_key)
     return {
         "stats": calc["stats"],
         "power": calc["power"],
         "set_bonus": calc["set_bonus"],
         "parts": ordered,
         "archetype": archetype,
-        "robot_style": robot_style,
+        "robot_style": computed_style,
     }
 
 
@@ -16833,9 +17038,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED"},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "STYLE_RANK_UP", "STYLE_MASTER"},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED"}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "STYLE_RANK_UP", "STYLE_MASTER"}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -16845,6 +17050,8 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
     "CHAMPION_DEFEATED",
+    "STYLE_RANK_UP",
+    "STYLE_MASTER",
     *LAB_WORLD_EVENT_TYPES,
 }
 WORLD_LOG_RANKING_METRICS = (
@@ -16874,6 +17081,7 @@ PERSONAL_LOG_EVENT_TYPES = (
     AUDIT_EVENT_TYPES["PART_EVOLVE"],
     AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"],
     AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
+    AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
 )
 
 
@@ -16964,6 +17172,18 @@ def _feed_card_from_event(db, row):
         enemy_row = _feed_enemy_row(db, row, payload)
         if enemy_row:
             card["image_url"] = _enemy_static_url(enemy_row["image_path"])
+    elif event_type in {"STYLE_RANK_UP", "STYLE_MASTER"}:
+        actor_label = card["user_label"]
+        robot_name = str(payload.get("robot_name") or "機体").strip() or "機体"
+        style_label = str(payload.get("style_label") or ROBOT_STYLE_LABELS.get(payload.get("style_key"), "思想")).strip()
+        rank_label = str(payload.get("new_rank_label") or payload.get("rank_label") or "IV").strip()
+        card["headline"] = "STYLE MASTER" if event_type == "STYLE_MASTER" else "STYLE RANK"
+        card["accent"] = "weekly"
+        card["text"] = f"{actor_label} の「{robot_name}」が {style_label}思想 {rank_label} に到達"
+        card["meta_lines"] = [f"思想: {style_label}", f"Rank: {rank_label}"]
+        robot_instance_id = int(payload.get("robot_instance_id") or 0)
+        if robot_instance_id > 0:
+            card["link_url"] = url_for("robot_detail", instance_id=robot_instance_id)
     elif event_type == "LAB_RACE_WIN":
         username = str(payload.get("username") or "LAB ENEMY").strip() or "LAB ENEMY"
         robot_name = str(payload.get("robot_name") or "実験機").strip() or "実験機"
@@ -17695,6 +17915,23 @@ def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
                     "text": f"{robot_name} を完成させました。",
                     "accent": "weekly",
                     "link_url": url_for("robots"),
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["STYLE_RANK_UP"]:
+            robot_name = str(payload.get("robot_name") or "機体").strip() or "機体"
+            style_label = str(payload.get("style_label") or ROBOT_STYLE_LABELS.get(payload.get("style_key"), "思想")).strip()
+            rank_label = str(payload.get("new_rank_label") or "II").strip()
+            item = dict(base)
+            item.update(
+                {
+                    "title": "思想ランクアップ",
+                    "text": f"機体「{robot_name}」の{style_label}思想が {rank_label} になりました。",
+                    "accent": "weekly",
+                    "link_url": url_for("robot_detail", instance_id=int(payload.get("robot_instance_id") or 0))
+                    if int(payload.get("robot_instance_id") or 0) > 0
+                    else url_for("robots"),
+                    "meta_lines": [f"累計勝利: {int(payload.get('wins') or payload.get('xp') or 0)}"],
                 }
             )
             items.append(item)
@@ -21088,6 +21325,11 @@ def home():
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
     main_robot_profile = _robot_profile_view(main_robot_stats)
+    main_robot_style_state = (
+        _robot_style_state_for_view(db, int(main_robot["id"]), stat_obj=main_robot_stats)
+        if main_robot and main_robot_stats
+        else None
+    )
     main_robot_set_bonus_view = _set_bonus_view_for_loadout(
         (main_robot_stats or {}).get("parts"),
         (main_robot_stats or {}).get("set_bonus"),
@@ -21459,6 +21701,7 @@ def home():
             main_robot_stats=main_robot_stats,
             main_robot_style=main_robot_style,
             main_robot_profile=main_robot_profile,
+            main_robot_style_state=main_robot_style_state,
             main_robot_set_bonus_view=main_robot_set_bonus_view,
             style_achievements=style_achievements,
             idle_line=idle_line,
@@ -24568,6 +24811,7 @@ def explore():
         and _robot_weekly_fit(db, int(active["id"]), weekly_env["element"])
     )
     current_week_key = str((weekly_env["week_key"] if weekly_env and "week_key" in weekly_env.keys() else "") or _world_week_key())
+    history_applied = False
     if active:
         history_applied = _apply_robot_history_update_once(
             db,
@@ -24694,6 +24938,30 @@ def explore():
         desperate_low_hp_inc=desperate_low_hp_inc,
         request_ip=request.remote_addr,
     )
+    battle_win_count = sum(1 for b in battle_results if b.get("win"))
+    style_award_result = None
+    if active and history_applied and battle_win_count > 0:
+        style_state = _ensure_style_snapshot(
+            db,
+            int(active["id"]),
+            stat_obj=robot_stats,
+            force=True,
+        )
+        current_style_key = style_state.get("current_key") or "stable"
+        style_award_result = _award_robot_style_xp(
+            db,
+            int(active["id"]),
+            current_style_key,
+            amount=int(battle_win_count),
+        )
+        _record_style_rank_result(
+            db,
+            user_id=int(user_id),
+            robot=active,
+            award_result=style_award_result,
+            request_id=request_id,
+            ip=request.remote_addr,
+        )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["COIN_DELTA"],
@@ -24765,6 +25033,17 @@ def explore():
             "rewards": {
                 "coins": int(reward_coin),
                 "cores": int(reward_core),
+                "style_xp": (
+                    {
+                        "style_key": style_award_result.get("style_key"),
+                        "style_label": style_award_result.get("style_label"),
+                        "amount": int(style_award_result.get("amount") or 0),
+                        "rank_up": bool(style_award_result.get("rank_up")),
+                        "rank_label": style_award_result.get("new_rank_label"),
+                    }
+                    if style_award_result
+                    else None
+                ),
                 "core_progress": {
                     "added": int(evolution_core_progress_result.get("progress_added") or 0),
                     "current": int(evolution_core_progress_result.get("progress_after") or 0),
@@ -25359,6 +25638,11 @@ def robot_detail(instance_id):
     )
     robot["archetype"] = stat_obj.get("archetype") if stat_obj else None
     robot["robot_profile"] = _robot_profile_view(stat_obj)
+    robot["style_state"] = (
+        _robot_style_state_for_view(db, int(robot["id"]), stat_obj=stat_obj)
+        if stat_obj
+        else None
+    )
     if robot.get("decor_asset_id"):
         decor_row = db.execute(
             "SELECT key, name_ja FROM robot_decor_assets WHERE id = ?",
@@ -25422,6 +25706,7 @@ def robot_detail(instance_id):
         """,
         (int(robot["id"]),),
     ).fetchall()
+    db.commit()
     return render_template(
         "robot_detail.html",
         robot=robot,
@@ -26166,6 +26451,7 @@ def build():
         "style_scores": {"stable": 0.0, "desperate": 0.0, "burst": 0.0},
         "legacy_build_type": "STABLE",
     }
+    candidate_style_state = _style_view_from_stats(estimate["stats"]) if estimate else None
     current_robot_stats_obj = _compute_robot_stats_for_instance(db, active_robot["id"]) if active_robot else None
     current_robot_stats = {
         "hp": int(current_robot_stats_obj["stats"]["hp"]) if current_robot_stats_obj else 0,
@@ -26198,6 +26484,11 @@ def build():
             "legacy_build_type": "STABLE",
         }
     )
+    current_style_state = (
+        _robot_style_state_for_view(db, int(active_robot["id"]), stat_obj=current_robot_stats_obj)
+        if active_robot and current_robot_stats_obj
+        else None
+    )
     candidate_set_bonus_view = _set_bonus_view_for_loadout(
         selected_payloads,
         (estimate or {}).get("set_bonus"),
@@ -26208,6 +26499,8 @@ def build():
     )
     boss_alert_status = _home_boss_alert_status(db, user_id, now_ts=now)
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
+    if current_style_state:
+        db.commit()
 
     return render_template(
         "build.html",
@@ -26221,6 +26514,8 @@ def build():
         selected_decor_id=selected_decor_id,
         candidate_build_style=candidate_build_style,
         current_build_style=current_build_style,
+        candidate_style_state=candidate_style_state,
+        current_style_state=current_style_state,
         candidate_set_bonus_view=candidate_set_bonus_view,
         current_set_bonus_view=current_set_bonus_view,
         current_robot_stats=current_robot_stats,
@@ -26399,6 +26694,17 @@ def build_confirm():
         _compose_instance_assets_no_commit(db, instance_id, parts)
         _ensure_robot_title_master_rows(db)
         _grant_robot_title_by_key(db, robot_id=int(instance_id), title_key="title_boot")
+        style_state = _ensure_style_snapshot(
+            db,
+            int(instance_id),
+            force=True,
+            audit_context={
+                "user_id": int(user["id"]),
+                "request_id": getattr(g, "request_id", None),
+                "action_key": "build_confirm",
+                "ip": request.remote_addr,
+            },
+        )
         db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (instance_id, user["id"]))
         week_key = _world_week_key()
         build_element = _build_element_from_keys(db, head_key, r_arm_key, l_arm_key, legs_key)
@@ -26423,6 +26729,11 @@ def build_confirm():
                 "combat_mode": combat_mode,
                 "offsets": dict(selected_offsets),
                 "consumed_part_instance_ids": consumed_ids,
+                "style": {
+                    "current_key": style_state.get("current_key"),
+                    "next_key": style_state.get("next_key"),
+                    "scores": style_state.get("scores"),
+                },
             },
             ip=request.remote_addr,
         )
@@ -26532,6 +26843,7 @@ def showcase():
         sort_key=sort_key,
         limit=80,
     )
+    db.commit()
     return render_template(
         "showcase.html",
         rows=rows,

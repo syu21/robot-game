@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% from '_style_gauge.html' import render_style_gauge %}
+{% from '_style_rank.html' import render_style_rank %}
 {% block content %}
 <h1>ロボ個別ページ</h1>
 
@@ -32,6 +34,8 @@
       {% if robot.get('robot_profile') and robot['robot_profile'].get('style_support_line') %}
       <div class="robot-time">{{ robot['robot_profile']['style_support_line'] }}</div>
       {% endif %}
+      {{ render_style_gauge(robot.get('style_state'), compact=True) }}
+      {{ render_style_rank(robot.get('style_state'), compact=True) }}
       <div class="robot-part">展示: {% if robot['is_public'] %}公開{% else %}非公開{% endif %}</div>
       {% if can_share %}
       <form method="post" action="{{ url_for('robot_toggle_public', instance_id=robot['id']) }}">
@@ -50,6 +54,18 @@
     <form method="post" action="{{ url_for('robot_share', instance_id=robot['id']) }}">
       <button type="submit">全体チャットへ共有</button>
     </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>思想</h2>
+  {{ render_style_gauge(robot.get('style_state')) }}
+  {{ render_style_rank(robot.get('style_state')) }}
+  {% if robot.get('style_state') %}
+  <div class="robot-time">
+    この機体は {{ robot['style_state']['current_label'] }} 思想を中心に育っています。
+    {% if robot['style_state'].get('next_label') %}{{ robot['style_state']['next_label'] }} も近い傾向です。{% endif %}
+  </div>
   {% endif %}
 </div>
 

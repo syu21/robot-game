@@ -202,6 +202,8 @@ AUDIT_EVENT_TYPES = {
     "LAB_SMALL_BOOST_GRANT": "audit.lab.small_boost.grant",
     "LAB_SMALL_BOOST_USE": "audit.lab.small_boost.use",
     "SHARE_CLICK": "audit.share.click",
+    "STYLE_SNAPSHOT": "audit.style.snapshot",
+    "STYLE_RANK_UP": "audit.style.rank_up",
     "REFERRAL_ATTACH": "audit.referral.attach",
     "REFERRAL_QUALIFIED": "audit.referral.qualified",
     "FACTION_CHOOSE": "audit.faction.choose",

@@ -211,6 +211,7 @@
       cri: total.cri,
       power: Math.round(power * 10) / 10,
     });
+    updateCandidateStylePreview(total);
   }
 
   function setText(id, value) {
@@ -232,7 +233,14 @@
     const cri = Number(stats.cri || 0);
     const total = hp + atk + def + spd + acc + cri;
     if (total <= 0) {
-      return { key: "stable", label: "安定", description: descriptions.stable, reason: "ステータス不足" };
+      return {
+        key: "stable",
+        label: "安定",
+        description: descriptions.stable,
+        reason: "ステータス不足",
+        scores: { stable: 0, burst: 0, desperate: 0 },
+        nextKey: "burst",
+      };
     }
     const hpN = hp / total;
     const atkN = atk / total;
@@ -242,8 +250,8 @@
     const criN = cri / total;
     const scores = {
       stable: 0.35 * defN + 0.25 * hpN + 0.2 * accN + 0.1 * spdN + 0.05 * atkN + 0.05 * (1 - criN),
-      desperate: 0.3 * atkN + 0.25 * spdN + 0.15 * criN + 0.1 * accN + 0.2 * (1 - hpN),
       burst: 0.35 * atkN + 0.35 * criN + 0.1 * accN + 0.1 * spdN + 0.1 * (1 - defN),
+      desperate: 0.3 * atkN + 0.25 * spdN + 0.15 * criN + 0.1 * accN + 0.2 * (1 - hpN),
     };
     const order = ["stable", "burst", "desperate"];
     let best = order[0];
@@ -256,6 +264,8 @@
         label: "安定",
         description: descriptions.stable,
         reason: `防御 ${Math.round(defN * 1000) / 10}% / 耐久 ${Math.round(hpN * 1000) / 10}% が高い`,
+        scores: normalizeStyleScores(scores),
+        nextKey: nextStyle(scores, best),
       };
     }
     if (best === "burst") {
@@ -264,6 +274,8 @@
         label: "爆発",
         description: descriptions.burst,
         reason: `攻撃 ${Math.round(atkN * 1000) / 10}% / 会心 ${Math.round(criN * 1000) / 10}% が高い`,
+        scores: normalizeStyleScores(scores),
+        nextKey: nextStyle(scores, best),
       };
     }
     return {
@@ -271,7 +283,64 @@
       label: "背水",
       description: descriptions.desperate,
       reason: `低耐久傾向 ${Math.round((1 - hpN) * 1000) / 10}% / 素早さ ${Math.round(spdN * 1000) / 10}% が高い`,
+      scores: normalizeStyleScores(scores),
+      nextKey: nextStyle(scores, best),
     };
+  }
+
+  function normalizeStyleScores(scores) {
+    const keys = ["stable", "burst", "desperate"];
+    const raw = {};
+    let total = 0;
+    keys.forEach((key) => {
+      raw[key] = Math.max(0, Number(scores[key] || 0));
+      total += raw[key];
+    });
+    if (total <= 0) return { stable: 0, burst: 0, desperate: 0 };
+    const exact = {};
+    const base = {};
+    let used = 0;
+    keys.forEach((key) => {
+      exact[key] = (raw[key] / total) * 100;
+      base[key] = Math.floor(exact[key]);
+      used += base[key];
+    });
+    keys
+      .slice()
+      .sort((a, b) => (exact[b] - base[b]) - (exact[a] - base[a]))
+      .slice(0, 100 - used)
+      .forEach((key) => {
+        base[key] += 1;
+      });
+    return base;
+  }
+
+  function nextStyle(scores, currentKey) {
+    const keys = ["stable", "burst", "desperate"].filter((key) => key !== currentKey);
+    return keys.sort((a, b) => Number(scores[b] || 0) - Number(scores[a] || 0))[0] || "";
+  }
+
+  function updateCandidateStylePreview(stats) {
+    const box = document.getElementById("candidate-style-preview");
+    if (!box) return;
+    const gauge = box.querySelector(".style-gauge");
+    if (!gauge) return;
+    const style = computeStyle(stats);
+    const labelMap = { stable: "安定", burst: "爆発", desperate: "背水" };
+    const currentLabel = gauge.querySelector("[data-style-current-label]");
+    if (currentLabel) currentLabel.textContent = `現在: ${style.label}`;
+    const nextLabel = gauge.querySelector("[data-style-next-label]");
+    if (nextLabel && style.nextKey) nextLabel.textContent = `次の傾向: ${labelMap[style.nextKey] || style.nextKey}`;
+    gauge.querySelectorAll(".style-gauge-row[data-style-key]").forEach((row) => {
+      const key = row.dataset.styleKey;
+      const score = Number((style.scores || {})[key] || 0);
+      row.classList.toggle("is-current", key === style.key);
+      row.classList.toggle("is-next", key === style.nextKey && key !== style.key);
+      const fill = row.querySelector(".style-gauge-fill");
+      const scoreEl = row.querySelector(".style-gauge-score");
+      if (fill) fill.value = Math.max(0, Math.min(100, score));
+      if (scoreEl) scoreEl.textContent = String(score);
+    });
   }
 
   function updateComparisonRows(candidate) {
@@ -402,4 +471,32 @@
     });
   });
 
-  formEl.querySelectorAll("button[data-offset-reset]").f
+  formEl.querySelectorAll("button[data-offset-reset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const slot = String(button.dataset.offsetReset || "").trim();
+      if (!slot || !offsetInputMap[slot]) return;
+      if (offsetInputMap[slot].x) offsetInputMap[slot].x.value = "0";
+      if (offsetInputMap[slot].y) offsetInputMap[slot].y.value = "0";
+      syncOffsetOutput(slot, "x");
+      syncOffsetOutput(slot, "y");
+      const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
+      if (target) refreshPreviewTarget(target[0]);
+    });
+  });
+
+  syncSelectedCards();
+  syncAllOffsetOutputs();
+  syncAllPreviews();
+
+  updateEstimate();
+  window.addEventListener("pageshow", () => {
+    try {
+      syncSelectedCards();
+      syncAllOffsetOutputs();
+      syncAllPreviews();
+      updateEstimate();
+    } catch (err) {
+      console.error("[build_preview] pageshow sync failed", err);
+    }
+  });
+})();

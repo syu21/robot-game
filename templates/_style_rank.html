@@ -1,0 +1,17 @@
+{% macro render_style_rank(style_state, compact=False) -%}
+  {% if style_state and style_state.get('rank_rows') %}
+  <div class="style-rank{% if compact %} is-compact{% endif %}">
+    <div class="style-rank-head"><b>思想ランク</b></div>
+    <div class="style-rank-row">
+      {% for row in style_state['rank_rows'] %}
+      <span class="style-rank-chip{% if row['is_current'] %} is-current{% endif %}" title="{{ row['wins'] }}勝">
+        {{ row['label'] }} {{ row['rank_label'] }}
+      </span>
+      {% endfor %}
+    </div>
+    {% if not compact %}
+    <div class="style-rank-note">勝利を重ねると、この機体の思想ランクが上がります。</div>
+    {% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}

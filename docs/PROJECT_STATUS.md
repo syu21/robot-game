@@ -67,6 +67,7 @@
 - ホームの `Next Action` 直下に `今日の進捗` カードを追加し、`探索 / 獲得パーツ / 戦闘力増分 / ボス撃破 / 進化 / 強化` を数字中心で見えるようにした
 - ホーム上部に `研究員 N名 参加中` の Presenceバーを追加し、最近20分以内に実際に動いた研究員の小ロボ・状態・最終活動を見られるようにした
 - ボス撃破で獲得した DECOR 報酬を `ボス撃破の勲章` としてホームに表示し、機体整備の `装飾` でロボへ付けられることを明示した
+- 出撃機体の `思想ゲージ` とロボ単位の `思想ランク` を追加し、勝利時に現在思想のXPを蓄積してランクアップを個人ログ / 高ランク時の世界ログへ残すようにした
 - 開発用の `balance_simulator` は第2ラウンドで `FIXED / RANDOM_FIRST / SPD_FIRST` の3モード比較に対応し、後手勝率や初手被弾後勝率も見られる
 - `今週のチャンプ戦` は `RANDOM_FIRST` を採用し、会心型は会心倍率 `1.65` と初撃補正、命中 / 火力の小幅調整でロマン逆転の勝ち筋を残す方向へ再調整した
 - 出撃先ごとの特徴文を `探索先メモ` として表示
@@ -102,6 +103,7 @@
 - `アクション` 欄に `創設支援パック / ラボ維持支援パック / 出撃ブースター` への控えめな導線を置く
 - パーツ在庫は `所持 X/Y | 保管 Z` として表示し、報酬消失なしで `見比べる / 破棄 / 所持へ戻す` を分ける
 - 出撃機体の `思想` と `注目能力` を短く表示
+- `思想ゲージ / 思想ランク / 次の傾向` をホーム・ロボ詳細・ロボ展示・編成比較で表示し、思想は直接選択ではなくステータスから自然発生するものとして扱う
 - 探索先メモで `育成傾向` を短く表示
 
 ### 3.3 出撃（/explore）
@@ -330,6 +332,7 @@
   - `is_banned`, `is_admin_protected`, `banned_at`, `banned_reason`, `banned_by_user_id`
 - `robot_instances`, `robot_instance_parts`
   - `composed_image_path`, `icon_32_path`
+  - `style_scores_json`, `style_rank_json`, `style_current_key`, `style_next_key`, `style_updated_at`
 - `robot_parts`（`display_name_ja`, `offset_x/y`）
 - `part_instances`（`plus`, `w_*`）
 - `core_assets`, `user_core_inventory`

@@ -333,6 +333,11 @@ def main():
             combat_mode TEXT NOT NULL DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
+            style_scores_json TEXT,
+            style_rank_json TEXT,
+            style_current_key TEXT,
+            style_next_key TEXT,
+            style_updated_at TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -1255,8 +1260,24 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
     if "is_public" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
+    if "style_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_key TEXT NOT NULL DEFAULT 'stable'")
+    if "style_stats_json" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_stats_json TEXT NOT NULL DEFAULT '{}'")
+    if "style_scores_json" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_scores_json TEXT")
+    if "style_rank_json" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_rank_json TEXT")
+    if "style_current_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_current_key TEXT")
+    if "style_next_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_next_key TEXT")
+    if "style_updated_at" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_updated_at TEXT")
     cur.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     cur.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
+    cur.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
+    cur.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
     rp_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_parts)").fetchall()}
     if "rarity" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN rarity TEXT")

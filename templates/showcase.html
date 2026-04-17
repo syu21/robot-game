@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_style_rank.html' import render_style_rank %}
 {% block content %}
 <h1>ロボ展示</h1>
 
@@ -51,6 +52,7 @@
         {% if r.get('profile') and r['profile'].get('signature_label') %}
         <div class="robot-part">思想: {{ r['profile']['signature_label'] }}</div>
         {% endif %}
+        {{ render_style_rank(r.get('style_state'), compact=True) }}
         {% if r.get('profile') and r['profile'].get('battle_style_line') %}
         <div class="robot-time">{{ r['profile']['battle_style_line'] }}</div>
         {% endif %}

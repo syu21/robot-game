@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% from '_style_gauge.html' import render_style_gauge %}
+{% from '_style_rank.html' import render_style_rank %}
 {% macro render_picker_option(input_name, preview_target, p, selected_value) -%}
   {% set input_id = input_name ~ '_' ~ p['instance_id'] %}
   <article class="picker-item part-picker-card">
@@ -188,6 +190,9 @@
           <div id="est-bonus-effect">{{ candidate_set_bonus_view['effect_text'] }}</div>
           <div class="robot-time" id="est-bonus-detail">{{ candidate_set_bonus_view['detail_text'] }}</div>
         </div>
+        <div id="candidate-style-preview">
+          {{ render_style_gauge(candidate_style_state, compact=True) }}
+        </div>
         <hr />
         <div class="upgrade-cost"><b>現装備（起動中ロボ）</b></div>
         <div class="estimate-grid">
@@ -205,6 +210,8 @@
           <div>{{ current_set_bonus_view['effect_text'] }}</div>
           <div class="robot-time">{{ current_set_bonus_view['detail_text'] }}</div>
         </div>
+        {{ render_style_gauge(current_style_state, compact=True) }}
+        {{ render_style_rank(current_style_state, compact=True) }}
         <hr />
         {% for row in stat_comparison_rows %}
         <div class="upgrade-cost">

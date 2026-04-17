@@ -1,0 +1,28 @@
+{% macro render_style_gauge(style_state, compact=False) -%}
+  {% if style_state and style_state.get('score_rows') %}
+  <div class="style-gauge{% if compact %} is-compact{% endif %}">
+    <div class="style-gauge-head">
+      <b>思想ゲージ</b>
+      <span data-style-current-label="1">現在: {{ style_state['current_label'] }}</span>
+    </div>
+    <div class="style-gauge-rows">
+      {% for row in style_state['score_rows'] %}
+      <div class="style-gauge-row{% if row['is_current'] %} is-current{% elif row['is_next'] %} is-next{% endif %}" data-style-key="{{ row['key'] }}">
+        <span class="style-gauge-label">{{ row['label'] }}</span>
+        <span class="style-gauge-track"><progress class="style-gauge-fill" value="{{ row['score'] }}" max="100">{{ row['score'] }}</progress></span>
+        <span class="style-gauge-score">{{ row['score'] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if style_state.get('next_label') %}
+    <div class="style-gauge-next" data-style-next-label="1">
+      {% if style_state.get('is_close') %}
+        次の傾向: {{ style_state['next_label'] }} と拮抗中
+      {% else %}
+        次の傾向: {{ style_state['next_label'] }}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+{%- endmacro %}
