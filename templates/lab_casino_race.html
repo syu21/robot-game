@@ -5,7 +5,7 @@
 <div class="card lab-race-bet-hero">
   <div><b>どれに賭ける？</b></div>
   <div class="lab-race-bet-copy">6体の中から1体を選んで、レースの行方を見届けよう。</div>
-  <div class="robot-part"><b>いまのラボコイン：{{ wallet['lab_coin'] }}</b></div>
+  <div class="robot-part"><b>いまのコイン：{{ wallet['coins'] }}</b></div>
   <div class="robot-part">賭けるコインを選んでスタート</div>
   {% if course.get('selected_features') %}
   <div class="robot-part">今回のしかけ:
@@ -49,7 +49,7 @@
       <input type="hidden" name="entry_id" value="{{ row['id'] }}" />
       <div class="lab-entry-bet-actions">
         {% for amount in bet_amounts %}
-        <button type="submit" name="amount" value="{{ amount }}" {% if wallet['lab_coin'] < amount %}disabled{% endif %}>{{ amount }}</button>
+        <button type="submit" name="amount" value="{{ amount }}" {% if wallet['coins'] < amount %}disabled{% endif %}>{{ amount }}</button>
         {% endfor %}
       </div>
     </form>
@@ -57,5 +57,5 @@
   {% endfor %}
 </div>
 
-<p class="link"><a href="{{ url_for('lab_race_prizes') }}">交換所景品へ</a> | <a href="{{ url_for('lab_race_history') }}">レース記録へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+<p class="link"><a href="{{ url_for('lab_race_history') }}">レース記録へ</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
 {% endblock %}

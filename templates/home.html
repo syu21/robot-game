@@ -340,6 +340,12 @@
           </div>
         </div>
         {% if weekly_mvp['robot_name'] %}<div>{{ weekly_mvp['robot_name'] }}</div>{% endif %}
+        {% if weekly_mvp.get('primary_title') %}
+        <div class="upgrade-cost">称号: <span class="title-badge title-badge-new is-{{ weekly_mvp['primary_title'].get('category', 'honor') }} is-{{ weekly_mvp['primary_title'].get('color_key', 'honor') }}">{{ weekly_mvp['primary_title']['label'] }}</span></div>
+        {% endif %}
+        {% if weekly_mvp.get('style_title') %}
+        <div class="upgrade-cost">思想: {{ weekly_mvp['style_title']['label'] }}</div>
+        {% endif %}
         {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
         {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">詳細を見る</a></div>{% endif %}
         {% else %}
@@ -366,6 +372,9 @@
         </div>
         {% if weekly_champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ weekly_champion.get('signature_label') }}</div>
+        {% endif %}
+        {% if weekly_champion.get('primary_title') %}
+        <div class="upgrade-cost">称号: <span class="title-badge title-badge-new is-{{ weekly_champion['primary_title'].get('category', 'honor') }} is-{{ weekly_champion['primary_title'].get('color_key', 'honor') }}">{{ weekly_champion['primary_title']['label'] }}</span></div>
         {% endif %}
         {% if weekly_champion.get('focus_label_line') %}
         <div class="upgrade-cost">{{ weekly_champion.get('focus_label_line') }}</div>
@@ -755,6 +764,9 @@
         {% endif %}
         <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
         <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体差を見比べる</div></a>
+        {% if show_market_menu %}
+        <a class="action-card" href="{{ url_for('market') }}"><div class="action-title">市場</div><div class="action-desc">余剰パーツを売って補填を買う</div></a>
+        {% endif %}
       </div>
       <div class="home-nav-section-title">β版を応援</div>
       <div class="home-support-card card">

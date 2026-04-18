@@ -19,7 +19,7 @@
   </div>
   <p class="link">
     {% if watch_mode == 'enemy_race' %}
-    <a href="{{ url_for('lab_race_result', race_id=race['id']) }}">結果へ</a> | <a href="{{ url_for('lab_race_prizes') }}">交換所景品</a> | <a href="{{ url_for('lab_race_history') }}">レース記録</a>
+    <a href="{{ url_for('lab_race_result', race_id=race['id']) }}">結果へ</a> | <a href="{{ url_for('lab_race_history') }}">レース記録</a>
     {% else %}
     <a href="{{ url_for('lab_race_legacy_results_view', race_id=race['id']) }}">結果だけ見る</a> | <a href="{{ url_for('lab_race_legacy_rankings') }}">記録庫へ</a>
     {% endif %}

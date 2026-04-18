@@ -55,6 +55,15 @@ from services.personality_logs import generate_exploration_log, get_idle_line, g
 from services.audit import audit_log
 from services.archetype import compute_archetype
 from services.presence import get_presence_count, get_recent_home_robot_presence, get_recent_presence, touch_presence
+from services.robot_titles import (
+    ensure_robot_title_system,
+    grant_robot_title,
+    robot_story_suffix,
+    robot_title_summary,
+    sync_growth_titles_for_robot,
+    sync_progress_titles_for_robot,
+    sync_style_title_for_robot,
+)
 from services.style import (
     STYLE_DEFINITIONS as ROBOT_STYLE_DEFINITIONS,
     STYLE_KEYS,
@@ -885,7 +894,36 @@ LAB_CASINO_PRIZE_SEEDS = (
     },
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
-LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。ラボコインはそのまま保持されます。"
+LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。コインはそのまま保持されます。"
+MARKET_FEATURE_KEY = "market"
+MARKET_COIN_REWARD_MULTIPLIER = 1.25
+MARKET_SLOT_KEYS = ("head", "right_arm", "left_arm", "legs", "free_1", "free_2")
+MARKET_FIXED_SLOT_PART_TYPES = {
+    "head": "HEAD",
+    "right_arm": "RIGHT_ARM",
+    "left_arm": "LEFT_ARM",
+    "legs": "LEGS",
+}
+MARKET_PART_TYPE_LABELS = {
+    "head": "頭部",
+    "right_arm": "右腕",
+    "left_arm": "左腕",
+    "legs": "脚部",
+    "free_1": "自由枠",
+    "free_2": "自由枠",
+}
+MARKET_FREE_RARITY_ROLL = (("N", 92), ("N+1", 7), ("R", 1))
+MARKET_PRICE_RANGES = {
+    "N": (120, 220),
+    "N+1": (260, 420),
+    "R": (1800, 3000),
+}
+MARKET_SELL_BASE_BY_RARITY = {
+    "N": 35,
+    "R": 180,
+}
+MARKET_SELL_PLUS_BONUS = 20
+MARKET_REFRESH_COSTS = (0, 100, 200, 400, 800)
 STYLE_ACHIEVEMENT_DEFS = (
     {
         "key": "stable_no_damage_wins",
@@ -1048,6 +1086,11 @@ RELEASE_FLAG_DEFS = (
         "key": "weekly_champion",
         "label": "今週のチャンプ機体",
         "summary": "ホームのチャンプカードと /champion の非同期挑戦を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": MARKET_FEATURE_KEY,
+        "label": "市場",
+        "summary": "余剰パーツ売却と日替わり購入市場を一般公開します。管理者は非公開中でも確認できます。",
     },
     {
         "key": LAB_SMALL_BOOST_FEATURE_KEY,
@@ -6199,6 +6242,11 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
             if stat_obj
             else None
         )
+        title_summary = robot_title_summary(db, int(item["id"]))
+        item["title_summary"] = title_summary
+        if title_summary.get("primary"):
+            item["primary_title"] = title_summary["primary"]["label"]
+            item["primary_title_view"] = title_summary["primary"]
         item["set_bonus_view"] = _set_bonus_view_for_loadout(
             (stat_obj or {}).get("parts"),
             (stat_obj or {}).get("set_bonus"),
@@ -6510,6 +6558,7 @@ def _ensure_style_snapshot(db, robot_instance_id, *, stat_obj=None, force=False,
             "raw_scores": {},
         }
         rank_state = _ensure_style_rank_json(db, robot_instance_id, row=row)
+        sync_style_title_for_robot(db, int(robot_instance_id), snapshot["current_key"])
         return _style_view_model(snapshot, rank_state=rank_state)
     stats_obj = stat_obj if stat_obj is not None else _compute_robot_stats_for_instance(db, int(robot_instance_id))
     stats = (stats_obj or {}).get("stats") or {}
@@ -6535,6 +6584,7 @@ def _ensure_style_snapshot(db, robot_instance_id, *, stat_obj=None, force=False,
             int(robot_instance_id),
         ),
     )
+    sync_style_title_for_robot(db, int(robot_instance_id), snapshot["current_key"])
     if audit_context:
         audit_log(
             db,
@@ -6605,6 +6655,17 @@ def _record_style_rank_result(db, *, user_id, robot, award_result, request_id=No
         ip=ip,
     )
     new_rank = int(award_result["new_rank"])
+    if robot_id:
+        sync_style_title_for_robot(db, robot_id, award_result["style_key"])
+    if robot_id and new_rank >= 4:
+        grant_robot_title(
+            db,
+            robot_id,
+            "record_updater",
+            source_event="style_rank_up",
+            source_entity_type="robot_instance",
+            source_entity_id=robot_id,
+        )
     if new_rank >= 4:
         audit_log(
             db,
@@ -8195,10 +8256,19 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_updated_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
+    added_lab_coin_converted_at = "lab_coin_converted_at" not in cols
     if "lab_coin" not in cols:
-        db.execute(f"ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT {LAB_CASINO_STARTING_COINS}")
+        db.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
     if "lab_coin_last_daily_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
+    if added_lab_coin_converted_at:
+        db.execute("ALTER TABLE users ADD COLUMN lab_coin_converted_at INTEGER NOT NULL DEFAULT 0")
+    if "market_refresh_count_today" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN market_refresh_count_today INTEGER NOT NULL DEFAULT 0")
+    if "market_free_refresh_used_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN market_free_refresh_used_at TEXT")
+    if "market_refresh_day_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -8270,8 +8340,20 @@ def ensure_schema(db):
     db.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
     db.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
     db.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
-    db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_STARTING_COINS} WHERE lab_coin IS NULL OR lab_coin < 0")
-    db.execute(f"UPDATE users SET lab_coin = {LAB_CASINO_COIN_CAP} WHERE lab_coin > {LAB_CASINO_COIN_CAP}")
+    db.execute(
+        """
+        UPDATE users
+        SET
+            coins = COALESCE(coins, 0) + MAX(COALESCE(lab_coin, 0), 0),
+            lab_coin = 0,
+            lab_coin_converted_at = ?
+        WHERE COALESCE(lab_coin_converted_at, 0) = 0
+          AND COALESCE(lab_coin, 0) > 0
+        """,
+        (_now_ts(),),
+    )
+    db.execute("UPDATE users SET lab_coin = 0 WHERE lab_coin IS NULL OR lab_coin < 0")
+    db.execute("UPDATE users SET market_refresh_count_today = 0 WHERE market_refresh_count_today IS NULL OR market_refresh_count_today < 0")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     user_rows = db.execute("SELECT id FROM users WHERE invite_code IS NULL OR TRIM(invite_code) = ''").fetchall()
     for user_row in user_rows:
@@ -8388,6 +8470,9 @@ def ensure_schema(db):
             style_current_key TEXT,
             style_next_key TEXT,
             style_updated_at TEXT,
+            primary_title_key TEXT,
+            style_title_key TEXT,
+            honor_title_key TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -8446,6 +8531,29 @@ def ensure_schema(db):
             created_at INTEGER NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (part_id) REFERENCES robot_parts(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_listings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            slot_key TEXT NOT NULL,
+            part_key TEXT NOT NULL,
+            part_type TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            plus INTEGER NOT NULL DEFAULT 0,
+            price INTEGER NOT NULL,
+            seed INTEGER NOT NULL DEFAULT 0,
+            is_sold INTEGER NOT NULL DEFAULT 0,
+            sold_to_user_id INTEGER,
+            sold_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, slot_key),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -9371,6 +9479,12 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN style_next_key TEXT")
     if "style_updated_at" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN style_updated_at TEXT")
+    if "primary_title_key" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN primary_title_key TEXT")
+    if "style_title_key" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN style_title_key TEXT")
+    if "honor_title_key" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     db.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     db.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     db.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
@@ -9616,6 +9730,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_user_day ON market_daily_listings(user_id, day_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_day_slot ON market_daily_listings(day_key, slot_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
@@ -9671,6 +9787,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_snapshot_created ON weekly_champion_battles(champion_snapshot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_user_created ON weekly_champion_battles(challenger_user_id, created_at DESC)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_champion_battles_request ON weekly_champion_battles(request_id)")
+    ensure_robot_title_system(db)
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
     _seed_default_decor_assets(db)
@@ -10654,6 +10771,299 @@ def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=No
     return cur.lastrowid
 
 
+def _market_day_key():
+    return datetime.now(JST).strftime("%Y-%m-%d")
+
+
+def _market_refresh_cost(refresh_count_today):
+    count = max(0, int(refresh_count_today or 0))
+    if count < len(MARKET_REFRESH_COSTS):
+        return int(MARKET_REFRESH_COSTS[count])
+    return int(MARKET_REFRESH_COSTS[-1])
+
+
+def _market_part_type_aliases(part_type):
+    norm = _norm_part_type(str(part_type or "").strip().upper())
+    aliases = [norm]
+    if norm == "RIGHT_ARM":
+        aliases.append("R_ARM")
+    elif norm == "LEFT_ARM":
+        aliases.append("L_ARM")
+    return tuple(dict.fromkeys(alias for alias in aliases if alias))
+
+
+def _market_pick_weighted(items, rng):
+    total = sum(int(weight) for _key, weight in items)
+    if total <= 0:
+        return items[0][0]
+    roll = rng.randint(1, total)
+    current = 0
+    for key, weight in items:
+        current += int(weight)
+        if roll <= current:
+            return key
+    return items[-1][0]
+
+
+def _market_pick_part_row(db, *, slot_key, rng):
+    if slot_key in MARKET_FIXED_SLOT_PART_TYPES:
+        rarity_roll = "N"
+        part_type = MARKET_FIXED_SLOT_PART_TYPES[slot_key]
+    else:
+        rarity_roll = _market_pick_weighted(MARKET_FREE_RARITY_ROLL, rng)
+        part_type = rng.choice(tuple(MARKET_FIXED_SLOT_PART_TYPES.values()))
+    rarity = "R" if rarity_roll == "R" else "N"
+    aliases = _market_part_type_aliases(part_type)
+    marks = ",".join("?" for _ in aliases)
+    rows = db.execute(
+        f"""
+        SELECT *
+        FROM robot_parts
+        WHERE is_active = 1
+          AND COALESCE(is_unlocked, 1) = 1
+          AND UPPER(COALESCE(rarity, 'N')) = ?
+          AND UPPER(COALESCE(part_type, '')) IN ({marks})
+        ORDER BY key ASC
+        """,
+        (rarity, *aliases),
+    ).fetchall()
+    if not rows and rarity == "R":
+        rarity = "N"
+        rarity_roll = "N"
+        rows = db.execute(
+            f"""
+            SELECT *
+            FROM robot_parts
+            WHERE is_active = 1
+              AND COALESCE(is_unlocked, 1) = 1
+              AND UPPER(COALESCE(rarity, 'N')) = 'N'
+              AND UPPER(COALESCE(part_type, '')) IN ({marks})
+            ORDER BY key ASC
+            """,
+            aliases,
+        ).fetchall()
+    if not rows:
+        return None, rarity_roll
+    return rows[rng.randrange(len(rows))], rarity_roll
+
+
+def _market_listing_price(rarity_roll, rng):
+    key = "N+1" if rarity_roll == "N+1" else ("R" if rarity_roll == "R" else "N")
+    lo, hi = MARKET_PRICE_RANGES[key]
+    return int(rng.randint(int(lo), int(hi)))
+
+
+def _market_generate_listings_for_user(db, user_id, day_key, *, replace=False):
+    now_ts = int(time.time())
+    if replace:
+        db.execute(
+            "DELETE FROM market_daily_listings WHERE user_id = ? AND day_key = ?",
+            (int(user_id), str(day_key)),
+        )
+    existing = {
+        row["slot_key"]
+        for row in db.execute(
+            "SELECT slot_key FROM market_daily_listings WHERE user_id = ? AND day_key = ?",
+            (int(user_id), str(day_key)),
+        ).fetchall()
+    }
+    created = 0
+    for slot_key in MARKET_SLOT_KEYS:
+        if slot_key in existing:
+            continue
+        seed = int((time.time_ns() + random.randint(0, 999999)) % 2147483647)
+        rng = random.Random(seed)
+        part_row, rarity_roll = _market_pick_part_row(db, slot_key=slot_key, rng=rng)
+        if not part_row:
+            continue
+        rarity = "R" if rarity_roll == "R" else "N"
+        plus = 1 if rarity_roll == "N+1" else 0
+        price = _market_listing_price(rarity_roll, rng)
+        db.execute(
+            """
+            INSERT INTO market_daily_listings
+            (user_id, day_key, slot_key, part_key, part_type, rarity, plus, price, seed, is_sold, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ON CONFLICT(user_id, day_key, slot_key) DO UPDATE SET
+                part_key = excluded.part_key,
+                part_type = excluded.part_type,
+                rarity = excluded.rarity,
+                plus = excluded.plus,
+                price = excluded.price,
+                seed = excluded.seed,
+                is_sold = 0,
+                sold_to_user_id = NULL,
+                sold_at = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (
+                int(user_id),
+                str(day_key),
+                slot_key,
+                part_row["key"],
+                _norm_part_type(part_row["part_type"]),
+                rarity,
+                int(plus),
+                int(price),
+                int(seed),
+                now_ts,
+                now_ts,
+            ),
+        )
+        created += 1
+    return created
+
+
+def _market_user_state(db, user_id):
+    row = db.execute(
+        """
+        SELECT
+            id,
+            username,
+            is_admin,
+            COALESCE(coins, 0) AS coins,
+            COALESCE(market_refresh_count_today, 0) AS market_refresh_count_today,
+            market_free_refresh_used_at,
+            market_refresh_day_key
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _market_reset_daily_state_if_needed(db, user_id, day_key):
+    state = _market_user_state(db, user_id)
+    if not state:
+        return None
+    if str(state.get("market_refresh_day_key") or "") != str(day_key):
+        db.execute(
+            """
+            UPDATE users
+            SET market_refresh_count_today = 0,
+                market_free_refresh_used_at = NULL,
+                market_refresh_day_key = ?
+            WHERE id = ?
+            """,
+            (str(day_key), int(user_id)),
+        )
+        state["market_refresh_count_today"] = 0
+        state["market_free_refresh_used_at"] = None
+        state["market_refresh_day_key"] = str(day_key)
+    return state
+
+
+def _market_ensure_daily_listings(db, user_id):
+    day_key = _market_day_key()
+    _market_reset_daily_state_if_needed(db, user_id, day_key)
+    count = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM market_daily_listings WHERE user_id = ? AND day_key = ?",
+            (int(user_id), day_key),
+        ).fetchone()["c"]
+        or 0
+    )
+    if count < len(MARKET_SLOT_KEYS):
+        _market_generate_listings_for_user(db, user_id, day_key)
+    return day_key
+
+
+def _market_listing_rows(db, user_id, day_key):
+    rows = db.execute(
+        """
+        SELECT
+            ml.*,
+            rp.id AS part_id,
+            rp.key AS key,
+            rp.image_path,
+            rp.display_name_ja,
+            rp.element,
+            rp.series,
+            COALESCE(rp.rarity, ml.rarity) AS master_rarity
+        FROM market_daily_listings ml
+        JOIN robot_parts rp ON rp.key = ml.part_key
+        WHERE ml.user_id = ? AND ml.day_key = ?
+        ORDER BY
+            CASE ml.slot_key
+              WHEN 'head' THEN 1
+              WHEN 'right_arm' THEN 2
+              WHEN 'left_arm' THEN 3
+              WHEN 'legs' THEN 4
+              WHEN 'free_1' THEN 5
+              WHEN 'free_2' THEN 6
+              ELSE 99
+            END,
+            ml.id ASC
+        """,
+        (int(user_id), str(day_key)),
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["slot_label"] = MARKET_PART_TYPE_LABELS.get(item["slot_key"], item["slot_key"])
+        item["display_name"] = _part_display_name_ja(
+            {
+                "key": item["key"],
+                "display_name_ja": item.get("display_name_ja"),
+                "rarity": item.get("rarity"),
+                "element": item.get("element"),
+                "part_type": item.get("part_type"),
+            }
+        )
+        item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
+        item["rarity_label"] = str(item.get("rarity") or "N").upper()
+        item["plus_label"] = f"+{int(item.get('plus') or 0)}" if int(item.get("plus") or 0) > 0 else ""
+        item["is_sold"] = bool(int(item.get("is_sold") or 0))
+        items.append(item)
+    return items
+
+
+def _market_sell_value(part_row):
+    rarity = str(part_row["rarity"] or part_row["master_rarity"] or "N").strip().upper()
+    base = MARKET_SELL_BASE_BY_RARITY.get(rarity, MARKET_SELL_BASE_BY_RARITY["N"])
+    return int(base + max(0, int(part_row["plus"] or 0)) * MARKET_SELL_PLUS_BONUS)
+
+
+def _market_sellable_part_rows(db, user_id, limit=80):
+    rows = db.execute(
+        """
+        SELECT
+            pi.*,
+            rp.key,
+            rp.image_path,
+            rp.display_name_ja,
+            COALESCE(rp.rarity, pi.rarity) AS master_rarity,
+            COALESCE(rp.element, pi.element) AS master_element
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND pi.status = 'inventory'
+        ORDER BY
+            CASE UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) WHEN 'R' THEN 2 ELSE 1 END ASC,
+            pi.plus ASC,
+            pi.id ASC
+        LIMIT ?
+        """,
+        (int(user_id), max(1, int(limit or 80))),
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = _part_card_payload(row, can_discard=False)
+        item["sell_value"] = _market_sell_value(row)
+        items.append(item)
+    return items
+
+
+def _market_can_access(db, user_row):
+    return _release_open_for_viewer(db, MARKET_FEATURE_KEY, user_row=user_row)
+
+
+def _market_require_access(db, user_row):
+    if not _market_can_access(db, user_row):
+        abort(404)
+
+
 def _take_or_materialize_part_instance(db, user_id, part_key):
     # Prefer existing individual parts first.
     row = db.execute(
@@ -11035,6 +11445,10 @@ def _explore_part_drop_budget(total_fights):
     return MAX_PART_DROPS_CHAIN if int(total_fights or 0) > 1 else MAX_PART_DROPS_NORMAL
 
 
+def _market_adjust_coin_reward(base_coin):
+    return max(1, int(math.ceil(float(base_coin or 0) * MARKET_COIN_REWARD_MULTIPLIER)))
+
+
 def _roll_battle_rewards(
     db,
     user_id,
@@ -11046,7 +11460,7 @@ def _roll_battle_rewards(
     area_key=None,
 ):
     tier = int(tier or 1)
-    coin = COIN_REWARD_BY_TIER.get(tier, 2)
+    coin = _market_adjust_coin_reward(COIN_REWARD_BY_TIER.get(tier, 2))
     drop_type = _weighted_pick(DROP_TYPE_WEIGHTS_BY_TIER.get(tier, DROP_TYPE_WEIGHTS_BY_TIER[1]))
     promotion_triggered = False
     if (
@@ -12941,42 +13355,54 @@ def _lab_casino_day_key():
 def _lab_casino_wallet_row(db, user_id):
     row = db.execute(
         """
-        SELECT id, username, COALESCE(lab_coin, ?) AS lab_coin, lab_coin_last_daily_at
+        SELECT id, username, COALESCE(coins, 0) AS coins, lab_coin_last_daily_at
         FROM users
         WHERE id = ?
         LIMIT 1
         """,
-        (int(LAB_CASINO_STARTING_COINS), int(user_id)),
+        (int(user_id),),
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    data = dict(row)
+    data["lab_coin"] = int(data.get("coins") or 0)
+    return data
 
 
-def _lab_casino_adjust_coins(db, user_id, delta, *, cap=LAB_CASINO_COIN_CAP):
+def _lab_casino_adjust_coins(db, user_id, delta, *, cap=None):
     wallet = _lab_casino_wallet_row(db, user_id)
-    before = int(wallet["lab_coin"] or 0) if wallet else 0
+    before = int(wallet["coins"] or 0) if wallet else 0
     after = max(0, before + int(delta))
-    if cap is not None:
-        after = min(int(cap), after)
-    db.execute("UPDATE users SET lab_coin = ? WHERE id = ?", (int(after), int(user_id)))
+    db.execute("UPDATE users SET coins = ? WHERE id = ?", (int(after), int(user_id)))
     return before, after
 
 
 def _lab_casino_apply_daily_grant_if_needed(db, user_id):
     wallet = _lab_casino_wallet_row(db, user_id)
     if not wallet:
-        return {"granted_amount": 0, "already_received": True, "lab_coin_before": 0, "lab_coin_after": 0, "day_key": None}
+        return {
+            "granted_amount": 0,
+            "already_received": True,
+            "coin_before": 0,
+            "coin_after": 0,
+            "lab_coin_before": 0,
+            "lab_coin_after": 0,
+            "day_key": None,
+        }
     day_key = _lab_casino_day_key()
     last_daily_at = str(wallet.get("lab_coin_last_daily_at") or "").strip()
-    before_coin = int(wallet.get("lab_coin") or 0)
+    before_coin = int(wallet.get("coins") or 0)
     if last_daily_at == day_key:
         return {
             "granted_amount": 0,
             "already_received": True,
+            "coin_before": before_coin,
+            "coin_after": before_coin,
             "lab_coin_before": before_coin,
             "lab_coin_after": before_coin,
             "day_key": day_key,
         }
-    grant_amount = min(int(LAB_CASINO_DAILY_GRANT), max(0, int(LAB_CASINO_COIN_CAP) - before_coin))
+    grant_amount = int(LAB_CASINO_DAILY_GRANT)
     before, after = _lab_casino_adjust_coins(db, user_id, grant_amount)
     db.execute("UPDATE users SET lab_coin_last_daily_at = ? WHERE id = ?", (day_key, int(user_id)))
     audit_log(
@@ -12991,15 +13417,19 @@ def _lab_casino_apply_daily_grant_if_needed(db, user_id):
         payload={
             "day_key": day_key,
             "grant_amount": int(grant_amount),
+            "coin_before": int(before),
+            "coin_after": int(after),
             "lab_coin_before": int(before),
             "lab_coin_after": int(after),
-            "cap": int(LAB_CASINO_COIN_CAP),
+            "currency": "coins",
         },
         ip=request.remote_addr,
     )
     return {
         "granted_amount": int(grant_amount),
         "already_received": False,
+        "coin_before": int(before),
+        "coin_after": int(after),
         "lab_coin_before": int(before),
         "lab_coin_after": int(after),
         "day_key": day_key,
@@ -13391,8 +13821,11 @@ def _lab_casino_resolve_race(db, race_id, *, actor_user_id=None):
                 "is_hit": bool(is_hit),
                 "payout": int(payout),
                 "watch_bonus": int(LAB_CASINO_WATCH_BONUS),
+                "coin_before": int(before_coin),
+                "coin_after": int(after_coin),
                 "lab_coin_before": int(before_coin),
                 "lab_coin_after": int(after_coin),
+                "currency": "coins",
                 "winner_entry_id": int(winner_entry_id or 0),
             },
             ip=request.remote_addr,
@@ -14125,6 +14558,15 @@ def _home_robot_presence_entry_view_model(db, entry):
         )
     display_name = str(item.get("display_name") or item.get("username") or "研究員").strip() or "研究員"
     robot_name = str(item.get("robot_name") or "").strip() or (f"Robot #{robot_id}" if robot_id > 0 else "Robot")
+    primary_title = None
+    primary_title_label = str(item.get("primary_title_label") or "").strip()
+    if primary_title_label:
+        primary_title = {
+            "key": str(item.get("primary_title_key") or ""),
+            "label": primary_title_label,
+            "category": str(item.get("primary_title_category") or ""),
+            "color_key": str(item.get("primary_title_color_key") or ""),
+        }
     item.update(
         {
             "display_name": display_name,
@@ -14136,6 +14578,7 @@ def _home_robot_presence_entry_view_model(db, entry):
             "detail_url": url_for("robot_detail", instance_id=robot_id) if robot_id > 0 else None,
             "supporter_mark": supporter_mark,
             "supporter_label": supporter_label,
+            "primary_title": primary_title,
         }
     )
     return item
@@ -16024,7 +16467,7 @@ def _weekly_mvp_snapshot(db, week_key):
     if user_row["active_robot_id"]:
         robot = db.execute(
             """
-            SELECT id, name, composed_image_path, updated_at
+            SELECT id, name, composed_image_path, updated_at, style_key, style_current_key
             FROM robot_instances
             WHERE id = ? AND user_id = ? AND status = 'active'
             """,
@@ -16033,7 +16476,7 @@ def _weekly_mvp_snapshot(db, week_key):
     if not robot:
         robot = db.execute(
             """
-            SELECT id, name, composed_image_path, updated_at
+            SELECT id, name, composed_image_path, updated_at, style_key, style_current_key
             FROM robot_instances
             WHERE user_id = ? AND status = 'active'
             ORDER BY updated_at DESC, id DESC
@@ -16045,6 +16488,15 @@ def _weekly_mvp_snapshot(db, week_key):
     image_url = None
     if robot_dict and robot_dict.get("composed_image_path"):
         image_url = _composed_image_url(robot_dict.get("composed_image_path"), robot_dict.get("updated_at"))
+    title_summary = {"primary": None, "style": None, "honor": None, "titles": []}
+    if robot_dict:
+        sync_style_title_for_robot(
+            db,
+            int(robot_dict["id"]),
+            robot_dict.get("style_current_key") or robot_dict.get("style_key") or "stable",
+        )
+        grant_robot_title(db, int(robot_dict["id"]), "mvp_weekly", source_event="weekly_mvp")
+        title_summary = robot_title_summary(db, int(robot_dict["id"]))
     visuals = _user_visuals(db, int(user_row["id"]), {})
     return {
         "user_id": int(user_row["id"]),
@@ -16064,6 +16516,9 @@ def _weekly_mvp_snapshot(db, week_key):
         "presence_state": visuals["presence_state"],
         "presence_label": visuals["presence_label"],
         "presence_title": visuals["presence_title"],
+        "title_summary": title_summary,
+        "primary_title": title_summary.get("primary"),
+        "style_title": title_summary.get("style"),
     }
 
 
@@ -16226,6 +16681,13 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "presence_title": "待機中",
     }
     stats_summary = get_weekly_champion_stats(db, int(snapshot["id"]))
+    if robot_instance_id > 0:
+        sync_style_title_for_robot(db, robot_instance_id, payload.get("style_key") or "stable")
+    title_summary = (
+        robot_title_summary(db, robot_instance_id)
+        if robot_instance_id > 0
+        else {"primary": None, "style": None, "honor": None, "titles": []}
+    )
     recent_rows = []
     for row in list_weekly_champion_battles(db, int(snapshot["id"]), limit=6):
         challenger_user_id = int(row.get("challenger_user_id") or 0)
@@ -16303,6 +16765,9 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "presence_state": visuals.get("presence_state") or "idle",
         "presence_label": visuals.get("presence_label") or "探索待機中",
         "presence_title": visuals.get("presence_title") or "待機中",
+        "title_summary": title_summary,
+        "primary_title": title_summary.get("primary"),
+        "style_title": title_summary.get("style"),
     }
 
 
@@ -17441,13 +17906,15 @@ def _feed_card_from_event(db, row):
         actor_label = card["user_label"]
         boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
         robot_name = str(payload.get("robot_name") or "").strip()
+        robot_instance_id = int(payload.get("robot_instance_id") or 0)
+        story_suffix = robot_story_suffix(db, robot_instance_id) if robot_instance_id > 0 else ""
         area_label = str(payload.get("area_label") or "").strip()
         if not area_label and payload.get("area_key"):
             area_label = _boss_area_label(payload.get("area_key"))
         card["headline"] = "BOSS DEFEATED"
         card["accent"] = "boss"
         if robot_name:
-            card["text"] = f"ボス撃破: {actor_label} の {robot_name} が {boss_name} を討伐"
+            card["text"] = f"ボス撃破: {actor_label} の {robot_name}{story_suffix} が {boss_name} を討伐"
             card["meta_lines"].append(f"機体: {robot_name}")
         else:
             card["text"] = f"ボス撃破: {actor_label} が {boss_name} を討伐"
@@ -17458,6 +17925,8 @@ def _feed_card_from_event(db, row):
         enemy_row = _feed_enemy_row(db, row, payload)
         if enemy_row:
             card["image_url"] = _enemy_static_url(enemy_row["image_path"])
+        if robot_instance_id > 0:
+            card["link_url"] = url_for("robot_detail", instance_id=robot_instance_id)
     elif event_type in {"STYLE_RANK_UP", "STYLE_MASTER"}:
         actor_label = card["user_label"]
         robot_name = str(payload.get("robot_name") or "機体").strip() or "機体"
@@ -17645,14 +18114,20 @@ def _feed_card_from_event(db, row):
         if challenger_user_id > 0:
             challenger_name = _feed_user_label_with_supporter_mark(db, challenger_user_id, challenger_name)
         challenger_robot_name = str(payload.get("challenger_robot_name") or "挑戦機").strip() or "挑戦機"
+        challenger_robot_id = int(payload.get("challenger_robot_instance_id") or 0)
+        story_suffix = robot_story_suffix(db, challenger_robot_id) if challenger_robot_id > 0 else ""
         champion_robot_name = str(payload.get("champion_robot_name") or "チャンプ機体").strip() or "チャンプ機体"
         week_key = str(payload.get("week_key") or "-")
         card["headline"] = "CHAMPION DOWN"
         card["accent"] = "boss"
-        card["text"] = f"{challenger_name} の『{challenger_robot_name}』が今週のチャンプ『{champion_robot_name}』を撃破"
+        card["text"] = f"{challenger_name} の『{challenger_robot_name}』{story_suffix}が今週のチャンプ『{champion_robot_name}』を撃破"
         card["meta_lines"] = [f"対象週: {week_key}", f"{int(payload.get('turn_count') or 0)}ターン決着"]
         card["image_url"] = payload.get("robot_image_url")
-        card["link_url"] = url_for("champion_view")
+        card["link_url"] = (
+            url_for("robot_detail", instance_id=challenger_robot_id)
+            if challenger_robot_id > 0
+            else url_for("champion_view")
+        )
     elif event_type == "admin_world_reroll":
         card["headline"] = "世界再抽選"
         wk = payload.get("week_key") or "-"
@@ -21832,6 +22307,28 @@ def home():
         limit=5,
         week_key=week_key,
     )
+    if home_ranking_rows:
+        top_weekly_user = home_ranking_rows[0]
+        top_robot = db.execute(
+            """
+            SELECT ri.id
+            FROM users u
+            JOIN robot_instances ri
+              ON ri.id = u.active_robot_id
+             AND ri.user_id = u.id
+             AND ri.status = 'active'
+            WHERE u.id = ?
+            """,
+            (int(top_weekly_user["id"]),),
+        ).fetchone()
+        if top_robot:
+            grant_robot_title(
+                db,
+                int(top_robot["id"]),
+                "weekly_rank_top",
+                source_event="weekly_rank_top",
+                source_entity_type="week",
+            )
     home_ranking_rows = _decorate_user_rows(db, home_ranking_rows, user_key="id")
     home_ranking_url = url_for("ranking", metric="weekly_explores")
     upgrade_cost = max(10, user["click_power"] * 10)
@@ -21985,6 +22482,7 @@ def home():
     }
     is_main_admin = _is_main_admin_user_row(user)
     show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
+    show_market_menu = _market_can_access(db, user)
     boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
     audit_log(
         db,
@@ -22107,6 +22605,7 @@ def home():
             recommended_build=boss_alert_hint["recommended_build"],
             recommended_text=boss_alert_hint["recommended_text"],
             show_lab_menu=show_lab_menu,
+            show_market_menu=show_market_menu,
             recent_drop_items=recent_drop_items,
             newbie_boost=newbie_boost,
             research_boost=research_boost,
@@ -22321,6 +22820,300 @@ def _safe_home_next_redirect():
     return redirect(url_for("home"))
 
 
+@app.route("/market")
+@login_required
+def market():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute(
+        "SELECT id, username, is_admin, coins, market_refresh_count_today, market_refresh_day_key FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    day_key = _market_ensure_daily_listings(db, user_id)
+    db.commit()
+    state = _market_user_state(db, user_id) or {}
+    refresh_cost = _market_refresh_cost(state.get("market_refresh_count_today", 0))
+    return render_template(
+        "market.html",
+        user=state,
+        day_key=day_key,
+        listings=_market_listing_rows(db, user_id, day_key),
+        sellable_parts=_market_sellable_part_rows(db, user_id),
+        refresh_cost=refresh_cost,
+        next_refresh_number=int(state.get("market_refresh_count_today") or 0) + 1,
+    )
+
+
+@app.route("/market/sell", methods=["POST"])
+@login_required
+def market_sell():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    part_instance_id = request.form.get("part_instance_id", type=int)
+    if not part_instance_id:
+        flash("売却するパーツを選んでください。", "error")
+        return redirect(url_for("market"))
+    part_row = db.execute(
+        """
+        SELECT
+            pi.*,
+            rp.key,
+            rp.display_name_ja,
+            rp.rarity AS master_rarity,
+            rp.element AS master_element,
+            rp.image_path
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.id = ? AND pi.user_id = ?
+        LIMIT 1
+        """,
+        (int(part_instance_id), user_id),
+    ).fetchone()
+    if not part_row or str(part_row["status"] or "").strip().lower() != "inventory":
+        flash("装備中または保管中のパーツは市場で売却できません。", "error")
+        return redirect(url_for("market"))
+    value = _market_sell_value(part_row)
+    before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
+    db.execute("DELETE FROM part_instances WHERE id = ? AND user_id = ? AND status = 'inventory'", (int(part_instance_id), user_id))
+    db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(value), user_id))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MARKET_SELL"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="market_sell",
+        entity_type="part_instance",
+        entity_id=int(part_instance_id),
+        delta_coins=int(value),
+        payload={
+            "part_key": part_row["key"],
+            "part_name": _part_display_name_ja(part_row),
+            "rarity": str(part_row["rarity"] or part_row["master_rarity"] or "N").upper(),
+            "plus": int(part_row["plus"] or 0),
+            "coin_before": int(before),
+            "coin_after": int(before + value),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{_part_display_name_ja(part_row)} を {int(value)} コインで売却しました。", "notice")
+    return redirect(url_for("market"))
+
+
+@app.route("/market/sell-bulk", methods=["POST"])
+@login_required
+def market_sell_bulk():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    ids = _normalize_instance_id_values(request.form.getlist("part_instance_ids"), limit=80)
+    if not ids:
+        flash("まとめ売りするパーツを選んでください。", "error")
+        return redirect(url_for("market"))
+    marks = ",".join("?" for _ in ids)
+    rows = db.execute(
+        f"""
+        SELECT
+            pi.*,
+            rp.key,
+            rp.display_name_ja,
+            rp.rarity AS master_rarity,
+            rp.element AS master_element,
+            rp.image_path
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND pi.status = 'inventory' AND pi.id IN ({marks})
+        """,
+        (user_id, *ids),
+    ).fetchall()
+    if not rows:
+        flash("売却できるパーツがありません。", "error")
+        return redirect(url_for("market"))
+    total = sum(_market_sell_value(row) for row in rows)
+    before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
+    row_ids = [int(row["id"]) for row in rows]
+    delete_marks = ",".join("?" for _ in row_ids)
+    db.execute(
+        f"DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory' AND id IN ({delete_marks})",
+        (user_id, *row_ids),
+    )
+    db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(total), user_id))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MARKET_SELL"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="market_sell_bulk",
+        entity_type="part_instance",
+        delta_coins=int(total),
+        delta_count=len(rows),
+        payload={
+            "count": len(rows),
+            "part_instance_ids": row_ids,
+            "coin_before": int(before),
+            "coin_after": int(before + total),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{len(rows)}個のパーツを {int(total)} コインで売却しました。", "notice")
+    return redirect(url_for("market"))
+
+
+@app.route("/market/buy/<int:listing_id>", methods=["POST"])
+@login_required
+def market_buy(listing_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_admin, coins, part_inventory_limit FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    day_key = _market_ensure_daily_listings(db, user_id)
+    listing = db.execute(
+        """
+        SELECT ml.*, rp.id AS part_id, rp.key, rp.image_path, rp.display_name_ja, rp.element, rp.series, rp.rarity AS master_rarity
+        FROM market_daily_listings ml
+        JOIN robot_parts rp ON rp.key = ml.part_key
+        WHERE ml.id = ? AND ml.user_id = ? AND ml.day_key = ?
+        LIMIT 1
+        """,
+        (int(listing_id), user_id, day_key),
+    ).fetchone()
+    if not listing or int(listing["is_sold"] or 0) == 1:
+        flash("この商品は購入できません。", "error")
+        db.commit()
+        return redirect(url_for("market"))
+    price = int(listing["price"] or 0)
+    coins_before = int(user["coins"] or 0)
+    if coins_before < price:
+        flash("コインが足りません。", "error")
+        db.commit()
+        return redirect(url_for("market"))
+    status = _next_part_instance_status(db, user_id, user_row=user)
+    part_master = dict(listing)
+    part_master["id"] = int(listing["part_id"])
+    part_instance_id = _create_part_instance_from_master(
+        db,
+        user_id,
+        part_master,
+        plus=int(listing["plus"] or 0),
+        status=status,
+    )
+    now_ts = int(time.time())
+    db.execute("UPDATE users SET coins = COALESCE(coins, 0) - ? WHERE id = ?", (price, user_id))
+    db.execute(
+        """
+        UPDATE market_daily_listings
+        SET is_sold = 1,
+            sold_to_user_id = ?,
+            sold_at = ?,
+            updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (user_id, now_ts, now_ts, int(listing_id), user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MARKET_BUY"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="market_buy",
+        entity_type="market_daily_listing",
+        entity_id=int(listing_id),
+        delta_coins=-price,
+        payload={
+            "listing_id": int(listing_id),
+            "part_instance_id": int(part_instance_id),
+            "part_key": listing["part_key"],
+            "part_name": _part_display_name_ja(listing),
+            "rarity": str(listing["rarity"] or "N").upper(),
+            "plus": int(listing["plus"] or 0),
+            "price": price,
+            "storage_status": status,
+            "coin_before": coins_before,
+            "coin_after": coins_before - price,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    suffix = "（保管へ）" if status == "overflow" else ""
+    flash(f"{_part_display_name_ja(listing)} を {price} コインで購入しました。{suffix}", "notice")
+    return redirect(url_for("market"))
+
+
+@app.route("/market/refresh", methods=["POST"])
+@login_required
+def market_refresh():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_admin, coins FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    day_key = _market_ensure_daily_listings(db, user_id)
+    state = _market_user_state(db, user_id) or {}
+    refresh_count = int(state.get("market_refresh_count_today") or 0)
+    cost = _market_refresh_cost(refresh_count)
+    coins_before = int(state.get("coins") or user["coins"] or 0)
+    if coins_before < cost:
+        flash("再入荷に必要なコインが足りません。", "error")
+        db.commit()
+        return redirect(url_for("market"))
+    if cost > 0:
+        db.execute("UPDATE users SET coins = COALESCE(coins, 0) - ? WHERE id = ?", (int(cost), user_id))
+    free_used_at = day_key if cost == 0 else state.get("market_free_refresh_used_at")
+    db.execute(
+        """
+        UPDATE users
+        SET market_refresh_count_today = COALESCE(market_refresh_count_today, 0) + 1,
+            market_free_refresh_used_at = COALESCE(?, market_free_refresh_used_at),
+            market_refresh_day_key = ?
+        WHERE id = ?
+        """,
+        (free_used_at, day_key, user_id),
+    )
+    _market_generate_listings_for_user(db, user_id, day_key, replace=True)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MARKET_REFRESH"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="market_refresh",
+        entity_type="market_daily_listings",
+        delta_coins=-int(cost),
+        payload={
+            "day_key": day_key,
+            "refresh_index": refresh_count + 1,
+            "cost": int(cost),
+            "coin_before": coins_before,
+            "coin_after": coins_before - cost,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    if cost:
+        flash(f"{cost} コインで市場を再入荷しました。", "notice")
+    else:
+        flash("無料で市場を再入荷しました。", "notice")
+    return redirect(url_for("market"))
+
+
 @app.route("/home/beginner-mission/hide", methods=["POST"])
 @login_required
 def home_beginner_mission_hide():
@@ -22404,13 +23197,14 @@ def champion_view():
         else None
     )
     active_robot_profile = _robot_profile_view(active_robot_stats) if active_robot_stats else None
+    champion_history_rows = _weekly_champion_history_rows(db, limit=6)
     db.commit()
     return render_template(
         "champion.html",
         title="今週のチャンプ機体",
         user=user,
         champion=champion,
-        champion_history_rows=_weekly_champion_history_rows(db, limit=6),
+        champion_history_rows=champion_history_rows,
         active_robot=active_robot,
         active_robot_profile=active_robot_profile,
         active_robot_stats=active_robot_stats,
@@ -22566,6 +23360,14 @@ def champion_challenge():
         ip=request.remote_addr,
     )
     if battle_result.get("win"):
+        grant_robot_title(
+            db,
+            int(active_robot["id"]),
+            "champion_breaker",
+            source_event="champion_break",
+            source_entity_type="weekly_champion_snapshot",
+            source_entity_id=int(snapshot.get("id") or 0) or None,
+        )
         defeat_payload = dict(battle_payload)
         defeat_payload.update(
             {
@@ -22833,6 +23635,7 @@ def world_view():
         prev_faction_result = _faction_week_result(db, prev_week_key)
     faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
+    db.commit()
     return render_template(
         "world.html",
         week_key=week_key,
@@ -25175,6 +25978,16 @@ def explore():
                 enemy_row=last_enemy,
                 week_key=_world_week_key(),
             )
+            sync_progress_titles_for_robot(
+                db,
+                int(active["id"]),
+                area_key=area_key,
+                source_entity_id=(
+                    int(last_enemy["id"])
+                    if last_enemy is not None and "id" in last_enemy.keys() and last_enemy["id"]
+                    else None
+                ),
+            )
     db.execute(
         """
         UPDATE users
@@ -26039,6 +26852,13 @@ def robot_detail(instance_id):
     weekly_element = weekly_env["element"] if weekly_env else None
     weekly_fit = _robot_weekly_fit(db, int(robot["id"]), weekly_element) if weekly_element else False
     history = _robot_history_row(db, int(robot["id"]))
+    title_summary = robot_title_summary(db, int(robot["id"]))
+    primary_title_view = title_summary.get("primary")
+    primary_title_label = (
+        primary_title_view.get("label")
+        if primary_title_view
+        else _robot_primary_title(db, int(robot["id"]))
+    )
     titles = db.execute(
         """
         SELECT rt.key, rt.name_ja, rt.desc_ja, rt.sort_order, rtu.unlocked_at
@@ -26066,10 +26886,12 @@ def robot_detail(instance_id):
         robot_composition=robot_composition,
         history=history,
         titles=titles,
+        title_summary=title_summary,
+        robot_story_titles=title_summary.get("titles") or [],
         achievements=achievements,
         weekly_env=weekly_env,
         weekly_fit=weekly_fit,
-        primary_title=_robot_primary_title(db, int(robot["id"])),
+        primary_title=primary_title_label,
         can_share=(int(robot["user_id"]) == user_id),
         can_maintain=(int(robot["user_id"]) == user_id),
     )
@@ -26475,7 +27297,13 @@ def robot_share(instance_id):
     if not row:
         session["message"] = "共有対象のロボが見つかりません。"
         return redirect(url_for("robots"))
-    primary_title = _robot_primary_title(db, int(row["id"]))
+    title_summary = robot_title_summary(db, int(row["id"]))
+    primary_title_view = title_summary.get("primary")
+    primary_title = (
+        primary_title_view.get("label")
+        if primary_title_view
+        else _robot_primary_title(db, int(row["id"]))
+    )
     detail_url = url_for("robot_detail", instance_id=int(row["id"]))
     msg = f"相棒共有：{row['name']}《{primary_title}》 {detail_url}"
     db.execute(
@@ -27561,7 +28389,7 @@ def lab_race_place_bet():
     entry_id = request.form.get("entry_id", type=int)
     amount = request.form.get("amount", type=int)
     if amount not in LAB_CASINO_BET_AMOUNTS:
-        flash("予想額は 10 / 50 / 100 から選んでください。", "error")
+        flash("予想額は 1 / 2 / 3 から選んでください。", "error")
         db.commit()
         return redirect(url_for("lab_race"))
     race = _lab_casino_fetch_race(db, race_id)
@@ -27582,8 +28410,8 @@ def lab_race_place_bet():
         db.commit()
         return redirect(url_for("lab_race"))
     wallet = _lab_casino_wallet_row(db, user_id)
-    if not wallet or int(wallet["lab_coin"] or 0) < int(amount):
-        flash("ラボコインが足りません。", "error")
+    if not wallet or int(wallet["coins"] or 0) < int(amount):
+        flash("コインが足りません。", "error")
         db.commit()
         return redirect(url_for("lab_race"))
     before_coin, after_coin = _lab_casino_adjust_coins(db, user_id, -int(amount), cap=None)
@@ -27611,8 +28439,11 @@ def lab_race_place_bet():
             "bot_key": entry["bot_key"],
             "amount": int(amount),
             "odds": float(entry["odds"]),
+            "coin_before": int(before_coin),
+            "coin_after": int(after_coin),
             "lab_coin_before": int(before_coin),
             "lab_coin_after": int(after_coin),
+            "currency": "coins",
         },
         ip=request.remote_addr,
     )
@@ -27621,7 +28452,7 @@ def lab_race_place_bet():
     )
     _lab_casino_resolve_race(db, race_id, actor_user_id=user_id)
     db.commit()
-    flash(f"{entry['display_name']} に {int(amount)} ラボコインで予想しました。", "notice")
+    flash(f"{entry['display_name']} に {int(amount)} コインで予想しました。", "notice")
     return redirect(url_for("lab_race_watch", race_id=int(race_id)))
 
 
@@ -27747,8 +28578,8 @@ def lab_race_prize_claim(prize_id):
         return redirect(url_for("lab_race_prizes"))
     wallet = _lab_casino_wallet_row(db, user_id)
     cost = int(prize["cost_lab_coin"])
-    if not wallet or int(wallet["lab_coin"] or 0) < cost:
-        flash("ラボコインが足りません。", "error")
+    if not wallet or int(wallet["coins"] or 0) < cost:
+        flash("コインが足りません。", "error")
         return redirect(url_for("lab_race_prizes"))
     before_coin, after_coin = _lab_casino_adjust_coins(db, user_id, -cost, cap=None)
     now_ts = int(time.time())
@@ -27772,8 +28603,11 @@ def lab_race_prize_claim(prize_id):
             "prize_id": int(prize_id),
             "prize_key": prize["prize_key"],
             "cost_lab_coin": cost,
+            "coin_before": int(before_coin),
+            "coin_after": int(after_coin),
             "lab_coin_before": int(before_coin),
             "lab_coin_after": int(after_coin),
+            "currency": "coins",
         },
         ip=request.remote_addr,
     )
@@ -28185,7 +29019,7 @@ def admin_lab_race():
         "finished": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races WHERE status = 'finished'").fetchone()["c"] or 0),
         "bets": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_bets").fetchone()["c"] or 0),
         "claims": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_prize_claims").fetchone()["c"] or 0),
-        "total_lab_coin": int(db.execute("SELECT COALESCE(SUM(lab_coin), 0) AS c FROM users").fetchone()["c"] or 0),
+        "total_lab_coin": int(db.execute("SELECT COALESCE(SUM(coins), 0) AS c FROM users").fetchone()["c"] or 0),
         "daily_grants_today": int(
             db.execute(
                 """
@@ -29145,6 +29979,20 @@ def evolve_parts():
                 },
                 ip=request.remote_addr,
             )
+            for refreshed_robot in refreshed_equipped:
+                refreshed_robot_id = (
+                    refreshed_robot.get("robot_instance_id")
+                    if isinstance(refreshed_robot, dict)
+                    else refreshed_robot
+                )
+                if not refreshed_robot_id:
+                    continue
+                sync_growth_titles_for_robot(
+                    db,
+                    int(refreshed_robot_id),
+                    evolved=True,
+                    source_entity_id=created_id,
+                )
             db.commit()
             session["last_evolve_result"] = {
                 "source_name": source_name,
@@ -30235,6 +31083,26 @@ def parts_strengthen():
                     ip=request.remote_addr,
                 )
                 if result.get("ok"):
+                    if str(result.get("base_status") or "").strip().lower() == "equipped":
+                        active_robot_for_title = db.execute(
+                            """
+                            SELECT ri.id
+                            FROM users u
+                            JOIN robot_instances ri
+                              ON ri.id = u.active_robot_id
+                             AND ri.user_id = u.id
+                             AND ri.status = 'active'
+                            WHERE u.id = ?
+                            """,
+                            (int(user_id),),
+                        ).fetchone()
+                        if active_robot_for_title:
+                            sync_growth_titles_for_robot(
+                                db,
+                                int(active_robot_for_title["id"]),
+                                plus_value=result.get("new_plus"),
+                                source_entity_id=result.get("created_id"),
+                            )
                     _tutorial_layer1_mark_fuse_success(
                         db,
                         user_id,
@@ -30753,6 +31621,76 @@ def admin():
         message=message,
         referral_counts=referral_counts,
         missing_assets=missing_assets,
+    )
+
+
+@app.route("/admin/market", methods=["GET", "POST"])
+@login_required
+def admin_market():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user or int(user["is_admin"] or 0) != 1:
+        return redirect(url_for("home"))
+    day_key = _market_day_key()
+    if request.method == "POST":
+        action = str(request.form.get("action") or "").strip().lower()
+        if action == "regenerate_today":
+            deleted = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM market_daily_listings WHERE day_key = ?",
+                    (day_key,),
+                ).fetchone()["c"]
+                or 0
+            )
+            db.execute("DELETE FROM market_daily_listings WHERE day_key = ?", (day_key,))
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MARKET_REFRESH"],
+                user_id=int(user["id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="admin_market_regenerate_today",
+                entity_type="market_daily_listings",
+                payload={"day_key": day_key, "deleted": deleted},
+                ip=request.remote_addr,
+            )
+            db.commit()
+            flash(f"本日分の市場 {deleted} 件を再生成対象にしました。", "notice")
+            return redirect(url_for("admin_market"))
+        flash("市場管理の操作内容が不正です。", "error")
+        return redirect(url_for("admin_market"))
+    counts = {
+        "today_listings": int(
+            db.execute("SELECT COUNT(*) AS c FROM market_daily_listings WHERE day_key = ?", (day_key,)).fetchone()["c"]
+            or 0
+        ),
+        "today_sold": int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM market_daily_listings WHERE day_key = ? AND is_sold = 1",
+                (day_key,),
+            ).fetchone()["c"]
+            or 0
+        ),
+    }
+    recent_listings = db.execute(
+        """
+        SELECT ml.*, u.username
+        FROM market_daily_listings ml
+        JOIN users u ON u.id = ml.user_id
+        WHERE ml.day_key = ?
+        ORDER BY ml.updated_at DESC, ml.id DESC
+        LIMIT 24
+        """,
+        (day_key,),
+    ).fetchall()
+    return render_template(
+        "admin_market.html",
+        day_key=day_key,
+        counts=counts,
+        recent_listings=recent_listings,
+        price_ranges=MARKET_PRICE_RANGES,
+        free_rarity_roll=MARKET_FREE_RARITY_ROLL,
+        coin_reward_multiplier=MARKET_COIN_REWARD_MULTIPLIER,
+        refresh_costs=MARKET_REFRESH_COSTS,
     )
 
 

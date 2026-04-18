@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>市場管理</h1>
+
+<div class="card">
+  <div><b>{{ day_key }}</b></div>
+  <div class="robot-part">本日商品: {{ counts['today_listings'] }} / 売却済み: {{ counts['today_sold'] }}</div>
+  <div class="robot-part">探索コイン倍率: {{ coin_reward_multiplier }}</div>
+  <div class="robot-part">再入荷コスト: {% for cost in refresh_costs %}{{ cost }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+  <form method="post" class="post-form">
+    <input type="hidden" name="action" value="regenerate_today" />
+    <button type="submit">本日分を強制再生成</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>価格帯</h2>
+  {% for rarity, range in price_ranges.items() %}
+  <div class="robot-part">{{ rarity }}: {{ range[0] }}〜{{ range[1] }}</div>
+  {% endfor %}
+  <h2>自由枠出現率</h2>
+  {% for rarity, weight in free_rarity_roll %}
+  <div class="robot-part">{{ rarity }}: {{ weight }}</div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>最近の商品</h2>
+  {% if recent_listings %}
+  <table>
+    <thead>
+      <tr><th>ユーザー</th><th>枠</th><th>パーツ</th><th>価格</th><th>状態</th></tr>
+    </thead>
+    <tbody>
+      {% for row in recent_listings %}
+      <tr>
+        <td>{{ row['username'] }}</td>
+        <td>{{ row['slot_key'] }}</td>
+        <td>{{ row['part_key'] }}{% if row['plus'] > 0 %} +{{ row['plus'] }}{% endif %}</td>
+        <td>{{ row['price'] }}</td>
+        <td>{% if row['is_sold'] %}購入済み{% else %}販売中{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>まだ本日分の商品は生成されていません。</p>
+  {% endif %}
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

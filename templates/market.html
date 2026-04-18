@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>市場</h1>
+
+<div class="card market-hero-card">
+  <div><b>今日の補填パーツ</b></div>
+  <div class="upgrade-cost">余ったパーツをコインに変えて、足りない部位を補えます。</div>
+  <div class="robot-part">所持コイン: <b>{{ user['coins'] }}</b></div>
+  <form method="post" action="{{ url_for('market_refresh') }}" class="post-form">
+    <button type="submit" {% if user['coins'] < refresh_cost %}disabled{% endif %}>
+      {% if refresh_cost > 0 %}{{ refresh_cost }} コインで再入荷{% else %}無料で再入荷{% endif %}
+    </button>
+    <span class="robot-time">本日 {{ next_refresh_number }} 回目</span>
+  </form>
+</div>
+
+<section class="panel">
+  <h2>購入</h2>
+  <div class="part-card-grid market-listing-grid">
+    {% for item in listings %}
+    <div class="card part-card market-listing-card{% if item['is_sold'] %} is-sold{% endif %}">
+      <div class="part-card-topline">
+        <span class="weekly-fit-badge">{{ item['slot_label'] }}</span>
+        <span class="weekly-fit-badge">{{ item['rarity_label'] }}{% if item['plus_label'] %} {{ item['plus_label'] }}{% endif %}</span>
+      </div>
+      <div class="part-card-main">
+        <img class="part-card-image" src="{{ item['image_url'] }}" alt="{{ item['display_name'] }}" loading="lazy" decoding="async" />
+        <div class="part-card-copy">
+          <div><b>{{ item['display_name'] }}</b></div>
+          <div class="robot-part">{{ item['price'] }} コイン</div>
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('market_buy', listing_id=item['id']) }}" class="post-form">
+        <button type="submit" {% if item['is_sold'] or user['coins'] < item['price'] %}disabled{% endif %}>
+          {% if item['is_sold'] %}購入済み{% else %}購入する{% endif %}
+        </button>
+      </form>
+    </div>
+    {% else %}
+    <div class="card">市場の商品を準備中です。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>売却</h2>
+  {% if sellable_parts %}
+  <form method="post" action="{{ url_for('market_sell_bulk') }}" class="post-form">
+    <div class="part-card-grid market-sell-grid">
+      {% for p in sellable_parts %}
+      <div class="card part-card market-sell-card">
+        <div class="part-card-topline">
+          <label><input type="checkbox" name="part_instance_ids" value="{{ p['id'] }}" /> 売却候補</label>
+          <span class="weekly-fit-badge">{{ p['sell_value'] }} コイン</span>
+        </div>
+        <div class="part-card-main">
+          <img class="part-card-image" src="{{ p['image_url'] }}" alt="{{ p['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="part-card-copy">
+            <div><b>{{ p['display_name'] }}</b></div>
+            <div class="robot-part">{{ p['rarity_label'] }}{% if p['plus'] > 0 %} +{{ p['plus'] }}{% endif %} / {{ p['part_type_label'] }}</div>
+            <div class="robot-time">{{ p['focus_line'] }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="submit">選択したパーツをまとめ売り</button>
+  </form>
+  {% else %}
+  <div class="card">
+    <div><b>売却できる所持パーツはありません。</b></div>
+    <div class="upgrade-cost">装備中・保管中のパーツは市場売却の対象外です。</div>
+  </div>
+  {% endif %}
+</section>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a> | <a href="{{ url_for('parts') }}">所持パーツへ</a></p>
+{% endblock %}

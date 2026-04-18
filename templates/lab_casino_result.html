@@ -6,8 +6,8 @@
   <div><b>Race #{{ race['id'] }}</b></div>
   <div class="robot-part">{{ course['label'] }}</div>
   <div class="home-ranking-row">
-    <span>現在のラボコイン</span>
-    <span class="weekly-fit-badge">{{ wallet['lab_coin'] }}</span>
+    <span>現在のコイン</span>
+    <span class="weekly-fit-badge">{{ wallet['coins'] }}</span>
   </div>
   {% if bet_row %}
   <div class="robot-part">あなたの予想: {{ bet_row['display_name'] }} / {{ bet_row['amount'] }} / 倍率 {{ bet_row['odds_text'] }}</div>
@@ -32,5 +32,5 @@
   {% endfor %}
 </div>
 
-<p class="link"><a href="{{ url_for('lab_race_watch', race_id=race['id']) }}">観戦を見直す</a> | <a href="{{ url_for('lab_race') }}">もう一回遊ぶ</a> | <a href="{{ url_for('lab_race_prizes') }}">交換所景品へ</a></p>
+<p class="link"><a href="{{ url_for('lab_race_watch', race_id=race['id']) }}">観戦を見直す</a> | <a href="{{ url_for('lab_race') }}">もう一回遊ぶ</a></p>
 {% endblock %}

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import time
 from balance_config import ENEMY_SEED_STATS
+from services.robot_titles import ensure_robot_title_system
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -13,7 +14,7 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
-RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "market", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -176,8 +177,12 @@ def main():
             tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0,
-            lab_coin INTEGER NOT NULL DEFAULT 1000,
+            lab_coin INTEGER NOT NULL DEFAULT 0,
             lab_coin_last_daily_at TEXT,
+            lab_coin_converted_at INTEGER NOT NULL DEFAULT 0,
+            market_refresh_count_today INTEGER NOT NULL DEFAULT 0,
+            market_free_refresh_used_at TEXT,
+            market_refresh_day_key TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -340,6 +345,9 @@ def main():
             style_current_key TEXT,
             style_next_key TEXT,
             style_updated_at TEXT,
+            primary_title_key TEXT,
+            style_title_key TEXT,
+            honor_title_key TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -391,6 +399,29 @@ def main():
             status TEXT NOT NULL DEFAULT 'inventory',
             created_at INTEGER NOT NULL,
             FOREIGN KEY (part_id) REFERENCES robot_parts(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_listings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            slot_key TEXT NOT NULL,
+            part_key TEXT NOT NULL,
+            part_type TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            plus INTEGER NOT NULL DEFAULT 0,
+            price INTEGER NOT NULL,
+            seed INTEGER NOT NULL DEFAULT 0,
+            is_sold INTEGER NOT NULL DEFAULT 0,
+            sold_to_user_id INTEGER,
+            sold_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, slot_key),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -1205,10 +1236,19 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_updated_at" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
+    added_lab_coin_converted_at = "lab_coin_converted_at" not in users_cols
     if "lab_coin" not in users_cols:
-        cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 1000")
+        cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
     if "lab_coin_last_daily_at" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
+    if added_lab_coin_converted_at:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_coin_converted_at INTEGER NOT NULL DEFAULT 0")
+    if "market_refresh_count_today" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN market_refresh_count_today INTEGER NOT NULL DEFAULT 0")
+    if "market_free_refresh_used_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN market_free_refresh_used_at TEXT")
+    if "market_refresh_day_key" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     for release_key in RELEASE_FLAG_KEYS:
         cur.execute(
             """
@@ -1275,8 +1315,20 @@ def main():
     cur.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
-    cur.execute("UPDATE users SET lab_coin = 1000 WHERE lab_coin IS NULL OR lab_coin < 0")
-    cur.execute("UPDATE users SET lab_coin = 5000 WHERE lab_coin > 5000")
+    cur.execute(
+        """
+        UPDATE users
+        SET
+            coins = COALESCE(coins, 0) + MAX(COALESCE(lab_coin, 0), 0),
+            lab_coin = 0,
+            lab_coin_converted_at = ?
+        WHERE COALESCE(lab_coin_converted_at, 0) = 0
+          AND COALESCE(lab_coin, 0) > 0
+        """,
+        (int(time.time()),),
+    )
+    cur.execute("UPDATE users SET lab_coin = 0 WHERE lab_coin IS NULL OR lab_coin < 0")
+    cur.execute("UPDATE users SET market_refresh_count_today = 0 WHERE market_refresh_count_today IS NULL OR market_refresh_count_today < 0")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     ri_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instances)").fetchall()}
     if "personality" not in ri_cols:
@@ -1301,10 +1353,17 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN style_next_key TEXT")
     if "style_updated_at" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN style_updated_at TEXT")
+    if "primary_title_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN primary_title_key TEXT")
+    if "style_title_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN style_title_key TEXT")
+    if "honor_title_key" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     cur.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     cur.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     cur.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
     cur.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
+    ensure_robot_title_system(cur)
     rp_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_parts)").fetchall()}
     if "rarity" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN rarity TEXT")
@@ -1479,6 +1538,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_entries_race_order ON lab_race_entries(race_id, entry_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_race_records_user_rank ON lab_race_records(user_id, final_rank, finish_time_ms)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_user_day ON market_daily_listings(user_id, day_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_day_slot ON market_daily_listings(day_key, slot_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
