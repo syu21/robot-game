@@ -5,6 +5,9 @@
     <div>
       <h2 id="recent-robots-title" class="recent-robots-title">{{ robot_presence['title'] }}</h2>
       <div class="recent-robots-subtitle">{{ robot_presence['subtitle'] }}</div>
+      {% if robot_presence.get('has_supporter') %}
+      <div class="recent-robots-crown-note">👑はラボ支援者の印です。</div>
+      {% endif %}
     </div>
   </div>
   {% if robot_presence['cards'] %}
@@ -25,7 +28,12 @@
         </div>
         {% endif %}
       </div>
-      <div class="recent-robot-name">{{ entry['display_name'] }}</div>
+      <div class="recent-robot-name">
+        <span class="recent-robot-name-text">{{ entry['display_name'] }}</span>
+        {% if entry.get('supporter_mark') %}
+        <span class="recent-robot-crown" title="{{ entry.get('supporter_label') or 'ラボ支援者' }}">{{ entry['supporter_mark'] }}</span>
+        {% endif %}
+      </div>
       <div class="recent-robot-unit">{{ entry['robot_name'] }}</div>
       <div class="recent-robot-status is-{{ entry['status_key'] }}">
         {% if entry['status_icon'] %}<span class="recent-robot-status-icon" aria-hidden="true">{{ entry['status_icon'] }}</span>{% endif %}

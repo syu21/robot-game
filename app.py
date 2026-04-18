@@ -341,15 +341,15 @@ PAYMENT_STATUS_FAILED = "failed"
 PAYMENT_STATUS_EXPIRED = "expired"
 USER_TROPHY_DEFS = {
     SUPPORTER_FOUNDER_TROPHY_KEY: {
-        "label": "創設支援章",
-        "short_label": "🏆",
-        "description": "開発初期を支えた証",
+        "label": "ラボ支援者",
+        "short_label": "👑",
+        "description": "ラボを支えている研究員の印",
         "sort_order": 10,
     },
     SUPPORTER_LAB_TROPHY_KEY: {
-        "label": "ラボ支援章",
-        "short_label": "🏆+",
-        "description": "ラボ維持と開発を支えた証",
+        "label": "ラボ支援者+",
+        "short_label": "👑+",
+        "description": "継続してラボを支えている研究員の印",
         "sort_order": 5,
     },
 }
@@ -14104,6 +14104,10 @@ def _home_robot_presence_entry_view_model(db, entry):
     avatar_rel = _safe_static_rel(item.get("avatar_path")) if item.get("avatar_path") else None
     if not avatar_rel:
         avatar_rel = DEFAULT_AVATAR_REL
+    supporter_mark = str(item.get("supporter_mark") or "").strip()
+    supporter_label = str(item.get("supporter_label") or "ラボ支援者").strip() or "ラボ支援者"
+    if item.get("is_supporter") and not supporter_mark:
+        supporter_mark = "👑"
     badges = []
     if item.get("is_mvp"):
         badges.append({"label": "MVP", "kind": "mvp", "title": "今週のMVP"})
@@ -14114,9 +14118,9 @@ def _home_robot_presence_entry_view_model(db, entry):
     if item.get("is_supporter"):
         badges.append(
             {
-                "label": str(item.get("supporter_label") or "ラボ支援者"),
+                "label": supporter_mark or "👑",
                 "kind": "supporter",
-                "title": "この研究員はラボ支援パックで開発を応援しています。",
+                "title": f"{supporter_label} | この研究員はラボ支援パックで開発を応援しています。",
             }
         )
     display_name = str(item.get("display_name") or item.get("username") or "研究員").strip() or "研究員"
@@ -14130,6 +14134,8 @@ def _home_robot_presence_entry_view_model(db, entry):
             "avatar_url": _versioned_static_url(avatar_rel, fallback_url=url_for("static", filename=DEFAULT_AVATAR_REL)),
             "badges": badges[:3],
             "detail_url": url_for("robot_detail", instance_id=robot_id) if robot_id > 0 else None,
+            "supporter_mark": supporter_mark,
+            "supporter_label": supporter_label,
         }
     )
     return item
@@ -14150,6 +14156,7 @@ def _home_robot_presence_summary_view(db, *, limit=HOME_ROBOT_PRESENCE_LIMIT, in
         "limit": int(limit),
         "count": len(cards),
         "cards": cards,
+        "has_supporter": any(bool(card.get("is_supporter")) for card in cards),
     }
 
 
@@ -17364,6 +17371,30 @@ def _feed_user_label(db, user_id):
     return f"User#{int(user_id)}"
 
 
+def _supporter_crown_mark_for_user(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return ""
+    trophy_keys = set(_get_user_trophy_keys(db, uid))
+    if _user_has_decor_key(db, uid, SUPPORT_PACK_LAB_DECOR_KEY):
+        trophy_keys.add(SUPPORTER_LAB_TROPHY_KEY)
+    if _user_has_any_decor_key(db, uid, (SUPPORT_PACK_DECOR_KEY, LEGACY_SUPPORT_PACK_DECOR_KEY)):
+        trophy_keys.add(SUPPORTER_FOUNDER_TROPHY_KEY)
+    if SUPPORTER_LAB_TROPHY_KEY in trophy_keys:
+        return "👑+"
+    if SUPPORTER_FOUNDER_TROPHY_KEY in trophy_keys:
+        return "👑"
+    return ""
+
+
+def _feed_user_label_with_supporter_mark(db, user_id, fallback=None):
+    label = str(fallback or _feed_user_label(db, user_id) or "SYSTEM").strip() or "SYSTEM"
+    mark = _supporter_crown_mark_for_user(db, user_id)
+    if mark and not label.lstrip().startswith("👑"):
+        return f"{mark} {label}"
+    return label
+
+
 def _part_image_url(part_row):
     return url_for("static", filename=_part_image_rel(part_row))
 
@@ -17393,7 +17424,11 @@ def _feed_card_from_event(db, row):
         "created_ts": int(row["created_at"] or 0),
         "event_type": event_type,
         "user_id": (int(row["user_id"]) if row["user_id"] is not None else None),
-        "user_label": _feed_user_label(db, row["user_id"]) if "user_id" in row.keys() else "SYSTEM",
+        "user_label": (
+            _feed_user_label_with_supporter_mark(db, row["user_id"])
+            if "user_id" in row.keys()
+            else "SYSTEM"
+        ),
         "time_jst": _format_jst_ts(row["created_at"]),
         "text": event_type,
         "image_url": None,
@@ -17588,6 +17623,11 @@ def _feed_card_from_event(db, row):
         card["link_url"] = url_for("world_view")
     elif event_type == "CHAMPION_SELECTED":
         owner_name = str(payload.get("champion_owner_name") or payload.get("owner_name") or "unknown").strip() or "unknown"
+        owner_user_id = int(
+            payload.get("champion_user_id") or payload.get("user_id") or row["user_id"] or 0
+        )
+        if owner_user_id > 0:
+            owner_name = _feed_user_label_with_supporter_mark(db, owner_user_id, owner_name)
         robot_name = str(payload.get("champion_robot_name") or payload.get("robot_name") or "無名ロボ").strip() or "無名ロボ"
         week_key = str(payload.get("week_key") or "-")
         reason_label = str(payload.get("reason_label") or "今週の注目機体").strip()
@@ -17601,6 +17641,9 @@ def _feed_card_from_event(db, row):
         card["link_url"] = url_for("champion_view")
     elif event_type == "CHAMPION_DEFEATED":
         challenger_name = str(payload.get("challenger_name") or "挑戦者").strip() or "挑戦者"
+        challenger_user_id = int(payload.get("challenger_user_id") or row["user_id"] or 0)
+        if challenger_user_id > 0:
+            challenger_name = _feed_user_label_with_supporter_mark(db, challenger_user_id, challenger_name)
         challenger_robot_name = str(payload.get("challenger_robot_name") or "挑戦機").strip() or "挑戦機"
         champion_robot_name = str(payload.get("champion_robot_name") or "チャンプ機体").strip() or "チャンプ機体"
         week_key = str(payload.get("week_key") or "-")
@@ -17662,7 +17705,7 @@ def _world_log_is_first_fixed_boss_defeat(db, row_id, area_key):
 
 
 def _world_first_boss_card(db, row, payload):
-    actor_label = _feed_user_label(db, row["user_id"])
+    actor_label = _feed_user_label_with_supporter_mark(db, row["user_id"])
     boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
     robot_name = str(payload.get("robot_name") or "").strip()
     area_label = str(payload.get("area_label") or "").strip()
@@ -17698,7 +17741,7 @@ def _world_first_boss_card(db, row, payload):
 
 
 def _world_layer_unlock_card(db, row, payload, unlocked_layer):
-    actor_label = _feed_user_label(db, row["user_id"])
+    actor_label = _feed_user_label_with_supporter_mark(db, row["user_id"])
     boss_name = str(payload.get("enemy_name") or "").strip() or "ボス"
     area_label = str(payload.get("area_label") or "").strip()
     if not area_label and payload.get("area_key"):
@@ -17762,6 +17805,7 @@ def _world_ranking_timeline_items(db):
         if not rows:
             continue
         leader = rows[0]
+        leader_label = _feed_user_label_with_supporter_mark(db, int(leader["id"]), leader["username"])
         latest_ts = _latest_world_event_ts(
             db,
             event_type=metric["event_type"],
@@ -17773,15 +17817,21 @@ def _world_ranking_timeline_items(db):
             "created_ts": int(latest_ts),
             "event_type": f"world.ranking.{metric['key']}",
             "user_id": int(leader["id"]),
-            "user_label": leader["username"],
+            "user_label": leader_label,
             "time_jst": _format_jst_ts(latest_ts),
-            "text": f"ランキング速報: {metric['text_label']}は {leader['username']} が {int(leader['metric_value'])}{metric['value_suffix']}で首位",
+            "text": (
+                f"ランキング速報: {metric['text_label']}は {leader_label} が "
+                f"{int(leader['metric_value'])}{metric['value_suffix']}で首位"
+            ),
             "image_url": None,
             "link_url": url_for("ranking", metric=metric["key"]),
             "headline": metric["title"],
             "accent": "weekly",
             "meta_lines": [
-                f"{rank}位 {row['username']} {int(row['metric_value'])}{metric['value_suffix']}"
+                (
+                    f"{rank}位 {_feed_user_label_with_supporter_mark(db, int(row['id']), row['username'])} "
+                    f"{int(row['metric_value'])}{metric['value_suffix']}"
+                )
                 for rank, row in enumerate(rows[:3], start=1)
             ],
         }
@@ -19847,7 +19897,7 @@ def _public_changelog_entries():
             "notes": [
                 "`STRIPE_PRICE_ID_SUPPORT_PACK` の商品を 100円支援パック前提に切り替え、`/support` では `支援する（100円）` ボタンで購入へ進めるよう調整",
                 "支援パックの DECOR 付与は `shien_trophy` に差し替え、既存の `support_pack_001` 購入済みユーザーにも新DECORが揃うよう backfill を追加",
-                "webhook 完了時の `創設支援章` 付与はそのまま維持し、決済仕様と公開文言も新構成へ更新",
+                "webhook 完了時の `ラボ支援者👑` 付与はそのまま維持し、決済仕様と公開文言も新構成へ更新",
             ],
         },
         {
@@ -19855,7 +19905,7 @@ def _public_changelog_entries():
             "date": "2026/04/03",
             "title": "支援者トロフィーを追加",
             "notes": [
-                "β版支援パック `support_pack_001` の webhook 完了時に、DECOR に加えて `創設支援章` を冪等付与するよう改善",
+                "β版支援パック `support_pack_001` の webhook 完了時に、DECOR に加えて `ラボ支援者👑` を冪等付与するよう改善",
                 "ヘッダー / 通信 / ランキング / ホーム / 世界戦況 / 記録庫では、ユーザー名の近くに小さな支援者バッジを表示",
                 "支援ページと決済仕様も更新し、支援すると見える形で残ることが分かるよう調整",
             ],

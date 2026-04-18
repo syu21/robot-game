@@ -315,6 +315,43 @@ class FeedAndRankingVisibilityTests(unittest.TestCase):
         self.assertNotIn("Robot #329", html)
         self.assertIn("Robot #330", html)
 
+    def test_feed_champion_event_marks_supporter_with_crown(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                "INSERT INTO user_trophies (user_id, trophy_key, granted_at) VALUES (?, ?, ?)",
+                (self.public_user_id, game_app.SUPPORTER_FOUNDER_TROPHY_KEY, now - 60),
+            )
+            db.execute(
+                """
+                INSERT INTO world_events_log
+                (created_at, event_type, payload_json, user_id)
+                VALUES (?, 'CHAMPION_DEFEATED', ?, ?)
+                """,
+                (
+                    now,
+                    json.dumps(
+                        {
+                            "challenger_user_id": int(self.public_user_id),
+                            "challenger_name": "feed_public_actor",
+                            "challenger_robot_name": "GuideBot",
+                            "champion_robot_name": "Robot #330",
+                            "week_key": game_app._world_week_key(),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    int(self.public_user_id),
+                ),
+            )
+            db.commit()
+
+        resp = self._client().get("/feed")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("👑 feed_public_actor", html)
+        self.assertIn("Robot #330", html)
+
     def test_feed_weekly_filter_shows_faction_and_research_events(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -537,7 +574,7 @@ class RankingVisibilityTests(unittest.TestCase):
         self.assertIn("ranking-user-row is-podium", wins_html)
         self.assertIn("user-chip-avatar", wins_html)
         self.assertIn("user-signal-name", wins_html)
-        self.assertIn("🏆", wins_html)
+        self.assertIn("👑", wins_html)
         self.assertIn("user-trophy-badge", wins_html)
         self.assertNotIn("badge-overlay", wins_html)
 

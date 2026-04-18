@@ -112,6 +112,20 @@ RECENT_HOME_SUPPORTER_PRODUCT_KEYS = (
     "support_pack_founder",
     "support_pack_001",
 )
+RECENT_HOME_SUPPORTER_TIER_BY_KEY = {
+    "lab_badge_gold": 2,
+    "support_pack_lab": 2,
+    "founder_badge_silver": 1,
+    "shien_trophy": 1,
+    "support_pack_founder": 1,
+    "support_pack_001": 1,
+}
+RECENT_HOME_SUPPORTER_MARK_BY_TIER = {
+    1: "👑",
+    2: "👑+",
+    3: "👑★",
+    4: "👑✨",
+}
 _RECENT_HOME_ROBOT_CACHE = {}
 
 
@@ -363,6 +377,27 @@ def _home_status_label(status_key):
     return RECENT_HOME_STATUS_LABELS.get(str(status_key or ""), RECENT_HOME_STATUS_LABELS["weekly_hot"])
 
 
+def _home_supporter_tier_info(source_key):
+    key = str(source_key or "").strip()
+    tier = int(RECENT_HOME_SUPPORTER_TIER_BY_KEY.get(key, 1))
+    tier = max(1, min(tier, 4))
+    mark = RECENT_HOME_SUPPORTER_MARK_BY_TIER.get(tier, "👑")
+    return {
+        "tier": tier,
+        "mark": mark,
+        "icon": (
+            "crown_sparkle"
+            if tier >= 4
+            else "crown_star"
+            if tier >= 3
+            else "crown_plus"
+            if tier >= 2
+            else "crown"
+        ),
+        "label": "ラボ支援者+" if tier >= 2 else "ラボ支援者",
+    }
+
+
 def _home_event_action_from_row(row):
     data = _row_dict(row)
     event_type = str(data.get("event_type") or "").strip()
@@ -452,7 +487,10 @@ def _merge_home_robot_candidate(
             "is_ranker": False,
             "is_supporter": False,
             "supporter_label": "",
-            "supporter_tier": "",
+            "supporter_tier": 0,
+            "supporter_tier_key": "",
+            "supporter_icon": "",
+            "supporter_mark": "",
             "supporter_glow": False,
             "is_featured": False,
             "status_key": "",
@@ -579,14 +617,6 @@ def _decorate_home_candidates_with_supporters(db, candidates):
         """,
         [*user_ids, *RECENT_HOME_SUPPORTER_DECOR_KEYS],
     ).fetchall()
-    tier_rank = {
-        "lab_badge_gold": 3,
-        "founder_badge_silver": 2,
-        "shien_trophy": 1,
-        "support_pack_lab": 3,
-        "support_pack_founder": 2,
-        "support_pack_001": 1,
-    }
     for row in decor_rows:
         data = _row_dict(row)
         user_id = int(data.get("user_id") or 0)
@@ -594,7 +624,11 @@ def _decorate_home_candidates_with_supporters(db, candidates):
         if user_id <= 0 or not key:
             continue
         current = supporter_by_user.get(user_id)
-        if current is None or tier_rank.get(key, 0) > tier_rank.get(current, 0):
+        if (
+            current is None
+            or RECENT_HOME_SUPPORTER_TIER_BY_KEY.get(key, 0)
+            > RECENT_HOME_SUPPORTER_TIER_BY_KEY.get(current, 0)
+        ):
             supporter_by_user[user_id] = key
     payment_rows = db.execute(
         f"""
@@ -617,9 +651,13 @@ def _decorate_home_candidates_with_supporters(db, candidates):
         key = supporter_by_user.get(int(item.get("user_id") or 0))
         if not key:
             continue
+        tier_info = _home_supporter_tier_info(key)
         item["is_supporter"] = True
-        item["supporter_label"] = "ラボ支援者"
-        item["supporter_tier"] = key
+        item["supporter_label"] = tier_info["label"]
+        item["supporter_tier"] = tier_info["tier"]
+        item["supporter_tier_key"] = key
+        item["supporter_icon"] = tier_info["icon"]
+        item["supporter_mark"] = tier_info["mark"]
         item["supporter_glow"] = True
 
 

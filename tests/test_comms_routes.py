@@ -196,7 +196,7 @@ class CommsRoutesTests(unittest.TestCase):
         self.assertIn("層解放", html)
         self.assertIn("みんなの動きが見えていい感じ", html)
         self.assertIn("roommate", html)
-        self.assertIn("🏆", html)
+        self.assertIn("👑", html)
         self.assertIn("user-trophy-badge", html)
         self.assertIn(
             f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で1人が活動中",
@@ -358,7 +358,7 @@ class CommsRoutesTests(unittest.TestCase):
         global_html = global_resp.get_data(as_text=True)
         self.assertIn("全体会議室", global_html)
         self.assertIn("全体会議室の話題", global_html)
-        self.assertIn("🏆", global_html)
+        self.assertIn("👑", global_html)
         self.assertIn("user-trophy-badge", global_html)
 
         feedback_resp = client.post(

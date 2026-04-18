@@ -286,7 +286,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   white-space: nowrap;
   box-shadow: 0 4px 10px rgba(9, 14, 25, 0.24);
 }
@@ -295,17 +295,19 @@ body {
   font-size: 10px;
 }
 .user-trophy-badge.trophy-supporter_founder {
-  border-color: rgba(207, 219, 233, 0.76);
+  border-color: rgba(250, 204, 21, 0.64);
   background:
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 55%),
-    linear-gradient(180deg, rgba(117, 132, 154, 0.98), rgba(69, 79, 96, 0.98));
-  color: #f8fbff;
+    radial-gradient(circle at 20% 20%, rgba(255, 247, 205, 0.24), rgba(255, 247, 205, 0) 56%),
+    linear-gradient(180deg, rgba(126, 86, 12, 0.98), rgba(74, 48, 8, 0.98));
+  color: #fff1b8;
 }
 .user-trophy-badge.trophy-supporter_lab {
-  border-color: rgba(255, 222, 120, 0.7);
+  border-color: rgba(251, 191, 36, 0.78);
   background:
-    radial-gradient(circle at 20% 20%, rgba(255, 237, 171, 0.22), rgba(255, 237, 171, 0) 55%),
-    linear-gradient(180deg, rgba(143, 101, 17, 0.98), rgba(88, 60, 8, 0.98));
+    radial-gradient(circle at 20% 20%, rgba(255, 247, 205, 0.3), rgba(255, 247, 205, 0) 56%),
+    linear-gradient(180deg, rgba(150, 99, 12, 0.98), rgba(92, 60, 8, 0.98));
+  color: #fff7c2;
+  box-shadow: 0 4px 10px rgba(9, 14, 25, 0.24), 0 0 10px rgba(250, 204, 21, 0.12);
 }
 .user-trophy-badge.is-more {
   border-color: rgba(148, 163, 184, 0.42);
@@ -3719,6 +3721,13 @@ body.battle-page .layer-boss-victory-sub {
   font-size: 0.86rem;
 }
 
+.recent-robots-crown-note {
+  margin-top: 3px;
+  color: #d9c77d;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .recent-robot-carousel {
   display: grid;
   grid-auto-columns: clamp(76px, 22vw, 124px);
@@ -3840,14 +3849,14 @@ body.battle-page .layer-boss-victory-sub {
 }
 
 .recent-robot-badges span.is-supporter {
-  border-color: rgba(125, 211, 252, 0.36);
-  background: rgba(30, 41, 59, 0.92);
-  color: #c4b5fd;
+  border-color: rgba(250, 204, 21, 0.44);
+  background: rgba(73, 50, 10, 0.92);
+  color: #fde68a;
 }
 
 .recent-robot-card:hover .recent-robot-badges span.is-supporter {
-  border-color: rgba(196, 181, 253, 0.58);
-  color: #e9d5ff;
+  border-color: rgba(253, 230, 138, 0.64);
+  color: #fff7c2;
 }
 
 .recent-robot-name,
@@ -3860,9 +3869,27 @@ body.battle-page .layer-boss-victory-sub {
 }
 
 .recent-robot-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   color: #f8fafc;
   font-size: 0.78rem;
   font-weight: 900;
+}
+
+.recent-robot-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-robot-crown {
+  flex: 0 0 auto;
+  color: #fde68a;
+  font-size: 0.75rem;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(250, 204, 21, 0.24);
 }
 
 .recent-robot-unit {

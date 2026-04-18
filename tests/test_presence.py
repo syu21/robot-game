@@ -321,6 +321,9 @@ class PresenceTests(unittest.TestCase):
         self.assertEqual(support_card["status_label"], "チャンプ撃破")
         self.assertTrue(support_card["is_supporter"])
         self.assertEqual(support_card["supporter_label"], "ラボ支援者")
+        self.assertEqual(support_card["supporter_mark"], "👑")
+        self.assertEqual(support_card["supporter_icon"], "crown")
+        self.assertEqual(support_card["supporter_tier"], 1)
         self.assertTrue(support_card["is_featured"])
         self.assertEqual(sum(1 for card in cards if card["is_featured"]), 1)
 
