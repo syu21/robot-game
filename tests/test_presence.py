@@ -124,6 +124,18 @@ class PresenceTests(unittest.TestCase):
             db.commit()
             return user_id
 
+    def _grant_supporter_decor(self, user_id, decor_key=None):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            key = decor_key or game_app.SUPPORT_PACK_DECOR_KEY
+            decor = db.execute("SELECT id FROM robot_decor_assets WHERE key = ?", (key,)).fetchone()
+            self.assertIsNotNone(decor)
+            db.execute(
+                "INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at) VALUES (?, ?, ?)",
+                (int(user_id), int(decor["id"]), int(datetime.now(JST).timestamp())),
+            )
+            db.commit()
+
     def _client(self):
         client = game_app.app.test_client()
         with client.session_transaction() as session:
@@ -207,7 +219,7 @@ class PresenceTests(unittest.TestCase):
         self.assertEqual(home.status_code, 200)
         html = home.get_data(as_text=True)
         self.assertIn("最近の研究機体", html)
-        self.assertIn("このラボで最近動きのあった機体たちです。", html)
+        self.assertIn("出撃、強化、遭遇。最近動いた研究機体を観測しています。", html)
         self.assertIn("PresenceRunner", html)
         self.assertNotIn("研究員 " + "1名 参加中", html)
         self.assertNotIn("現在の" + "参加研究員", html)
@@ -259,8 +271,58 @@ class PresenceTests(unittest.TestCase):
         self.assertNotIn("test_user", by_username)
         self.assertNotIn("presence_banned", by_username)
         self.assertNotIn("presence_admin", by_username)
-        self.assertEqual(by_username["presence_user"]["status_label"], "出撃中")
-        self.assertEqual(by_username["weekly_rider"]["status_label"], "今週活発")
+        self.assertEqual(by_username["presence_user"]["status_label"], "探索帰還")
+        self.assertEqual(by_username["weekly_rider"]["status_label"], "記録更新")
+
+    def test_recent_home_robot_presence_prioritizes_hot_events_and_marks_supporter(self):
+        now = datetime(2026, 4, 15, 12, 0, tzinfo=JST)
+        supporter_id = self._create_user("support_rider", "支援ライダー", wins=4)
+        evolve_user_id = self._create_user("evolve_rider", "進化ライダー", wins=4)
+        self._create_active_robot(supporter_id)
+        self._create_active_robot(evolve_user_id)
+        self._grant_supporter_decor(supporter_id)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now_ts = int(now.timestamp())
+            rows = [
+                (
+                    now_ts - 60,
+                    game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"],
+                    '{"target_part_name":"テストアーム"}',
+                    evolve_user_id,
+                ),
+                (
+                    now_ts - 180,
+                    game_app.AUDIT_EVENT_TYPES["FUSE"],
+                    '{"outcome":"success","from_plus":1,"to_plus":2}',
+                    supporter_id,
+                ),
+                (
+                    now_ts - 2 * 24 * 60 * 60,
+                    "CHAMPION_DEFEATED",
+                    '{"result":"win","challenger_robot_name":"支援号"}',
+                    supporter_id,
+                ),
+            ]
+            db.executemany(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                rows,
+            )
+            db.commit()
+
+            cards = get_recent_home_robot_presence(db, limit=8, now=now, use_cache=False)
+
+        by_username = {card["username"]: card for card in cards}
+        support_card = by_username["support_rider"]
+        self.assertEqual(support_card["status_label"], "チャンプ撃破")
+        self.assertTrue(support_card["is_supporter"])
+        self.assertEqual(support_card["supporter_label"], "ラボ支援者")
+        self.assertTrue(support_card["is_featured"])
+        self.assertEqual(sum(1 for card in cards if card["is_featured"]), 1)
 
 
 if __name__ == "__main__":

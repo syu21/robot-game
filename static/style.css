@@ -3747,16 +3747,45 @@ body.battle-page .layer-boss-victory-sub {
   scroll-snap-align: start;
 }
 
+.recent-robot-card.is-exploring,
+.recent-robot-card.is-returned,
 .recent-robot-card.is-active {
   border-color: rgba(34, 211, 238, 0.48);
 }
 
+.recent-robot-card.is-fuse_success,
+.recent-robot-card.is-evolve_success,
+.recent-robot-card.is-build_update,
 .recent-robot-card.is-recent {
   border-color: rgba(74, 222, 128, 0.42);
 }
 
+.recent-robot-card.is-boss_found,
+.recent-robot-card.is-record_update,
+.recent-robot-card.is-champion_break,
 .recent-robot-card.is-weekly {
   border-color: rgba(250, 204, 21, 0.38);
+}
+
+.recent-robot-card.is-recent_seen {
+  border-color: rgba(168, 85, 247, 0.34);
+}
+
+.recent-robot-card.is-weekly_hot {
+  border-color: rgba(245, 158, 11, 0.34);
+}
+
+.recent-robot-card.is-featured {
+  border-color: rgba(226, 232, 240, 0.62);
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.14), 0 12px 26px rgba(0, 0, 0, 0.24);
+}
+
+.recent-robot-card.is-supporter {
+  box-shadow: inset 0 0 18px rgba(125, 92, 255, 0.08);
+}
+
+.recent-robot-card.is-featured.is-supporter {
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.2), 0 12px 28px rgba(0, 0, 0, 0.26), inset 0 0 20px rgba(34, 211, 238, 0.08);
 }
 
 .recent-robot-card:hover {
@@ -3803,6 +3832,24 @@ body.battle-page .layer-boss-victory-sub {
   white-space: nowrap;
 }
 
+.recent-robot-badges span.is-mvp,
+.recent-robot-badges span.is-champion,
+.recent-robot-badges span.is-ranker {
+  border-color: rgba(250, 204, 21, 0.42);
+  color: #fde68a;
+}
+
+.recent-robot-badges span.is-supporter {
+  border-color: rgba(125, 211, 252, 0.36);
+  background: rgba(30, 41, 59, 0.92);
+  color: #c4b5fd;
+}
+
+.recent-robot-card:hover .recent-robot-badges span.is-supporter {
+  border-color: rgba(196, 181, 253, 0.58);
+  color: #e9d5ff;
+}
+
 .recent-robot-name,
 .recent-robot-unit {
   width: 100%;
@@ -3844,16 +3891,46 @@ body.battle-page .layer-boss-victory-sub {
   color: #a5f3fc;
 }
 
+.recent-robot-status.is-exploring,
+.recent-robot-status.is-returned {
+  border-color: rgba(34, 211, 238, 0.36);
+  background: rgba(8, 145, 178, 0.18);
+  color: #a5f3fc;
+}
+
+.recent-robot-status.is-fuse_success,
+.recent-robot-status.is-evolve_success,
+.recent-robot-status.is-build_update,
 .recent-robot-status.is-recent {
   border-color: rgba(74, 222, 128, 0.34);
   background: rgba(22, 101, 52, 0.18);
   color: #bbf7d0;
 }
 
+.recent-robot-status.is-boss_found,
+.recent-robot-status.is-record_update,
+.recent-robot-status.is-champion_break,
 .recent-robot-status.is-weekly {
   border-color: rgba(250, 204, 21, 0.34);
   background: rgba(113, 63, 18, 0.18);
   color: #fde68a;
+}
+
+.recent-robot-status.is-recent_seen {
+  border-color: rgba(168, 85, 247, 0.28);
+  background: rgba(88, 28, 135, 0.16);
+  color: #ddd6fe;
+}
+
+.recent-robot-status.is-weekly_hot {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(113, 63, 18, 0.15);
+  color: #fed7aa;
+}
+
+.recent-robot-status-icon {
+  display: inline-block;
+  margin-right: 3px;
 }
 
 .recent-robots-empty {
@@ -3876,6 +3953,16 @@ body.battle-page .layer-boss-victory-sub {
   .recent-robot-card:nth-child(3n) .recent-robot-icon {
     animation-delay: 1.3s;
   }
+
+  .recent-robot-card.is-featured {
+    animation: recent-robot-featured-pulse 4.6s ease-in-out infinite;
+  }
+
+  .recent-robot-card.is-boss_found .recent-robot-status,
+  .recent-robot-card.is-record_update .recent-robot-status,
+  .recent-robot-card.is-champion_break .recent-robot-status {
+    animation: recent-robot-label-glow 3.8s ease-in-out infinite;
+  }
 }
 
 @keyframes recent-robot-float {
@@ -3885,6 +3972,26 @@ body.battle-page .layer-boss-victory-sub {
   }
   50% {
     transform: translateY(-2px);
+  }
+}
+
+@keyframes recent-robot-featured-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.12), 0 12px 26px rgba(0, 0, 0, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.24), 0 14px 30px rgba(0, 0, 0, 0.28);
+  }
+}
+
+@keyframes recent-robot-label-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.18);
   }
 }
 

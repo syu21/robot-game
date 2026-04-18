@@ -309,7 +309,7 @@ PRESENCE_MODAL_LIMIT = max(PRESENCE_PREVIEW_LIMIT, min(int(os.getenv("PRESENCE_M
 PRESENCE_INCLUDE_ADMIN = False
 HOME_ROBOT_PRESENCE_LIMIT = max(4, min(int(os.getenv("HOME_ROBOT_PRESENCE_LIMIT", "8")), 10))
 HOME_ROBOT_PRESENCE_TITLE = "最近の研究機体"
-HOME_ROBOT_PRESENCE_SUBTITLE = "このラボで最近動きのあった機体たちです。"
+HOME_ROBOT_PRESENCE_SUBTITLE = "出撃、強化、遭遇。最近動いた研究機体を観測しています。"
 HOME_ROBOT_PRESENCE_EMPTY_LINE = "まだ観測された機体が少ないようです。最初の機体を動かしてみましょう。"
 COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     5,
@@ -14105,12 +14105,20 @@ def _home_robot_presence_entry_view_model(db, entry):
     if not avatar_rel:
         avatar_rel = DEFAULT_AVATAR_REL
     badges = []
-    if item.get("is_champion"):
-        badges.append("チャンプ")
     if item.get("is_mvp"):
-        badges.append("MVP")
+        badges.append({"label": "MVP", "kind": "mvp", "title": "今週のMVP"})
+    if item.get("is_champion"):
+        badges.append({"label": "チャンプ", "kind": "champion", "title": "今週のチャンプ機体"})
     if item.get("is_ranker"):
-        badges.append("ランカー")
+        badges.append({"label": "ランカー", "kind": "ranker", "title": "今週ランキング上位"})
+    if item.get("is_supporter"):
+        badges.append(
+            {
+                "label": str(item.get("supporter_label") or "ラボ支援者"),
+                "kind": "supporter",
+                "title": "この研究員はラボ支援パックで開発を応援しています。",
+            }
+        )
     display_name = str(item.get("display_name") or item.get("username") or "研究員").strip() or "研究員"
     robot_name = str(item.get("robot_name") or "").strip() or (f"Robot #{robot_id}" if robot_id > 0 else "Robot")
     item.update(
@@ -14120,7 +14128,7 @@ def _home_robot_presence_entry_view_model(db, entry):
             "icon_url": _versioned_static_url(robot_icon_rel, fallback_url=url_for("static", filename=DEFAULT_BADGE_REL)),
             "robot_icon_32_url": _versioned_static_url(robot_icon_rel, fallback_url=url_for("static", filename=DEFAULT_BADGE_REL)),
             "avatar_url": _versioned_static_url(avatar_rel, fallback_url=url_for("static", filename=DEFAULT_AVATAR_REL)),
-            "badges": badges[:2],
+            "badges": badges[:3],
             "detail_url": url_for("robot_detail", instance_id=robot_id) if robot_id > 0 else None,
         }
     )

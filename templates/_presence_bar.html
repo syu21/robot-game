@@ -11,23 +11,26 @@
   <div class="recent-robot-carousel" role="list" aria-label="{{ robot_presence['title'] }}">
     {% for entry in robot_presence['cards'] %}
     {% if entry['detail_url'] %}
-    <a class="recent-robot-card is-{{ entry['status_key'] }}" href="{{ entry['detail_url'] }}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
+    <a class="recent-robot-card is-{{ entry['status_key'] }}{% if entry['is_featured'] %} is-featured{% endif %}{% if entry['is_supporter'] %} is-supporter{% endif %}" href="{{ entry['detail_url'] }}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
     {% else %}
-    <article class="recent-robot-card is-{{ entry['status_key'] }}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
+    <article class="recent-robot-card is-{{ entry['status_key'] }}{% if entry['is_featured'] %} is-featured{% endif %}{% if entry['is_supporter'] %} is-supporter{% endif %}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
     {% endif %}
       <div class="recent-robot-visual">
         <img class="recent-robot-icon" src="{{ entry['icon_url'] }}" alt="{{ entry['display_name'] }}の研究機体" loading="lazy" width="42" height="42" />
         {% if entry['badges'] %}
         <div class="recent-robot-badges" aria-label="注目マーク">
           {% for badge in entry['badges'] %}
-          <span>{{ badge }}</span>
+          <span class="is-{{ badge['kind'] }}" title="{{ badge['title'] }}">{{ badge['label'] }}</span>
           {% endfor %}
         </div>
         {% endif %}
       </div>
       <div class="recent-robot-name">{{ entry['display_name'] }}</div>
       <div class="recent-robot-unit">{{ entry['robot_name'] }}</div>
-      <div class="recent-robot-status is-{{ entry['status_key'] }}">{{ entry['status_label'] }}</div>
+      <div class="recent-robot-status is-{{ entry['status_key'] }}">
+        {% if entry['status_icon'] %}<span class="recent-robot-status-icon" aria-hidden="true">{{ entry['status_icon'] }}</span>{% endif %}
+        <span>{{ entry['status_label'] }}</span>
+      </div>
     {% if entry['detail_url'] %}
     </a>
     {% else %}

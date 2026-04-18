@@ -1,4 +1,5 @@
 import copy
+import json
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +17,8 @@ PRESENCE_STATE_LABELS = {
 HOME_SURFACES = {"home", "parts", "build", "world", "records", "showcase"}
 RECENT_HOME_ROBOT_LIMIT = 8
 RECENT_HOME_ROBOT_CACHE_TTL_SECONDS = 60
+RECENT_HOME_MAIN_WINDOW_SECONDS = 72 * 60 * 60
+RECENT_HOME_FALLBACK_WINDOW_SECONDS = 7 * 24 * 60 * 60
 RECENT_HOME_ACTIVITY_EVENTS = (
     AUDIT_EVENT_TYPES["EXPLORE_START"],
     AUDIT_EVENT_TYPES["EXPLORE_END"],
@@ -25,6 +28,8 @@ RECENT_HOME_ACTIVITY_EVENTS = (
     AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
     AUDIT_EVENT_TYPES["CHAT_POST"],
+    AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"],
+    "CHAMPION_DEFEATED",
 )
 RECENT_HOME_EXPLORE_EVENTS = (
     AUDIT_EVENT_TYPES["EXPLORE_START"],
@@ -38,16 +43,55 @@ RECENT_HOME_WORLD_EVENTS = tuple(
             "CHAMPION_DEFEATED",
             AUDIT_EVENT_TYPES["CHAMPION_SELECT"],
             AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"],
+            "CHAMPION_DEFEATED",
             AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
             AUDIT_EVENT_TYPES["PART_EVOLVE"],
             AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
+        )
+    )
+)
+RECENT_HOME_REPRESENTATIVE_EVENTS = tuple(
+    dict.fromkeys(
+        (
+            AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"],
+            "CHAMPION_DEFEATED",
+            "RESEARCH_UNLOCK",
+            AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            AUDIT_EVENT_TYPES["FUSE"],
+            AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["EXPLORE_START"],
         )
     )
 )
 RECENT_HOME_STATUS_LABELS = {
-    "active": "出撃中",
-    "recent": "最近観測",
-    "weekly": "今週活発",
+    "exploring": "出撃中",
+    "returned": "探索帰還",
+    "fuse_success": "強化成功",
+    "evolve_success": "進化完了",
+    "build_update": "編成更新",
+    "boss_found": "ボス遭遇",
+    "record_update": "記録更新",
+    "champion_break": "チャンプ撃破",
+    "recent_seen": "最近観測",
+    "weekly_hot": "今週活発",
+}
+RECENT_HOME_STATUS_META = {
+    "champion_break": {"priority": 100, "icon": "#"},
+    "record_update": {"priority": 90, "icon": "*"},
+    "boss_found": {"priority": 80, "icon": "!"},
+    "evolve_success": {"priority": 70, "icon": "^"},
+    "fuse_success": {"priority": 60, "icon": "+"},
+    "build_update": {"priority": 50, "icon": "="},
+    "returned": {"priority": 40, "icon": "<"},
+    "exploring": {"priority": 30, "icon": ">"},
+    "recent_seen": {"priority": 10, "icon": ""},
+    "weekly_hot": {"priority": 5, "icon": ""},
 }
 RECENT_HOME_EXCLUDED_USERNAMES = (
     "admin",
@@ -57,6 +101,16 @@ RECENT_HOME_EXCLUDED_USERNAMES = (
     "test",
     "tester",
     "test_user",
+)
+RECENT_HOME_SUPPORTER_DECOR_KEYS = (
+    "lab_badge_gold",
+    "founder_badge_silver",
+    "shien_trophy",
+)
+RECENT_HOME_SUPPORTER_PRODUCT_KEYS = (
+    "support_pack_lab",
+    "support_pack_founder",
+    "support_pack_001",
 )
 _RECENT_HOME_ROBOT_CACHE = {}
 
@@ -293,6 +347,67 @@ def _presence_datetime_ts(value):
     return int(parsed.timestamp()) if parsed else 0
 
 
+def _safe_json_loads(raw_value):
+    try:
+        data = json.loads(raw_value or "{}")
+    except (TypeError, json.JSONDecodeError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _home_status_meta(status_key):
+    return RECENT_HOME_STATUS_META.get(str(status_key or ""), RECENT_HOME_STATUS_META["weekly_hot"])
+
+
+def _home_status_label(status_key):
+    return RECENT_HOME_STATUS_LABELS.get(str(status_key or ""), RECENT_HOME_STATUS_LABELS["weekly_hot"])
+
+
+def _home_event_action_from_row(row):
+    data = _row_dict(row)
+    event_type = str(data.get("event_type") or "").strip()
+    payload = _safe_json_loads(data.get("payload_json"))
+    created_at = int(data.get("created_at") or 0)
+    row_id = int(data.get("id") or 0)
+    status_key = None
+    if event_type in {AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"], "CHAMPION_DEFEATED"}:
+        status_key = "champion_break"
+    elif event_type in {"RESEARCH_UNLOCK", AUDIT_EVENT_TYPES["STYLE_RANK_UP"]}:
+        status_key = "record_update"
+    elif event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+        status_key = "record_update"
+    elif event_type == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]:
+        status_key = "boss_found"
+    elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+        status_key = "evolve_success"
+    elif event_type == AUDIT_EVENT_TYPES["FUSE"]:
+        outcome = str(payload.get("outcome") or "").strip().lower()
+        from_plus = int(payload.get("from_plus") or 0)
+        to_plus = int(payload.get("to_plus") or payload.get("new_plus") or 0)
+        if outcome and outcome not in {"success", "great_success", "great"} and to_plus <= from_plus:
+            return None
+        status_key = "fuse_success"
+    elif event_type == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
+        status_key = "build_update"
+    elif event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+        status_key = "returned"
+    elif event_type == AUDIT_EVENT_TYPES["EXPLORE_START"]:
+        status_key = "exploring"
+    if not status_key:
+        return None
+    meta = _home_status_meta(status_key)
+    return {
+        "status_key": status_key,
+        "status_label": _home_status_label(status_key),
+        "status_icon": str(meta.get("icon") or ""),
+        "status_priority": int(meta.get("priority") or 0),
+        "last_event_at_ts": created_at,
+        "last_event_at": _iso_jst(datetime.fromtimestamp(created_at, JST)) if created_at > 0 else "",
+        "event_type": event_type,
+        "event_id": row_id,
+    }
+
+
 def _merge_home_robot_candidate(
     candidates,
     row,
@@ -310,7 +425,7 @@ def _merge_home_robot_candidate(
         return
     latest_activity_at = int(data.get("latest_activity_at") or 0)
     latest_explore_at = int(data.get("latest_explore_at") or 0)
-    existing = candidates.get(robot_id)
+    existing = candidates.get(user_id)
     if not existing:
         robot_name = str(data.get("robot_name") or "").strip() or f"Robot #{robot_id}"
         display_name = str(data.get("display_name") or data.get("username") or "研究員").strip() or "研究員"
@@ -335,9 +450,22 @@ def _merge_home_robot_candidate(
             "is_mvp": False,
             "is_champion": False,
             "is_ranker": False,
+            "is_supporter": False,
+            "supporter_label": "",
+            "supporter_tier": "",
+            "supporter_glow": False,
+            "is_featured": False,
+            "status_key": "",
+            "status_label": "",
+            "status_icon": "",
+            "status_priority": 0,
+            "last_event_at": "",
+            "last_event_at_ts": 0,
+            "event_type": "",
+            "event_id": 0,
             "detail_url": None,
         }
-        candidates[robot_id] = existing
+        candidates[user_id] = existing
     existing["latest_activity_at"] = max(int(existing.get("latest_activity_at") or 0), latest_activity_at)
     existing["latest_explore_at"] = max(int(existing.get("latest_explore_at") or 0), latest_explore_at)
     existing["is_mvp"] = bool(existing.get("is_mvp") or is_mvp)
@@ -378,51 +506,192 @@ def _apply_presence_activity_to_home_candidates(db, candidates, current_ts):
         action = str(row.get("last_action_key") or "").strip().lower()
         if presence_ts >= active_cutoff and (surface == "explore" or action.startswith("explore.")):
             item["latest_explore_at"] = max(int(item.get("latest_explore_at") or 0), presence_ts)
+            item["presence_explore_at"] = max(int(item.get("presence_explore_at") or 0), presence_ts)
+
+
+def _decorate_home_candidates_with_recent_events(db, candidates, current_ts):
+    if not candidates:
+        return
+    user_ids = sorted({int(item["user_id"]) for item in candidates.values() if int(item.get("user_id") or 0) > 0})
+    if not user_ids:
+        return
+    rows = db.execute(
+        f"""
+        SELECT id, user_id, created_at, event_type, payload_json, action_key, entity_type, entity_id
+        FROM world_events_log
+        WHERE user_id IN ({_sql_placeholders(user_ids)})
+          AND created_at >= ?
+          AND event_type IN ({_sql_placeholders(RECENT_HOME_REPRESENTATIVE_EVENTS)})
+        ORDER BY user_id ASC, created_at DESC, id DESC
+        LIMIT ?
+        """,
+        [
+            *user_ids,
+            int(current_ts) - RECENT_HOME_FALLBACK_WINDOW_SECONDS,
+            *RECENT_HOME_REPRESENTATIVE_EVENTS,
+            max(240, len(user_ids) * 24),
+        ],
+    ).fetchall()
+    best_by_user = {}
+    for row in rows:
+        data = _row_dict(row)
+        user_id = int(data.get("user_id") or 0)
+        action = _home_event_action_from_row(data)
+        if not action:
+            continue
+        current = best_by_user.get(user_id)
+        if current is None or (
+            int(action.get("status_priority") or 0),
+            int(action.get("last_event_at_ts") or 0),
+            int(action.get("event_id") or 0),
+        ) > (
+            int(current.get("status_priority") or 0),
+            int(current.get("last_event_at_ts") or 0),
+            int(current.get("event_id") or 0),
+        ):
+            best_by_user[user_id] = action
+    for item in candidates.values():
+        user_id = int(item.get("user_id") or 0)
+        action = best_by_user.get(user_id)
+        if not action:
+            continue
+        item.update(action)
+        item["latest_activity_at"] = max(
+            int(item.get("latest_activity_at") or 0),
+            int(action.get("last_event_at_ts") or 0),
+        )
+
+
+def _decorate_home_candidates_with_supporters(db, candidates):
+    if not candidates:
+        return
+    user_ids = sorted({int(item["user_id"]) for item in candidates.values() if int(item.get("user_id") or 0) > 0})
+    if not user_ids:
+        return
+    supporter_by_user = {}
+    decor_rows = db.execute(
+        f"""
+        SELECT udi.user_id, da.key AS decor_key
+        FROM user_decor_inventory udi
+        JOIN robot_decor_assets da ON da.id = udi.decor_asset_id
+        WHERE udi.user_id IN ({_sql_placeholders(user_ids)})
+          AND da.key IN ({_sql_placeholders(RECENT_HOME_SUPPORTER_DECOR_KEYS)})
+        """,
+        [*user_ids, *RECENT_HOME_SUPPORTER_DECOR_KEYS],
+    ).fetchall()
+    tier_rank = {
+        "lab_badge_gold": 3,
+        "founder_badge_silver": 2,
+        "shien_trophy": 1,
+        "support_pack_lab": 3,
+        "support_pack_founder": 2,
+        "support_pack_001": 1,
+    }
+    for row in decor_rows:
+        data = _row_dict(row)
+        user_id = int(data.get("user_id") or 0)
+        key = str(data.get("decor_key") or "").strip()
+        if user_id <= 0 or not key:
+            continue
+        current = supporter_by_user.get(user_id)
+        if current is None or tier_rank.get(key, 0) > tier_rank.get(current, 0):
+            supporter_by_user[user_id] = key
+    payment_rows = db.execute(
+        f"""
+        SELECT user_id, product_key
+        FROM payment_orders
+        WHERE user_id IN ({_sql_placeholders(user_ids)})
+          AND product_key IN ({_sql_placeholders(RECENT_HOME_SUPPORTER_PRODUCT_KEYS)})
+          AND status IN ('completed', 'granted')
+        """,
+        [*user_ids, *RECENT_HOME_SUPPORTER_PRODUCT_KEYS],
+    ).fetchall()
+    for row in payment_rows:
+        data = _row_dict(row)
+        user_id = int(data.get("user_id") or 0)
+        key = str(data.get("product_key") or "").strip()
+        if user_id <= 0 or user_id in supporter_by_user or not key:
+            continue
+        supporter_by_user[user_id] = key
+    for item in candidates.values():
+        key = supporter_by_user.get(int(item.get("user_id") or 0))
+        if not key:
+            continue
+        item["is_supporter"] = True
+        item["supporter_label"] = "ラボ支援者"
+        item["supporter_tier"] = key
+        item["supporter_glow"] = True
+
+
+def _default_home_status_for_candidate(item, current_ts):
+    active_cutoff = int(current_ts) - 10 * 60
+    recent_cutoff = int(current_ts) - RECENT_HOME_MAIN_WINDOW_SECONDS
+    if int(item.get("presence_explore_at") or item.get("latest_explore_at") or 0) >= active_cutoff:
+        return "exploring"
+    if int(item.get("latest_activity_at") or 0) >= recent_cutoff:
+        return "recent_seen"
+    return "weekly_hot"
+
+
+def _mark_featured_home_robot(rows):
+    if not rows:
+        return rows
+    for item in rows:
+        item["is_featured"] = False
+    best_index = 0
+    best_score = None
+    for index, item in enumerate(rows):
+        score = (
+            int(item.get("status_priority") or 0),
+            1 if item.get("is_mvp") or item.get("is_champion") or item.get("is_ranker") else 0,
+            1 if item.get("is_supporter") else 0,
+            int(item.get("last_event_at_ts") or item.get("latest_activity_at") or 0),
+            -index,
+        )
+        if best_score is None or score > best_score:
+            best_score = score
+            best_index = index
+    rows[best_index]["is_featured"] = True
+    return rows
 
 
 def _finalize_home_robot_candidates(candidates, *, limit, current_ts):
-    active_cutoff = int(current_ts) - 10 * 60
-    recent_cutoff = int(current_ts) - 24 * 60 * 60
     finalized = []
     for item in candidates.values():
-        latest_activity_at = int(item.get("latest_activity_at") or 0)
-        latest_explore_at = int(item.get("latest_explore_at") or 0)
-        if latest_explore_at >= active_cutoff:
-            status_key = "active"
-        elif latest_activity_at >= recent_cutoff:
-            status_key = "recent"
-        else:
-            status_key = "weekly"
+        status_key = str(item.get("status_key") or "").strip() or _default_home_status_for_candidate(item, current_ts)
+        status_meta = _home_status_meta(status_key)
         item["status_key"] = status_key
-        item["status_label"] = RECENT_HOME_STATUS_LABELS[status_key]
+        item["status_label"] = _home_status_label(status_key)
+        item["status_icon"] = str(item.get("status_icon") or status_meta.get("icon") or "")
+        item["status_priority"] = int(item.get("status_priority") or status_meta.get("priority") or 0)
         item["tone"] = status_key
         item["stable_seed"] = (int(item["user_id"]) * 31 + int(item["robot_id"]) * 17) % 100000
         finalized.append(item)
 
     def sort_key(item):
-        status_rank = {"active": 0, "recent": 1, "weekly": 2}.get(item.get("status_key"), 2)
         source_rank = int(item.get("source_rank") or 99)
         featured_rank = 0 if item.get("is_mvp") or item.get("is_champion") else 1
         return (
-            status_rank,
+            -int(item.get("status_priority") or 0),
             source_rank,
             featured_rank,
-            -int(item.get("latest_activity_at") or 0),
+            -int(item.get("last_event_at_ts") or item.get("latest_activity_at") or 0),
+            -int(1 if item.get("is_supporter") else 0),
             int(item.get("stable_seed") or 0),
         )
 
     ordered = sorted(finalized, key=sort_key)
     display_limit = max(1, min(int(limit or RECENT_HOME_ROBOT_LIMIT), 12))
     if len(ordered) <= display_limit:
-        return ordered
+        return _mark_featured_home_robot(ordered)
     front_count = min(4, display_limit, len(ordered))
     needed = display_limit - front_count
     if needed <= 0:
-        return ordered[:display_limit]
+        return _mark_featured_home_robot(ordered[:display_limit])
     tail = ordered[front_count:]
     offset = (int(current_ts) // 3600) % len(tail)
     rotated_tail = tail[offset:] + tail[:offset]
-    return ordered[:front_count] + rotated_tail[:needed]
+    return _mark_featured_home_robot(ordered[:front_count] + rotated_tail[:needed])
 
 
 def get_recent_home_robot_presence(
@@ -471,7 +740,7 @@ def get_recent_home_robot_presence(
         ORDER BY latest_activity_at DESC, u.id DESC
         LIMIT ?
         """,
-        [*RECENT_HOME_EXPLORE_EVENTS, current_ts - 24 * 60 * 60, *RECENT_HOME_ACTIVITY_EVENTS, max(16, display_limit * 3)],
+        [*RECENT_HOME_EXPLORE_EVENTS, current_ts - RECENT_HOME_MAIN_WINDOW_SECONDS, *RECENT_HOME_ACTIVITY_EVENTS, max(16, display_limit * 3)],
     ).fetchall()
     for row in recent_rows:
         _merge_home_robot_candidate(candidates, row, source_key="recent_activity", source_rank=0)
@@ -596,7 +865,7 @@ def get_recent_home_robot_presence(
         ORDER BY latest_activity_at DESC, u.id DESC
         LIMIT ?
         """,
-        [*RECENT_HOME_EXPLORE_EVENTS, weekly_start_ts, *RECENT_HOME_WORLD_EVENTS, max(16, display_limit * 3)],
+        [*RECENT_HOME_EXPLORE_EVENTS, current_ts - RECENT_HOME_MAIN_WINDOW_SECONDS, *RECENT_HOME_WORLD_EVENTS, max(16, display_limit * 3)],
     ).fetchall()
     for row in world_rows:
         _merge_home_robot_candidate(candidates, row, source_key="world_event", source_rank=4)
@@ -624,7 +893,7 @@ def get_recent_home_robot_presence(
             """,
             [
                 *RECENT_HOME_EXPLORE_EVENTS,
-                current_ts - 7 * 24 * 60 * 60,
+                current_ts - RECENT_HOME_FALLBACK_WINDOW_SECONDS,
                 *RECENT_HOME_ACTIVITY_EVENTS,
                 max(16, display_limit * 3),
             ],
@@ -679,6 +948,8 @@ def get_recent_home_robot_presence(
             _merge_home_robot_candidate(candidates, row, source_key="record_archive", source_rank=7)
 
     _apply_presence_activity_to_home_candidates(db, candidates, current_ts)
+    _decorate_home_candidates_with_recent_events(db, candidates, current_ts)
+    _decorate_home_candidates_with_supporters(db, candidates)
     rows = _finalize_home_robot_candidates(candidates, limit=display_limit, current_ts=current_ts)
     if use_cache and now is None:
         _RECENT_HOME_ROBOT_CACHE[cache_key] = {
