@@ -2,6 +2,10 @@ import random
 
 from services.simulate_balance import resolve_attack
 
+CHAMPION_FIRST_STRIKE_MODE = "RANDOM_FIRST"
+CHAMPION_CRIT_MULTIPLIER = 1.65
+CHAMPION_OPENING_CRIT_BONUS = 5
+
 
 def build_champion_enemy_payload(snapshot_payload):
     payload = dict(snapshot_payload or {})
@@ -11,6 +15,10 @@ def build_champion_enemy_payload(snapshot_payload):
         "owner_name": str(payload.get("owner_name") or "unknown"),
         "image_url": payload.get("robot_image_url"),
         "signature_label": str(payload.get("signature_label") or "無印"),
+        "focus_labels": list(payload.get("focus_labels") or []),
+        "focus_label_line": str(payload.get("focus_label_line") or ""),
+        "trait_summary": str(payload.get("trait_summary") or ""),
+        "style_key": str(payload.get("style_key") or "stable"),
         "focus_line": str(payload.get("focus_line") or ""),
         "robot_instance_id": int(payload.get("robot_instance_id") or 0),
         "user_id": int(payload.get("user_id") or 0),
@@ -69,7 +77,24 @@ def _summary_label(*, win, timeout, player_stats, enemy_stats, critical_hits):
         int(enemy_stats.get("hp") or 0) + int(enemy_stats.get("def") or 0)
     ):
         return "体勢維持で受け切った" if win else "削り切る前に崩れた"
-    return "先手差で押し切った" if win else "先手差を返せなかった"
+    return "主導権を握って押し切った" if win else "主導権を奪い返せなかった"
+
+
+def _payload_prefers_critical(payload):
+    data = dict(payload or {})
+    signature = str(data.get("signature_label") or "").strip()
+    if "会心" in signature:
+        return True
+    for label in list(data.get("focus_labels") or []):
+        if "会心" in str(label or ""):
+            return True
+    return False
+
+
+def _effective_crit(payload, attack_count, base_cri):
+    if attack_count <= 0 and _payload_prefers_critical(payload):
+        return int(base_cri) + int(CHAMPION_OPENING_CRIT_BONUS)
+    return int(base_cri)
 
 
 def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=None):
@@ -84,6 +109,9 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
     enemy_hp = int(enemy_hp_max)
     critical_hits = 0
     turn_logs = []
+    first_turn_striker = None
+    player_attack_count = 0
+    enemy_attack_count = 0
 
     for turn in range(1, int(max_turns) + 1):
         enemy_before = int(enemy_hp)
@@ -94,16 +122,20 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
         player_action = "様子を見る"
         enemy_action = "様子を見る"
 
-        player_first = int(player_stats.get("spd") or 0) >= int(enemy_stats.get("spd") or 0)
+        player_first = bool(roller.random() < 0.5)
+        if int(turn) == 1:
+            first_turn_striker = "player" if player_first else "champion"
         if player_first:
             player_damage, critical = resolve_attack(
                 int(player_stats.get("atk") or 0),
                 int(player_stats.get("acc") or 0),
-                int(player_stats.get("cri") or 0),
+                _effective_crit(player_payload, player_attack_count, int(player_stats.get("cri") or 0)),
                 int(enemy_stats.get("def") or 0),
                 int(enemy_stats.get("acc") or 0),
                 rng=roller,
+                crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
             )
+            player_attack_count += 1
             enemy_hp = max(0, enemy_hp - int(player_damage))
             if critical:
                 critical_hits += 1
@@ -118,11 +150,13 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                 enemy_damage, enemy_critical = resolve_attack(
                     int(enemy_stats.get("atk") or 0),
                     int(enemy_stats.get("acc") or 0),
-                    int(enemy_stats.get("cri") or 0),
+                    _effective_crit(champion_payload, enemy_attack_count, int(enemy_stats.get("cri") or 0)),
                     int(player_stats.get("def") or 0),
                     int(player_stats.get("acc") or 0),
                     rng=roller,
+                    crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
                 )
+                enemy_attack_count += 1
                 player_hp = max(0, player_hp - int(enemy_damage))
                 enemy_action = _action_label(
                     attacker_name=enemy_name,
@@ -135,11 +169,13 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
             enemy_damage, enemy_critical = resolve_attack(
                 int(enemy_stats.get("atk") or 0),
                 int(enemy_stats.get("acc") or 0),
-                int(enemy_stats.get("cri") or 0),
+                _effective_crit(champion_payload, enemy_attack_count, int(enemy_stats.get("cri") or 0)),
                 int(player_stats.get("def") or 0),
                 int(player_stats.get("acc") or 0),
                 rng=roller,
+                crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
             )
+            enemy_attack_count += 1
             player_hp = max(0, player_hp - int(enemy_damage))
             enemy_action = _action_label(
                 attacker_name=enemy_name,
@@ -152,11 +188,13 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                 player_damage, critical = resolve_attack(
                     int(player_stats.get("atk") or 0),
                     int(player_stats.get("acc") or 0),
-                    int(player_stats.get("cri") or 0),
+                    _effective_crit(player_payload, player_attack_count, int(player_stats.get("cri") or 0)),
                     int(enemy_stats.get("def") or 0),
                     int(enemy_stats.get("acc") or 0),
                     rng=roller,
+                    crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
                 )
+                player_attack_count += 1
                 enemy_hp = max(0, enemy_hp - int(player_damage))
                 if critical:
                     critical_hits += 1
@@ -233,4 +271,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
         "summary_label": summary_label,
         "result_label": result_label,
         "critical_hits": int(critical_hits),
+        "first_striker": first_turn_striker,
+        "first_strike_mode": CHAMPION_FIRST_STRIKE_MODE,
+        "crit_multiplier": float(CHAMPION_CRIT_MULTIPLIER),
     }
