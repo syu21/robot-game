@@ -8,6 +8,7 @@ import init_db
 from services.presence import (
     JST,
     get_presence_count,
+    get_recent_home_robot_presence,
     get_recent_presence,
     serialize_presence_entry,
     touch_presence,
@@ -108,6 +109,21 @@ class PresenceTests(unittest.TestCase):
             db.commit()
             return robot_id
 
+    def _create_user(self, username, display_name=None, *, is_admin=0, is_banned=0, wins=1):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(datetime.now(JST).timestamp())
+            db.execute(
+                """
+                INSERT INTO users (username, display_name, password_hash, created_at, last_seen_at, is_admin, is_banned, wins, max_unlocked_layer)
+                VALUES (?, ?, 'x', ?, ?, ?, ?, ?, 1)
+                """,
+                (username, display_name, now, now, int(is_admin), int(is_banned), int(wins)),
+            )
+            user_id = int(db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"])
+            db.commit()
+            return user_id
+
     def _client(self):
         client = game_app.app.test_client()
         with client.session_transaction() as session:
@@ -190,8 +206,11 @@ class PresenceTests(unittest.TestCase):
         home = client.get("/home")
         self.assertEqual(home.status_code, 200)
         html = home.get_data(as_text=True)
-        self.assertIn("研究員 1名 参加中", html)
-        self.assertIn("現在の参加研究員", html)
+        self.assertIn("最近の研究機体", html)
+        self.assertIn("このラボで最近動きのあった機体たちです。", html)
+        self.assertIn("PresenceRunner", html)
+        self.assertNotIn("研究員 " + "1名 参加中", html)
+        self.assertNotIn("現在の" + "参加研究員", html)
 
         api = client.get("/api/presence/recent?limit=24")
         self.assertEqual(api.status_code, 200)
@@ -203,6 +222,45 @@ class PresenceTests(unittest.TestCase):
         self.assertIn("avatar_url", data["entries"][0])
         self.assertIn("state_label", data["entries"][0])
         self.assertIn("minutes_ago", data["entries"][0])
+
+    def test_recent_home_robot_presence_blends_real_sources_and_filters_admin_test_banned(self):
+        now = datetime(2026, 4, 15, 12, 0, tzinfo=JST)
+        weekly_user_id = self._create_user("weekly_rider", "週間ライダー", wins=3)
+        test_user_id = self._create_user("test_user", "テスト機体", wins=9)
+        self._create_active_robot(weekly_user_id)
+        self._create_active_robot(test_user_id)
+        self._create_active_robot(self.banned_id)
+        self._create_active_robot(self.admin_id)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now_ts = int(now.timestamp())
+            rows = [
+                (now_ts - 60, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"result":{"win":1}}', self.user_id),
+                (now_ts - 36 * 60 * 60, game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"], "{}", weekly_user_id),
+                (now_ts - 40, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"result":{"win":1}}', test_user_id),
+                (now_ts - 30, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"result":{"win":1}}', self.banned_id),
+                (now_ts - 20, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"result":{"win":1}}', self.admin_id),
+            ]
+            db.executemany(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                rows,
+            )
+            db.commit()
+
+            cards = get_recent_home_robot_presence(db, limit=8, now=now, use_cache=False)
+
+        by_username = {card["username"]: card for card in cards}
+        self.assertIn("presence_user", by_username)
+        self.assertIn("weekly_rider", by_username)
+        self.assertNotIn("test_user", by_username)
+        self.assertNotIn("presence_banned", by_username)
+        self.assertNotIn("presence_admin", by_username)
+        self.assertEqual(by_username["presence_user"]["status_label"], "出撃中")
+        self.assertEqual(by_username["weekly_rider"]["status_label"], "今週活発")
 
 
 if __name__ == "__main__":

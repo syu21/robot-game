@@ -60,7 +60,7 @@
     if (!entries.length) {
       const empty = document.createElement("div");
       empty.className = "presence-empty";
-      empty.textContent = "まだ参加研究員はいません";
+      empty.textContent = "まだ観測された機体が少ないようです。最初の機体を動かしてみましょう。";
       listNode.appendChild(empty);
       return;
     }
@@ -113,8 +113,8 @@
     const count = Number(payload.count || 0);
     const within = Number(payload.within_minutes || 20);
     const entries = Array.isArray(payload.entries) ? payload.entries : [];
-    setText(titleNode, count > 0 ? `研究員 ${count}名 参加中` : "今は静かです");
-    setText(subtitleNode, count > 0 ? `最近${within}分で動いた研究員` : "最初の研究員になってみましょう");
+    setText(titleNode, "最近の研究機体");
+    setText(subtitleNode, count > 0 ? `最近${within}分で動きのあった機体たちです。` : "まだ観測された機体が少ないようです。最初の機体を動かしてみましょう。");
     renderIcons(entries, count);
     renderList(entries);
   };

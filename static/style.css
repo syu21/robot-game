@@ -3686,6 +3686,208 @@ body.battle-page .layer-boss-victory-sub {
   color: #9fb4ba;
 }
 
+.recent-robots-shell {
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(20, 184, 166, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(7, 18, 24, 0.94), rgba(17, 24, 39, 0.9)),
+    rgba(9, 18, 27, 0.9);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  color: #e8f5f3;
+}
+
+.recent-robots-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.recent-robots-title {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.02rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.recent-robots-subtitle,
+.recent-robots-empty {
+  color: #9fb4ba;
+  font-size: 0.86rem;
+}
+
+.recent-robot-carousel {
+  display: grid;
+  grid-auto-columns: clamp(76px, 22vw, 124px);
+  grid-auto-flow: column;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 1px 2px 4px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.recent-robot-card {
+  display: grid;
+  grid-template-rows: 48px 1fr auto auto;
+  align-items: center;
+  min-height: 126px;
+  min-width: 0;
+  padding: 8px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #eef6f8;
+  text-align: center;
+  text-decoration: none;
+  scroll-snap-align: start;
+}
+
+.recent-robot-card.is-active {
+  border-color: rgba(34, 211, 238, 0.48);
+}
+
+.recent-robot-card.is-recent {
+  border-color: rgba(74, 222, 128, 0.42);
+}
+
+.recent-robot-card.is-weekly {
+  border-color: rgba(250, 204, 21, 0.38);
+}
+
+.recent-robot-card:hover {
+  border-color: rgba(226, 232, 240, 0.52);
+  transform: translateY(-1px);
+}
+
+.recent-robot-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.recent-robot-icon {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.45);
+}
+
+.recent-robot-badges {
+  position: absolute;
+  top: -5px;
+  right: -3px;
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+}
+
+.recent-robot-badges span {
+  max-width: 54px;
+  overflow: hidden;
+  padding: 2px 4px;
+  border: 1px solid rgba(250, 204, 21, 0.4);
+  border-radius: 6px;
+  background: rgba(24, 24, 27, 0.9);
+  color: #fde68a;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-robot-name,
+.recent-robot-unit {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-robot-name {
+  color: #f8fafc;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.recent-robot-unit {
+  color: #b8cbd0;
+  font-size: 0.7rem;
+}
+
+.recent-robot-status {
+  justify-self: center;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 5px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  color: #dbeafe;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-robot-status.is-active {
+  border-color: rgba(34, 211, 238, 0.36);
+  background: rgba(8, 145, 178, 0.18);
+  color: #a5f3fc;
+}
+
+.recent-robot-status.is-recent {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(22, 101, 52, 0.18);
+  color: #bbf7d0;
+}
+
+.recent-robot-status.is-weekly {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(113, 63, 18, 0.18);
+  color: #fde68a;
+}
+
+.recent-robots-empty {
+  padding: 10px 0 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .recent-robot-card {
+    transition: border-color 160ms ease, transform 160ms ease;
+  }
+
+  .recent-robot-icon {
+    animation: recent-robot-float 4.8s ease-in-out infinite;
+  }
+
+  .recent-robot-card:nth-child(2n) .recent-robot-icon {
+    animation-delay: 0.7s;
+  }
+
+  .recent-robot-card:nth-child(3n) .recent-robot-icon {
+    animation-delay: 1.3s;
+  }
+}
+
+@keyframes recent-robot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
 .home-research-boost-copy {
   display: grid;
   gap: 3px;
@@ -6504,6 +6706,30 @@ body.home-page.home-mobile .presence-avatar-row {
 
 body.home-page.home-mobile .presence-modal-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+body.home-page.home-mobile .recent-robots-shell {
+  padding: 10px 8px 11px !important;
+}
+
+body.home-page.home-mobile .recent-robots-head {
+  margin-bottom: 8px !important;
+}
+
+body.home-page.home-mobile .recent-robot-carousel {
+  grid-auto-columns: 76px !important;
+  gap: 7px !important;
+  padding-bottom: 5px !important;
+}
+
+body.home-page.home-mobile .recent-robot-card {
+  min-height: 116px !important;
+  padding: 7px 5px !important;
+}
+
+body.home-page.home-mobile .recent-robot-icon {
+  width: 38px !important;
+  height: 38px !important;
 }
 
 @media (max-width: 420px) {

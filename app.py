@@ -54,7 +54,7 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.archetype import compute_archetype
-from services.presence import get_presence_count, get_recent_presence, touch_presence
+from services.presence import get_presence_count, get_recent_home_robot_presence, get_recent_presence, touch_presence
 from services.style import (
     STYLE_DEFINITIONS as ROBOT_STYLE_DEFINITIONS,
     STYLE_KEYS,
@@ -307,6 +307,10 @@ PRESENCE_WITHIN_MINUTES = max(1, int(os.getenv("PRESENCE_WITHIN_MINUTES", "20"))
 PRESENCE_PREVIEW_LIMIT = max(1, min(int(os.getenv("PRESENCE_PREVIEW_LIMIT", "8")), 8))
 PRESENCE_MODAL_LIMIT = max(PRESENCE_PREVIEW_LIMIT, min(int(os.getenv("PRESENCE_MODAL_LIMIT", "24")), 24))
 PRESENCE_INCLUDE_ADMIN = False
+HOME_ROBOT_PRESENCE_LIMIT = max(4, min(int(os.getenv("HOME_ROBOT_PRESENCE_LIMIT", "8")), 10))
+HOME_ROBOT_PRESENCE_TITLE = "最近の研究機体"
+HOME_ROBOT_PRESENCE_SUBTITLE = "このラボで最近動きのあった機体たちです。"
+HOME_ROBOT_PRESENCE_EMPTY_LINE = "まだ観測された機体が少ないようです。最初の機体を動かしてみましょう。"
 COMM_ROOM_ACTIVITY_WINDOW_MINUTES = max(
     5,
     int(os.getenv("COMM_ROOM_ACTIVITY_WINDOW_MINUTES", "20")),
@@ -536,15 +540,15 @@ GUIDE_SECTIONS = (
             },
             {
                 "term": "安定",
-                "body": "耐久や命中を活かして、崩れにくく勝つタイプです。長く戦って取りこぼしを減らしたいときに向いています。",
-            },
-            {
-                "term": "背水",
-                "body": "打たれ弱いぶん、先手や逆転で押し切るタイプです。短期決戦やギリギリの勝負が好きな人向けです。",
+                "body": "長く戦って確実に勝つ型。耐久・防御・命中で事故を減らします。",
             },
             {
                 "term": "爆発",
-                "body": "攻撃や会心で一気に勝負を決めるタイプです。大ダメージで流れをひっくり返したい人向けです。",
+                "body": "一撃で倒して終わらせる型。攻撃・会心で短期決着を狙います。",
+            },
+            {
+                "term": "背水",
+                "body": "ギリギリから逆転する型。低耐久・高火力で先手や一発勝負を狙います。",
             },
             {
                 "term": "思想ゲージ",
@@ -4816,6 +4820,18 @@ def _robot_style_support_line(style_key):
     return str(info.get("support_line") or "")
 
 
+def _robot_style_strong_line(style_key):
+    key = _normalize_style_key(style_key)
+    info = ROBOT_STYLE_PLAY_GUIDE.get(key) or ROBOT_STYLE_PLAY_GUIDE["stable"]
+    return str(info.get("strong_line") or "")
+
+
+def _robot_style_weak_line(style_key):
+    key = _normalize_style_key(style_key)
+    info = ROBOT_STYLE_PLAY_GUIDE.get(key) or ROBOT_STYLE_PLAY_GUIDE["stable"]
+    return str(info.get("weak_line") or "")
+
+
 def _set_bonus_catalog_rows():
     rows = []
     for element_key, element_label in ELEMENTS:
@@ -6321,7 +6337,7 @@ def _battle_id_for_explore_submission(submission_id):
 
 
 def _robot_style_description(style_key):
-    return (ROBOT_STYLE_DEFINITIONS.get(style_key) or {}).get("description_jp", "防御・命中寄り（長期戦向き）")
+    return (ROBOT_STYLE_DEFINITIONS.get(style_key) or {}).get("description_jp", "長く戦って確実に勝つ型")
 
 
 def _pick_robot_style_key(style_scores):
@@ -6434,6 +6450,10 @@ def _style_view_model(snapshot, rank_state=None):
         "score_rows": _style_score_rows(scores, current_key=current_key, next_key=next_key),
         "current_key": current_key,
         "current_label": ROBOT_STYLE_LABELS[current_key],
+        "current_battle_line": _robot_style_battle_line(current_key),
+        "current_support_line": _robot_style_support_line(current_key),
+        "current_strong_line": _robot_style_strong_line(current_key),
+        "current_weak_line": _robot_style_weak_line(current_key),
         "next_key": next_key,
         "next_label": (ROBOT_STYLE_LABELS.get(next_key) if next_key else ""),
         "is_close": bool(next_key and abs(current_score - next_score) < 5),
@@ -6682,10 +6702,10 @@ def _build_champion_trait_summary(source):
     if focus_keys in summary_by_focus:
         return summary_by_focus[focus_keys]
     if style_key == "burst":
-        return "速攻で押し切る高火力型"
+        return _robot_style_battle_line("burst")
     if style_key == "desperate":
-        return "刺さると一気に持っていく"
-    return "命中が安定し、事故が少ない"
+        return _robot_style_battle_line("desperate")
+    return _robot_style_battle_line("stable")
 
 
 def _build_champion_profile_view(source):
@@ -6697,6 +6717,8 @@ def _build_champion_profile_view(source):
     data["trait_summary"] = _build_champion_trait_summary(data)
     data["battle_style_line"] = _robot_style_battle_line(data.get("style_key"))
     data["style_support_line"] = _robot_style_support_line(data.get("style_key"))
+    data["style_strong_line"] = _robot_style_strong_line(data.get("style_key"))
+    data["style_weak_line"] = _robot_style_weak_line(data.get("style_key"))
     data["stat_tier_view"] = _build_champion_stat_tier_view(data.get("stats") or {})
     return data
 
@@ -6727,6 +6749,8 @@ def _robot_profile_view(stat_obj):
         "focus_line": focus_line,
         "battle_style_line": _robot_style_battle_line(robot_style.get("style_key")),
         "style_support_line": _robot_style_support_line(robot_style.get("style_key")),
+        "style_strong_line": _robot_style_strong_line(robot_style.get("style_key")),
+        "style_weak_line": _robot_style_weak_line(robot_style.get("style_key")),
     }
     return _build_champion_profile_view(profile)
 
@@ -14058,9 +14082,66 @@ def _presence_summary_view(db, *, limit=PRESENCE_PREVIEW_LIMIT):
         "modal_limit": int(PRESENCE_MODAL_LIMIT),
         "entries": entries,
         "extra_count": max(0, int(count) - len(entries)),
-        "title": (f"研究員 {int(count)}名 参加中" if int(count) > 0 else "今は静かです"),
-        "subtitle": f"最近{int(PRESENCE_WITHIN_MINUTES)}分で動いた研究員",
-        "empty_line": "最初の研究員になってみましょう",
+        "title": HOME_ROBOT_PRESENCE_TITLE,
+        "subtitle": HOME_ROBOT_PRESENCE_SUBTITLE,
+        "empty_line": HOME_ROBOT_PRESENCE_EMPTY_LINE,
+    }
+
+
+def _home_robot_presence_entry_view_model(db, entry):
+    item = dict(entry or {})
+    robot_id = int(item.get("robot_id") or 0)
+    robot_icon_rel = _safe_static_rel(item.get("icon_path") or item.get("robot_icon_32_path")) if (item.get("icon_path") or item.get("robot_icon_32_path")) else None
+    composed_rel = _safe_static_rel(item.get("composed_image_path") or item.get("robot_composed_image_path")) if (item.get("composed_image_path") or item.get("robot_composed_image_path")) else None
+    if not robot_icon_rel and composed_rel and robot_id > 0:
+        try:
+            robot_icon_rel = _ensure_robot_instance_badge(db, robot_id, composed_rel)
+        except Exception:
+            app.logger.warning("home_robot_presence.badge_fallback_failed robot_id=%s", robot_id, exc_info=True)
+            robot_icon_rel = None
+    if not robot_icon_rel:
+        robot_icon_rel = DEFAULT_BADGE_REL
+    avatar_rel = _safe_static_rel(item.get("avatar_path")) if item.get("avatar_path") else None
+    if not avatar_rel:
+        avatar_rel = DEFAULT_AVATAR_REL
+    badges = []
+    if item.get("is_champion"):
+        badges.append("チャンプ")
+    if item.get("is_mvp"):
+        badges.append("MVP")
+    if item.get("is_ranker"):
+        badges.append("ランカー")
+    display_name = str(item.get("display_name") or item.get("username") or "研究員").strip() or "研究員"
+    robot_name = str(item.get("robot_name") or "").strip() or (f"Robot #{robot_id}" if robot_id > 0 else "Robot")
+    item.update(
+        {
+            "display_name": display_name,
+            "robot_name": robot_name,
+            "icon_url": _versioned_static_url(robot_icon_rel, fallback_url=url_for("static", filename=DEFAULT_BADGE_REL)),
+            "robot_icon_32_url": _versioned_static_url(robot_icon_rel, fallback_url=url_for("static", filename=DEFAULT_BADGE_REL)),
+            "avatar_url": _versioned_static_url(avatar_rel, fallback_url=url_for("static", filename=DEFAULT_AVATAR_REL)),
+            "badges": badges[:2],
+            "detail_url": url_for("robot_detail", instance_id=robot_id) if robot_id > 0 else None,
+        }
+    )
+    return item
+
+
+def _home_robot_presence_summary_view(db, *, limit=HOME_ROBOT_PRESENCE_LIMIT, include_champion=True):
+    raw_entries = get_recent_home_robot_presence(
+        db,
+        limit=limit,
+        include_admin=False,
+        include_champion=include_champion,
+    )
+    cards = [_home_robot_presence_entry_view_model(db, entry) for entry in raw_entries]
+    return {
+        "title": HOME_ROBOT_PRESENCE_TITLE,
+        "subtitle": HOME_ROBOT_PRESENCE_SUBTITLE,
+        "empty_line": HOME_ROBOT_PRESENCE_EMPTY_LINE,
+        "limit": int(limit),
+        "count": len(cards),
+        "cards": cards,
     }
 
 
@@ -20032,8 +20113,10 @@ def guide():
                 "description": _robot_style_description(key),
                 "battle_line": _robot_style_battle_line(key),
                 "support_line": _robot_style_support_line(key),
+                "strong_line": _robot_style_strong_line(key),
+                "weak_line": _robot_style_weak_line(key),
             }
-            for key in ("stable", "desperate", "burst")
+            for key in ("stable", "burst", "desperate")
         ],
         set_bonus_catalog=_set_bonus_catalog_rows(),
         set_bonus_condition_text="同属性パーツ 4部位で発動",
@@ -21632,7 +21715,11 @@ def home():
         if research_boost_visible
         else None
     )
-    presence_summary = _presence_summary_view(db, limit=PRESENCE_PREVIEW_LIMIT)
+    recent_robot_presence = _home_robot_presence_summary_view(
+        db,
+        limit=HOME_ROBOT_PRESENCE_LIMIT,
+        include_champion=show_weekly_champion,
+    )
     home_comm_initial_tab = "world"
     home_comm_initial_room_key = COMM_ROOM_DEFS[0]["key"]
     home_active_user_count = count_active_users(
@@ -21967,7 +22054,7 @@ def home():
             research_boost=research_boost,
             research_boost_x_share=research_boost_x_share,
             boss_medal_summary=boss_medal_summary,
-            presence_summary=presence_summary,
+            recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
             explore_submission_id=explore_submission_id,
@@ -25664,6 +25751,7 @@ def share_robot_generic():
         robot=None,
         owner_name="",
         profile_label="",
+        profile_battle_line="",
         max_layer=None,
         image_url=image_url,
     )
@@ -25693,6 +25781,7 @@ def share_robot_public(robot_instance_id):
     stat_obj = _compute_robot_stats_for_instance(db, int(robot["id"]))
     profile = _robot_profile_view(stat_obj) if stat_obj else None
     profile_label = str((profile or {}).get("signature_label") or "").strip()
+    profile_battle_line = str((profile or {}).get("battle_style_line") or "").strip()
     share_url = _absolute_public_url(url_for("share_robot_public", robot_instance_id=int(robot["id"])))
     image_url = (
         _absolute_public_url(_composed_image_url(robot.get("composed_image_path"), robot.get("updated_at")))
@@ -25717,6 +25806,7 @@ def share_robot_public(robot_instance_id):
         robot=robot,
         owner_name=owner_name,
         profile_label=profile_label,
+        profile_battle_line=profile_battle_line,
         max_layer=int(row["max_unlocked_layer"] or 1),
         image_url=image_url,
     )
