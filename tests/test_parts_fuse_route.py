@@ -276,6 +276,94 @@ class PartsFuseRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(int(row["p"] or 0), int(game_app.MAX_PART_PLUS))
 
+    def test_r_part_accepts_corresponding_n_assist_materials(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            seed = db.execute(
+                """
+                SELECT
+                    id AS part_id,
+                    part_type,
+                    rarity,
+                    element,
+                    series
+                FROM robot_parts
+                WHERE UPPER(COALESCE(rarity, 'N')) = 'N'
+                  AND is_active = 1
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            self.assertIsNotNone(seed)
+            db.execute("DELETE FROM part_instances WHERE user_id = ?", (self.user_id,))
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+
+            def insert_part(prefix, part_id, part_type, rarity, element, series):
+                cur = db.execute(
+                    """
+                    INSERT INTO part_instances
+                    (part_id, user_id, part_type, rarity, element, series, plus, w_hp, w_atk, w_def, w_spd, w_acc, w_cri, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 1, 1, 1, 1, 'inventory', ?, datetime('now'))
+                    """,
+                    (
+                        int(part_id),
+                        int(self.user_id),
+                        part_type,
+                        rarity,
+                        element,
+                        series,
+                        int(time.time()) + int(prefix),
+                    ),
+                )
+                return int(cur.lastrowid)
+
+            base_id = insert_part(
+                1,
+                seed["part_id"],
+                seed["part_type"],
+                "R",
+                seed["element"],
+                seed["series"],
+            )
+            for offset in (2, 3):
+                insert_part(
+                    offset,
+                    seed["part_id"],
+                    seed["part_type"],
+                    seed["rarity"],
+                    seed["element"],
+                    seed["series"],
+                )
+            db.commit()
+
+            with game_app.app.test_request_context():
+                first = game_app._strengthen_parts_selected(db, self.user_id, base_id)
+            self.assertTrue(first["ok"])
+            self.assertEqual(first["material_mode"], "r_n_assist")
+            self.assertEqual(int(first["inc"]), 0)
+            base = db.execute("SELECT plus, r_assist_points FROM part_instances WHERE id = ?", (base_id,)).fetchone()
+            self.assertEqual(int(base["plus"]), 0)
+            self.assertEqual(int(base["r_assist_points"]), 50)
+
+            for offset in (4, 5):
+                insert_part(
+                    offset,
+                    seed["part_id"],
+                    seed["part_type"],
+                    seed["rarity"],
+                    seed["element"],
+                    seed["series"],
+                )
+            db.commit()
+
+            with game_app.app.test_request_context():
+                second = game_app._strengthen_parts_selected(db, self.user_id, base_id)
+            self.assertTrue(second["ok"])
+            self.assertEqual(int(second["inc"]), 1)
+            base = db.execute("SELECT plus, r_assist_points FROM part_instances WHERE id = ?", (base_id,)).fetchone()
+            self.assertEqual(int(base["plus"]), 1)
+            self.assertEqual(int(base["r_assist_points"]), 0)
+
     def test_fuse_batch_uses_inventory_materials_only(self):
         ids = self._seed_same_part_instances([0, 0, 0, 0, 0])
         base_id = ids[0]

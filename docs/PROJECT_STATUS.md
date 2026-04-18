@@ -221,12 +221,12 @@
 - `/ranking` のユーザー系指標は `小ロボ主役 + 補助アバター + presence 状態`、ロボ系指標は機体サムネで表示
 - ロボ系ランキングでは、古いプレースホルダ機体画像を掴んでいた場合も表示時に再生成して崩れを残さない
 - ホームから `今週のランキング` と `前回の出撃先で出撃` を自然に視認できる
-- ロボ一覧 / ロボ個別 / ロボ展示で `思想` と `注目能力` を短く見える
+- ロボ一覧 / ロボ個別 / ロボ展示で `思想` と `注目能力` を短く見せる。思想説明は `勝ち方` と `手段` の順に統一し、詳細UIでは強い場面 / 弱い場面も添える
 - `/showcase` は 新着 / 今週 / ボス / いいね / 最速 / 耐久 / 命中 / 爆発 で並び替え可能
 - `/terms`, `/privacy`, `/commerce` を独立した法務ページとして公開
 - フッターは `利用規約 / プライバシー / 特商法 / お問い合わせ / 更新履歴 / 応援導線` を常設し、公式Xがある環境では追加表示できる
 - `/guide` で `性格 / 型 / 育成 / 世界競争` の基本用語を辞典形式で確認できる
-- `/guide` は用語辞典に加えて、`思想ごとの戦い方` と `セットボーナス一覧` をカード表示し、初見でも型の魅力と恩恵が分かるようにした
+- `/guide` は用語辞典に加えて、`思想ごとの戦い方` と `セットボーナス一覧` をカード表示し、安定 / 爆発 / 背水の勝ち方・手段・強弱が同じ構造で分かるようにした
 - ヘッダーの `設定` は `機体アイコン` 表記にし、補助アバターは `手動アップロード -> Google画像 -> seed生成` の順で選べる
 - `/support` は `創設支援パック 100円` と `ラボ維持支援パック 300円` の支援専用ページとし、`戦力差はつきません / 名前横バッジ / 限定DECOR付き` を明示する
 - `support_pack_founder` 完了時は DECOR `founder_badge_silver` と `創設支援章` を、`support_pack_lab` 完了時は `lab_badge_gold` と `ラボ支援章` を webhook で冪等付与する
@@ -334,7 +334,9 @@
   - `composed_image_path`, `icon_32_path`
   - `style_scores_json`, `style_rank_json`, `style_current_key`, `style_next_key`, `style_updated_at`
 - `robot_parts`（`display_name_ja`, `offset_x/y`）
-- `part_instances`（`plus`, `w_*`）
+- `part_instances`（`plus`, `w_*`, `r_assist_points`）
+- `market_daily_listings`
+- `market_purchase_history`, `market_sell_history`, `market_refresh_history`
 - `core_assets`, `user_core_inventory`
 - `enemies`
 - `world_weekly_environment`, `world_weekly_counters`
@@ -382,6 +384,14 @@
 - docsの更新粒度を継続改善中
 - `SECRET_KEY` は本番用の長いランダム値へ再設定が必要
 - 旧 enemy key からの表示補正は入ったが、敵マスタ自体の整理は継続課題
+
+## 廃品市場・コイン経済
+- `/market` は `release_flags.market` により初期 `admin_only`。公開前は管理者だけ確認できる。
+- 通貨は `coins` に統一。実験室レースも `coins` を付与し、`lab_coin` は既存互換・変換用途だけ残す。
+- 市場は6枠固定で、固定4枠はN、自由2枠は `N / N+1 / R` の夢枠を持つ。
+- 売却価格は `N: 60 + plus * 20`、`R: 130`。再入荷は `0 / 100 / 200 / 400 / 800`。
+- 探索報酬は市場導入後の基準に合わせ、直接コインを約1.25倍、パーツドロップはNのみ約70%に調整。
+- R強化は従来の `R + R素材2 -> +1` に加え、`R + 対応N素材2 -> 補助50`、補助100で `+1`。
 
 ## 7. 決済サンドボックス状況
 - `/support`

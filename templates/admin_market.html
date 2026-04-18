@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>市場管理</h1>
+<h1>廃品市場管理</h1>
 
 <div class="card">
   <div><b>{{ day_key }}</b></div>
   <div class="robot-part">本日商品: {{ counts['today_listings'] }} / 売却済み: {{ counts['today_sold'] }}</div>
-  <div class="robot-part">探索コイン倍率: {{ coin_reward_multiplier }}</div>
-  <div class="robot-part">再入荷コスト: {% for cost in refresh_costs %}{{ cost }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+  <div class="robot-part">購入件数: {{ counts['today_purchase_count'] }} / 売却件数: {{ counts['today_sell_count'] }} / 再入荷件数: {{ counts['today_refresh_count'] }}</div>
+  <div class="robot-part">平均購入価格: {{ counts['avg_purchase_price'] }} / 平均売却価格: {{ counts['avg_sell_price'] }}</div>
   <form method="post" class="post-form">
     <input type="hidden" name="action" value="regenerate_today" />
     <button type="submit">本日分を強制再生成</button>
@@ -14,9 +14,21 @@
 </div>
 
 <div class="card">
+  <h2>経済設定</h2>
+  <div class="robot-part">探索コイン倍率: {{ coin_reward_multiplier }}</div>
+  <div class="robot-part">パーツドロップ率: {{ (part_drop_base_chance * 100)|round(1) }}% / 期待値目標: {{ part_drop_expected_target }}</div>
+  <div class="robot-part">レース日次支給: {{ race_daily_grant }} / 賭け額: {% for amount in race_bet_amounts %}{{ amount }}{% if not loop.last %} / {% endif %}{% endfor %} / 観戦ボーナス: {{ race_watch_bonus }}</div>
+  <div class="robot-part">再入荷コスト: {% for cost in refresh_costs %}{{ cost }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+</div>
+
+<div class="card">
   <h2>価格帯</h2>
   {% for rarity, range in price_ranges.items() %}
-  <div class="robot-part">{{ rarity }}: {{ range[0] }}〜{{ range[1] }}</div>
+  <div class="robot-part">{{ rarity }}購入: {{ range[0] }}〜{{ range[1] }}</div>
+  {% endfor %}
+  <h2>売却価格</h2>
+  {% for rarity, price in sell_base_by_rarity.items() %}
+  <div class="robot-part">{{ rarity }}: {{ price }}{% if rarity == 'N' %} + plus × {{ sell_plus_bonus }}{% endif %}</div>
   {% endfor %}
   <h2>自由枠出現率</h2>
   {% for rarity, weight in free_rarity_roll %}
@@ -25,7 +37,7 @@
 </div>
 
 <div class="card">
-  <h2>最近の商品</h2>
+  <h2>今日の商品</h2>
   {% if recent_listings %}
   <table>
     <thead>

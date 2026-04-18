@@ -67,7 +67,7 @@ class LabCasinoRouteTests(unittest.TestCase):
                 "SELECT coins, lab_coin, lab_coin_last_daily_at FROM users WHERE id = ?",
                 (self.user_id,),
             ).fetchone()
-            self.assertEqual(int(row["coins"]), 6)
+            self.assertEqual(int(row["coins"]), 40)
             self.assertEqual(int(row["lab_coin"]), 0)
             self.assertTrue(str(row["lab_coin_last_daily_at"] or "").strip())
 
@@ -80,7 +80,7 @@ class LabCasinoRouteTests(unittest.TestCase):
                 "SELECT coins, lab_coin FROM users WHERE id = ?",
                 (self.user_id,),
             ).fetchone()
-            self.assertEqual(int(row["coins"]), 6)
+            self.assertEqual(int(row["coins"]), 40)
             self.assertEqual(int(row["lab_coin"]), 0)
 
     def test_lab_race_page_uses_player_focused_copy(self):
@@ -119,7 +119,7 @@ class LabCasinoRouteTests(unittest.TestCase):
 
         resp = client.post(
             "/lab/race/bet",
-            data={"race_id": int(race["id"]), "entry_id": int(entry["id"]), "amount": 2},
+            data={"race_id": int(race["id"]), "entry_id": int(entry["id"]), "amount": 20},
             follow_redirects=False,
         )
         self.assertEqual(resp.status_code, 302)
@@ -171,11 +171,7 @@ class LabCasinoRouteTests(unittest.TestCase):
             f"/lab/race/prizes/{int(prize['id'])}/claim",
             follow_redirects=True,
         )
-        self.assertEqual(resp.status_code, 200)
-        html = resp.get_data(as_text=True)
-        self.assertIn("景品交換は準備中です", html)
-        self.assertNotIn("交換しました", html)
-        self.assertNotIn("交換する", html)
+        self.assertEqual(resp.status_code, 404)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -185,7 +181,7 @@ class LabCasinoRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNone(claim)
             wallet = db.execute("SELECT coins, lab_coin FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            self.assertEqual(int(wallet["coins"]), 6)
+            self.assertEqual(int(wallet["coins"]), 40)
             self.assertEqual(int(wallet["lab_coin"]), 0)
             event_types = {
                 row["event_type"]
@@ -207,7 +203,7 @@ class LabCasinoRouteTests(unittest.TestCase):
             ).fetchone()
         client.post(
             "/lab/race/bet",
-            data={"race_id": int(race["id"]), "entry_id": int(entry["id"]), "amount": 1},
+            data={"race_id": int(race["id"]), "entry_id": int(entry["id"]), "amount": 10},
             follow_redirects=False,
         )
         history = client.get("/lab/race/history")

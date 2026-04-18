@@ -36,6 +36,17 @@ class StyleServiceTests(unittest.TestCase):
         self.assertEqual(result["new_rank"], 5)
         self.assertEqual(style_service.get_style_rank_label(result["new_rank"]), "MASTER")
 
+    def test_style_copy_uses_shared_win_and_method_template(self):
+        self.assertEqual(style_service.STYLE_DEFINITIONS["stable"]["description_jp"], "長く戦って確実に勝つ型")
+        self.assertEqual(style_service.STYLE_DEFINITIONS["stable"]["method_jp"], "耐久・防御・命中で事故を減らす")
+        self.assertEqual(style_service.STYLE_DEFINITIONS["burst"]["description_jp"], "一撃で倒して終わらせる型")
+        self.assertEqual(style_service.STYLE_DEFINITIONS["burst"]["method_jp"], "攻撃・会心で短期決着を狙う")
+        self.assertEqual(style_service.STYLE_DEFINITIONS["desperate"]["description_jp"], "ギリギリから逆転する型")
+        self.assertEqual(style_service.STYLE_DEFINITIONS["desperate"]["method_jp"], "低耐久・高火力で先手や一発勝負")
+        for key, guide in style_service.STYLE_PLAY_GUIDE.items():
+            self.assertEqual(guide["battle_line"], style_service.STYLE_DEFINITIONS[key]["description_jp"])
+            self.assertEqual(guide["support_line"], style_service.STYLE_DEFINITIONS[key]["method_jp"])
+
 
 class StyleRouteIntegrationTests(unittest.TestCase):
     def setUp(self):
@@ -102,6 +113,9 @@ class StyleRouteIntegrationTests(unittest.TestCase):
             self.assertTrue(row["style_rank_json"])
             self.assertIn(row["style_current_key"], style_service.STYLE_KEYS)
             self.assertIn(row["style_next_key"], style_service.STYLE_KEYS)
+            current_def = style_service.STYLE_DEFINITIONS[row["style_current_key"]]
+        self.assertIn(current_def["description_jp"], html)
+        self.assertIn(current_def["method_jp"], html)
 
     def test_award_style_xp_persists_and_rank_up_logs(self):
         with game_app.app.app_context():

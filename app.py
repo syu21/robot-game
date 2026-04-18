@@ -896,7 +896,33 @@ LAB_CASINO_PRIZE_SEEDS = (
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
 LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。コインはそのまま保持されます。"
 MARKET_FEATURE_KEY = "market"
-MARKET_COIN_REWARD_MULTIPLIER = 1.25
+
+
+def _float_env(name, default):
+    try:
+        return float(os.environ.get(str(name), default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+COIN_REWARD_MARKET_RELEASE_BONUS = _float_env("COIN_REWARD_MARKET_RELEASE_BONUS", 1.25)
+MARKET_COIN_REWARD_MULTIPLIER = _float_env("COIN_REWARD_BASE_MULTIPLIER", COIN_REWARD_MARKET_RELEASE_BONUS)
+PART_DROP_BASE_CHANCE = _float_env("PART_DROP_BASE_CHANCE", 0.70)
+PART_DROP_EXPECTED_PER_RUN_TARGET = _float_env("PART_DROP_EXPECTED_PER_RUN_TARGET", 0.70)
+PART_DROP_AREA_MULTIPLIERS = {
+    "layer_1": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER1", 1.00),
+    "layer_2": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER2", 1.00),
+    "layer_2_mist": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER2", 1.00),
+    "layer_2_rush": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER2", 1.00),
+    "layer_3": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER3", 1.00),
+    "layer_4_forge": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
+    "layer_4_haze": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
+    "layer_4_burst": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
+    "layer_4_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
+    "layer_5_labyrinth": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+    "layer_5_pinnacle": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+    "layer_5_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+}
 MARKET_SLOT_KEYS = ("head", "right_arm", "left_arm", "legs", "free_1", "free_2")
 MARKET_FIXED_SLOT_PART_TYPES = {
     "head": "HEAD",
@@ -914,16 +940,18 @@ MARKET_PART_TYPE_LABELS = {
 }
 MARKET_FREE_RARITY_ROLL = (("N", 92), ("N+1", 7), ("R", 1))
 MARKET_PRICE_RANGES = {
-    "N": (120, 220),
+    "N": (150, 220),
     "N+1": (260, 420),
     "R": (1800, 3000),
 }
 MARKET_SELL_BASE_BY_RARITY = {
-    "N": 35,
-    "R": 180,
+    "N": 60,
+    "R": 130,
 }
 MARKET_SELL_PLUS_BONUS = 20
 MARKET_REFRESH_COSTS = (0, 100, 200, 400, 800)
+R_PART_N_ASSIST_GAIN = 50
+R_PART_N_ASSIST_THRESHOLD = 100
 STYLE_ACHIEVEMENT_DEFS = (
     {
         "key": "stable_no_damage_wins",
@@ -1089,7 +1117,7 @@ RELEASE_FLAG_DEFS = (
     },
     {
         "key": MARKET_FEATURE_KEY,
-        "label": "市場",
+        "label": "廃品市場",
         "summary": "余剰パーツ売却と日替わり購入市場を一般公開します。管理者は非公開中でも確認できます。",
     },
     {
@@ -8527,6 +8555,7 @@ def ensure_schema(db):
             w_spd REAL NOT NULL,
             w_acc REAL NOT NULL,
             w_cri REAL NOT NULL,
+            r_assist_points INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'inventory',
             created_at INTEGER NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -8554,6 +8583,48 @@ def ensure_schema(db):
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             UNIQUE(user_id, day_key, slot_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_purchase_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            listing_id INTEGER,
+            part_instance_id INTEGER,
+            part_key TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_sell_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            part_instance_id INTEGER,
+            part_key TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            plus INTEGER NOT NULL DEFAULT 0,
+            price INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_refresh_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            refresh_index INTEGER NOT NULL,
+            cost INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -9619,7 +9690,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE part_instances ADD COLUMN part_type TEXT")
     if "updated_at" not in pi_cols:
         db.execute("ALTER TABLE part_instances ADD COLUMN updated_at TEXT")
+    if "r_assist_points" not in pi_cols:
+        db.execute("ALTER TABLE part_instances ADD COLUMN r_assist_points INTEGER NOT NULL DEFAULT 0")
     db.execute("UPDATE part_instances SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    db.execute("UPDATE part_instances SET r_assist_points = 0 WHERE r_assist_points IS NULL OR r_assist_points < 0")
     db.execute(
         """
         UPDATE part_instances
@@ -9732,6 +9806,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_user_day ON market_daily_listings(user_id, day_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_day_slot ON market_daily_listings(day_key, slot_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_market_purchase_history_user_created ON market_purchase_history(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_market_sell_history_user_created ON market_sell_history(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_market_refresh_history_user_day ON market_refresh_history(user_id, day_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
@@ -10775,6 +10852,11 @@ def _market_day_key():
     return datetime.now(JST).strftime("%Y-%m-%d")
 
 
+def _market_next_update_label():
+    tomorrow = (datetime.now(JST) + timedelta(days=1)).strftime("%Y-%m-%d")
+    return f"{tomorrow} 00:00頃"
+
+
 def _market_refresh_cost(refresh_count_today):
     count = max(0, int(refresh_count_today or 0))
     if count < len(MARKET_REFRESH_COSTS):
@@ -10828,8 +10910,6 @@ def _market_pick_part_row(db, *, slot_key, rng):
         (rarity, *aliases),
     ).fetchall()
     if not rows and rarity == "R":
-        rarity = "N"
-        rarity_roll = "N"
         rows = db.execute(
             f"""
             SELECT *
@@ -10851,6 +10931,21 @@ def _market_listing_price(rarity_roll, rng):
     key = "N+1" if rarity_roll == "N+1" else ("R" if rarity_roll == "R" else "N")
     lo, hi = MARKET_PRICE_RANGES[key]
     return int(rng.randint(int(lo), int(hi)))
+
+
+def _market_part_helper_line(item):
+    rarity = str(item.get("rarity") or "N").strip().upper()
+    part_type = _norm_part_type(item.get("part_type"))
+    if rarity == "R":
+        return "進化素材を背負った夢枠。必要な時だけ狙いたい一品"
+    if int(item.get("plus") or 0) > 0:
+        return "少し強化済み。今日の編成を一段だけ押し上げます"
+    return {
+        "HEAD": "耐久と命中を整えたい機体向け",
+        "RIGHT_ARM": "攻撃を補いたい時に扱いやすい標準装備",
+        "LEFT_ARM": "命中と会心を伸ばしたい機体向け",
+        "LEGS": "素早さを少し補いたい時に",
+    }.get(part_type, "足りない部位を補うための標準パーツ")
 
 
 def _market_generate_listings_for_user(db, user_id, day_key, *, replace=False):
@@ -10911,6 +11006,21 @@ def _market_generate_listings_for_user(db, user_id, day_key, *, replace=False):
             ),
         )
         created += 1
+    if created > 0:
+        try:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MARKET_DAILY_GENERATE"],
+                user_id=int(user_id),
+                request_id=getattr(g, "request_id", None) if has_request_context() else None,
+                action_key="market_daily_generate",
+                entity_type="market_daily_listings",
+                delta_count=int(created),
+                payload={"day_key": str(day_key), "replace": bool(replace), "created": int(created)},
+                ip=request.remote_addr if has_request_context() else None,
+            )
+        except Exception:
+            pass
     return created
 
 
@@ -11000,6 +11110,18 @@ def _market_listing_rows(db, user_id, day_key):
         (int(user_id), str(day_key)),
     ).fetchall()
     items = []
+    featured_id = None
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            0 if str(row["rarity"] or "").upper() == "R" else 1,
+            0 if int(row["plus"] or 0) > 0 else 1,
+            -int(row["price"] or 0),
+            int(row["id"] or 0),
+        ),
+    )
+    if ranked:
+        featured_id = int(ranked[0]["id"])
     for row in rows:
         item = dict(row)
         item["slot_label"] = MARKET_PART_TYPE_LABELS.get(item["slot_key"], item["slot_key"])
@@ -11016,6 +11138,9 @@ def _market_listing_rows(db, user_id, day_key):
         item["rarity_label"] = str(item.get("rarity") or "N").upper()
         item["plus_label"] = f"+{int(item.get('plus') or 0)}" if int(item.get("plus") or 0) > 0 else ""
         item["is_sold"] = bool(int(item.get("is_sold") or 0))
+        item["stock_remaining"] = 0 if item["is_sold"] else 1
+        item["helper_line"] = _market_part_helper_line(item)
+        item["is_featured"] = featured_id is not None and int(item.get("id") or 0) == int(featured_id)
         items.append(item)
     return items
 
@@ -11023,7 +11148,8 @@ def _market_listing_rows(db, user_id, day_key):
 def _market_sell_value(part_row):
     rarity = str(part_row["rarity"] or part_row["master_rarity"] or "N").strip().upper()
     base = MARKET_SELL_BASE_BY_RARITY.get(rarity, MARKET_SELL_BASE_BY_RARITY["N"])
-    return int(base + max(0, int(part_row["plus"] or 0)) * MARKET_SELL_PLUS_BONUS)
+    plus_bonus = max(0, int(part_row["plus"] or 0)) * MARKET_SELL_PLUS_BONUS if rarity == "N" else 0
+    return int(base + plus_bonus)
 
 
 def _market_sellable_part_rows(db, user_id, limit=80):
@@ -11057,6 +11183,12 @@ def _market_sellable_part_rows(db, user_id, limit=80):
 
 def _market_can_access(db, user_row):
     return _release_open_for_viewer(db, MARKET_FEATURE_KEY, user_row=user_row)
+
+
+def can_access_market(user):
+    if not user:
+        return False
+    return _market_can_access(get_db(), user)
 
 
 def _market_require_access(db, user_row):
@@ -11449,6 +11581,12 @@ def _market_adjust_coin_reward(base_coin):
     return max(1, int(math.ceil(float(base_coin or 0) * MARKET_COIN_REWARD_MULTIPLIER)))
 
 
+def _market_part_drop_chance(area_key=None):
+    base = max(0.0, min(1.0, float(PART_DROP_BASE_CHANCE)))
+    multiplier = PART_DROP_AREA_MULTIPLIERS.get(str(area_key or "").strip(), 1.0)
+    return max(0.0, min(1.0, base * float(multiplier or 1.0)))
+
+
 def _roll_battle_rewards(
     db,
     user_id,
@@ -11461,7 +11599,7 @@ def _roll_battle_rewards(
 ):
     tier = int(tier or 1)
     coin = _market_adjust_coin_reward(COIN_REWARD_BY_TIER.get(tier, 2))
-    drop_type = _weighted_pick(DROP_TYPE_WEIGHTS_BY_TIER.get(tier, DROP_TYPE_WEIGHTS_BY_TIER[1]))
+    drop_type = "parts_1" if random.random() < _market_part_drop_chance(area_key) else "coin_only"
     promotion_triggered = False
     if (
         weekly_env
@@ -11486,25 +11624,18 @@ def _roll_battle_rewards(
     dropped = []
     suppressed_by_budget = 0
     if drop_type != "coin_only":
-        part_count = 1 if drop_type == "parts_1" else 2
+        part_count = 1
         allowed_part_count = part_count
         if part_drop_budget is not None:
             allowed_part_count = max(0, min(part_count, int(part_drop_budget)))
             suppressed_by_budget = max(0, part_count - allowed_part_count)
         for _ in range(allowed_part_count):
-            profile = EXPLORE_DROP_PROFILE_BY_AREA.get(str(area_key or "").strip(), {})
-            rarity_weights = profile.get("rarity_weights")
-            if rarity_weights:
-                rarity = _weighted_pick(rarity_weights)
-            else:
-                rarity = _weighted_pick(RARITY_WEIGHTS_BY_TIER.get(tier, RARITY_WEIGHTS_BY_TIER[1]))
-            plus = int(_weighted_pick(PLUS_WEIGHTS_BY_TIER.get(tier, PLUS_WEIGHTS_BY_TIER[1])))
             pd = _add_part_drop(
                 db,
                 user_id,
                 source="battle_drop",
-                rarity=rarity,
-                plus=plus,
+                rarity="N",
+                plus=0,
                 as_instance=True,
                 announce_username=announce_username,
                 area_key=area_key,
@@ -22845,6 +22976,7 @@ def market():
         sellable_parts=_market_sellable_part_rows(db, user_id),
         refresh_cost=refresh_cost,
         next_refresh_number=int(state.get("market_refresh_count_today") or 0) + 1,
+        next_update_label=_market_next_update_label(),
     )
 
 
@@ -22883,6 +23015,23 @@ def market_sell():
         return redirect(url_for("market"))
     value = _market_sell_value(part_row)
     before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO market_sell_history
+        (user_id, part_instance_id, part_key, rarity, plus, price, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            int(part_instance_id),
+            str(part_row["key"]),
+            str(part_row["rarity"] or part_row["master_rarity"] or "N").upper(),
+            int(part_row["plus"] or 0),
+            int(value),
+            now_ts,
+        ),
+    )
     db.execute("DELETE FROM part_instances WHERE id = ? AND user_id = ? AND status = 'inventory'", (int(part_instance_id), user_id))
     db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(value), user_id))
     audit_log(
@@ -22945,6 +23094,24 @@ def market_sell_bulk():
     total = sum(_market_sell_value(row) for row in rows)
     before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
     row_ids = [int(row["id"]) for row in rows]
+    now_ts = int(time.time())
+    for row in rows:
+        db.execute(
+            """
+            INSERT INTO market_sell_history
+            (user_id, part_instance_id, part_key, rarity, plus, price, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                int(row["id"]),
+                str(row["key"]),
+                str(row["rarity"] or row["master_rarity"] or "N").upper(),
+                int(row["plus"] or 0),
+                int(_market_sell_value(row)),
+                now_ts,
+            ),
+        )
     delete_marks = ",".join("?" for _ in row_ids)
     db.execute(
         f"DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory' AND id IN ({delete_marks})",
@@ -23018,6 +23185,21 @@ def market_buy(listing_id):
     db.execute("UPDATE users SET coins = COALESCE(coins, 0) - ? WHERE id = ?", (price, user_id))
     db.execute(
         """
+        INSERT INTO market_purchase_history
+        (user_id, listing_id, part_instance_id, part_key, price, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            int(listing_id),
+            int(part_instance_id),
+            str(listing["part_key"]),
+            int(price),
+            now_ts,
+        ),
+    )
+    db.execute(
+        """
         UPDATE market_daily_listings
         SET is_sold = 1,
             sold_to_user_id = ?,
@@ -23077,6 +23259,15 @@ def market_refresh():
         return redirect(url_for("market"))
     if cost > 0:
         db.execute("UPDATE users SET coins = COALESCE(coins, 0) - ? WHERE id = ?", (int(cost), user_id))
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO market_refresh_history
+        (user_id, day_key, refresh_index, cost, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (user_id, day_key, refresh_count + 1, int(cost), now_ts),
+    )
     free_used_at = day_key if cost == 0 else state.get("market_free_refresh_used_at")
     db.execute(
         """
@@ -28389,7 +28580,8 @@ def lab_race_place_bet():
     entry_id = request.form.get("entry_id", type=int)
     amount = request.form.get("amount", type=int)
     if amount not in LAB_CASINO_BET_AMOUNTS:
-        flash("予想額は 1 / 2 / 3 から選んでください。", "error")
+        options = " / ".join(str(x) for x in LAB_CASINO_BET_AMOUNTS)
+        flash(f"予想額は {options} から選んでください。", "error")
         db.commit()
         return redirect(url_for("lab_race"))
     race = _lab_casino_fetch_race(db, race_id)
@@ -28523,6 +28715,10 @@ def lab_race_result(race_id):
 def lab_race_prizes():
     db = get_db()
     user_id = int(session["user_id"])
+    if not LAB_CASINO_PRIZE_EXCHANGE_ENABLED:
+        user = db.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user or int(user["is_admin"] or 0) != 1:
+            abort(404)
     daily_info = _lab_casino_apply_daily_grant_if_needed(db, user_id)
     db.commit()
     claim_rows = db.execute(
@@ -28556,6 +28752,9 @@ def lab_race_prize_claim(prize_id):
     db = get_db()
     user_id = int(session["user_id"])
     if not LAB_CASINO_PRIZE_EXCHANGE_ENABLED:
+        user = db.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user or int(user["is_admin"] or 0) != 1:
+            abort(404)
         flash(LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE, "notice")
         return redirect(url_for("lab_race_prizes"))
     prize = db.execute(
@@ -30149,6 +30348,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
         """
         SELECT
             pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
+            COALESCE(pi.r_assist_points, 0) AS r_assist_points,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
             rp.part_type, rp.key AS part_key
         FROM part_instances pi
@@ -30165,6 +30365,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
             base_row=base_row,
         )
 
+    material_mode = "same_rarity"
     material_rows = db.execute(
         """
         SELECT
@@ -30189,14 +30390,51 @@ def _strengthen_parts_selected(db, user_id, base_id):
         ),
     ).fetchall()
     if len(material_rows) != 2:
-        return _fail(
-            "同じパーツ（＋値違い可）の素材が2個不足しています。",
-            base_row=base_row,
-        )
+        base_rarity = str(base_row["rarity"] or "").strip().upper()
+        if base_rarity == "R":
+            aliases = _market_part_type_aliases(base_row["part_type"])
+            marks = ",".join("?" for _ in aliases)
+            material_rows = db.execute(
+                f"""
+                SELECT
+                    pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
+                    pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                    rp.part_type, rp.key AS part_key
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ?
+                  AND pi.status = 'inventory'
+                  AND pi.id != ?
+                  AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) = 'N'
+                  AND UPPER(COALESCE(pi.element, rp.element, '')) = UPPER(COALESCE(?, ''))
+                  AND UPPER(COALESCE(rp.part_type, pi.part_type, '')) IN ({marks})
+                ORDER BY pi.plus ASC, pi.id ASC
+                LIMIT 2
+                """,
+                (
+                    int(user_id),
+                    base_id_int,
+                    str(base_row["element"] or ""),
+                    *aliases,
+                ),
+            ).fetchall()
+            if len(material_rows) == 2:
+                material_mode = "r_n_assist"
+        if len(material_rows) != 2:
+            return _fail(
+                "同じパーツ2個、またはR強化用の対応N素材2個が不足しています。",
+                base_row=base_row,
+            )
 
     material_ids = [int(material_rows[0]["id"]), int(material_rows[1]["id"])]
     preview_row = dict(base_row)
-    preview_row["plus"] = min(int(MAX_PART_PLUS), int(base_row["plus"] or 0) + 1)
+    base_plus_preview = int(base_row["plus"] or 0)
+    base_assist_preview = int(base_row["r_assist_points"] or 0)
+    if material_mode == "r_n_assist":
+        preview_plus = base_plus_preview + (1 if base_assist_preview + R_PART_N_ASSIST_GAIN >= R_PART_N_ASSIST_THRESHOLD else 0)
+    else:
+        preview_plus = base_plus_preview + 1
+    preview_row["plus"] = min(int(MAX_PART_PLUS), preview_plus)
     compare_payload = _part_card_payload(base_row, compare_row=preview_row)
 
     coin_cost = int(FUSE_COST_BY_PLUS.get(int(base_row["plus"] or 0), 20))
@@ -30213,8 +30451,16 @@ def _strengthen_parts_selected(db, user_id, base_id):
         material_pluses = [int(material_rows[0]["plus"] or 0), int(material_rows[1]["plus"] or 0)]
         mat_plus_sum = int(sum(material_pluses))
         bonus = 0
+        assist_before = int(base_row["r_assist_points"] or 0)
+        assist_gain = int(R_PART_N_ASSIST_GAIN) if material_mode == "r_n_assist" else 0
+        assist_after = assist_before
         inc = 1
-        new_plus = min(int(MAX_PART_PLUS), base_plus + 1)
+        if material_mode == "r_n_assist":
+            assist_after = assist_before + assist_gain
+            inc = 1 if assist_after >= int(R_PART_N_ASSIST_THRESHOLD) else 0
+            if inc:
+                assist_after -= int(R_PART_N_ASSIST_THRESHOLD)
+        new_plus = min(int(MAX_PART_PLUS), base_plus + inc)
         db.execute("BEGIN IMMEDIATE")
         db.execute("UPDATE users SET coins = coins - ? WHERE id = ?", (coin_cost, int(user_id)))
         placeholders = ",".join(["?"] * len(material_ids))
@@ -30225,11 +30471,14 @@ def _strengthen_parts_selected(db, user_id, base_id):
         db.execute(
             """
             UPDATE part_instances
-            SET plus = ?, updated_at = datetime('now')
+            SET plus = ?,
+                r_assist_points = ?,
+                updated_at = datetime('now')
             WHERE id = ? AND user_id = ?
             """,
             (
                 int(new_plus),
+                int(assist_after),
                 int(base_id_int),
                 int(user_id),
             ),
@@ -30252,9 +30501,14 @@ def _strengthen_parts_selected(db, user_id, base_id):
         "base_plus": int(base_plus),
         "new_plus": int(new_plus),
         "material_pluses": material_pluses,
+        "material_mode": material_mode,
         "mat_plus_sum": int(mat_plus_sum),
         "bonus": int(bonus),
         "inc": int(inc),
+        "assist_before": int(assist_before),
+        "assist_gain": int(assist_gain),
+        "assist_after": int(assist_after),
+        "assist_threshold": int(R_PART_N_ASSIST_THRESHOLD),
         "consumed_ids": [int(x) for x in material_ids],
         "created_id": int(base_id_int),
         "updated_id": int(base_id_int),
@@ -30262,6 +30516,11 @@ def _strengthen_parts_selected(db, user_id, base_id):
         "base_id": int(base_id_int),
         "base_status": str(base_row["status"] or "inventory"),
         "power_delta_estimate": int(compare_payload.get("compare_total_delta") or 0),
+        "message": (
+            f"R補助強化が {int(assist_after)}/{int(R_PART_N_ASSIST_THRESHOLD)} まで進みました。"
+            if material_mode == "r_n_assist" and inc == 0
+            else None
+        ),
     }
 
 
@@ -31076,6 +31335,11 @@ def parts_strengthen():
                         "mat_plus_sum": result.get("mat_plus_sum"),
                         "bonus": result.get("bonus"),
                         "inc": result.get("inc"),
+                        "material_mode": result.get("material_mode"),
+                        "assist_before": result.get("assist_before"),
+                        "assist_gain": result.get("assist_gain"),
+                        "assist_after": result.get("assist_after"),
+                        "assist_threshold": result.get("assist_threshold"),
                         "batch_mode": bool(result.get("batch_mode")),
                         "batch_count": int(result.get("batch_count") or 0),
                         "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
@@ -31127,6 +31391,11 @@ def parts_strengthen():
                     "bonus": result.get("bonus"),
                     "inc": result.get("inc"),
                     "material_pluses": result.get("material_pluses", []),
+                    "material_mode": result.get("material_mode"),
+                    "assist_before": result.get("assist_before"),
+                    "assist_gain": result.get("assist_gain"),
+                    "assist_after": result.get("assist_after"),
+                    "assist_threshold": result.get("assist_threshold"),
                     "ok": bool(result.get("ok")),
                     "batch_mode": bool(result.get("batch_mode")),
                     "batch_count": int(result.get("batch_count") or 0),
@@ -31148,9 +31417,11 @@ def parts_strengthen():
                     )
                     detail = (
                         f"{mode_label}{status_label}：{part_type} / {rarity} / {plus_text} "
-                        f"（{('実行 ' + str(int(result.get('batch_count') or 0)) + '回 / ') if mode == 'batch' else ''}上昇量 +1 / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
+                        f"（{('実行 ' + str(int(result.get('batch_count') or 0)) + '回 / ') if mode == 'batch' else ''}上昇量 +{int(result.get('inc') or 0)} / ベース #{result.get('base_id')} / 消費 {consumed_ids} / 更新 #{result.get('created_id')}） "
                         f"-{coin_cost if coin_cost is not None else 0}コイン"
                     )
+                    if result.get("message"):
+                        detail = f"{detail} / {result.get('message')}"
                     flash(detail, "notice")
                 else:
                     flash(result["message"], "error")
@@ -31670,6 +31941,50 @@ def admin_market():
             ).fetchone()["c"]
             or 0
         ),
+        "today_purchase_count": int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM market_purchase_history WHERE created_at >= ? AND created_at < ?",
+                (
+                    int(datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST).timestamp()),
+                    int((datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST) + timedelta(days=1)).timestamp()),
+                ),
+            ).fetchone()["c"]
+            or 0
+        ),
+        "today_sell_count": int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM market_sell_history WHERE created_at >= ? AND created_at < ?",
+                (
+                    int(datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST).timestamp()),
+                    int((datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST) + timedelta(days=1)).timestamp()),
+                ),
+            ).fetchone()["c"]
+            or 0
+        ),
+        "today_refresh_count": int(
+            db.execute("SELECT COUNT(*) AS c FROM market_refresh_history WHERE day_key = ?", (day_key,)).fetchone()["c"]
+            or 0
+        ),
+        "avg_purchase_price": int(
+            db.execute(
+                "SELECT COALESCE(AVG(price), 0) AS v FROM market_purchase_history WHERE created_at >= ? AND created_at < ?",
+                (
+                    int(datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST).timestamp()),
+                    int((datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST) + timedelta(days=1)).timestamp()),
+                ),
+            ).fetchone()["v"]
+            or 0
+        ),
+        "avg_sell_price": int(
+            db.execute(
+                "SELECT COALESCE(AVG(price), 0) AS v FROM market_sell_history WHERE created_at >= ? AND created_at < ?",
+                (
+                    int(datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST).timestamp()),
+                    int((datetime.strptime(day_key, "%Y-%m-%d").replace(tzinfo=JST) + timedelta(days=1)).timestamp()),
+                ),
+            ).fetchone()["v"]
+            or 0
+        ),
     }
     recent_listings = db.execute(
         """
@@ -31688,9 +32003,16 @@ def admin_market():
         counts=counts,
         recent_listings=recent_listings,
         price_ranges=MARKET_PRICE_RANGES,
+        sell_base_by_rarity=MARKET_SELL_BASE_BY_RARITY,
+        sell_plus_bonus=MARKET_SELL_PLUS_BONUS,
         free_rarity_roll=MARKET_FREE_RARITY_ROLL,
         coin_reward_multiplier=MARKET_COIN_REWARD_MULTIPLIER,
+        part_drop_base_chance=PART_DROP_BASE_CHANCE,
+        part_drop_expected_target=PART_DROP_EXPECTED_PER_RUN_TARGET,
         refresh_costs=MARKET_REFRESH_COSTS,
+        race_daily_grant=LAB_CASINO_DAILY_GRANT,
+        race_bet_amounts=LAB_CASINO_BET_AMOUNTS,
+        race_watch_bonus=LAB_CASINO_WATCH_BONUS,
     )
 
 

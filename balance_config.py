@@ -59,27 +59,27 @@ ENEMY_SEED_STATS = {
 }
 
 COIN_REWARD_BY_TIER = {
-    1: 2,
-    2: 3,
-    3: 4,
-    4: 5,
-    5: 6,
+    1: 36,
+    2: 40,
+    3: 44,
+    4: 48,
+    5: 52,
 }
 
 DROP_TYPE_WEIGHTS_BY_TIER = {
-    1: {"coin_only": 60, "parts_1": 38, "parts_2": 2},
-    2: {"coin_only": 50, "parts_1": 45, "parts_2": 5},
-    3: {"coin_only": 40, "parts_1": 55, "parts_2": 5},
-    4: {"coin_only": 35, "parts_1": 53, "parts_2": 12},
-    5: {"coin_only": 30, "parts_1": 50, "parts_2": 20},
+    1: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    2: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    3: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    4: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    5: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
 }
 
 RARITY_WEIGHTS_BY_TIER = {
-    1: {"N": 78, "R": 20, "SR": 2, "SSR": 0, "UR": 0},
-    2: {"N": 55, "R": 35, "SR": 9, "SSR": 1, "UR": 0},
-    3: {"N": 35, "R": 40, "SR": 20, "SSR": 4, "UR": 1},
-    4: {"N": 25, "R": 38, "SR": 26, "SSR": 8, "UR": 3},
-    5: {"N": 18, "R": 34, "SR": 28, "SSR": 14, "UR": 6},
+    1: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    2: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    3: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    4: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    5: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
 }
 
 PLUS_WEIGHTS_BY_TIER = {

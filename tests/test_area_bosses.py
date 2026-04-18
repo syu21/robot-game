@@ -314,7 +314,12 @@ class AreaBossTests(unittest.TestCase):
             self.assertGreaterEqual(int(defeat_count), 1)
 
             inv_count = db.execute(
-                "SELECT COUNT(*) AS c FROM user_decor_inventory WHERE user_id = ?",
+                """
+                SELECT COUNT(*) AS c
+                FROM user_decor_inventory udi
+                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+                WHERE udi.user_id = ? AND rda.key = 'boss_emblem_ventra'
+                """,
                 (self.user_id,),
             ).fetchone()["c"]
             self.assertEqual(int(inv_count), 1)
@@ -406,7 +411,12 @@ class AreaBossTests(unittest.TestCase):
             with game_app.app.app_context():
                 db = game_app.get_db()
                 inv_count = db.execute(
-                    "SELECT COUNT(*) AS c FROM user_decor_inventory WHERE user_id = ?",
+                    """
+                    SELECT COUNT(*) AS c
+                    FROM user_decor_inventory udi
+                    JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+                    WHERE udi.user_id = ? AND rda.key = 'missing_decor_key_for_test'
+                    """,
                     (self.user_id,),
                 ).fetchone()["c"]
                 self.assertEqual(int(inv_count), 0)

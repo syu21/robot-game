@@ -116,6 +116,11 @@
 ## 8. リリース前検証
 - [ ] `python3 -m py_compile app.py init_db.py services/stats.py services/fuse.py constants.py`
 - [ ] `python3 -m unittest discover -s tests -q`
+- [ ] `python3 -m unittest tests.test_market tests.test_lab_casino tests.test_explore_drop_budget tests.test_tier_growth_staging tests.test_streak_bonus tests.test_parts_fuse_route`
+- [ ] `/admin/release` で `廃品市場` が `admin_only` のままになっている
+- [ ] `/market` が非管理者404、管理者200
+- [ ] `/admin/market` で購入件数・売却件数・再入荷件数・平均価格が見える
+- [ ] 実験室交換所 `/lab/race/prizes` が非管理者に出ていない
 
 ## 9. 世界競争UI
 - [ ] `/home` の `今週のランキング` で `小ロボ主役 + 補助アバター` になっている

@@ -80,11 +80,15 @@ class MarketRouteTests(unittest.TestCase):
 
         admin_resp = self._client(admin=True).get("/market")
         self.assertEqual(admin_resp.status_code, 200)
-        self.assertIn("市場", admin_resp.get_data(as_text=True))
+        self.assertIn("廃品市場", admin_resp.get_data(as_text=True))
 
     def test_market_generates_six_daily_listings(self):
         resp = self._client(admin=True).get("/market")
         self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("今日の入荷", html)
+        self.assertIn("まとめて売る", html)
+        self.assertIn("marketSellTotal", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             count = int(
@@ -120,6 +124,13 @@ class MarketRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(int(row["coins"]), 900)
             self.assertEqual(int(row["market_refresh_count_today"]), 2)
+            refresh_rows = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM market_refresh_history WHERE user_id = ?",
+                    (self.admin_id,),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(refresh_rows, 2)
 
     def test_market_buy_consumes_coins_and_creates_part_instance(self):
         client = self._client(admin=True)
@@ -145,6 +156,11 @@ class MarketRouteTests(unittest.TestCase):
                 (self.admin_id, game_app.AUDIT_EVENT_TYPES["MARKET_BUY"]),
             ).fetchone()
             self.assertIsNotNone(event)
+            history = db.execute(
+                "SELECT id FROM market_purchase_history WHERE user_id = ? AND listing_id = ? LIMIT 1",
+                (self.admin_id, int(listing["id"])),
+            ).fetchone()
+            self.assertIsNotNone(history)
 
     def test_market_sell_only_inventory_parts(self):
         client = self._client(admin=True)
@@ -162,9 +178,14 @@ class MarketRouteTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
-            self.assertEqual(int(user["coins"]), 1075)
+            self.assertEqual(int(user["coins"]), 1100)
             gone = db.execute("SELECT id FROM part_instances WHERE id = ?", (int(inventory_id),)).fetchone()
             self.assertIsNone(gone)
+            history = db.execute(
+                "SELECT price FROM market_sell_history WHERE user_id = ? AND part_instance_id = ? LIMIT 1",
+                (self.admin_id, int(inventory_id)),
+            ).fetchone()
+            self.assertEqual(int(history["price"]), 100)
 
         blocked = client.post("/market/sell", data={"part_instance_id": int(equipped_id)}, follow_redirects=False)
         self.assertEqual(blocked.status_code, 302)
@@ -172,7 +193,7 @@ class MarketRouteTests(unittest.TestCase):
             db = game_app.get_db()
             user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
             still_there = db.execute("SELECT id FROM part_instances WHERE id = ?", (int(equipped_id),)).fetchone()
-            self.assertEqual(int(user["coins"]), 1075)
+            self.assertEqual(int(user["coins"]), 1100)
             self.assertIsNotNone(still_there)
 
 

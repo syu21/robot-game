@@ -396,6 +396,7 @@ def main():
             w_spd REAL NOT NULL,
             w_acc REAL NOT NULL,
             w_cri REAL NOT NULL,
+            r_assist_points INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'inventory',
             created_at INTEGER NOT NULL,
             FOREIGN KEY (part_id) REFERENCES robot_parts(id),
@@ -422,6 +423,48 @@ def main():
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             UNIQUE(user_id, day_key, slot_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_purchase_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            listing_id INTEGER,
+            part_instance_id INTEGER,
+            part_key TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_sell_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            part_instance_id INTEGER,
+            part_key TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            plus INTEGER NOT NULL DEFAULT 0,
+            price INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS market_refresh_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            refresh_index INTEGER NOT NULL,
+            cost INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -1540,6 +1583,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_lab_coin ON users(lab_coin DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_user_day ON market_daily_listings(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_market_daily_listings_day_slot ON market_daily_listings(day_key, slot_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_market_purchase_history_user_created ON market_purchase_history(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_market_sell_history_user_created ON market_sell_history(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_market_refresh_history_user_day ON market_refresh_history(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_races_status_created ON lab_casino_races(status, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_entries_race_lane ON lab_casino_entries(race_id, lane_index)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_casino_bets_user_created ON lab_casino_bets(user_id, created_at DESC)")
@@ -1555,7 +1601,10 @@ def main():
         cur.execute("ALTER TABLE part_instances ADD COLUMN part_type TEXT")
     if "updated_at" not in pi_cols:
         cur.execute("ALTER TABLE part_instances ADD COLUMN updated_at TEXT")
+    if "r_assist_points" not in pi_cols:
+        cur.execute("ALTER TABLE part_instances ADD COLUMN r_assist_points INTEGER NOT NULL DEFAULT 0")
     cur.execute("UPDATE part_instances SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    cur.execute("UPDATE part_instances SET r_assist_points = 0 WHERE r_assist_points IS NULL OR r_assist_points < 0")
     cur.execute(
         """
         UPDATE part_instances

@@ -2026,6 +2026,36 @@ body.lightbox-open .lightbox-overlay {
   font-size: 12px;
   font-weight: 700;
 }
+.title-badge-list-compact {
+  gap: 5px;
+  margin: 4px 0;
+}
+.title-badge-new {
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5e7eb;
+}
+.title-badge-new.is-style {
+  border-color: rgba(34, 211, 238, 0.34);
+  color: #0891b2;
+}
+.title-badge-new.is-battle,
+.title-badge-new.is-record,
+.title-badge-new.is-gold {
+  border-color: rgba(217, 119, 6, 0.36);
+  color: #b45309;
+}
+.title-badge-new.is-growth,
+.title-badge-new.is-green,
+.title-badge-new.is-mint {
+  border-color: rgba(22, 163, 74, 0.32);
+  color: #15803d;
+}
+.title-badge-new.is-support,
+.title-badge-new.is-crown_gold {
+  border-color: rgba(217, 119, 6, 0.34);
+  color: #92400e;
+}
 .timeline-list {
   list-style: none;
   margin: 0;
@@ -3742,9 +3772,9 @@ body.battle-page .layer-boss-victory-sub {
 
 .recent-robot-card {
   display: grid;
-  grid-template-rows: 48px 1fr auto auto;
+  grid-template-rows: 48px 1fr auto auto auto;
   align-items: center;
-  min-height: 126px;
+  min-height: 138px;
   min-width: 0;
   padding: 8px 7px;
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -3895,6 +3925,47 @@ body.battle-page .layer-boss-victory-sub {
 .recent-robot-unit {
   color: #b8cbd0;
   font-size: 0.7rem;
+}
+
+.recent-robot-title-chip {
+  justify-self: center;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 5px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5e7eb;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-robot-title-chip.is-style {
+  border-color: rgba(34, 211, 238, 0.28);
+  color: #a5f3fc;
+}
+
+.recent-robot-title-chip.is-battle,
+.recent-robot-title-chip.is-record,
+.recent-robot-title-chip.is-gold {
+  border-color: rgba(250, 204, 21, 0.34);
+  color: #fde68a;
+}
+
+.recent-robot-title-chip.is-growth,
+.recent-robot-title-chip.is-mint,
+.recent-robot-title-chip.is-green {
+  border-color: rgba(74, 222, 128, 0.32);
+  color: #bbf7d0;
+}
+
+.recent-robot-title-chip.is-support,
+.recent-robot-title-chip.is-crown_gold {
+  border-color: rgba(250, 204, 21, 0.3);
+  color: #fde68a;
 }
 
 .recent-robot-status {
@@ -6642,6 +6713,100 @@ body.home-page .locked-layer-card {
   }
 }
 
+.market-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.market-wallet {
+  min-width: 180px;
+  padding: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 8px;
+  background: rgba(10, 20, 32, 0.72);
+}
+.market-wallet-coins,
+.market-summary-total,
+.market-summary-count {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+.market-section {
+  margin-bottom: 18px;
+}
+.market-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.market-refresh-form {
+  flex-shrink: 0;
+}
+.market-listing-card {
+  position: relative;
+}
+.market-listing-card.is-featured {
+  border-color: rgba(250, 204, 21, 0.46);
+  box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.12), 0 10px 28px rgba(8, 13, 24, 0.28);
+}
+.market-featured-label {
+  display: inline-flex;
+  width: fit-content;
+  margin: 4px 0 8px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  color: #fde68a;
+  background: rgba(113, 63, 18, 0.18);
+  font-size: 12px;
+  font-weight: 800;
+}
+.market-sell-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  align-items: start;
+  gap: 14px;
+}
+.market-sell-card {
+  cursor: pointer;
+}
+.market-sell-summary {
+  position: sticky;
+  top: 12px;
+}
+.market-summary-list {
+  min-height: 76px;
+  margin: 10px 0;
+  padding-left: 18px;
+  color: rgba(221, 231, 246, 0.86);
+}
+button.secondary {
+  margin-top: 8px;
+  background: rgba(30, 41, 59, 0.72);
+}
+@media (max-width: 768px) {
+  .market-hero,
+  .market-section-heading,
+  .market-sell-layout {
+    grid-template-columns: 1fr;
+  }
+  .market-section-heading {
+    display: grid;
+  }
+  .market-refresh-form {
+    width: 100%;
+  }
+  .market-sell-summary {
+    position: static;
+    order: -1;
+  }
+}
+
 /* Home-specific mobile fallback for browsers that keep desktop-like defaults (e.g. in-app webviews). */
 @media (max-width: 900px), (hover: none) and (pointer: coarse) {
   body.home-page .container,
@@ -6857,7 +7022,7 @@ body.home-page.home-mobile .recent-robot-carousel {
 }
 
 body.home-page.home-mobile .recent-robot-card {
-  min-height: 116px !important;
+  min-height: 128px !important;
   padding: 7px 5px !important;
 }
 

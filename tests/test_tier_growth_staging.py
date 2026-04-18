@@ -58,7 +58,7 @@ class TierGrowthStagingTests(unittest.TestCase):
     def test_layer2_drop_profile_keeps_n_only(self):
         with game_app.app.app_context():
             db = game_app.get_db()
-            with mock.patch.object(game_app, "_weighted_pick", side_effect=self._pick_for_test):
+            with mock.patch.object(game_app.random, "random", return_value=0.0):
                 rewards = game_app._roll_battle_rewards(
                     db=db,
                     user_id=self.user_id,
@@ -72,4 +72,3 @@ class TierGrowthStagingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
