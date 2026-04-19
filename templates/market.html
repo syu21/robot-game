@@ -65,12 +65,12 @@
   </div>
 
   {% if sellable_parts %}
-  <form method="post" action="{{ url_for('market_sell_bulk') }}" class="post-form market-sell-layout" id="marketSellForm">
+  <form method="post" action="{{ url_for('market_sell_bulk') }}" class="post-form market-sell-layout" id="marketSellForm" autocomplete="off">
     <div class="part-card-grid market-sell-grid">
       {% for p in sellable_parts %}
       <label class="card part-card market-sell-card">
         <div class="part-card-topline">
-          <span><input type="checkbox" name="part_instance_ids" value="{{ p['id'] }}" data-market-sell-checkbox data-sell-value="{{ p['sell_value'] }}" data-sell-name="{{ p['display_name'] }}" /> 売却候補</span>
+          <span><input type="checkbox" name="part_instance_ids" value="{{ p['id'] }}" autocomplete="off" data-market-sell-checkbox data-sell-value="{{ p['sell_value'] }}" data-sell-name="{{ p['display_name'] }}" /> 売却候補</span>
           <span class="weekly-fit-badge">{{ p['sell_value'] }} コイン</span>
         </div>
         <div class="part-card-main">
@@ -93,7 +93,7 @@
       <ul class="market-summary-list" id="marketSellNames">
         <li>まだ選択されていません</li>
       </ul>
-      <button type="submit" id="marketSellSubmit" disabled>まとめて売る</button>
+      <button type="submit" id="marketSellSubmit">まとめて売る</button>
       <button type="button" class="secondary" id="marketSellClear">選択解除</button>
     </aside>
   </form>
@@ -109,6 +109,7 @@
 
 <script>
 (function () {
+  const formEl = document.getElementById("marketSellForm");
   const checks = Array.from(document.querySelectorAll("[data-market-sell-checkbox]"));
   const countEl = document.getElementById("marketSellCount");
   const totalEl = document.getElementById("marketSellTotal");
@@ -122,7 +123,8 @@
     const total = selected.reduce((sum, item) => sum + Number(item.dataset.sellValue || 0), 0);
     countEl.textContent = String(selected.length);
     totalEl.textContent = String(total);
-    submitEl.disabled = selected.length === 0;
+    submitEl.disabled = false;
+    submitEl.dataset.emptySelection = selected.length === 0 ? "1" : "0";
     namesEl.innerHTML = "";
     if (!selected.length) {
       const li = document.createElement("li");
@@ -142,7 +144,17 @@
     }
   }
 
-  checks.forEach((item) => item.addEventListener("change", updateSummary));
+  checks.forEach((item) => {
+    item.addEventListener("change", updateSummary);
+    item.addEventListener("input", updateSummary);
+    item.addEventListener("click", function () {
+      window.setTimeout(updateSummary, 0);
+    });
+  });
+  if (formEl) {
+    formEl.addEventListener("change", updateSummary);
+    formEl.addEventListener("input", updateSummary);
+  }
   if (clearEl) {
     clearEl.addEventListener("click", function () {
       checks.forEach((item) => { item.checked = false; });
@@ -150,6 +162,10 @@
     });
   }
   updateSummary();
+  window.requestAnimationFrame(updateSummary);
+  window.setTimeout(updateSummary, 0);
+  window.setTimeout(updateSummary, 150);
+  window.addEventListener("pageshow", updateSummary);
 })();
 </script>
 {% endblock %}

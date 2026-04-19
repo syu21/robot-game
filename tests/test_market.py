@@ -89,6 +89,7 @@ class MarketRouteTests(unittest.TestCase):
         self.assertIn("今日の入荷", html)
         self.assertIn("まとめて売る", html)
         self.assertIn("marketSellTotal", html)
+        self.assertIn('id="marketSellSubmit">まとめて売る', html)
         with game_app.app.app_context():
             db = game_app.get_db()
             count = int(
@@ -195,6 +196,44 @@ class MarketRouteTests(unittest.TestCase):
             still_there = db.execute("SELECT id FROM part_instances WHERE id = ?", (int(equipped_id),)).fetchone()
             self.assertEqual(int(user["coins"]), 1100)
             self.assertIsNotNone(still_there)
+
+    def test_market_sell_bulk_sells_checked_inventory_parts(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            part = db.execute(
+                "SELECT * FROM robot_parts WHERE is_active = 1 AND UPPER(COALESCE(rarity, 'N')) = 'N' ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            first_id = game_app._create_part_instance_from_master(db, self.admin_id, part, plus=0, status="inventory")
+            second_id = game_app._create_part_instance_from_master(db, self.admin_id, part, plus=1, status="inventory")
+            db.commit()
+
+        sold = client.post(
+            "/market/sell-bulk",
+            data={"part_instance_ids": [str(first_id), str(second_id)]},
+            follow_redirects=False,
+        )
+        self.assertEqual(sold.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["coins"]), 1140)
+            remaining = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM part_instances WHERE id IN (?, ?)",
+                    (int(first_id), int(second_id)),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(remaining, 0)
+            history_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM market_sell_history WHERE user_id = ? AND part_instance_id IN (?, ?)",
+                    (self.admin_id, int(first_id), int(second_id)),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(history_count, 2)
 
 
 if __name__ == "__main__":
