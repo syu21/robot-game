@@ -14,9 +14,6 @@
         <span class="part-summary-pill">表示中 {{ total }}</span>
         <span class="part-summary-pill">装備中 {{ equipped_total }}</span>
         <span class="part-summary-pill">強化素材に使える {{ inventory_total }}</span>
-        {% if storage_total > 0 %}
-        <span class="part-summary-pill">保管中 {{ storage_total }}</span>
-        {% endif %}
         <span class="part-summary-pill">保護コア {{ protect_core }}</span>
       </div>
     </div>
@@ -45,7 +42,7 @@
       </select>
       <button type="submit">適用</button>
     </form>
-    <div class="robot-time">所持中と装備中を並び替えます。保管中の個体は下の保管欄で分けて表示します。</div>
+    <div class="robot-time">所持中と装備中を並び替えます。所持上限を超えた新規戦利品は自動売却されます。</div>
   </div>
 
   {% if compare_items %}
@@ -169,116 +166,6 @@
     <p><b>対象のパーツがありません</b></p>
     <p class="robot-time">部位フィルターを切り替えるか、出撃で新しいパーツを集めてみましょう。</p>
   </div>
-  {% endif %}
-
-  {% if overflow_total > 0 %}
-  <form
-    id="part-storage"
-    method="post"
-    action="{{ url_for('parts_restore') }}"
-    class="card"
-    data-submit-lock="1"
-    data-loading-text="戻し中..."
-  >
-    {% if selected_part_type %}
-    <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
-    {% endif %}
-    <input type="hidden" name="sort" value="{{ selected_sort }}" />
-    <div class="part-list-header">
-      <div>
-        <div><b>保管中の個体パーツ</b></div>
-        <div class="robot-time">所持枠がいっぱいだったため自動で保管に回った個体です。必要なものだけ選んで所持へ戻せます。</div>
-        <div class="robot-time">
-          {% if inventory_space_remaining > 0 %}
-          今はあと {{ inventory_space_remaining }} 件まで所持へ戻せます。
-          {% else %}
-          今は所持枠がいっぱいです。先に所持中パーツを破棄すると戻せます。
-          {% endif %}
-        </div>
-      </div>
-      <div>
-        <div class="robot-time">保管 {{ overflow_total }}</div>
-        <button type="submit" {% if inventory_space_remaining <= 0 %}disabled{% endif %}>選択した保管個体を所持へ戻す</button>
-      </div>
-    </div>
-    <div class="part-card-grid is-storage">
-      {% for p in overflow_items %}
-        <article class="robot-card part-compare-card">
-          <div class="part-card-topline">
-            <label class="part-check">
-              <input type="checkbox" name="overflow_instance_ids" value="{{ p['id'] }}" {% if inventory_space_remaining <= 0 %}disabled{% endif %} />
-              <span>選択</span>
-            </label>
-            <span class="robot-time">#{{ p['id'] }}</span>
-          </div>
-          <div class="part-card-main">
-            <img class="part-card-image" src="{{ p['image_url'] }}" alt="{{ p['display_name'] }}" loading="lazy" decoding="async" />
-            <div class="part-card-copy">
-              <div class="robot-id">{{ p['display_name'] }}</div>
-              <div class="part-chip-row">
-                <span class="part-chip">{{ p['part_type_label'] }}</span>
-                <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
-                <span class="part-chip">+{{ p['plus'] }}</span>
-                <span class="part-chip">{{ p['status_label'] }}</span>
-              </div>
-              <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
-              <div class="part-meta-line">{{ p['material_hint'] }}</div>
-            </div>
-          </div>
-          {{ stat_grid(p['stat_rows']) }}
-        </article>
-      {% endfor %}
-    </div>
-  </form>
-  {% endif %}
-
-  {% if legacy_total > 0 %}
-  <form
-    method="post"
-    action="{{ url_for('parts_discard') }}"
-    class="card"
-    data-submit-lock="1"
-    data-loading-text="破棄中..."
-    onsubmit="return confirm('選択した保管パーツを破棄します。よろしいですか？');"
-  >
-    <input type="hidden" name="confirm" value="yes" />
-    {% if selected_part_type %}
-    <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
-    {% endif %}
-    <input type="hidden" name="sort" value="{{ selected_sort }}" />
-    <input type="hidden" name="page" value="{{ page }}" />
-    <div class="part-list-header">
-      <div>
-        <div><b>保管パーツ</b></div>
-        <div class="robot-time">まとめて保管されている分です。所持数だけを見ながら破棄できます。</div>
-      </div>
-      <button type="submit">選択した保管パーツを破棄</button>
-    </div>
-    <div class="part-card-grid is-storage">
-      {% for p in legacy_items %}
-        <article class="robot-card part-compare-card">
-          <div class="part-card-topline">
-            <label class="part-check">
-              <input type="checkbox" name="part_keys" value="{{ p['part_key'] }}" />
-              <span>選択</span>
-            </label>
-            <span class="robot-time">所持数 {{ p['qty'] }}</span>
-          </div>
-          <div class="part-card-main">
-            <img class="part-card-image" src="{{ p['image_url'] }}" alt="{{ p['display_name'] }}" loading="lazy" decoding="async" />
-            <div class="part-card-copy">
-              <div class="robot-id">{{ p['display_name'] }}</div>
-              <div class="part-chip-row">
-                <span class="part-chip">{{ p['part_type_label'] }}</span>
-                <span class="part-chip rarity-{{ (p['rarity'] or 'n')|lower }}">{{ p['rarity'] or 'N' }}</span>
-              </div>
-              <div class="part-meta-line">所持数 {{ p['qty'] }}</div>
-            </div>
-          </div>
-        </article>
-      {% endfor %}
-    </div>
-  </form>
   {% endif %}
 
   <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>

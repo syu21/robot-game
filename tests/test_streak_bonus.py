@@ -154,12 +154,12 @@ class StreakBonusTests(unittest.TestCase):
         self.assertTrue(all(r.status_code == 200 for r in responses))
         third_html = responses[-1].get_data(as_text=True)
         self.assertIn("獲得コイン", third_html)
-        self.assertIn("+46", third_html)
+        self.assertIn("+17", third_html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
             coins = db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"]
-            self.assertEqual(int(coins), 136)  # market economy tier1 coin(45) * 3 + streak bonus(1)
+            self.assertEqual(int(coins), 49)  # auto-sell economy tier1 coin(16) * 3 + streak bonus(1)
             streak = db.execute(
                 "SELECT win_streak FROM user_area_streaks WHERE user_id = ? AND area_key = 'layer_1'",
                 (self.user_id,),

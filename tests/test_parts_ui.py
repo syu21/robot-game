@@ -197,8 +197,8 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn(self.head_name, html)
         self.assertIn("見比べを閉じる", html)
 
-    def test_parts_page_shows_storage_separately_and_excludes_it_from_usable_candidates(self):
-        overflow_part = self._create_custom_part("HEAD", "overflow_head_proto", "保管試作ヘッド")
+    def test_parts_page_hides_legacy_storage_and_excludes_it_from_usable_candidates(self):
+        overflow_part = self._create_custom_part("HEAD", "overflow_head_proto", "旧保管試作ヘッド")
         self._create_extra_instance(overflow_part, plus=2, status="overflow")
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -215,19 +215,18 @@ class PartsUiTests(unittest.TestCase):
         resp = client.get("/parts?part_type=HEAD")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("保管中 2", html)
-        self.assertIn("保管中の個体パーツ", html)
-        self.assertIn("保管試作ヘッド", html)
-        self.assertIn("選択した保管個体を所持へ戻す", html)
-        self.assertIn("所持枠がいっぱいだったため自動で保管に回った個体です。", html)
+        self.assertNotIn("旧保管試作ヘッド", html)
+        self.assertNotIn("保管中の個体パーツ", html)
+        self.assertNotIn("所持へ戻す", html)
+        self.assertIn("所持上限を超えた新規戦利品は自動売却されます。", html)
 
         strengthen_html = client.get("/parts/strengthen?part_type=HEAD").get_data(as_text=True)
         build_html = client.get("/build").get_data(as_text=True)
-        self.assertNotIn("保管試作ヘッド", strengthen_html)
-        self.assertNotIn("保管試作ヘッド", build_html)
+        self.assertNotIn("旧保管試作ヘッド", strengthen_html)
+        self.assertNotIn("旧保管試作ヘッド", build_html)
 
-    def test_strengthen_page_explains_when_required_parts_are_in_storage(self):
-        blocked_part = self._create_custom_part("HEAD", "blocked_strengthen_head", "保管強化ヘッド")
+    def test_strengthen_page_no_longer_surfaces_storage_blocked_groups(self):
+        blocked_part = self._create_custom_part("HEAD", "blocked_strengthen_head", "旧保管強化ヘッド")
         self._create_extra_instance(blocked_part, plus=0, status="inventory")
         self._create_extra_instance(blocked_part, plus=0, status="overflow")
         self._create_extra_instance(blocked_part, plus=1, status="overflow")
@@ -236,12 +235,11 @@ class PartsUiTests(unittest.TestCase):
         resp = client.get("/parts/strengthen?part_type=HEAD")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("保管中の個体があるため、今は強化に使えない組み合わせがあります", html)
-        self.assertIn("保管強化ヘッド", html)
-        self.assertIn("所持パーツで保管を確認する", html)
-        self.assertIn("#part-storage", html)
+        self.assertNotIn("保管中の個体があるため", html)
+        self.assertNotIn("旧保管強化ヘッド", html)
+        self.assertNotIn("#part-storage", html)
 
-    def test_parts_restore_moves_selected_overflow_items_back_to_inventory(self):
+    def test_parts_restore_route_is_legacy_noop(self):
         overflow_part = self._create_custom_part("HEAD", "restore_head_proto", "復帰ヘッド")
         self._create_extra_instance(overflow_part, plus=1, status="overflow")
         with game_app.app.app_context():
@@ -264,9 +262,9 @@ class PartsUiTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             status = db.execute("SELECT status FROM part_instances WHERE id = ?", (overflow_id,)).fetchone()["status"]
-            self.assertEqual(str(status), "inventory")
+            self.assertEqual(str(status), "overflow")
 
-    def test_parts_restore_shows_reason_when_inventory_is_full(self):
+    def test_parts_restore_redirects_without_reactivating_overflow_when_inventory_is_full(self):
         overflow_part = self._create_custom_part("HEAD", "restore_blocked_proto", "満杯ヘッド")
         self._create_extra_instance(overflow_part, plus=1, status="overflow")
         with game_app.app.app_context():
@@ -281,7 +279,7 @@ class PartsUiTests(unittest.TestCase):
         client = self._client()
         get_resp = client.get("/parts?part_type=HEAD")
         self.assertEqual(get_resp.status_code, 200)
-        self.assertIn("今は所持枠がいっぱいです。先に所持中パーツを破棄すると戻せます。", get_resp.get_data(as_text=True))
+        self.assertNotIn("所持へ戻す", get_resp.get_data(as_text=True))
         post_resp = client.post(
             "/parts/restore",
             data={"overflow_instance_ids": str(overflow_id), "part_type": "HEAD"},
@@ -359,11 +357,12 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("/parts?page=1&amp;part_type=HEAD&amp;sort=plus", second_html)
         self.assertIn('name="sort" value="plus"', second_html)
 
-    def test_battle_drop_over_capacity_goes_to_overflow(self):
+    def test_battle_drop_over_capacity_auto_sells_part(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory'", (self.user_id,))
             db.execute("UPDATE users SET part_inventory_limit = 0 WHERE id = ?", (self.user_id,))
+            coins_before = int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"] or 0)
             dropped = game_app._add_part_drop(
                 db,
                 self.user_id,
@@ -374,11 +373,26 @@ class PartsUiTests(unittest.TestCase):
             )
             db.commit()
             self.assertIsNotNone(dropped)
-            self.assertEqual(dropped["storage_status"], "overflow")
+            self.assertEqual(dropped["storage_status"], "sold")
+            self.assertTrue(dropped["auto_sold"])
+            self.assertEqual(dropped["auto_sell_price"], game_app.AUTO_SELL_PRICE_BY_RARITY["N"])
             self.assertEqual(game_app._count_part_inventory(db, self.user_id), 0)
-            self.assertEqual(game_app._count_part_overflow(db, self.user_id), 1)
+            sold_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'sold'",
+                    (self.user_id,),
+                ).fetchone()["c"]
+            )
+            coins_after = int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"] or 0)
+            audit = db.execute(
+                "SELECT id FROM world_events_log WHERE user_id = ? AND event_type = ? LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["PART_AUTO_SELL"]),
+            ).fetchone()
+            self.assertEqual(sold_count, 1)
+            self.assertEqual(coins_after, coins_before + game_app.AUTO_SELL_PRICE_BY_RARITY["N"])
+            self.assertIsNotNone(audit)
 
-    def test_legacy_materialization_respects_capacity_and_uses_overflow(self):
+    def test_legacy_materialization_respects_capacity_and_does_not_create_overflow(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory'", (self.user_id,))
@@ -395,11 +409,9 @@ class PartsUiTests(unittest.TestCase):
                 self.user_id,
                 self.starter_rows["HEAD"]["key"],
             )
-            row = db.execute("SELECT status FROM part_instances WHERE id = ?", (part_instance_id,)).fetchone()
-            self.assertIsNotNone(row)
-            self.assertEqual(str(row["status"]), "overflow")
+            self.assertIsNone(part_instance_id)
             self.assertEqual(game_app._count_part_inventory(db, self.user_id), 0)
-            self.assertEqual(game_app._count_part_legacy_storage(db, self.user_id), 0)
+            self.assertEqual(game_app._count_part_legacy_storage(db, self.user_id), 1)
 
     def test_strengthen_page_shows_compare_cards_and_legacy_route_still_works(self):
         self._create_extra_instance(self.starter_rows["HEAD"], plus=0)

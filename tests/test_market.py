@@ -90,6 +90,8 @@ class MarketRouteTests(unittest.TestCase):
         self.assertIn("まとめて売る", html)
         self.assertIn("marketSellTotal", html)
         self.assertIn('id="marketSellSubmit">まとめて売る', html)
+        self.assertIn("static/market.js", html)
+        self.assertNotIn("<script>\n(function ()", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             count = int(
@@ -179,14 +181,14 @@ class MarketRouteTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
-            self.assertEqual(int(user["coins"]), 1100)
-            gone = db.execute("SELECT id FROM part_instances WHERE id = ?", (int(inventory_id),)).fetchone()
-            self.assertIsNone(gone)
+            self.assertEqual(int(user["coins"]), 1010)
+            sold_status = db.execute("SELECT status FROM part_instances WHERE id = ?", (int(inventory_id),)).fetchone()["status"]
+            self.assertEqual(str(sold_status), "sold")
             history = db.execute(
                 "SELECT price FROM market_sell_history WHERE user_id = ? AND part_instance_id = ? LIMIT 1",
                 (self.admin_id, int(inventory_id)),
             ).fetchone()
-            self.assertEqual(int(history["price"]), 100)
+            self.assertEqual(int(history["price"]), 10)
 
         blocked = client.post("/market/sell", data={"part_instance_id": int(equipped_id)}, follow_redirects=False)
         self.assertEqual(blocked.status_code, 302)
@@ -194,7 +196,7 @@ class MarketRouteTests(unittest.TestCase):
             db = game_app.get_db()
             user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
             still_there = db.execute("SELECT id FROM part_instances WHERE id = ?", (int(equipped_id),)).fetchone()
-            self.assertEqual(int(user["coins"]), 1100)
+            self.assertEqual(int(user["coins"]), 1010)
             self.assertIsNotNone(still_there)
 
     def test_market_sell_bulk_sells_checked_inventory_parts(self):
@@ -217,10 +219,10 @@ class MarketRouteTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
-            self.assertEqual(int(user["coins"]), 1140)
+            self.assertEqual(int(user["coins"]), 1020)
             remaining = int(
                 db.execute(
-                    "SELECT COUNT(*) AS c FROM part_instances WHERE id IN (?, ?)",
+                    "SELECT COUNT(*) AS c FROM part_instances WHERE id IN (?, ?) AND status != 'sold'",
                     (int(first_id), int(second_id)),
                 ).fetchone()["c"]
                 or 0

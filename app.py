@@ -905,10 +905,24 @@ def _float_env(name, default):
         return float(default)
 
 
-COIN_REWARD_MARKET_RELEASE_BONUS = _float_env("COIN_REWARD_MARKET_RELEASE_BONUS", 1.25)
+def _bool_env(name, default=False):
+    raw = os.environ.get(str(name))
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+AUTO_SELL_ENABLED = _bool_env("AUTO_SELL_ENABLED", True)
+AUTO_SELL_PRICE_BY_RARITY = {
+    "N": int(os.getenv("AUTO_SELL_PRICE_N", "10")),
+    "R": int(os.getenv("AUTO_SELL_PRICE_R", "25")),
+}
+DROP_RATE_MULTIPLIER_AFTER_AUTO_SELL = _float_env("DROP_RATE_MULTIPLIER_AFTER_AUTO_SELL", 0.85)
+AUTO_SELL_MIGRATION_ENABLED = _bool_env("AUTO_SELL_MIGRATION_ENABLED", False)
+COIN_REWARD_MARKET_RELEASE_BONUS = _float_env("COIN_REWARD_MARKET_RELEASE_BONUS", 1.0)
 MARKET_COIN_REWARD_MULTIPLIER = _float_env("COIN_REWARD_BASE_MULTIPLIER", COIN_REWARD_MARKET_RELEASE_BONUS)
 PART_DROP_BASE_CHANCE = _float_env("PART_DROP_BASE_CHANCE", 0.70)
-PART_DROP_EXPECTED_PER_RUN_TARGET = _float_env("PART_DROP_EXPECTED_PER_RUN_TARGET", 0.70)
+PART_DROP_EXPECTED_PER_RUN_TARGET = _float_env("PART_DROP_EXPECTED_PER_RUN_TARGET", 0.60)
 PART_DROP_AREA_MULTIPLIERS = {
     "layer_1": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER1", 1.00),
     "layer_2": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER2", 1.00),
@@ -940,15 +954,15 @@ MARKET_PART_TYPE_LABELS = {
 }
 MARKET_FREE_RARITY_ROLL = (("N", 92), ("N+1", 7), ("R", 1))
 MARKET_PRICE_RANGES = {
-    "N": (150, 220),
-    "N+1": (260, 420),
-    "R": (1800, 3000),
+    "N": (40, 48),
+    "N+1": (80, 120),
+    "R": (600, 900),
 }
 MARKET_SELL_BASE_BY_RARITY = {
-    "N": 60,
-    "R": 130,
+    "N": AUTO_SELL_PRICE_BY_RARITY["N"],
+    "R": AUTO_SELL_PRICE_BY_RARITY["R"],
 }
-MARKET_SELL_PLUS_BONUS = 20
+MARKET_SELL_PLUS_BONUS = 0
 MARKET_REFRESH_COSTS = (0, 100, 200, 400, 800)
 R_PART_N_ASSIST_GAIN = 50
 R_PART_N_ASSIST_THRESHOLD = 100
@@ -5409,18 +5423,19 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     item["status_key"] = status_key
     item["is_equipped"] = status_key == "equipped"
     item["is_inventory"] = status_key == "inventory"
-    item["is_overflow"] = status_key == "overflow"
+    item["is_overflow"] = False
+    item["is_sold"] = status_key == "sold"
     item["can_discard"] = (status_key == "inventory") if can_discard is None else bool(can_discard)
     if item["is_equipped"]:
         item["status_label"] = "装備中"
-    elif item["is_overflow"]:
-        item["status_label"] = "保管中"
+    elif item["is_sold"]:
+        item["status_label"] = "売却済み"
     else:
         item["status_label"] = "所持中"
     if item["is_inventory"]:
         item["material_hint"] = "強化素材に使える"
-    elif item["is_overflow"]:
-        item["material_hint"] = "所持枠がいっぱいのため保管中"
+    elif item["is_sold"]:
+        item["material_hint"] = "コインに変換済み"
     else:
         item["material_hint"] = "今は素材に使えない"
     item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
@@ -7745,7 +7760,9 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
     for item in (drop_items or []):
         name = (item.get("part_display_name") or item.get("part_key") or "不明パーツ").strip()
         plus = int(item.get("plus") or 0)
-        storage_suffix = "（保管）" if str(item.get("storage_status") or "").strip().lower() == "overflow" else ""
+        storage_suffix = ""
+        if item.get("auto_sold"):
+            storage_suffix = f"（自動売却 +{int(item.get('auto_sell_price') or 0)}コイン）"
         label = f"{name} +{plus}{storage_suffix}"
         drop_counter[label] += 1
         row_key = (
@@ -10329,7 +10346,8 @@ def _part_storage_snapshot(db, user_id):
         "inventory_count": int(inventory_count),
         "overflow_count": int(overflow_count),
         "legacy_count": int(legacy_count),
-        "storage_count": int(overflow_count + legacy_count),
+        "storage_count": 0,
+        "legacy_storage_count": int(overflow_count + legacy_count),
     }
 
 
@@ -10347,16 +10365,15 @@ def _inventory_space_remaining(db, user_id, user_row=None):
 
 
 def _next_part_instance_status(db, user_id, user_row=None):
-    return "inventory" if _inventory_space_remaining(db, user_id, user_row=user_row) > 0 else "overflow"
+    return "inventory"
 
 
 def _return_part_instance_to_pool(db, user_id, part_instance_id, user_row=None):
-    next_status = _next_part_instance_status(db, user_id, user_row=user_row)
     db.execute(
-        "UPDATE part_instances SET status = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
-        (next_status, int(part_instance_id), int(user_id)),
+        "UPDATE part_instances SET status = 'inventory', updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        (int(part_instance_id), int(user_id)),
     )
-    return next_status
+    return "inventory"
 
 
 def _effective_limits(db, user):
@@ -10466,7 +10483,9 @@ def _add_part_drop(
 
     create_as_instance = bool(as_instance or source == "battle_drop")
     if create_as_instance and part:
-        storage_status = _next_part_instance_status(db, user_id)
+        inventory_full = _inventory_space_remaining(db, user_id) <= 0
+        auto_sold = bool(AUTO_SELL_ENABLED and inventory_full)
+        storage_status = "sold" if auto_sold else "inventory"
         pi_id = _create_part_instance_from_master(
             db,
             user_id,
@@ -10480,6 +10499,53 @@ def _add_part_drop(
             pi_row = db.execute("SELECT * FROM part_instances WHERE id = ?", (pi_id,)).fetchone()
             if pi_row:
                 _maybe_post_research_title(db, user_id, announce_username, dict(pi_row))
+        auto_sell_price = _auto_sell_value(
+            {
+                "rarity": part["rarity"] if "rarity" in part.keys() else "N",
+                "master_rarity": part["rarity"] if "rarity" in part.keys() else "N",
+                "plus": int(plus),
+            }
+        ) if auto_sold else 0
+        if auto_sold:
+            before = int(
+                db.execute(
+                    "SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?",
+                    (int(user_id),),
+                ).fetchone()["coins"]
+                or 0
+            )
+            db.execute(
+                "UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?",
+                (int(auto_sell_price), int(user_id)),
+            )
+            request_ip = None
+            try:
+                request_ip = request.remote_addr
+            except RuntimeError:
+                request_ip = None
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["PART_AUTO_SELL"],
+                user_id=int(user_id),
+                request_id=getattr(g, "request_id", None),
+                action_key="part_auto_sell",
+                entity_type="part_instance",
+                entity_id=int(pi_id),
+                delta_coins=int(auto_sell_price),
+                delta_count=1,
+                payload={
+                    "part_instance_id": int(pi_id),
+                    "part_key": part["key"],
+                    "rarity": str(part["rarity"] or "N").upper(),
+                    "part_type": part["part_type"],
+                    "sell_price": int(auto_sell_price),
+                    "reason": "inventory_full",
+                    "area_key": area_key,
+                    "coin_before": int(before),
+                    "coin_after": int(before + auto_sell_price),
+                },
+                ip=request_ip,
+            )
         return {
             "part_type": part["part_type"],
             "part_key": part["key"],
@@ -10488,6 +10554,8 @@ def _add_part_drop(
             "part_instance_id": pi_id,
             "source": source,
             "storage_status": storage_status,
+            "auto_sold": auto_sold,
+            "auto_sell_price": int(auto_sell_price),
             "growth_tendency_key": (tendency.get("key") if tendency else None),
             "growth_tendency_label": (tendency.get("label") if tendency else None),
         }
@@ -10512,6 +10580,8 @@ def _drop_audit_payload(area_key, battle_no, dropped_part):
         "rarity": row.get("rarity"),
         "plus": row.get("plus"),
         "storage_status": row.get("storage_status"),
+        "auto_sold": bool(row.get("auto_sold")),
+        "auto_sell_price": int(row.get("auto_sell_price") or 0),
         "growth_tendency_key": row.get("growth_tendency_key"),
         "growth_tendency_label": row.get("growth_tendency_label"),
     }
@@ -10819,7 +10889,7 @@ def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=No
     element = (part_row["element"] or "NORMAL").upper()
     series = part_row["series"] or "S1"
     status_key = str(status or "inventory").strip().lower()
-    if status_key not in {"inventory", "equipped", "overflow"}:
+    if status_key not in {"inventory", "equipped", "overflow", "sold"}:
         status_key = "inventory"
     cur = db.execute(
         """
@@ -11145,6 +11215,11 @@ def _market_listing_rows(db, user_id, day_key):
     return items
 
 
+def _auto_sell_value(part_row):
+    rarity = str(part_row["rarity"] or part_row["master_rarity"] or "N").strip().upper()
+    return int(AUTO_SELL_PRICE_BY_RARITY.get(rarity, AUTO_SELL_PRICE_BY_RARITY["N"]))
+
+
 def _market_sell_value(part_row):
     rarity = str(part_row["rarity"] or part_row["master_rarity"] or "N").strip().upper()
     base = MARKET_SELL_BASE_BY_RARITY.get(rarity, MARKET_SELL_BASE_BY_RARITY["N"])
@@ -11179,6 +11254,83 @@ def _market_sellable_part_rows(db, user_id, limit=80):
         item["sell_value"] = _market_sell_value(row)
         items.append(item)
     return items
+
+
+def cleanup_overflow_parts_to_coins(db, *, user_id=None, execute=False, request_id=None):
+    params = []
+    where = "pi.status = 'overflow'"
+    if user_id is not None:
+        where += " AND pi.user_id = ?"
+        params.append(int(user_id))
+    rows = db.execute(
+        f"""
+        SELECT
+            pi.*,
+            rp.key,
+            rp.display_name_ja,
+            rp.rarity AS master_rarity,
+            rp.element AS master_element,
+            rp.image_path
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE {where}
+        ORDER BY pi.user_id ASC, pi.id ASC
+        """,
+        params,
+    ).fetchall()
+    by_user = {}
+    for row in rows:
+        uid = int(row["user_id"])
+        by_user.setdefault(uid, {"sold_count": 0, "total_coins": 0, "part_instance_ids": []})
+        value = int(_auto_sell_value(row))
+        by_user[uid]["sold_count"] += 1
+        by_user[uid]["total_coins"] += value
+        by_user[uid]["part_instance_ids"].append(int(row["id"]))
+
+    summary = {
+        "execute": bool(execute),
+        "user_count": len(by_user),
+        "sold_count": sum(int(item["sold_count"]) for item in by_user.values()),
+        "total_coins": sum(int(item["total_coins"]) for item in by_user.values()),
+        "users": by_user,
+    }
+    if not execute or not rows:
+        return summary
+
+    for uid, payload in by_user.items():
+        ids = payload["part_instance_ids"]
+        if not ids:
+            continue
+        marks = ",".join("?" for _ in ids)
+        before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (uid,)).fetchone()["coins"] or 0)
+        db.execute(
+            "UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?",
+            (int(payload["total_coins"]), uid),
+        )
+        db.execute(
+            f"UPDATE part_instances SET status = 'sold', updated_at = datetime('now') WHERE user_id = ? AND status = 'overflow' AND id IN ({marks})",
+            (uid, *ids),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["PART_OVERFLOW_CLEANUP_SELL"],
+            user_id=uid,
+            request_id=request_id,
+            action_key="overflow_cleanup_sell",
+            entity_type="part_instance",
+            delta_coins=int(payload["total_coins"]),
+            delta_count=int(payload["sold_count"]),
+            payload={
+                "sold_count": int(payload["sold_count"]),
+                "total_coins": int(payload["total_coins"]),
+                "part_instance_ids": ids[:500],
+                "truncated_ids": max(0, len(ids) - 500),
+                "reason": "market_release_cleanup",
+                "coin_before": before,
+                "coin_after": before + int(payload["total_coins"]),
+            },
+        )
+    return summary
 
 
 def _market_can_access(db, user_row):
@@ -11227,8 +11379,9 @@ def _take_or_materialize_part_instance(db, user_id, part_key):
     part = _get_part_by_key(db, part_key)
     if not part:
         return None
-    storage_status = _next_part_instance_status(db, user_id)
-    pi_id = _create_part_instance_from_master(db, user_id, part, plus=0, status=storage_status)
+    if _inventory_space_remaining(db, user_id) <= 0:
+        return None
+    pi_id = _create_part_instance_from_master(db, user_id, part, plus=0, status="inventory")
     db.execute("DELETE FROM user_parts_inventory WHERE id = ?", (inv["id"],))
     return pi_id
 
@@ -11584,6 +11737,8 @@ def _market_adjust_coin_reward(base_coin):
 def _market_part_drop_chance(area_key=None):
     base = max(0.0, min(1.0, float(PART_DROP_BASE_CHANCE)))
     multiplier = PART_DROP_AREA_MULTIPLIERS.get(str(area_key or "").strip(), 1.0)
+    if AUTO_SELL_ENABLED:
+        multiplier = float(multiplier or 1.0) * float(DROP_RATE_MULTIPLIER_AFTER_AUTO_SELL or 1.0)
     return max(0.0, min(1.0, base * float(multiplier or 1.0)))
 
 
@@ -11646,6 +11801,7 @@ def _roll_battle_rewards(
         "coin": coin,
         "drop_type": drop_type,
         "dropped_parts": dropped,
+        "auto_sell_coins": sum(int(item.get("auto_sell_price") or 0) for item in dropped if item.get("auto_sold")),
         "promotion_triggered": promotion_triggered,
         "suppressed_part_drops": int(suppressed_by_budget),
     }
@@ -23011,7 +23167,7 @@ def market_sell():
         (int(part_instance_id), user_id),
     ).fetchone()
     if not part_row or str(part_row["status"] or "").strip().lower() != "inventory":
-        flash("装備中または保管中のパーツは市場で売却できません。", "error")
+        flash("装備中のパーツは市場で売却できません。", "error")
         return redirect(url_for("market"))
     value = _market_sell_value(part_row)
     before = int(db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
@@ -23032,7 +23188,10 @@ def market_sell():
             now_ts,
         ),
     )
-    db.execute("DELETE FROM part_instances WHERE id = ? AND user_id = ? AND status = 'inventory'", (int(part_instance_id), user_id))
+    db.execute(
+        "UPDATE part_instances SET status = 'sold', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'inventory'",
+        (int(part_instance_id), user_id),
+    )
     db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(value), user_id))
     audit_log(
         db,
@@ -23114,7 +23273,7 @@ def market_sell_bulk():
         )
     delete_marks = ",".join("?" for _ in row_ids)
     db.execute(
-        f"DELETE FROM part_instances WHERE user_id = ? AND status = 'inventory' AND id IN ({delete_marks})",
+        f"UPDATE part_instances SET status = 'sold', updated_at = datetime('now') WHERE user_id = ? AND status = 'inventory' AND id IN ({delete_marks})",
         (user_id, *row_ids),
     )
     db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(total), user_id))
@@ -23171,7 +23330,11 @@ def market_buy(listing_id):
         flash("コインが足りません。", "error")
         db.commit()
         return redirect(url_for("market"))
-    status = _next_part_instance_status(db, user_id, user_row=user)
+    if _inventory_space_remaining(db, user_id, user_row=user) <= 0:
+        flash("所持枠がいっぱいです。不要なパーツを売却してから購入してください。", "error")
+        db.commit()
+        return redirect(url_for("market"))
+    status = "inventory"
     part_master = dict(listing)
     part_master["id"] = int(listing["part_id"])
     part_instance_id = _create_part_instance_from_master(
@@ -23233,8 +23396,7 @@ def market_buy(listing_id):
         ip=request.remote_addr,
     )
     db.commit()
-    suffix = "（保管へ）" if status == "overflow" else ""
-    flash(f"{_part_display_name_ja(listing)} を {price} コインで購入しました。{suffix}", "notice")
+    flash(f"{_part_display_name_ja(listing)} を {price} コインで購入しました。", "notice")
     return redirect(url_for("market"))
 
 
@@ -24287,7 +24449,7 @@ def parts_discard():
             [session["user_id"], *part_keys],
         )
         db.commit()
-        session["message"] = f"{cur.rowcount} 件の保管パーツを破棄しました。"
+        session["message"] = f"{cur.rowcount} 件の旧在庫パーツを破棄しました。"
         return redirect(url_for("parts", **redirect_params))
 
     part_ids = request.form.getlist("part_ids")
@@ -24339,61 +24501,13 @@ def parts_compare():
 @app.route("/parts/restore", methods=["POST"])
 @login_required
 def parts_restore():
-    db = get_db()
-    user_id = int(session["user_id"])
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
     selected_sort = _normalize_parts_sort(request.form.get("sort"))
     redirect_params = {"part_type": selected_part_type} if selected_part_type else {}
     if selected_sort != "recommended":
         redirect_params["sort"] = selected_sort
-    overflow_instance_ids = [pid for pid in request.form.getlist("overflow_instance_ids") if pid.isdigit()]
-    if not overflow_instance_ids:
-        session["message"] = "所持へ戻す保管個体を選択してください。"
-        return redirect(url_for("parts", **redirect_params))
-
-    user_row = db.execute(
-        "SELECT id, part_inventory_limit FROM users WHERE id = ?",
-        (user_id,),
-    ).fetchone()
-    remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
-    if remaining <= 0:
-        session["message"] = "所持枠がいっぱいです。先に所持中パーツを破棄してください。"
-        return redirect(url_for("parts", **redirect_params))
-
-    placeholders = ",".join(["?"] * len(overflow_instance_ids))
-    rows = db.execute(
-        f"""
-        SELECT id
-        FROM part_instances
-        WHERE user_id = ? AND status = 'overflow' AND id IN ({placeholders})
-        ORDER BY id ASC
-        """,
-        [user_id, *[int(pid) for pid in overflow_instance_ids]],
-    ).fetchall()
-    if not rows:
-        session["message"] = "戻せる保管個体が見つかりませんでした。"
-        return redirect(url_for("parts", **redirect_params))
-
-    restored = 0
-    for row in rows:
-        if restored >= remaining:
-            break
-        cur = db.execute(
-            "UPDATE part_instances SET status = 'inventory', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'overflow'",
-            (int(row["id"]), user_id),
-        )
-        restored += int(cur.rowcount or 0)
-    db.commit()
-
-    total_rows = len(rows)
-    if restored <= 0:
-        session["message"] = "所持枠が足りず、保管個体を戻せませんでした。"
-    elif restored < total_rows:
-        session["message"] = f"{restored} 件を所持へ戻しました。残り {total_rows - restored} 件は保管のままです。"
-    else:
-        session["message"] = f"{restored} 件を所持へ戻しました。"
+    session["message"] = "この操作は廃止されました。所持上限を超えた新規パーツは自動売却されます。"
     return redirect(url_for("parts", **redirect_params))
-
 
 def _ensure_battle_state(db, user_id):
     state = db.execute("SELECT * FROM battle_state WHERE user_id = ?", (user_id,)).fetchone()
@@ -24661,10 +24775,14 @@ def _perform_battle_attack(db, user_id, user, state, now):
         )
         part_drop = _add_part_drop(db, user_id, source="battle_drop")
         if part_drop:
-            label_suffix = "（保管）" if str(part_drop.get("storage_status") or "").strip().lower() == "overflow" else ""
+            label_suffix = (
+                f"（自動売却 +{int(part_drop.get('auto_sell_price') or 0)}コイン）"
+                if part_drop.get("auto_sold")
+                else ""
+            )
             drop_labels.append(f"{part_drop['part_type']} {part_drop['part_key']}{label_suffix}")
             if label_suffix:
-                message = "所持がいっぱいだったため、戦利品は保管へ送りました。"
+                message = f"所持上限のため、自動売却 +{int(part_drop.get('auto_sell_price') or 0)}コイン"
         got_robot, new_robot = _add_robot_if_lucky(db, user_id)
         if got_robot and new_robot is not None:
             session["new_robot"] = {
@@ -24992,7 +25110,8 @@ def explore():
     crit_finisher_kills = 0
     consecutive_bonus_applied = False
     suppressed_part_drop_count = 0
-    overflow_part_drop_count = 0
+    auto_sell_part_drop_count = 0
+    auto_sell_coin_total = 0
     total_fights = 1
     if weekly_mode == "暴走" and random.random() < 0.25:
         total_fights = 2
@@ -25771,9 +25890,12 @@ def explore():
             for p in rewards["dropped_parts"]:
                 part_row_for_label = _get_part_by_key(db, p.get("part_key")) if p.get("part_key") else None
                 part_display_name = _part_display_name_ja(part_row_for_label) if part_row_for_label else p.get("part_key")
-                storage_suffix = "（保管）" if str(p.get("storage_status") or "").strip().lower() == "overflow" else ""
-                if storage_suffix:
-                    overflow_part_drop_count += 1
+                storage_suffix = ""
+                if p.get("auto_sold"):
+                    auto_sell_price = int(p.get("auto_sell_price") or 0)
+                    auto_sell_part_drop_count += 1
+                    auto_sell_coin_total += auto_sell_price
+                    storage_suffix = f"（自動売却 +{auto_sell_price}コイン）"
                 drop_labels.append(f"{p['rarity']} {p['part_type']} {part_display_name} +{p['plus']}{storage_suffix}")
                 audit_log(
                     db,
@@ -25794,24 +25916,25 @@ def explore():
                     ),
                     ip=request.remote_addr,
                 )
-                audit_log(
-                    db,
-                    AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
-                    user_id=user_id,
-                    request_id=request_id,
-                    action_key="explore",
-                    entity_type="part_instance",
-                    entity_id=p.get("part_instance_id"),
-                    delta_count=1,
-                    payload={
-                        "reason": "battle_drop",
-                        "battle_no": battle_no,
-                        "part_type": p.get("part_type"),
-                        "part_key": p.get("part_key"),
-                        "growth_tendency_key": p.get("growth_tendency_key"),
-                    },
-                    ip=request.remote_addr,
-                )
+                if not p.get("auto_sold"):
+                    audit_log(
+                        db,
+                        AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
+                        user_id=user_id,
+                        request_id=request_id,
+                        action_key="explore",
+                        entity_type="part_instance",
+                        entity_id=p.get("part_instance_id"),
+                        delta_count=1,
+                        payload={
+                            "reason": "battle_drop",
+                            "battle_no": battle_no,
+                            "part_type": p.get("part_type"),
+                            "part_key": p.get("part_key"),
+                            "growth_tendency_key": p.get("growth_tendency_key"),
+                        },
+                        ip=request.remote_addr,
+                    )
             core_drop_rate = _evolution_core_drop_rate_for_area(area_key)
             if (
                 not (area_boss_active and battle_no == 1)
@@ -26460,6 +26583,9 @@ def explore():
                     "part_display_name": (_part_display_name_ja(part_row) if part_row else (part_key or "-")),
                     "rarity": p.get("rarity"),
                     "plus": p.get("plus"),
+                    "auto_sold": bool(p.get("auto_sold")),
+                    "auto_sell_price": int(p.get("auto_sell_price") or 0),
+                    "storage_status": p.get("storage_status"),
                     "element": (part_row["element"] if part_row else None),
                     "image_url": url_for("static", filename=_part_image_rel(part_row)),
                     "link": url_for("parts", tab="instances"),
@@ -26577,8 +26703,8 @@ def explore():
         "core_reward_row_label": core_reward_row_label,
         "dropped_parts": drop_labels,
         "storage_notice": (
-            f"所持がいっぱいだったため、{int(overflow_part_drop_count)}件を保管へ送りました。"
-            if overflow_part_drop_count > 0
+            f"所持上限のため {int(auto_sell_part_drop_count)}件を自動売却 +{int(auto_sell_coin_total)}コイン"
+            if auto_sell_part_drop_count > 0
             else None
         ),
         "player_final_hp": player_hp,
@@ -26662,7 +26788,7 @@ def explore():
         ),
     }
     summary["reward_front"] = _build_battle_reward_front(
-        reward_coin=reward_coin,
+        reward_coin=int(reward_coin) + int(auto_sell_coin_total),
         reward_core=reward_core,
         dropped_core_name=dropped_core_name,
         drop_items=drop_items,
@@ -29959,7 +30085,11 @@ def parts():
         legacy_total += int(d["qty"])
         d["image_url"] = url_for("static", filename=_part_image_rel(d), v=APP_VERSION)
         legacy_items.append(d)
-    storage_total = int(overflow_total + legacy_total)
+    overflow_items = []
+    overflow_total = 0
+    legacy_items = []
+    legacy_total = 0
+    storage_total = 0
     list_params = {}
     if selected_part_type:
         list_params["part_type"] = selected_part_type
@@ -31681,71 +31811,10 @@ def parts_strengthen():
                 batch_item["base_id"] = int(batch_base_row["id"])
                 batch_item["base_status"] = str(batch_base_row.get("status") or "inventory")
                 batch_candidates.append(batch_item)
-    storage_blocked_rows = db.execute(
-        """
-        SELECT
-            rp.part_type,
-            rp.key AS part_key,
-            pi.rarity,
-            SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) AS qty_inventory,
-            SUM(CASE WHEN pi.status = 'equipped' THEN 1 ELSE 0 END) AS qty_equipped,
-            SUM(CASE WHEN pi.status = 'overflow' THEN 1 ELSE 0 END) AS qty_overflow,
-            COUNT(*) AS qty_total,
-            MAX(rp.image_path) AS image_path,
-            MAX(rp.display_name_ja) AS display_name_ja
-        FROM part_instances pi
-        JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE pi.user_id = ?
-          AND pi.status IN ('inventory', 'equipped', 'overflow')
-        """
-        + (" AND rp.part_type = ?" if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} else "")
-        + (" AND pi.rarity = ?" if filter_rarity in RARITIES else "")
-        + """
-        GROUP BY rp.part_type, rp.key, pi.rarity
-        HAVING SUM(CASE WHEN pi.status = 'overflow' THEN 1 ELSE 0 END) > 0
-           AND COUNT(*) >= 3
-           AND NOT (
-                SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 3
-                OR (
-                    SUM(CASE WHEN pi.status = 'equipped' THEN 1 ELSE 0 END) >= 1
-                    AND SUM(CASE WHEN pi.status = 'inventory' THEN 1 ELSE 0 END) >= 2
-                )
-           )
-        ORDER BY
-            CASE rp.part_type
-                WHEN 'HEAD' THEN 1
-                WHEN 'RIGHT_ARM' THEN 2
-                WHEN 'LEFT_ARM' THEN 3
-                WHEN 'LEGS' THEN 4
-                ELSE 9
-            END ASC,
-            qty_overflow DESC,
-            qty_total DESC,
-            rp.key ASC
-        LIMIT 8
-        """,
-        (
-            [user_id, filter_part_type, filter_rarity]
-            if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} and filter_rarity in RARITIES
-            else [user_id, filter_part_type]
-            if filter_part_type in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}
-            else [user_id, filter_rarity]
-            if filter_rarity in RARITIES
-            else [user_id]
-        ),
-    ).fetchall()
     storage_blocked_groups = []
-    for row in storage_blocked_rows:
-        item = dict(row)
-        item["display_name"] = _part_display_name_ja(item)
-        item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
-        item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
-        storage_blocked_groups.append(item)
     if warehouse_preview is not None:
         warehouse_preview["empty_message"] = (
-            "装備中を除くと成立する組み合わせがありません"
-            if int(warehouse_preview.get("group_count") or 0) <= 0 and storage_blocked_groups
-            else "整理できるパーツはありません"
+            "整理できるパーツはありません"
         )
         warehouse_preview["groups_view"] = []
         for group_plan in warehouse_preview.get("groups", []):

@@ -15,7 +15,7 @@
   <div class="card strengthen-hub-card">
     <div><b>強化メニュー</b></div>
     <div class="robot-time">通常ルールはすべて共通です。ベース1 + 素材2 / 成功率100% / +1固定で進みます。</div>
-    <div class="robot-time">装備中の個体は素材に使いません。保管中の個体は候補に混ぜません。</div>
+    <div class="robot-time">装備中の個体は素材に使いません。所持上限を超えた新規戦利品は自動売却されます。</div>
     <div class="actions-grid strengthen-entry-grid">
       <a class="action-card{% if selected_mode == 'select' %} is-active{% endif %}" href="{{ url_for('parts_strengthen', mode='select', part_type=selected_part_type or '', rarity=selected_rarity or '', plus=selected_plus if selected_plus is not none else '') }}#individual-strengthen">
         <div class="action-title">個別強化</div>
@@ -36,33 +36,6 @@
     <div class="robot-time">部位フィルターは個別強化 / まとめて強化の候補一覧に反映されます。倉庫整理合成は所持中全体を対象にします。</div>
     {% endif %}
   </div>
-
-  {% if storage_blocked_groups and selected_mode in ('select', 'warehouse_preview') %}
-  <div class="card">
-    <div><b>保管中の個体があるため、今は強化に使えない組み合わせがあります</b></div>
-    <div class="robot-time">保管中の個体は強化素材に使えません。先に所持へ戻すと候補に出ます。</div>
-    <div class="robot-time">
-      {% if inventory_space_remaining > 0 %}
-      今はあと {{ inventory_space_remaining }} 件まで所持へ戻せます。
-      {% else %}
-      今は所持枠がいっぱいです。先に所持中パーツを破棄すると戻せます。
-      {% endif %}
-    </div>
-    <div class="part-mini-grid">
-      {% for item in storage_blocked_groups %}
-      <div class="part-mini-card">
-        <img class="part-mini-image" src="{{ item['image_url'] }}" alt="{{ item['display_name'] }}" loading="lazy" decoding="async" />
-        <div>
-          <div class="part-mini-name">{{ item['display_name'] }}</div>
-          <div class="robot-time">{{ item['part_type_label'] }} / {{ item['rarity'] }}</div>
-          <div class="robot-time">所持 {{ item['qty_inventory'] }} / 装備 {{ item['qty_equipped'] }} / 保管 {{ item['qty_overflow'] }}</div>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    <p class="link"><a href="{{ storage_manage_url }}">所持パーツで保管を確認する</a></p>
-  </div>
-  {% endif %}
 
   {% if last_fuse_result %}
   <div class="card fuse-result-card">
@@ -131,7 +104,7 @@
       <span class="part-summary-pill">消費素材 {{ warehouse_result['total_material_count'] }}個</span>
       <span class="part-summary-pill">合計 {{ warehouse_result['total_coin_cost'] }}コイン</span>
     </div>
-    <div class="robot-time">装備中・保管中の個体は素材に使っていません。通常の強化ルールだけを、所持中全体へまとめて適用しました。</div>
+    <div class="robot-time">装備中の個体は素材に使っていません。通常の強化ルールだけを、所持中全体へまとめて適用しました。</div>
     <div class="part-card-grid warehouse-group-grid">
       {% for group in warehouse_result['groups'] %}
       <div class="robot-card part-compare-card warehouse-group-card{% if group.get('is_equipped') %} is-equipped{% endif %}">
@@ -179,7 +152,7 @@
   <div class="card fuse-warehouse-panel" id="warehouse-batch">
     <div><b>倉庫整理合成</b></div>
     <div class="robot-time">所持中の装備をまとめて整理し、成立する強化を一括で実行します。</div>
-    <div class="robot-time">装備中のパーツは対象外です / 保管中のパーツは対象外です / ルールは通常の強化と同じです</div>
+    <div class="robot-time">装備中のパーツは対象外です / ルールは通常の強化と同じです</div>
 
     {% if selected_mode == 'warehouse_preview' and warehouse_preview %}
     <div class="part-summary-pills">
@@ -261,7 +234,7 @@
     {% else %}
     <div class="warehouse-summary-note">
       <div class="warehouse-note-item"><b>対象:</b> 所持中の個体だけ</div>
-      <div class="warehouse-note-item"><b>除外:</b> 装備中 / 保管中 / 強化対象外の個体</div>
+      <div class="warehouse-note-item"><b>除外:</b> 装備中 / 強化対象外の個体</div>
       <div class="warehouse-note-item"><b>残す基準:</b> 装備中ベース優先 → +値が高い個体 → 古い個体</div>
     </div>
     <form method="post" data-submit-lock="1" data-loading-text="内容を確認中...">
@@ -432,11 +405,7 @@
         <div><b>使える素材がありません</b></div>
         <div class="robot-time">
           同じパーツを3個そろえると強化できます。
-          {% if storage_blocked_groups %}
-          保管中の個体がある場合は、先に所持へ戻すと候補に出ます。
-          {% else %}
           部位を切り替えると候補が見つかることがあります。
-          {% endif %}
         </div>
       </div>
     {% endif %}

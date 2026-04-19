@@ -166,6 +166,8 @@ AUDIT_EVENT_TYPES = {
     "STREAK_BONUS": "audit.streak.bonus",
     "DROP": "audit.drop",
     "INVENTORY_DELTA": "audit.inventory.delta",
+    "PART_AUTO_SELL": "audit.part.auto_sell",
+    "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",
     "FUSE": "audit.fuse",
     "FUSE_BATCH_PREVIEW": "audit.fuse.batch_preview",
     "FUSE_BATCH_EXECUTE": "audit.fuse.batch_execute",

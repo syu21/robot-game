@@ -59,11 +59,11 @@ ENEMY_SEED_STATS = {
 }
 
 COIN_REWARD_BY_TIER = {
-    1: 36,
-    2: 40,
-    3: 44,
-    4: 48,
-    5: 52,
+    1: 16,
+    2: 18,
+    3: 20,
+    4: 22,
+    5: 24,
 }
 
 DROP_TYPE_WEIGHTS_BY_TIER = {
