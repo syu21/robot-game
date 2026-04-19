@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
+{% from '_part_ui.html' import render_part_type_filters, stat_grid %}
 {% block content %}
 <h1>進化合成</h1>
 <div class="card evolve-overview-card">
   <div class="evolve-overview-head">
     <div>
       <div><b>今の進化状況</b></div>
-      <div class="upgrade-cost">同じNパーツをRへ進化できます。</div>
+      <div class="upgrade-cost">Nパーツを、対応するRパーツへ進化できます。</div>
     </div>
     <div class="evolve-core-pill">進化コア {{ core_qty }}個</div>
   </div>
@@ -24,22 +25,26 @@
     </div>
   </div>
   <div class="evolve-help-list">
-    <div>Nパーツ + 進化コア×1 で対応するRパーツへ進化します。</div>
-    <div>+値と個体差は引き継がれます。</div>
-    <div class="robot-time">将来拡張: R→SR / SR→UR</div>
+    <div>強化値と個体性能はそのまま引き継がれます。</div>
+    <div>進化後の伸び方を見比べてから選べます。</div>
+    {% if core_qty < 1 %}
+      <div class="robot-time">進化コアがないため、今は実行できません。</div>
+    {% endif %}
   </div>
+  {{ render_part_type_filters(part_type_filters) }}
 </div>
 
 {% if selected_mode == 'result' and last_evolve_result %}
 <div class="card evolve-success-banner rare-glow-card">
   <p><b>✨ 進化成功！ ✨</b></p>
-  <p>{{ last_evolve_result['source_name'] }} が {{ last_evolve_result['target_name'] }} に進化した！</p>
+  <p>{{ last_evolve_result['source_name'] }} が {{ last_evolve_result['target_name'] }} に進化しました。</p>
   <div class="evolve-compare-grid">
     <div class="evolve-compare-item">
       <div class="evolve-compare-title">進化前</div>
       <img class="evolve-compare-image" src="{{ last_evolve_result.get('source_image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="source part" loading="lazy" />
       <div class="evolve-compare-name">{{ last_evolve_result['source_name'] }}</div>
       <div class="evolve-compare-plus">+{{ last_evolve_result['source_plus'] }}</div>
+      <div class="robot-time">総合値 {{ last_evolve_result.get('source_total_value') or 0 }}</div>
     </div>
     <div class="evolve-compare-arrow">進化 →</div>
     <div class="evolve-compare-item evolve-target">
@@ -47,13 +52,17 @@
       <img class="evolve-compare-image" src="{{ last_evolve_result.get('target_image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="evolved part" loading="lazy" />
       <div class="evolve-compare-name">{{ last_evolve_result['target_name'] }}</div>
       <div class="evolve-compare-plus">+{{ last_evolve_result['target_plus'] }}</div>
+      <div class="robot-time">総合値 {{ last_evolve_result.get('target_total_value') or 0 }} ({{ last_evolve_result.get('total_delta_text') or '±0' }})</div>
     </div>
   </div>
-  <p>+値は維持されました</p>
-  <p>個体差は引き継がれました</p>
+  {% if last_evolve_result.get('stat_rows') %}
+    {{ stat_grid(last_evolve_result['stat_rows'], 'is-compare') }}
+  {% endif %}
+  <p>強化値と個体性能はそのまま引き継がれました。</p>
   <div class="actions-grid">
-    <a class="action-card" href="{{ url_for('evolve_parts', mode='select') }}">
+    <a class="action-card" href="{{ url_for('evolve_parts', mode='select', part_type=selected_part_type or '') }}">
       <div class="action-title">もう一度進化する</div>
+      <div class="action-desc">候補一覧へ戻る</div>
     </a>
   </div>
   <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
@@ -61,43 +70,70 @@
 {% endif %}
 
 {% if selected_mode == 'select' and items %}
-<form method="post">
-  <div class="upgrade-cost evolve-section-kicker">進化前と進化後を見比べて選べます。</div>
-  <div class="robot-grid">
+<form method="post" data-submit-lock="1" data-loading-text="進化中...">
+  {% if selected_part_type %}
+    <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+  {% endif %}
+  <div class="upgrade-cost evolve-section-kicker">進化するとこう変わる、を見ながら選べます。</div>
+  <div class="part-card-grid">
     {% for p in items %}
-    <label class="robot-card compact-part-card">
-      <input type="radio" name="part_instance_id" value="{{ p['id'] }}" required />
-      {% if p['image_url'] %}
-      <img class="robot-thumb" src="{{ p['image_url'] }}" alt="{{ p['part_key'] }}" loading="lazy" />
-      {% else %}
-      <div class="robot-thumb empty">no image</div>
-      {% endif %}
-      <div class="robot-id">#{{ p['id'] }} {{ p['display_name'] }} +{{ p['plus'] }}</div>
-      <div class="robot-part">状態: {% if p.get('status') == 'equipped' %}装備中{% else %}在庫{% endif %}</div>
-      <div class="robot-part">部位: {{ p['part_type'] }} / 属性: {{ p['element'] }}</div>
-      <div class="robot-part">rarity:
-        <span class="rarity-badge rarity-{{ p['rarity']|lower }}">{{ p['rarity'] }}</span>
-        →
-        <span class="rarity-badge rarity-{{ p['next_rarity']|lower }}">{{ p['next_rarity'] }}</span>
+    <label class="robot-card part-compare-card{% if p.get('is_equipped') %} is-equipped{% endif %}">
+      <div class="part-card-topline">
+        <span class="part-check">
+          <input type="radio" name="part_instance_id" value="{{ p['id'] }}" required />
+          <span>この個体を進化する</span>
+        </span>
+        <span class="robot-time">進化コア ×1</span>
       </div>
-      <div class="robot-part">{{ p['display_name'] }} +{{ p['plus'] }} → {{ p['target_display_name'] }} +{{ p['plus'] }}</div>
-      {% if p.get('target_image_url') %}
-      <div class="evolve-preview-inline">
-        <img class="evolve-preview-thumb" src="{{ p['target_image_url'] }}" alt="{{ p['target_display_name'] }}" loading="lazy" />
-        <span>進化後プレビュー</span>
+      <div class="part-compare-head">
+        <div class="part-compare-column">
+          <img class="part-card-image" src="{{ p['image_url'] }}" alt="{{ p['display_name'] }}" loading="lazy" decoding="async" />
+          <div class="robot-id">{{ p['display_name'] }}</div>
+          <div class="part-chip-row">
+            <span class="part-chip">{{ p['part_type_label'] }}</span>
+            <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
+            <span class="part-chip">+{{ p['plus'] }}</span>
+            {% if p.get('is_equipped') %}
+              <span class="part-chip is-equipped">装備中</span>
+            {% else %}
+              <span class="part-chip">所持中</span>
+            {% endif %}
+          </div>
+          <div class="part-meta-line">総合値 {{ p['total_value'] }}</div>
+        </div>
+        <div class="part-compare-arrow">進化 →</div>
+        <div class="part-compare-column">
+          <img class="part-card-image" src="{{ p['compare_image_url'] }}" alt="{{ p['compare_display_name'] }}" loading="lazy" decoding="async" />
+          <div class="robot-id">{{ p['compare_display_name'] }}</div>
+          <div class="part-chip-row">
+            <span class="part-chip">{{ p['part_type_label'] }}</span>
+            <span class="part-chip rarity-r">R</span>
+            <span class="part-chip">+{{ p['plus'] }}</span>
+          </div>
+          <div class="part-meta-line">総合値 {{ p['compare_total_value'] }} ({{ p['compare_total_delta_text'] }})</div>
+        </div>
       </div>
-      {% endif %}
-      <div class="robot-part">必要素材: 進化コア ×1</div>
+      {{ stat_grid(p['stat_rows'], 'is-compare') }}
+      <div class="part-subsection">
+        <div class="part-subsection-title">進化するとこう変わる</div>
+        <div class="robot-time">強化値と個体性能は引き継がれます。見た目とレアリティが上がります。</div>
+      </div>
     </label>
     {% endfor %}
   </div>
-  <button type="submit" {% if core_qty < 1 %}disabled{% endif %}>進化する</button>
+  <button type="submit" {% if core_qty < 1 %}disabled{% endif %}>選んだ個体を進化する</button>
 </form>
 <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
 {% elif selected_mode == 'select' %}
 <div class="card">
-  <p>進化可能なNパーツがありません。</p>
-  <p class="upgrade-cost">まずはNパーツを集めるか、今あるパーツを強化して周回を進めよう。</p>
+  <p><b>対象のパーツがありません</b></p>
+  <p class="upgrade-cost">
+    {% if core_qty < 1 %}
+      まずは進化コアを集めましょう。
+    {% else %}
+      進化できるNパーツが見つかりません。出撃でパーツを集めるか、部位を切り替えて確認してみましょう。
+    {% endif %}
+  </p>
   <div class="home-inline-actions">
     <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('parts') }}">所持パーツを見る</a></p>
@@ -107,4 +143,7 @@
 {% endif %}
 
 <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
 {% endblock %}
