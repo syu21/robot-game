@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div><span class="weekly-fit-badge">体験モード</span></div>
+  <h1>体験はここまで！</h1>
+  {% if reason == 'time' %}
+  <p class="upgrade-cost">10分の体験時間が終了しました。</p>
+  {% elif reason == 'explores' %}
+  <p class="upgrade-cost">3回の出撃体験が完了しました。</p>
+  {% else %}
+  <p class="upgrade-cost">出撃、強化、編成の基本ループを確認できました。</p>
+  {% endif %}
+  <p>自分の研究員として始めると、パーツ、機体、ランキング記録を保存できます。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('register') }}">無料で始める</a></p>
+  <p class="link"><a href="{{ url_for('trial_end') }}">体験データを消して入口へ戻る</a></p>
+</section>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div><span class="weekly-fit-badge">体験モード</span></div>
+  <h1>ロボ編成</h1>
+  <p class="upgrade-cost">候補を3つだけに絞っています。体験中は迷わず違いを見られる構成です。</p>
+</section>
+
+{% if result %}
+<div class="notice">
+  <b>{{ result['title'] }}</b><br />
+  {{ result['body'] }}
+</div>
+{% endif %}
+
+<section class="panel">
+  <h2>STEP3: ロボを組み直そう</h2>
+  <form method="post" action="{{ url_for('build') }}">
+    <div class="action-grid">
+      {% for option in build_options %}
+      <label class="action-card">
+        <input type="radio" name="build_key" value="{{ option['key'] }}" {% if loop.first %}checked{% endif %} />
+        <div class="action-title">{{ option['title'] }}</div>
+        <div class="action-desc">{{ option['desc'] }}</div>
+        <div class="robot-time">{{ option['stat_delta'] }}</div>
+      </label>
+      {% endfor %}
+    </div>
+    <button type="submit">この編成を試す</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>現在の試験機</h2>
+  <div class="robot-id">{{ trial_state['robot']['name'] }}</div>
+  <div class="upgrade-cost">{{ trial_state['robot']['summary'] }}</div>
+  <div class="stats">
+    <div>耐久 {{ trial_robot_stats['hp'] }}</div>
+    <div>攻撃 {{ trial_robot_stats['atk'] }}</div>
+    <div>防御 {{ trial_robot_stats['def'] }}</div>
+    <div>素早さ {{ trial_robot_stats['spd'] }}</div>
+    <div>命中 {{ trial_robot_stats['acc'] }}</div>
+    <div>会心 {{ trial_robot_stats['cri'] }}</div>
+  </div>
+</section>
+
+{% if trial_state.get('built') %}
+<section class="card">
+  <h2>体験ループ完了</h2>
+  <p class="upgrade-cost">出撃、強化、編成まで確認できました。登録すると、自分の機体として育成を保存できます。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('register') }}">無料で始める</a></p>
+</section>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

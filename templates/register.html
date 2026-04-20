@@ -74,6 +74,11 @@
             <button type="submit">新規登録して出撃する</button>
           </form>
         <div class="auth-register-separator" aria-hidden="true">
+          <span>まず触ってみる</span>
+        </div>
+        <a class="auth-register-alt-btn" href="{{ url_for('trial_start') }}">試験機で体験する</a>
+        <div class="auth-register-alt-note">データ保存なし・ランキング反映なしで、出撃から編成まで約3分だけ試せます。</div>
+        <div class="auth-register-separator" aria-hidden="true">
           <span>または</span>
         </div>
         <a class="auth-register-alt-btn" href="{{ url_for('google_oauth_start', intent='register', ref=ref_code or None) }}">Googleでかんたん登録</a>
@@ -194,18 +199,4 @@
             {% endif %}
             <div class="auth-world-mvp-copy">
               <div><b>今週のMVP: {{ mvp['username'] }}</b></div>
-              <div class="robot-time">{{ mvp.get('robot_name') or '話題の機体' }}</div>
-              <div class="robot-time">いま世界で存在感を出しているロボです。</div>
-            </div>
-          </div>
-        </div>
-        {% endif %}
-      </section>
-    </section>
-  </section>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='auth_tabs.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+              <div class="robot-time">{{ mvp.get('robot_name') or '話�

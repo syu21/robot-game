@@ -1,9 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="auth">
+  <div class="card auth-beta-card">
+    <div><span class="weekly-fit-badge">ロボらぼ β版公開中</span></div>
+    <p class="robot-time">現在、入口体験と戦闘UIを中心に改善中です。ログイン後はそのまま基地から出撃できます。</p>
+  </div>
   <h1 class="auth-title">ログイン</h1>
-  <p class="auth-lead">登録したアカウントで基地に戻りましょう。</p>
-  <p class="upgrade-cost">パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。</p>
+  <p class="auth-lead">登録したアカウントで、すぐ基地に戻れます。</p>
+  <p class="upgrade-cost">出撃してパーツを持ち帰り、育てた機体で次の層を目指すロボ育成ゲームです。</p>
   {% if message %}
   <div class="notice">{{ message }}</div>
   {% endif %}
@@ -15,6 +19,11 @@
     <input id="login-password" type="password" name="password" autocomplete="current-password" required />
     <button type="submit">ログイン</button>
   </form>
-  <p class="link"><a href="{{ url_for('register') }}">新規登録へ</a></p>
-</div>
-{% endblock %}
+  {% if google_auth_available %}
+  <div class="auth-alt-actions">
+    <div class="robot-time">または</div>
+    <p class="link"><a class="battle-home-link landing-front-btn-google" href="{{ url_for('google_oauth_start', next=next_path or None) }}">Googleでログイン</a></p>
+  </div>
+  {% endif %}
+  <p class="link"><a href="{{ url_for('register') }}">新規登録して始める</a></p>
+  <p class="link"><a c

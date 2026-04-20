@@ -38,10 +38,16 @@
   data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"
   data-js-diag="{{ '1' if js_diag else '0' }}"
 >
-  {% set logo_href = url_for('home') if session.get('user_id') else url_for('register') %}
+  {% set logo_href = url_for('home') if (session.get('user_id') or trial_mode) else url_for('register') %}
   <header class="top topbar site-header" id="site-header">
     <a class="logo logo-link" href="{{ logo_href }}" data-busy-link="1" aria-label="ロボらぼ ホームへ戻る">ロボらぼ</a>
-    {% if session.get('user_id') %}
+    {% if trial_mode %}
+      <div class="user">
+        <span class="header-user-name">体験モード</span> |
+        <a href="{{ url_for('register') }}">無料で始める</a> |
+        <a href="{{ url_for('trial_end') }}">体験を終了</a>
+      </div>
+    {% elif session.get('user_id') %}
       <div class="user">
         {% if header_user_visual %}{{ render_user_chip(header_user_visual, 'header', 'current robot icon', 'eager') }}{% endif %}
         {% if header_user_visual %}
@@ -110,15 +116,9 @@
   {% endif %}
   <footer class="footer">
     MECHA ENGINE v{{ app_version }}
+    {% if trial_mode %}
+    | <a href="{{ url_for('register') }}">無料で始める</a>
+    | <a href="{{ url_for('trial_end') }}">体験を終了</a>
+    {% else %}
     | <a href="{{ url_for('support') }}">支援</a>
-    | <a href="{{ url_for('terms') }}">利用規約</a>
-    | <a href="{{ url_for('privacy') }}">プライバシー</a>
-    | <a href="{{ url_for('commerce') }}">特商法表記</a>
-    | <a href="{{ url_for('contact') }}">お問い合わせ</a>
-    {% if official_x_url %}
-    | <a href="{{ official_x_url }}" rel="noopener noreferrer" target="_blank">公式X</a>
-    {% endif %}
-    | <a href="{{ url_for('changelog') }}">更新履歴</a>
-  </footer>
-</body>
-</html>
+    | <a href="{{ url_fo
