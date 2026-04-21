@@ -20119,6 +20119,8 @@ def _trial_fallback_part(part_type):
         "element": "NORMAL",
         "series": "S1",
         "display_name_ja": "",
+        "offset_x": 0,
+        "offset_y": 0,
     }
 
 
@@ -20128,7 +20130,7 @@ def _trial_pick_part_master(db, part_type):
         return _trial_fallback_part(part_type)
     row = db.execute(
         """
-        SELECT id, key, part_type, image_path, rarity, element, series, display_name_ja
+        SELECT id, key, part_type, image_path, rarity, element, series, display_name_ja, offset_x, offset_y
         FROM robot_parts
         WHERE is_active = 1
           AND UPPER(COALESCE(rarity, 'N')) = 'N'
@@ -20169,6 +20171,8 @@ def _trial_part_from_master(master, *, token, equipped=False, plus=0):
         "equipped": bool(equipped),
         "status_label": "装備中" if equipped else "所持中",
         "image_path": item.get("image_path"),
+        "offset_x": int(item.get("offset_x") or 0),
+        "offset_y": int(item.get("offset_y") or 0),
         "image_url": url_for("static", filename=_part_image_rel(item), v=APP_VERSION),
         "stats": stats,
         **weights,
@@ -20192,6 +20196,60 @@ def _trial_initial_parts(db=None):
     return parts
 
 
+def _trial_equipped_parts_by_type(state):
+    return {p.get("part_type"): p for p in (state.get("parts") or []) if p.get("equipped")}
+
+
+def _trial_compose_robot_image(state):
+    equipped = _trial_equipped_parts_by_type(state)
+    required = ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")
+    if not all(equipped.get(part_type) for part_type in required):
+        return state.get("robot", {}).get("image_url") or url_for("static", filename="assets/placeholder_player.png")
+
+    signature_src = "|".join(
+        f"{equipped[part_type].get('part_key') or equipped[part_type].get('key')}:{equipped[part_type].get('plus', 0)}"
+        for part_type in required
+    )
+    signature = hashlib.sha1(signature_src.encode("utf-8")).hexdigest()[:16]
+    rel_path = f"robot_composed/trial_{signature}.png"
+    out_path = _static_abs(rel_path)
+
+    try:
+        if not os.path.exists(out_path):
+            compose_robot(
+                {
+                    "path": _asset_abs(equipped["HEAD"].get("image_path")),
+                    "x": int(equipped["HEAD"].get("offset_x") or 0),
+                    "y": int(equipped["HEAD"].get("offset_y") or 0),
+                },
+                {
+                    "path": _asset_abs(equipped["RIGHT_ARM"].get("image_path")),
+                    "x": int(equipped["RIGHT_ARM"].get("offset_x") or 0),
+                    "y": int(equipped["RIGHT_ARM"].get("offset_y") or 0),
+                },
+                {
+                    "path": _asset_abs(equipped["LEFT_ARM"].get("image_path")),
+                    "x": int(equipped["LEFT_ARM"].get("offset_x") or 0),
+                    "y": int(equipped["LEFT_ARM"].get("offset_y") or 0),
+                },
+                {
+                    "path": _asset_abs(equipped["LEGS"].get("image_path")),
+                    "x": int(equipped["LEGS"].get("offset_x") or 0),
+                    "y": int(equipped["LEGS"].get("offset_y") or 0),
+                },
+                out_path,
+                None,
+            )
+        image_url = _composed_image_url(rel_path, int(os.path.getmtime(out_path) if os.path.exists(out_path) else _now_ts()))
+    except Exception:
+        app.logger.exception("trial.robot_compose_failed")
+        image_url = url_for("static", filename="assets/placeholder_player.png")
+
+    state.setdefault("robot", {})["image_url"] = image_url
+    state["robot"]["composed_image_path"] = rel_path
+    return image_url
+
+
 def _trial_robot_stats(state):
     stats = {"hp": 0, "atk": 0, "def": 0, "spd": 0, "acc": 0, "cri": 0}
     for part in state.get("parts") or []:
@@ -20204,7 +20262,7 @@ def _trial_robot_stats(state):
 
 def _trial_default_state(db=None):
     now = _now_ts()
-    return {
+    state = {
         "started_at": int(now),
         "expires_at": int(now + TRIAL_MODE_DURATION_SECONDS),
         "coins": 100,
@@ -20218,11 +20276,13 @@ def _trial_default_state(db=None):
             "name": "アーク・プロト",
             "style_label": "安定",
             "summary": "命中が高めで、最初の出撃が分かりやすい貸与ロボです。",
-            "image_url": url_for("static", filename="robot_icons/1.png"),
+            "image_url": url_for("static", filename="assets/placeholder_player.png"),
         },
         "parts": _trial_initial_parts(db),
         "last_result": None,
     }
+    _trial_compose_robot_image(state)
+    return state
 
 
 def _trial_state():
@@ -20230,6 +20290,13 @@ def _trial_state():
     if not isinstance(state, dict):
         state = _trial_default_state()
         session["trial_state"] = state
+    elif state.get("parts") and (
+        not (state.get("robot") or {}).get("image_url")
+        or "robot_icons/1.png" in str((state.get("robot") or {}).get("image_url") or "")
+    ):
+        _trial_compose_robot_image(state)
+        session["trial_state"] = state
+        session.modified = True
     return state
 
 
@@ -20426,7 +20493,22 @@ def _trial_battle_result(db, state, area_key):
     enemy = _pick_enemy_for_area(db, area_key, weekly_env=weekly_env)
     enemy_stats = {k: int(enemy[k]) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
     player_stats = _trial_robot_stats(state)
-    battle_result = simulate_battle(player_stats, enemy_stats, max_turns=EXPLORE_MAX_TURNS)
+    enemy_name = enemy["name_ja"] if "name_ja" in enemy.keys() else "訓練ドローン"
+    enemy_image_url = _enemy_static_url(
+        enemy["image_path"] if "image_path" in enemy.keys() else None,
+        fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+    )
+    battle_result = run_champion_battle(
+        {
+            "name": state.get("robot", {}).get("name") or "アーク・プロト",
+            "stats": player_stats,
+        },
+        {
+            "name": enemy_name,
+            "stats": enemy_stats,
+        },
+        max_turns=EXPLORE_MAX_TURNS,
+    )
     outcome_is_win = bool(battle_result.get("win"))
     explore_no = int(state.get("explores") or 0) + 1
     coin_gain = _market_adjust_coin_reward(COIN_REWARD_BY_TIER.get(int(enemy["tier"] if "tier" in enemy.keys() else 1), 2))
@@ -20454,15 +20536,12 @@ def _trial_battle_result(db, state, area_key):
         "highlight_core_drop": False,
         "dropped_parts": [p.get("name") for p in reward_parts],
         "drop_items": drop_items,
-        "player_final_hp": None,
+        "player_final_hp": int(battle_result.get("player_final_hp") or 0),
         "player_max_hp": int(player_stats.get("hp") or 0),
-        "enemy_name": enemy["name_ja"] if "name_ja" in enemy.keys() else "訓練ドローン",
+        "enemy_name": enemy_name,
         "enemy_key": enemy["key"] if "key" in enemy.keys() else None,
         "enemy_tier": int(enemy["tier"] if "tier" in enemy.keys() else 1),
-        "enemy_image_url": _enemy_static_url(
-            enemy["image_path"] if "image_path" in enemy.keys() else None,
-            fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
-        ),
+        "enemy_image_url": enemy_image_url,
         "enemy_faction": ((enemy["faction"] if "faction" in enemy.keys() else "neutral") or "neutral").lower(),
         "enemy_faction_label": FACTION_LABELS.get(
             ((enemy["faction"] if "faction" in enemy.keys() else "neutral") or "neutral").lower(),
@@ -20493,6 +20572,26 @@ def _trial_battle_result(db, state, area_key):
         dropped_core_name=None,
         drop_items=drop_items,
     )
+    turn_logs = list(battle_result.get("turn_logs") or [])
+    summary["summary_heading"] = str(battle_result.get("summary_heading") or ("今回の勝ち筋" if outcome_is_win else "今回の崩れ筋"))
+    summary["summary_label"] = str(battle_result.get("summary_label") or "")
+    summary["result_label"] = str(battle_result.get("result_label") or ("WIN" if outcome_is_win else "LOSE"))
+    summary["turn_count"] = int(battle_result.get("turn_count") or len(turn_logs))
+    summary["battle_cinematic"] = _build_battle_replay_summary(
+        area_key=area_key,
+        area_label=area.get("label"),
+        enemy_name=summary["enemy_name"],
+        enemy_image_url=summary["enemy_image_url"],
+        player_name=state.get("robot", {}).get("name") or "アーク・プロト",
+        player_image_url=state.get("robot", {}).get("image_url") or url_for("static", filename="assets/placeholder_player.png"),
+        player_stats=player_stats,
+        enemy_stats={**enemy_stats, "trait": "normal"},
+        robot_style={"style_key": "stable"},
+        turn_logs=turn_logs,
+        outcome=summary["outcome"],
+        is_boss=False,
+    )
+    summary["battle_replay"] = summary["battle_cinematic"]
     state["last_result"] = {
         "explore_no": explore_no,
         "enemy_name": summary["enemy_name"],
@@ -20508,7 +20607,7 @@ def _trial_battle_result(db, state, area_key):
             "name": state.get("robot", {}).get("name") or "アーク・プロト",
             "image_url": state.get("robot", {}).get("image_url"),
         },
-        "turn_logs": [],
+        "turn_logs": turn_logs,
         "state": {"enemy_name": summary["enemy_name"]},
         "explore_area_key": area_key,
         "explore_area_label": area.get("label"),
@@ -20773,7 +20872,7 @@ def _render_trial_explore_result(result):
             explore_mode=True,
             explore_area_key=result["explore_area_key"],
             explore_area_label=result["explore_area_label"],
-            battle_short_replay_enabled=False,
+            battle_short_replay_enabled=True,
             battle_ritual_overlay_enabled=False,
             battle_log_mode="collapsed",
         ),
@@ -28648,6 +28747,7 @@ def build():
                 state["robot"]["summary"] = f"{selected.get('name', '新しいパーツ')}を試した構成です。"
             else:
                 state["robot"]["summary"] = "今の構成のまま、もう一度出撃できます。"
+            _trial_compose_robot_image(state)
             result = {
                 "title": "組み替え完了",
                 "body": "新しい構成で、もう一度出撃してみよう。",
