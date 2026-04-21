@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
+  <h1>所持パーツ</h1>
+  <p class="upgrade-cost">出撃で拾ったパーツと、今装備しているパーツを見比べられます。</p>
+</section>
+
+<section class="panel">
+  <h2>パーツ一覧</h2>
+  <div class="robot-grid">
+    {% for part in parts %}
+    <article class="robot-card compact-part-card">
+      <div><span class="weekly-fit-badge">{{ part['status_label'] }}</span></div>
+      <img class="robot-thumb" src="{{ part['image_url'] }}" alt="{{ part['name'] }}" loading="lazy" />
+      <div class="robot-id">{{ part['name'] }} +{{ part['plus'] }}</div>
+      <div class="robot-part">{{ part['part_type_label'] }} / {{ part['rarity'] }}</div>
+      <div class="upgrade-cost">{{ part['role'] }}</div>
+      <div class="stats">
+        <div>耐久 {{ part['stats']['hp'] }}</div>
+        <div>攻撃 {{ part['stats']['atk'] }}</div>
+        <div>防御 {{ part['stats']['def'] }}</div>
+        <div>素早さ {{ part['stats']['spd'] }}</div>
+        <div>命中 {{ part['stats']['acc'] }}</div>
+        <div>会心 {{ part['stats']['cri'] }}</div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>次にやること</h2>
+  {% if trial_state.get('step') == 'strengthen' %}
+  <p class="upgrade-cost">素材がそろいました。次はパーツを強くしてみよう。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
+  {% elif trial_state.get('step') == 'build' %}
+  <p class="upgrade-cost">強化できました。次はロボを組み替えてみよう。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボ編成へ</a></p>
+  {% else %}
+  <p class="upgrade-cost">まずは第1層へ出撃して、戦利品を見てみよう。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('home') }}">第1層へ出撃</a></p>
+  {% endif %}
+</section>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}

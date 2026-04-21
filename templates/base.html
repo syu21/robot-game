@@ -43,9 +43,9 @@
     <a class="logo logo-link" href="{{ logo_href }}" data-busy-link="1" aria-label="ロボらぼ ホームへ戻る">ロボらぼ</a>
     {% if trial_mode %}
       <div class="user">
-        <span class="header-user-name">体験モード</span> |
+        <span class="header-user-name">お試しプレイ中</span> |
         <a href="{{ url_for('register') }}">無料で始める</a> |
-        <a href="{{ url_for('trial_end') }}">体験を終了</a>
+        <a href="{{ url_for('trial_end') }}">終了する</a>
       </div>
     {% elif session.get('user_id') %}
       <div class="user">
@@ -118,7 +118,7 @@
     MECHA ENGINE v{{ app_version }}
     {% if trial_mode %}
     | <a href="{{ url_for('register') }}">無料で始める</a>
-    | <a href="{{ url_for('trial_end') }}">体験を終了</a>
+    | <a href="{{ url_for('trial_end') }}">終了する</a>
     {% else %}
     | <a href="{{ url_for('support') }}">支援</a>
     | <a href="{{ url_for('terms') }}">利用規約</a>
