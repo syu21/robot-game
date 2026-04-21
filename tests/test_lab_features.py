@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import time
@@ -231,6 +232,48 @@ class LabRouteTests(unittest.TestCase):
                 session["user_id"] = self.user_id
                 session["username"] = "lab_user"
         return client
+
+    def test_lab_ai_generate_links_and_audit_sources(self):
+        client = self._client()
+        lab_resp = client.get("/lab")
+        self.assertEqual(lab_resp.status_code, 200)
+        lab_html = lab_resp.get_data(as_text=True)
+        self.assertIn("AIロボ生成", lab_html)
+        self.assertIn("研究所AIでロボを作る", lab_html)
+        self.assertIn("/lab/ai-robot-generate?source=lab_top", lab_html)
+        self.assertIn('target="_blank"', lab_html)
+        self.assertIn('rel="noopener noreferrer"', lab_html)
+
+        upload_resp = client.get("/lab/upload")
+        self.assertEqual(upload_resp.status_code, 200)
+        upload_html = upload_resp.get_data(as_text=True)
+        self.assertIn("ロボ画像をまだ持っていない方へ", upload_html)
+        self.assertIn("研究所AIでロボを作れます", upload_html)
+        self.assertIn("作ったPNG画像を、そのままここにアップできます", upload_html)
+        self.assertIn("透過PNG・正方形画像をそのまま使えます", upload_html)
+        self.assertIn("/lab/ai-robot-generate?source=lab_upload", upload_html)
+
+        for source in ("lab_top", "lab_upload"):
+            resp = client.get(f"/lab/ai-robot-generate?source={source}", follow_redirects=False)
+            self.assertEqual(resp.status_code, 302)
+            self.assertEqual(resp.headers["Location"], game_app.LAB_AI_ROBOT_GENERATOR_URL)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE event_type = ?
+                ORDER BY id ASC
+                """,
+                (game_app.AUDIT_EVENT_TYPES["LAB_AI_GENERATE_CLICK"],),
+            ).fetchall()
+            self.assertEqual(len(rows), 2)
+            payloads = [json.loads(row["payload_json"]) for row in rows]
+            self.assertEqual([item["source"] for item in payloads], ["lab_top", "lab_upload"])
+            self.assertTrue(all(item["target"] == game_app.LAB_AI_ROBOT_GENERATOR_TARGET for item in payloads))
+            self.assertTrue(all(item["url"] == game_app.LAB_AI_ROBOT_GENERATOR_URL for item in payloads))
 
     def test_lab_race_entry_creates_finished_race_and_audit_logs(self):
         client = self._client()

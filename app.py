@@ -153,6 +153,8 @@ AVATAR_UPLOAD_ROOT = os.path.join(STATIC_ROOT, "uploads", "avatars")
 LAB_UPLOAD_ROOT = os.path.join(STATIC_ROOT, "user_lab_uploads")
 LAB_UPLOAD_ORIGINAL_ROOT = os.path.join(LAB_UPLOAD_ROOT, "originals")
 LAB_UPLOAD_THUMB_ROOT = os.path.join(LAB_UPLOAD_ROOT, "thumbs")
+LAB_AI_ROBOT_GENERATOR_URL = "https://chatgpt.com/g/g-69e4b2db2dfc819181d5e1a815121ce2-rohorahogong-fang"
+LAB_AI_ROBOT_GENERATOR_TARGET = "external_gpt_robot_factory"
 LAB_SCENE_SPRITE_ROOT = os.path.join(STATIC_ROOT, "lab_scene_sprites")
 ROBOT_ICON_ROOT = os.path.join(STATIC_ROOT, "robot_icons")
 GENERATED_AVATAR_ROOT = os.path.join(STATIC_ROOT, "generated_avatars")
@@ -265,7 +267,7 @@ NEWBIE_BOOST_WINDOW_HOURS = int(os.getenv("NEWBIE_BOOST_WINDOW_HOURS", "72"))
 NEWBIE_EXPLORE_CT_SECONDS = int(os.getenv("NEWBIE_EXPLORE_CT_SECONDS", "20"))
 TRIAL_MODE_DURATION_SECONDS = max(60, int(os.getenv("TRIAL_MODE_DURATION_SECONDS", "600")))
 TRIAL_MODE_MAX_EXPLORES = max(1, int(os.getenv("TRIAL_MODE_MAX_EXPLORES", "3")))
-TRIAL_MODE_CT_SECONDS = max(0, int(os.getenv("TRIAL_MODE_CT_SECONDS", "10")))
+TRIAL_MODE_CT_SECONDS = max(0, int(os.getenv("TRIAL_MODE_CT_SECONDS", "20")))
 HOME_UNLOCK_RECENT_SECONDS = int(os.getenv("HOME_UNLOCK_RECENT_SECONDS", "86400"))
 STAGE_MODIFIERS_ENABLED = os.getenv("STAGE_MODIFIERS_ENABLED", "1") == "1"
 BATTLE_RITUAL_OVERLAY_ENABLED = os.getenv("BATTLE_RITUAL_OVERLAY_ENABLED", "1") == "1"
@@ -20076,6 +20078,7 @@ TRIAL_ALLOWED_ENDPOINTS = {
     "trial_end",
     "home",
     "explore",
+    "parts",
     "parts_strengthen",
     "build",
     "guide",
@@ -20090,57 +20093,103 @@ def _is_trial_session():
     return bool(session.get("is_trial"))
 
 
-def _trial_initial_parts():
-    return [
-        {
-            "id": "trial_head",
-            "part_type": "HEAD",
-            "part_type_label": "頭部",
-            "name": "安定センサー頭部",
-            "role": "耐久と命中を整える貸与パーツ",
-            "rarity": "N",
-            "plus": 3,
-            "equipped": True,
-            "image_url": url_for("static", filename="robot_assets/parts/head/head_n_normal.png"),
-            "stats": {"hp": 8, "atk": 1, "def": 2, "spd": 1, "acc": 4, "cri": 1},
-        },
-        {
-            "id": "trial_r_arm",
-            "part_type": "RIGHT_ARM",
-            "part_type_label": "右腕",
-            "name": "試験キャノン右腕",
-            "role": "攻撃を担当する主砲",
-            "rarity": "N",
-            "plus": 3,
-            "equipped": True,
-            "image_url": url_for("static", filename="robot_assets/parts/right_arm/right_arm_n_normal.png"),
-            "stats": {"hp": 2, "atk": 9, "def": 1, "spd": 1, "acc": 4, "cri": 2},
-        },
-        {
-            "id": "trial_l_arm",
-            "part_type": "LEFT_ARM",
-            "part_type_label": "左腕",
-            "name": "貸与シールド左腕",
-            "role": "防御を支える盾",
-            "rarity": "N",
-            "plus": 3,
-            "equipped": True,
-            "image_url": url_for("static", filename="robot_assets/parts/left_arm/left_arm_n_normal.png"),
-            "stats": {"hp": 5, "atk": 1, "def": 7, "spd": 1, "acc": 2, "cri": 1},
-        },
-        {
-            "id": "trial_legs",
-            "part_type": "LEGS",
-            "part_type_label": "脚部",
-            "name": "均衡フレーム脚部",
-            "role": "素早さと安定性の土台",
-            "rarity": "N",
-            "plus": 3,
-            "equipped": True,
-            "image_url": url_for("static", filename="robot_assets/parts/legs/legs_n_normal.png"),
-            "stats": {"hp": 4, "atk": 1, "def": 2, "spd": 6, "acc": 2, "cri": 1},
-        },
-    ]
+def _trial_part_bias(part_type):
+    return {
+        "HEAD": {"hp": 0.08, "acc": 0.06},
+        "RIGHT_ARM": {"atk": 0.10, "acc": 0.05},
+        "LEFT_ARM": {"def": 0.08, "acc": 0.05},
+        "LEGS": {"spd": 0.08, "acc": 0.04},
+    }.get(_norm_part_type(part_type), {})
+
+
+def _trial_fallback_part(part_type):
+    part_type = _norm_part_type(part_type)
+    fallback = {
+        "HEAD": ("head_1", "parts/head/head_n_normal.png"),
+        "RIGHT_ARM": ("r_arm_1", "parts/right_arm/right_arm_n_normal.png"),
+        "LEFT_ARM": ("l_arm_1", "parts/left_arm/left_arm_n_normal.png"),
+        "LEGS": ("legs_1", "parts/legs/legs_n_normal.png"),
+    }.get(part_type, ("head_1", "parts/head/head_n_normal.png"))
+    return {
+        "id": 0,
+        "key": fallback[0],
+        "part_type": part_type,
+        "image_path": fallback[1],
+        "rarity": "N",
+        "element": "NORMAL",
+        "series": "S1",
+        "display_name_ja": "",
+    }
+
+
+def _trial_pick_part_master(db, part_type):
+    part_type = _norm_part_type(part_type)
+    if db is None:
+        return _trial_fallback_part(part_type)
+    row = db.execute(
+        """
+        SELECT id, key, part_type, image_path, rarity, element, series, display_name_ja
+        FROM robot_parts
+        WHERE is_active = 1
+          AND UPPER(COALESCE(rarity, 'N')) = 'N'
+          AND part_type = ?
+        ORDER BY
+          CASE WHEN key IN ('head_1', 'r_arm_1', 'l_arm_1', 'legs_1') THEN 0 ELSE 1 END,
+          CASE WHEN UPPER(COALESCE(element, 'NORMAL')) = 'NORMAL' THEN 0 ELSE 1 END,
+          id ASC
+        LIMIT 1
+        """,
+        (part_type,),
+    ).fetchone()
+    return dict(row) if row else _trial_fallback_part(part_type)
+
+
+def _trial_part_from_master(master, *, token, equipped=False, plus=0):
+    item = dict(master or {})
+    part_type = _norm_part_type(item.get("part_type"))
+    rarity = str(item.get("rarity") or "N").upper()
+    weights = generate_noisy_weights(part_type, noise=0.02, bias=_trial_part_bias(part_type))
+    part_instance_like = {
+        "rarity": rarity,
+        "plus": int(plus or 0),
+        **weights,
+    }
+    stats = compute_part_stats(part_instance_like)
+    return {
+        "id": str(token),
+        "part_id": int(item.get("id") or 0),
+        "key": str(item.get("key") or ""),
+        "part_key": str(item.get("key") or ""),
+        "part_type": part_type,
+        "part_type_label": _part_type_ui_label(part_type),
+        "name": _part_display_name_ja(item, rarity=rarity, part_type=part_type),
+        "role": _trial_part_role(part_type),
+        "rarity": rarity,
+        "plus": int(plus or 0),
+        "equipped": bool(equipped),
+        "status_label": "装備中" if equipped else "所持中",
+        "image_path": item.get("image_path"),
+        "image_url": url_for("static", filename=_part_image_rel(item), v=APP_VERSION),
+        "stats": stats,
+        **weights,
+    }
+
+
+def _trial_part_role(part_type):
+    return {
+        "HEAD": "耐久と命中を整えます",
+        "RIGHT_ARM": "攻撃を伸ばしやすい部位です",
+        "LEFT_ARM": "命中と防御を支えます",
+        "LEGS": "素早さと安定感を作ります",
+    }.get(_norm_part_type(part_type), "ロボを支えるパーツです")
+
+
+def _trial_initial_parts(db=None):
+    parts = []
+    for part_type in ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"):
+        master = _trial_pick_part_master(db, part_type)
+        parts.append(_trial_part_from_master(master, token=f"trial_{part_type.lower()}", equipped=True, plus=1))
+    return parts
 
 
 def _trial_robot_stats(state):
@@ -20150,17 +20199,10 @@ def _trial_robot_stats(state):
             continue
         for key in stats:
             stats[key] += int((part.get("stats") or {}).get(key) or 0)
-    if state.get("strengthened"):
-        stats["atk"] += 2
-        stats["def"] += 1
-        stats["acc"] += 1
-    if state.get("built"):
-        stats["spd"] += 2
-        stats["acc"] += 1
     return stats
 
 
-def _trial_default_state():
+def _trial_default_state(db=None):
     now = _now_ts()
     return {
         "started_at": int(now),
@@ -20173,12 +20215,12 @@ def _trial_default_state():
         "built": False,
         "next_part_id": 1,
         "robot": {
-            "name": "試験機アーク・プロト",
-            "style_label": "安定型",
-            "summary": "命中を高めた、勝ちやすいが無双しない貸与機です。",
+            "name": "アーク・プロト",
+            "style_label": "安定",
+            "summary": "命中が高めで、最初の出撃が分かりやすい貸与ロボです。",
             "image_url": url_for("static", filename="robot_icons/1.png"),
         },
-        "parts": _trial_initial_parts(),
+        "parts": _trial_initial_parts(db),
         "last_result": None,
     }
 
@@ -20219,15 +20261,45 @@ def _trial_ct_remaining(state=None):
     return max(0, int(TRIAL_MODE_CT_SECONDS) - elapsed)
 
 
+def _trial_time_left_label(state=None):
+    remaining = _trial_remaining_seconds(state)
+    minutes = max(1, int(math.ceil(remaining / 60.0))) if remaining > 0 else 0
+    return f"あと{minutes}分遊べます" if minutes > 0 else "体験時間が終了しました"
+
+
+def _trial_explore_left_label(state=None):
+    state = state or _trial_state()
+    left = max(0, int(TRIAL_MODE_MAX_EXPLORES) - int(state.get("explores") or 0))
+    return f"あと{left}回出撃できます" if left > 0 else "出撃体験は完了しました"
+
+
 def _trial_progress_steps(state=None):
     state = state or _trial_state()
     current = str(state.get("step") or "explore")
     order = {"explore": 1, "strengthen": 2, "build": 3, "done": 4}
     current_order = int(order.get(current, 1))
     steps = [
-        {"key": "explore", "label": "STEP1", "title": "出撃してみよう", "url": url_for("home")},
-        {"key": "strengthen", "label": "STEP2", "title": "パーツを強化しよう", "url": url_for("parts_strengthen")},
-        {"key": "build", "label": "STEP3", "title": "ロボを組み直そう", "url": url_for("build")},
+        {
+            "key": "explore",
+            "label": "1",
+            "title": "まずは出撃してみよう！",
+            "desc": "今ここ。まずは第1層へ出撃",
+            "url": url_for("home"),
+        },
+        {
+            "key": "strengthen",
+            "label": "2",
+            "title": "パーツを強くしてみよう！",
+            "desc": "パーツを手に入れたら進めます",
+            "url": url_for("parts_strengthen"),
+        },
+        {
+            "key": "build",
+            "label": "3",
+            "title": "ロボを組み替えてみよう！",
+            "desc": "新しいパーツを試せます",
+            "url": url_for("build"),
+        },
     ]
     for item in steps:
         item_order = int(order[item["key"]])
@@ -20243,6 +20315,8 @@ def _trial_view_context(**extra):
         "trial_robot_stats": _trial_robot_stats(state),
         "trial_steps": _trial_progress_steps(state),
         "trial_remaining_seconds": _trial_remaining_seconds(state),
+        "trial_time_left_label": _trial_time_left_label(state),
+        "trial_explore_left_label": _trial_explore_left_label(state),
         "trial_ct_remaining": _trial_ct_remaining(state),
         "trial_max_explores": TRIAL_MODE_MAX_EXPLORES,
         "trial_message": session.pop("message", None),
@@ -20251,72 +20325,249 @@ def _trial_view_context(**extra):
     return context
 
 
-def _trial_reward_part(state, explore_no):
-    part_id = f"trial_reward_{int(state.get('next_part_id') or 1)}"
-    state["next_part_id"] = int(state.get("next_part_id") or 1) + 1
-    if explore_no == 1:
+def _trial_reward_parts(db, state, explore_no):
+    # 初回は強化導線が必ず動くよう、同部位素材を2つsessionに積む。
+    reward_types = ["RIGHT_ARM", "RIGHT_ARM", "LEGS"] if int(explore_no or 0) == 1 else ["LEGS"]
+    rewards = []
+    for part_type in reward_types:
+        next_id = int(state.get("next_part_id") or 1)
+        state["next_part_id"] = next_id + 1
+        master = _trial_pick_part_master(db, part_type)
+        rewards.append(_trial_part_from_master(master, token=f"trial_reward_{next_id}", equipped=False, plus=0))
+    return rewards
+
+
+def _trial_drop_item(part):
+    return {
+        "part_key": part.get("part_key") or part.get("key"),
+        "part_display_name": part.get("name"),
+        "part_type": part.get("part_type"),
+        "rarity": part.get("rarity"),
+        "plus": int(part.get("plus") or 0),
+        "image_url": part.get("image_url"),
+    }
+
+
+def _trial_strengthen_candidate(state):
+    parts = list(state.get("parts") or [])
+    for base in [p for p in parts if p.get("equipped")]:
+        same_type_materials = [
+            p for p in parts if (not p.get("equipped")) and p.get("part_type") == base.get("part_type")
+        ]
+        if len(same_type_materials) >= 2:
+            return base, same_type_materials[:2]
+    return None, []
+
+
+def _trial_build_options(state):
+    parts = list(state.get("parts") or [])
+    equipped_by_type = {p.get("part_type"): p for p in parts if p.get("equipped")}
+    options = []
+    current_stats = _trial_robot_stats(state)
+    for part in [p for p in parts if not p.get("equipped")]:
+        current = equipped_by_type.get(part.get("part_type"))
+        if not current:
+            continue
+        new_total = dict(current_stats)
+        for stat_key in new_total:
+            new_total[stat_key] -= int((current.get("stats") or {}).get(stat_key) or 0)
+            new_total[stat_key] += int((part.get("stats") or {}).get(stat_key) or 0)
+        delta_total = int(_part_total_value(new_total) - _part_total_value(current_stats))
+        options.append(
+            {
+                "key": part["id"],
+                "part_id": part["id"],
+                "title": f"{part['name']}を試す",
+                "desc": f"{part['part_type_label']}を入れ替えます。",
+                "stat_delta": _delta_text(delta_total),
+                "part": part,
+            }
+        )
+    if not options:
+        options.append(
+            {
+                "key": "keep",
+                "part_id": "",
+                "title": "今の構成で出撃",
+                "desc": "手に入れたパーツが増えたら、ここで組み替えできます。",
+                "stat_delta": "変化なし",
+                "part": None,
+            }
+        )
+    return options[:3]
+
+
+def _trial_next_action_for_result(state):
+    step = str(state.get("step") or "explore")
+    if step == "strengthen":
         return {
-            "id": part_id,
-            "part_type": "RIGHT_ARM",
-            "part_type_label": "右腕",
-            "name": "回収キャノン右腕",
-            "role": "攻撃が少し伸びる素材",
-            "rarity": "N",
-            "plus": 0,
-            "equipped": False,
-            "image_url": url_for("static", filename="robot_assets/parts/right_arm/right_arm_n_normal.png"),
-            "stats": {"hp": 1, "atk": 5, "def": 0, "spd": 1, "acc": 2, "cri": 1},
+            "title": "次は強化してみよう",
+            "desc": "拾ったパーツを素材にして、今のロボを少し強くできます。",
+            "cta_label": "パーツ強化へ",
+            "cta_url": url_for("parts_strengthen"),
+        }
+    if step == "build":
+        return {
+            "title": "次はロボを組み替えてみよう",
+            "desc": "新しく拾った部位を試して、性能の変化を見られます。",
+            "cta_label": "ロボ編成へ",
+            "cta_url": url_for("build"),
         }
     return {
-        "id": part_id,
-        "part_type": "LEGS",
-        "part_type_label": "脚部",
-        "name": "軽量フレーム脚部",
-        "role": "編成で動きが変わる候補",
-        "rarity": "N",
-        "plus": 0,
-        "equipped": False,
-        "image_url": url_for("static", filename="robot_assets/parts/legs/legs_n_normal.png"),
-        "stats": {"hp": 2, "atk": 1, "def": 1, "spd": 5, "acc": 2, "cri": 1},
+        "title": "もう一度出撃してみよう",
+        "desc": "新しい構成で第1層へ戻り、戦い方の違いを試せます。",
+        "cta_label": "もう一度出撃",
+        "cta_url": url_for("home"),
+    }
+
+
+def _trial_battle_result(db, state, area_key):
+    weekly_env = _world_current_environment(db)
+    enemy = _pick_enemy_for_area(db, area_key, weekly_env=weekly_env)
+    enemy_stats = {k: int(enemy[k]) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
+    player_stats = _trial_robot_stats(state)
+    battle_result = simulate_battle(player_stats, enemy_stats, max_turns=EXPLORE_MAX_TURNS)
+    outcome_is_win = bool(battle_result.get("win"))
+    explore_no = int(state.get("explores") or 0) + 1
+    coin_gain = _market_adjust_coin_reward(COIN_REWARD_BY_TIER.get(int(enemy["tier"] if "tier" in enemy.keys() else 1), 2))
+    reward_parts = _trial_reward_parts(db, state, explore_no) if outcome_is_win else []
+    state.setdefault("parts", []).extend(reward_parts)
+    state["explores"] = explore_no
+    state["last_explore_at"] = int(_now_ts())
+    state["coins"] = int(state.get("coins") or 0) + int(coin_gain if outcome_is_win else 0)
+    if outcome_is_win and str(state.get("step") or "") == "explore":
+        state["step"] = "strengthen"
+    elif outcome_is_win and str(state.get("step") or "") == "done":
+        state["step"] = "done"
+
+    wait = _trial_ct_remaining(state)
+    ct_ready_at = int(_now_ts()) + int(wait)
+    drop_items = [_trial_drop_item(p) for p in reward_parts]
+    area = next((a for a in EXPLORE_AREAS if a["key"] == area_key), {"label": "第一層"})
+    summary = {
+        "outcome": "勝利" if outcome_is_win else "敗北",
+        "outcome_base": "勝利" if outcome_is_win else "敗北",
+        "outcome_is_win": outcome_is_win,
+        "reward_coin": int(coin_gain if outcome_is_win else 0),
+        "reward_exp": 0,
+        "reward_core": 0,
+        "highlight_core_drop": False,
+        "dropped_parts": [p.get("name") for p in reward_parts],
+        "drop_items": drop_items,
+        "player_final_hp": None,
+        "player_max_hp": int(player_stats.get("hp") or 0),
+        "enemy_name": enemy["name_ja"] if "name_ja" in enemy.keys() else "訓練ドローン",
+        "enemy_key": enemy["key"] if "key" in enemy.keys() else None,
+        "enemy_tier": int(enemy["tier"] if "tier" in enemy.keys() else 1),
+        "enemy_image_url": _enemy_static_url(
+            enemy["image_path"] if "image_path" in enemy.keys() else None,
+            fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+        ),
+        "enemy_faction": ((enemy["faction"] if "faction" in enemy.keys() else "neutral") or "neutral").lower(),
+        "enemy_faction_label": FACTION_LABELS.get(
+            ((enemy["faction"] if "faction" in enemy.keys() else "neutral") or "neutral").lower(),
+            "旧文明",
+        ),
+        "timeout": bool(battle_result.get("timeout")),
+        "timeout_decision_line": "8ターン終了" if battle_result.get("timeout") else None,
+        "explore_ct_remain": int(wait),
+        "explore_ct_ready_at": int(ct_ready_at),
+        "explore_ct_is_admin": False,
+        "explore_ct_button_label": f"もう一度出撃（あと{int(wait)}秒）" if wait > 0 else "もう一度出撃",
+        "explore_ct_status_label": f"CT中: あと{int(wait)}秒" if wait > 0 else "出撃可能",
+        "tutorial_layer1_result_card": (
+            {
+                "title": "パーツを手に入れた！",
+                "text": "次は強化してみよう。",
+                "cta_label": "パーツ強化へ",
+                "cta_url": url_for("parts_strengthen"),
+            }
+            if outcome_is_win and explore_no == 1
+            else None
+        ),
+        "tutorial_layer1_next_action": _trial_next_action_for_result(state),
+    }
+    summary["reward_front"] = _build_battle_reward_front(
+        reward_coin=int(summary["reward_coin"]),
+        reward_core=0,
+        dropped_core_name=None,
+        drop_items=drop_items,
+    )
+    state["last_result"] = {
+        "explore_no": explore_no,
+        "enemy_name": summary["enemy_name"],
+        "area_label": area.get("label"),
+        "coin_gain": int(summary["reward_coin"]),
+        "dropped_parts": reward_parts,
+        "is_finished": explore_no >= int(TRIAL_MODE_MAX_EXPLORES),
+    }
+    return {
+        "summary": summary,
+        "active_robot": {
+            "id": "trial",
+            "name": state.get("robot", {}).get("name") or "アーク・プロト",
+            "image_url": state.get("robot", {}).get("image_url"),
+        },
+        "turn_logs": [],
+        "state": {"enemy_name": summary["enemy_name"]},
+        "explore_area_key": area_key,
+        "explore_area_label": area.get("label"),
     }
 
 
 def _render_trial_home():
-    return render_template("trial_home.html", **_trial_view_context(title="体験モード"))
+    return render_template("trial_home.html", **_trial_view_context(title="お試しプレイ中"))
 
 
 def _render_trial_explore_result(result):
-    return render_template("trial_battle.html", **_trial_view_context(result=result, title="体験モード"))
+    return render_template(
+        "battle.html",
+        **_trial_view_context(
+            title="お試しプレイ中",
+            summary=result["summary"],
+            active_robot=result["active_robot"],
+            turn_logs=result["turn_logs"],
+            state=result["state"],
+            explore_mode=True,
+            explore_area_key=result["explore_area_key"],
+            explore_area_label=result["explore_area_label"],
+            battle_short_replay_enabled=False,
+            battle_ritual_overlay_enabled=False,
+            battle_log_mode="collapsed",
+        ),
+    )
 
 
 def _render_trial_strengthen(result=None):
-    return render_template("trial_strengthen.html", **_trial_view_context(result=result, title="体験モード"))
+    base, materials = _trial_strengthen_candidate(_trial_state())
+    return render_template(
+        "trial_strengthen.html",
+        **_trial_view_context(
+            result=result,
+            strengthen_base=base,
+            strengthen_materials=materials,
+            title="パーツ強化",
+        ),
+    )
+
+
+def _render_trial_parts():
+    state = _trial_state()
+    return render_template(
+        "trial_parts.html",
+        **_trial_view_context(
+            title="所持パーツ",
+            parts=state.get("parts") or [],
+        ),
+    )
 
 
 def _render_trial_build(result=None):
-    build_options = [
-        {
-            "key": "balanced",
-            "title": "安定運用のまま",
-            "desc": "今のバランスを維持して、命中と防御を優先します。",
-            "stat_delta": "命中 +1 / 防御 +1",
-        },
-        {
-            "key": "cannon",
-            "title": "右腕キャノン寄せ",
-            "desc": "拾った右腕を試して、攻撃寄りの手触りにします。",
-            "stat_delta": "攻撃 +2 / 会心 +1",
-        },
-        {
-            "key": "swift",
-            "title": "軽量脚部を試す",
-            "desc": "脚部を軽くして、先手を取りやすくします。",
-            "stat_delta": "素早さ +2 / 命中 +1",
-        },
-    ]
+    state = _trial_state()
+    build_options = _trial_build_options(state)
     return render_template(
         "trial_build.html",
-        **_trial_view_context(build_options=build_options, result=result, title="体験モード"),
+        **_trial_view_context(build_options=build_options, result=result, title="ロボ編成"),
     )
 
 
@@ -20444,7 +20695,7 @@ def enforce_trial_mode_scope():
         return redirect(url_for("trial_finish"))
     if endpoint in TRIAL_ALLOWED_ENDPOINTS:
         return None
-    session["message"] = "体験モードではこの機能は利用できません。登録すると続きの機能を使えます。"
+    session["message"] = "お試しプレイではこの機能は使えません。無料で始めると続きの機能を使えます。"
     return redirect(url_for("home"))
 
 
@@ -22244,8 +22495,8 @@ def trial_start():
     session.permanent = False
     session["is_trial"] = True
     session["trial_id"] = str(uuid.uuid4())
-    session["trial_state"] = _trial_default_state()
-    session["message"] = "体験モードを開始しました。まずは第1層へ出撃してみましょう。"
+    session["trial_state"] = _trial_default_state(get_db())
+    session["message"] = "このロボで、まずは1回出撃してみよう。"
     return redirect(url_for("home"))
 
 
@@ -22254,7 +22505,7 @@ def trial_finish():
     if not _is_trial_session():
         return redirect(url_for("register"))
     reason = _trial_finish_reason() or "complete"
-    return render_template("trial_finish.html", **_trial_view_context(reason=reason, title="体験はここまで"))
+    return render_template("trial_finish.html", **_trial_view_context(reason=reason, title="お試しプレイ完了"))
 
 
 @app.route("/trial/end")
@@ -25289,33 +25540,16 @@ def explore():
         state = _trial_state()
         area_key = (request.form.get("area_key") or "").strip()
         if area_key != "layer_1":
-            session["message"] = "体験モードでは第1層だけ出撃できます。"
+            session["message"] = "お試しプレイでは第1層へ出撃できます。"
             return redirect(url_for("home"))
         if _trial_finish_reason(state):
             return redirect(url_for("trial_finish"))
         wait = _trial_ct_remaining(state)
         if wait > 0:
-            session["message"] = f"体験モードの再出撃はあと{int(wait)}秒待ってください。"
+            session["message"] = f"再出撃まであと{int(wait)}秒です。"
             return redirect(url_for("home"))
-        explore_no = int(state.get("explores") or 0) + 1
-        coin_gain = 16
-        state["explores"] = explore_no
-        state["last_explore_at"] = int(_now_ts())
-        state["coins"] = int(state.get("coins") or 0) + coin_gain
-        dropped_part = _trial_reward_part(state, explore_no) if explore_no <= 2 else None
-        if dropped_part:
-            state.setdefault("parts", []).append(dropped_part)
-        if str(state.get("step") or "") == "explore":
-            state["step"] = "strengthen"
-        result = {
-            "explore_no": explore_no,
-            "enemy_name": "訓練用ドローン",
-            "area_label": "第一層: 風化した整備通路",
-            "coin_gain": coin_gain,
-            "dropped_part": dropped_part,
-            "is_finished": explore_no >= int(TRIAL_MODE_MAX_EXPLORES),
-        }
-        state["last_result"] = result
+        db = get_db()
+        result = _trial_battle_result(db, state, area_key)
         _save_trial_state(state)
         return _render_trial_explore_result(result)
     db = get_db()
@@ -28149,18 +28383,32 @@ def build():
         state = _trial_state()
         result = None
         if request.method == "POST":
-            build_key = (request.form.get("build_key") or "balanced").strip()
+            build_key = (request.form.get("build_key") or "").strip()
+            selected = None
+            current = None
+            for part in state.get("parts") or []:
+                if part.get("id") == build_key and not part.get("equipped"):
+                    selected = part
+                    break
+            if selected:
+                for part in state.get("parts") or []:
+                    if part.get("equipped") and part.get("part_type") == selected.get("part_type"):
+                        current = part
+                        break
+                if current:
+                    current["equipped"] = False
+                    current["status_label"] = "所持中"
+                    selected["equipped"] = True
+                    selected["status_label"] = "装備中"
             state["built"] = True
             state["step"] = "done"
-            if build_key == "cannon":
-                state["robot"]["summary"] = "右腕キャノンを試した攻撃寄りの試験構成です。"
-            elif build_key == "swift":
-                state["robot"]["summary"] = "軽量脚部を試した先手寄りの試験構成です。"
+            if selected:
+                state["robot"]["summary"] = f"{selected.get('name', '新しいパーツ')}を試した構成です。"
             else:
-                state["robot"]["summary"] = "安定型のまま、命中と防御を整えた試験構成です。"
+                state["robot"]["summary"] = "今の構成のまま、もう一度出撃できます。"
             result = {
-                "title": "編成を更新しました",
-                "body": "出撃、強化、編成の基本ループを一通り体験しました。",
+                "title": "組み替え完了",
+                "body": "新しい構成で、もう一度出撃してみよう。",
             }
             _save_trial_state(state)
         return _render_trial_build(result=result)
@@ -28892,6 +29140,33 @@ def lab_home():
         counts=counts,
         is_admin=bool(int(user["is_admin"] or 0) == 1),
     )
+
+
+@app.route("/lab/ai-robot-generate")
+@login_required
+def lab_ai_robot_generate():
+    source = (request.args.get("source") or "lab_top").strip().lower()
+    if source not in {"lab_top", "lab_upload"}:
+        source = "lab_top"
+    db = get_db()
+    user_id = int(session["user_id"])
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_AI_GENERATE_CLICK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_ai_generate_click",
+        entity_type="external_link",
+        entity_id=None,
+        payload={
+            "source": source,
+            "target": LAB_AI_ROBOT_GENERATOR_TARGET,
+            "url": LAB_AI_ROBOT_GENERATOR_URL,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return redirect(LAB_AI_ROBOT_GENERATOR_URL)
 
 
 @app.route("/lab/race/legacy")
@@ -30317,6 +30592,8 @@ def enemy_dex_detail(enemy_key):
 @app.route("/parts")
 @login_required
 def parts():
+    if _is_trial_session():
+        return _render_trial_parts()
     db = get_db()
     user_id = int(session["user_id"])
     user_row = db.execute(
@@ -31556,16 +31833,25 @@ def parts_strengthen():
         state = _trial_state()
         result = None
         if request.method == "POST":
-            if not state.get("strengthened"):
+            base, materials = _trial_strengthen_candidate(state)
+            if not state.get("strengthened") and base and len(materials) >= 2:
                 state["strengthened"] = True
                 state["step"] = "build"
-                for part in state.get("parts") or []:
-                    if part.get("id") == "trial_r_arm":
-                        part["plus"] = int(part.get("plus") or 0) + 1
-                        break
+                base["plus"] = int(base.get("plus") or 0) + 1
+                base_like = {"rarity": base.get("rarity") or "N", "plus": int(base["plus"])}
+                for stat_key in PART_STAT_KEYS:
+                    base_like[f"w_{stat_key}"] = float(base.get(f"w_{stat_key}") or 0.0)
+                base["stats"] = compute_part_stats(base_like)
+                consumed_ids = {materials[0]["id"], materials[1]["id"]}
+                state["parts"] = [p for p in (state.get("parts") or []) if p.get("id") not in consumed_ids]
                 result = {
                     "title": "強くなった！",
-                    "body": "素材を自動選択して、右腕キャノンを +1 強化しました。",
+                    "body": f"{base.get('name', 'パーツ')}を +1 強化しました。次はロボを組み替えてみよう。",
+                }
+            elif not state.get("strengthened"):
+                result = {
+                    "title": "素材が足りません",
+                    "body": "もう一度出撃すると、強化に使えるパーツを集められます。",
                 }
             else:
                 result = {

@@ -10,6 +10,15 @@
   {% endif %}
 </div>
 
+<div class="card lab-upload-ai-card">
+  <h2>ロボ画像をまだ持っていない方へ</h2>
+  <div class="robot-part">研究所AIでロボを作れます。</div>
+  <div class="robot-part">作ったPNG画像を、そのままここにアップできます。</div>
+  <p class="link">
+    <a class="battle-home-link battle-next-cta" href="{{ url_for('lab_ai_robot_generate', source='lab_upload') }}" target="_blank" rel="noopener noreferrer">AIで作る</a>
+  </p>
+</div>
+
 <form method="post" enctype="multipart/form-data" class="lab-upload-form" data-lab-stat-form data-max-total="{{ chart_max_total }}">
   <section class="card lab-upload-section">
     <h2>基本情報</h2>
@@ -127,6 +136,7 @@
   <section class="card lab-upload-section">
     <h2>画像</h2>
     <div class="robot-part">PNG / 透過必須 / 正方形 96px〜512px / 最大1MB。</div>
+    <div class="robot-part">透過PNG・正方形画像をそのまま使えます。AIで作った画像を保存してアップしてください。</div>
     <div class="lab-field-stack lab-image-field">
       <label for="image">PNG画像アップロード</label>
       <input id="image" type="file" name="image" accept="image/png" required />

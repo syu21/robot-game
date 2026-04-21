@@ -230,6 +230,7 @@ AUDIT_EVENT_TYPES = {
     "LAB_SUBMISSION_FEATURE": "audit.lab.submission.feature",
     "LAB_SUBMISSION_ADOPTION_CANDIDATE": "audit.lab.submission.adoption_candidate",
     "LAB_SUBMISSION_ADOPTION_UPDATE": "audit.lab.submission.adoption_update",
+    "LAB_AI_GENERATE_CLICK": "audit.lab.ai_generate.click",
     "LAB_RACE_ENTRY": "audit.lab.race.entry",
     "LAB_RACE_START": "audit.lab.race.start",
     "LAB_RACE_FINISH": "audit.lab.race.finish",

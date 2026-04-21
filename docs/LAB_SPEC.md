@@ -1,6 +1,6 @@
 # 実験室仕様
 
-最終更新日: 2026-04-12
+最終更新日: 2026-04-21
 
 ## 1. 位置づけ
 - `基地 = 本編の成長`
@@ -20,6 +20,7 @@
 現行ルート:
 
 - `/lab`
+- `/lab/ai-robot-generate`
 - `/lab/race`
 - `/lab/race/watch/<race_id>`
 - `/lab/race/result/<race_id>`
@@ -75,10 +76,17 @@ UGC拡張予定ルート:
 
 ## 6. 監査
 - `audit.lab.submission.*`
+- `audit.lab.ai_generate.click`
 - `audit.lab.race.*`
 - `audit.lab.casino.*`
 
 UI 名称は `エネミーレース` に統一したが、既存 `audit.*` キーは互換維持のため継続利用する。
+
+## 6.1 AIロボ生成導線
+- `/lab` と `/lab/upload` から `研究所AI` のロボ生成導線を表示する
+- 導線は `/lab/ai-robot-generate?source=lab_top|lab_upload` を新規タブで開き、クリック監査後に外部のロボ生成ページへリダイレクトする
+- 生成画像はユーザーが保存し、`/lab/upload` から投稿する
+- ゲーム内で画像生成APIは呼ばず、本編の強さ、コイン、層進行、出撃、進化、強化には影響させない
 
 ## 7. 景品交換の公開状態
 - 2026-04-12 時点では景品交換は準備中

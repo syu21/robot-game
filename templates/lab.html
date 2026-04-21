@@ -36,13 +36,17 @@
     <div class="action-title">エネミーレース</div>
     <div class="action-desc">敵ロボ6体のレースを予想して遊ぶ</div>
   </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_ai_robot_generate', source='lab_top') }}" target="_blank" rel="noopener noreferrer">
+    <div class="action-title">AIロボ生成 <span class="weekly-fit-badge">β</span></div>
+    <div class="action-desc">研究所AIでロボを作る。作った画像は実験室へ投稿できます</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('lab_upload') }}">
+    <div class="action-title">ロボ投稿</div>
+    <div class="action-desc">作ったロボを実験室へ投稿する</div>
+  </a>
   <a class="action-card home-nav-card" href="{{ url_for('lab_showcase') }}">
     <div class="action-title">投稿ロボ展示</div>
     <div class="action-desc">みんなのロボを見る</div>
-  </a>
-  <a class="action-card home-nav-card" href="{{ url_for('lab_upload') }}">
-    <div class="action-title">試作機登録</div>
-    <div class="action-desc">自分のロボを投稿する</div>
   </a>
   <a class="action-card home-nav-card" href="{{ url_for('lab_my_submissions') }}">
     <div class="action-title">自分の研究機体</div>

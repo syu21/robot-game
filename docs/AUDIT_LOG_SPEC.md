@@ -61,6 +61,8 @@
 - `audit.lab.submission.disable`
 - `audit.lab.submission.like`
 - `audit.lab.submission.report`
+- `audit.lab.ai_generate.click`
+  - payload は `source=lab_top|lab_upload`, `target=external_gpt_robot_factory`, `url` を含める
 - `audit.lab.race.entry`
 - `audit.lab.race.start`
 - `audit.lab.race.finish`
