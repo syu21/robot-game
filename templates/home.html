@@ -11,6 +11,14 @@
 </div>
 {% else %}
 {% include '_presence_bar.html' %}
+{% if trial_mode %}
+<section class="card trial-home-banner">
+  <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
+  <h1>アーク・プロトで出撃体験</h1>
+  <div class="upgrade-cost">このロボで、まずは1回出撃してみよう。気に入ったら、そのまま無料で始められます。</div>
+  <div class="robot-time">この体験の報酬は保存されません。</div>
+</section>
+{% endif %}
 <div class="home-priority-stack">
 {% if home_primary_explore_cta %}
 <div class="panel home-explore-card">
@@ -241,17 +249,29 @@
       {% if main_robot %}
         <div class="main-robot-layout">
           <div class="robot-top-row">
+            {% if trial_mode %}
+            <div class="robot-top-visual robot-image-card">
+            {% else %}
             <a class="robot-top-visual robot-image-card" href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">
+            {% endif %}
               {% if main_robot.get('image_url') %}
               <img class="robot-thumb main-robot-thumb" src="{{ main_robot['image_url'] }}" alt="main robot" loading="lazy" />
               {% else %}
               <div class="robot-thumb empty main-robot-thumb">no image</div>
               {% endif %}
+            {% if trial_mode %}
+            </div>
+            {% else %}
             </a>
+            {% endif %}
             <div class="robot-info-row">
               <div class="stat-card robot-name-card">
                 <div class="stat-label">ロボ名</div>
+                {% if trial_mode %}
+                <div class="stat-value stat-small">{{ main_robot['name'] or '無名ロボ' }}</div>
+                {% else %}
                 <div class="stat-value stat-small"><a href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">{{ main_robot['name'] or '無名ロボ' }}</a></div>
+                {% endif %}
                 {% if idle_line %}
                 <div class="robot-idle-line">{{ idle_line }}</div>
                 {% endif %}
@@ -328,6 +348,7 @@
         </div>
       {% endif %}
     </section>
+    {% if not trial_mode %}
     <section class="panel home-mvp-panel">
       <div class="world-env-card mvp-hero-card">
         <div><b>今週のMVP</b></div>
@@ -412,6 +433,8 @@
       </div>
     </section>
     {% endif %}
+    {% endif %}
+    {% if not trial_mode %}
     <section
       class="panel home-mini-log-panel home-comms-panel"
       id="home-comms-panel"
@@ -602,6 +625,7 @@
         </section>
       </div>
     </section>
+    {% endif %}
   </div>
 
   <div class="home-right-stack home-social-stack">
@@ -665,7 +689,9 @@
           <div><b>今日の進捗</b></div>
           <div class="upgrade-cost">今日どれだけ前に進んだかをまとめて見られます。</div>
         </div>
-        <a class="battle-home-link home-today-progress-link" href="{{ url_for('progress_view') }}">詳しく見る</a>
+      {% if not trial_mode %}
+      <a class="battle-home-link home-today-progress-link" href="{{ url_for('progress_view') }}">詳しく見る</a>
+      {% endif %}
       </div>
       {% if today_progress.get('is_empty') %}
       <div class="home-today-progress-empty">
@@ -732,7 +758,9 @@
         </form>
       </div>
       {% endif %}
+      {% if not trial_mode %}
       <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
+      {% endif %}
       {% if home_area_cards %}
       <div class="home-nav-section-title">探索先メモ</div>
       <div class="home-area-card-grid">
@@ -756,7 +784,9 @@
       <div class="home-nav-section-title">育成</div>
       <div class="actions-grid home-actions-grid home-primary-actions-grid">
         {% if has_any_robot %}
+        {% if not trial_mode %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
+        {% endif %}
         <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
         {% if show_evolution_actions %}
         <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">{{ evolution_core_status['home_label'] }}</div></a>
@@ -768,6 +798,7 @@
         <a class="action-card" href="{{ url_for('market') }}"><div class="action-title">廃品市場</div><div class="action-desc">余剰パーツを売って補填を買う</div></a>
         {% endif %}
       </div>
+      {% if not trial_mode %}
       <div class="home-nav-section-title">β版を応援</div>
       <div class="home-support-card card">
         <div><b>入口と戦闘UIを改善中です</b></div>
@@ -777,6 +808,7 @@
           <a class="battle-home-link" href="{{ url_for('shop') }}">ショップ</a>
         </div>
       </div>
+      {% endif %}
       {% if is_admin %}
       <div class="home-nav-section-title">管理</div>
       <div class="actions-grid home-actions-grid home-secondary-actions-grid">
@@ -791,6 +823,7 @@
       {% endif %}
   </section>
 
+    {% if not trial_mode %}
     <section class="panel home-weekly-panel">
     {% if weekly_env %}
       <div class="world-env-card">
@@ -853,6 +886,7 @@
       <div class="link"><a href="{{ url_for('world_view') }}">陣営戦を見る</a> | <a href="{{ url_for('records_view') }}">記録を見る</a></div>
     </div>
     </section>
+    {% endif %}
 
     {% if not home_beginner_focus %}
     <section class="panel home-nav-panel">
@@ -872,6 +906,7 @@
       </div>
     </section>
     {% endif %}
+    {% if not trial_mode %}
     <section class="panel home-ranking-panel">
       <div class="world-env-card">
         <div><b>今週のランキング</b></div>
@@ -893,6 +928,8 @@
         <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
       </div>
     </section>
+    {% endif %}
+    {% if not trial_mode %}
     <section class="panel home-visibility-panel">
       <div class="world-env-card">
         <div><b>表示調整</b></div>
@@ -916,6 +953,7 @@
         {% endif %}
       </div>
     </section>
+    {% endif %}
 </div>
 </div>
 </div>

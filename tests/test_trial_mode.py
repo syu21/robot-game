@@ -43,8 +43,12 @@ class TrialModeTests(unittest.TestCase):
         start_resp = client.get("/trial/start", follow_redirects=True)
         self.assertEqual(start_resp.status_code, 200)
         start_html = start_resp.get_data(as_text=True)
-        self.assertIn("研究所貸与機でプレイ中", start_html)
-        self.assertIn("STEP1: 出撃してみよう", start_html)
+        self.assertIn("お試しプレイ中", start_html)
+        self.assertIn("出撃機体", start_html)
+        self.assertIn("最初の出撃", start_html)
+        self.assertIn("本番のロボ編成と同じ考え方で動きます。", start_html)
+        self.assertNotIn("体験ガイド", start_html)
+        self.assertIn("アーク・プロト", start_html)
         with client.session_transaction() as sess:
             self.assertTrue(sess.get("is_trial"))
             self.assertNotIn("user_id", sess)
@@ -52,8 +56,11 @@ class TrialModeTests(unittest.TestCase):
         explore_resp = client.post("/explore", data={"area_key": "layer_1"})
         self.assertEqual(explore_resp.status_code, 200)
         explore_html = explore_resp.get_data(as_text=True)
-        self.assertIn("パーツが手に入った！", explore_html)
+        self.assertIn("パーツを手に入れた", explore_html)
         self.assertIn("次は強化してみよう", explore_html)
+        parts_resp = client.get("/parts")
+        self.assertEqual(parts_resp.status_code, 200)
+        self.assertIn("所持パーツ", parts_resp.get_data(as_text=True))
         self.assertEqual(self._count_rows("users"), users_before)
         self.assertEqual(self._count_rows("world_events_log"), logs_before)
 
@@ -71,8 +78,8 @@ class TrialModeTests(unittest.TestCase):
         build_resp = client.post("/build", data={"build_key": "swift"})
         self.assertEqual(build_resp.status_code, 200)
         build_html = build_resp.get_data(as_text=True)
-        self.assertIn("編成を更新しました", build_html)
-        self.assertIn("体験ループ完了", build_html)
+        self.assertIn("組み替え完了", build_html)
+        self.assertIn("もう一度出撃してみよう", build_html)
 
         blocked_resp = client.get("/ranking")
         self.assertEqual(blocked_resp.status_code, 302)
@@ -87,7 +94,7 @@ class TrialModeTests(unittest.TestCase):
                 self.assertEqual(resp.status_code, 200)
         finish_resp = client.get("/home", follow_redirects=True)
         self.assertEqual(finish_resp.status_code, 200)
-        self.assertIn("体験はここまで！", finish_resp.get_data(as_text=True))
+        self.assertIn("ここまで遊んだ内容は保存されません", finish_resp.get_data(as_text=True))
 
 
 if __name__ == "__main__":
