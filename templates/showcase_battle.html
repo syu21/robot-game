@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block content %}
+{% set enemy_name = opponent.get('robot_name', '展示ロボ') if opponent else '展示ロボ' %}
+{% set player_name = challenger.get('robot_name', 'あなた') if challenger else (active_robot['name'] if active_robot else 'あなた') %}
+{% set battle_cinematic_enabled = summary and summary.get('battle_cinematic') and ui_effects_enabled and battle_short_replay_enabled %}
+<div class="battle-scene champion-battle-scene">
+  {% if battle_cinematic_enabled %}
+    {% set battle_cinematic = summary.get('battle_cinematic') %}
+    {% set explore_area_label = 'ロボ展示模擬戦' %}
+    {% include '_battle_cinematic_v1.html' %}
+  {% else %}
+  <div class="card champion-battle-head">
+    <h1 class="battle-title">{{ enemy_name }} と模擬戦</h1>
+    <div class="upgrade-cost">展示されている機体を相手に、今のロボの手応えを確かめます。</div>
+  </div>
+  {% endif %}
+
+  <div id="battle-replay-followup">
+    <div class="battle-section-title">対戦相手</div>
+    <div class="card enemy-card champion-summary-card">
+      <div class="enemy-sprite-frame battle-enemy-thumb-frame">
+        {% if opponent and opponent.get('robot_image_url') %}
+        <img class="battle-enemy-thumb" src="{{ opponent.get('robot_image_url') }}" alt="{{ enemy_name }}" loading="lazy" />
+        {% else %}
+        <img class="battle-enemy-thumb" src="{{ url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ enemy_name }}" loading="lazy" />
+        {% endif %}
+      </div>
+      <div>
+        <div><b>{{ enemy_name }}</b></div>
+        {% if opponent %}
+        <div class="upgrade-cost">所有者: {{ opponent.get('owner_name') or 'unknown' }}</div>
+        {% if opponent.get('signature_label') %}
+        <div class="upgrade-cost">思想: {{ opponent.get('signature_label') }}</div>
+        {% endif %}
+        {% if opponent.get('focus_label_line') %}
+        <div class="upgrade-cost">{{ opponent.get('focus_label_line') }}</div>
+        {% endif %}
+        {% if opponent.get('trait_summary') %}
+        <div class="upgrade-cost">特徴: {{ opponent.get('trait_summary') }}</div>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {% if turn_logs %}
+    <div class="battle-section-title">戦闘ログ</div>
+    <details class="battle-log-fold" {% if battle_log_mode == 'expanded' %}open{% endif %}>
+      <summary>戦闘ログを見る</summary>
+      {% for t in turn_logs %}
+      <div class="card battle-turn">
+        <div class="battle-turn-head">{{ t.get('turn', loop.index) }}ターン</div>
+        <div class="battle-text">
+          <div class="battle-line">{{ t.get('player_action', player_name ~ 'の攻撃') }}</div>
+          <div class="battle-line">{{ t.get('enemy_action', enemy_name ~ 'の攻撃') }}</div>
+          {% if t.get('critical') %}
+          <div class="battle-flag">クリティカル！！</div>
+          {% endif %}
+          {% if t.get('result_line') %}
+          <div class="battle-line"><strong>{{ t.get('result_line') }}</strong></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </details>
+    {% endif %}
+
+    <div class="battle-section-title">結果</div>
+    <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
+      <div class="battle-outcome-label">{{ summary.get('result_label', 'LOSE') }}</div>
+      <div class="battle-outcome-sub">{{ summary.get('outcome', '敗北') }}</div>
+      <div class="upgrade-cost"><b>{{ summary.get('headline', '結果') }}</b></div>
+      <div class="upgrade-cost">{{ summary.get('subline', '') }}</div>
+      {% if summary.get('timeout_decision_line') %}
+      <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
+      {% endif %}
+      <div class="upgrade-cost">{{ summary.get('summary_heading', '今回の勝ち筋') }}: {{ summary.get('summary_label', '') }}</div>
+      <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ summary.get('reward_coin', 0) }}</b></div>
+    </div>
+
+    <div class="battle-section-title">次の行動</div>
+    <div class="battle-next-grid">
+      <section class="card battle-next-card battle-next-card-primary">
+        <div><b>もう一度戦う</b></div>
+        <div class="upgrade-cost">同じ展示ロボを相手に、調整前後の違いを見られます。</div>
+        <form method="post" action="{{ url_for('battle_simulation', robot_id=opponent.get('robot_instance_id')) }}">
+          <input type="hidden" name="sort" value="{{ sort_key }}" />
+          <button type="submit" class="battle-next-cta">再戦する</button>
+        </form>
+      </section>
+      <section class="card battle-next-card">
+        <div><b>ロボ展示へ戻る</b></div>
+        <div class="upgrade-cost">ほかの公開ロボとも腕試しできます。</div>
+        <a class="battle-home-link" href="{{ url_for('showcase', sort=sort_key) }}">ロボ展示へ</a>
+      </section>
+      <section class="card battle-next-card">
+        <div><b>パーツを見る</b></div>
+        <div class="upgrade-cost">自機を調整して、次の対戦につなげます。</div>
+        <a class="battle-home-link" href="{{ url_for('parts') }}">パーツ一覧へ</a>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
+{% endblock %}

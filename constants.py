@@ -180,6 +180,7 @@ AUDIT_EVENT_TYPES = {
     "CHAMPION_DEFEAT": "audit.champion.defeat",
     "SHOWCASE_EXPAND": "audit.showcase.expand",
     "SHOWCASE_LIKE": "audit.showcase.like",
+    "SHOWCASE_BATTLE": "audit.showcase.battle",
     "ROBOT_SHARE": "audit.robot.share",
     "CHAT_POST": "audit.chat.post",
     "BOSS_ENCOUNTER": "audit.boss.encounter",

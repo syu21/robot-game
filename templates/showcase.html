@@ -48,7 +48,14 @@
       <div class="robot-card">
         <div class="robot-id">{{ r['name'] }}</div>
         <div class="robot-part">オーナー: {{ r['username'] }}</div>
-        <div class="robot-part">称号: {{ r['primary_title'] }}</div>
+        <div class="robot-part">
+          称号:
+          {% if r.get('primary_title_view') %}
+          <span class="title-badge title-badge-new is-{{ r['primary_title_view'].get('category', 'honor') }} is-{{ r['primary_title_view'].get('color_key', 'honor') }}">{{ r['primary_title_view']['label'] }}</span>
+          {% else %}
+          {{ r['primary_title'] }}
+          {% endif %}
+        </div>
         {% if r.get('profile') and r['profile'].get('signature_label') %}
         <div class="robot-part">思想: {{ r['profile']['signature_label'] }}</div>
         {% endif %}
@@ -74,6 +81,10 @@
         <form method="post" action="{{ url_for('showcase_like', robot_id=r['id']) }}">
           <input type="hidden" name="sort" value="{{ sort_key }}" />
           <button type="submit">{% if r['liked_by_me'] %}いいね解除{% else %}いいね{% endif %} ({{ r['vote_count'] }})</button>
+        </form>
+        <form method="post" action="{{ url_for('battle_simulation', robot_id=r['id']) }}">
+          <input type="hidden" name="sort" value="{{ sort_key }}" />
+          <button type="submit">このロボと戦う</button>
         </form>
         <p class="link"><a href="{{ url_for('robot_detail', instance_id=r['id']) }}">個別ページ</a></p>
       </div>

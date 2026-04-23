@@ -224,6 +224,7 @@ COMM_PERSONAL_LOG_LIMIT = 30
 COMM_AUTO_REFRESH_SECONDS = 18
 CHAMPION_CHALLENGE_WIN_COINS = 20
 CHAMPION_CHALLENGE_LOSE_COINS = 5
+SHOWCASE_BATTLE_WIN_REWARD_COINS = int(os.getenv("SHOWCASE_BATTLE_WIN_REWARD_COINS", "5"))
 
 BUILD_OFFSET_CONTROL_DEFS = (
     {"slot": "head", "label": "HEAD（頭）", "preview_target": "head"},
@@ -18094,6 +18095,7 @@ PERSONAL_LOG_EVENT_TYPES = (
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
     AUDIT_EVENT_TYPES["EXPLORE_END"],
     AUDIT_EVENT_TYPES["PART_EVOLVE"],
+    AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"],
     AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"],
     AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
     AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
@@ -19144,6 +19146,36 @@ def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
                     "meta_lines": [f"部位: {part_label}"],
                 }
             )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"]:
+            target_name = str(payload.get("target_robot_name") or "展示ロボ").strip() or "展示ロボ"
+            target_owner = str(payload.get("target_owner_name") or "unknown").strip() or "unknown"
+            challenger_name = str(payload.get("challenger_robot_name") or "自機").strip() or "自機"
+            result = str(payload.get("result") or "").strip()
+            result_label = "勝利" if result == "win" else "敗北"
+            target_robot_id = int(payload.get("target_robot_instance_id") or 0)
+            reward_coin = int(payload.get("reward_coin") or 0)
+            item = dict(base)
+            item.update(
+                {
+                    "title": "展示ロボ模擬戦",
+                    "text": f"{target_owner} の {target_name} と対戦し、{result_label}しました。",
+                    "accent": ("boss" if result == "win" else "default"),
+                    "link_url": (
+                        url_for("robot_detail", instance_id=target_robot_id)
+                        if target_robot_id > 0
+                        else url_for("showcase")
+                    ),
+                    "meta_lines": [
+                        f"自機: {challenger_name}",
+                        f"{int(payload.get('turn_count') or 0)}ターン / {str(payload.get('summary_label') or '').strip() or result_label}",
+                    ],
+                }
+            )
+            if reward_coin > 0:
+                item["meta_lines"].append(f"報酬: {reward_coin}コイン")
+            elif result == "win" and payload.get("reward_already_granted_today"):
+                item["meta_lines"].append("報酬: 本日受取済み")
             items.append(item)
         elif event_type == AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"]:
             item = dict(base)
@@ -29396,6 +29428,233 @@ def showcase_buy_slot():
     db.commit()
     session["message"] = f"ロボ展示枠を拡張しました（-{price} コイン）。"
     return redirect(url_for("showcase"))
+
+
+@app.route("/battle_simulation/robot/<int:robot_id>", methods=["POST"])
+@login_required
+def battle_simulation(robot_id):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+
+    sort_key = (request.form.get("sort") or request.args.get("sort") or "new").strip().lower()
+    if sort_key == "likes":
+        sort_key = "like"
+    if sort_key not in SHOWCASE_SORT_OPTIONS:
+        sort_key = "new"
+
+    target = db.execute(
+        """
+        SELECT id, user_id, name
+        FROM robot_instances
+        WHERE id = ? AND status = 'active' AND COALESCE(is_public, 1) = 1
+        """,
+        (int(robot_id),),
+    ).fetchone()
+    if not target:
+        abort(404)
+
+    active_robot = _get_active_robot(db, int(user["id"]))
+    if not active_robot:
+        flash("対戦するには出撃機体を設定してください。", "notice")
+        db.commit()
+        return redirect(url_for("build"))
+
+    challenger_payload = _build_champion_robot_payload(
+        db,
+        user_id=int(user["id"]),
+        robot_instance_id=int(active_robot["id"]),
+    )
+    target_payload = _build_champion_robot_payload(
+        db,
+        user_id=int(target["user_id"]),
+        robot_instance_id=int(target["id"]),
+    )
+    if not challenger_payload or not target_payload:
+        flash("対戦機体の読み込みに失敗しました。少し待ってから再挑戦してください。", "error")
+        db.commit()
+        return redirect(url_for("showcase", sort=sort_key))
+
+    battle_result = run_champion_battle(
+        {
+            "name": str(challenger_payload.get("robot_name") or "あなた"),
+            "stats": dict(challenger_payload.get("stats") or {}),
+            "signature_label": str(challenger_payload.get("signature_label") or ""),
+            "focus_labels": list(challenger_payload.get("focus_labels") or []),
+        },
+        {
+            "name": str(target_payload.get("robot_name") or "展示ロボ"),
+            "stats": dict(target_payload.get("stats") or {}),
+            "signature_label": str(target_payload.get("signature_label") or ""),
+            "focus_labels": list(target_payload.get("focus_labels") or []),
+        },
+        max_turns=8,
+    )
+
+    request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
+    today_start, today_end = _jst_day_bounds()
+    rewarded_today = bool(
+        db.execute(
+            """
+            SELECT 1
+            FROM world_events_log
+            WHERE user_id = ?
+              AND event_type = ?
+              AND entity_type = 'robot_instance'
+              AND entity_id = ?
+              AND COALESCE(delta_coins, 0) > 0
+              AND created_at >= ?
+              AND created_at < ?
+            LIMIT 1
+            """,
+            (
+                int(user["id"]),
+                AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"],
+                int(target["id"]),
+                int(today_start),
+                int(today_end),
+            ),
+        ).fetchone()
+    )
+    reward_coin = 0
+    self_target = int(target["user_id"]) == int(user["id"])
+    if bool(battle_result.get("win")) and not rewarded_today and not self_target:
+        reward_coin = max(0, int(SHOWCASE_BATTLE_WIN_REWARD_COINS or 0))
+    if reward_coin > 0:
+        db.execute(
+            "UPDATE users SET coins = coins + ? WHERE id = ?",
+            (int(reward_coin), int(user["id"])),
+        )
+
+    battle_payload = {
+        "challenger_user_id": int(user["id"]),
+        "challenger_owner_name": str(challenger_payload.get("owner_name") or _display_username_for_user_row(db, user)),
+        "challenger_robot_instance_id": int(active_robot["id"]),
+        "challenger_robot_name": str(challenger_payload.get("robot_name") or active_robot.get("name") or "挑戦機"),
+        "challenger_robot_image_url": challenger_payload.get("robot_image_url"),
+        "target_user_id": int(target_payload.get("user_id") or target["user_id"]),
+        "target_owner_name": str(target_payload.get("owner_name") or "unknown"),
+        "target_robot_instance_id": int(target["id"]),
+        "target_robot_name": str(target_payload.get("robot_name") or target["name"] or "展示ロボ"),
+        "target_robot_image_url": target_payload.get("robot_image_url"),
+        "result": ("win" if battle_result.get("win") else "lose"),
+        "outcome": str(battle_result.get("outcome") or ""),
+        "turn_count": int(battle_result.get("turn_count") or 0),
+        "timeout": bool(battle_result.get("timeout")),
+        "summary_label": str(battle_result.get("summary_label") or ""),
+        "first_strike_mode": str(battle_result.get("first_strike_mode") or "RANDOM_FIRST"),
+        "first_striker": str(battle_result.get("first_striker") or ""),
+        "reward_coin": int(reward_coin),
+        "reward_already_granted_today": bool(rewarded_today),
+        "self_target": bool(self_target),
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"],
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="showcase_battle",
+        entity_type="robot_instance",
+        entity_id=int(target["id"]),
+        delta_coins=int(reward_coin),
+        payload=battle_payload,
+        ip=request.remote_addr,
+    )
+    if reward_coin > 0:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["COIN_DELTA"],
+            user_id=int(user["id"]),
+            request_id=request_id,
+            action_key="showcase_battle",
+            entity_type="robot_instance",
+            entity_id=int(target["id"]),
+            delta_coins=int(reward_coin),
+            payload={
+                "source": "showcase_battle",
+                "target_robot_instance_id": int(target["id"]),
+                "result": battle_payload["result"],
+                "reward_coin": int(reward_coin),
+            },
+            ip=request.remote_addr,
+        )
+
+    battle_short_replay_enabled = _battle_short_replay_open_for_viewer(
+        db,
+        user_row=user,
+        user_id=int(user["id"]),
+    )
+    enemy_replay_stats = dict(target_payload.get("stats") or {})
+    enemy_replay_stats["trait"] = enemy_replay_stats.get("trait") or "normal"
+    battle_cinematic = (
+        _build_battle_replay_summary(
+            area_key="showcase_battle",
+            area_label="ロボ展示模擬戦",
+            enemy_name=str(target_payload.get("robot_name") or "展示ロボ"),
+            enemy_image_url=target_payload.get("robot_image_url") or url_for("static", filename="assets/placeholder_enemy.png"),
+            player_name=str(challenger_payload.get("robot_name") or active_robot.get("name") or "あなた"),
+            player_image_url=challenger_payload.get("robot_image_url") or active_robot.get("image_url") or url_for("static", filename="assets/placeholder_player.png"),
+            player_stats=dict(challenger_payload.get("stats") or {}),
+            enemy_stats=enemy_replay_stats,
+            robot_style={"style_key": str(challenger_payload.get("style_key") or "stable")},
+            turn_logs=list(battle_result.get("turn_logs") or []),
+            outcome=str(battle_result.get("outcome") or ""),
+            is_boss=False,
+        )
+        if battle_short_replay_enabled
+        else None
+    )
+    result_summary = {
+        "outcome": str(battle_result.get("outcome") or ("勝利" if battle_result.get("win") else "敗北")),
+        "outcome_is_win": bool(battle_result.get("win")),
+        "summary_heading": str(battle_result.get("summary_heading") or ("今回の勝ち筋" if battle_result.get("win") else "今回の崩れ筋")),
+        "summary_label": str(battle_result.get("summary_label") or ""),
+        "result_label": str(battle_result.get("result_label") or ("WIN" if battle_result.get("win") else "LOSE")),
+        "turn_count": int(battle_result.get("turn_count") or 0),
+        "timeout_decision_line": (
+            str((battle_result.get("timeout_decision") or {}).get("result_line") or "")
+            if battle_result.get("timeout")
+            else ""
+        ),
+        "reward_coin": int(reward_coin),
+        "reward_already_granted_today": bool(rewarded_today),
+        "battle_cinematic": battle_cinematic,
+        "headline": ("展示ロボに勝利" if battle_result.get("win") else "展示ロボに敗北"),
+        "subline": (
+            f"腕試し報酬として {int(reward_coin)} コインを獲得しました。"
+            if reward_coin > 0
+            else (
+                "自分の機体との腕試しではコイン報酬はありません。"
+                if battle_result.get("win") and self_target
+                else ("今日はこの相手の勝利報酬を受け取り済みです。" if battle_result.get("win") and rewarded_today else "機体を調整して再挑戦できます。")
+            )
+        ),
+    }
+    opponent = {
+        "robot_instance_id": int(target["id"]),
+        "robot_name": str(target_payload.get("robot_name") or "展示ロボ"),
+        "owner_name": str(target_payload.get("owner_name") or "unknown"),
+        "robot_image_url": target_payload.get("robot_image_url"),
+        "signature_label": str(target_payload.get("signature_label") or ""),
+        "focus_label_line": str(target_payload.get("focus_label_line") or ""),
+        "trait_summary": str(target_payload.get("trait_summary") or ""),
+    }
+    db.commit()
+    return render_template(
+        "showcase_battle.html",
+        title="展示ロボ模擬戦",
+        opponent=opponent,
+        challenger=challenger_payload,
+        active_robot=active_robot,
+        turn_logs=list(battle_result.get("turn_logs") or []),
+        summary=result_summary,
+        battle_cinematic=result_summary["battle_cinematic"],
+        battle_log_mode=(str(user["battle_log_mode"] or "collapsed").strip().lower() if "battle_log_mode" in user.keys() else "collapsed"),
+        battle_short_replay_enabled=battle_short_replay_enabled,
+        sort_key=sort_key,
+    )
 
 
 @app.route("/showcase/<int:robot_id>/like", methods=["POST"])

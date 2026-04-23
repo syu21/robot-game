@@ -1,7 +1,9 @@
+import json
 import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import app as game_app
 import init_db
@@ -188,6 +190,86 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
         self.assertIn("Bastion Owner", html)
         public_section = html.split("公開ロボ", 1)[1]
         self.assertLess(public_section.index("Velocity Liker"), public_section.index("Bastion Owner"))
+
+    def test_showcase_battle_button_runs_simulation_and_personal_log(self):
+        self._set_robot_weights(
+            self.owner_robot_id,
+            name="Bastion Owner",
+            hp=0.42,
+            atk=0.04,
+            defe=0.36,
+            spd=0.07,
+            acc=0.07,
+            cri=0.04,
+        )
+        client = self._client_for(self.liker_id, "liker_user")
+        resp = client.get("/showcase?sort=new")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("このロボと戦う", html)
+        self.assertIn(f"/battle_simulation/robot/{int(self.owner_robot_id)}", html)
+
+        battle_result = {
+            "win": True,
+            "outcome": "勝利",
+            "timeout": False,
+            "turn_count": 1,
+            "summary_heading": "今回の勝ち筋",
+            "summary_label": "命中で押し切った",
+            "result_label": "WIN",
+            "first_strike_mode": "RANDOM_FIRST",
+            "first_striker": "player",
+            "turn_logs": [
+                {
+                    "turn": 1,
+                    "player_before": 30,
+                    "player_after": 30,
+                    "player_max": 30,
+                    "enemy_before": 10,
+                    "enemy_after": 0,
+                    "enemy_max": 10,
+                    "player_action": "LikerBotの攻撃",
+                    "enemy_action": "Bastion Ownerは停止",
+                    "player_damage": 10,
+                    "enemy_damage": 0,
+                    "result_line": "Bastion Ownerを停止させた。",
+                }
+            ],
+        }
+        with mock.patch.object(game_app, "run_champion_battle", return_value=battle_result) as sim:
+            battle_resp = client.post(f"/battle_simulation/robot/{int(self.owner_robot_id)}", data={"sort": "new"})
+        self.assertEqual(battle_resp.status_code, 200)
+        battle_html = battle_resp.get_data(as_text=True)
+        self.assertIn("展示ロボ模擬戦", battle_html)
+        self.assertIn("Bastion Owner", battle_html)
+        self.assertIn("展示ロボに勝利", battle_html)
+        self.assertTrue(sim.called)
+        self.assertEqual(sim.call_args.args[1]["name"], "Bastion Owner")
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            log = db.execute(
+                """
+                SELECT event_type, payload_json, delta_coins
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (int(self.liker_id), game_app.AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"]),
+            ).fetchone()
+            self.assertIsNotNone(log)
+            payload = json.loads(log["payload_json"])
+            self.assertEqual(payload["target_robot_instance_id"], int(self.owner_robot_id))
+            self.assertEqual(payload["result"], "win")
+            self.assertEqual(int(log["delta_coins"] or 0), game_app.SHOWCASE_BATTLE_WIN_REWARD_COINS)
+
+        personal_resp = client.get("/comms/personal")
+        self.assertEqual(personal_resp.status_code, 200)
+        personal_html = personal_resp.get_data(as_text=True)
+        self.assertIn("展示ロボ模擬戦", personal_html)
+        self.assertIn("Bastion Owner", personal_html)
+        self.assertIn(f"報酬: {game_app.SHOWCASE_BATTLE_WIN_REWARD_COINS}コイン", personal_html)
 
 
 if __name__ == "__main__":
