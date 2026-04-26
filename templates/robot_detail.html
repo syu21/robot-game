@@ -10,6 +10,16 @@
       <div class="robot-id">{{ robot['name'] }} <span class="robot-part">#{{ robot['id'] }}</span></div>
       <div class="robot-part">オーナー: {{ robot['owner_name'] }}</div>
       <div class="robot-part">メイン称号: {{ primary_title }}</div>
+      {% if title_summary and (title_summary.get('style') or title_summary.get('honor')) %}
+      <div class="title-badge-list title-badge-list-compact">
+        {% if title_summary.get('honor') %}
+        <span class="title-badge title-badge-new is-{{ title_summary['honor'].get('category', 'honor') }} is-{{ title_summary['honor'].get('color_key', 'honor') }}">{{ title_summary['honor']['label'] }}</span>
+        {% endif %}
+        {% if title_summary.get('style') %}
+        <span class="title-badge title-badge-new is-{{ title_summary['style'].get('category', 'style') }} is-{{ title_summary['style'].get('color_key', 'style') }}">{{ title_summary['style']['label'] }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="robot-part">製造日: {{ robot['created_at'] | dt }}</div>
       {% if weekly_env %}
       <div class="robot-part">
@@ -21,6 +31,11 @@
       <div class="robot-part">セットボーナス: {{ robot['set_bonus_view']['status_label'] }}</div>
       <div class="robot-time">{{ robot['set_bonus_view']['condition_text'] }} / {{ robot['set_bonus_view']['effect_text'] }}</div>
       <div class="robot-time">{{ robot['set_bonus_view']['detail_text'] }}</div>
+      {% endif %}
+      {% if robot.get('series_view') %}
+      <div class="robot-part">シリーズ効果: {{ robot['series_view']['status_label'] }}</div>
+      <div class="robot-time">{{ robot['series_view']['condition_text'] }} / {{ robot['series_view']['effect_text'] }}</div>
+      <div class="robot-time">{{ robot['series_view']['detail_text'] }}</div>
       {% endif %}
       {% if robot.get('robot_profile') and robot['robot_profile'].get('signature_label') %}
       <div class="robot-part">思想: {{ robot['robot_profile']['signature_label'] }}</div>
@@ -95,7 +110,13 @@
 
 <div class="card">
   <h2>称号</h2>
-  {% if titles %}
+  {% if robot_story_titles %}
+    <div class="title-badge-list">
+      {% for t in robot_story_titles %}
+        <span class="title-badge title-badge-new is-{{ t.get('category', 'honor') }} is-{{ t.get('color_key', 'honor') }}" title="{{ t.get('description', '') }}">{{ t['label'] }}</span>
+      {% endfor %}
+    </div>
+  {% elif titles %}
     <div class="title-badge-list">
       {% for t in titles %}
         <span class="title-badge" title="{{ t['desc_ja'] }}">{{ t['name_ja'] }}</span>
@@ -114,9 +135,23 @@
     {% if item.get('part_key') %}
       <span class="robot-time">({{ item['part_key'] }})</span>
     {% endif %}
+    {% if item.get('series_badge') %}
+      <span class="robot-time">/ {{ item['series_badge']['display_name'] }} / 思想: {{ item['series_badge']['role_label'] }}</span>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
+
+{% if robot.get('series_view') and robot['series_view'].get('catalog_rows') %}
+<div class="card">
+  <h2>シリーズ効果</h2>
+  {% for row in robot['series_view']['catalog_rows'] %}
+  <div class="robot-part">{{ row['display_name'] }}（{{ row['count_text'] }}）</div>
+  <div class="robot-time">{{ row['effect_text'] }}</div>
+  <div class="robot-time">{{ row['hint_text'] }}</div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div class="card">
   <h2>ステータス</h2>

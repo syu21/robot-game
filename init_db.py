@@ -2,6 +2,12 @@ import os
 import sqlite3
 import time
 from balance_config import ENEMY_SEED_STATS
+from series_catalog import (
+    PART_KEY_SERIES_ASSIGNMENTS,
+    SERIES_BONUS_DEFINITIONS,
+    SERIES_DEFINITIONS,
+    SERIES_PART_DEFINITIONS,
+)
 from services.robot_titles import ensure_robot_title_system
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +20,7 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
-RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "market", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "market", "series_system", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -23,6 +29,126 @@ SUPPORTER_LAB_TROPHY_KEY = "supporter_lab"
 SUPPORT_PACK_FOUNDER_DECOR_KEY = "founder_badge_silver"
 SUPPORT_PACK_LAB_DECOR_KEY = "lab_badge_gold"
 LEGACY_SUPPORT_PACK_DECOR_KEY = "shien_trophy"
+
+
+def _upsert_series_rows(cur):
+    now = int(time.time())
+    for row in SERIES_DEFINITIONS:
+        cur.execute(
+            """
+            INSERT INTO series_master (
+                series_key,
+                display_name,
+                category,
+                role_label,
+                description,
+                is_active,
+                released_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(series_key) DO UPDATE SET
+                display_name = excluded.display_name,
+                category = excluded.category,
+                role_label = excluded.role_label,
+                description = excluded.description,
+                is_active = CASE
+                    WHEN series_master.is_active = 1 THEN 1
+                    ELSE excluded.is_active
+                END,
+                released_at = CASE
+                    WHEN series_master.released_at IS NOT NULL THEN series_master.released_at
+                    ELSE excluded.released_at
+                END
+            """,
+            (
+                row["series_key"],
+                row["display_name"],
+                row["category"],
+                row["role_label"],
+                row["description"],
+                int(row.get("default_active", 0)),
+                now if int(row.get("default_active", 0)) else None,
+            ),
+        )
+    for bonus in SERIES_BONUS_DEFINITIONS:
+        cur.execute(
+            """
+            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(series_key, pieces_required, stat_key) DO UPDATE SET
+                value = excluded.value
+            """,
+            (
+                bonus["series_key"],
+                int(bonus["pieces_required"]),
+                bonus["stat_key"],
+                float(bonus["value"]),
+            ),
+        )
+
+
+def _apply_series_part_assignments(cur):
+    now = int(time.time())
+    for part in SERIES_PART_DEFINITIONS:
+        cur.execute(
+            """
+            INSERT INTO robot_parts (
+                part_type,
+                key,
+                image_path,
+                rarity,
+                element,
+                series,
+                display_name_ja,
+                offset_x,
+                offset_y,
+                is_active,
+                is_unlocked,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                part_type = excluded.part_type,
+                image_path = excluded.image_path,
+                rarity = excluded.rarity,
+                element = excluded.element,
+                series = excluded.series,
+                display_name_ja = excluded.display_name_ja,
+                is_active = 1
+            """,
+            (
+                part["part_type"],
+                part["key"],
+                part["image_path"],
+                part["rarity"],
+                part["element"],
+                part["series"],
+                part["display_name_ja"],
+                now,
+            ),
+        )
+    for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
+        cur.execute(
+            "UPDATE robot_parts SET series = ? WHERE key = ?",
+            (series_key, part_key),
+        )
+    cur.execute(
+        """
+        UPDATE part_instances
+        SET series = (
+            SELECT rp.series
+            FROM robot_parts rp
+            WHERE rp.id = part_instances.part_id
+        )
+        WHERE COALESCE(series, '') IN ('', 'S1')
+           OR EXISTS (
+                SELECT 1
+                FROM robot_parts rp
+                WHERE rp.id = part_instances.part_id
+                  AND COALESCE(rp.series, '') != COALESCE(part_instances.series, '')
+           )
+        """
+    )
 
 robots_seed = [
     ("Head:A", "RightArm:A", "LeftArm:A", "Legs:A", "ヘラクス", "SR", "バランス", "蒼い炎をまとった強化型。", 4, 3, 20),
@@ -285,6 +411,43 @@ def main():
             is_active INTEGER NOT NULL DEFAULT 1,
             is_unlocked INTEGER NOT NULL DEFAULT 1,
             created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_master (
+            series_key TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            role_label TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            released_at INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_set_bonus (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_key TEXT NOT NULL,
+            pieces_required INTEGER NOT NULL,
+            stat_key TEXT NOT NULL,
+            value REAL NOT NULL,
+            UNIQUE(series_key, pieces_required, stat_key),
+            FOREIGN KEY (series_key) REFERENCES series_master(series_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS enemy_series_drops (
+            enemy_id INTEGER NOT NULL,
+            series_key TEXT NOT NULL,
+            drop_weight INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (enemy_id, series_key),
+            FOREIGN KEY (series_key) REFERENCES series_master(series_key)
         )
         """
     )
@@ -1422,6 +1585,43 @@ def main():
     cur.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     cur.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
     cur.execute("UPDATE robot_parts SET is_active = 1 WHERE is_active IS NULL")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_master (
+            series_key TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            role_label TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            released_at INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_set_bonus (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_key TEXT NOT NULL,
+            pieces_required INTEGER NOT NULL,
+            stat_key TEXT NOT NULL,
+            value REAL NOT NULL,
+            UNIQUE(series_key, pieces_required, stat_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS enemy_series_drops (
+            enemy_id INTEGER NOT NULL,
+            series_key TEXT NOT NULL,
+            drop_weight INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (enemy_id, series_key)
+        )
+        """
+    )
+    _upsert_series_rows(cur)
+    _apply_series_part_assignments(cur)
     rows_to_fill = cur.execute(
         """
         SELECT id, key, rarity, element, part_type
@@ -1818,6 +2018,8 @@ def main():
             "INSERT INTO robot_parts (part_type, key, image_path, rarity, element, series, offset_x, offset_y, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             items,
         )
+    _upsert_series_rows(cur)
+    _apply_series_part_assignments(cur)
     milestone_count = cur.execute("SELECT COUNT(*) FROM robot_milestones").fetchone()[0]
     if milestone_count == 0:
         cur.executemany(

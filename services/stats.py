@@ -103,6 +103,88 @@ def apply_set_bonus(stats, parts):
     return out, e0.upper()
 
 
+def _normalize_series_key(series_key):
+    key = str(series_key or "").strip()
+    return key
+
+
+def count_series(parts, series_bonus_defs=None):
+    valid_keys = set((series_bonus_defs or {}).keys())
+    counts = {}
+    for part in parts or ():
+        if not part:
+            continue
+        key = _normalize_series_key(part.get("series"))
+        if not key:
+            continue
+        if valid_keys and key not in valid_keys:
+            continue
+        counts[key] = int(counts.get(key, 0)) + 1
+    return counts
+
+
+def _series_bonus_scale(progress_layer, pieces_required):
+    layer = max(1, min(5, int(progress_layer or 1)))
+    pieces = int(pieces_required or 0)
+    if pieces <= 0:
+        return 0.0, ""
+    if pieces == 2:
+        if layer >= 3:
+            return 1.0, "強"
+        if layer >= 2:
+            return 0.6, "弱"
+        return 0.0, ""
+    if pieces == 4:
+        if layer >= 5:
+            return 1.0, "最大"
+        if layer >= 4:
+            return 0.7, "解禁"
+        return 0.0, ""
+    if layer >= 5:
+        return 1.0, "最大"
+    return 0.0, ""
+
+
+def apply_series_bonus(stats, parts, series_bonus_defs=None, progress_layer=5):
+    out = dict(stats)
+    defs = series_bonus_defs or {}
+    counts = count_series(parts, defs)
+    applied = []
+    for series_key, part_count in counts.items():
+        bonus_rows = list(defs.get(series_key) or [])
+        for bonus in bonus_rows:
+            pieces_required = int(bonus.get("pieces_required") or 0)
+            if not pieces_required or part_count < pieces_required:
+                continue
+            scale, stage_label = _series_bonus_scale(progress_layer, pieces_required)
+            if scale <= 0.0:
+                continue
+            stat_key = str(bonus.get("stat_key") or "").strip().lower()
+            if stat_key not in STATS:
+                continue
+            configured_value = float(bonus.get("value") or 0.0)
+            applied_value = configured_value * scale
+            before_value = int(out.get(stat_key) or 0)
+            boosted_value = int(math.ceil(before_value * (1.0 + applied_value)))
+            after_value = max(before_value + 1, boosted_value) if before_value > 0 else boosted_value
+            out[stat_key] = after_value
+            applied.append(
+                {
+                    "series_key": series_key,
+                    "pieces_required": pieces_required,
+                    "count": int(part_count),
+                    "stat_key": stat_key,
+                    "configured_value": configured_value,
+                    "applied_value": applied_value,
+                    "stage_label": stage_label,
+                    "before_value": before_value,
+                    "after_value": after_value,
+                    "delta_value": int(after_value - before_value),
+                }
+            )
+    return out, counts, applied
+
+
 def compute_power(stats):
     # Lightweight display metric.
     return round(
@@ -116,17 +198,25 @@ def compute_power(stats):
     )
 
 
-def compute_robot_stats(parts):
+def compute_robot_stats(parts, *, series_bonus_defs=None, series_progress_layer=5):
     total = {k: 0 for k in STATS}
     for p in parts:
         ps = compute_part_stats(p)
         for k in STATS:
             total[k] += ps[k]
     total_with_bonus, element = apply_set_bonus(total, parts)
+    total_with_series, series_counts, series_bonus = apply_series_bonus(
+        total_with_bonus,
+        parts,
+        series_bonus_defs=series_bonus_defs,
+        progress_layer=series_progress_layer,
+    )
     return {
-        "stats": total_with_bonus,
-        "power": compute_power(total_with_bonus),
+        "stats": total_with_series,
+        "power": compute_power(total_with_series),
         "set_bonus": element,
+        "series_counts": series_counts,
+        "series_bonus": series_bonus,
     }
 
 

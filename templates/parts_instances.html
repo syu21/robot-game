@@ -69,6 +69,10 @@
                 <span class="part-chip">{{ p['part_type_label'] }}</span>
                 <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
                 <span class="part-chip">+{{ p['plus'] }}</span>
+                {% if p.get('series_badge') %}
+                  <span class="part-chip">{{ p['series_badge']['display_name'] }}</span>
+                  <span class="part-chip">{{ p['series_badge']['role_label'] }}</span>
+                {% endif %}
                 {% if p.get('is_equipped') %}
                   <span class="part-chip is-equipped">装備中</span>
                 {% else %}
@@ -130,6 +134,10 @@
                 <span class="part-chip">{{ p['part_type_label'] }}</span>
                 <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
                 <span class="part-chip">+{{ p['plus'] }}</span>
+                {% if p.get('series_badge') %}
+                  <span class="part-chip">{{ p['series_badge']['display_name'] }}</span>
+                  <span class="part-chip">{{ p['series_badge']['role_label'] }}</span>
+                {% endif %}
                 {% if p.get('is_equipped') %}
                   <span class="part-chip is-equipped">装備中</span>
                 {% else %}

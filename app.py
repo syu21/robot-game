@@ -29,6 +29,14 @@ from balance_config import (
     PLUS_WEIGHTS_BY_TIER,
     RARITY_WEIGHTS_BY_TIER,
 )
+from series_catalog import (
+    LEGACY_GENERIC_SERIES_KEYS,
+    PART_KEY_SERIES_ASSIGNMENTS,
+    SERIES_BONUS_DEFINITIONS,
+    SERIES_DEFINITIONS,
+    SERIES_METADATA_BY_KEY,
+    SERIES_PART_DEFINITIONS,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 from constants import (
     APP_VERSION,
@@ -902,6 +910,7 @@ LAB_CASINO_PRIZE_SEEDS = (
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
 LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。コインはそのまま保持されます。"
 MARKET_FEATURE_KEY = "market"
+SERIES_SYSTEM_FEATURE_KEY = "series_system"
 
 
 def _float_env(name, default):
@@ -1139,6 +1148,11 @@ RELEASE_FLAG_DEFS = (
         "key": MARKET_FEATURE_KEY,
         "label": "廃品市場",
         "summary": "余剰パーツ売却と日替わり購入市場を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": SERIES_SYSTEM_FEATURE_KEY,
+        "label": "シリーズシステム",
+        "summary": "シリーズ付きパーツの出現、シリーズ効果、編成UI表示を一般公開します。管理者は非公開中でも確認できます。",
     },
     {
         "key": LAB_SMALL_BOOST_FEATURE_KEY,
@@ -3036,8 +3050,24 @@ def _evolution_core_drop_rate_for_area(area_key):
     return float(EVOLUTION_CORE_DROP_RATE)
 
 
-def _pick_drop_part_master(db, *, rarity=None, area_key=None):
+def _series_drop_rate_for_area(area_key):
+    key = str(area_key or "").strip()
+    if key == "layer_1":
+        return 0.05
+    if key in {"layer_2", "layer_2_mist", "layer_2_rush"}:
+        return 0.10
+    if key == "layer_3":
+        return 0.20
+    if key in {"layer_4_forge", "layer_4_haze", "layer_4_burst", "layer_4_final"}:
+        return 0.35
+    if key in {"layer_5_labyrinth", "layer_5_pinnacle", "layer_5_final"}:
+        return 0.50
+    return 0.0
+
+
+def _pick_drop_part_master(db, *, rarity=None, area_key=None, user_id=None):
     profile = EXPLORE_DROP_PROFILE_BY_AREA.get(str(area_key or "").strip(), {})
+    series_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     rarity_weights = profile.get("rarity_weights") or {}
     effective_rarity = (rarity or "").upper().strip()
     if not effective_rarity and rarity_weights:
@@ -3050,23 +3080,54 @@ def _pick_drop_part_master(db, *, rarity=None, area_key=None):
     if effective_rarity == "R":
         rows = db.execute(
             """
-            SELECT * FROM robot_parts
-            WHERE is_active = 1
-              AND UPPER(COALESCE(rarity, '')) = 'R'
-              AND is_unlocked = 1
+            SELECT rp.*, COALESCE(sm.is_active, 0) AS series_active
+            FROM robot_parts rp
+            LEFT JOIN series_master sm ON sm.series_key = rp.series
+            WHERE rp.is_active = 1
+              AND UPPER(COALESCE(rp.rarity, '')) = 'R'
+              AND rp.is_unlocked = 1
+              AND (
+                    COALESCE(TRIM(rp.series), '') = ''
+                    OR rp.series IN ('S1', 'n1')
+                    OR sm.series_key IS NULL
+                    OR sm.is_active = 1
+              )
             """,
         ).fetchall()
     else:
         rows = db.execute(
             """
-            SELECT * FROM robot_parts
-            WHERE is_active = 1
-              AND UPPER(COALESCE(rarity, '')) = UPPER(?)
+            SELECT rp.*, COALESCE(sm.is_active, 0) AS series_active
+            FROM robot_parts rp
+            LEFT JOIN series_master sm ON sm.series_key = rp.series
+            WHERE rp.is_active = 1
+              AND UPPER(COALESCE(rp.rarity, '')) = UPPER(?)
+              AND (
+                    COALESCE(TRIM(rp.series), '') = ''
+                    OR rp.series IN ('S1', 'n1')
+                    OR sm.series_key IS NULL
+                    OR sm.is_active = 1
+              )
             """,
             (effective_rarity,),
         ).fetchall()
     if not rows:
         return None
+    series_rows = []
+    generic_rows = []
+    for row in rows:
+        series_key = str(row["series"] or "").strip()
+        if series_key and series_key not in LEGACY_GENERIC_SERIES_KEYS and int(row["series_active"] or 0) == 1:
+            series_rows.append(row)
+        else:
+            generic_rows.append(row)
+    series_rate = _series_drop_rate_for_area(area_key) if series_enabled else 0.0
+    if series_rows and generic_rows and series_rate > 0 and random.random() < series_rate:
+        rows = series_rows
+    elif generic_rows:
+        rows = generic_rows
+    elif series_rows:
+        rows = series_rows
 
     element_weights = profile.get("element_weights") or {}
     bias = float(profile.get("exception_bias") or 0.0)
@@ -3526,6 +3587,16 @@ def _release_open_for_viewer(db, feature_key, *, user_row=None, user_id=None, is
     if _viewer_is_admin_for_release(db, user_row=user_row, user_id=user_id, is_admin=is_admin):
         return True
     return _release_flag_is_public(db, key)
+
+
+def _series_system_enabled_for_user(db, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        SERIES_SYSTEM_FEATURE_KEY,
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
 
 
 def _release_feature_for_area(area_key):
@@ -4998,6 +5069,137 @@ def _set_bonus_view_for_loadout(parts, set_bonus_key=None):
     }
 
 
+def _series_meta_for_key(series_key):
+    key = str(series_key or "").strip()
+    if not key or key in LEGACY_GENERIC_SERIES_KEYS:
+        return None
+    row = SERIES_METADATA_BY_KEY.get(key)
+    return dict(row) if row else None
+
+
+def _series_badge_payload(series_key):
+    meta = _series_meta_for_key(series_key)
+    if not meta:
+        return None
+    return {
+        "series_key": str(meta["series_key"]),
+        "display_name": str(meta["display_name"]),
+        "role_label": str(meta["role_label"]),
+        "category": str(meta["category"]),
+        "summary_text": f"{meta['display_name']} / 思想: {meta['role_label']}",
+    }
+
+
+def _series_progress_layer_for_user(db, user_id):
+    row = db.execute(
+        "SELECT max_unlocked_layer FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    layer = int(row["max_unlocked_layer"] or 1) if row else 1
+    return max(1, min(5, layer))
+
+
+def _load_series_master_map(db, active_only=False):
+    where = "WHERE is_active = 1" if active_only else ""
+    rows = db.execute(
+        f"""
+        SELECT series_key, display_name, category, role_label, description, is_active, released_at
+        FROM series_master
+        {where}
+        ORDER BY series_key ASC
+        """
+    ).fetchall()
+    mapping = {}
+    for row in rows:
+        mapping[str(row["series_key"])] = dict(row)
+    return mapping
+
+
+def _load_series_bonus_defs(db, active_only=True):
+    rows = db.execute(
+        f"""
+        SELECT ssb.series_key, ssb.pieces_required, ssb.stat_key, ssb.value
+        FROM series_set_bonus ssb
+        JOIN series_master sm ON sm.series_key = ssb.series_key
+        {"WHERE sm.is_active = 1" if active_only else ""}
+        ORDER BY ssb.series_key ASC, ssb.pieces_required ASC, ssb.id ASC
+        """
+    ).fetchall()
+    mapping = {}
+    for row in rows:
+        mapping.setdefault(str(row["series_key"]), []).append(
+            {
+                "series_key": str(row["series_key"]),
+                "pieces_required": int(row["pieces_required"] or 0),
+                "stat_key": str(row["stat_key"] or ""),
+                "value": float(row["value"] or 0.0),
+            }
+        )
+    return mapping
+
+
+def _format_series_bonus_value(rate):
+    pct = int(round(float(rate or 0.0) * 100))
+    return f"+{pct}%"
+
+
+def _series_bonus_view_for_loadout(db, parts, series_calc=None, progress_layer=1):
+    calc = series_calc or {}
+    counts = dict(calc.get("series_counts") or {})
+    applied = list(calc.get("series_bonus") or [])
+    meta_map = _load_series_master_map(db, active_only=False)
+    line_items = []
+    for series_key, count in sorted(counts.items(), key=lambda item: (-int(item[1]), item[0])):
+        meta = meta_map.get(series_key) or _series_meta_for_key(series_key)
+        if not meta:
+            continue
+        series_effects = [row for row in applied if str(row.get("series_key")) == series_key]
+        effect_text = " / ".join(
+            f"{_stat_label(row['stat_key'])} {_format_series_bonus_value(row['applied_value'])}"
+            for row in series_effects
+        ) or "未発動"
+        if count < 2:
+            hint_text = "あと1部位で2部位効果"
+        elif count < 4 and int(progress_layer or 1) < 4:
+            hint_text = "第4層到達で4部位効果が解禁"
+        elif count < 4:
+            hint_text = "あと1部位で4部位効果"
+        elif int(progress_layer or 1) < 5:
+            hint_text = "第5層到達で4部位効果が最大化"
+        else:
+            hint_text = "4部位効果まで発動中"
+        line_items.append(
+            {
+                "series_key": series_key,
+                "display_name": str(meta["display_name"]),
+                "role_label": str(meta["role_label"]),
+                "count": int(count),
+                "count_text": f"{int(count)}/4",
+                "effect_text": effect_text,
+                "hint_text": hint_text,
+                "active": bool(series_effects),
+            }
+        )
+    if line_items:
+        top = line_items[0]
+        return {
+            "active": bool(applied),
+            "status_label": "発動中" if applied else "準備中",
+            "condition_text": "同シリーズ 2部位 / 4部位で発動",
+            "effect_text": f"{top['display_name']} {top['count_text']} / {top['effect_text']}",
+            "detail_text": top["hint_text"],
+            "catalog_rows": line_items,
+        }
+    return {
+        "active": False,
+        "status_label": "未発動",
+        "condition_text": "同シリーズ 2部位 / 4部位で発動",
+        "effect_text": "同シリーズを集めると能力が伸びます",
+        "detail_text": "第2層から2部位、第4層から4部位効果が使えます。",
+        "catalog_rows": [],
+    }
+
+
 def _normalize_part_type_key(part_type):
     key = str(part_type or "").strip().lower()
     if key in PART_TYPE_TITLES_JA:
@@ -5424,6 +5626,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     status_key = str(item.get("status") or "inventory").strip().lower()
     stats = compute_part_stats(item)
     item["display_name"] = _part_display_name_ja(item)
+    item["series_badge"] = _series_badge_payload(item.get("instance_series") or item.get("series"))
     item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
     item["rarity_label"] = str(item.get("rarity") or "N").upper()
     item["status_key"] = status_key
@@ -5496,6 +5699,7 @@ def _build_picker_part_item(part_row, *, compare_item=None):
     item["rn"] = int(item.get("rn") or 1)
     item["plus"] = int(item.get("plus") or 0)
     item["display_name"] = _part_display_name_ja(item)
+    item["series_badge"] = _series_badge_payload(item.get("instance_series") or item.get("series"))
     item["display_name_with_plus"] = f"{item['display_name']} +{int(item['plus'])}"
     item["display_plus_text"] = f"+{int(item['plus'])}"
     item["instance_slot_label"] = (
@@ -9667,6 +9871,42 @@ def ensure_schema(db):
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE is_unlocked IS NULL")
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE UPPER(COALESCE(rarity, '')) = 'N'")
     db.execute("UPDATE robot_parts SET is_unlocked = 0 WHERE UPPER(COALESCE(rarity, '')) = 'R'")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_master (
+            series_key TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            role_label TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            released_at INTEGER
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_set_bonus (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_key TEXT NOT NULL,
+            pieces_required INTEGER NOT NULL,
+            stat_key TEXT NOT NULL,
+            value REAL NOT NULL,
+            UNIQUE(series_key, pieces_required, stat_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS enemy_series_drops (
+            enemy_id INTEGER NOT NULL,
+            series_key TEXT NOT NULL,
+            drop_weight INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (enemy_id, series_key)
+        )
+        """
+    )
+    _sync_series_catalog(db)
     _backfill_part_display_names(db)
     rip_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_instance_parts)").fetchall()}
     if "head_part_instance_id" not in rip_cols:
@@ -9724,6 +9964,21 @@ def ensure_schema(db):
             SELECT rp.part_type FROM robot_parts rp WHERE rp.id = part_instances.part_id
         )
         WHERE part_type IS NULL OR part_type = ''
+        """
+    )
+    db.execute(
+        """
+        UPDATE part_instances
+        SET series = (
+            SELECT rp.series FROM robot_parts rp WHERE rp.id = part_instances.part_id
+        )
+        WHERE COALESCE(series, '') IN ('', 'S1')
+           OR EXISTS (
+                SELECT 1
+                FROM robot_parts rp
+                WHERE rp.id = part_instances.part_id
+                  AND COALESCE(rp.series, '') != COALESCE(part_instances.series, '')
+           )
         """
     )
     db.execute("UPDATE part_instances SET updated_at = datetime('now') WHERE updated_at IS NULL OR TRIM(updated_at) = ''")
@@ -10230,6 +10485,7 @@ def _seed_robot_assets_v2(db):
             items,
         )
         db.commit()
+    _sync_series_catalog(db)
     if _backfill_part_display_names(db) > 0:
         db.commit()
 
@@ -10282,6 +10538,136 @@ def _repair_legacy_starter_part_rows(db):
         )
         changed += 1
     return changed
+
+
+def _sync_series_catalog(db):
+    now = int(time.time())
+    for row in SERIES_DEFINITIONS:
+        db.execute(
+            """
+            INSERT INTO series_master (
+                series_key,
+                display_name,
+                category,
+                role_label,
+                description,
+                is_active,
+                released_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(series_key) DO UPDATE SET
+                display_name = excluded.display_name,
+                category = excluded.category,
+                role_label = excluded.role_label,
+                description = excluded.description,
+                is_active = CASE
+                    WHEN series_master.is_active = 1 THEN 1
+                    ELSE excluded.is_active
+                END,
+                released_at = CASE
+                    WHEN series_master.released_at IS NOT NULL THEN series_master.released_at
+                    ELSE excluded.released_at
+                END
+            """,
+            (
+                row["series_key"],
+                row["display_name"],
+                row["category"],
+                row["role_label"],
+                row["description"],
+                int(row.get("default_active", 0)),
+                now if int(row.get("default_active", 0)) else None,
+            ),
+        )
+    for bonus in SERIES_BONUS_DEFINITIONS:
+        db.execute(
+            """
+            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(series_key, pieces_required, stat_key) DO UPDATE SET
+                value = excluded.value
+            """,
+            (
+                bonus["series_key"],
+                int(bonus["pieces_required"]),
+                bonus["stat_key"],
+                float(bonus["value"]),
+            ),
+        )
+    for part in SERIES_PART_DEFINITIONS:
+        db.execute(
+            """
+            INSERT INTO robot_parts (
+                part_type,
+                key,
+                image_path,
+                rarity,
+                element,
+                series,
+                display_name_ja,
+                offset_x,
+                offset_y,
+                is_active,
+                is_unlocked,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                part_type = excluded.part_type,
+                image_path = excluded.image_path,
+                rarity = excluded.rarity,
+                element = excluded.element,
+                series = excluded.series,
+                display_name_ja = excluded.display_name_ja,
+                is_active = 1
+            """,
+            (
+                part["part_type"],
+                part["key"],
+                part["image_path"],
+                part["rarity"],
+                part["element"],
+                part["series"],
+                part["display_name_ja"],
+                now,
+            ),
+        )
+    for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
+        db.execute(
+            "UPDATE robot_parts SET series = ? WHERE key = ?",
+            (series_key, part_key),
+        )
+
+
+def release_series(db, series_key, *, emit_world_log=True):
+    key = str(series_key or "").strip()
+    if not key:
+        return False
+    meta = _series_meta_for_key(key)
+    row = db.execute(
+        "SELECT is_active, released_at FROM series_master WHERE series_key = ?",
+        (key,),
+    ).fetchone()
+    if not row:
+        return False
+    already_active = int(row["is_active"] or 0) == 1
+    released_at = int(time.time())
+    db.execute(
+        "UPDATE series_master SET is_active = 1, released_at = COALESCE(released_at, ?) WHERE series_key = ?",
+        (released_at, key),
+    )
+    if emit_world_log and not already_active:
+        _world_event_log(
+            db,
+            "series_released",
+            {
+                "message": f"{meta['display_name'] if meta else key} が解禁されました。",
+                "series_key": key,
+                "display_name": (meta.get("display_name") if meta else key),
+                "category": (meta.get("category") if meta else ""),
+            },
+        )
+    return not already_active
 
 
 def _seed_milestones(db):
@@ -10468,15 +10854,23 @@ def _add_part_drop(
 ):
     rarity_code = (rarity or "").upper()
     if part_type is None or part_key is None:
-        part = _pick_drop_part_master(db, rarity=rarity, area_key=area_key) if rarity else None
+        part = _pick_drop_part_master(db, rarity=rarity, area_key=area_key, user_id=user_id)
         if rarity_code == "R" and not part:
             return None
         if not part:
             part = db.execute(
                 """
-                SELECT * FROM robot_parts
-                WHERE is_active = 1
-                  AND (UPPER(COALESCE(rarity, '')) != 'R' OR is_unlocked = 1)
+                SELECT rp.*
+                FROM robot_parts rp
+                LEFT JOIN series_master sm ON sm.series_key = rp.series
+                WHERE rp.is_active = 1
+                  AND (UPPER(COALESCE(rp.rarity, '')) != 'R' OR rp.is_unlocked = 1)
+                  AND (
+                        COALESCE(TRIM(rp.series), '') = ''
+                        OR rp.series IN ('S1', 'n1')
+                        OR sm.series_key IS NULL
+                        OR sm.is_active = 1
+                  )
                 ORDER BY RANDOM() LIMIT 1
                 """
             ).fetchone()
@@ -11470,6 +11864,16 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
     mapping = _ensure_robot_instance_part_instances(db, robot_instance_id)
     if not mapping or not all(mapping.values()):
         return None
+    owner_row = db.execute(
+        "SELECT user_id FROM robot_instances WHERE id = ?",
+        (int(robot_instance_id),),
+    ).fetchone()
+    series_progress_layer = _series_progress_layer_for_user(db, owner_row["user_id"]) if owner_row else 1
+    series_bonus_defs = (
+        _load_series_bonus_defs(db, active_only=True)
+        if owner_row and _series_system_enabled_for_user(db, user_id=owner_row["user_id"])
+        else {}
+    )
     rows = db.execute(
         f"""
         SELECT pi.*, rp.part_type, rp.key
@@ -11485,7 +11889,11 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
     if not all(t in by_type for t in ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")):
         return None
     ordered = [by_type["HEAD"], by_type["RIGHT_ARM"], by_type["LEFT_ARM"], by_type["LEGS"]]
-    calc = compute_robot_stats(ordered)
+    calc = compute_robot_stats(
+        ordered,
+        series_bonus_defs=series_bonus_defs,
+        series_progress_layer=series_progress_layer,
+    )
     archetype = compute_archetype(ordered)
     computed_style = _robot_style_from_final_stats(calc["stats"])
     row = db.execute(
@@ -11502,6 +11910,9 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         "stats": calc["stats"],
         "power": calc["power"],
         "set_bonus": calc["set_bonus"],
+        "series_bonus": calc.get("series_bonus") or [],
+        "series_counts": calc.get("series_counts") or {},
+        "series_progress_layer": int(series_progress_layer),
         "parts": ordered,
         "archetype": archetype,
         "robot_style": computed_style,
@@ -28032,7 +28443,8 @@ def robot_detail(instance_id):
             rip.l_arm_key,
             rip.legs_key,
             rip.decor_asset_id,
-            u.username AS owner_name
+            u.username AS owner_name,
+            u.max_unlocked_layer AS owner_max_unlocked_layer
         FROM robot_instances ri
         JOIN robot_instance_parts rip ON rip.robot_instance_id = ri.id
         JOIN users u ON u.id = ri.user_id
@@ -28069,6 +28481,16 @@ def robot_detail(instance_id):
         (stat_obj or {}).get("parts"),
         (stat_obj or {}).get("set_bonus"),
     )
+    robot["series_view"] = (
+        _series_bonus_view_for_loadout(
+            db,
+            (stat_obj or {}).get("parts"),
+            series_calc=stat_obj,
+            progress_layer=int(robot.get("owner_max_unlocked_layer") or 1),
+        )
+        if _series_system_enabled_for_user(db, user_id=int(robot["user_id"]))
+        else None
+    )
     robot["archetype"] = stat_obj.get("archetype") if stat_obj else None
     robot["robot_profile"] = _robot_profile_view(stat_obj)
     robot["style_state"] = (
@@ -28087,7 +28509,7 @@ def robot_detail(instance_id):
 
     part_rows = db.execute(
         """
-        SELECT part_type, key, display_name_ja, rarity, element
+        SELECT part_type, key, display_name_ja, rarity, element, series
         FROM robot_parts
         WHERE key IN (?, ?, ?, ?)
         """,
@@ -28104,9 +28526,16 @@ def robot_detail(instance_id):
         row = part_by_key.get(str(key or ""))
         if row:
             name = _part_display_name_ja(row)
+            series_badge = _series_badge_payload(row.get("series"))
         else:
             name = str(key or "-")
-        return {"slot_label": label, "part_name": name, "part_key": str(key or "-")}
+            series_badge = None
+        return {
+            "slot_label": label,
+            "part_name": name,
+            "part_key": str(key or "-"),
+            "series_badge": series_badge,
+        }
 
     robot_composition = [
         _slot_line("頭部", robot.get("head_key")),
@@ -28233,7 +28662,21 @@ def robot_maintenance(instance_id):
         for part_type, item in current_part_items.items()
         if item
     }
-    current_estimate = compute_robot_stats(list(current_payloads.values())) if len(current_payloads) == 4 else None
+    series_progress_layer = _series_progress_layer_for_user(db, user_id)
+    series_bonus_defs = (
+        _load_series_bonus_defs(db, active_only=True)
+        if _series_system_enabled_for_user(db, user_id=user_id)
+        else {}
+    )
+    current_estimate = (
+        compute_robot_stats(
+            list(current_payloads.values()),
+            series_bonus_defs=series_bonus_defs,
+            series_progress_layer=series_progress_layer,
+        )
+        if len(current_payloads) == 4
+        else None
+    )
     current_robot_stats = {
         "hp": int((current_estimate or {}).get("stats", {}).get("hp") or 0),
         "atk": int((current_estimate or {}).get("stats", {}).get("atk") or 0),
@@ -28363,7 +28806,11 @@ def robot_maintenance(instance_id):
         selected_item = _build_picker_part_item(selected_row)
         candidate_payloads = dict(current_payloads)
         candidate_payloads[slot_def["part_type"]] = _robot_payload_from_part_picker_item(selected_item)
-        candidate_estimate = compute_robot_stats(list(candidate_payloads.values()))
+        candidate_estimate = compute_robot_stats(
+            list(candidate_payloads.values()),
+            series_bonus_defs=series_bonus_defs,
+            series_progress_layer=series_progress_layer,
+        )
         candidate_stats = {
             "hp": int((candidate_estimate or {}).get("stats", {}).get("hp") or 0),
             "atk": int((candidate_estimate or {}).get("stats", {}).get("atk") or 0),
@@ -28501,7 +28948,11 @@ def robot_maintenance(instance_id):
             item = _build_picker_part_item(row, compare_item=current_item)
             candidate_payloads = dict(current_payloads)
             candidate_payloads[current_part_type] = _robot_payload_from_part_picker_item(item)
-            candidate_estimate = compute_robot_stats(list(candidate_payloads.values()))
+            candidate_estimate = compute_robot_stats(
+                list(candidate_payloads.values()),
+                series_bonus_defs=series_bonus_defs,
+                series_progress_layer=series_progress_layer,
+            )
             candidate_stats = {
                 "hp": int((candidate_estimate or {}).get("stats", {}).get("hp") or 0),
                 "atk": int((candidate_estimate or {}).get("stats", {}).get("atk") or 0),
@@ -28789,6 +29240,9 @@ def build():
     db = get_db()
     user_id = session["user_id"]
     now = int(time.time())
+    series_progress_layer = _series_progress_layer_for_user(db, user_id)
+    series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
+    series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
     active_robot = _get_active_robot(db, user_id)
     current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
     if active_robot:
@@ -28902,7 +29356,15 @@ def build():
                 }
             )
 
-    estimate = compute_robot_stats(selected_payloads) if len(selected_payloads) == 4 else None
+    estimate = (
+        compute_robot_stats(
+            selected_payloads,
+            series_bonus_defs=series_bonus_defs,
+            series_progress_layer=series_progress_layer,
+        )
+        if len(selected_payloads) == 4
+        else None
+    )
     decor_assets = db.execute(
         """
         SELECT rda.id, rda.key, rda.name_ja, rda.image_path
@@ -28975,9 +29437,29 @@ def build():
         selected_payloads,
         (estimate or {}).get("set_bonus"),
     )
+    candidate_series_view = (
+        _series_bonus_view_for_loadout(
+            db,
+            selected_payloads,
+            series_calc=estimate,
+            progress_layer=series_progress_layer,
+        )
+        if series_system_enabled
+        else None
+    )
     current_set_bonus_view = _set_bonus_view_for_loadout(
         (current_robot_stats_obj or {}).get("parts"),
         (current_robot_stats_obj or {}).get("set_bonus"),
+    )
+    current_series_view = (
+        _series_bonus_view_for_loadout(
+            db,
+            (current_robot_stats_obj or {}).get("parts"),
+            series_calc=current_robot_stats_obj,
+            progress_layer=(current_robot_stats_obj or {}).get("series_progress_layer") or series_progress_layer,
+        )
+        if series_system_enabled
+        else None
     )
     boss_alert_status = _home_boss_alert_status(db, user_id, now_ts=now)
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
@@ -29000,6 +29482,8 @@ def build():
         current_style_state=current_style_state,
         candidate_set_bonus_view=candidate_set_bonus_view,
         current_set_bonus_view=current_set_bonus_view,
+        candidate_series_view=candidate_series_view,
+        current_series_view=current_series_view,
         current_robot_stats=current_robot_stats,
         stat_comparison_rows=stat_comparison_rows,
         selected_offsets=selected_offsets,

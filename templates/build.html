@@ -40,6 +40,9 @@
           <span class="picker-total-label">{{ p['summary_total']['label'] }}</span>
           <span class="picker-total-value is-{{ p['summary_total']['value_class'] }}">{{ p['summary_total']['value_text'] }}</span>
         </div>
+        {% if p.get('series_badge') %}
+          <div class="picker-total-note">{{ p['series_badge']['display_name'] }} / 思想: {{ p['series_badge']['role_label'] }}</div>
+        {% endif %}
         {% if p['summary_total']['note_text'] %}
           <div class="picker-total-note">{{ p['summary_total']['note_text'] }}</div>
         {% endif %}
@@ -77,6 +80,10 @@
         <span class="part-chip">{{ p['part_type_label'] }}</span>
         <span class="part-chip rarity-{{ (p['instance_rarity'] or p['rarity'] or 'n')|lower }}">{{ p['instance_rarity'] or p['rarity'] or 'N' }}</span>
         <span class="part-chip">{{ p['instance_slot_label'] }}</span>
+        {% if p.get('series_badge') %}
+          <span class="part-chip">{{ p['series_badge']['display_name'] }}</span>
+          <span class="part-chip">{{ p['series_badge']['role_label'] }}</span>
+        {% endif %}
         {% if p.get('extreme_title') %}
           <span class="part-chip">{{ p['extreme_title'] }}</span>
         {% endif %}
@@ -190,9 +197,25 @@
           <div id="est-bonus-effect">{{ candidate_set_bonus_view['effect_text'] }}</div>
           <div class="robot-time" id="est-bonus-detail">{{ candidate_set_bonus_view['detail_text'] }}</div>
         </div>
+        {% if candidate_series_view %}
+        <div class="estimate-bonus" id="est-series-bonus">
+          <div><b>シリーズ効果: <span>{{ candidate_series_view['status_label'] }}</span></b></div>
+          <div>{{ candidate_series_view['condition_text'] }}</div>
+          <div>{{ candidate_series_view['effect_text'] }}</div>
+          <div class="robot-time">{{ candidate_series_view['detail_text'] }}</div>
+          {% for row in candidate_series_view['catalog_rows'][:3] %}
+          <div class="robot-time">{{ row['display_name'] }} {{ row['count_text'] }} / {{ row['effect_text'] }} / {{ row['hint_text'] }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
         <div id="candidate-style-preview">
           {{ render_style_gauge(candidate_style_state, compact=True) }}
         </div>
+        {% if candidate_style_state %}
+        <div class="upgrade-cost">思想: {{ candidate_style_state['current_label'] }}</div>
+        <div class="robot-time">{{ candidate_style_state['current_battle_line'] }}</div>
+        <div class="robot-time">{{ candidate_style_state['current_support_line'] }}</div>
+        {% endif %}
         <hr />
         <div class="upgrade-cost"><b>現装備（起動中ロボ）</b></div>
         <div class="estimate-grid">
@@ -210,8 +233,24 @@
           <div>{{ current_set_bonus_view['effect_text'] }}</div>
           <div class="robot-time">{{ current_set_bonus_view['detail_text'] }}</div>
         </div>
+        {% if current_series_view %}
+        <div class="estimate-bonus is-current">
+          <div><b>シリーズ効果: {{ current_series_view['status_label'] }}</b></div>
+          <div>{{ current_series_view['condition_text'] }}</div>
+          <div>{{ current_series_view['effect_text'] }}</div>
+          <div class="robot-time">{{ current_series_view['detail_text'] }}</div>
+          {% for row in current_series_view['catalog_rows'][:3] %}
+          <div class="robot-time">{{ row['display_name'] }} {{ row['count_text'] }} / {{ row['effect_text'] }} / {{ row['hint_text'] }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
         {{ render_style_gauge(current_style_state, compact=True) }}
         {{ render_style_rank(current_style_state, compact=True) }}
+        {% if current_style_state %}
+        <div class="upgrade-cost">思想: {{ current_style_state['current_label'] }}</div>
+        <div class="robot-time">{{ current_style_state['current_battle_line'] }}</div>
+        <div class="robot-time">{{ current_style_state['current_support_line'] }}</div>
+        {% endif %}
         <hr />
         {% for row in stat_comparison_rows %}
         <div class="upgrade-cost">
