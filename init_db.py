@@ -40,17 +40,23 @@ def _upsert_series_rows(cur):
                 series_key,
                 display_name,
                 category,
+                frame_type,
                 role_label,
                 description,
+                max_rarity,
+                can_evolve,
                 is_active,
                 released_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(series_key) DO UPDATE SET
                 display_name = excluded.display_name,
                 category = excluded.category,
+                frame_type = excluded.frame_type,
                 role_label = excluded.role_label,
                 description = excluded.description,
+                max_rarity = excluded.max_rarity,
+                can_evolve = excluded.can_evolve,
                 is_active = CASE
                     WHEN series_master.is_active = 1 THEN 1
                     ELSE excluded.is_active
@@ -64,8 +70,11 @@ def _upsert_series_rows(cur):
                 row["series_key"],
                 row["display_name"],
                 row["category"],
+                row.get("frame_type") or "normal",
                 row["role_label"],
                 row["description"],
+                str(row.get("max_rarity") or "N").upper(),
+                int(row.get("can_evolve", 0)),
                 int(row.get("default_active", 0)),
                 now if int(row.get("default_active", 0)) else None,
             ),
@@ -99,6 +108,9 @@ def _apply_series_part_assignments(cur):
                 rarity,
                 element,
                 series,
+                frame_type,
+                series_key,
+                series_label,
                 display_name_ja,
                 offset_x,
                 offset_y,
@@ -106,13 +118,16 @@ def _apply_series_part_assignments(cur):
                 is_unlocked,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
                 rarity = excluded.rarity,
                 element = excluded.element,
                 series = excluded.series,
+                frame_type = excluded.frame_type,
+                series_key = excluded.series_key,
+                series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
                 is_active = 1
             """,
@@ -123,15 +138,55 @@ def _apply_series_part_assignments(cur):
                 part["rarity"],
                 part["element"],
                 part["series"],
+                part.get("frame_type") or "normal",
+                part.get("series_key") or part.get("series"),
+                part.get("series_label"),
                 part["display_name_ja"],
                 now,
             ),
         )
     for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
         cur.execute(
-            "UPDATE robot_parts SET series = ? WHERE key = ?",
-            (series_key, part_key),
+            """
+            UPDATE robot_parts
+            SET
+                series = ?,
+                frame_type = 'insect',
+                series_key = ?,
+                series_label = (
+                    SELECT display_name
+                    FROM series_master
+                    WHERE series_key = ?
+                    LIMIT 1
+                )
+            WHERE key = ?
+            """,
+            (series_key, series_key, series_key, part_key),
         )
+    cur.execute(
+        """
+        UPDATE robot_parts
+        SET frame_type = 'normal'
+        WHERE frame_type IS NULL OR TRIM(frame_type) = ''
+        """
+    )
+    cur.execute(
+        """
+        UPDATE robot_parts
+        SET
+            series_key = COALESCE(NULLIF(TRIM(series_key), ''), NULLIF(TRIM(series), '')),
+            series_label = COALESCE(
+                NULLIF(TRIM(series_label), ''),
+                (
+                    SELECT sm.display_name
+                    FROM series_master sm
+                    WHERE sm.series_key = COALESCE(NULLIF(TRIM(robot_parts.series_key), ''), NULLIF(TRIM(robot_parts.series), ''))
+                    LIMIT 1
+                )
+            )
+        WHERE frame_type = 'insect'
+        """
+    )
     cur.execute(
         """
         UPDATE part_instances
@@ -149,6 +204,44 @@ def _apply_series_part_assignments(cur):
            )
         """
     )
+
+
+def _ensure_default_normal_robot_parts(cur):
+    normal_count = cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM robot_parts
+        WHERE COALESCE(frame_type, 'normal') = 'normal'
+        """
+    ).fetchone()[0]
+    if normal_count > 0:
+        return
+    now = int(time.time())
+    items = []
+    for i in range(1, 11):
+        items.append(("HEAD", f"head_{i}", f"parts/head/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+        items.append(("RIGHT_ARM", f"r_arm_{i}", f"parts/right_arm/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+        items.append(("LEFT_ARM", f"l_arm_{i}", f"parts/left_arm/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+        items.append(("LEGS", f"legs_{i}", f"parts/legs/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+    cur.executemany(
+        """
+        INSERT INTO robot_parts (
+            part_type, key, image_path, rarity, element, series, frame_type, offset_x, offset_y, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            part_type = excluded.part_type,
+            image_path = excluded.image_path,
+            rarity = excluded.rarity,
+            element = excluded.element,
+            series = excluded.series,
+            frame_type = excluded.frame_type,
+            offset_x = excluded.offset_x,
+            offset_y = excluded.offset_y,
+            is_active = 1
+        """,
+        items,
+    )
+
 
 robots_seed = [
     ("Head:A", "RightArm:A", "LeftArm:A", "Legs:A", "ヘラクス", "SR", "バランス", "蒼い炎をまとった強化型。", 4, 3, 20),
@@ -405,6 +498,9 @@ def main():
             rarity TEXT,
             element TEXT,
             series TEXT,
+            frame_type TEXT DEFAULT 'normal',
+            series_key TEXT,
+            series_label TEXT,
             display_name_ja TEXT,
             offset_x INTEGER NOT NULL DEFAULT 0,
             offset_y INTEGER NOT NULL DEFAULT 0,
@@ -420,8 +516,11 @@ def main():
             series_key TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
             category TEXT NOT NULL,
+            frame_type TEXT DEFAULT 'normal',
             role_label TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            max_rarity TEXT DEFAULT 'N',
+            can_evolve INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 0,
             released_at INTEGER
         )
@@ -501,6 +600,7 @@ def main():
             personality TEXT,
             icon_32_path TEXT,
             combat_mode TEXT NOT NULL DEFAULT 'normal',
+            frame_type TEXT DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
             style_scores_json TEXT,
@@ -1543,6 +1643,8 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN icon_32_path TEXT")
     if "combat_mode" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
+    if "frame_type" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN frame_type TEXT DEFAULT 'normal'")
     if "is_public" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
     if "style_key" not in ri_cols:
@@ -1566,6 +1668,7 @@ def main():
     if "honor_title_key" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     cur.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
+    cur.execute("UPDATE robot_instances SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
     cur.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     cur.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
     cur.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
@@ -1579,11 +1682,18 @@ def main():
         cur.execute("ALTER TABLE robot_parts ADD COLUMN element TEXT")
     if "series" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN series TEXT")
+    if "frame_type" not in rp_cols:
+        cur.execute("ALTER TABLE robot_parts ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "series_key" not in rp_cols:
+        cur.execute("ALTER TABLE robot_parts ADD COLUMN series_key TEXT")
+    if "series_label" not in rp_cols:
+        cur.execute("ALTER TABLE robot_parts ADD COLUMN series_label TEXT")
     if "display_name_ja" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
     cur.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")
     cur.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     cur.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
+    cur.execute("UPDATE robot_parts SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
     cur.execute("UPDATE robot_parts SET is_active = 1 WHERE is_active IS NULL")
     cur.execute(
         """
@@ -1591,13 +1701,28 @@ def main():
             series_key TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
             category TEXT NOT NULL,
+            frame_type TEXT DEFAULT 'normal',
             role_label TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            max_rarity TEXT DEFAULT 'N',
+            can_evolve INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 0,
             released_at INTEGER
         )
         """
     )
+    sm_cols = {row[1] for row in cur.execute("PRAGMA table_info(series_master)").fetchall()}
+    if "frame_type" not in sm_cols:
+        cur.execute("ALTER TABLE series_master ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "max_rarity" not in sm_cols:
+        cur.execute("ALTER TABLE series_master ADD COLUMN max_rarity TEXT DEFAULT 'N'")
+    if "can_evolve" not in sm_cols:
+        cur.execute("ALTER TABLE series_master ADD COLUMN can_evolve INTEGER NOT NULL DEFAULT 0")
+    cur.execute("UPDATE series_master SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
+    cur.execute("UPDATE series_master SET max_rarity = 'N' WHERE max_rarity IS NULL OR TRIM(max_rarity) = ''")
+    cur.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
+    cur.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
+    cur.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%'")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (
@@ -1620,6 +1745,7 @@ def main():
         )
         """
     )
+    _ensure_default_normal_robot_parts(cur)
     _upsert_series_rows(cur)
     _apply_series_part_assignments(cur)
     rows_to_fill = cur.execute(
@@ -2005,19 +2131,7 @@ def main():
                 ("devil", "base_bodies/devil.png"),
             ],
         )
-    parts_count = cur.execute("SELECT COUNT(*) FROM robot_parts").fetchone()[0]
-    if parts_count == 0:
-        now = int(time.time())
-        items = []
-        for i in range(1, 11):
-            items.append(("HEAD", f"head_{i}", f"parts/head/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("RIGHT_ARM", f"r_arm_{i}", f"parts/right_arm/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("LEFT_ARM", f"l_arm_{i}", f"parts/left_arm/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("LEGS", f"legs_{i}", f"parts/legs/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-        cur.executemany(
-            "INSERT INTO robot_parts (part_type, key, image_path, rarity, element, series, offset_x, offset_y, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            items,
-        )
+    _ensure_default_normal_robot_parts(cur)
     _upsert_series_rows(cur)
     _apply_series_part_assignments(cur)
     milestone_count = cur.execute("SELECT COUNT(*) FROM robot_milestones").fetchone()[0]

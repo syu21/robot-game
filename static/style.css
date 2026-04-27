@@ -5835,6 +5835,13 @@ body.battle-page.battle-short-replay-active #battle-replay-followup {
   object-fit: contain;
 }
 
+.enemy-image,
+.battle-enemy-image,
+.admin-enemy-image {
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .battle-enemy-thumb-frame {
   width: 112px;
   height: 112px;

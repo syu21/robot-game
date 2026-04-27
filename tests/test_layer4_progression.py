@@ -150,9 +150,9 @@ class Layer4ProgressionTests(unittest.TestCase):
 
     def test_layer4_enemy_pools_match_area_traits(self):
         expected = {
-            "layer_4_forge": ("heavy", {"fort_ironbulk", "fort_platehound", "fort_bastion_eye"}),
-            "layer_4_haze": ("fast", {"haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone"}),
-            "layer_4_burst": (None, {"burst_coreling", "burst_shockfang", "burst_ruptgear"}),
+            "layer_4_forge": ("heavy", {"fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"}),
+            "layer_4_haze": ("fast", {"haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone", "enemy_insect_bee"}),
+            "layer_4_burst": (None, {"burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"}),
         }
         with game_app.app.app_context():
             db = game_app.get_db()

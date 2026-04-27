@@ -203,9 +203,11 @@ class BerserkModeTests(unittest.TestCase):
     def test_berserk_mode_reduces_hp_and_outputs_turn_log_line(self):
         with game_app.app.app_context():
             db = game_app.get_db()
-            db.execute("UPDATE robot_instances SET combat_mode = 'berserk' WHERE id = ?", (self.robot_id,))
+            db.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE id = ?", (self.robot_id,))
             db.commit()
             base_hp = int(game_app._compute_robot_stats_for_instance(db, self.robot_id)["stats"]["hp"])
+            db.execute("UPDATE robot_instances SET combat_mode = 'berserk' WHERE id = ?", (self.robot_id,))
+            db.commit()
 
         client = self._new_client()
         with patch.object(game_app, "render_template", side_effect=self._mock_battle_render), patch.object(

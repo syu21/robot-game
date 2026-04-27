@@ -48,6 +48,8 @@ class AdminEnemyImageUrlTests(unittest.TestCase):
             html = resp.get_data(as_text=True)
             self.assertIn("/static/enemies/", html)
             self.assertIn("?v=", html)
+            self.assertIn("admin-enemy-image", html)
+            self.assertIn("static/enemies/insect_butterfly.png", html)
 
     def test_admin_enemy_edit_uses_versioned_enemy_url(self):
         with game_app.app.app_context():

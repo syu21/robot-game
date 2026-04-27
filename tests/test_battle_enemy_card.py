@@ -79,7 +79,8 @@ class BattleEnemyCardTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn('class="card enemy-card"', html)
-            self.assertIn('class="battle-enemy-thumb"', html)
+            self.assertIn("battle-enemy-thumb", html)
+            self.assertIn("battle-enemy-image", html)
 
 
 if __name__ == "__main__":

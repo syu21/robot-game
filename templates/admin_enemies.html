@@ -47,6 +47,19 @@
 </div>
 
 <div class="card">
+  <div><b>虫系画像チェック</b></div>
+  <div class="upgrade-cost">画像が見つからない場合でも一覧はプレースホルダで表示されます。</div>
+  <div class="enemy-asset-check-list">
+    {% for item in insect_asset_checks %}
+    <div class="enemy-asset-check-item">
+      <span>{{ item['stored_path'] }}</span>
+      <span>{% if item['exists'] %}OK{% else %}placeholder{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
   <div class="table-wrap">
     <table class="admin-parts-table">
       <thead>
@@ -65,7 +78,7 @@
       <tbody>
       {% for e in enemies %}
         <tr>
-          <td><img class="part-thumb admin-thumb" src="{{ e['display_image_url'] }}" alt="{{ e['key'] }}" loading="lazy" /></td>
+          <td><img class="part-thumb admin-thumb admin-enemy-image" src="{{ e['display_image_url'] }}" alt="{{ e['key'] }}" loading="lazy" /></td>
           <td>{{ e['key'] }}</td>
           <td>{{ e['name_ja'] }}</td>
           <td>{{ e['tier'] }}</td>

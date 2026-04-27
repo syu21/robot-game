@@ -33,6 +33,10 @@ class AssetFallbackTests(unittest.TestCase):
         self.assertEqual(len(cap.output), 1)
         self.assertIn("asset.missing", cap.output[0])
 
+    def test_enemy_image_rel_accepts_static_prefixed_path(self):
+        rel = game_app._enemy_image_rel("static/enemies/insect_ant.png")
+        self.assertEqual(rel, "enemies/insect_ant.png")
+
     def test_part_image_rel_falls_back_when_missing(self):
         part_like = {"key": "head_n_missing", "image_path": "parts/head/missing.png"}
         rel = game_app._part_image_rel(part_like)

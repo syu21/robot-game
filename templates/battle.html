@@ -171,7 +171,7 @@
     {% if summary.get('enemy_image_url') %}
     <div class="card enemy-card">
       <div class="enemy-sprite-frame battle-enemy-thumb-frame">
-        <img class="battle-enemy-thumb" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
+        <img class="battle-enemy-thumb battle-enemy-image" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
       </div>
       <div>
         <div>
@@ -278,7 +278,7 @@
 
             <div class="battle-side enemy">
               <div class="battle-side-top">
-                <img class="battle-avatar" src="{{ enemy_img }}" alt="enemy" loading="lazy" />
+                <img class="battle-avatar battle-enemy-image" src="{{ enemy_img }}" alt="enemy" loading="lazy" />
                 <div class="battle-name">{{ enemy_name }}</div>
               </div>
               <div class="hp-line">

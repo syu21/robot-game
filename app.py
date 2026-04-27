@@ -36,6 +36,7 @@ from series_catalog import (
     SERIES_DEFINITIONS,
     SERIES_METADATA_BY_KEY,
     SERIES_PART_DEFINITIONS,
+    SERIES_WEIGHT_BIASES,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from constants import (
@@ -1292,12 +1293,52 @@ EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_5_final": {5: 1.0},
 }
 EXPLORE_AREA_ENEMY_KEYS = {
-    "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye"),
-    "layer_4_haze": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone"),
-    "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear"),
+    "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"),
+    "layer_4_haze": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone", "enemy_insect_bee"),
+    "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"),
     "layer_5_labyrinth": ("lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"),
     "layer_5_pinnacle": ("pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"),
 }
+EXPLORE_AREA_ENEMY_WEIGHT_OVERRIDES = {
+    "layer_1": {
+        "enemy_insect_ant": 0.7,
+        "enemy_insect_batta": 0.7,
+    },
+    "layer_2": {
+        "enemy_insect_ant": 0.7,
+        "enemy_insect_batta": 0.7,
+        "enemy_insect_bee": 1.2,
+    },
+    "layer_2_mist": {
+        "enemy_insect_bee": 1.2,
+    },
+    "layer_2_rush": {
+        "enemy_insect_bee": 1.2,
+    },
+    "layer_3": {
+        "enemy_insect_bee": 1.2,
+        "enemy_insect_kuwagata": 1.0,
+        "enemy_insect_scorpion": 1.0,
+    },
+    "layer_4_forge": {
+        "enemy_insect_kabuto": 0.25,
+    },
+    "layer_4_haze": {
+        "enemy_insect_bee": 0.2,
+    },
+    "layer_4_burst": {
+        "enemy_insect_scorpion": 0.2,
+    },
+}
+INSECT_ENEMY_IMAGE_PATHS = (
+    "static/enemies/insect_ant.png",
+    "static/enemies/insect_batta.png",
+    "static/enemies/insect_bee.png",
+    "static/enemies/insect_butterfly.png",
+    "static/enemies/insect_kabuto.png",
+    "static/enemies/insect_kuwagata.png",
+    "static/enemies/insect_scorpion.png",
+)
 EXPLORE_DROP_PROFILE_BY_AREA = {
     # Tier1: 基本系中心。例外は少量だけ混ぜる。
     "layer_1": {
@@ -3055,13 +3096,13 @@ def _series_drop_rate_for_area(area_key):
     if key == "layer_1":
         return 0.05
     if key in {"layer_2", "layer_2_mist", "layer_2_rush"}:
-        return 0.10
+        return 0.09
     if key == "layer_3":
-        return 0.20
+        return 0.15
     if key in {"layer_4_forge", "layer_4_haze", "layer_4_burst", "layer_4_final"}:
-        return 0.35
+        return 0.28
     if key in {"layer_5_labyrinth", "layer_5_pinnacle", "layer_5_final"}:
-        return 0.50
+        return 0.38
     return 0.0
 
 
@@ -5084,10 +5125,59 @@ def _series_badge_payload(series_key):
     return {
         "series_key": str(meta["series_key"]),
         "display_name": str(meta["display_name"]),
+        "short_label": str(meta.get("short_label") or str(meta["display_name"]).replace("シリーズ", "")),
         "role_label": str(meta["role_label"]),
         "category": str(meta["category"]),
+        "frame_type": str(meta.get("frame_type") or _infer_frame_type_from_series_key(meta["series_key"])),
+        "max_rarity": str(meta.get("max_rarity") or "N").upper(),
+        "can_evolve": bool(int(meta.get("can_evolve", 0))),
         "summary_text": f"{meta['display_name']} / 思想: {meta['role_label']}",
     }
+
+
+def _series_rules_for_row(part_row, series_master_map=None):
+    row = dict(part_row or {})
+    frame_type = _frame_type_for_row(row)
+    series_key = str(
+        row.get("series_key")
+        or row.get("instance_series")
+        or row.get("series")
+        or ""
+    ).strip()
+    base = {
+        "series_key": series_key,
+        "frame_type": frame_type,
+        "max_rarity": "N" if frame_type == "insect" else "R",
+        "can_evolve": 0 if frame_type == "insect" else 1,
+        "display_name": row.get("series_label") or "",
+        "short_label": "",
+    }
+    if not series_key or series_key in LEGACY_GENERIC_SERIES_KEYS:
+        return base
+    meta = (series_master_map or {}).get(series_key) or _series_meta_for_key(series_key) or {}
+    merged = dict(base)
+    if meta:
+        merged.update(meta)
+    merged["series_key"] = series_key
+    merged["frame_type"] = _normalize_frame_type(merged.get("frame_type"), default=frame_type)
+    merged["max_rarity"] = str(merged.get("max_rarity") or base["max_rarity"]).upper()
+    merged["can_evolve"] = int(merged.get("can_evolve", base["can_evolve"]))
+    display_name = str(merged.get("display_name") or row.get("series_label") or "").strip()
+    merged["display_name"] = display_name
+    merged["short_label"] = str(
+        merged.get("short_label")
+        or (display_name.replace("シリーズ", "") if display_name else "")
+    ).strip()
+    return merged
+
+
+def _series_can_evolve_for_row(part_row, series_master_map=None):
+    return bool(int(_series_rules_for_row(part_row, series_master_map=series_master_map).get("can_evolve") or 0))
+
+
+def _series_is_n_only_for_row(part_row, series_master_map=None):
+    rules = _series_rules_for_row(part_row, series_master_map=series_master_map)
+    return str(rules.get("max_rarity") or "N").upper() == "N" and not bool(int(rules.get("can_evolve") or 0))
 
 
 def _series_progress_layer_for_user(db, user_id):
@@ -5103,7 +5193,17 @@ def _load_series_master_map(db, active_only=False):
     where = "WHERE is_active = 1" if active_only else ""
     rows = db.execute(
         f"""
-        SELECT series_key, display_name, category, role_label, description, is_active, released_at
+        SELECT
+            series_key,
+            display_name,
+            category,
+            frame_type,
+            role_label,
+            description,
+            max_rarity,
+            can_evolve,
+            is_active,
+            released_at
         FROM series_master
         {where}
         ORDER BY series_key ASC
@@ -5140,7 +5240,7 @@ def _load_series_bonus_defs(db, active_only=True):
 
 def _format_series_bonus_value(rate):
     pct = int(round(float(rate or 0.0) * 100))
-    return f"+{pct}%"
+    return f"{pct:+d}%"
 
 
 def _series_bonus_view_for_loadout(db, parts, series_calc=None, progress_layer=1):
@@ -5287,6 +5387,99 @@ PART_IMAGE_PATH_ALIASES = {
     "parts/left_arm/left_arm_normal.png": "parts/left_arm/left_arm_n_normal.png",
     "parts/legs/legs_normal.png": "parts/legs/legs_n_normal.png",
 }
+FRAME_TYPE_DEFS = (
+    {
+        "key": "normal",
+        "label": "通常型",
+        "description": "標準的なロボパーツで組み立てるフレームです。",
+        "detail": "安定した見た目と育成導線を持ちます。",
+    },
+    {
+        "key": "insect",
+        "label": "虫型",
+        "description": "昆虫系パーツで組み立てる特殊フレームです。",
+        "detail": "細身で尖った性能を持ちます。",
+    },
+)
+FRAME_TYPE_DEF_BY_KEY = {item["key"]: item for item in FRAME_TYPE_DEFS}
+
+
+def _normalize_frame_type(raw_value, default="normal"):
+    key = str(raw_value or "").strip().lower()
+    if key in FRAME_TYPE_DEF_BY_KEY:
+        return key
+    return str(default or "normal").strip().lower()
+
+
+def _infer_frame_type_from_series_key(series_key):
+    key = str(series_key or "").strip().lower()
+    if key.startswith("insect_"):
+        return "insect"
+    return "normal"
+
+
+def _frame_type_for_row(row, default="normal"):
+    if not row:
+        return _normalize_frame_type(default)
+    if isinstance(row, dict):
+        frame_type = row.get("frame_type")
+        series_key = row.get("series_key") or row.get("instance_series") or row.get("series")
+    else:
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        frame_type = row["frame_type"] if "frame_type" in keys else None
+        series_key = None
+        for key in ("series_key", "instance_series", "series"):
+            if key in keys:
+                series_key = row[key]
+                if series_key:
+                    break
+    normalized = str(frame_type or "").strip().lower()
+    if normalized in FRAME_TYPE_DEF_BY_KEY:
+        return normalized
+    return _infer_frame_type_from_series_key(series_key or default)
+
+
+def _frame_type_label(frame_type):
+    key = _normalize_frame_type(frame_type)
+    return FRAME_TYPE_DEF_BY_KEY.get(key, FRAME_TYPE_DEF_BY_KEY["normal"])["label"]
+
+
+def _series_weight_bias_for_part_row(part_row):
+    row = dict(part_row or {})
+    series_key = str(row.get("series_key") or row.get("series") or "").strip()
+    if not series_key or series_key in LEGACY_GENERIC_SERIES_KEYS:
+        return None
+    bias = SERIES_WEIGHT_BIASES.get(series_key)
+    return dict(bias) if bias else None
+
+
+def _frame_type_filter_rows(selected_frame_type, endpoint, *, extra_params=None, allow_all=False):
+    params = {
+        str(key): value
+        for key, value in (extra_params or {}).items()
+        if value not in (None, "")
+    }
+    options = []
+    if allow_all:
+        options.append(("", "すべて"))
+    options.extend((item["key"], item["label"]) for item in FRAME_TYPE_DEFS)
+    rows = []
+    for key, label in options:
+        next_params = dict(params)
+        next_params.pop("page", None)
+        if key:
+            next_params["frame_type"] = key
+        else:
+            next_params.pop("frame_type", None)
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "is_active": selected_frame_type == key,
+                "url": url_for(endpoint, **next_params),
+            }
+        )
+    return rows
 
 
 def _normalize_part_type_filter(raw_value):
@@ -5625,8 +5818,15 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     item = dict(part_row)
     status_key = str(item.get("status") or "inventory").strip().lower()
     stats = compute_part_stats(item)
+    item["frame_type"] = _frame_type_for_row(item)
+    item["frame_label"] = _frame_type_label(item["frame_type"])
     item["display_name"] = _part_display_name_ja(item)
     item["series_badge"] = _series_badge_payload(item.get("instance_series") or item.get("series"))
+    item["series_n_only"] = bool(
+        item.get("series_badge")
+        and str(item["series_badge"].get("max_rarity") or "N").upper() == "N"
+        and not bool(item["series_badge"].get("can_evolve"))
+    )
     item["part_type_label"] = _part_type_ui_label(item.get("part_type"))
     item["rarity_label"] = str(item.get("rarity") or "N").upper()
     item["status_key"] = status_key
@@ -5682,7 +5882,7 @@ def _part_instance_display_rows(db, instance_ids):
             pi.rarity AS instance_rarity,
             pi.element AS instance_element,
             pi.series AS instance_series,
-            rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+            rp.part_type, rp.key, rp.series, rp.frame_type, rp.series_key, rp.series_label, rp.image_path, rp.offset_x, rp.offset_y,
             rp.rarity, rp.element, rp.display_name_ja
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
@@ -5698,6 +5898,8 @@ def _build_picker_part_item(part_row, *, compare_item=None):
     item["qty"] = int(item.get("qty") or 1)
     item["rn"] = int(item.get("rn") or 1)
     item["plus"] = int(item.get("plus") or 0)
+    item["frame_type"] = _frame_type_for_row(item)
+    item["frame_label"] = _frame_type_label(item["frame_type"])
     item["display_name"] = _part_display_name_ja(item)
     item["series_badge"] = _series_badge_payload(item.get("instance_series") or item.get("series"))
     item["display_name_with_plus"] = f"{item['display_name']} +{int(item['plus'])}"
@@ -6447,6 +6649,7 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
             ri.user_id,
             ri.name,
             ri.composed_image_path,
+            COALESCE(ri.frame_type, 'normal') AS frame_type,
             ri.updated_at,
             u.username,
             COALESCE(rh.wins_this_week, 0) AS wins_this_week,
@@ -6487,6 +6690,8 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
     out = []
     for row in rows:
         item = dict(row)
+        item["frame_type"] = _normalize_frame_type(item.get("frame_type"))
+        item["frame_label"] = _frame_type_label(item["frame_type"])
         item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
         stat_obj = _compute_robot_stats_for_instance(db, int(item["id"]))
         item["profile"] = _robot_profile_view(stat_obj)
@@ -7087,7 +7292,7 @@ def _robot_metric_rows(db, metric_key, limit=50):
     metric = RANKING_METRIC_DEF_BY_KEY.get(metric_key) or RANKING_METRIC_DEF_BY_KEY["wins"]
     rows = db.execute(
         """
-        SELECT ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.icon_32_path, ri.updated_at, u.username
+        SELECT ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.icon_32_path, COALESCE(ri.frame_type, 'normal') AS frame_type, ri.updated_at, u.username
         FROM robot_instances ri
         JOIN users u ON u.id = ri.user_id
         WHERE ri.status = 'active'
@@ -7113,6 +7318,8 @@ def _robot_metric_rows(db, metric_key, limit=50):
             "username": row["username"],
             "robot_id": int(row["id"]),
             "robot_name": (row["name"] or "無名ロボ"),
+            "frame_type": _normalize_frame_type(row["frame_type"]),
+            "frame_label": _frame_type_label(row["frame_type"]),
             "metric_value": int(metric_value),
             "image_url": _composed_image_url(row["composed_image_path"], row["updated_at"]),
             "profile": profile,
@@ -8302,6 +8509,9 @@ def ensure_schema(db):
             rarity TEXT,
             element TEXT,
             series TEXT,
+            frame_type TEXT DEFAULT 'normal',
+            series_key TEXT,
+            series_label TEXT,
             display_name_ja TEXT,
             offset_x INTEGER NOT NULL DEFAULT 0,
             offset_y INTEGER NOT NULL DEFAULT 0,
@@ -8718,6 +8928,7 @@ def ensure_schema(db):
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             combat_mode TEXT NOT NULL DEFAULT 'normal',
+            frame_type TEXT DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
             style_scores_json TEXT,
@@ -9761,6 +9972,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN icon_32_path TEXT")
     if "combat_mode" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
+    if "frame_type" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN frame_type TEXT DEFAULT 'normal'")
     if "is_public" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
     if "style_key" not in ri_cols:
@@ -9784,6 +9997,7 @@ def ensure_schema(db):
     if "honor_title_key" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     db.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
+    db.execute("UPDATE robot_instances SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
     db.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     db.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
     db.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
@@ -9862,11 +10076,18 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_parts ADD COLUMN element TEXT")
     if "series" not in rp_cols:
         db.execute("ALTER TABLE robot_parts ADD COLUMN series TEXT")
+    if "frame_type" not in rp_cols:
+        db.execute("ALTER TABLE robot_parts ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "series_key" not in rp_cols:
+        db.execute("ALTER TABLE robot_parts ADD COLUMN series_key TEXT")
+    if "series_label" not in rp_cols:
+        db.execute("ALTER TABLE robot_parts ADD COLUMN series_label TEXT")
     if "display_name_ja" not in rp_cols:
         db.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
     db.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")
     db.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     db.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
+    db.execute("UPDATE robot_parts SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
     db.execute("UPDATE robot_parts SET is_active = 1 WHERE is_active IS NULL")
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE is_unlocked IS NULL")
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE UPPER(COALESCE(rarity, '')) = 'N'")
@@ -9877,13 +10098,28 @@ def ensure_schema(db):
             series_key TEXT PRIMARY KEY,
             display_name TEXT NOT NULL,
             category TEXT NOT NULL,
+            frame_type TEXT DEFAULT 'normal',
             role_label TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            max_rarity TEXT DEFAULT 'N',
+            can_evolve INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 0,
             released_at INTEGER
         )
         """
     )
+    sm_cols = {row["name"] for row in db.execute("PRAGMA table_info(series_master)").fetchall()}
+    if "frame_type" not in sm_cols:
+        db.execute("ALTER TABLE series_master ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "max_rarity" not in sm_cols:
+        db.execute("ALTER TABLE series_master ADD COLUMN max_rarity TEXT DEFAULT 'N'")
+    if "can_evolve" not in sm_cols:
+        db.execute("ALTER TABLE series_master ADD COLUMN can_evolve INTEGER NOT NULL DEFAULT 0")
+    db.execute("UPDATE series_master SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
+    db.execute("UPDATE series_master SET max_rarity = 'N' WHERE max_rarity IS NULL OR TRIM(max_rarity) = ''")
+    db.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
+    db.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
+    db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%'")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (
@@ -10320,7 +10556,10 @@ def _starter_part_rows(db):
             SELECT *
             FROM robot_parts
             WHERE is_active = 1 AND part_type = ?
-            ORDER BY CASE WHEN UPPER(COALESCE(rarity, 'N')) = 'N' THEN 0 ELSE 1 END, id ASC
+            ORDER BY
+              CASE WHEN COALESCE(frame_type, 'normal') = 'normal' THEN 0 ELSE 1 END,
+              CASE WHEN UPPER(COALESCE(rarity, 'N')) = 'N' THEN 0 ELSE 1 END,
+              id ASC
             LIMIT 1
             """,
             (ptype,),
@@ -10471,17 +10710,37 @@ def _seed_robot_assets_v2(db):
                 ("devil", "base_bodies/devil.png"),
             ],
         )
-    part_count = db.execute("SELECT COUNT(*) AS c FROM robot_parts").fetchone()["c"]
-    if part_count == 0:
+    normal_count = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM robot_parts
+        WHERE COALESCE(frame_type, 'normal') = 'normal'
+        """
+    ).fetchone()["c"]
+    if int(normal_count or 0) == 0:
         now = int(time.time())
         items = []
         for i in range(1, 11):
-            items.append(("HEAD", f"head_{i}", f"parts/head/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("RIGHT_ARM", f"r_arm_{i}", f"parts/right_arm/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("LEFT_ARM", f"l_arm_{i}", f"parts/left_arm/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
-            items.append(("LEGS", f"legs_{i}", f"parts/legs/{i}.png", "N", "NORMAL", "S1", 0, 0, now))
+            items.append(("HEAD", f"head_{i}", f"parts/head/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+            items.append(("RIGHT_ARM", f"r_arm_{i}", f"parts/right_arm/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+            items.append(("LEFT_ARM", f"l_arm_{i}", f"parts/left_arm/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
+            items.append(("LEGS", f"legs_{i}", f"parts/legs/{i}.png", "N", "NORMAL", "S1", "normal", 0, 0, now))
         db.executemany(
-            "INSERT INTO robot_parts (part_type, key, image_path, rarity, element, series, offset_x, offset_y, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO robot_parts (
+                part_type, key, image_path, rarity, element, series, frame_type, offset_x, offset_y, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                part_type = excluded.part_type,
+                image_path = excluded.image_path,
+                rarity = excluded.rarity,
+                element = excluded.element,
+                series = excluded.series,
+                frame_type = excluded.frame_type,
+                offset_x = excluded.offset_x,
+                offset_y = excluded.offset_y,
+                is_active = 1
+            """,
             items,
         )
         db.commit()
@@ -10549,17 +10808,23 @@ def _sync_series_catalog(db):
                 series_key,
                 display_name,
                 category,
+                frame_type,
                 role_label,
                 description,
+                max_rarity,
+                can_evolve,
                 is_active,
                 released_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(series_key) DO UPDATE SET
                 display_name = excluded.display_name,
                 category = excluded.category,
+                frame_type = excluded.frame_type,
                 role_label = excluded.role_label,
                 description = excluded.description,
+                max_rarity = excluded.max_rarity,
+                can_evolve = excluded.can_evolve,
                 is_active = CASE
                     WHEN series_master.is_active = 1 THEN 1
                     ELSE excluded.is_active
@@ -10573,8 +10838,11 @@ def _sync_series_catalog(db):
                 row["series_key"],
                 row["display_name"],
                 row["category"],
+                row.get("frame_type") or "normal",
                 row["role_label"],
                 row["description"],
+                str(row.get("max_rarity") or "N").upper(),
+                int(row.get("can_evolve", 0)),
                 int(row.get("default_active", 0)),
                 now if int(row.get("default_active", 0)) else None,
             ),
@@ -10604,6 +10872,9 @@ def _sync_series_catalog(db):
                 rarity,
                 element,
                 series,
+                frame_type,
+                series_key,
+                series_label,
                 display_name_ja,
                 offset_x,
                 offset_y,
@@ -10611,13 +10882,16 @@ def _sync_series_catalog(db):
                 is_unlocked,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
                 rarity = excluded.rarity,
                 element = excluded.element,
                 series = excluded.series,
+                frame_type = excluded.frame_type,
+                series_key = excluded.series_key,
+                series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
                 is_active = 1
             """,
@@ -10628,15 +10902,55 @@ def _sync_series_catalog(db):
                 part["rarity"],
                 part["element"],
                 part["series"],
+                part.get("frame_type") or "normal",
+                part.get("series_key") or part.get("series"),
+                part.get("series_label"),
                 part["display_name_ja"],
                 now,
             ),
         )
     for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
         db.execute(
-            "UPDATE robot_parts SET series = ? WHERE key = ?",
-            (series_key, part_key),
+            """
+            UPDATE robot_parts
+            SET
+                series = ?,
+                frame_type = 'insect',
+                series_key = ?,
+                series_label = (
+                    SELECT display_name
+                    FROM series_master
+                    WHERE series_key = ?
+                    LIMIT 1
+                )
+            WHERE key = ?
+            """,
+            (series_key, series_key, series_key, part_key),
         )
+    db.execute(
+        """
+        UPDATE robot_parts
+        SET frame_type = 'normal'
+        WHERE frame_type IS NULL OR TRIM(frame_type) = ''
+        """
+    )
+    db.execute(
+        """
+        UPDATE robot_parts
+        SET
+            series_key = COALESCE(NULLIF(TRIM(series_key), ''), NULLIF(TRIM(series), '')),
+            series_label = COALESCE(
+                NULLIF(TRIM(series_label), ''),
+                (
+                    SELECT sm.display_name
+                    FROM series_master sm
+                    WHERE sm.series_key = COALESCE(NULLIF(TRIM(robot_parts.series_key), ''), NULLIF(TRIM(robot_parts.series), ''))
+                    LIMIT 1
+                )
+            )
+        WHERE frame_type = 'insect'
+        """
+    )
 
 
 def release_series(db, series_key, *, emit_world_log=True):
@@ -10791,6 +11105,7 @@ def _create_robot_instance(
     status="active",
     personality=None,
     combat_mode="normal",
+    frame_type="normal",
     offsets=None,
 ):
     now = int(time.time())
@@ -10799,11 +11114,21 @@ def _create_robot_instance(
     cur = db.execute(
         """
         INSERT INTO robot_instances (
-            user_id, name, status, personality, combat_mode, style_key, style_stats_json, style_rank_json, created_at, updated_at
+            user_id, name, status, personality, combat_mode, frame_type, style_key, style_stats_json, style_rank_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, 'stable', '{}', ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, 'stable', '{}', ?, ?, ?)
         """,
-        (user_id, robot_name, status, personality, _normalize_combat_mode(combat_mode), encode_style_rank_state(empty_style_rank_state()), now, now),
+        (
+            user_id,
+            robot_name,
+            status,
+            personality,
+            _normalize_combat_mode(combat_mode),
+            _normalize_frame_type(frame_type),
+            encode_style_rank_state(empty_style_rank_state()),
+            now,
+            now,
+        ),
     )
     instance_id = cur.lastrowid
     offsets = offsets or {}
@@ -11284,7 +11609,11 @@ def _norm_part_type(part_type):
 
 def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=None, status="inventory"):
     ptype = _norm_part_type(part_row["part_type"])
-    weights = generate_noisy_weights(ptype, bias=_area_weight_bias(area_key))
+    bias = dict(_area_weight_bias(area_key) or {})
+    series_bias = _series_weight_bias_for_part_row(part_row) or {}
+    for stat_key, delta in series_bias.items():
+        bias[stat_key] = float(bias.get(stat_key, 0.0)) + float(delta or 0.0)
+    weights = generate_noisy_weights(ptype, bias=bias)
     rarity = (part_row["rarity"] or "N").upper()
     element = (part_row["element"] or "NORMAL").upper()
     series = part_row["series"] or "S1"
@@ -12254,12 +12583,17 @@ def _pick_enemy_from_rows(rows, area_key, weekly_env=None, rng=None):
     if use_rush_modifier and candidates:
         tier_avg_cri = sum(int(r["cri"]) for r in candidates) / len(candidates)
 
-    if weekly_env or use_mist_modifier or use_rush_modifier:
+    area_key_weights = EXPLORE_AREA_ENEMY_WEIGHT_OVERRIDES.get(str(area_key or "").strip(), {})
+    use_area_key_weights = any(str(r["key"] or "").strip() in area_key_weights for r in candidates)
+
+    if weekly_env or use_mist_modifier or use_rush_modifier or use_area_key_weights:
         env_element = (weekly_env.get("element") or "").upper() if weekly_env else ""
         bonus = float(weekly_env.get("enemy_spawn_bonus") or 0.0) if weekly_env else 0.0
         weights = []
         for r in candidates:
             w = 1.0
+            if use_area_key_weights:
+                w *= float(area_key_weights.get(str(r["key"] or "").strip(), 1.0))
             if weekly_env and (r["element"] or "").upper() == env_element:
                 w += bonus
             if use_mist_modifier and tier_avg_acc is not None:
@@ -14620,6 +14954,8 @@ def _safe_static_rel(path_value, *, warn_key=None):
     if not path_value:
         return None
     rel = path_value.replace("\\", "/").lstrip("/")
+    if rel.startswith("static/"):
+        rel = rel[len("static/") :]
     abs_path = _static_abs(rel)
     if os.path.exists(abs_path):
         return rel
@@ -28457,6 +28793,8 @@ def robot_detail(instance_id):
     if not row:
         abort(404)
     robot = dict(row)
+    robot["frame_type"] = _normalize_frame_type(robot.get("frame_type"))
+    robot["frame_label"] = _frame_type_label(robot["frame_type"])
     # Robot detail should always reflect latest part offsets/alignment.
     # Re-compose here to avoid stale composed_image_path from prior cache states.
     try:
@@ -28692,6 +29030,8 @@ def robot_maintenance(instance_id):
     robot["final_stats"] = (current_estimate or {}).get("stats")
     robot["set_bonus"] = (current_estimate or {}).get("set_bonus")
     robot["image_url"] = _composed_image_url(robot.get("composed_image_path"), robot.get("updated_at"))
+    robot["frame_type"] = _normalize_frame_type(robot.get("frame_type"))
+    robot["frame_label"] = _frame_type_label(robot["frame_type"])
 
     decor_assets = db.execute(
         """
@@ -28789,7 +29129,7 @@ def robot_maintenance(instance_id):
                 pi.rarity AS instance_rarity,
                 pi.element AS instance_element,
                 pi.series AS instance_series,
-                rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+                rp.part_type, rp.key, rp.series, rp.frame_type, rp.series_key, rp.series_label, rp.image_path, rp.offset_x, rp.offset_y,
                 rp.rarity, rp.element, rp.display_name_ja
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
@@ -28801,6 +29141,9 @@ def robot_maintenance(instance_id):
         ).fetchone()
         if not selected_row or _norm_part_type(selected_row["part_type"]) != slot_def["part_type"]:
             flash("整備候補が見つかりません。", "error")
+            return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
+        if _normalize_frame_type(selected_row["frame_type"]) != robot["frame_type"]:
+            flash("選択したパーツのフレームタイプが合っていません。", "error")
             return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
 
         selected_item = _build_picker_part_item(selected_row)
@@ -28907,11 +29250,12 @@ def robot_maintenance(instance_id):
                     pi.element AS instance_element,
                     pi.series AS instance_series,
                     pi.status,
-                    rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+                    rp.part_type, rp.key, rp.series, rp.frame_type, rp.series_key, rp.series_label, rp.image_path, rp.offset_x, rp.offset_y,
                     rp.rarity, rp.element, rp.display_name_ja
                 FROM part_instances pi
                 JOIN robot_parts rp ON rp.id = pi.part_id
                 WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1 AND rp.part_type = ?
+                  AND COALESCE(rp.frame_type, 'normal') = ?
             ),
             ranked AS (
                 SELECT
@@ -28933,7 +29277,7 @@ def robot_maintenance(instance_id):
                 END DESC,
                 instance_id ASC
             """,
-            (user_id, current_part_type),
+            (user_id, current_part_type, robot["frame_type"]),
         ).fetchall()
         if current_item:
             maintenance_candidates.append(
@@ -29240,10 +29584,14 @@ def build():
     db = get_db()
     user_id = session["user_id"]
     now = int(time.time())
+    requested_frame_type = (request.args.get("frame_type") or "").strip()
+    selected_frame_type = _normalize_frame_type(requested_frame_type or "normal")
     series_progress_layer = _series_progress_layer_for_user(db, user_id)
     series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
     active_robot = _get_active_robot(db, user_id)
+    if not requested_frame_type and active_robot:
+        selected_frame_type = _normalize_frame_type(active_robot.get("frame_type"), default=selected_frame_type)
     current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
     if active_robot:
         active_mapping = _ensure_robot_instance_part_instances(db, int(active_robot["id"])) or {}
@@ -29277,11 +29625,12 @@ def build():
                 pi.rarity AS instance_rarity,
                 pi.element AS instance_element,
                 pi.series AS instance_series,
-                rp.part_type, rp.key, rp.series, rp.image_path, rp.offset_x, rp.offset_y,
+                rp.part_type, rp.key, rp.series, rp.frame_type, rp.series_key, rp.series_label, rp.image_path, rp.offset_x, rp.offset_y,
                 rp.rarity, rp.element, rp.display_name_ja
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1
+              AND COALESCE(rp.frame_type, 'normal') = ?
         ),
         ranked AS (
             SELECT
@@ -29306,7 +29655,7 @@ def build():
             COALESCE(instance_series, series, '') ASC,
             instance_id ASC
         """,
-        (user_id,),
+        (user_id, selected_frame_type),
     ).fetchall()
     part_groups = {"HEAD": [], "RIGHT_ARM": [], "LEFT_ARM": [], "LEGS": []}
     for row in owned_rows:
@@ -29329,6 +29678,7 @@ def build():
     selected_parts = {}
     selected_payloads = []
     selected_offsets = _build_offset_payload_from_values(request.values)
+    message = session.pop("message", None)
     for part_type, param in slot_param_map.items():
         options = part_groups[part_type]
         picked_raw = (request.values.get(param) or "").strip()
@@ -29470,6 +29820,9 @@ def build():
         "build.html",
         part_groups=part_groups,
         missing_part_types=missing_part_types,
+        selected_frame_type=selected_frame_type,
+        frame_type_defs=FRAME_TYPE_DEFS,
+        frame_type_filters=_frame_type_filter_rows(selected_frame_type, "build"),
         selected_slot_values=selected_slot_values,
         selected_parts=selected_parts,
         current_part_items=current_part_items,
@@ -29487,6 +29840,7 @@ def build():
         current_robot_stats=current_robot_stats,
         stat_comparison_rows=stat_comparison_rows,
         selected_offsets=selected_offsets,
+        message=message,
         build_offset_control_defs=BUILD_OFFSET_CONTROL_DEFS,
         build_offset_min=BUILD_PART_OFFSET_MIN,
         build_offset_max=BUILD_PART_OFFSET_MAX,
@@ -29506,6 +29860,7 @@ def build_confirm():
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
+    selected_frame_type = _normalize_frame_type(request.form.get("frame_type"))
     head_choice = (request.form.get("head_key") or "").strip()
     r_arm_choice = (request.form.get("r_arm_key") or "").strip()
     l_arm_choice = (request.form.get("l_arm_key") or "").strip()
@@ -29515,7 +29870,7 @@ def build_confirm():
     combat_mode = _normalize_combat_mode(request.form.get("combat_mode"))
     if not all([head_choice, r_arm_choice, l_arm_choice, legs_choice]):
         session["message"] = "全カテゴリから1つずつ選択してください。"
-        return redirect(url_for("build"))
+        return redirect(url_for("build", frame_type=selected_frame_type))
     slot_defs = {
         "head": {"expected_type": "HEAD", "choice": head_choice},
         "r_arm": {"expected_type": "RIGHT_ARM", "choice": r_arm_choice},
@@ -29530,7 +29885,7 @@ def build_confirm():
         if choice.isdigit():
             row = db.execute(
                 """
-                SELECT pi.id, pi.status, rp.key, rp.part_type
+                SELECT pi.id, pi.status, rp.key, rp.part_type, COALESCE(rp.frame_type, 'normal') AS frame_type
                 FROM part_instances pi
                 JOIN robot_parts rp ON rp.id = pi.part_id
                 WHERE pi.id = ? AND pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1
@@ -29541,11 +29896,16 @@ def build_confirm():
                 return None
             if _norm_part_type(row["part_type"]) != expected_type:
                 return None
-            return {"id": int(row["id"]), "key": row["key"], "part_type": _norm_part_type(row["part_type"])}
+            return {
+                "id": int(row["id"]),
+                "key": row["key"],
+                "part_type": _norm_part_type(row["part_type"]),
+                "frame_type": _normalize_frame_type(row["frame_type"]),
+            }
         # Backward-compatible key fallback.
         row = db.execute(
             """
-            SELECT pi.id, pi.status, rp.key, rp.part_type
+            SELECT pi.id, pi.status, rp.key, rp.part_type, COALESCE(rp.frame_type, 'normal') AS frame_type
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.key = ? AND rp.is_active = 1
@@ -29555,13 +29915,18 @@ def build_confirm():
             (user["id"], choice),
         ).fetchone()
         if row and _norm_part_type(row["part_type"]) == expected_type:
-            return {"id": int(row["id"]), "key": row["key"], "part_type": _norm_part_type(row["part_type"])}
+            return {
+                "id": int(row["id"]),
+                "key": row["key"],
+                "part_type": _norm_part_type(row["part_type"]),
+                "frame_type": _normalize_frame_type(row["frame_type"]),
+            }
         legacy_id = _take_or_materialize_part_instance(db, user["id"], choice)
         if not legacy_id:
             return None
         legacy_row = db.execute(
             """
-            SELECT pi.id, pi.status, rp.key, rp.part_type
+            SELECT pi.id, pi.status, rp.key, rp.part_type, COALESCE(rp.frame_type, 'normal') AS frame_type
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.id = ? AND pi.user_id = ? AND rp.is_active = 1
@@ -29574,18 +29939,27 @@ def build_confirm():
             or str(legacy_row["status"] or "inventory").strip().lower() != "inventory"
         ):
             return None
-        return {"id": int(legacy_row["id"]), "key": legacy_row["key"], "part_type": _norm_part_type(legacy_row["part_type"])}
+        return {
+            "id": int(legacy_row["id"]),
+            "key": legacy_row["key"],
+            "part_type": _norm_part_type(legacy_row["part_type"]),
+            "frame_type": _normalize_frame_type(legacy_row["frame_type"]),
+        }
 
     resolved_slots = {}
     for slot_name, cfg in slot_defs.items():
         resolved = _resolve_selected_part_instance(cfg["choice"], cfg["expected_type"])
         if not resolved:
             session["message"] = "無効化されたパーツは組み立てに使用できません。"
-            return redirect(url_for("build"))
+            return redirect(url_for("build", frame_type=selected_frame_type))
         resolved_slots[slot_name] = resolved
     if len({resolved_slots["head"]["id"], resolved_slots["r_arm"]["id"], resolved_slots["l_arm"]["id"], resolved_slots["legs"]["id"]}) != 4:
         session["message"] = "同じ個体を複数部位へは設定できません。"
-        return redirect(url_for("build"))
+        return redirect(url_for("build", frame_type=selected_frame_type))
+    selected_frame_types = {resolved_slots[key]["frame_type"] for key in ("head", "r_arm", "l_arm", "legs")}
+    if len(selected_frame_types) != 1 or selected_frame_type not in selected_frame_types:
+        session["message"] = "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで編成できます。"
+        return redirect(url_for("build", frame_type=selected_frame_type))
 
     head_key = resolved_slots["head"]["key"]
     r_arm_key = resolved_slots["r_arm"]["key"]
@@ -29593,7 +29967,7 @@ def build_confirm():
     legs_key = resolved_slots["legs"]["key"]
     if combat_mode == "berserk" and not _has_any_active_boss_alert(db, user["id"]):
         session["message"] = "背水モードはボス警報中のみ選択可能"
-        return redirect(url_for("build"))
+        return redirect(url_for("build", frame_type=selected_frame_type))
     if decor_asset_id is not None:
         decor = db.execute(
             """
@@ -29606,7 +29980,7 @@ def build_confirm():
         ).fetchone()
         if not decor:
             session["message"] = "装飾が無効です。選び直してください。"
-            return redirect(url_for("build"))
+            return redirect(url_for("build", frame_type=selected_frame_type))
     if not robot_name:
         next_id_row = db.execute(
             "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM robot_instances"
@@ -29622,7 +29996,7 @@ def build_confirm():
             f"保存枠がいっぱいです（{int(active_count)}/{int(limits['robot_slots'])}）。ロボを整理してください。",
             "error",
         )
-        return redirect(url_for("build"))
+        return redirect(url_for("build", frame_type=selected_frame_type))
     try:
         db.execute("BEGIN IMMEDIATE")
         selected = {
@@ -29646,6 +30020,7 @@ def build_confirm():
             decor_asset_id=decor_asset_id,
             status="active",
             combat_mode=combat_mode,
+            frame_type=selected_frame_type,
             offsets=selected_offsets,
         )
         _equip_part_instances_on_robot(db, instance_id, selected)
@@ -31686,6 +32061,9 @@ def parts():
         (user_id,),
     ).fetchone()
     selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
+    selected_frame_type = str(request.args.get("frame_type") or "").strip().lower()
+    if selected_frame_type not in {"", "normal", "insect"}:
+        selected_frame_type = ""
     selected_compare_ids = _normalize_instance_id_values((request.args.get("compare_ids"),), limit=6)
     selected_sort = _normalize_parts_sort(request.args.get("sort"))
     try:
@@ -31699,11 +32077,14 @@ def parts():
     if selected_part_type:
         where_clauses.append("rp.part_type = ?")
         params.append(selected_part_type)
+    if selected_frame_type:
+        where_clauses.append("COALESCE(rp.frame_type, 'normal') = ?")
+        params.append(selected_frame_type)
     where_sql = " AND ".join(where_clauses)
 
     rows = db.execute(
         """
-        SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja
+        SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja, rp.frame_type, rp.series_key, rp.series_label
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE """
@@ -31731,7 +32112,7 @@ def parts():
         placeholders = ",".join(["?"] * len(selected_compare_ids))
         compare_rows = db.execute(
             f"""
-            SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja
+            SELECT pi.*, rp.part_type, rp.key AS part_key, rp.image_path, rp.display_name_ja, rp.frame_type, rp.series_key, rp.series_label
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND pi.id IN ({placeholders})
@@ -31817,6 +32198,8 @@ def parts():
     list_params = {}
     if selected_part_type:
         list_params["part_type"] = selected_part_type
+    if selected_frame_type:
+        list_params["frame_type"] = selected_frame_type
     if selected_sort != "recommended":
         list_params["sort"] = selected_sort
     prev_url = url_for("parts", page=page - 1, **list_params) if page > 1 else None
@@ -31846,12 +32229,25 @@ def parts():
         protect_core=protect_core,
         storage_total=storage_total,
         selected_part_type=selected_part_type,
+        selected_frame_type=selected_frame_type,
         selected_sort=selected_sort,
         parts_sort_defs=PARTS_SORT_DEFS,
         part_type_filters=_part_type_filter_rows(
             selected_part_type,
             "parts",
-            extra_params={"sort": (selected_sort if selected_sort != "recommended" else None)},
+            extra_params={
+                "frame_type": selected_frame_type,
+                "sort": (selected_sort if selected_sort != "recommended" else None),
+            },
+        ),
+        frame_type_filters=_frame_type_filter_rows(
+            selected_frame_type,
+            "parts",
+            extra_params={
+                "part_type": selected_part_type,
+                "sort": (selected_sort if selected_sort != "recommended" else None),
+            },
+            allow_all=True,
         ),
         show_evolution_actions=_evolution_feature_unlocked(db, user=user_row, user_id=user_id),
     )
@@ -31862,6 +32258,7 @@ def parts():
 def evolve_parts():
     db = get_db()
     user_id = int(session["user_id"])
+    series_master_map = _load_series_master_map(db, active_only=False)
     user = db.execute(
         "SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?",
         (user_id,),
@@ -31891,7 +32288,8 @@ def evolve_parts():
                 SELECT
                     pi.id, pi.part_id, pi.rarity, pi.plus, pi.part_type, pi.element, pi.series, pi.status,
                     pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-                    rp.key AS part_key, rp.display_name_ja, rp.image_path
+                    rp.key AS part_key, rp.display_name_ja, rp.image_path,
+                    COALESCE(rp.frame_type, 'normal') AS frame_type, rp.series_key, rp.series_label
                 FROM part_instances pi
                 JOIN robot_parts rp ON rp.id = pi.part_id
                 WHERE pi.id = ? AND pi.user_id = ? AND pi.status IN ('inventory', 'equipped')
@@ -31907,6 +32305,10 @@ def evolve_parts():
                 db.rollback()
                 flash("Nパーツのみ進化できます。", "error")
                 return redirect(url_for("evolve_parts", **redirect_params))
+            if not _series_can_evolve_for_row(source_row, series_master_map=series_master_map):
+                db.rollback()
+                flash("このシリーズは現在Nパーツのみです。進化合成には対応していません。", "error")
+                return redirect(url_for("evolve_parts", **redirect_params))
             target_part_key = resolve_evolved_part_key(source_row["part_key"])
             if not target_part_key:
                 db.rollback()
@@ -31915,6 +32317,7 @@ def evolve_parts():
             target_part = db.execute(
                 """
                 SELECT id, key, part_type, rarity, element, series, image_path, display_name_ja
+                     , COALESCE(frame_type, 'normal') AS frame_type, series_key, series_label
                 FROM robot_parts
                 WHERE key = ? AND is_active = 1
                 LIMIT 1
@@ -31928,6 +32331,10 @@ def evolve_parts():
             if str(target_part["rarity"] or "").upper().strip() != "R":
                 db.rollback()
                 flash("進化先パーツのレアリティ設定が不正です。", "error")
+                return redirect(url_for("evolve_parts", **redirect_params))
+            if _normalize_frame_type(target_part["frame_type"]) != _normalize_frame_type(source_row["frame_type"]):
+                db.rollback()
+                flash("進化先のフレームタイプが一致しません。", "error")
                 return redirect(url_for("evolve_parts", **redirect_params))
             if not _consume_player_core(db, user_id, EVOLUTION_CORE_KEY, qty=1):
                 db.rollback()
@@ -32098,7 +32505,8 @@ def evolve_parts():
         SELECT
             pi.id, pi.rarity, pi.plus, pi.part_type, pi.element, pi.series, pi.status,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.key AS part_key, rp.image_path, rp.display_name_ja
+            rp.key AS part_key, rp.image_path, rp.display_name_ja,
+            COALESCE(rp.frame_type, 'normal') AS frame_type, rp.series_key, rp.series_label
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE """
@@ -32111,12 +32519,15 @@ def evolve_parts():
     evolve_items = []
     for row in rows:
         item = dict(row)
+        if not _series_can_evolve_for_row(item, series_master_map=series_master_map):
+            continue
         target_key = resolve_evolved_part_key(item.get("part_key"))
         if not target_key:
             continue
         target_part = db.execute(
             """
             SELECT id, key, display_name_ja, image_path, part_type, element, rarity, series
+                 , COALESCE(frame_type, 'normal') AS frame_type, series_key, series_label
             FROM robot_parts
             WHERE key = ? AND is_active = 1
             LIMIT 1
@@ -32124,6 +32535,8 @@ def evolve_parts():
             (target_key,),
         ).fetchone()
         if not target_part:
+            continue
+        if _normalize_frame_type(target_part["frame_type"]) != _normalize_frame_type(item["frame_type"]):
             continue
         target_preview = dict(target_part)
         target_preview.update(
@@ -32204,7 +32617,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
             pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
             COALESCE(pi.r_assist_points, 0) AS r_assist_points,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.part_type, rp.key AS part_key
+            rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND pi.id = ?
@@ -32225,7 +32638,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
         SELECT
             pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.part_type, rp.key AS part_key
+            rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.user_id = ?
@@ -32262,6 +32675,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
                   AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) = 'N'
                   AND UPPER(COALESCE(pi.element, rp.element, '')) = UPPER(COALESCE(?, ''))
                   AND UPPER(COALESCE(rp.part_type, pi.part_type, '')) IN ({marks})
+                  AND COALESCE(rp.frame_type, 'normal') = ?
                 ORDER BY pi.plus ASC, pi.id ASC
                 LIMIT 2
                 """,
@@ -32270,6 +32684,7 @@ def _strengthen_parts_selected(db, user_id, base_id):
                     base_id_int,
                     str(base_row["element"] or ""),
                     *aliases,
+                    _normalize_frame_type(base_row["frame_type"]),
                 ),
             ).fetchall()
             if len(material_rows) == 2:
@@ -32433,6 +32848,7 @@ def _strengthen_group_rows(db, user_id, part_key, rarity):
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
             rp.part_type,
             rp.key AS part_key,
+            COALESCE(rp.frame_type, 'normal') AS frame_type,
             rp.image_path,
             rp.display_name_ja
         FROM part_instances pi
@@ -32702,7 +33118,7 @@ def _strengthen_parts_batch_selected(db, user_id, base_id):
         SELECT
             pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.part_type, rp.key AS part_key
+            rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.user_id = ? AND pi.status IN ('inventory', 'equipped') AND pi.id = ?
@@ -34604,17 +35020,33 @@ def _load_simulation_enemies(db, area_key):
     if not tiers:
         return []
     placeholders = ",".join(["?"] * len(tiers))
-    rows = db.execute(
-        f"""
-        SELECT key, name_ja, tier, element, hp, atk, def, spd, acc, cri
-        FROM enemies
-        WHERE is_active = 1
-          AND COALESCE(is_boss, 0) = 0
-          AND tier IN ({placeholders})
-        ORDER BY id ASC
-        """,
-        list(tiers),
-    ).fetchall()
+    allowed_keys = tuple(EXPLORE_AREA_ENEMY_KEYS.get(str(area_key or "").strip(), ()))
+    if allowed_keys:
+        key_placeholders = ",".join(["?"] * len(allowed_keys))
+        rows = db.execute(
+            f"""
+            SELECT key, name_ja, tier, element, hp, atk, def, spd, acc, cri
+            FROM enemies
+            WHERE is_active = 1
+              AND COALESCE(is_boss, 0) = 0
+              AND tier IN ({placeholders})
+              AND key IN ({key_placeholders})
+            ORDER BY id ASC
+            """,
+            [*list(tiers), *list(allowed_keys)],
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""
+            SELECT key, name_ja, tier, element, hp, atk, def, spd, acc, cri
+            FROM enemies
+            WHERE is_active = 1
+              AND COALESCE(is_boss, 0) = 0
+              AND tier IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            list(tiers),
+        ).fetchall()
     out = []
     for r in rows:
         out.append(
@@ -34689,6 +35121,20 @@ def _run_balance_simulation(players, enemies, n, rng, area_key=None, enable_arch
         "timeouts": timeouts,
         "enemy_rows": enemy_rows,
     }
+
+
+def _insect_enemy_asset_checks():
+    rows = []
+    for stored_path in INSECT_ENEMY_IMAGE_PATHS:
+        resolved_rel = _safe_static_rel(stored_path)
+        rows.append(
+            {
+                "stored_path": stored_path,
+                "resolved_rel": resolved_rel or "enemies/_placeholder.png",
+                "exists": bool(resolved_rel),
+            }
+        )
+    return rows
 
 
 def _archetype_distribution(players):
@@ -35211,6 +35657,7 @@ def admin_enemies():
     return render_template(
         "admin_enemies.html",
         enemies=enemies,
+        insect_asset_checks=_insect_enemy_asset_checks(),
         q=q,
         tier=tier_raw,
         selected_element=element,
