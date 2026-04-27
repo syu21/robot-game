@@ -4,9 +4,27 @@ from datetime import datetime, timezone
 
 
 STYLE_DEFINITIONS = {
-    "stable": {"label_jp": "安定", "description_jp": "防御・命中寄り（長期戦向き）"},
-    "desperate": {"label_jp": "背水", "description_jp": "低耐久寄り（速攻・リスク）"},
-    "burst": {"label_jp": "爆発", "description_jp": "攻撃・会心寄り（一撃型）"},
+    "stable": {
+        "label_jp": "安定",
+        "description_jp": "長く戦って確実に勝つ型",
+        "method_jp": "耐久・防御・命中で事故を減らす",
+        "strong_jp": "長期戦 / 安定周回",
+        "weak_jp": "高火力の速攻型",
+    },
+    "burst": {
+        "label_jp": "爆発",
+        "description_jp": "一撃で倒して終わらせる型",
+        "method_jp": "攻撃・会心で短期決着を狙う",
+        "strong_jp": "短期戦 / 格上突破",
+        "weak_jp": "耐久型 / 長期戦",
+    },
+    "desperate": {
+        "label_jp": "背水",
+        "description_jp": "ギリギリから逆転する型",
+        "method_jp": "低耐久・高火力で先手や一発勝負",
+        "strong_jp": "逆転 / 瞬間火力勝負",
+        "weak_jp": "長期戦 / 安定型",
+    },
 }
 STYLE_LABELS = {key: value["label_jp"] for key, value in STYLE_DEFINITIONS.items()}
 STYLE_KEYS = ("stable", "burst", "desperate")
@@ -18,16 +36,22 @@ STYLE_WEIGHTS = {
 }
 STYLE_PLAY_GUIDE = {
     "stable": {
-        "battle_line": "耐久や命中を活かして、崩れにくく勝つ型",
-        "support_line": "守りと命中で試合を安定させやすい思想です。",
-    },
-    "desperate": {
-        "battle_line": "打たれ弱いぶん、先手や逆転で押し切る型",
-        "support_line": "短期決着やギリギリの逆転を狙いやすい思想です。",
+        "battle_line": STYLE_DEFINITIONS["stable"]["description_jp"],
+        "support_line": STYLE_DEFINITIONS["stable"]["method_jp"],
+        "strong_line": STYLE_DEFINITIONS["stable"]["strong_jp"],
+        "weak_line": STYLE_DEFINITIONS["stable"]["weak_jp"],
     },
     "burst": {
-        "battle_line": "攻撃や会心で一気に勝負を決める型",
-        "support_line": "高火力で流れをひっくり返しやすい思想です。",
+        "battle_line": STYLE_DEFINITIONS["burst"]["description_jp"],
+        "support_line": STYLE_DEFINITIONS["burst"]["method_jp"],
+        "strong_line": STYLE_DEFINITIONS["burst"]["strong_jp"],
+        "weak_line": STYLE_DEFINITIONS["burst"]["weak_jp"],
+    },
+    "desperate": {
+        "battle_line": STYLE_DEFINITIONS["desperate"]["description_jp"],
+        "support_line": STYLE_DEFINITIONS["desperate"]["method_jp"],
+        "strong_line": STYLE_DEFINITIONS["desperate"]["strong_jp"],
+        "weak_line": STYLE_DEFINITIONS["desperate"]["weak_jp"],
     },
 }
 
