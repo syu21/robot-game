@@ -158,16 +158,16 @@ class StageModifiersTests(unittest.TestCase):
         map_on = client.get("/map")
         self.assertEqual(home_on.status_code, 200)
         self.assertEqual(map_on.status_code, 200)
-        self.assertIn("傾向：", home_on.get_data(as_text=True))
-        self.assertIn("傾向：", map_on.get_data(as_text=True))
+        self.assertIn("育成傾向:", home_on.get_data(as_text=True))
+        self.assertIn("耐久・防御寄りの基礎育成", map_on.get_data(as_text=True))
 
         game_app.STAGE_MODIFIERS_ENABLED = False
         home_off = client.get("/home")
         map_off = client.get("/map")
         self.assertEqual(home_off.status_code, 200)
         self.assertEqual(map_off.status_code, 200)
-        self.assertNotIn("傾向：", home_off.get_data(as_text=True))
-        self.assertNotIn("傾向：", map_off.get_data(as_text=True))
+        self.assertIn("育成傾向:", home_off.get_data(as_text=True))
+        self.assertNotIn("耐久・防御寄りの基礎育成", map_off.get_data(as_text=True))
 
     def test_battle_html_shows_style_line_and_enemy_tendency_for_normal_enemy(self):
         game_app.STAGE_MODIFIERS_ENABLED = True

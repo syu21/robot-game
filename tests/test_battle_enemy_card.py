@@ -83,4 +83,5 @@ class BattleEnemyCardTests(unittest.TestCase):
             self.assertIn("battle-enemy-image", html)
 
 
-i
+if __name__ == "__main__":
+    unittest.main()
