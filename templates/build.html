@@ -46,6 +46,7 @@
         {% if p['summary_total']['note_text'] %}
           <div class="picker-total-note">{{ p['summary_total']['note_text'] }}</div>
         {% endif %}
+        <div class="picker-total-note">フレーム: {{ p['frame_label'] }}</div>
         <div class="picker-diff-row">
           {% for row in p['summary_rows'] %}
             <span class="picker-diff-chip is-{{ row['delta_class'] }}">{{ row['display_text'] }}</span>
@@ -78,6 +79,7 @@
       </div>
       <div class="picker-detail-meta">
         <span class="part-chip">{{ p['part_type_label'] }}</span>
+        <span class="part-chip">{{ p['frame_label'] }}</span>
         <span class="part-chip rarity-{{ (p['instance_rarity'] or p['rarity'] or 'n')|lower }}">{{ p['instance_rarity'] or p['rarity'] or 'N' }}</span>
         <span class="part-chip">{{ p['instance_slot_label'] }}</span>
         {% if p.get('series_badge') %}
@@ -97,6 +99,7 @@
     {% if part %}
       <div class="picker-current-name">{{ part['display_name_with_plus'] }}</div>
       <div class="part-chip-row">
+        <span class="part-chip">{{ part['frame_label'] }}</span>
         <span class="part-chip is-equipped">総合 {{ part['total_value'] }}</span>
         {% for row in part['summary_rows'] %}
           <span class="part-chip">{{ row['display_text'] }}</span>
@@ -109,6 +112,11 @@
 {%- endmacro %}
 {% block content %}
 <h1>ロボ編成</h1>
+{% if message %}
+<div class="card">
+  <div><b>{{ message }}</b></div>
+</div>
+{% endif %}
 {% if missing_part_types %}
 <div class="card">
   <p><b>不足部位:</b> {{ missing_part_types | join(' / ') }}</p>
@@ -119,7 +127,22 @@
   </form>
 </div>
 {% endif %}
+<div class="card">
+  <div><b>フレームタイプ</b></div>
+  <div class="showcase-sort-tabs">
+    {% for item in frame_type_filters %}
+    <a href="{{ item['url'] }}" class="fuse-mode-tab {% if item['is_active'] %}is-active{% endif %}">{{ item['label'] }}</a>
+    {% endfor %}
+  </div>
+  {% for item in frame_type_defs %}
+    {% if item['key'] == selected_frame_type %}
+    <div class="upgrade-cost">{{ item['description'] }}</div>
+    <div class="robot-time">{{ item['detail'] }}</div>
+    {% endif %}
+  {% endfor %}
+</div>
 <form method="post" action="{{ url_for('build_confirm') }}" id="build-form" data-submit-lock="1" data-loading-text="登録中...">
+  <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
   <div class="build-grid">
     <section class="card build-preview build-preview-primary">
       <h2>プレビュー</h2>
@@ -252,6 +275,7 @@
         <div class="robot-time">{{ current_style_state['current_support_line'] }}</div>
         {% endif %}
         <hr />
+        <div class="upgrade-cost"><b>総合差分</b></div>
         {% for row in stat_comparison_rows %}
         <div class="upgrade-cost">
           {{ row['label'] }} <span id="cmp-{{ row['key'] }}-current">{{ row['current'] }}</span> →

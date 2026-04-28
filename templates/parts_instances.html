@@ -30,9 +30,17 @@
       {% endif %}
     </div>
     {{ render_part_type_filters(part_type_filters) }}
+    <div class="showcase-sort-tabs">
+      {% for item in frame_type_filters %}
+      <a href="{{ item['url'] }}" class="fuse-mode-tab {% if item['is_active'] %}is-active{% endif %}">{{ item['label'] }}</a>
+      {% endfor %}
+    </div>
     <form method="get" class="part-sort-form">
       {% if selected_part_type %}
       <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+      {% endif %}
+      {% if selected_frame_type %}
+      <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
       {% endif %}
       <label class="part-sort-label" for="parts-sort-select">並び替え</label>
       <select id="parts-sort-select" name="sort">
@@ -67,6 +75,7 @@
               <div class="robot-id">{{ p['display_name'] }}</div>
               <div class="part-chip-row">
                 <span class="part-chip">{{ p['part_type_label'] }}</span>
+                <span class="part-chip">{{ p['frame_label'] }}</span>
                 <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
                 <span class="part-chip">+{{ p['plus'] }}</span>
                 {% if p.get('series_badge') %}
@@ -80,6 +89,13 @@
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              <div class="part-meta-line">フレーム：{{ p['frame_label'] }}</div>
+              {% if p.get('series_badge') %}
+              <div class="part-meta-line">シリーズ：{{ p['series_badge']['short_label'] }}</div>
+              {% endif %}
+              {% if p.get('series_n_only') %}
+              <div class="part-meta-line">このシリーズは現在Nパーツのみです</div>
+              {% endif %}
               <div class="part-meta-line">{{ p['material_hint'] }}</div>
             </div>
           </div>
@@ -101,6 +117,9 @@
     <input type="hidden" name="confirm" value="yes" />
     {% if selected_part_type %}
     <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+    {% endif %}
+    {% if selected_frame_type %}
+    <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
     {% endif %}
     <input type="hidden" name="sort" value="{{ selected_sort }}" />
     <input type="hidden" name="page" value="{{ page }}" />
@@ -132,6 +151,7 @@
               <div class="robot-id">{{ p['display_name'] }}</div>
               <div class="part-chip-row">
                 <span class="part-chip">{{ p['part_type_label'] }}</span>
+                <span class="part-chip">{{ p['frame_label'] }}</span>
                 <span class="part-chip rarity-{{ p['rarity_label']|lower }}">{{ p['rarity_label'] }}</span>
                 <span class="part-chip">+{{ p['plus'] }}</span>
                 {% if p.get('series_badge') %}
@@ -145,6 +165,13 @@
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              <div class="part-meta-line">フレーム：{{ p['frame_label'] }}</div>
+              {% if p.get('series_badge') %}
+              <div class="part-meta-line">シリーズ：{{ p['series_badge']['short_label'] }}</div>
+              {% endif %}
+              {% if p.get('series_n_only') %}
+              <div class="part-meta-line">このシリーズは現在Nパーツのみです</div>
+              {% endif %}
               <div class="part-meta-line">{{ p['material_hint'] }}</div>
               {% if p.get('extreme_title') %}
                 <div class="part-meta-line"><span class="weekly-fit-badge">{{ p['extreme_title'] }}</span></div>

@@ -165,8 +165,12 @@ def apply_series_bonus(stats, parts, series_bonus_defs=None, progress_layer=5):
             configured_value = float(bonus.get("value") or 0.0)
             applied_value = configured_value * scale
             before_value = int(out.get(stat_key) or 0)
-            boosted_value = int(math.ceil(before_value * (1.0 + applied_value)))
-            after_value = max(before_value + 1, boosted_value) if before_value > 0 else boosted_value
+            if before_value > 0 and applied_value < 0:
+                reduced_value = int(math.floor(before_value * (1.0 + applied_value)))
+                after_value = max(1, min(before_value - 1, reduced_value))
+            else:
+                boosted_value = int(math.ceil(before_value * (1.0 + applied_value)))
+                after_value = max(before_value + 1, boosted_value) if before_value > 0 else boosted_value
             out[stat_key] = after_value
             applied.append(
                 {

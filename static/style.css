@@ -11996,10 +11996,4 @@ body#page-world .world-competition-grid {
     width: 120px;
   }
   .robot-maintenance-delta-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .style-gauge-row {
-    grid-template-columns: 38px minmax(64px, 1fr) 26px;
-    gap: 6px;
-  }
-}
+    grid-template-columns: repeat(2, minmax

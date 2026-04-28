@@ -9,6 +9,7 @@
     <div>
       <div class="robot-id">{{ robot['name'] }} <span class="robot-part">#{{ robot['id'] }}</span></div>
       <div class="robot-part">オーナー: {{ robot['owner_name'] }}</div>
+      <div class="robot-part">フレーム: {{ robot['frame_label'] }}</div>
       <div class="robot-part">メイン称号: {{ primary_title }}</div>
       {% if title_summary and (title_summary.get('style') or title_summary.get('honor')) %}
       <div class="title-badge-list title-badge-list-compact">

@@ -293,8 +293,4 @@ class Layer4ProgressionTests(unittest.TestCase):
         self.assertEqual(payload.get("area_key"), "layer_4_haze")
         self.assertEqual(int(payload.get("battle_no") or 0), 1)
         self.assertEqual(payload.get("growth_tendency_key"), "precision_master")
-        self.assertEqual(payload.get("growth_tendency_label"), "霧界育成")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(payload.get("growth_tendency_label"

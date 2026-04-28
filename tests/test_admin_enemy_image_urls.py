@@ -60,9 +60,4 @@ class AdminEnemyImageUrlTests(unittest.TestCase):
             resp = client.get(f"/admin/enemies/{enemy_key}/edit")
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
-            self.assertIn("/static/enemies/", html)
-            self.assertIn("?v=", html)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self

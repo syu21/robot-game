@@ -80,9 +80,3 @@ class AssetFallbackTests(unittest.TestCase):
             enemy = game_app._feed_enemy_row(db, row, payload)
         self.assertIsNotNone(enemy)
         self.assertNotEqual(enemy["key"], "legacy_scout")
-        self.assertNotEqual(enemy["image_path"], "enemies/steel_scout.png")
-        self.assertTrue(game_app._enemy_row_has_display_image(enemy))
-
-
-if __name__ == "__main__":
-    unittest.main()

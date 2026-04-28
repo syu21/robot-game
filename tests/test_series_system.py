@@ -52,9 +52,19 @@ class SeriesSystemTests(unittest.TestCase):
             db = game_app.get_db()
             count = int(db.execute("SELECT COUNT(*) AS c FROM series_master").fetchone()["c"])
             self.assertGreaterEqual(count, 7)
-            row = db.execute("SELECT series, image_path FROM robot_parts WHERE key = 'head_kabuto'").fetchone()
+            row = db.execute(
+                """
+                SELECT rp.series, rp.image_path, sm.frame_type, sm.max_rarity, sm.can_evolve
+                FROM robot_parts rp
+                LEFT JOIN series_master sm ON sm.series_key = rp.series
+                WHERE rp.key = 'head_kabuto'
+                """
+            ).fetchone()
             self.assertEqual(row["series"], "insect_kabuto")
             self.assertEqual(row["image_path"], "parts/head/head_kabuto.png")
+            self.assertEqual(row["frame_type"], "insect")
+            self.assertEqual(row["max_rarity"], "N")
+            self.assertEqual(int(row["can_evolve"]), 0)
 
     def test_series_release_gate_defaults_to_admin_only(self):
         old_bypass = game_app.app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True)

@@ -247,9 +247,4 @@ class BerserkModeTests(unittest.TestCase):
             },
             follow_redirects=True,
         )
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("ロボ編成", resp.get_data(as_text=True))
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(resp.sta

@@ -39,8 +39,12 @@
           {% endif %}
           <div>
             <div><b><a href="{{ url_for('robot_detail', instance_id=r['robot_id']) }}">{{ r['robot_name'] }}</a></b></div>
+            <div class="robot-part">フレーム: {{ r['frame_label'] }}</div>
             {% if r.get('profile') and r['profile'].get('signature_label') %}
             <div class="robot-part">{{ r['profile']['signature_label'] }}</div>
+            {% endif %}
+            {% if r.get('profile') and r['profile'].get('battle_style_line') %}
+            <div class="robot-time">{{ r['profile']['battle_style_line'] }}</div>
             {% endif %}
             {% if r.get('profile') and r['profile'].get('focus_line') %}
             <div class="robot-time">{{ r['profile']['focus_line'] }}</div>
@@ -68,5 +72,4 @@
   <p>まだ記録がありません。</p>
   {% endif %}
 </div>
-<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
-{% endblock %}
+<p

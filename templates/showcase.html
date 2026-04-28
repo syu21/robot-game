@@ -48,6 +48,7 @@
       <div class="robot-card">
         <div class="robot-id">{{ r['name'] }}</div>
         <div class="robot-part">オーナー: {{ r['username'] }}</div>
+        <div class="robot-part">フレーム: {{ r['frame_label'] }}</div>
         <div class="robot-part">
           称号:
           {% if r.get('primary_title_view') %}
@@ -79,18 +80,4 @@
         <div class="robot-part">注目記録: {{ r['metric_' ~ sort_key] }}</div>
         {% endif %}
         <form method="post" action="{{ url_for('showcase_like', robot_id=r['id']) }}">
-          <input type="hidden" name="sort" value="{{ sort_key }}" />
-          <button type="submit">{% if r['liked_by_me'] %}いいね解除{% else %}いいね{% endif %} ({{ r['vote_count'] }})</button>
-        </form>
-        <form method="post" action="{{ url_for('battle_simulation', robot_id=r['id']) }}">
-          <input type="hidden" name="sort" value="{{ sort_key }}" />
-          <button type="submit">このロボと戦う</button>
-        </form>
-        <p class="link"><a href="{{ url_for('robot_detail', instance_id=r['id']) }}">個別ページ</a></p>
-      </div>
-    {% endfor %}
-  </div>
-</div>
-
-<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
-{% endblock %}
+          <input type="hidden" name="sort" value
