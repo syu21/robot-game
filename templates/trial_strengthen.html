@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-  <div><span class="weekly-fit-badge">体験モード</span></div>
+  <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
   <h1>パーツ強化</h1>
-  <p class="upgrade-cost">体験中は素材を自動選択します。整理操作なしで、強化の手触りだけ確認できます。</p>
+  <p class="upgrade-cost">拾ったパーツを素材にして、装備中のパーツを +1 します。</p>
 </section>
 
 {% if result %}
@@ -14,30 +14,42 @@
 {% endif %}
 
 <section class="panel">
-  <h2>強化対象</h2>
+  <h2>強化候補</h2>
+  {% if strengthen_base %}
   <div class="robot-row">
-    {% for part in trial_state['parts'] if part['equipped'] %}
+    <article class="robot-card compact-part-card">
+      <img class="robot-thumb" src="{{ strengthen_base['image_url'] }}" alt="{{ strengthen_base['name'] }}" loading="lazy" />
+      <div class="robot-id">{{ strengthen_base['name'] }} +{{ strengthen_base['plus'] }}</div>
+      <div class="robot-part">{{ strengthen_base['part_type_label'] }} / {{ strengthen_base['rarity'] }}</div>
+      <div class="upgrade-cost">素材2つで +1 強化できます。</div>
+    </article>
+    {% for part in strengthen_materials %}
     <article class="robot-card compact-part-card">
       <img class="robot-thumb" src="{{ part['image_url'] }}" alt="{{ part['name'] }}" loading="lazy" />
-      <div class="robot-id">{{ part['name'] }} +{{ part['plus'] }}</div>
+      <div class="robot-id">素材: {{ part['name'] }}</div>
       <div class="robot-part">{{ part['part_type_label'] }} / {{ part['rarity'] }}</div>
       <div class="upgrade-cost">{{ part['role'] }}</div>
     </article>
     {% endfor %}
   </div>
-</section>
-
-<section class="card">
-  <h2>STEP2: 1クリック強化</h2>
-  {% if trial_state.get('strengthened') %}
-  <p class="upgrade-cost">強化済みです。次はロボ編成を変えてみましょう。</p>
-  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボ編成へ</a></p>
   {% else %}
-  <form method="post" action="{{ url_for('parts_strengthen') }}">
-    <button type="submit">自動選択で強化する</button>
-  </form>
+  <p class="upgrade-cost">素材がまだ足りません。第1層へ出撃してパーツを集めよう。</p>
   {% endif %}
 </section>
 
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+<section class="card">
+  <h2>② パーツを強くしてみよう！</h2>
+  {% if trial_state.get('strengthened') %}
+  <p class="upgrade-cost">強化済みです。次はロボを組み替えてみよう。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボ編成へ</a></p>
+  {% elif strengthen_base %}
+  <form method="post" action="{{ url_for('parts_strengthen') }}">
+    <button type="submit">素材を使って強化する</button>
+  </form>
+  {% else %}
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('home') }}">第1層へ出撃</a></p>
+  {% endif %}
+</section>
+
+<p class="link"><a href="{{ url_for('parts') }}">所持パーツへ</a> | <a href="{{ url_for('home') }}">基地へ戻る</a></p>
 {% endblock %}

@@ -182,7 +182,7 @@ class BattleOverlayCleanupTests(unittest.TestCase):
         resp = client.get("/build")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn('/static/base_cleanup_v2.js', html)
+        self.assertIn('/static/base_cleanup_v3.js', html)
 
     def test_debug_ui_effects_off_sets_body_class(self):
         client = self._new_client()

@@ -45,7 +45,7 @@ class GoogleAuthFlowTests(unittest.TestCase):
         self.assertTrue(redirect_url.startswith("https://accounts.google.com/o/oauth2/v2/auth"))
         qs = parse_qs(urlparse(redirect_url).query)
         self.assertEqual(qs.get("client_id", [""])[0], "cid")
-        self.assertEqual(qs.get("scope", [""])[0], "openid email profile")
+        self.assertEqual(qs.get("scope", [""])[0], "openid email")
         self.assertEqual(qs.get("response_type", [""])[0], "code")
         with client.session_transaction() as session:
             self.assertTrue(session.get("google_oauth_state"))
@@ -84,27 +84,64 @@ class GoogleAuthFlowTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("最初のミッション", html)
         self.assertIn("第1層へ出撃", html)
-        self.assertIn("表示名を決めよう", html)
+        self.assertNotIn("あるけみすと", html)
         with client.session_transaction() as session:
-            self.assertEqual(session.get("username"), "あるけみすと")
-            self.assertEqual(session.get("needs_display_name_setup"), 1)
+            self.assertRegex(session.get("username") or "", r"^研究員\d{4}$")
+            self.assertIsNone(session.get("needs_display_name_setup"))
 
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute(
-                "SELECT id, username, active_robot_id FROM users WHERE username LIKE ?",
-                ("alchemist%",),
+                "SELECT id, username, display_name, active_robot_id FROM users WHERE username LIKE ?",
+                ("robo_%",),
             ).fetchone()
             self.assertIsNotNone(user)
+            self.assertRegex(user["username"], r"^robo_\d{4}$")
+            self.assertRegex(user["display_name"], r"^研究員\d{4}$")
             self.assertIsNotNone(user["active_robot_id"])
             identity = db.execute(
-                "SELECT provider, provider_user_id, email FROM user_auth_identities WHERE user_id = ?",
+                "SELECT provider, provider_user_id, email, display_name, avatar_url FROM user_auth_identities WHERE user_id = ?",
                 (int(user["id"]),),
             ).fetchone()
             self.assertIsNotNone(identity)
             self.assertEqual(identity["provider"], "google")
             self.assertEqual(identity["provider_user_id"], "google-sub-1")
             self.assertEqual(identity["email"], "alchemist@example.com")
+            self.assertIsNone(identity["display_name"])
+            self.assertIsNone(identity["avatar_url"])
+
+    def test_google_identity_display_name_is_not_public_fallback(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            cur = db.execute(
+                """
+                INSERT INTO users (username, display_name, password_hash, created_at, last_seen_at)
+                VALUES (?, NULL, ?, ?, ?)
+                """,
+                ("robo_7777", "x", now, now),
+            )
+            user_id = int(cur.lastrowid)
+            db.execute(
+                """
+                INSERT INTO user_auth_identities
+                (user_id, provider, provider_user_id, email, display_name, avatar_url, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    "google",
+                    "google-sub-real-name",
+                    "real@example.com",
+                    "本名 太郎",
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            db.commit()
+            row = db.execute("SELECT id, username, display_name, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+            self.assertEqual(game_app._display_username_for_user_row(db, row), "robo_7777")
 
     def test_google_registered_user_can_save_game_display_name(self):
         client = game_app.app.test_client()

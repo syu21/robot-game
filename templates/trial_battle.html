@@ -1,44 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-  <div><span class="weekly-fit-badge">体験モード</span></div>
-  <h1>訓練戦闘 完了</h1>
-  <p class="upgrade-cost">{{ result['area_label'] }} で {{ result['enemy_name'] }} を撃破しました。</p>
+  <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
+  <h1>出撃結果</h1>
+  <p class="upgrade-cost">戦利品と次の行動を確認できます。</p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('home') }}">基地へ戻る</a></p>
 </section>
-
-<section class="card battle-summary-upgraded">
-  <h2>戦利品</h2>
-  <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ result['coin_gain'] }}</b></div>
-  {% if result.get('dropped_part') %}
-  <div class="battle-summary-row">パーツが手に入った！</div>
-  <div class="battle-drop-row">
-    <img class="battle-drop-mini" src="{{ result['dropped_part']['image_url'] }}" alt="{{ result['dropped_part']['name'] }}" loading="lazy" />
-    <span class="battle-drop-name">{{ result['dropped_part']['name'] }}</span>
-  </div>
-  {% else %}
-  <div class="battle-summary-row">今回はパーツなし。コインを回収しました。</div>
-  {% endif %}
-</section>
-
-{% if result['is_finished'] %}
-<section class="card">
-  <h2>体験はここまで！</h2>
-  <p class="upgrade-cost">自分の研究員として始めると、手に入れたパーツや記録を保存できます。</p>
-  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('register') }}">無料で始める</a></p>
-</section>
-{% else %}
-<section class="panel">
-  <h2>次の行動</h2>
-  <div class="action-grid">
-    <a class="action-card is-primary" href="{{ url_for('parts_strengthen') }}">
-      <div class="action-title">次は強化してみよう</div>
-      <div class="action-desc">素材を自動選択して1クリックで強化します。</div>
-    </a>
-    <a class="action-card" href="{{ url_for('home') }}">
-      <div class="action-title">基地へ戻る</div>
-      <div class="action-desc">体験ガイドを確認します。</div>
-    </a>
-  </div>
-</section>
-{% endif %}
 {% endblock %}

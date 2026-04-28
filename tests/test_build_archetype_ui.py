@@ -57,7 +57,7 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertEqual(stable["style_key"], "stable")
         self.assertEqual(burst["style_key"], "burst")
         self.assertEqual(desperate["style_key"], "desperate")
-        self.assertEqual(stable.get("style_description"), "防御・命中寄り（長期戦向き）")
+        self.assertEqual(stable.get("style_description"), "長く戦って確実に勝つ型")
 
     def test_style_tie_break_prefers_stable_then_burst(self):
         self.assertEqual(
@@ -75,6 +75,8 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
         self.assertIn("思想:", home_html)
+        self.assertIn("ギリギリから逆転する型", home_html)
+        self.assertIn("低耐久・高火力で先手や一発勝負", home_html)
         self.assertIn("出撃機体", home_html)
         self.assertIn("スタイル実績", home_html)
         self.assertIn("セットボーナス:", home_html)
@@ -94,6 +96,9 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("位置の微調整", build_html)
         self.assertIn("セットボーナス:", build_html)
         self.assertIn("同属性パーツ 4部位で発動", build_html)
+        self.assertIn("思想:", build_html)
+        self.assertIn("ギリギリから逆転する型", build_html)
+        self.assertIn("低耐久・高火力で先手や一発勝負", build_html)
         self.assertIn('name="head_offset_x"', build_html)
         self.assertIn('name="r_arm_offset_y"', build_html)
         self.assertIn("リセット", build_html)
@@ -108,6 +113,8 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("セットボーナス:", html)
         self.assertIn("同属性パーツ 4部位で発動", html)
         self.assertIn("戦い方:", html)
+        self.assertIn("ギリギリから逆転する型", html)
+        self.assertIn("低耐久・高火力で先手や一発勝負", html)
 
     def test_build_stat_comparison_rows(self):
         rows = game_app._build_stat_comparison_rows(

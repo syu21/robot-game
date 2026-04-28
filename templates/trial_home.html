@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="card">
-  <div><span class="weekly-fit-badge">体験モード</span></div>
-  <h1>研究所貸与機でプレイ中</h1>
-  <p class="upgrade-cost">データ保存なし・ランキング反映なしで、出撃、強化、編成の基本ループを試せます。</p>
-  <p class="robot-time">残り {{ trial_remaining_seconds }} 秒 / 出撃 {{ trial_state['explores'] }} / {{ trial_max_explores }} 回</p>
+  <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
+  <h1>🤖 お試しプレイ中</h1>
+  <p class="upgrade-cost">このロボで、まずは1回出撃してみよう。</p>
+  <p class="robot-time">{{ trial_time_left_label }} / {{ trial_explore_left_label }}</p>
+  <p class="robot-time">気に入ったら、そのまま無料で始められます。※この体験の報酬は保存されません。</p>
 </section>
 
 {% if trial_message %}
@@ -16,9 +17,9 @@
   <div class="action-grid">
     {% for step in trial_steps %}
     <a class="action-card{% if step['is_current'] %} is-primary{% endif %}" href="{{ step['url'] }}">
-      <div class="action-title">{{ step['label'] }}: {{ step['title'] }}</div>
+      <div class="action-title">{{ step['label'] }}. {{ step['title'] }}</div>
       <div class="action-desc">
-        {% if step['is_done'] %}完了{% elif step['is_current'] %}今ここ{% else %}次に進みます{% endif %}
+        {% if step['is_done'] %}完了{% elif step['is_current'] %}{{ step['desc'] }}{% else %}{{ step['desc'] }}{% endif %}
       </div>
     </a>
     {% endfor %}
@@ -26,16 +27,16 @@
 </section>
 
 <section class="panel">
-  <h2>試験機アーク・プロト</h2>
+  <h2>{{ trial_state['robot']['name'] }}</h2>
   <div class="robot-row">
     <div class="robot-card">
-      <img class="robot-thumb" src="{{ trial_state['robot']['image_url'] }}" alt="試験機アーク・プロト" loading="lazy" />
+      <img class="robot-thumb" src="{{ trial_state['robot']['image_url'] }}" alt="{{ trial_state['robot']['name'] }}" loading="lazy" />
       <div class="robot-id">{{ trial_state['robot']['name'] }}</div>
       <div class="robot-part">思想: {{ trial_state['robot']['style_label'] }}</div>
       <div class="upgrade-cost">{{ trial_state['robot']['summary'] }}</div>
     </div>
     <div class="card">
-      <div><b>現在の性能</b></div>
+      <div><b>機体ステータス</b></div>
       <div class="stats">
         <div>耐久 {{ trial_robot_stats['hp'] }}</div>
         <div>攻撃 {{ trial_robot_stats['atk'] }}</div>
@@ -45,20 +46,21 @@
         <div>会心 {{ trial_robot_stats['cri'] }}</div>
       </div>
       <p class="robot-time">所持コイン {{ trial_state['coins'] }}</p>
+      <p class="link"><a href="{{ url_for('parts') }}">貸与パーツを見る</a></p>
     </div>
   </div>
 </section>
 
 <section class="card">
-  <h2>STEP1: 出撃してみよう</h2>
-  <p class="upgrade-cost">第1層だけを使った短い体験です。勝ちやすい調整ですが、報酬は保存されません。</p>
+  <h2>第1層へ出撃</h2>
+  <p class="upgrade-cost">本番と同じ出撃結果画面で、戦利品と次の行動を確認できます。</p>
   <form method="post" action="{{ url_for('explore') }}">
     <input type="hidden" name="area_key" value="layer_1" />
     <button type="submit" {% if trial_ct_remaining > 0 %}disabled{% endif %}>
-      {% if trial_ct_remaining > 0 %}再出撃まで {{ trial_ct_remaining }} 秒{% else %}第1層へ出撃{% endif %}
+      {% if trial_ct_remaining > 0 %}再出撃まであと {{ trial_ct_remaining }} 秒{% else %}第1層へ出撃{% endif %}
     </button>
   </form>
 </section>
 
-<p class="link"><a href="{{ url_for('register') }}">無料で始める</a> | <a href="{{ url_for('trial_end') }}">体験を終了</a></p>
+<p class="link"><a href="{{ url_for('register') }}">無料で始める</a> | <a href="{{ url_for('trial_end') }}">終了する</a></p>
 {% endblock %}
