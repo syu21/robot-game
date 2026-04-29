@@ -98,6 +98,10 @@
 ## 6. 監査
 - [ ] 主要フローで `request_id` が埋まる
 - [ ] `audit.fuse`, `audit.part.evolve`, `audit.core.drop` が残る
+- [ ] チャンプ戦で `audit.champ.battle.start`, `audit.champ.battle.end`, `audit.champ.reward.coin` が残る
+- [ ] チャンプ初回撃破で `audit.champ.reward.core` と `CHAMP_DEFEAT_FIRST` が残る
+- [ ] チャンプ日次撃破で `audit.champ.reward.daily_bonus` と `CHAMP_DEFEAT_DAILY` が残る
+- [ ] 不利相性でチャンプ撃破すると `CHAMP_DEFEAT_UPSET` が世界ログに出る
 - [ ] `audit.fuse.batch_preview`, `audit.fuse.batch_execute` が `warehouse_batch` payload つきで残る
 - [ ] `audit.system.maintenance_block` が `path / method / mode / user_id` つきで残る
 - [ ] 管理操作監査が残る
@@ -114,9 +118,16 @@
 - [ ] 条件達成で qualified 遷移
 
 ## 8. リリース前検証
-- [ ] `python3 -m py_compile app.py init_db.py services/stats.py services/fuse.py constants.py`
+- [ ] `python3 -m py_compile app.py init_db.py services/stats.py services/fuse.py services/champion_battle.py services/battle_affinity.py constants.py`
 - [ ] `python3 -m unittest discover -s tests -q`
+- [ ] `python3 -m unittest tests.test_battle_affinity tests.test_weekly_champion`
 - [ ] `python3 -m unittest tests.test_market tests.test_lab_casino tests.test_explore_drop_budget tests.test_tier_growth_staging tests.test_streak_bonus tests.test_parts_fuse_route`
+- [ ] `python3 -m unittest tests.test_trial_mode`
+- [ ] `/register` から `試験機で体験する` で `/trial/start` に入れる
+- [ ] 体験中の `/home` に `お試しプレイ中`、`アーク・プロト`、`あとN分遊べます`、`あとN回出撃できます` が出る
+- [ ] 体験中は `layer_1` だけ出撃でき、出撃結果に戦利品と次アクションが出る
+- [ ] 体験中の `/parts`、`/parts/strengthen`、`/build` が session の一時パーツで動く
+- [ ] 体験中の出撃・強化・編成が `users`、`world_events_log`、ランキングへ永続保存されない
 - [ ] `/admin/release` で `廃品市場` が `admin_only` のままになっている
 - [ ] `/market` が非管理者404、管理者200
 - [ ] `/admin/market` で購入件数・売却件数・再入荷件数・平均価格が見える

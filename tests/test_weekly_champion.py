@@ -106,14 +106,93 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertEqual(battle["first_strike_mode"], "RANDOM_FIRST")
         self.assertEqual(battle["first_striker"], "champion")
         self.assertAlmostEqual(float(battle["crit_multiplier"]), 1.65, places=2)
+        self.assertIn("affinity", battle)
+
+    def test_run_champion_battle_applies_type_affinity_damage(self):
+        class _FlatRng:
+            def random(self):
+                return 0.1
+
+            def randint(self, low, high):
+                return 0
+
+        base_player = {
+            "name": "player",
+            "stats": {"hp": 30, "atk": 10, "def": 4, "spd": 99, "acc": 99, "cri": 0},
+        }
+        champion = {
+            "name": "champion",
+            "style_key": "desperate",
+            "stats": {"hp": 30, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 0},
+        }
+        advantage = game_app.run_champion_battle(
+            {**base_player, "style_key": "burst"},
+            champion,
+            max_turns=1,
+            rng=_FlatRng(),
+        )
+        disadvantage = game_app.run_champion_battle(
+            {**base_player, "style_key": "stable"},
+            champion,
+            max_turns=1,
+            rng=_FlatRng(),
+        )
+        self.assertGreater(
+            int(advantage["turn_logs"][0]["player_damage"]),
+            int(disadvantage["turn_logs"][0]["player_damage"]),
+        )
+        self.assertEqual(advantage["affinity"]["result"], "advantage")
 
     def test_champion_reward_summary_is_coin_only(self):
         win_summary = game_app._build_champion_reward_summary(win=True)
         lose_summary = game_app._build_champion_reward_summary(win=False)
-        self.assertEqual(int(win_summary["reward_coin"]), 20)
-        self.assertEqual(int(lose_summary["reward_coin"]), 5)
+        self.assertEqual(int(win_summary["reward_coin"]), 50)
+        self.assertEqual(int(lose_summary["reward_coin"]), 10)
         self.assertNotIn("reward_exp", win_summary)
         self.assertNotIn("first_week_bonus_coin", win_summary)
+
+    def test_champion_reward_records_prevent_duplicate_core_and_daily_bonus(self):
+        user_id = self._create_user("reward_user")
+        champ_id = self._rename_active_robot(self._create_user("reward_champ"), "報酬王")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            before = int(db.execute("SELECT coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
+            first = game_app._grant_champion_battle_rewards(
+                db,
+                user_id=user_id,
+                champion_robot_id=champ_id,
+                champion_user_id=None,
+                win=True,
+                now_ts=1_700_000_000,
+            )
+            second = game_app._grant_champion_battle_rewards(
+                db,
+                user_id=user_id,
+                champion_robot_id=champ_id,
+                champion_user_id=None,
+                win=True,
+                now_ts=1_700_000_100,
+            )
+            third = game_app._grant_champion_battle_rewards(
+                db,
+                user_id=user_id,
+                champion_robot_id=champ_id,
+                champion_user_id=None,
+                win=True,
+                now_ts=1_700_086_500,
+            )
+            after = int(db.execute("SELECT coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0)
+            core_qty = game_app._get_player_core_qty(db, user_id, game_app.EVOLUTION_CORE_KEY)
+        self.assertTrue(first["first_defeat"])
+        self.assertEqual(int(first["core_reward"]), 1)
+        self.assertEqual(int(first["daily_bonus_coin"]), 100)
+        self.assertFalse(second["first_defeat"])
+        self.assertEqual(int(second["core_reward"]), 0)
+        self.assertEqual(int(second["daily_bonus_coin"]), 0)
+        self.assertFalse(third["first_defeat"])
+        self.assertEqual(int(third["daily_bonus_coin"]), 100)
+        self.assertEqual(core_qty, 1)
+        self.assertEqual(after - before, 50 + 100 + 50 + 50 + 100)
 
     def test_select_weekly_champion_prefers_boss_and_excludes_admin_or_missing_active_robot(self):
         admin_id = self._create_user("champ_admin", is_admin=1)
@@ -332,7 +411,9 @@ class WeeklyChampionTests(unittest.TestCase):
         self.assertIn("今週のチャンプを撃破！", html)
         self.assertIn("今週1人目の撃破者です。", html)
         self.assertIn("命中安定で崩した", html)
-        self.assertIn("獲得コイン", html)
+        self.assertIn("獲得コイン合計", html)
+        self.assertIn("初回撃破報酬", html)
+        self.assertIn("本日初回撃破ボーナス", html)
         self.assertNotIn("獲得EXP", html)
         self.assertNotIn("初回週撃破ボーナス", html)
 
@@ -353,7 +434,8 @@ class WeeklyChampionTests(unittest.TestCase):
             self.assertEqual(int(battle_row["challenger_robot_instance_id"]), int(challenger_robot_id))
             payload = json.loads(battle_row["payload_json"] or "{}")
             self.assertEqual(payload.get("first_strike_mode"), "RANDOM_FIRST")
-            self.assertEqual(int(payload.get("reward_coin") or 0), 20)
+            self.assertEqual(int(payload.get("reward_coin") or 0), 150)
+            self.assertEqual(int(payload.get("reward_core") or 0), 1)
             self.assertNotIn("reward_exp", payload)
 
             snapshot_row = db.execute(
@@ -372,6 +454,7 @@ class WeeklyChampionTests(unittest.TestCase):
             coin_after = int(
                 db.execute("SELECT coins FROM users WHERE id = ?", (int(challenger_id),)).fetchone()["coins"] or 0
             )
+            core_qty = game_app._get_player_core_qty(db, challenger_id, game_app.EVOLUTION_CORE_KEY)
 
             event_types = {
                 row["event_type"]
@@ -381,11 +464,14 @@ class WeeklyChampionTests(unittest.TestCase):
             }
         self.assertEqual(
             coin_after - coin_before,
-            game_app.CHAMPION_CHALLENGE_WIN_COINS,
+            game_app.CHAMPION_CHALLENGE_WIN_COINS + game_app.CHAMPION_DAILY_DEFEAT_BONUS_COINS,
         )
+        self.assertEqual(core_qty, 1)
         self.assertIn(game_app.AUDIT_EVENT_TYPES["CHAMPION_CHALLENGE"], event_types)
         self.assertIn(game_app.AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"], event_types)
         self.assertIn("CHAMPION_DEFEATED", event_types)
+        self.assertIn("CHAMP_DEFEAT_FIRST", event_types)
+        self.assertIn("CHAMP_DEFEAT_DAILY", event_types)
 
 
 if __name__ == "__main__":

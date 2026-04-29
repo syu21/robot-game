@@ -57,6 +57,9 @@
           {% if t.get('critical') %}
           <div class="battle-flag">クリティカル！！</div>
           {% endif %}
+          {% if t.get('affinity_line') %}
+          <div class="battle-line affinity-log-line">{{ t.get('affinity_line') }}</div>
+          {% endif %}
           {% if t.get('result_line') %}
           <div class="battle-line"><strong>{{ t.get('result_line') }}</strong></div>
           {% endif %}
@@ -76,7 +79,22 @@
       <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
       {% endif %}
       <div class="upgrade-cost">{{ summary.get('summary_heading', '今回の勝ち筋') }}: {{ summary.get('summary_label', '') }}</div>
-      <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ summary.get('reward_coin', 0) }}</b></div>
+      <div class="battle-summary-row"><span class="label">{% if summary.get('outcome_is_win') %}勝利報酬{% else %}参加報酬{% endif %}</span> <b>+{{ summary.get('reward_base_coin', summary.get('reward_coin', 0)) }}</b></div>
+      {% if summary.get('reward_daily_bonus_coin') %}
+      <div class="battle-summary-row"><span class="label">本日初回撃破ボーナス</span> <b>+{{ summary.get('reward_daily_bonus_coin', 0) }}</b></div>
+      {% endif %}
+      {% if summary.get('reward_core') %}
+      <div class="battle-summary-row"><span class="label">初回撃破報酬</span> <b>進化コア x{{ summary.get('reward_core', 0) }}</b></div>
+      {% endif %}
+      <div class="battle-summary-row"><span class="label">獲得コイン合計</span> <b>+{{ summary.get('reward_coin', 0) }}</b></div>
+      {% if summary.get('affinity_card') %}
+      <div class="card affinity-card {{ summary['affinity_card'].get('class_name', 'affinity-unknown') }}">
+        <div class="affinity-label">型相性</div>
+        <div class="affinity-result">{{ summary['affinity_card'].get('label', '不明') }}</div>
+        <p>{{ summary['affinity_card'].get('body', '') }}</p>
+        <div class="upgrade-cost">{{ summary['affinity_card'].get('hint', '') }}</div>
+      </div>
+      {% endif %}
     </div>
 
     <div class="battle-section-title">次の行動</div>

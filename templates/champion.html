@@ -27,6 +27,9 @@
         {% if champion.get('signature_label') %}
         <div class="upgrade-cost">思想: {{ champion.get('signature_label') }}</div>
         {% endif %}
+        {% if champion.get('primary_title') %}
+        <div class="upgrade-cost">称号: <span class="title-badge title-badge-new is-{{ champion['primary_title'].get('category', 'honor') }} is-{{ champion['primary_title'].get('color_key', 'honor') }}">{{ champion['primary_title']['label'] }}</span></div>
+        {% endif %}
         {% if champion.get('focus_label_line') %}
         <div class="upgrade-cost">{{ champion.get('focus_label_line') }}</div>
         {% endif %}
@@ -67,6 +70,15 @@
       {% if active_robot_profile and active_robot_profile.get('trait_summary') %}
       <div class="upgrade-cost">特徴: {{ active_robot_profile.get('trait_summary') }}</div>
       {% endif %}
+    </div>
+    {% endif %}
+
+    {% if affinity_card %}
+    <div class="card affinity-card {{ affinity_card.get('class_name', 'affinity-unknown') }}">
+      <div class="affinity-label">型相性</div>
+      <div class="affinity-result">{{ affinity_card.get('label', '不明') }}</div>
+      <p>{{ affinity_card.get('body', '') }}</p>
+      <div class="upgrade-cost">{{ affinity_card.get('hint', '') }}</div>
     </div>
     {% endif %}
 

@@ -1,5 +1,6 @@
 import random
 
+from services.battle_affinity import apply_affinity_damage, get_type_affinity
 from services.simulate_balance import resolve_attack
 
 CHAMPION_FIRST_STRIKE_MODE = "RANDOM_FIRST"
@@ -112,6 +113,10 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
     first_turn_striker = None
     player_attack_count = 0
     enemy_attack_count = 0
+    player_type = str(player_payload.get("style_key") or "").strip().lower()
+    champion_type = str(champion_payload.get("style_key") or "").strip().lower()
+    player_affinity = get_type_affinity(player_type, champion_type)
+    champion_affinity = get_type_affinity(champion_type, player_type)
 
     for turn in range(1, int(max_turns) + 1):
         enemy_before = int(enemy_hp)
@@ -135,6 +140,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                 rng=roller,
                 crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
             )
+            player_damage = apply_affinity_damage(player_damage, player_affinity)
             player_attack_count += 1
             enemy_hp = max(0, enemy_hp - int(player_damage))
             if critical:
@@ -156,6 +162,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                     rng=roller,
                     crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
                 )
+                enemy_damage = apply_affinity_damage(enemy_damage, champion_affinity)
                 enemy_attack_count += 1
                 player_hp = max(0, player_hp - int(enemy_damage))
                 enemy_action = _action_label(
@@ -175,6 +182,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                 rng=roller,
                 crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
             )
+            enemy_damage = apply_affinity_damage(enemy_damage, champion_affinity)
             enemy_attack_count += 1
             player_hp = max(0, player_hp - int(enemy_damage))
             enemy_action = _action_label(
@@ -194,6 +202,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                     rng=roller,
                     crit_multiplier=CHAMPION_CRIT_MULTIPLIER,
                 )
+                player_damage = apply_affinity_damage(player_damage, player_affinity)
                 player_attack_count += 1
                 enemy_hp = max(0, enemy_hp - int(player_damage))
                 if critical:
@@ -225,6 +234,7 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
                 "enemy_max": int(enemy_hp_max),
                 "player_action": player_action,
                 "enemy_action": enemy_action,
+                "affinity_line": player_affinity["message"] if int(turn) == 1 else None,
                 "critical": bool(critical),
                 "result_line": result_line,
             }
@@ -274,4 +284,5 @@ def run_champion_battle(player_payload, champion_payload, *, max_turns=8, rng=No
         "first_striker": first_turn_striker,
         "first_strike_mode": CHAMPION_FIRST_STRIKE_MODE,
         "crit_multiplier": float(CHAMPION_CRIT_MULTIPLIER),
+        "affinity": player_affinity,
     }

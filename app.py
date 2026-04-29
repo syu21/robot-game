@@ -122,6 +122,7 @@ from services.weekly_champion import (
     list_weekly_champion_battles,
 )
 from services.champion_battle import build_champion_enemy_payload, run_champion_battle
+from services.battle_affinity import apply_affinity_damage, battle_type_label, get_type_affinity, normalize_battle_type
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
     compute_part_stats,
@@ -231,8 +232,9 @@ COMM_WORLD_TIMELINE_LIMIT = 50
 COMM_ROOM_TIMELINE_LIMIT = 100
 COMM_PERSONAL_LOG_LIMIT = 30
 COMM_AUTO_REFRESH_SECONDS = 18
-CHAMPION_CHALLENGE_WIN_COINS = 20
-CHAMPION_CHALLENGE_LOSE_COINS = 5
+CHAMPION_CHALLENGE_WIN_COINS = 50
+CHAMPION_CHALLENGE_LOSE_COINS = 10
+CHAMPION_DAILY_DEFEAT_BONUS_COINS = 100
 SHOWCASE_BATTLE_WIN_REWARD_COINS = int(os.getenv("SHOWCASE_BATTLE_WIN_REWARD_COINS", "5"))
 
 BUILD_OFFSET_CONTROL_DEFS = (
@@ -3682,7 +3684,7 @@ def _event_release_feature(event_type, payload):
     text = str(event_type or "").strip()
     if text.startswith("audit.lab.") or text.startswith("LAB_RACE_") or text.startswith("LAB_SUBMISSION_"):
         return "lab"
-    if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED"} or text.startswith("audit.champion."):
+    if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET"} or text.startswith("audit.champion.") or text.startswith("audit.champ."):
         return "weekly_champion"
     unlocked_layer = int((payload or {}).get("unlocked_layer") or 0)
     if unlocked_layer >= 5:
@@ -6846,6 +6848,64 @@ def _robot_style_description(style_key):
     return (ROBOT_STYLE_DEFINITIONS.get(style_key) or {}).get("description_jp", "長く戦って確実に勝つ型")
 
 
+def _robot_battle_type_from_style(style_obj):
+    if isinstance(style_obj, dict):
+        return normalize_battle_type(style_obj.get("style_key") or style_obj.get("current_key"))
+    return normalize_battle_type(style_obj)
+
+
+def _enemy_battle_type(enemy_row):
+    enemy = dict(enemy_row or {})
+    for key in ("battle_type", "style_key"):
+        value = normalize_battle_type(enemy.get(key))
+        if value:
+            return value
+    trait = _normalize_enemy_trait(enemy.get("trait"))
+    return {
+        "heavy": "stable",
+        "fast": "desperate",
+        "berserk": "desperate",
+        "unstable": "burst",
+    }.get(trait)
+
+
+def _affinity_view_payload(affinity, *, subject_label="あなた", opponent_label="相手", context="battle"):
+    data = dict(affinity or {})
+    result = str(data.get("result") or "unknown")
+    label = str(data.get("label") or "不明")
+    player_label = str(data.get("attacker_label") or "不明")
+    opponent_type_label = str(data.get("defender_label") or "不明")
+    if result == "advantage":
+        body = f"{subject_label}の{player_label}型は、{opponent_label}の{opponent_type_label}型に強い！"
+        hint = "ダメージが少し伸びます。"
+    elif result == "disadvantage":
+        body = f"{opponent_label}の{opponent_type_label}型は、{subject_label}の{player_label}型に強い……"
+        hint = "勝てない時は、別の型のロボで挑むのも手です。"
+    elif result == "neutral":
+        body = "型相性による大きな差はありません。"
+        hint = "純粋な育成と編成で勝負です。"
+    else:
+        body = f"{opponent_label}の型を解析できません。"
+        hint = "実戦ログで相手の傾向を確認してください。"
+    return {
+        "result": result,
+        "label": label,
+        "class_name": {
+            "advantage": "affinity-advantage",
+            "disadvantage": "affinity-disadvantage",
+            "neutral": "affinity-neutral",
+        }.get(result, "affinity-unknown"),
+        "player_type": str(data.get("attacker_type") or ""),
+        "opponent_type": str(data.get("defender_type") or ""),
+        "player_label": player_label,
+        "opponent_label": opponent_type_label,
+        "body": body,
+        "hint": hint,
+        "message": str(data.get("message") or ""),
+        "context": str(context or "battle"),
+    }
+
+
 def _pick_robot_style_key(style_scores):
     return resolve_current_style(style_scores)
 
@@ -9422,6 +9482,30 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS champ_defeat_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            champ_robot_id INTEGER NOT NULL,
+            champ_user_id INTEGER,
+            defeated_at TEXT NOT NULL,
+            reward_core_granted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, champ_robot_id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS champ_daily_bonus_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            granted_at TEXT NOT NULL,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_titles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT UNIQUE NOT NULL,
@@ -10378,6 +10462,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_snapshot_created ON weekly_champion_battles(champion_snapshot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_user_created ON weekly_champion_battles(challenger_user_id, created_at DESC)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_champion_battles_request ON weekly_champion_battles(request_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     ensure_robot_title_system(db)
     _seed_enemies(db)
     _apply_default_enemy_traits(db)
@@ -17780,6 +17866,8 @@ def _weekly_champion_view_model(db, snapshot_row, *, viewer_user_id=None):
         "focus_label_line": str(display_profile.get("focus_label_line") or ""),
         "focus_line": str(payload.get("focus_line") or ""),
         "trait_summary": str(payload.get("trait_summary") or display_profile.get("trait_summary") or ""),
+        "style_key": str(display_profile.get("style_key") or payload.get("style_key") or "stable"),
+        "style_label": str(display_profile.get("style_label") or payload.get("style_label") or "安定"),
         "reason_key": reason_key,
         "reason_label": WEEKLY_CHAMPION_REASON_LABELS.get(reason_key, "今週の注目機体"),
         "score_value": int(snapshot.get("score_value") or 0),
@@ -17958,6 +18046,109 @@ def _build_champion_reward_summary(*, win):
     reward_coin = int(CHAMPION_CHALLENGE_WIN_COINS if win else CHAMPION_CHALLENGE_LOSE_COINS)
     return {
         "reward_coin": int(reward_coin),
+    }
+
+
+def _grant_champion_battle_rewards(
+    db,
+    *,
+    user_id,
+    champion_robot_id,
+    champion_user_id=None,
+    win,
+    request_id=None,
+    ip=None,
+    now_ts=None,
+):
+    now_value = int(now_ts or _now_ts())
+    base_coin = int(CHAMPION_CHALLENGE_WIN_COINS if win else CHAMPION_CHALLENGE_LOSE_COINS)
+    daily_bonus_coin = 0
+    core_qty = 0
+    first_defeat = False
+    daily_bonus_granted = False
+    if win:
+        defeated_at = datetime.fromtimestamp(now_value, JST).strftime("%Y-%m-%d %H:%M:%S")
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO champ_defeat_records (
+                user_id, champ_robot_id, champ_user_id, defeated_at, reward_core_granted
+            ) VALUES (?, ?, ?, ?, 1)
+            """,
+            (int(user_id), int(champion_robot_id), int(champion_user_id or 0) or None, defeated_at),
+        )
+        first_defeat = int(cur.rowcount or 0) > 0
+        if first_defeat:
+            core_qty = int(_grant_player_core(db, int(user_id), EVOLUTION_CORE_KEY, qty=1))
+        day_key = _jst_day_key_from_ts(now_value)
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO champ_daily_bonus_records (user_id, day_key, granted_at)
+            VALUES (?, ?, ?)
+            """,
+            (int(user_id), day_key, defeated_at),
+        )
+        daily_bonus_granted = int(cur.rowcount or 0) > 0
+        if daily_bonus_granted:
+            daily_bonus_coin = int(CHAMPION_DAILY_DEFEAT_BONUS_COINS)
+
+    total_coin = int(base_coin + daily_bonus_coin)
+    if total_coin > 0:
+        db.execute("UPDATE users SET coins = coins + ? WHERE id = ?", (total_coin, int(user_id)))
+    audit_log(
+        db,
+        "audit.champ.reward.coin",
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="champion_reward_coin",
+        delta_coins=int(total_coin),
+        payload={
+            "win": bool(win),
+            "base_coin": int(base_coin),
+            "daily_bonus_coin": int(daily_bonus_coin),
+            "total_coin": int(total_coin),
+            "champion_robot_id": int(champion_robot_id),
+        },
+        ip=ip,
+    )
+    if core_qty > 0:
+        audit_log(
+            db,
+            "audit.champ.reward.core",
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="champion_reward_core",
+            entity_type="core",
+            delta_count=int(core_qty),
+            payload={
+                "core_key": EVOLUTION_CORE_KEY,
+                "quantity": int(core_qty),
+                "champion_robot_id": int(champion_robot_id),
+                "first_defeat": bool(first_defeat),
+            },
+            ip=ip,
+        )
+    if daily_bonus_coin > 0:
+        audit_log(
+            db,
+            "audit.champ.reward.daily_bonus",
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="champion_reward_daily_bonus",
+            delta_coins=int(daily_bonus_coin),
+            payload={
+                "day_key": _jst_day_key_from_ts(now_value),
+                "bonus_coin": int(daily_bonus_coin),
+                "champion_robot_id": int(champion_robot_id),
+            },
+            ip=ip,
+        )
+    return {
+        "reward_coin": int(total_coin),
+        "base_coin": int(base_coin),
+        "daily_bonus_coin": int(daily_bonus_coin),
+        "core_reward": int(core_qty),
+        "first_defeat": bool(first_defeat),
+        "daily_bonus_granted": bool(daily_bonus_granted),
     }
 
 
@@ -18801,9 +18992,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "STYLE_RANK_UP", "STYLE_MASTER"},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER"},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "STYLE_RANK_UP", "STYLE_MASTER"}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER"}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -18813,6 +19004,9 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
     "CHAMPION_DEFEATED",
+    "CHAMP_DEFEAT_FIRST",
+    "CHAMP_DEFEAT_DAILY",
+    "CHAMP_DEFEAT_UPSET",
     "STYLE_RANK_UP",
     "STYLE_MASTER",
     *LAB_WORLD_EVENT_TYPES,
@@ -19169,6 +19363,35 @@ def _feed_card_from_event(db, row):
             if challenger_robot_id > 0
             else url_for("champion_view")
         )
+    elif event_type in {"CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET"}:
+        challenger_name = str(payload.get("challenger_name") or "挑戦者").strip() or "挑戦者"
+        challenger_user_id = int(payload.get("challenger_user_id") or row["user_id"] or 0)
+        if challenger_user_id > 0:
+            challenger_name = _feed_user_label_with_supporter_mark(db, challenger_user_id, challenger_name)
+        champion_robot_name = str(payload.get("champion_robot_name") or "チャンプ機体").strip() or "チャンプ機体"
+        challenger_robot_id = int(payload.get("challenger_robot_instance_id") or 0)
+        player_type_label = str(payload.get("player_type_label") or battle_type_label(payload.get("player_type"))).strip()
+        champ_type_label = str(payload.get("champion_type_label") or battle_type_label(payload.get("champion_type"))).strip()
+        card["accent"] = "boss"
+        card["image_url"] = payload.get("robot_image_url")
+        card["link_url"] = (
+            url_for("robot_detail", instance_id=challenger_robot_id)
+            if challenger_robot_id > 0
+            else url_for("champion_view")
+        )
+        if event_type == "CHAMP_DEFEAT_FIRST":
+            card["headline"] = "FIRST CHAMP BREAK"
+            card["text"] = f"🏆 {challenger_name} がチャンプ機『{champion_robot_name}』を初撃破！"
+            card["meta_lines"] = ["報酬: 進化コア x1"]
+        elif event_type == "CHAMP_DEFEAT_DAILY":
+            card["headline"] = "DAILY CHAMP BONUS"
+            card["text"] = f"⚔️ {challenger_name} が本日のチャンプ撃破ボーナスを獲得！"
+            card["meta_lines"] = [f"追加コイン +{CHAMPION_DAILY_DEFEAT_BONUS_COINS}"]
+        else:
+            card["headline"] = "AFFINITY UPSET"
+            card["accent"] = "drop"
+            card["text"] = f"🔥 {challenger_name} が不利相性をひっくり返してチャンプ撃破！"
+            card["meta_lines"] = [f"{player_type_label}型で{champ_type_label}型を突破"]
     elif event_type == "admin_world_reroll":
         card["headline"] = "世界再抽選"
         wk = payload.get("week_key") or "-"
@@ -25231,6 +25454,17 @@ def champion_view():
         else None
     )
     active_robot_profile = _robot_profile_view(active_robot_stats) if active_robot_stats else None
+    affinity_card = None
+    if champion and active_robot_profile:
+        affinity_card = _affinity_view_payload(
+            get_type_affinity(
+                _robot_battle_type_from_style(active_robot_profile),
+                _robot_battle_type_from_style(champion.get("style_key")),
+            ),
+            subject_label="あなた",
+            opponent_label="チャンプ",
+            context="champion",
+        )
     champion_history_rows = _weekly_champion_history_rows(db, limit=6)
     db.commit()
     return render_template(
@@ -25242,6 +25476,7 @@ def champion_view():
         active_robot=active_robot,
         active_robot_profile=active_robot_profile,
         active_robot_stats=active_robot_stats,
+        affinity_card=affinity_card,
     )
 
 
@@ -25300,18 +25535,54 @@ def champion_challenge():
         db.commit()
         return redirect(url_for("champion_view"))
 
+    request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
+    player_type = _robot_battle_type_from_style(challenger_payload.get("style_key"))
+    champion_type = _robot_battle_type_from_style(champion_enemy_payload.get("style_key") or champion.get("style_key"))
+    type_affinity = get_type_affinity(player_type, champion_type)
+    affinity_card = _affinity_view_payload(
+        type_affinity,
+        subject_label="あなた",
+        opponent_label="チャンプ",
+        context="champion",
+    )
+    audit_log(
+        db,
+        "audit.champ.battle.start",
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="champion_battle_start",
+        entity_type="robot_instance",
+        entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+        payload={
+            "champion_snapshot_id": int(snapshot.get("id") or 0),
+            "champion_robot_instance_id": int(snapshot.get("robot_instance_id") or 0),
+            "challenger_robot_instance_id": int(active_robot["id"] or 0),
+            "player_type": player_type,
+            "champion_type": champion_type,
+            "affinity_result": type_affinity.get("result"),
+        },
+        ip=request.remote_addr,
+    )
     battle_result = run_champion_battle(
         {
             "name": str(challenger_payload.get("robot_name") or "あなた"),
             "stats": dict(challenger_payload.get("stats") or {}),
             "signature_label": str(challenger_payload.get("signature_label") or ""),
             "focus_labels": list(challenger_payload.get("focus_labels") or []),
+            "style_key": str(challenger_payload.get("style_key") or "stable"),
         },
         champion_enemy_payload,
         max_turns=8,
     )
-    request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
-    reward_summary = _build_champion_reward_summary(win=bool(battle_result.get("win")))
+    reward_summary = _grant_champion_battle_rewards(
+        db,
+        user_id=int(user["id"]),
+        champion_robot_id=int(snapshot.get("robot_instance_id") or 0),
+        champion_user_id=int(snapshot.get("user_id") or 0),
+        win=bool(battle_result.get("win")),
+        request_id=request_id,
+        ip=request.remote_addr,
+    )
     battle_payload = {
         "week_key": str(snapshot.get("week_key") or champion_current_week_key()),
         "champion_snapshot_id": int(snapshot.get("id") or 0),
@@ -25331,6 +25602,17 @@ def champion_challenge():
         "first_strike_mode": str(battle_result.get("first_strike_mode") or "RANDOM_FIRST"),
         "first_striker": str(battle_result.get("first_striker") or ""),
         "reward_coin": int(reward_summary.get("reward_coin") or 0),
+        "reward_base_coin": int(reward_summary.get("base_coin") or 0),
+        "reward_daily_bonus_coin": int(reward_summary.get("daily_bonus_coin") or 0),
+        "reward_core": int(reward_summary.get("core_reward") or 0),
+        "first_defeat": bool(reward_summary.get("first_defeat")),
+        "daily_bonus_granted": bool(reward_summary.get("daily_bonus_granted")),
+        "player_type": player_type,
+        "champion_type": champion_type,
+        "player_type_label": battle_type_label(player_type),
+        "champion_type_label": battle_type_label(champion_type),
+        "affinity_result": str(type_affinity.get("result") or "unknown"),
+        "affinity_label": str(type_affinity.get("label") or "不明"),
     }
     db.execute(
         """
@@ -25359,11 +25641,6 @@ def champion_challenge():
         ),
     )
     stats_summary = _sync_weekly_champion_snapshot_counters(db, int(snapshot.get("id") or 0))
-    if int(reward_summary.get("reward_coin") or 0) > 0:
-        db.execute(
-            "UPDATE users SET coins = coins + ? WHERE id = ?",
-            (int(reward_summary.get("reward_coin") or 0), int(user["id"])),
-        )
     battle_payload["challenge_count"] = int(stats_summary.get("challenge_count") or 0)
     battle_payload["defeat_count"] = int(stats_summary.get("defeat_count") or 0)
     battle_payload["champion_win_rate"] = int(stats_summary.get("champion_win_rate") or 0)
@@ -25381,6 +25658,20 @@ def champion_challenge():
     )
     audit_log(
         db,
+        "audit.champ.battle.end",
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="champion_battle_end",
+        entity_type="robot_instance",
+        entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+        payload={
+            **battle_payload,
+            "affinity": type_affinity,
+        },
+        ip=request.remote_addr,
+    )
+    audit_log(
+        db,
         AUDIT_EVENT_TYPES["COIN_DELTA"],
         user_id=int(user["id"]),
         request_id=request_id,
@@ -25390,6 +25681,8 @@ def champion_challenge():
             "champion_snapshot_id": int(snapshot.get("id") or 0),
             "result": str(battle_payload.get("result") or "lose"),
             "reward_coin": int(reward_summary.get("reward_coin") or 0),
+            "base_coin": int(reward_summary.get("base_coin") or 0),
+            "daily_bonus_coin": int(reward_summary.get("daily_bonus_coin") or 0),
         },
         ip=request.remote_addr,
     )
@@ -25407,6 +25700,7 @@ def champion_challenge():
             {
                 "robot_image_url": challenger_payload.get("robot_image_url"),
                 "challenger_name": str(challenger_payload.get("owner_name") or _display_username_for_user_row(db, user)),
+                "affinity": type_affinity,
             }
         )
         audit_log(
@@ -25420,17 +25714,59 @@ def champion_challenge():
             payload=defeat_payload,
             ip=request.remote_addr,
         )
-        audit_log(
-            db,
-            "CHAMPION_DEFEATED",
-            user_id=int(user["id"]),
-            request_id=request_id,
-            action_key="champion_defeated_public",
-            entity_type="robot_instance",
-            entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
-            payload=defeat_payload,
-            ip=request.remote_addr,
+        should_publish_champion_defeat = bool(
+            reward_summary.get("first_defeat")
+            or reward_summary.get("daily_bonus_granted")
+            or type_affinity.get("result") == "disadvantage"
         )
+        if should_publish_champion_defeat:
+            audit_log(
+                db,
+                "CHAMPION_DEFEATED",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="champion_defeated_public",
+                entity_type="robot_instance",
+                entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+                payload=defeat_payload,
+                ip=request.remote_addr,
+            )
+        if reward_summary.get("first_defeat"):
+            audit_log(
+                db,
+                "CHAMP_DEFEAT_FIRST",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="champ_defeat_first",
+                entity_type="robot_instance",
+                entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+                payload=defeat_payload,
+                ip=request.remote_addr,
+            )
+        if reward_summary.get("daily_bonus_granted"):
+            audit_log(
+                db,
+                "CHAMP_DEFEAT_DAILY",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="champ_defeat_daily",
+                entity_type="robot_instance",
+                entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+                payload=defeat_payload,
+                ip=request.remote_addr,
+            )
+        if type_affinity.get("result") == "disadvantage":
+            audit_log(
+                db,
+                "CHAMP_DEFEAT_UPSET",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="champ_defeat_upset",
+                entity_type="robot_instance",
+                entity_id=int(snapshot.get("robot_instance_id") or 0) or None,
+                payload=defeat_payload,
+                ip=request.remote_addr,
+            )
 
     battle_short_replay_enabled = _battle_short_replay_open_for_viewer(
         db,
@@ -25478,6 +25814,12 @@ def champion_challenge():
             else ""
         ),
         "reward_coin": int(reward_summary.get("reward_coin") or 0),
+        "reward_base_coin": int(reward_summary.get("base_coin") or 0),
+        "reward_daily_bonus_coin": int(reward_summary.get("daily_bonus_coin") or 0),
+        "reward_core": int(reward_summary.get("core_reward") or 0),
+        "first_defeat": bool(reward_summary.get("first_defeat")),
+        "daily_bonus_granted": bool(reward_summary.get("daily_bonus_granted")),
+        "affinity_card": affinity_card,
         "battle_cinematic": battle_cinematic,
         "headline": ("今週のチャンプを撃破！" if battle_result.get("win") else "チャンプには届かなかった"),
         "subline": (
@@ -25499,6 +25841,7 @@ def champion_challenge():
         active_robot=active_robot,
         turn_logs=list(battle_result.get("turn_logs") or []),
         summary=result_summary,
+        affinity_card=affinity_card,
         battle_cinematic=result_summary["battle_cinematic"],
         battle_log_mode=(str(user["battle_log_mode"] or "collapsed").strip().lower() if "battle_log_mode" in user.keys() else "collapsed"),
         battle_short_replay_enabled=battle_short_replay_enabled,
@@ -26781,6 +27124,7 @@ def explore():
         if robot_stats and robot_stats.get("robot_style")
         else _robot_style_from_final_stats(base_stats)
     )
+    player_battle_type = _robot_battle_type_from_style(robot_style)
     combat_mode = _normalize_combat_mode(active["combat_mode"] if active and "combat_mode" in active.keys() else "normal")
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
@@ -27200,6 +27544,9 @@ def explore():
         enemy_tendency_line = f"敵の特徴：{enemy_tendency_tag}" if enemy_tendency_tag else None
         last_enemy_tendency_tag = enemy_tendency_tag
         enemy_trait_key = _normalize_enemy_trait(enemy.get("trait") if isinstance(enemy, dict) else None)
+        enemy_battle_type = _enemy_battle_type(enemy)
+        player_type_affinity = get_type_affinity(player_battle_type, enemy_battle_type)
+        enemy_type_affinity = get_type_affinity(enemy_battle_type, player_battle_type)
         enemy_trait_label = _enemy_trait_label(enemy_trait_key)
         enemy_trait_desc = _enemy_trait_desc(enemy_trait_key)
         enemy_trait_line = (
@@ -27320,6 +27667,7 @@ def explore():
                     force_hit=force_player_hit,
                     damage_noise_range=player_damage_noise_range,
                 )
+                player_damage = apply_affinity_damage(player_damage, player_type_affinity)
                 player_attack_note = _attack_note(player_action, player_damage, player_attack_detail, debug=battle_debug)
                 player_missed = bool(player_attack_detail.get("miss")) or player_damage <= 0
                 if force_player_hit:
@@ -27366,6 +27714,7 @@ def explore():
                         crit_multiplier=crit_multiplier,
                         damage_noise_range=None,
                     )
+                    enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                     player_hp = max(0, player_hp - enemy_damage)
                     damage_taken_total += max(0, int(enemy_damage))
@@ -27396,6 +27745,7 @@ def explore():
                     crit_multiplier=crit_multiplier,
                     damage_noise_range=None,
                 )
+                enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
                 enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                 player_hp = max(0, player_hp - enemy_damage)
                 damage_taken_total += max(0, int(enemy_damage))
@@ -27424,6 +27774,7 @@ def explore():
                         force_hit=force_player_hit,
                         damage_noise_range=player_damage_noise_range,
                     )
+                    player_damage = apply_affinity_damage(player_damage, player_type_affinity)
                     player_attack_note = _attack_note(player_action, player_damage, player_attack_detail, debug=battle_debug)
                     player_missed = bool(player_attack_detail.get("miss")) or player_damage <= 0
                     if force_player_hit:
@@ -27471,6 +27822,7 @@ def explore():
                     "enemy_trait_line": enemy_trait_line if turn == 1 and enemy_trait_line else None,
                     "archetype_line": archetype_note if turn == 1 and archetype_note else None,
                     "build_profile_line": build_profile_line if turn == 1 and battle_no == 1 else None,
+                    "affinity_line": player_type_affinity["message"] if turn == 1 else None,
                     "stage_modifier_line": stage_modifier_line if turn == 1 and battle_no == 1 and stage_modifier_line else None,
                     "boss_type_line": boss_type_line if turn == 1 and battle_no == 1 else None,
                     "mid_line": mid_line if turn == 1 and mid_line else None,

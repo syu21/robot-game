@@ -313,6 +313,9 @@
                 <div class="battle-line">{{ t['build_profile_line'] }}</div>
               </details>
             {% endif %}
+            {% if t.get('affinity_line') %}
+              <div class="battle-line affinity-log-line">{{ t['affinity_line'] }}</div>
+            {% endif %}
             {% if t.get('stage_modifier_line') %}
               <div class="battle-line">{{ t['stage_modifier_line'] }}</div>
             {% endif %}

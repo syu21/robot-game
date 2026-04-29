@@ -1023,6 +1023,30 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS champ_defeat_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            champ_robot_id INTEGER NOT NULL,
+            champ_user_id INTEGER,
+            defeated_at TEXT NOT NULL,
+            reward_core_granted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, champ_robot_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS champ_daily_bonus_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            granted_at TEXT NOT NULL,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_boss_progress (
             user_id INTEGER NOT NULL,
             area_key TEXT NOT NULL,
@@ -1882,6 +1906,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_metrics_day_key ON daily_metrics(day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_enemies_boss_area_active ON enemies(is_boss, boss_area_key, is_active)")

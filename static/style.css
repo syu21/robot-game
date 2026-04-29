@@ -11979,6 +11979,46 @@ body#page-world .world-competition-grid {
   border-color: rgba(94, 234, 212, 0.42);
   background: rgba(20, 83, 45, 0.2);
 }
+.affinity-card {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(30, 41, 59, 0.72));
+}
+.affinity-label {
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.affinity-result {
+  margin: 3px 0 6px;
+  font-size: 24px;
+  font-weight: 900;
+}
+.affinity-card p {
+  margin: 0 0 6px;
+}
+.affinity-advantage {
+  border-color: rgba(34, 211, 238, 0.48);
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.86), rgba(20, 83, 45, 0.58));
+}
+.affinity-advantage .affinity-result {
+  color: #67e8f9;
+}
+.affinity-disadvantage {
+  border-color: rgba(251, 146, 60, 0.52);
+  background: linear-gradient(135deg, rgba(69, 10, 10, 0.82), rgba(124, 45, 18, 0.58));
+}
+.affinity-disadvantage .affinity-result {
+  color: #fdba74;
+}
+.affinity-neutral .affinity-result,
+.affinity-unknown .affinity-result {
+  color: rgba(226, 232, 240, 0.92);
+}
+.affinity-log-line {
+  color: #a7f3d0;
+  font-weight: 800;
+}
 @media (max-width: 768px) {
   .home-today-progress-grid {
     gap: 8px;
