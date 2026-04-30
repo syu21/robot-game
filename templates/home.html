@@ -864,11 +864,17 @@
       {% endif %}
       {% if not faction_status['is_joined'] %}
       <div>{{ faction_unlock_progress_line }}</div>
+      <div class="robot-part">条件を満たすと、3つの研究陣営から所属先を選べます。所属後は、あなたの出撃や強化が毎週の陣営戦に反映されます。</div>
       {% if faction_status['can_choose'] %}
       <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
       {% endif %}
       {% else %}
-      <div>今週スコア: IG {{ faction_week_scores['ignis'] }} / VE {{ faction_week_scores['ventra'] }} / AU {{ faction_week_scores['aurix'] }}</div>
+      <div>現在 {% for row in faction_detail_rows %}{% if row['key'] == user_faction %}{{ row['rank'] }}位 / 3陣営中{% endif %}{% endfor %}</div>
+      <div>あなたの貢献: {{ faction_user_contribution['points'] }}pt{% if faction_user_rank %} / 陣営内 {{ faction_user_rank }}位{% endif %}</div>
+      <div class="robot-part">首位との差: あと{{ faction_leader_gap }}pt</div>
+      <div class="upgrade-cost">
+        今日の主な貢献: 強化 {{ faction_user_contribution['strengthen_count'] }} / 出撃 {{ faction_user_contribution['explore_win_count'] }} / ボス {{ faction_user_contribution['boss_defeat_count'] }}
+      </div>
       {% if faction_score_rows %}
       <div class="robot-part">首位: {{ faction_score_rows[0]['label'] }} {{ faction_score_rows[0]['points'] }}pt</div>
       {% endif %}
@@ -883,7 +889,7 @@
       <div>今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}（勝利コイン +1）</div>
       {% endif %}
       {% endif %}
-      <div class="link"><a href="{{ url_for('world_view') }}">陣営戦を見る</a> | <a href="{{ url_for('records_view') }}">記録を見る</a></div>
+      <div class="link"><a href="{{ url_for('comms_faction') }}">陣営通信を見る</a> | <a href="{{ url_for('world_view') }}">陣営戦を見る</a></div>
     </div>
     </section>
     {% endif %}

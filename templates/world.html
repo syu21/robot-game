@@ -55,6 +55,12 @@
         </div>
       </div>
       {% if weekly_mvp['robot_name'] %}<div class="robot-part">{{ weekly_mvp['robot_name'] }}</div>{% endif %}
+      {% if weekly_mvp.get('primary_title') %}
+      <div class="upgrade-cost">称号: <span class="title-badge title-badge-new is-{{ weekly_mvp['primary_title'].get('category', 'honor') }} is-{{ weekly_mvp['primary_title'].get('color_key', 'honor') }}">{{ weekly_mvp['primary_title']['label'] }}</span></div>
+      {% endif %}
+      {% if weekly_mvp.get('style_title') %}
+      <div class="upgrade-cost">思想: {{ weekly_mvp['style_title']['label'] }}</div>
+      {% endif %}
       {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb world-mvp-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
       {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">機体を見る</a></div>{% endif %}
       {% else %}
@@ -83,9 +89,12 @@
       {% elif faction_buff_winner %}
       <div class="robot-part">今週バフ対象: {{ faction_labels.get(faction_buff_winner, faction_buff_winner) }}</div>
       {% endif %}
+      {% if user_faction %}
+      <div class="upgrade-cost">あなたの貢献: {{ faction_user_contribution['points'] }}pt</div>
+      {% endif %}
     </div>
     <div class="world-score-list">
-      {% for row in faction_score_rows %}
+      {% for row in faction_detail_rows %}
       <div class="card world-score-card{% if row['is_user_faction'] %} is-user{% endif %}{% if row['is_weekly_tailwind'] %} is-tailwind{% endif %}">
         <div class="world-score-head">
           <div class="world-score-title">
@@ -97,10 +106,14 @@
               <div class="upgrade-cost">{{ row['doctrine_title'] }}</div>
             </div>
           </div>
-          <div class="world-score-points">{{ row['points'] }} pt</div>
+          <div class="world-score-points">{{ row['points'] }} pt / {{ row['rank'] }}位</div>
         </div>
         <div class="robot-part">{{ row['doctrine_summary'] }}</div>
-        <div class="upgrade-cost">軸: {{ row['focus'] }} / 所属 {{ row['member_count'] }}人</div>
+        <div class="upgrade-cost">軸: {{ row['focus'] }} / 所属 {{ row['member_count'] }}人 / 今週参加 {{ row['active_user_count'] }}人</div>
+        <div class="upgrade-cost">
+          勝因メーター: 出撃 {{ row['explore_win_count'] }} / 強化 {{ row['strengthen_count'] }} / 編成 {{ row['build_count'] }} /
+          進化 {{ row['evolve_count'] }} / ボス {{ row['boss_defeat_count'] }} / チャンプ {{ row['champ_defeat_count'] }} / 不利突破 {{ row['upset_count'] }}
+        </div>
         <div class="upgrade-cost">{{ row['world_hint'] }}</div>
         {% if row['is_weekly_tailwind'] %}
         <div><span class="weekly-fit-badge">今週の追い風</span></div>
@@ -114,12 +127,4 @@
 <section class="panel">
   <h2>研究進捗</h2>
   <div class="world-env-card">
-    <div><b>勝利属性:</b> {{ element_label_map.get(research_summary['current_research_element'], research_summary['current_research_element']) if research_summary['current_research_element'] else '-' }}</div>
-    <div class="upgrade-cost">stage {{ research_summary['unlocked_stage'] }} / 4</div>
-    <div class="upgrade-cost">next unlock: {{ research_summary['next_part_type'] or '-' }}</div>
-    <div class="link"><a href="{{ url_for('research_view') }}">研究進捗を見る</a></div>
-  </div>
-</section>
-
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endblock %}
+    <div><b>勝�

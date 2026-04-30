@@ -45,9 +45,44 @@
   <p>IGNIS: {{ faction_week_scores.get('ignis', 0) }} / VENTRA: {{ faction_week_scores.get('ventra', 0) }} / AURIX: {{ faction_week_scores.get('aurix', 0) }}</p>
   {% if faction_week_result %}
   <p>勝者: <b>{{ faction_week_result['winner_faction'] }}</b> / computed_at: {{ faction_week_result['computed_at'] }}</p>
+  {% if faction_week_result.get('summary_text') %}<p>{{ faction_week_result['summary_text'] }}</p>{% endif %}
   {% else %}
   <p>未集計です。</p>
   {% endif %}
+</div>
+
+<div class="card">
+  <h2>陣営戦 詳細</h2>
+  <ul class="ranking-mini">
+    {% for row in faction_detail_rows %}
+    <li>
+      <span>{{ row['label'] }} {{ row['points'] }}pt / 参加 {{ row['active_user_count'] }}人</span>
+      <span>出撃{{ row['explore_win_count'] }} 強化{{ row['strengthen_count'] }} 進化{{ row['evolve_count'] }} ボス{{ row['boss_defeat_count'] }} チャンプ{{ row['champ_defeat_count'] }} 不利{{ row['upset_count'] }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>ユーザー貢献TOP10</h2>
+  <ul class="ranking-mini">
+    {% for row in faction_top_contributions %}
+    <li><span>{{ row['username'] }} / {{ row['faction_label'] }}</span><span>{{ row['points'] }}pt</span></li>
+    {% else %}
+    <li>まだ貢献データはありません。</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>陣営ログ 最新50件</h2>
+  <ul class="ranking-mini">
+    {% for row in faction_recent_logs %}
+    <li><span>[{{ row['faction_label'] }}] {{ row['message'] }}</span><span>+{{ row['points_delta'] }}</span></li>
+    {% else %}
+    <li>まだ陣営ログはありません。</li>
+    {% endfor %}
+  </ul>
 </div>
 
 <div class="card">

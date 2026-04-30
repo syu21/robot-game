@@ -1023,6 +1023,57 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS world_faction_user_weekly_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            faction TEXT NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            explore_win_count INTEGER NOT NULL DEFAULT 0,
+            boss_defeat_count INTEGER NOT NULL DEFAULT 0,
+            build_count INTEGER NOT NULL DEFAULT 0,
+            strengthen_count INTEGER NOT NULL DEFAULT 0,
+            evolve_count INTEGER NOT NULL DEFAULT 0,
+            champ_defeat_count INTEGER NOT NULL DEFAULT 0,
+            upset_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(week_key, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS world_faction_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction TEXT NOT NULL,
+            user_id INTEGER,
+            event_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            points_delta INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS world_faction_weekly_mvp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(week_key, faction, category)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS champ_defeat_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -1906,6 +1957,18 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
+    faction_result_cols = {row[1] for row in cur.execute("PRAGMA table_info(world_faction_weekly_result)").fetchall()}
+    if "summary_text" not in faction_result_cols:
+        cur.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN summary_text TEXT")
+    if "highlights_json" not in faction_result_cols:
+        cur.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN highlights_json TEXT")
+    if "mvp_json" not in faction_result_cols:
+        cur.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN mvp_json TEXT")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_contrib_week_faction_points ON world_faction_user_weekly_contributions(week_key, faction, points DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_contrib_user_week ON world_faction_user_weekly_contributions(user_id, week_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_faction_created ON world_faction_logs(week_key, faction, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")

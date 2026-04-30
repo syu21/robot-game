@@ -87,6 +87,10 @@
 - `audit.referral.attach`
 - `audit.referral.qualified`
 - `audit.faction.choose`
+- `audit.faction.points.add`
+  - 陣営ポイント加算時に記録する。payload は `week_key`, `faction`, `event_type`, `points`, `counters`, `payload`, `log_created` を含める
+  - 未所属ユーザーは加算されない
+  - 再集計時は二重監査を避けるため、このauditは生成しない
 
 ### 4.7 チャンプ/非同期挑戦
 - `audit.champion.select`

@@ -123,6 +123,16 @@ from services.weekly_champion import (
 )
 from services.champion_battle import build_champion_enemy_payload, run_champion_battle
 from services.battle_affinity import apply_affinity_damage, battle_type_label, get_type_affinity, normalize_battle_type
+from services.faction_war import (
+    FACTION_POINTS,
+    add_faction_points,
+    aggregate_faction_details,
+    compute_and_store_weekly_mvp,
+    compute_weekly_highlights,
+    contribution_for_user,
+    rank_factions,
+    should_create_log,
+)
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
     compute_part_stats,
@@ -9307,6 +9317,57 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS world_faction_user_weekly_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            faction TEXT NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            explore_win_count INTEGER NOT NULL DEFAULT 0,
+            boss_defeat_count INTEGER NOT NULL DEFAULT 0,
+            build_count INTEGER NOT NULL DEFAULT 0,
+            strengthen_count INTEGER NOT NULL DEFAULT 0,
+            evolve_count INTEGER NOT NULL DEFAULT 0,
+            champ_defeat_count INTEGER NOT NULL DEFAULT 0,
+            upset_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(week_key, user_id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS world_faction_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction TEXT NOT NULL,
+            user_id INTEGER,
+            event_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            points_delta INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS world_faction_weekly_mvp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(week_key, faction, category)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_events_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at INTEGER NOT NULL,
@@ -10384,6 +10445,18 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_result_week ON world_faction_weekly_result(week_key)")
+    faction_result_cols = {row["name"] for row in db.execute("PRAGMA table_info(world_faction_weekly_result)").fetchall()}
+    if "summary_text" not in faction_result_cols:
+        db.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN summary_text TEXT")
+    if "highlights_json" not in faction_result_cols:
+        db.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN highlights_json TEXT")
+    if "mvp_json" not in faction_result_cols:
+        db.execute("ALTER TABLE world_faction_weekly_result ADD COLUMN mvp_json TEXT")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_contrib_week_faction_points ON world_faction_user_weekly_contributions(week_key, faction, points DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_contrib_user_week ON world_faction_user_weekly_contributions(user_id, week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_faction_created ON world_faction_logs(week_key, faction, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
@@ -17401,7 +17474,7 @@ def _faction_recommended_key(counts):
 def _faction_week_result(db, week_key):
     row = db.execute(
         """
-        SELECT week_key, winner_faction, scores_json, computed_at
+        SELECT week_key, winner_faction, scores_json, computed_at, summary_text, highlights_json, mvp_json
         FROM world_faction_weekly_result
         WHERE week_key = ?
         """,
@@ -17413,11 +17486,22 @@ def _faction_week_result(db, week_key):
         scores = json.loads(row["scores_json"] or "{}")
     except json.JSONDecodeError:
         scores = {}
+    try:
+        highlights = json.loads(row["highlights_json"] or "{}") if "highlights_json" in row.keys() else {}
+    except json.JSONDecodeError:
+        highlights = {}
+    try:
+        mvp = json.loads(row["mvp_json"] or "{}") if "mvp_json" in row.keys() else {}
+    except json.JSONDecodeError:
+        mvp = {}
     return {
         "week_key": row["week_key"],
         "winner_faction": _normalize_faction_key(row["winner_faction"]),
         "scores": {k: int(scores.get(k, 0) or 0) for k in FACTION_KEYS},
         "computed_at": int(row["computed_at"] or 0),
+        "summary_text": (row["summary_text"] if "summary_text" in row.keys() else "") or "",
+        "highlights": highlights,
+        "mvp": mvp,
     }
 
 
@@ -17457,51 +17541,132 @@ def _faction_war_recompute(db, week_key):
     start_dt, end_dt = _world_week_bounds(wk)
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
+    db.execute("DELETE FROM world_faction_weekly_scores WHERE week_key = ?", (wk,))
+    db.execute("DELETE FROM world_faction_user_weekly_contributions WHERE week_key = ?", (wk,))
+    db.execute("DELETE FROM world_faction_weekly_mvp WHERE week_key = ?", (wk,))
 
-    def _count_points(event_type, extra_where="", params=None):
-        where = [
-            "wel.event_type = ?",
-            "wel.created_at >= ?",
-            "wel.created_at < ?",
-            "u.faction IN ('ignis','ventra','aurix')",
-        ]
-        qparams = [event_type, start_ts, end_ts]
-        if extra_where:
-            where.append(extra_where)
-        if params:
-            qparams.extend(params)
-        rows = db.execute(
-            f"""
-            SELECT u.faction, COUNT(*) AS c
-            FROM world_events_log wel
-            JOIN users u ON u.id = wel.user_id
-            WHERE {' AND '.join(where)}
-            GROUP BY u.faction
-            """,
-            qparams,
-        ).fetchall()
-        out = {k: 0 for k in FACTION_KEYS}
-        for row in rows:
-            fk = _normalize_faction_key(row["faction"])
-            if fk:
-                out[fk] = int(row["c"] or 0)
-        return out
+    rows = db.execute(
+        """
+        SELECT id, user_id, event_type, payload_json
+        FROM world_events_log
+        WHERE user_id IS NOT NULL
+          AND created_at >= ?
+          AND created_at < ?
+          AND event_type IN (?, ?, ?, ?, ?, ?, ?)
+        ORDER BY id ASC
+        """,
+        (
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+            AUDIT_EVENT_TYPES["FUSE"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"],
+            "CHAMP_DEFEAT_UPSET",
+        ),
+    ).fetchall()
+    for row in rows:
+        event_type = str(row["event_type"] or "")
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            if not bool(result.get("win")):
+                continue
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "explore_win",
+                FACTION_POINTS["explore_win"],
+                counters={"explore_win_count": 1},
+                payload={"area_key": payload.get("area_key")},
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "boss_defeat",
+                FACTION_POINTS["boss_defeat"],
+                counters={"boss_defeat_count": 1},
+                payload=payload,
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "build",
+                FACTION_POINTS["build"],
+                counters={"build_count": 1},
+                payload={"robot_instance_id": payload.get("robot_instance_id")},
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == AUDIT_EVENT_TYPES["FUSE"]:
+            if payload and not bool(payload.get("success")):
+                continue
+            count = max(1, int(payload.get("batch_count") or payload.get("delta_count") or 1))
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "strengthen",
+                FACTION_POINTS["strengthen"] * count,
+                counters={"strengthen_count": count},
+                payload={"mode": payload.get("mode"), "count": count},
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "evolve",
+                FACTION_POINTS["evolve"],
+                counters={"evolve_count": 1},
+                payload=payload,
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == AUDIT_EVENT_TYPES["CHAMPION_DEFEAT"]:
+            if str(payload.get("affinity_result") or "").strip() == "disadvantage":
+                continue
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "champ_defeat",
+                FACTION_POINTS["champ_defeat"],
+                counters={"champ_defeat_count": 1},
+                payload=payload,
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
+        elif event_type == "CHAMP_DEFEAT_UPSET":
+            add_faction_points(
+                db,
+                int(row["user_id"]),
+                "champ_upset",
+                FACTION_POINTS["champ_upset"],
+                counters={"champ_defeat_count": 1, "upset_count": 1},
+                payload=payload,
+                create_log=False,
+                create_audit=False,
+                week_key=wk,
+            )
 
-    explore_wins = _count_points(
-        AUDIT_EVENT_TYPES["EXPLORE_END"],
-        "CAST(COALESCE(json_extract(wel.payload_json, '$.result.win'), 0) AS INTEGER) = 1",
-    )
-    boss_defeats = _count_points(AUDIT_EVENT_TYPES["BOSS_DEFEAT"])
-    build_confirms = _count_points(AUDIT_EVENT_TYPES["BUILD_CONFIRM"])
-    fuse_runs = _count_points(AUDIT_EVENT_TYPES["FUSE"])
-
-    scores = {k: 0 for k in FACTION_KEYS}
-    for fk in FACTION_KEYS:
-        scores[fk] += int(explore_wins.get(fk, 0)) * int(FACTION_WAR_POINTS["explore_win"])
-        scores[fk] += int(boss_defeats.get(fk, 0)) * int(FACTION_WAR_POINTS["boss_defeat"])
-        scores[fk] += int(build_confirms.get(fk, 0)) * int(FACTION_WAR_POINTS["build_confirm"])
-        scores[fk] += int(fuse_runs.get(fk, 0)) * int(FACTION_WAR_POINTS["fuse"])
-
+    scores = _faction_week_scores(db, wk)
     ranked = sorted([(scores[k], k) for k in FACTION_KEYS], key=lambda x: (-x[0], x[1]))
     winner = ranked[0][1] if ranked else "aurix"
     now_ts = int(time.time())
@@ -17514,25 +17679,70 @@ def _faction_war_recompute(db, week_key):
                 points = excluded.points,
                 updated_at = excluded.updated_at
             """,
-            (wk, fk, int(scores[fk]), now_ts),
+            (wk, fk, int(scores.get(fk, 0)), now_ts),
         )
+    highlights = compute_weekly_highlights(db, wk, winner, scores)
+    mvp = compute_and_store_weekly_mvp(db, wk)
+    winner_reason = str(highlights.get("winner_reason") or "日常行動の積み上げでリード")
+    summary_text = f"今週の陣営戦は{FACTION_LABELS.get(winner, winner)}が勝利！{winner_reason}しました。"
     db.execute(
         """
-        INSERT INTO world_faction_weekly_result (week_key, winner_faction, scores_json, computed_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO world_faction_weekly_result (
+            week_key, winner_faction, scores_json, computed_at, summary_text, highlights_json, mvp_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(week_key) DO UPDATE SET
             winner_faction = excluded.winner_faction,
             scores_json = excluded.scores_json,
-            computed_at = excluded.computed_at
+            computed_at = excluded.computed_at,
+            summary_text = excluded.summary_text,
+            highlights_json = excluded.highlights_json,
+            mvp_json = excluded.mvp_json
         """,
-        (wk, winner, json.dumps(scores, ensure_ascii=False), now_ts),
+        (
+            wk,
+            winner,
+            json.dumps(scores, ensure_ascii=False),
+            now_ts,
+            summary_text,
+            json.dumps(highlights, ensure_ascii=False),
+            json.dumps(mvp, ensure_ascii=False),
+        ),
     )
     _world_event_log(
         db,
         "FACTION_WAR_RESULT",
-        {"week_key": wk, "winner_faction": winner, "scores": scores},
+        {"week_key": wk, "winner_faction": winner, "scores": scores, "summary_text": summary_text, "mvp": mvp},
     )
-    return {"week_key": wk, "winner_faction": winner, "scores": scores, "computed_at": now_ts}
+    if not db.execute(
+        "SELECT 1 FROM world_faction_logs WHERE week_key = ? AND event_type = 'weekly_result' LIMIT 1",
+        (wk,),
+    ).fetchone():
+        db.execute(
+            """
+            INSERT INTO world_faction_logs (
+                week_key, faction, user_id, event_type, message, points_delta, payload_json, created_at
+            )
+            VALUES (?, ?, NULL, ?, ?, 0, ?, ?)
+            """,
+            (
+                wk,
+                winner,
+                "weekly_result",
+                summary_text,
+                json.dumps({"scores": scores, "mvp": mvp, "highlights": highlights}, ensure_ascii=False),
+                datetime.fromtimestamp(now_ts, JST).strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+    return {
+        "week_key": wk,
+        "winner_faction": winner,
+        "scores": scores,
+        "computed_at": now_ts,
+        "summary_text": summary_text,
+        "highlights": highlights,
+        "mvp": mvp,
+    }
 
 
 def _ensure_faction_war_auto_close(db, current_week_key=None):
@@ -18235,6 +18445,122 @@ def _faction_score_rows(score_map, member_counts=None, *, user_faction=None, wee
         )
     rows.sort(key=lambda item: (-int(item["points"]), item["label"]))
     return rows
+
+
+def _faction_detail_rows(db, week_key, *, member_counts=None, user_faction=None, weekly_faction_key=None):
+    details = aggregate_faction_details(db, str(week_key))
+    scores = _faction_week_scores(db, str(week_key))
+    counts = member_counts or _faction_member_counts(db)
+    rows = []
+    rank_map = {row["faction"]: int(row["rank"]) for row in rank_factions(details)}
+    for key in FACTION_KEYS:
+        base = dict(details.get(key) or {})
+        base["points"] = int(scores.get(key, base.get("points", 0)) or 0)
+        doctrine = FACTION_DOCTRINES.get(key, {})
+        rows.append(
+            {
+                "key": key,
+                "label": FACTION_LABELS.get(key, key),
+                "points": int(base["points"]),
+                "rank": int(rank_map.get(key, 3)),
+                "member_count": int(counts.get(key, 0) or 0),
+                "active_user_count": int(base.get("active_user_count") or 0),
+                "explore_win_count": int(base.get("explore_win_count") or 0),
+                "boss_defeat_count": int(base.get("boss_defeat_count") or 0),
+                "build_count": int(base.get("build_count") or 0),
+                "strengthen_count": int(base.get("strengthen_count") or 0),
+                "evolve_count": int(base.get("evolve_count") or 0),
+                "champ_defeat_count": int(base.get("champ_defeat_count") or 0),
+                "upset_count": int(base.get("upset_count") or 0),
+                "emblem_path": FACTION_EMBLEMS.get(key),
+                "doctrine_title": doctrine.get("title", ""),
+                "doctrine_summary": doctrine.get("summary", ""),
+                "focus": doctrine.get("focus", ""),
+                "world_hint": doctrine.get("world_hint", ""),
+                "is_user_faction": bool(user_faction and key == user_faction),
+                "is_weekly_tailwind": bool(weekly_faction_key and key == weekly_faction_key),
+            }
+        )
+    rows.sort(key=lambda item: (int(item["rank"]), -int(item["points"]), item["label"]))
+    return rows
+
+
+def _faction_user_contribution_view(db, week_key, user_id):
+    return contribution_for_user(db, week_key=str(week_key), user_id=int(user_id))
+
+
+def _faction_top_contribution_rows(db, week_key, *, limit=10):
+    rows = db.execute(
+        """
+        SELECT c.*, u.username, u.display_name
+        FROM world_faction_user_weekly_contributions c
+        JOIN users u ON u.id = c.user_id
+        WHERE c.week_key = ?
+        ORDER BY c.points DESC, c.user_id ASC
+        LIMIT ?
+        """,
+        (str(week_key), int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        out.append(
+            {
+                "user_id": int(row["user_id"]),
+                "username": row["display_name"] or row["username"],
+                "faction": _normalize_faction_key(row["faction"]),
+                "faction_label": FACTION_LABELS.get(_normalize_faction_key(row["faction"]), row["faction"]),
+                "points": int(row["points"] or 0),
+                "boss_defeat_count": int(row["boss_defeat_count"] or 0),
+                "evolve_count": int(row["evolve_count"] or 0),
+                "champ_defeat_count": int(row["champ_defeat_count"] or 0),
+                "upset_count": int(row["upset_count"] or 0),
+            }
+        )
+    return out
+
+
+def _faction_log_rows(db, week_key, *, faction=None, user_id=None, event_types=None, limit=30):
+    where = ["l.week_key = ?"]
+    params = [str(week_key)]
+    faction_key = _normalize_faction_key(faction)
+    if faction_key:
+        where.append("l.faction = ?")
+        params.append(faction_key)
+    if user_id:
+        where.append("l.user_id = ?")
+        params.append(int(user_id))
+    if event_types:
+        clean = [str(v) for v in event_types if str(v or "").strip()]
+        if clean:
+            where.append(f"l.event_type IN ({','.join(['?'] * len(clean))})")
+            params.extend(clean)
+    params.append(int(limit))
+    rows = db.execute(
+        f"""
+        SELECT l.*, u.username, u.display_name
+        FROM world_faction_logs l
+        LEFT JOIN users u ON u.id = l.user_id
+        WHERE {' AND '.join(where)}
+        ORDER BY l.id DESC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "week_key": row["week_key"],
+            "faction": _normalize_faction_key(row["faction"]),
+            "faction_label": FACTION_LABELS.get(_normalize_faction_key(row["faction"]), row["faction"]),
+            "user_id": int(row["user_id"] or 0) if row["user_id"] else None,
+            "username": row["display_name"] or row["username"] or "SYSTEM",
+            "event_type": row["event_type"],
+            "message": row["message"],
+            "points_delta": int(row["points_delta"] or 0),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
 
 
 def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
@@ -19309,10 +19635,14 @@ def _feed_card_from_event(db, row):
         wk = payload.get("week_key") or "-"
         card["headline"] = "陣営戦決着"
         card["accent"] = "weekly"
-        card["text"] = f"陣営戦決着: {wk} の勝者は {FACTION_LABELS.get(winner, winner or '未確定')}"
+        card["text"] = payload.get("summary_text") or f"陣営戦決着: {wk} の勝者は {FACTION_LABELS.get(winner, winner or '未確定')}"
         card["meta_lines"] = [
             f"IGNIS {int(scores.get('ignis', 0) or 0)} / VENTRA {int(scores.get('ventra', 0) or 0)} / AURIX {int(scores.get('aurix', 0) or 0)}"
         ]
+        mvp = payload.get("mvp") if isinstance(payload.get("mvp"), dict) else {}
+        overall_mvp = mvp.get("overall") if isinstance(mvp.get("overall"), dict) else None
+        if overall_mvp:
+            card["meta_lines"].append(f"陣営MVP: User #{int(overall_mvp.get('user_id') or 0)} / {int(overall_mvp.get('points') or 0)}pt")
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -24352,6 +24682,19 @@ def home():
         user_faction=user_faction,
         weekly_faction_key=weekly_faction_key,
     )
+    faction_detail_rows = _faction_detail_rows(
+        db,
+        week_key,
+        member_counts=faction_member_counts,
+        user_faction=user_faction,
+        weekly_faction_key=weekly_faction_key,
+    )
+    faction_user_contribution = _faction_user_contribution_view(db, week_key, int(user["id"]))
+    faction_user_rank = faction_user_contribution.get("rank")
+    user_faction_row = next((row for row in faction_detail_rows if row["key"] == user_faction), None)
+    leader_points = int(faction_detail_rows[0]["points"] or 0) if faction_detail_rows else 0
+    user_faction_points = int(user_faction_row["points"] or 0) if user_faction_row else 0
+    faction_leader_gap = max(0, leader_points - user_faction_points)
     prev_week_key = _faction_prev_week_key(week_key)
     prev_faction_result = _faction_week_result(db, prev_week_key)
     if not prev_faction_result:
@@ -24755,6 +25098,10 @@ def home():
             faction_recommended=faction_recommended,
             faction_week_scores=faction_week_scores,
             faction_score_rows=faction_score_rows,
+            faction_detail_rows=faction_detail_rows,
+            faction_user_contribution=faction_user_contribution,
+            faction_user_rank=faction_user_rank,
+            faction_leader_gap=faction_leader_gap,
             prev_week_key=prev_week_key,
             prev_faction_result=prev_faction_result,
             faction_buff_winner=faction_buff_winner,
@@ -25687,6 +26034,25 @@ def champion_challenge():
         ip=request.remote_addr,
     )
     if battle_result.get("win"):
+        faction_event_type = "champ_upset" if type_affinity.get("result") == "disadvantage" else "champ_defeat"
+        add_faction_points(
+            db,
+            int(user["id"]),
+            faction_event_type,
+            FACTION_POINTS[faction_event_type],
+            counters=(
+                {"champ_defeat_count": 1, "upset_count": 1}
+                if faction_event_type == "champ_upset"
+                else {"champ_defeat_count": 1}
+            ),
+            payload={
+                "champion_snapshot_id": int(snapshot.get("id") or 0),
+                "champion_robot_instance_id": int(snapshot.get("robot_instance_id") or 0),
+                "affinity_result": type_affinity.get("result"),
+            },
+            create_log=True,
+            week_key=_world_week_key(),
+        )
         grant_robot_title(
             db,
             int(active_robot["id"]),
@@ -26005,6 +26371,14 @@ def world_view():
         user_faction=user_faction,
         weekly_faction_key=weekly_faction_key,
     )
+    faction_detail_rows = _faction_detail_rows(
+        db,
+        week_key,
+        member_counts=member_counts,
+        user_faction=user_faction,
+        weekly_faction_key=weekly_faction_key,
+    )
+    faction_user_contribution = _faction_user_contribution_view(db, week_key, int(user["id"]))
     prev_week_key = _faction_prev_week_key(week_key)
     prev_faction_result = _faction_week_result(db, prev_week_key)
     if not prev_faction_result:
@@ -26027,6 +26401,8 @@ def world_view():
         faction_labels=FACTION_LABELS,
         faction_emblems=FACTION_EMBLEMS,
         faction_score_rows=faction_score_rows,
+        faction_detail_rows=faction_detail_rows,
+        faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
         prev_faction_result=prev_faction_result,
         user_faction=user_faction,
@@ -26220,7 +26596,44 @@ def comms_rooms():
 @app.route("/comms/faction")
 @login_required
 def comms_faction():
-    return render_template("comms_faction.html", message=session.pop("message", None))
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    week_key = _world_week_key()
+    user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    unlock_counts = _faction_unlock_counts(db, int(user["id"]))
+    can_choose = bool((not user_faction) and _faction_unlock_ready(unlock_counts))
+    contribution = _faction_user_contribution_view(db, week_key, int(user["id"]))
+    member_counts = _faction_member_counts(db)
+    detail_rows = _faction_detail_rows(db, week_key, member_counts=member_counts, user_faction=user_faction)
+    user_faction_row = next((row for row in detail_rows if row["key"] == user_faction), None)
+    own_logs = _faction_log_rows(db, week_key, faction=user_faction, limit=40) if user_faction else []
+    all_logs = _faction_log_rows(
+        db,
+        week_key,
+        event_types={"boss_defeat", "evolve", "champ_defeat", "champ_upset", "weekly_result", "rank_change"},
+        limit=40,
+    )
+    my_logs = _faction_log_rows(db, week_key, user_id=int(user["id"]), limit=40)
+    return render_template(
+        "comms_faction.html",
+        message=session.pop("message", None),
+        week_key=week_key,
+        user=user,
+        user_faction=user_faction,
+        user_faction_label=FACTION_LABELS.get(user_faction, user_faction),
+        can_choose=can_choose,
+        unlock_counts=unlock_counts,
+        unlock_progress_line=_faction_unlock_progress_line(unlock_counts),
+        faction_labels=FACTION_LABELS,
+        contribution=contribution,
+        faction_rank=(user_faction_row.get("rank") if user_faction_row else None),
+        faction_count=len(FACTION_KEYS),
+        own_logs=own_logs,
+        all_logs=all_logs,
+        my_logs=my_logs,
+    )
 
 
 @app.route("/comms/personal")
@@ -28093,6 +28506,21 @@ def explore():
                     },
                     ip=request.remote_addr,
                 )
+                add_faction_points(
+                    db,
+                    user_id,
+                    "boss_defeat",
+                    FACTION_POINTS["boss_defeat"],
+                    counters={"boss_defeat_count": 1},
+                    payload={
+                        "area_key": area_key,
+                        "enemy_key": enemy["key"] if "key" in enemy.keys() else None,
+                        "enemy_name": enemy_name,
+                        "boss_kind": area_boss_kind,
+                    },
+                    create_log=True,
+                    week_key=_world_week_key(),
+                )
                 if area_boss_kind == "fixed":
                     reward_label = (
                         f"装飾『{area_boss_reward['decor_name']}』を入手"
@@ -28262,6 +28690,17 @@ def explore():
         faction_bonus_coin = 1
         world_bonus_notes.append("陣営バフ発動: 勝利コイン+1")
         bonus_events["faction_bonus_coin"] = 1
+    if final_outcome == "win":
+        add_faction_points(
+            db,
+            user_id,
+            "explore_win",
+            FACTION_POINTS["explore_win"],
+            counters={"explore_win_count": 1},
+            payload={"area_key": area_key, "battle_id": battle_id},
+            create_log=should_create_log("explore_win"),
+            week_key=_world_week_key(),
+        )
 
     streak_lines = get_streak_lines(
         personality=(active["personality"] if active and "personality" in active.keys() else ""),
@@ -30429,6 +30868,16 @@ def build_confirm():
                 },
             },
             ip=request.remote_addr,
+        )
+        add_faction_points(
+            db,
+            int(user["id"]),
+            "build",
+            FACTION_POINTS["build"],
+            counters={"build_count": 1},
+            payload={"robot_instance_id": int(instance_id), "robot_name": robot_name},
+            create_log=True,
+            week_key=week_key,
         )
         for pid in consumed_ids:
             audit_log(
@@ -32791,6 +33240,21 @@ def evolve_parts():
                 },
                 ip=request.remote_addr,
             )
+            add_faction_points(
+                db,
+                user_id,
+                "evolve",
+                FACTION_POINTS["evolve"],
+                counters={"evolve_count": 1},
+                payload={
+                    "source_part_key": source_row["part_key"],
+                    "target_part_key": target_part["key"],
+                    "target_part_name": target_name,
+                    "created_id": created_id,
+                },
+                create_log=True,
+                week_key=_world_week_key(),
+            )
             for refreshed_robot in refreshed_equipped:
                 refreshed_robot_id = (
                     refreshed_robot.get("robot_instance_id")
@@ -33862,6 +34326,21 @@ def parts_strengthen():
                                 },
                                 ip=request.remote_addr,
                             )
+                            batch_count_for_faction = max(1, int(group_summary.get("batch_count") or 1))
+                            add_faction_points(
+                                db,
+                                user_id,
+                                "strengthen",
+                                FACTION_POINTS["strengthen"] * batch_count_for_faction,
+                                counters={"strengthen_count": batch_count_for_faction},
+                                payload={
+                                    "mode": "warehouse_batch",
+                                    "part_type": group_summary.get("part_type"),
+                                    "count": batch_count_for_faction,
+                                },
+                                create_log=True,
+                                week_key=_world_week_key(),
+                            )
                         audit_log(
                             db,
                             AUDIT_EVENT_TYPES["FUSE_BATCH_EXECUTE"],
@@ -34000,6 +34479,22 @@ def parts_strengthen():
                     ip=request.remote_addr,
                 )
                 if result.get("ok"):
+                    strengthen_count_for_faction = max(1, int(result.get("batch_count") or 1))
+                    add_faction_points(
+                        db,
+                        user_id,
+                        "strengthen",
+                        FACTION_POINTS["strengthen"] * strengthen_count_for_faction,
+                        counters={"strengthen_count": strengthen_count_for_faction},
+                        payload={
+                            "mode": mode,
+                            "part_type": result.get("part_type"),
+                            "part_key": result.get("part_key"),
+                            "count": strengthen_count_for_faction,
+                        },
+                        create_log=True,
+                        week_key=_world_week_key(),
+                    )
                     if str(result.get("base_status") or "").strip().lower() == "equipped":
                         active_robot_for_title = db.execute(
                             """
@@ -35847,6 +36342,9 @@ def admin_world():
         research_unlock_order=RESEARCH_UNLOCK_ORDER,
         faction_week_scores=_faction_week_scores(db, week_key),
         faction_week_result=_faction_week_result(db, week_key),
+        faction_detail_rows=_faction_detail_rows(db, week_key),
+        faction_top_contributions=_faction_top_contribution_rows(db, week_key, limit=10),
+        faction_recent_logs=_faction_log_rows(db, week_key, limit=50),
     )
 
 

@@ -1,9 +1,8 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="panel comms-shell">
+<section class="panel comms-shell faction-comms-shell">
   <div class="comms-kicker">FACTION CHANNEL</div>
-  <h1>陣営通信</h1>
-  <p class="comms-lead">同じ陣営の仲間と話せる通信は、いま準備中です。</p>
+  <h1>{% if user_faction %}{{ user_faction_label }}通信{% else %}陣営通信{% endif %}</h1>
   <nav class="comms-nav">
     <a class="battle-home-link" href="{{ url_for('comms') }}">通信トップ</a>
     <a class="battle-home-link" href="{{ url_for('comms_world') }}">世界ログ</a>
@@ -11,11 +10,64 @@
     <a class="battle-home-link active" href="{{ url_for('comms_faction') }}">陣営通信</a>
     <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
   </nav>
+
+  {% if not user_faction %}
   <div class="card comms-placeholder-card">
-    <div class="comms-status-badge is-muted">準備中</div>
-    <h2>陣営ごとの通信は準備中です</h2>
-    <p>開放までのあいだは、世界ログと会議室から他のロボ使いたちと交流できます。</p>
-    <p class="link"><a href="{{ url_for('world_view') }}">今週の陣営戦を見る</a></p>
+    {% if can_choose %}
+    <div class="comms-status-badge">選択可能</div>
+    <h2>陣営選択が可能になりました</h2>
+    <p>所属すると、あなたの出撃や強化が陣営ポイントとして記録されます。</p>
+    <p class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></p>
+    {% else %}
+    <div class="comms-status-badge is-muted">未所属</div>
+    <h2>まだ陣営に所属していません</h2>
+    <p>条件を満たすと、3つの研究陣営から所属先を選べます。</p>
+    <p>{{ unlock_progress_line }}</p>
+    {% endif %}
   </div>
+  {% else %}
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>あなたの今週の貢献: {{ contribution['points'] }}pt</h2>
+    <p>陣営内順位: {% if contribution['rank'] %}{{ contribution['rank'] }}位{% else %}-{% endif %} / 今週の{{ user_faction_label }}: {% if faction_rank %}{{ faction_rank }}位{% else %}-{% endif %} / {{ faction_count }}陣営中</p>
+    <p class="upgrade-cost">
+      出撃 {{ contribution['explore_win_count'] }} / 強化 {{ contribution['strengthen_count'] }} / 編成 {{ contribution['build_count'] }} /
+      進化 {{ contribution['evolve_count'] }} / ボス {{ contribution['boss_defeat_count'] }} / チャンプ {{ contribution['champ_defeat_count'] }}
+    </p>
+  </div>
+
+  <div class="faction-comms-tabs">
+    <section class="card">
+      <h2>自陣営</h2>
+      <ul class="ranking-mini faction-log-list">
+        {% for item in own_logs %}
+        <li><span>{{ item['message'] }}</span><span>+{{ item['points_delta'] }}</span></li>
+        {% else %}
+        <li>まだ今週の陣営ログはありません。</li>
+        {% endfor %}
+      </ul>
+    </section>
+    <section class="card">
+      <h2>全陣営</h2>
+      <ul class="ranking-mini faction-log-list">
+        {% for item in all_logs %}
+        <li><span>[{{ item['faction_label'] }}] {{ item['message'] }}</span><span>+{{ item['points_delta'] }}</span></li>
+        {% else %}
+        <li>大きな動きはまだありません。</li>
+        {% endfor %}
+      </ul>
+    </section>
+    <section class="card">
+      <h2>自分</h2>
+      <ul class="ranking-mini faction-log-list">
+        {% for item in my_logs %}
+        <li><span>{{ item['message'] }}</span><span>+{{ item['points_delta'] }}</span></li>
+        {% else %}
+        <li>あなたの貢献ログはまだありません。</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+  {% endif %}
 </section>
 {% endblock %}

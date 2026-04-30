@@ -286,7 +286,10 @@
   - ルームタブに最近の発言人数バッジを出し、部屋ヘッダーで `最近の参加人数` を見せる
   - 各投稿は `小ロボ主役 + 補助アバター` に presence ラベルを添えて表示する
 - `/comms/faction`
-  - 今回は準備中表示のみ
+  - 陣営所属済みユーザーは `自陣営 / 全陣営 / 自分` の3系統で陣営ログを確認できる
+  - 未所属ユーザーは陣営選択までの進捗、選択可能ユーザーは `/faction/choose` 導線を表示する
+  - 出撃勝利 / 編成 / 強化 / 進化 / ボス撃破 / チャンプ撃破を陣営貢献として記録する
+  - 通常出撃ログは低頻度表示、進化・ボス・チャンプなど大きい出来事は陣営通信へ出す
 - `/comms/personal`
   - パーツ入手 / 強化 / 探索 / ボス遭遇 / ボス撃破 / 進化成功 / 層解放 / 招待条件達成 / 進化コア保証到達 / 個人ランキングを読み返す
   - 直近30件、読み取り専用
@@ -342,6 +345,13 @@
 - `enemies`
 - `world_weekly_environment`, `world_weekly_counters`
 - `world_faction_weekly_scores`, `world_faction_weekly_result`
+- `world_faction_user_weekly_contributions`
+  - 週ごとのユーザー別陣営貢献を保存する
+  - `points`, `explore_win_count`, `boss_defeat_count`, `build_count`, `strengthen_count`, `evolve_count`, `champ_defeat_count`, `upset_count`
+- `world_faction_logs`
+  - `/comms/faction` に表示する陣営ログ
+- `world_faction_weekly_mvp`
+  - 週次クローズ時に `overall / explore / boss / evolve / champ / upset` MVPを保存する
 - `lab_casino_races`, `lab_casino_entries`, `lab_casino_bets`
 - `lab_casino_frames`, `lab_casino_prizes`, `lab_casino_prize_claims`
 - `lab_races.course_payload_json`, `lab_casino_races.course_payload_json`
