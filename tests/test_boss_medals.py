@@ -60,14 +60,12 @@ class BossMedalVisibilityTests(unittest.TestCase):
             session["username"] = "boss_medal_user"
         return client
 
-    def test_home_shows_earned_boss_medal_and_decor_usage(self):
+    def test_home_does_not_show_boss_medal_panel(self):
         resp = self._client().get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("ボス撃破の勲章", html)
-        self.assertIn("オリクス紋章", html)
-        self.assertIn("機体整備の装飾でロボに付けられます", html)
-        self.assertIn("slot=DECOR", html)
+        self.assertNotIn("BOSS MEDALS", html)
+        self.assertNotIn("機体整備の装飾でロボに付けられます", html)
 
     def test_records_show_earned_and_locked_boss_medals(self):
         resp = self._client().get("/records")

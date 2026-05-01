@@ -60,34 +60,6 @@
   </div>
 </div>
 {% endif %}
-{% if boss_medal_summary and boss_medal_summary['earned_count'] > 0 %}
-<div class="panel home-boss-medals-panel priority-medals">
-  <div class="card boss-medal-card is-home">
-    <div class="boss-medal-head">
-      <div>
-        <div class="home-explore-kicker">BOSS MEDALS</div>
-        <div><b>ボス撃破の勲章 {{ boss_medal_summary['earned_count'] }} / {{ boss_medal_summary['total_count'] }}</b></div>
-        <div class="upgrade-cost">ボス撃破の証です。機体整備の装飾でロボに付けられます。</div>
-      </div>
-      <div class="boss-medal-count">{{ boss_medal_summary['earned_count'] }}</div>
-    </div>
-    <div class="boss-medal-row">
-      {% for medal in boss_medal_summary['preview_rows'] %}
-      <div class="boss-medal-chip" title="{{ medal['detail'] }}">
-        <img src="{{ medal['image_url'] }}" alt="{{ medal['name'] }}" loading="lazy" decoding="async" />
-        <span>{{ medal['name'] }}</span>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="home-inline-actions">
-      {% if boss_medal_summary['maintenance_url'] %}
-      <a class="battle-home-link" href="{{ boss_medal_summary['maintenance_url'] }}">機体に付ける</a>
-      {% endif %}
-      <a class="battle-home-link" href="{{ url_for('records_view') }}">勲章一覧</a>
-    </div>
-  </div>
-</div>
-{% endif %}
 {% if show_beginner_mission %}
 <div class="panel beginner-mission-panel">
   <div class="card">

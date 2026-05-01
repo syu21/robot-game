@@ -171,6 +171,47 @@ class RobotMaintenanceTests(unittest.TestCase):
             self.assertEqual(payload.get("changed_slots"), ["HEAD"])
             self.assertEqual(int((payload.get("after_part_ids") or {}).get("HEAD") or 0), self.candidate_head_instance_id)
 
+    def test_robot_maintenance_updates_decor_after_backfilling_part_instances(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            decor = db.execute(
+                "SELECT id FROM robot_decor_assets WHERE key = ?",
+                ("boss_emblem_aurix",),
+            ).fetchone()
+            self.assertIsNotNone(decor)
+            db.execute(
+                "INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at) VALUES (?, ?, ?)",
+                (self.user_id, int(decor["id"]), int(time.time())),
+            )
+            db.execute(
+                """
+                UPDATE robot_instance_parts
+                SET head_part_instance_id = NULL,
+                    r_arm_part_instance_id = NULL,
+                    l_arm_part_instance_id = NULL,
+                    legs_part_instance_id = NULL,
+                    decor_asset_id = NULL
+                WHERE robot_instance_id = ?
+                """,
+                (self.robot_id,),
+            )
+            db.commit()
+
+        resp = self._client().post(
+            f"/robots/{self.robot_id}/maintenance?slot=DECOR",
+            data={"slot": "DECOR", "decor_asset_id": str(int(decor["id"]))},
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            parts_row = db.execute(
+                "SELECT decor_asset_id FROM robot_instance_parts WHERE robot_instance_id = ?",
+                (self.robot_id,),
+            ).fetchone()
+            self.assertEqual(int(parts_row["decor_asset_id"]), int(decor["id"]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2826,11 +2826,12 @@ body.lightbox-open .lightbox-overlay {
   gap: 8px;
 }
 .estimate-item {
-  border: 1px solid rgba(33, 28, 20, 0.15);
+  border: 1px solid rgba(69, 212, 255, 0.22);
   border-radius: 8px;
-  background: #fffaf0;
+  background: rgba(12, 24, 48, 0.72);
   padding: 6px 8px;
   font-size: 12px;
+  color: var(--text);
 }
 .estimate-item b {
   display: block;
@@ -2843,10 +2844,11 @@ body.lightbox-open .lightbox-overlay {
   margin-top: 8px;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(33, 28, 20, 0.12);
-  background: rgba(255, 250, 240, 0.72);
+  border: 1px solid rgba(69, 212, 255, 0.2);
+  background: rgba(12, 24, 48, 0.72);
   font-size: 13px;
   line-height: 1.5;
+  color: var(--text);
 }
 .estimate-bonus.is-current {
   margin-top: 8px;
@@ -2882,9 +2884,10 @@ body.lightbox-open .lightbox-overlay {
   display: grid;
   gap: 8px;
   padding: 12px;
-  border: 1px solid rgba(33, 28, 20, 0.14);
+  border: 1px solid rgba(69, 212, 255, 0.22);
   border-radius: 12px;
-  background: rgba(255, 250, 240, 0.72);
+  background: rgba(12, 24, 48, 0.72);
+  color: var(--text);
 }
 .build-offset-head {
   display: flex;
@@ -2894,9 +2897,9 @@ body.lightbox-open .lightbox-overlay {
   flex-wrap: wrap;
 }
 .build-offset-reset {
-  border: 1px solid rgba(33, 28, 20, 0.16);
-  background: rgba(255, 255, 255, 0.88);
-  color: #1f1b16;
+  border: 1px solid rgba(69, 212, 255, 0.28);
+  background: rgba(18, 38, 72, 0.92);
+  color: var(--text);
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
@@ -2920,7 +2923,7 @@ body.lightbox-open .lightbox-overlay {
   min-width: 30px;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: #0d5956;
+  color: var(--accent);
 }
 .build-picker {
   display: grid;

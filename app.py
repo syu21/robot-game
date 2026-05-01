@@ -29878,6 +29878,10 @@ def robot_maintenance(instance_id):
         }
         for row in decor_assets
     ]
+    if request.method == "POST" and getattr(db, "in_transaction", False):
+        # Legacy robots can be backfilled with part_instance ids above. Commit that
+        # repair before opening the explicit maintenance transaction.
+        db.commit()
 
     if request.method == "POST":
         slot = _normalize_maintenance_slot(request.form.get("slot"))
@@ -29897,8 +29901,8 @@ def robot_maintenance(instance_id):
             if before_decor_id == next_decor_id:
                 flash("装飾はすでにその構成です。", "notice")
                 return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
-            db.execute("BEGIN IMMEDIATE")
             try:
+                db.execute("BEGIN IMMEDIATE")
                 db.execute(
                     "UPDATE robot_instance_parts SET decor_asset_id = ? WHERE robot_instance_id = ?",
                     (next_decor_id, int(instance_id)),
@@ -29993,8 +29997,8 @@ def robot_maintenance(instance_id):
         stat_delta = {key: int(candidate_stats[key] - current_robot_stats[key]) for key in ("hp", "atk", "def", "spd", "acc", "cri")}
         power_delta = int(round(candidate_stats["power"] - current_robot_stats["power"]))
 
-        db.execute("BEGIN IMMEDIATE")
         try:
+            db.execute("BEGIN IMMEDIATE")
             returned_status = _return_part_instance_to_pool(db, user_id, current_id, user_row=user)
             db.execute(
                 "UPDATE part_instances SET status = 'equipped', updated_at = datetime('now') WHERE id = ? AND user_id = ?",
