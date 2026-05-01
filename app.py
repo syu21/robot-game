@@ -30,6 +30,7 @@ from balance_config import (
     RARITY_WEIGHTS_BY_TIER,
 )
 from series_catalog import (
+    INSECT_PART_DISPLAY_NAME_OVERRIDES,
     LEGACY_GENERIC_SERIES_KEYS,
     PART_KEY_SERIES_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
@@ -10940,7 +10941,10 @@ def _seed_robot_assets_v2(db):
         )
         db.commit()
     _sync_series_catalog(db)
+    insect_name_updates = _sync_insect_part_display_names(db)
     if _backfill_part_display_names(db) > 0:
+        db.commit()
+    elif insect_name_updates > 0:
         db.commit()
 
 
@@ -11146,6 +11150,22 @@ def _sync_series_catalog(db):
         WHERE frame_type = 'insect'
         """
     )
+
+
+def _sync_insect_part_display_names(db):
+    changed = 0
+    for part_key, display_name in INSECT_PART_DISPLAY_NAME_OVERRIDES.items():
+        cur = db.execute(
+            """
+            UPDATE robot_parts
+            SET display_name_ja = ?
+            WHERE key = ?
+              AND COALESCE(display_name_ja, '') != ?
+            """,
+            (display_name, part_key, display_name),
+        )
+        changed += int(cur.rowcount or 0)
+    return changed
 
 
 def release_series(db, series_key, *, emit_world_log=True):

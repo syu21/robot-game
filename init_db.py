@@ -3,6 +3,7 @@ import sqlite3
 import time
 from balance_config import ENEMY_SEED_STATS
 from series_catalog import (
+    INSECT_PART_DISPLAY_NAME_OVERRIDES,
     PART_KEY_SERIES_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
     SERIES_DEFINITIONS,
@@ -204,6 +205,14 @@ def _apply_series_part_assignments(cur):
            )
         """
     )
+
+
+def _sync_insect_part_display_names(cur):
+    for part_key, display_name in INSECT_PART_DISPLAY_NAME_OVERRIDES.items():
+        cur.execute(
+            "UPDATE robot_parts SET display_name_ja = ? WHERE key = ?",
+            (display_name, part_key),
+        )
 
 
 def _ensure_default_normal_robot_parts(cur):
@@ -1843,6 +1852,7 @@ def main():
     _ensure_default_normal_robot_parts(cur)
     _upsert_series_rows(cur)
     _apply_series_part_assignments(cur)
+    _sync_insect_part_display_names(cur)
     rows_to_fill = cur.execute(
         """
         SELECT id, key, rarity, element, part_type

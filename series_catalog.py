@@ -102,6 +102,37 @@ SERIES_PART_SLOT_DEFS = (
     {"part_type": "LEGS", "key_prefix": "legs", "image_dir": "legs", "label_ja": "脚部"},
 )
 
+INSECT_PART_DISPLAY_NAME_OVERRIDES = {
+    "head_kuwagata": "双顎ヘッド",
+    "right_arm_kuwagata": "紅顎ブレード",
+    "left_arm_kuwagata": "顎砲クラッシャー",
+    "legs_kuwagata": "斬脚フレーム",
+    "head_bee": "針蜂ヘッド",
+    "right_arm_bee": "スティングランス",
+    "left_arm_bee": "蜂紋シールド",
+    "legs_bee": "空戦レッグ",
+    "head_butterfly": "幻蝶ヘッド",
+    "right_arm_butterfly": "幻翼ブレード",
+    "left_arm_butterfly": "幻翼シールド",
+    "legs_butterfly": "幻蝶レッグ",
+    "head_batta": "跳躍ヘッド",
+    "right_arm_batta": "跳撃ランス",
+    "left_arm_batta": "翡翠シールド",
+    "legs_batta": "跳脚フレーム",
+    "head_kabuto": "剛角ヘッド",
+    "right_arm_kabuto": "三連キャノン",
+    "left_arm_kabuto": "甲殻シールド",
+    "legs_kabuto": "重甲レッグ",
+    "head_ant": "工兵ヘッド",
+    "right_arm_ant": "重機キャノン",
+    "left_arm_ant": "工兵シールド",
+    "legs_ant": "六脚フレーム",
+    "head_scorpion": "毒蠍ヘッド",
+    "right_arm_scorpion": "毒爪クロー",
+    "left_arm_scorpion": "蠍甲シールド",
+    "legs_scorpion": "蠍脚フレーム",
+}
+
 SERIES_BONUS_DEFINITIONS = [
     {"series_key": "insect_kabuto", "pieces_required": 2, "stat_key": "def", "value": 0.02},
     {"series_key": "insect_kabuto", "pieces_required": 4, "stat_key": "hp", "value": 0.04},
@@ -175,7 +206,10 @@ for variant in SERIES_VARIANTS:
                     variant["name_ja"],
                 ),
                 "frame_type": "insect",
-                "display_name_ja": f"{variant['name_ja']}{slot['label_ja']}",
+                "display_name_ja": INSECT_PART_DISPLAY_NAME_OVERRIDES.get(
+                    key,
+                    f"{variant['name_ja']}{slot['label_ja']}",
+                ),
             }
         )
         PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]

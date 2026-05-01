@@ -66,6 +66,86 @@ class SeriesSystemTests(unittest.TestCase):
             self.assertEqual(row["max_rarity"], "N")
             self.assertEqual(int(row["can_evolve"]), 0)
 
+    def test_insect_part_display_names_match_robot_motifs(self):
+        expected = {
+            "head_kuwagata": "双顎ヘッド",
+            "right_arm_kuwagata": "紅顎ブレード",
+            "left_arm_kuwagata": "顎砲クラッシャー",
+            "legs_kuwagata": "斬脚フレーム",
+            "head_bee": "針蜂ヘッド",
+            "right_arm_bee": "スティングランス",
+            "left_arm_bee": "蜂紋シールド",
+            "legs_bee": "空戦レッグ",
+            "head_butterfly": "幻蝶ヘッド",
+            "right_arm_butterfly": "幻翼ブレード",
+            "left_arm_butterfly": "幻翼シールド",
+            "legs_butterfly": "幻蝶レッグ",
+            "head_batta": "跳躍ヘッド",
+            "right_arm_batta": "跳撃ランス",
+            "left_arm_batta": "翡翠シールド",
+            "legs_batta": "跳脚フレーム",
+            "head_kabuto": "剛角ヘッド",
+            "right_arm_kabuto": "三連キャノン",
+            "left_arm_kabuto": "甲殻シールド",
+            "legs_kabuto": "重甲レッグ",
+            "head_ant": "工兵ヘッド",
+            "right_arm_ant": "重機キャノン",
+            "left_arm_ant": "工兵シールド",
+            "legs_ant": "六脚フレーム",
+            "head_scorpion": "毒蠍ヘッド",
+            "right_arm_scorpion": "毒爪クロー",
+            "left_arm_scorpion": "蠍甲シールド",
+            "legs_scorpion": "蠍脚フレーム",
+        }
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                """
+                SELECT key, display_name_ja, series, image_path, rarity, element
+                FROM robot_parts
+                WHERE key IN ({})
+                """.format(",".join(["?"] * len(expected))),
+                tuple(expected.keys()),
+            ).fetchall()
+            self.assertEqual(len(rows), len(expected))
+            by_key = {row["key"]: row for row in rows}
+            for part_key, display_name in expected.items():
+                row = by_key[part_key]
+                self.assertEqual(row["display_name_ja"], display_name)
+                self.assertTrue(str(row["series"]).startswith("insect_"))
+                self.assertEqual(row["rarity"], "N")
+                self.assertEqual(row["element"], "NORMAL")
+                self.assertIn(part_key, row["image_path"])
+
+    def test_insect_part_display_name_sync_updates_existing_db_only_name(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            before = db.execute(
+                """
+                SELECT key, series, image_path, rarity, element
+                FROM robot_parts
+                WHERE key = 'right_arm_kabuto'
+                """
+            ).fetchone()
+            db.execute(
+                "UPDATE robot_parts SET display_name_ja = ? WHERE key = ?",
+                ("カブト右腕", "right_arm_kabuto"),
+            )
+            changed = game_app._sync_insect_part_display_names(db)
+            after = db.execute(
+                """
+                SELECT key, display_name_ja, series, image_path, rarity, element
+                FROM robot_parts
+                WHERE key = 'right_arm_kabuto'
+                """
+            ).fetchone()
+            self.assertEqual(changed, 1)
+            self.assertEqual(after["display_name_ja"], "三連キャノン")
+            self.assertEqual(after["series"], before["series"])
+            self.assertEqual(after["image_path"], before["image_path"])
+            self.assertEqual(after["rarity"], before["rarity"])
+            self.assertEqual(after["element"], before["element"])
+
     def test_series_release_gate_defaults_to_admin_only(self):
         old_bypass = game_app.app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True)
         game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
