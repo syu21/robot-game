@@ -133,6 +133,19 @@ from services.faction_war import (
     rank_factions,
     should_create_log,
 )
+from services.lab_typing import (
+    LAB_TYPING_DURATION_MS,
+    TYPING_COMMANDS,
+    TYPING_ENEMIES,
+    get_personal_best,
+    get_today_best,
+    get_typing_history,
+    get_weekly_rankings,
+    is_personal_best,
+    is_today_best,
+    save_typing_run,
+    validate_typing_result,
+)
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
     compute_part_stats,
@@ -9368,6 +9381,26 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS lab_typing_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            score INTEGER NOT NULL DEFAULT 0,
+            max_combo INTEGER NOT NULL DEFAULT 0,
+            typed_count INTEGER NOT NULL DEFAULT 0,
+            miss_count INTEGER NOT NULL DEFAULT 0,
+            defeated_count INTEGER NOT NULL DEFAULT 0,
+            boss_reached INTEGER NOT NULL DEFAULT 0,
+            boss_defeated INTEGER NOT NULL DEFAULT 0,
+            remaining_boss_hp INTEGER,
+            duration_ms INTEGER NOT NULL DEFAULT 30000,
+            client_payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_events_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at INTEGER NOT NULL,
@@ -10457,6 +10490,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_faction_created ON world_faction_logs(week_key, faction, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
@@ -31391,6 +31427,9 @@ def lab_home():
             db.execute("SELECT COUNT(*) AS c FROM lab_robot_submissions WHERE status = 'pending'").fetchone()["c"] or 0
         ),
         "race_count": int(db.execute("SELECT COUNT(*) AS c FROM lab_casino_races").fetchone()["c"] or 0),
+        "typing_run_count": int(
+            db.execute("SELECT COUNT(*) AS c FROM lab_typing_runs WHERE user_id = ?", (int(user["id"]),)).fetchone()["c"] or 0
+        ),
     }
     return render_template(
         "lab.html",
@@ -31400,6 +31439,105 @@ def lab_home():
         world_items=world_items,
         counts=counts,
         is_admin=bool(int(user["is_admin"] or 0) == 1),
+    )
+
+
+def _lab_typing_robot_view(db, user_id):
+    robot = _get_active_robot(db, int(user_id))
+    if not robot:
+        return {
+            "name": "訓練機",
+            "image_url": url_for("static", filename="assets/placeholder_player.png"),
+        }
+    image_rel = robot.get("icon_32_path") or robot.get("composed_image_path")
+    image_url = _composed_image_url(image_rel, robot.get("updated_at")) if image_rel else None
+    return {
+        "id": int(robot["id"]),
+        "name": robot.get("name") or "訓練機",
+        "image_url": image_url or url_for("static", filename="assets/placeholder_player.png"),
+    }
+
+
+@app.route("/lab/typing")
+@login_required
+def lab_typing():
+    db = get_db()
+    user_id = int(session["user_id"])
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_TYPING_START"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_typing_start",
+        payload={"mode": "typing_shooting_trial", "duration_seconds": int(LAB_TYPING_DURATION_MS / 1000)},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "lab_typing.html",
+        commands=TYPING_COMMANDS,
+        enemies=TYPING_ENEMIES,
+        duration_ms=LAB_TYPING_DURATION_MS,
+        robot_view=_lab_typing_robot_view(db, user_id),
+    )
+
+
+@app.route("/lab/typing/result", methods=["POST"])
+@login_required
+def lab_typing_result():
+    db = get_db()
+    user_id = int(session["user_id"])
+    data = request.get_json(silent=True) or {}
+    ok, error = validate_typing_result(data)
+    if not ok:
+        return jsonify({"ok": False, "error": error or "invalid_result"}), 400
+    personal_before = is_personal_best(db, user_id, int(data.get("score") or 0))
+    today_before = is_today_best(db, user_id, int(data.get("score") or 0))
+    saved = save_typing_run(db, user_id, data)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_TYPING_FINISH"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_typing_finish",
+        entity_type="lab_typing_run",
+        entity_id=int(saved["id"]),
+        payload={
+            "run_id": int(saved["id"]),
+            "score": int(saved["score"]),
+            "max_combo": int(saved["max_combo"]),
+            "typed_count": int(saved["typed_count"]),
+            "miss_count": int(saved["miss_count"]),
+            "defeated_count": int(saved["defeated_count"]),
+            "boss_reached": bool(saved["boss_reached"]),
+            "boss_defeated": bool(saved["boss_defeated"]),
+            "remaining_boss_hp": saved["remaining_boss_hp"],
+            "duration_ms": int(saved["duration_ms"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return jsonify(
+        {
+            "ok": True,
+            "run_id": int(saved["id"]),
+            "is_today_best": bool(today_before),
+            "is_personal_best": bool(personal_before),
+        }
+    )
+
+
+@app.route("/lab/typing/history")
+@login_required
+def lab_typing_history():
+    db = get_db()
+    user_id = int(session["user_id"])
+    return render_template(
+        "lab_typing_history.html",
+        today_best=get_today_best(db, user_id),
+        personal_best=get_personal_best(db, user_id),
+        recent_runs=get_typing_history(db, user_id, limit=20),
+        weekly_rankings=get_weekly_rankings(db, limit=10),
     )
 
 
@@ -36731,583 +36869,4 @@ def admin_enemy_edit(key):
         try:
             tier = int(request.form.get("tier", "1"))
             hp = int(request.form.get("hp", "1"))
-            atk = int(request.form.get("atk", "1"))
-            deff = int(request.form.get("def", "1"))
-            spd = int(request.form.get("spd", "1"))
-            acc = int(request.form.get("acc", "1"))
-            cri = int(request.form.get("cri", "1"))
-        except ValueError:
-            tier = 0
-            hp = atk = deff = spd = acc = cri = -1
-        is_active = 1 if request.form.get("is_active") == "1" else 0
-        valid_elements = {code for code, _ in ELEMENTS}
-        if not name_ja:
-            message = "表示名は必須です。"
-        elif tier not in {1, 2, 3, 4}:
-            message = "tier は 1〜4 で入力してください。"
-        elif element not in valid_elements:
-            message = "属性が不正です。"
-        elif faction not in FACTION_LABELS:
-            message = "所属が不正です。"
-        elif is_boss == 1 and boss_area_key not in AREA_BOSS_KEYS:
-            message = "ボス敵は出現エリア（layer_1/layer_2/layer_3）を指定してください。"
-        elif min(hp, atk, deff, spd, acc, cri) < 0:
-            message = "ステータスは0以上の整数で入力してください。"
-        else:
-            if is_boss == 0:
-                boss_area_key = None
-            image_path = enemy["image_path"]
-            if image and image.filename:
-                ok, err = _validate_enemy_png(image)
-                if not ok:
-                    message = err
-                else:
-                    rel = f"enemies/{enemy['key']}.png"
-                    abs_path = _static_abs(rel)
-                    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-                    img = Image.open(image.stream).convert("RGBA")
-                    img.save(abs_path, format="PNG")
-                    image.stream.seek(0)
-                    image_path = rel
-            if message is None:
-                db.execute(
-                    """
-                    UPDATE enemies
-                    SET name_ja = ?, image_path = ?, tier = ?, element = ?,
-                        hp = ?, atk = ?, def = ?, spd = ?, acc = ?, cri = ?, faction = ?, is_boss = ?, boss_area_key = ?, is_active = ?
-                    WHERE key = ?
-                    """,
-                    (name_ja, image_path, tier, element, hp, atk, deff, spd, acc, cri, faction, is_boss, boss_area_key, is_active, enemy["key"]),
-                )
-                db.commit()
-                session["message"] = "敵情報を更新しました。"
-                return redirect(url_for("admin_enemy_edit", key=enemy["key"]))
-    enemy_dict = dict(enemy)
-    enemy_dict["display_image_path"] = _enemy_image_rel(enemy_dict.get("image_path"))
-    enemy_dict["display_image_url"] = _enemy_static_url(
-        enemy_dict.get("image_path"),
-        fallback_url=url_for("static", filename="enemies/_placeholder.png"),
-    )
-    return render_template(
-        "admin_enemy_form.html",
-        mode="edit",
-        enemy=enemy_dict,
-        message=message,
-        element_options=ELEMENTS,
-        faction_options=FACTION_LABELS,
-        boss_area_options=AREA_BOSS_KEYS,
-    )
-
-
-@app.route("/admin/enemies/<string:key>/toggle_active", methods=["POST"])
-@login_required
-def admin_enemy_toggle_active(key):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT key, is_active FROM enemies WHERE key = ?", (key,)).fetchone()
-    if not row:
-        session["message"] = "対象の敵が見つかりません。"
-        return redirect(url_for("admin_enemies"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE enemies SET is_active = ? WHERE key = ?", (next_state, key))
-    db.commit()
-    session["message"] = "敵の有効状態を更新しました。"
-    return redirect(url_for("admin_enemies"))
-
-
-@app.route("/admin/parts", methods=["GET", "POST"])
-@login_required
-def admin_parts():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    element_codes = {code for code, _ in ELEMENTS}
-    show_inactive = request.args.get("show_inactive", "0") == "1"
-    edit_id_raw = (request.args.get("edit_id") or "").strip()
-    edit_id = int(edit_id_raw) if edit_id_raw.isdigit() else None
-    editing = None
-    message = None
-    if request.method == "POST":
-        edit_part_id_raw = (request.form.get("edit_part_id") or "").strip()
-        edit_part_id = int(edit_part_id_raw) if edit_part_id_raw.isdigit() else None
-        part_type = (request.form.get("part_type") or "").upper()
-        raw_key = _clean_key(request.form.get("key"))
-        key = f"{part_type.lower()}_{raw_key}" if raw_key and not raw_key.startswith(part_type.lower() + "_") else raw_key
-        rarity = (request.form.get("rarity") or "N").upper()
-        element = (request.form.get("element") or "NORMAL").upper()
-        series = (request.form.get("series") or "S1").strip() or "S1"
-        display_name_ja = (request.form.get("display_name_ja") or "").strip()
-        try:
-            offset_x = int(request.form.get("offset_x", 0))
-            offset_y = int(request.form.get("offset_y", 0))
-        except ValueError:
-            offset_x = 0
-            offset_y = 0
-        file = request.files.get("image")
-        if part_type not in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}:
-            message = "パーツ種別を選択してください。"
-        elif rarity not in RARITIES:
-            message = "レアリティが不正です。"
-        elif element not in element_codes:
-            message = "属性が不正です。"
-        elif not raw_key:
-            message = "キーを指定してください。"
-        elif not file:
-            existing = None
-            if edit_part_id is not None:
-                existing = db.execute("SELECT * FROM robot_parts WHERE id = ?", (edit_part_id,)).fetchone()
-            if existing is None:
-                existing = db.execute("SELECT * FROM robot_parts WHERE key = ?", (key,)).fetchone()
-            if existing:
-                db.execute(
-                    "UPDATE robot_parts SET part_type = ?, key = ?, rarity = ?, element = ?, series = ?, display_name_ja = ?, offset_x = ?, offset_y = ? WHERE id = ?",
-                    (part_type, key, rarity, element, series, (display_name_ja or None), offset_x, offset_y, existing["id"]),
-                )
-                _invalidate_composed_images_for_offset_change(db)
-                refresh_part_offset_cache(db)
-                db.commit()
-                message = "パーツ情報を更新しました。"
-            else:
-                message = "新規登録には画像が必要です。"
-        else:
-            ok, err, warn = _validate_png(file)
-            if not ok:
-                message = err
-            else:
-                folder = {
-                    "HEAD": "parts/head",
-                    "RIGHT_ARM": "parts/right_arm",
-                    "LEFT_ARM": "parts/left_arm",
-                    "LEGS": "parts/legs",
-                }[part_type]
-                rel_path = f"{folder}/{key}.png"
-                _save_png(file, rel_path)
-                if edit_part_id is not None:
-                    db.execute(
-                        "UPDATE robot_parts SET part_type = ?, key = ?, image_path = ?, rarity = ?, element = ?, series = ?, display_name_ja = ?, offset_x = ?, offset_y = ?, is_active = 1 WHERE id = ?",
-                        (part_type, key, rel_path, rarity, element, series, (display_name_ja or None), offset_x, offset_y, edit_part_id),
-                    )
-                else:
-                    db.execute(
-                        "INSERT INTO robot_parts (part_type, key, image_path, rarity, element, series, display_name_ja, offset_x, offset_y, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?) ON CONFLICT(key) DO UPDATE SET part_type = excluded.part_type, image_path = excluded.image_path, rarity = excluded.rarity, element = excluded.element, series = excluded.series, display_name_ja = excluded.display_name_ja, offset_x = excluded.offset_x, offset_y = excluded.offset_y, is_active = 1",
-                        (part_type, key, rel_path, rarity, element, series, (display_name_ja or None), offset_x, offset_y, int(time.time())),
-                    )
-                _invalidate_composed_images_for_offset_change(db)
-                refresh_part_offset_cache(db)
-                db.commit()
-                message = "パーツを保存しました。"
-                if warn:
-                    message += f" 注意: {warn}"
-    if show_inactive:
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-    else:
-        rows = db.execute("SELECT * FROM robot_parts WHERE is_active = 1 ORDER BY id DESC LIMIT 200").fetchall()
-    rows = [
-        {
-            **dict(r),
-            "display_name_resolved": _part_display_name_ja(r),
-            "display_name_is_fallback": (not bool((r["display_name_ja"] or "").strip())) if "display_name_ja" in r.keys() else True,
-        }
-        for r in rows
-    ]
-    if edit_id is not None:
-        editing = db.execute("SELECT * FROM robot_parts WHERE id = ?", (edit_id,)).fetchone()
-
-    return render_template(
-        "admin_parts.html",
-        rows=rows,
-        message=message,
-        show_inactive=show_inactive,
-        editing=editing,
-        rarity_options=RARITIES,
-        element_options=ELEMENTS,
-        element_labels=ELEMENT_LABEL_MAP,
-    )
-
-
-@app.route("/admin/parts/align", methods=["GET", "POST"])
-@login_required
-def admin_parts_align():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    def _default_base_key(rows, part_type):
-        candidates = [r for r in rows if r["part_type"] == part_type and int(r["is_active"] or 0) == 1]
-        if not candidates:
-            return ""
-        keyed = next((r for r in candidates if str(r["key"]).endswith("_1")), None)
-        return keyed["key"] if keyed else candidates[0]["key"]
-
-    rows = db.execute(
-        """
-        SELECT id, key, part_type, image_path, offset_x, offset_y, is_active
-        FROM robot_parts
-        ORDER BY part_type ASC, key ASC
-        """
-    ).fetchall()
-    row_by_key = {r["key"]: r for r in rows}
-    row_by_id = {int(r["id"]): r for r in rows}
-
-    selected_part_key = (request.values.get("target_part_key") or request.values.get("part_key") or "").strip()
-    part_id_raw = (request.values.get("part_id") or "").strip()
-    part_id = int(part_id_raw) if part_id_raw.isdigit() else None
-    if not selected_part_key and part_id is not None and part_id in row_by_id:
-        selected_part_key = row_by_id[part_id]["key"]
-    if not selected_part_key:
-        first_active = next((r for r in rows if int(r["is_active"] or 0) == 1), None)
-        if first_active:
-            selected_part_key = first_active["key"]
-    selected_part = row_by_key.get(selected_part_key)
-
-    base_head_key = (request.values.get("base_head") or request.values.get("base_head_key") or "").strip()
-    base_r_arm_key = (request.values.get("base_right") or request.values.get("base_r_arm_key") or "").strip()
-    base_l_arm_key = (request.values.get("base_left") or request.values.get("base_l_arm_key") or "").strip()
-    base_legs_key = (request.values.get("base_legs") or request.values.get("base_legs_key") or "").strip()
-
-    if not base_head_key:
-        base_head_key = _default_base_key(rows, "HEAD")
-    if not base_r_arm_key:
-        base_r_arm_key = _default_base_key(rows, "RIGHT_ARM")
-    if not base_l_arm_key:
-        base_l_arm_key = _default_base_key(rows, "LEFT_ARM")
-    if not base_legs_key:
-        base_legs_key = _default_base_key(rows, "LEGS")
-
-    if request.method == "POST":
-        selected_part_key = (request.form.get("target_part_key") or request.form.get("part_key") or "").strip()
-        base_head_key = (request.form.get("base_head") or request.form.get("base_head_key") or "").strip()
-        base_r_arm_key = (request.form.get("base_right") or request.form.get("base_r_arm_key") or "").strip()
-        base_l_arm_key = (request.form.get("base_left") or request.form.get("base_l_arm_key") or "").strip()
-        base_legs_key = (request.form.get("base_legs") or request.form.get("base_legs_key") or "").strip()
-        selected_part = row_by_key.get(selected_part_key)
-        if not selected_part:
-            flash("対象パーツを選択してください。", "error")
-        else:
-            try:
-                new_x = int(request.form.get("offset_x", selected_part["offset_x"]))
-                new_y = int(request.form.get("offset_y", selected_part["offset_y"]))
-            except ValueError:
-                new_x = int(selected_part["offset_x"] or 0)
-                new_y = int(selected_part["offset_y"] or 0)
-            db.execute(
-                "UPDATE robot_parts SET offset_x = ?, offset_y = ? WHERE key = ?",
-                (new_x, new_y, selected_part_key),
-            )
-            _invalidate_composed_images_for_offset_change(db)
-            refresh_part_offset_cache(db)
-            db.commit()
-            flash(f"オフセットを更新しました（{selected_part_key}: x={new_x}, y={new_y}）。", "notice")
-            return redirect(
-                url_for(
-                    "admin_parts_align",
-                    target_part_key=selected_part_key,
-                    base_head=base_head_key,
-                    base_right=base_r_arm_key,
-                    base_left=base_l_arm_key,
-                    base_legs=base_legs_key,
-                )
-            )
-
-    if selected_part:
-        if selected_part["part_type"] == "HEAD":
-            base_head_key = selected_part["key"]
-        elif selected_part["part_type"] == "RIGHT_ARM":
-            base_r_arm_key = selected_part["key"]
-        elif selected_part["part_type"] == "LEFT_ARM":
-            base_l_arm_key = selected_part["key"]
-        elif selected_part["part_type"] == "LEGS":
-            base_legs_key = selected_part["key"]
-
-    preview_parts = {
-        "HEAD": row_by_key.get(base_head_key),
-        "RIGHT_ARM": row_by_key.get(base_r_arm_key),
-        "LEFT_ARM": row_by_key.get(base_l_arm_key),
-        "LEGS": row_by_key.get(base_legs_key),
-    }
-    preview_layers = {}
-    for slot, row in preview_parts.items():
-        if row and row["image_path"]:
-            preview_layers[slot] = {
-                "key": row["key"],
-                "image_url": url_for("static", filename=f"robot_assets/{row['image_path']}"),
-                "offset_x": int(row["offset_x"] or 0),
-                "offset_y": int(row["offset_y"] or 0),
-            }
-        else:
-            preview_layers[slot] = None
-
-    options = {
-        "HEAD": [r for r in rows if r["part_type"] == "HEAD"],
-        "RIGHT_ARM": [r for r in rows if r["part_type"] == "RIGHT_ARM"],
-        "LEFT_ARM": [r for r in rows if r["part_type"] == "LEFT_ARM"],
-        "LEGS": [r for r in rows if r["part_type"] == "LEGS"],
-    }
-    part_meta = {}
-    for r in rows:
-        part_meta[r["key"]] = {
-            "part_type": r["part_type"],
-            "offset_x": int(r["offset_x"] or 0),
-            "offset_y": int(r["offset_y"] or 0),
-            "image_url": (url_for("static", filename=f"robot_assets/{r['image_path']}") if r["image_path"] else ""),
-        }
-
-    return render_template(
-        "admin_parts_align.html",
-        selected_part=selected_part,
-        preview_layers=preview_layers,
-        options=options,
-        rows=rows,
-        part_meta=part_meta,
-        base_head_key=base_head_key,
-        base_r_arm_key=base_r_arm_key,
-        base_l_arm_key=base_l_arm_key,
-        base_legs_key=base_legs_key,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_parts_toggle_active(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not row:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts"))
-    next_state = 0 if row["is_active"] == 1 else 1
-    db.execute("UPDATE robot_parts SET is_active = ? WHERE id = ?", (next_state, part_id))
-    db.commit()
-    session["message"] = "パーツ状態を更新しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/decor", methods=["GET", "POST"])
-@login_required
-def admin_decor():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    message = None
-    if request.method == "POST":
-        key = _clean_key(request.form.get("key"))
-        name_ja = (request.form.get("name_ja") or "").strip()
-        file = request.files.get("image")
-        existing = db.execute("SELECT id, image_path FROM robot_decor_assets WHERE key = ?", (key,)).fetchone() if key else None
-        if not key:
-            message = "keyを入力してください。"
-        elif not name_ja:
-            message = "表示名を入力してください。"
-        elif not file or not file.filename:
-            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
-            db.execute(
-                """
-                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                """,
-                (key, name_ja, rel_path, int(time.time())),
-            )
-            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-            db.commit()
-            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
-        else:
-            ok, err, warns = _validate_decor_png_soft(file)
-            if not ok:
-                message = err
-            else:
-                rel_path = f"decor/{key}.png"
-                _save_static_png(file, rel_path)
-                db.execute(
-                    """
-                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                    """,
-                    (key, name_ja, rel_path, int(time.time())),
-                )
-                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-                db.commit()
-                message = "装飾アセットを保存しました。"
-                if warns:
-                    message += " " + " / ".join(warns)
-    rows = db.execute(
-        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
-    ).fetchall()
-    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
-    return render_template("admin_decor.html", rows=rows, message=message)
-
-
-@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_decor_toggle_active(decor_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
-    if not row:
-        session["message"] = "対象装飾が見つかりません。"
-        return redirect(url_for("admin_decor"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
-    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-    db.commit()
-    session["message"] = "装飾の有効状態を更新しました。"
-    return redirect(url_for("admin_decor"))
-
-
-@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
-@login_required
-def admin_parts_delete(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
-        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    key = part["key"]
-    ref_counts = {
-        "inventory": db.execute(
-            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
-            (key,),
-        ).fetchone()["c"],
-        "instances": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_instance_parts
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "builds": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_builds
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "milestones": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_milestones
-            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-    }
-    if any(v > 0 for v in ref_counts.values()):
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-        message = (
-            "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+            atk = int(request.fo

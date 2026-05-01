@@ -73,6 +73,10 @@
 - `audit.lab.casino.race.start`
 - `audit.lab.casino.race.finish`
 - `audit.lab.casino.prize.claim`
+- `audit.lab.typing.start`
+  - payload は `mode=typing_shooting_trial`, `duration_seconds=30` を含める
+- `audit.lab.typing.finish`
+  - payload は `run_id`, `score`, `max_combo`, `typed_count`, `miss_count`, `defeated_count`, `boss_reached`, `boss_defeated`, `remaining_boss_hp`, `duration_ms` を含める
 
 ### 4.6 共有/招待/陣営
 - `audit.chat.post`
@@ -151,30 +155,4 @@
   - `starts_at`
   - `ends_at`
   - `duplicate_reason`
-- チャンプ系 payload は可能な範囲で以下を保持する
-  - `week_key`
-  - `champion_snapshot_id`
-  - `champion_user_id`
-  - `champion_robot_instance_id`
-  - `champion_robot_name`
-  - `champion_owner_name`
-  - `challenger_user_id`
-  - `challenger_robot_instance_id`
-  - `challenger_robot_name`
-  - `result`
-  - `turn_count`
-  - `timeout`
-  - `summary_label`
-
-## 6. 管理UI
-- `/admin/audit` で検索
-- 推奨フィルタ:
-  - `user_id`
-  - `event_type`
-  - `request_id`
-  - `after` / `before`
-
-## 7. 禁止事項
-- `audit.*` event_type の再利用による意味変更
-- 成否が曖昧な payload
-- request_id 未設定での重要操作記録
+- チャンプ系 payload は可

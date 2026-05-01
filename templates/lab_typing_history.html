@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <div class="comms-kicker">LAB RECORD</div>
+  <h1>タイピング射撃試験 記録</h1>
+  <p class="robot-part">30秒入力訓練のスコア記録です。本編の強さには影響しません。</p>
+</section>
+
+<div class="world-competition-grid">
+  <section class="panel">
+    <h2>自分の記録</h2>
+    <div class="card">
+      <h3>今日のベスト</h3>
+      {% if today_best %}
+      <p><b>{{ "{:,}".format(today_best['score']) }}</b> pt / 最大コンボ {{ today_best['max_combo'] }} / 撃破 {{ today_best['defeated_count'] }}</p>
+      {% else %}
+      <p class="robot-part">今日はまだ記録がありません。</p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>自己ベスト</h3>
+      {% if personal_best %}
+      <p><b>{{ "{:,}".format(personal_best['score']) }}</b> pt / 最大コンボ {{ personal_best['max_combo'] }} / 撃破 {{ personal_best['defeated_count'] }}</p>
+      <p class="upgrade-cost">{{ personal_best['created_at'] }}</p>
+      {% else %}
+      <p class="robot-part">まだ記録がありません。</p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>最近の試験</h3>
+      <ul class="ranking-mini">
+        {% for row in recent_runs %}
+        <li><span>{{ row['created_at'] }}</span><span>{{ "{:,}".format(row['score']) }} pt</span></li>
+        {% else %}
+        <li>まだ記録がありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>週間ランキング TOP10</h2>
+    <div class="card">
+      <ul class="ranking-mini">
+        {% for row in weekly_rankings %}
+        <li>
+          <span>{{ loop.index }}位 {{ row['display_name'] or row['username'] }}</span>
+          <span>{{ "{:,}".format(row['score']) }} pt</span>
+        </li>
+        {% else %}
+        <li>まだ週間記録がありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+</div>
+
+<p class="link"><a href="{{ url_for('lab_typing') }}">試験を開始</a> | <a href="{{ url_for('lab_home') }}">実験室トップへ</a></p>
+{% endblock %}

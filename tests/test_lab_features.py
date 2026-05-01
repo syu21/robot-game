@@ -238,6 +238,8 @@ class LabRouteTests(unittest.TestCase):
         lab_resp = client.get("/lab")
         self.assertEqual(lab_resp.status_code, 200)
         lab_html = lab_resp.get_data(as_text=True)
+        self.assertIn("タイピング射撃試験", lab_html)
+        self.assertIn("/lab/typing", lab_html)
         self.assertIn("AIロボ生成", lab_html)
         self.assertIn("研究所AIでロボを作る", lab_html)
         self.assertIn("/lab/ai-robot-generate?source=lab_top", lab_html)
@@ -274,6 +276,86 @@ class LabRouteTests(unittest.TestCase):
             self.assertEqual([item["source"] for item in payloads], ["lab_top", "lab_upload"])
             self.assertTrue(all(item["target"] == game_app.LAB_AI_ROBOT_GENERATOR_TARGET for item in payloads))
             self.assertTrue(all(item["url"] == game_app.LAB_AI_ROBOT_GENERATOR_URL for item in payloads))
+
+    def test_lab_typing_pages_and_result_save(self):
+        client = self._client()
+        play_resp = client.get("/lab/typing")
+        self.assertEqual(play_resp.status_code, 200)
+        play_html = play_resp.get_data(as_text=True)
+        self.assertIn("タイピング射撃試験", play_html)
+        self.assertIn("lab_typing.js", play_html)
+        self.assertIn("スクラップドローン", play_html)
+
+        payload = {
+            "score": 128400,
+            "max_combo": 42,
+            "typed_count": 58,
+            "miss_count": 2,
+            "defeated_count": 4,
+            "boss_reached": True,
+            "boss_defeated": False,
+            "remaining_boss_hp": 320,
+            "duration_ms": 30000,
+            "client_payload": {"version": 1},
+        }
+        result_resp = client.post("/lab/typing/result", json=payload)
+        self.assertEqual(result_resp.status_code, 200)
+        result_json = result_resp.get_json()
+        self.assertTrue(result_json["ok"])
+        self.assertGreater(int(result_json["run_id"]), 0)
+
+        history_resp = client.get("/lab/typing/history")
+        self.assertEqual(history_resp.status_code, 200)
+        history_html = history_resp.get_data(as_text=True)
+        self.assertIn("週間ランキング TOP10", history_html)
+        self.assertIn("128,400", history_html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            run = db.execute("SELECT * FROM lab_typing_runs WHERE id = ?", (result_json["run_id"],)).fetchone()
+            self.assertIsNotNone(run)
+            self.assertEqual(int(run["score"]), 128400)
+            event_types = {
+                row["event_type"]
+                for row in db.execute(
+                    "SELECT event_type FROM world_events_log WHERE event_type IN (?, ?)",
+                    (
+                        game_app.AUDIT_EVENT_TYPES["LAB_TYPING_START"],
+                        game_app.AUDIT_EVENT_TYPES["LAB_TYPING_FINISH"],
+                    ),
+                ).fetchall()
+            }
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_TYPING_START"], event_types)
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_TYPING_FINISH"], event_types)
+
+    def test_lab_typing_result_rejects_invalid_values(self):
+        client = self._client()
+        invalid_resp = client.post(
+            "/lab/typing/result",
+            json={
+                "score": 5_000_001,
+                "max_combo": 1,
+                "typed_count": 1,
+                "miss_count": 0,
+                "defeated_count": 0,
+                "duration_ms": 30000,
+            },
+        )
+        self.assertEqual(invalid_resp.status_code, 400)
+        self.assertFalse(invalid_resp.get_json()["ok"])
+
+        invalid_duration = client.post(
+            "/lab/typing/result",
+            json={
+                "score": 10,
+                "max_combo": 1,
+                "typed_count": 1,
+                "miss_count": 0,
+                "defeated_count": 0,
+                "duration_ms": 12000,
+            },
+        )
+        self.assertEqual(invalid_duration.status_code, 400)
 
     def test_lab_race_entry_creates_finished_race_and_audit_logs(self):
         client = self._client()

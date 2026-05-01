@@ -61,6 +61,8 @@ UGC拡張予定ルート:
 - `lab_casino_frames`
 - `lab_casino_prizes`
 - `lab_casino_prize_claims`
+- `lab_typing_runs`
+  - タイピング射撃試験のスコア、最大コンボ、撃破数、ボス到達/撃破を保存する
 
 ## 5. 世界ログ
 - `LAB_RACE_WIN`
@@ -79,6 +81,8 @@ UGC拡張予定ルート:
 - `audit.lab.ai_generate.click`
 - `audit.lab.race.*`
 - `audit.lab.casino.*`
+- `audit.lab.typing.start`
+- `audit.lab.typing.finish`
 
 UI 名称は `エネミーレース` に統一したが、既存 `audit.*` キーは互換維持のため継続利用する。
 

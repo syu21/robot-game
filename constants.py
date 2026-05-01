@@ -207,6 +207,8 @@ AUDIT_EVENT_TYPES = {
     "RESEARCH_BOOST_TOGGLE": "audit.research_boost.toggle",
     "LAB_SMALL_BOOST_GRANT": "audit.lab.small_boost.grant",
     "LAB_SMALL_BOOST_USE": "audit.lab.small_boost.use",
+    "LAB_TYPING_START": "audit.lab.typing.start",
+    "LAB_TYPING_FINISH": "audit.lab.typing.finish",
     "SHARE_CLICK": "audit.share.click",
     "STYLE_SNAPSHOT": "audit.style.snapshot",
     "STYLE_RANK_UP": "audit.style.rank_up",

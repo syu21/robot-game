@@ -305,6 +305,11 @@
   - `エネミーレース / AIロボ生成 / ロボ投稿 / 投稿ロボ展示 / レース記録` の導線を集約
   - `AIロボ生成` は外部の研究所AI導線を新規タブで開き、クリックを `audit.lab.ai_generate.click` に記録する
   - `今週の実験室話題` を world_events_log から表示
+- `/lab/typing`
+  - 30秒の `タイピング射撃試験` を追加
+  - 英字コマンド入力でロボが射撃し、通常敵4体撃破後にボス `タイプゼロ・コア` が出現する
+  - スコア / 最大コンボ / 入力成功 / ミス / 撃破数 / ボス到達 / ボス撃破を `lab_typing_runs` に保存する
+  - v1は報酬なし。本編の強さ、コイン、層進行、強化には影響しない
 - `/lab/race`
   - `lab_coin` を使う敵6体固定の単勝予想モード
   - 1日1回のデイリー補充、観戦ボーナス、交換所景品、予想履歴を実装
@@ -354,6 +359,7 @@
   - 週次クローズ時に `overall / explore / boss / evolve / champ / upset` MVPを保存する
 - `lab_casino_races`, `lab_casino_entries`, `lab_casino_bets`
 - `lab_casino_frames`, `lab_casino_prizes`, `lab_casino_prize_claims`
+- `lab_typing_runs`
 - `lab_races.course_payload_json`, `lab_casino_races.course_payload_json`
   - 各レースで抽選された 10 区間コースと特殊区間情報を保存
 - `world_events_log`
@@ -422,25 +428,4 @@
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。
-- 体験中は `layer_1` のみ出撃可能。敵抽選と戦闘表示は本番寄せ、報酬・コイン・一時在庫は `session["trial_state"]` に保存する。
-- 体験中の行動はユーザー、ランキング、世界ログへ永続保存しない。
-- `/parts`、`/parts/strengthen`、`/build` は体験中だけ session の一時在庫を参照し、出撃 -> 強化 -> 編成 -> 再出撃の導線を出す。
-
-## 7. 決済サンドボックス状況
-- `/support`
-  - `創設支援パック 100円` と `ラボ維持支援パック 300円` の Stripe Checkout / webhook 付与が動作
-- `/shop`
-  - `出撃ブースター 500円` (`explore_boost_14d`) の購入導線が動作
-- 付与は `success_url` ではなく `checkout.session.completed` webhook を正とする
-- 出撃CT は `admin 0秒 / 研究ブースト所持かつ自動使用ONなら1回消費でその回だけ0秒 / 課金ブースト20秒 / 新規ブースト20秒 / 通常40秒`
-  - 課金ブースト中でも研究ブーストはその回だけ優先され、なくなったら20秒へ戻る
-## 8. 中長期の非目標（現時点）
-- 早期PvP実装
-- 人口が薄い段階での直接対人主導化
-- 戦力販売
-
-## 9. リリース品質ゲート
-- `py_compile` 成功
-- 全テスト緑
-- 監査イベントの主要フロー確認
-- CT/UI整合確認
+- 体験中�

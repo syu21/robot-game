@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='lab_typing.css') }}?v={{ app_version }}" />
+
+<section class="panel lab-typing-shell">
+  <div class="comms-kicker">LAB TEST</div>
+  <h1>タイピング射撃試験</h1>
+  <p class="robot-part">コマンドを入力して、ロボに射撃命令を出そう。30秒以内に通常敵4体を撃破すると、ボスが出現します。</p>
+  <p class="upgrade-cost">この試験は記録用コンテンツです。本編の強さには影響しません。</p>
+
+  <div class="lab-typing-arena" data-lab-typing-root>
+    <div class="lab-typing-hud">
+      <div><span>残り時間</span><b data-typing-time>30.0</b></div>
+      <div><span>スコア</span><b data-typing-score>0</b></div>
+      <div><span>コンボ</span><b data-typing-combo>0</b></div>
+    </div>
+
+    <div class="lab-typing-stage">
+      <div class="lab-typing-robot-card">
+        <div class="robot-part">あなたのロボ</div>
+        <img class="lab-typing-robot" src="{{ robot_view['image_url'] }}" alt="{{ robot_view['name'] }}" />
+        <div class="robot-id">{{ robot_view['name'] }}</div>
+      </div>
+      <div class="lab-typing-shot-layer" data-typing-shot-layer></div>
+      <div class="lab-typing-enemy-card" data-typing-enemy-card>
+        <div class="robot-part" data-typing-enemy-kind>通常敵</div>
+        <h2 data-typing-enemy-name>スクラップドローン</h2>
+        <div class="lab-typing-hp-line"><span data-typing-enemy-hp>100 / 100</span></div>
+        <div class="lab-typing-hp-bar"><div data-typing-hp-fill></div></div>
+      </div>
+    </div>
+
+    <div class="lab-typing-warning" data-typing-warning hidden>警告：タイプゼロ・コア出現</div>
+
+    <div class="lab-typing-command-card">
+      <div class="robot-part">現在コマンド</div>
+      <div class="lab-typing-command" data-typing-command>FIRE</div>
+      <input class="lab-typing-input" data-typing-input type="text" inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled placeholder="STARTで入力可能" />
+      <div class="upgrade-cost">撃破数: <span data-typing-defeated>0</span> / 5　ミス: <span data-typing-miss>0</span></div>
+    </div>
+
+    <div class="lab-typing-actions">
+      <button type="button" data-typing-start>試験開始</button>
+      <a class="battle-home-link" href="{{ url_for('lab_typing_history') }}">記録を見る</a>
+      <a class="battle-home-link" href="{{ url_for('lab_home') }}">実験室へ戻る</a>
+    </div>
+
+    <div class="card lab-typing-result" data-typing-result hidden>
+      <h2>試験終了！</h2>
+      <div data-typing-result-body></div>
+      <p class="link">
+        <a href="{{ url_for('lab_typing') }}">もう一度挑戦</a> |
+        <a href="{{ url_for('lab_typing_history') }}">記録を見る</a> |
+        <a href="{{ url_for('lab_home') }}">実験室へ戻る</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<script id="lab-typing-config" type="application/json">
+{{ {"commands": commands, "enemies": enemies, "durationMs": duration_ms, "resultUrl": url_for("lab_typing_result")} | tojson }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/lab_typing.js') }}?v={{ app_version }}"></script>
+{% endblock %}

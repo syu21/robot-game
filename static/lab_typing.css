@@ -1,0 +1,210 @@
+.lab-typing-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.lab-typing-arena {
+  display: grid;
+  gap: 18px;
+}
+
+.lab-typing-hud,
+.lab-typing-stage,
+.lab-typing-actions,
+.lab-typing-result-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lab-typing-hud {
+  flex-wrap: wrap;
+}
+
+.lab-typing-hud > div {
+  min-width: 140px;
+  padding: 14px;
+  border: 1px solid rgba(80, 160, 220, 0.35);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(15, 35, 64, 0.92), rgba(15, 18, 36, 0.92));
+}
+
+.lab-typing-hud span {
+  display: block;
+  color: #9ca8bd;
+  font-size: 0.85rem;
+}
+
+.lab-typing-hud b {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.8rem;
+}
+
+.lab-typing-stage {
+  position: relative;
+  min-height: 220px;
+  padding: 20px;
+  border: 1px solid rgba(80, 160, 220, 0.35);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 20% 55%, rgba(57, 220, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 85% 45%, rgba(255, 96, 72, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(6, 18, 38, 0.96), rgba(17, 23, 48, 0.96));
+}
+
+.lab-typing-robot-card,
+.lab-typing-enemy-card {
+  width: min(42%, 360px);
+  min-height: 150px;
+  padding: 16px;
+  border: 1px solid rgba(110, 150, 210, 0.35);
+  border-radius: 18px;
+  background: rgba(9, 18, 36, 0.84);
+}
+
+.lab-typing-robot {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.lab-typing-enemy-card {
+  text-align: right;
+}
+
+.lab-typing-hp-bar {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.lab-typing-hp-bar > div {
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #31d6ff, #74ffb0);
+  transition: width 120ms ease-out;
+}
+
+.lab-typing-command-card {
+  padding: 20px;
+  border: 1px solid rgba(150, 120, 255, 0.42);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(25, 22, 58, 0.92), rgba(11, 22, 42, 0.92));
+}
+
+.lab-typing-command {
+  margin: 8px 0 12px;
+  font-size: clamp(2.4rem, 9vw, 5.4rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #f7fbff;
+  text-shadow: 0 0 24px rgba(80, 220, 255, 0.35);
+}
+
+.lab-typing-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(80, 200, 255, 0.42);
+  background: rgba(4, 12, 28, 0.95);
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.lab-typing-shot-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.typing-shot {
+  position: absolute;
+  left: 32%;
+  top: 50%;
+  width: 28px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d9fbff, #30d7ff);
+  box-shadow: 0 0 18px rgba(48, 215, 255, 0.9);
+  animation: typingShot 240ms linear forwards;
+}
+
+@keyframes typingShot {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(260px);
+    opacity: 0;
+  }
+}
+
+.enemy-hit {
+  animation: enemyHit 160ms ease-out;
+}
+
+@keyframes enemyHit {
+  0% { transform: translateX(0); }
+  35% { transform: translateX(8px); }
+  70% { transform: translateX(-4px); }
+  100% { transform: translateX(0); }
+}
+
+.is-miss .lab-typing-command-card {
+  animation: typingMiss 180ms ease-out;
+}
+
+@keyframes typingMiss {
+  0% { border-color: rgba(255, 120, 80, 0.9); }
+  100% { border-color: rgba(150, 120, 255, 0.42); }
+}
+
+.lab-typing-warning {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 170, 80, 0.6);
+  border-radius: 16px;
+  background: rgba(80, 30, 10, 0.7);
+  color: #ffd29a;
+  font-weight: 800;
+}
+
+.is-boss .lab-typing-enemy-card {
+  border-color: rgba(255, 120, 72, 0.65);
+  box-shadow: 0 0 28px rgba(255, 88, 60, 0.22);
+}
+
+.lab-typing-result-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 720px) {
+  .lab-typing-stage {
+    display: grid;
+  }
+
+  .lab-typing-robot-card,
+  .lab-typing-enemy-card {
+    width: auto;
+  }
+
+  .lab-typing-enemy-card {
+    text-align: left;
+  }
+
+  .typing-shot {
+    left: 24%;
+    top: 46%;
+  }
+}
