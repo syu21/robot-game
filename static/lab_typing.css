@@ -18,6 +18,28 @@
   gap: 12px;
 }
 
+.lab-typing-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.lab-typing-actions [data-typing-start] {
+  min-width: min(100%, 360px);
+  padding: 18px 34px;
+  border: 1px solid rgba(83, 225, 255, 0.72);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #26d8ff, #7d5cff);
+  color: #fff;
+  font-size: clamp(1.25rem, 3vw, 1.8rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 28px rgba(60, 200, 255, 0.35);
+}
+
+.lab-typing-actions [data-typing-start]:disabled {
+  opacity: 0.55;
+}
+
 .lab-typing-hud {
   flex-wrap: wrap;
 }
@@ -69,6 +91,16 @@
   height: 72px;
   object-fit: contain;
   image-rendering: auto;
+}
+
+.lab-typing-enemy {
+  display: block;
+  width: 104px;
+  height: 104px;
+  margin: 8px 0 10px auto;
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 0 18px rgba(84, 224, 255, 0.18));
 }
 
 .lab-typing-enemy-card {
@@ -201,6 +233,11 @@
 
   .lab-typing-enemy-card {
     text-align: left;
+  }
+
+  .lab-typing-enemy {
+    margin-left: 0;
+    margin-right: auto;
   }
 
   .typing-shot {

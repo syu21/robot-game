@@ -18,11 +18,11 @@ TYPING_COMMANDS = {
 }
 
 TYPING_ENEMIES = [
-    {"key": "scrap_drone", "name": "スクラップドローン", "hp": 100, "score_multiplier": 1.0, "kind": "normal"},
-    {"key": "bolt_bug", "name": "ボルトバグ", "hp": 160, "score_multiplier": 1.0, "kind": "normal"},
-    {"key": "guard_mech", "name": "ガードメック", "hp": 240, "score_multiplier": 1.0, "kind": "normal"},
-    {"key": "mirage_bit", "name": "ミラージュビット", "hp": 360, "score_multiplier": 1.5, "kind": "normal"},
-    {"key": "type_zero_core", "name": "タイプゼロ・コア", "hp": 1000, "score_multiplier": 3.0, "kind": "boss"},
+    {"key": "scrap_drone", "name": "スクラップドローン", "hp": 100, "score_multiplier": 1.0, "kind": "normal", "image_path": "enemies/enemy1.png"},
+    {"key": "bolt_bug", "name": "ボルトバグ", "hp": 160, "score_multiplier": 1.0, "kind": "normal", "image_path": "enemies/enemy2.png"},
+    {"key": "guard_mech", "name": "ガードメック", "hp": 240, "score_multiplier": 1.0, "kind": "normal", "image_path": "enemies/enemy3.png"},
+    {"key": "mirage_bit", "name": "ミラージュビット", "hp": 360, "score_multiplier": 1.5, "kind": "normal", "image_path": "enemies/enemy4.png"},
+    {"key": "type_zero_core", "name": "タイプゼロ・コア", "hp": 1000, "score_multiplier": 3.0, "kind": "boss", "image_path": "enemies/boss/boss_4_final_ark_zero.png"},
 ]
 
 

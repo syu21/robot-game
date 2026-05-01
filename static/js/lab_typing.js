@@ -8,6 +8,7 @@
   const enemies = config.enemies || [];
   const durationMs = Number(config.durationMs || 30000);
   const resultUrl = String(config.resultUrl || "");
+  const staticBaseUrl = String(config.staticBaseUrl || "/static/");
 
   const $ = (selector) => root.querySelector(selector);
   const els = {
@@ -20,6 +21,7 @@
     enemyCard: $("[data-typing-enemy-card]"),
     enemyName: $("[data-typing-enemy-name]"),
     enemyKind: $("[data-typing-enemy-kind]"),
+    enemyImage: $("[data-typing-enemy-image]"),
     enemyHp: $("[data-typing-enemy-hp]"),
     hpFill: $("[data-typing-hp-fill]"),
     defeated: $("[data-typing-defeated]"),
@@ -106,6 +108,11 @@
     return Number(value || 0).toLocaleString("ja-JP");
   }
 
+  function staticUrl(path) {
+    const cleanPath = String(path || "enemies/_placeholder.png").replace(/^\/+/, "");
+    return `${staticBaseUrl}${cleanPath}`;
+  }
+
   function render() {
     const enemy = currentEnemy();
     const maxHp = Number(enemy.hp || 1);
@@ -116,6 +123,10 @@
     els.command.textContent = state.currentCommand || "-";
     els.enemyName.textContent = enemy.name || "-";
     els.enemyKind.textContent = enemy.kind === "boss" ? "ボス" : "通常敵";
+    if (els.enemyImage) {
+      els.enemyImage.src = staticUrl(enemy.image_path);
+      els.enemyImage.alt = enemy.name || "敵";
+    }
     els.enemyHp.textContent = `${hp} / ${maxHp}`;
     els.hpFill.style.width = `${Math.max(0, Math.min(100, (hp / maxHp) * 100))}%`;
     els.defeated.textContent = String(state.defeatedCount);

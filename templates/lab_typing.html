@@ -5,8 +5,7 @@
 <section class="panel lab-typing-shell">
   <div class="comms-kicker">LAB TEST</div>
   <h1>タイピング射撃試験</h1>
-  <p class="robot-part">コマンドを入力して、ロボに射撃命令を出そう。30秒以内に通常敵4体を撃破すると、ボスが出現します。</p>
-  <p class="upgrade-cost">この試験は記録用コンテンツです。本編の強さには影響しません。</p>
+  <p class="robot-part">英数入力に切り替えてから開始してください。表示されたコマンドを入力すると、ロボが射撃します。</p>
 
   <div class="lab-typing-arena" data-lab-typing-root>
     <div class="lab-typing-hud">
@@ -24,6 +23,7 @@
       <div class="lab-typing-shot-layer" data-typing-shot-layer></div>
       <div class="lab-typing-enemy-card" data-typing-enemy-card>
         <div class="robot-part" data-typing-enemy-kind>通常敵</div>
+        <img class="lab-typing-enemy" data-typing-enemy-image src="{{ url_for('static', filename=enemies[0].get('image_path', 'enemies/_placeholder.png')) }}" alt="スクラップドローン" />
         <h2 data-typing-enemy-name>スクラップドローン</h2>
         <div class="lab-typing-hp-line"><span data-typing-enemy-hp>100 / 100</span></div>
         <div class="lab-typing-hp-bar"><div data-typing-hp-fill></div></div>
@@ -35,7 +35,7 @@
     <div class="lab-typing-command-card">
       <div class="robot-part">現在コマンド</div>
       <div class="lab-typing-command" data-typing-command>FIRE</div>
-      <input class="lab-typing-input" data-typing-input type="text" inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false" disabled placeholder="STARTで入力可能" />
+      <input class="lab-typing-input" data-typing-input type="text" inputmode="latin" autocomplete="off" autocapitalize="characters" enterkeyhint="done" spellcheck="false" disabled placeholder="STARTで入力可能" />
       <div class="upgrade-cost">撃破数: <span data-typing-defeated>0</span> / 5　ミス: <span data-typing-miss>0</span></div>
     </div>
 
@@ -58,7 +58,7 @@
 </section>
 
 <script id="lab-typing-config" type="application/json">
-{{ {"commands": commands, "enemies": enemies, "durationMs": duration_ms, "resultUrl": url_for("lab_typing_result")} | tojson }}
+{{ {"commands": commands, "enemies": enemies, "durationMs": duration_ms, "resultUrl": url_for("lab_typing_result"), "staticBaseUrl": url_for("static", filename="")} | tojson }}
 </script>
 {% endblock %}
 
