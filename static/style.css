@@ -12022,7 +12022,8 @@ body#page-world .world-competition-grid {
   color: #a7f3d0;
   font-weight: 800;
 }
-.lab-level-card .card {
+.lab-level-card .card,
+.card.lab-level-card {
   border-color: rgba(94, 234, 212, 0.28);
   background: linear-gradient(135deg, rgba(8, 47, 73, 0.28), rgba(15, 23, 42, 0.9));
 }
@@ -12075,6 +12076,44 @@ body#page-world .world-competition-grid {
   color: #a5f3fc;
   font-weight: 900;
 }
+.robot-overview-row {
+  grid-template-columns: 1fr !important;
+}
+.robot-overview-card {
+  display: grid;
+  gap: 8px;
+}
+.robot-overview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: rgba(226, 232, 240, 0.82);
+  font-weight: 800;
+}
+.robot-overview-meta span {
+  padding: 4px 8px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.36);
+}
+.home-robot-details {
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.18);
+}
+.home-robot-details > summary,
+.home-spotlight-tab > summary {
+  cursor: pointer;
+  color: #a5f3fc;
+  font-weight: 900;
+}
+.home-robot-details > .main-robot-meta-grid {
+  margin-top: 10px;
+}
+.home-spotlight-tab {
+  margin-top: 10px;
+}
 @media (max-width: 768px) {
   .home-today-progress-grid {
     gap: 8px;
@@ -12098,4 +12137,22 @@ body#page-world .world-competition-grid {
     grid-template-columns: 38px minmax(64px, 1fr) 26px;
     gap: 6px;
   }
+  .home-priority-stack {
+    display: flex;
+  }
+  .home-layout-grid,
+  .home-main-stack,
+  .home-right-stack {
+    display: contents;
+  }
+  .home-current-robot { order: 1; }
+  .home-actions-panel { order: 2; }
+  .home-mvp-panel { order: 6; }
+  .home-champion-panel { order: 6; }
+  .home-comms-panel { order: 7; }
+  .home-weekly-panel { order: 8; }
+  .home-faction-panel { order: 9; }
+  .home-nav-panel { order: 10; }
+  .home-ranking-panel { order: 11; }
+  .home-visibility-panel { order: 12; }
 }

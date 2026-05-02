@@ -20,7 +20,95 @@
 </section>
 {% endif %}
 <div class="home-priority-stack">
-{% if home_primary_explore_cta %}
+{% if show_next_action_card and next_action_card %}
+<div class="panel home-explore-card">
+  <div class="card next-action-card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">NEXT ACTION</div>
+        <div><b>{{ next_action_card['title'] }}</b></div>
+      </div>
+      {% if home_next_action_force_open %}
+      <div class="home-explore-status">{% if boss_alert_status %}警報中{% else %}優先表示{% endif %}</div>
+      {% endif %}
+    </div>
+    {% if home_next_action_force_open %}
+    <div class="upgrade-cost">{% if boss_alert_status %}ボス警報中は自動表示されます。{% else %}今やることを迷わないよう、自動表示しています。{% endif %}</div>
+    {% endif %}
+    <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
+    {% if home_primary_explore_cta %}
+    <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
+    {% endif %}
+    <div class="home-inline-actions">
+      {% if next_action_card['is_post'] %}
+      <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
+        {% if next_action_card['area_key'] %}
+        <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
+        {% endif %}
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        {% if next_action_card['boss_enter'] %}
+        <input type="hidden" name="boss_enter" value="1" />
+        {% endif %}
+        <button
+          type="submit"
+          class="home-primary-explore-cta"
+          data-explore-cta="1"
+          {% if home_primary_explore_cta and home_primary_explore_cta['disabled'] %}disabled{% endif %}
+        >{{ next_action_card['cta_label'] }}</button>
+      </form>
+      {% else %}
+      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
+      {% endif %}
+      {% for action in next_action_card.get('secondary_actions', []) %}
+        {% if action.get('is_post') %}
+        <form method="post" action="{{ action['url'] }}" class="inline-form inline-form-top">
+          {% if action.get('area_key') %}
+          <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
+          {% endif %}
+          {% if explore_submission_id %}
+          <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+          {% endif %}
+          {% if action.get('boss_enter') %}
+          <input type="hidden" name="boss_enter" value="1" />
+          {% endif %}
+          <button type="submit" class="btn-secondary">{{ action['label'] }}</button>
+        </form>
+        {% else %}
+        <p class="link"><a class="battle-home-link" href="{{ action['url'] }}">{{ action['label'] }}</a></p>
+        {% endif %}
+      {% endfor %}
+      {% if home_primary_explore_cta and home_primary_explore_cta['title'] == '前回の出撃先' %}
+      <div class="home-explore-context">{{ home_primary_explore_cta['title'] }}</div>
+      <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
+        {% if home_primary_explore_cta['area_key'] %}
+        <input type="hidden" name="area_key" value="{{ home_primary_explore_cta['area_key'] }}" />
+        {% endif %}
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        {% if home_primary_explore_cta['boss_enter'] %}
+        <input type="hidden" name="boss_enter" value="1" />
+        {% endif %}
+        <button
+          type="submit"
+          class="btn-secondary home-primary-explore-cta"
+          data-explore-cta="1"
+          {% if home_primary_explore_cta['disabled'] %}disabled{% endif %}
+        >{{ home_primary_explore_cta['button_current_label'] }}</button>
+      </form>
+      {% endif %}
+      {% if not home_next_action_force_open %}
+      <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="next" value="{{ request.path }}" />
+        <button type="submit" class="btn-secondary">たたむ</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% elif home_primary_explore_cta %}
 <div class="panel home-explore-card">
   <div class="card">
     <div class="home-explore-card-head">
@@ -57,26 +145,6 @@
     {% if home_primary_explore_cta['show_map_link'] %}
     <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">{{ home_primary_explore_cta['map_link_label'] }}</a></p>
     {% endif %}
-  </div>
-</div>
-{% endif %}
-{% if home_lab_level %}
-<div class="panel lab-level-card">
-  <div class="card">
-    <div class="lab-level-head">
-      <div>
-        <div class="home-explore-kicker">研究進行</div>
-        <div class="lab-level-main">らぼLv.{{ home_lab_level['level'] }}</div>
-      </div>
-      <div class="lab-level-rank">{{ home_lab_level['rank_label'] }}</div>
-    </div>
-    <div class="lab-level-bar" aria-label="らぼLv進捗">
-      <div class="lab-level-bar-fill" style="width: {{ home_lab_level['progress_pct'] }}%"></div>
-    </div>
-    <div class="lab-level-foot">
-      <span>次のLvまで {{ home_lab_level['exp_to_next'] }} EXP</span>
-      <span>出撃・強化・進化で研究が進みます</span>
-    </div>
   </div>
 </div>
 {% endif %}
@@ -256,8 +324,8 @@
             {% else %}
             </a>
             {% endif %}
-            <div class="robot-info-row">
-              <div class="stat-card robot-name-card">
+            <div class="robot-info-row robot-overview-row">
+              <div class="stat-card robot-name-card robot-overview-card">
                 <div class="stat-label">ロボ名</div>
                 {% if trial_mode %}
                 <div class="stat-value stat-small">{{ main_robot['name'] or '無名ロボ' }}</div>
@@ -267,12 +335,12 @@
                 {% if idle_line %}
                 <div class="robot-idle-line">{{ idle_line }}</div>
                 {% endif %}
-              </div>
-              <div class="stat-card robot-personality-card">
-                <div class="stat-label">性格</div>
-                <div class="stat-value stat-small">
+                <div class="robot-overview-meta">
                   {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'analyst' %}
-                  {{ personality_labels.get(p, p) }}
+                  <span>性格: {{ personality_labels.get(p, p) }}</span>
+                  <span>思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</span>
+                  <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
+                  <span>勝利: {{ user['wins'] }}</span>
                 </div>
               </div>
             </div>
@@ -285,6 +353,8 @@
             <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
           </div>
+          <details class="home-robot-details">
+            <summary>詳細を見る</summary>
           <div class="main-robot-meta-grid">
             {% if style_achievements %}
             <div class="stat-card stat-card-full main-robot-achievements">
@@ -332,6 +402,7 @@
             </div>
             <div class="upgrade-cost">パーツ在庫: 所持 {{ part_inventory_count }} / {{ limits['part_inventory'] }}</div>
           </div>
+          </details>
         </div>
       {% else %}
         <div class="card">
@@ -341,9 +412,11 @@
       {% endif %}
     </section>
     {% if not trial_mode %}
-    <section class="panel home-mvp-panel">
+    <section class="panel home-mvp-panel home-spotlight-panel">
       <div class="world-env-card mvp-hero-card">
-        <div><b>今週のMVP</b></div>
+        <div><b>注目ロボ</b></div>
+        <details class="home-spotlight-tab" open>
+          <summary>今週のMVP</summary>
         {% if weekly_mvp %}
         <div class="presence-user-line user-signal user-signal-hero is-podium">
           {{ render_user_chip(weekly_mvp, 'mvp', weekly_mvp['username'] ~ ' robot', 'lazy', true) }}
@@ -364,12 +437,10 @@
         {% else %}
         <div>まだ集計対象がありません。</div>
         {% endif %}
-      </div>
-    </section>
-    {% if show_weekly_champion %}
-    <section class="panel home-champion-panel">
-      <div class="world-env-card mvp-hero-card champion-hero-card">
-        <div><b>今週のチャンプ機体</b></div>
+        </details>
+        {% if show_weekly_champion %}
+        <details class="home-spotlight-tab">
+          <summary>今週のチャンプ機体</summary>
         {% if weekly_champion %}
         <div class="upgrade-cost">{{ weekly_champion.get('reason_label', '今週の注目機体') }}</div>
         <div class="presence-user-line user-signal user-signal-hero">
@@ -422,9 +493,10 @@
           <a class="battle-home-link" href="{{ url_for('ranking', metric='weekly_explores') }}">週間ランキングを見る</a>
         </div>
         {% endif %}
+        </details>
+        {% endif %}
       </div>
     </section>
-    {% endif %}
     {% endif %}
     {% if not trial_mode %}
     <section
@@ -463,7 +535,7 @@
             <input type="text" name="message" maxlength="{{ home_comm_world_settings['max_chars'] }}" placeholder="世界ログへひとこと投稿" required />
             <button type="submit">投稿</button>
           </form>
-          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="3">
             {% for item in home_comm_world_items %}
               {% if item['timeline_type'] == 'system' %}
                 {% set c = item['card'] %}
@@ -501,6 +573,7 @@
             <div class="home-mini-log-empty">まだ通信ログがありません。</div>
             {% endfor %}
           </div>
+          <div class="link"><a href="{{ url_for('comms_world') }}">通信をもっと見る</a></div>
         </section>
 
         <section
@@ -545,10 +618,10 @@
             <form method="post" action="{{ url_for('comms_rooms') }}" class="post-form comms-room-form home-room-form" data-home-comms-submit="1">
               <input type="hidden" name="next" value="{{ url_for('home') }}#home-comms-rooms-{{ room['key'] }}" />
               <input type="hidden" name="room_key" value="{{ room['key'] }}" />
-              <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="3" placeholder="{{ room['title'] }}に投稿する" required></textarea>
+              <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="1" placeholder="{{ room['title'] }}に投稿する" required></textarea>
               <button type="submit">投稿</button>
             </form>
-            <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+            <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="3">
               {% for item in room_items %}
               <article class="card home-comms-item comms-message-card">
                 <div class="comms-message-head">
@@ -567,6 +640,7 @@
               <div class="home-mini-log-empty">まだこの部屋には投稿がありません。</div>
               {% endfor %}
             </div>
+            <div class="link"><a href="{{ url_for('comms_rooms', room=room['key']) }}">通信をもっと見る</a></div>
           </div>
           {% endfor %}
         </section>
@@ -583,6 +657,7 @@
           <div class="card comms-placeholder-card">
             <div class="comms-status-badge is-muted">準備中</div>
             <div class="feed-text">陣営通信は次段階で開放します。いまは世界ログと会議室から交流できます。</div>
+            <div class="link"><a href="{{ url_for('comms_faction') }}">陣営通信を見る</a></div>
           </div>
         </section>
 
@@ -598,7 +673,7 @@
           <div class="home-comms-toolbar">
             <div class="home-mini-log-time">あなたのロボの成長や出来事がここに残ります。</div>
           </div>
-          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="5">
+          <div class="home-comms-list" data-home-comms-scroll-list="1" data-home-comms-max-visible="3">
             {% for item in home_comm_personal_items %}
             <article class="card feed-card home-comms-item comms-personal-card feed-card-{{ item['accent'] }}">
               <div class="feed-kicker-row">
@@ -614,6 +689,7 @@
             <div class="home-mini-log-empty">まだ個人ログに表示できる出来事がありません。</div>
             {% endfor %}
           </div>
+          <div class="link"><a href="{{ url_for('comms_personal') }}">通信をもっと見る</a></div>
         </section>
       </div>
     </section>
@@ -624,57 +700,6 @@
     <section class="panel home-actions-panel">
     <h2>アクション</h2>
     <div class="upgrade-cost">現在解放層: 第{{ max_unlocked_layer }}層</div>
-    {% if show_next_action_card and next_action_card %}
-      <div class="card next-action-card">
-        <div><b>{{ next_action_card['title'] }}</b></div>
-        {% if home_next_action_force_open %}
-        <div class="upgrade-cost">{% if boss_alert_status %}ボス警報中は自動表示されます。{% else %}今やることを迷わないよう、自動表示しています。{% endif %}</div>
-        {% endif %}
-        <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
-        <div class="home-inline-actions">
-          {% if next_action_card['is_post'] %}
-          <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
-            {% if next_action_card['area_key'] %}
-            <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
-            {% endif %}
-            {% if explore_submission_id %}
-            <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-            {% endif %}
-            {% if next_action_card['boss_enter'] %}
-            <input type="hidden" name="boss_enter" value="1" />
-            {% endif %}
-            <button type="submit">{{ next_action_card['cta_label'] }}</button>
-          </form>
-          {% else %}
-          <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
-          {% endif %}
-          {% for action in next_action_card.get('secondary_actions', []) %}
-            {% if action.get('is_post') %}
-            <form method="post" action="{{ action['url'] }}" class="inline-form inline-form-top">
-              {% if action.get('area_key') %}
-              <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
-              {% endif %}
-              {% if explore_submission_id %}
-              <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-              {% endif %}
-              {% if action.get('boss_enter') %}
-              <input type="hidden" name="boss_enter" value="1" />
-              {% endif %}
-              <button type="submit" class="btn-secondary">{{ action['label'] }}</button>
-            </form>
-            {% else %}
-            <p class="link"><a class="battle-home-link" href="{{ action['url'] }}">{{ action['label'] }}</a></p>
-            {% endif %}
-          {% endfor %}
-          {% if not home_next_action_force_open %}
-          <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
-            <input type="hidden" name="next" value="{{ request.path }}" />
-            <button type="submit" class="btn-secondary">たたむ</button>
-          </form>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
     <div class="card home-today-progress-card">
       <div class="home-today-progress-head">
         <div>
@@ -702,9 +727,28 @@
       <div class="home-today-progress-foot">
         <span>勝利 {{ today_progress['win_count'] }}</span>
         <span>獲得コイン +{{ today_progress['coin_total'] }}</span>
+        <span>研究進捗 stage {{ research_summary['unlocked_stage'] }} / 4</span>
       </div>
       {% endif %}
     </div>
+    {% if home_lab_level %}
+    <div class="card lab-level-card">
+      <div class="lab-level-head">
+        <div>
+          <div class="home-explore-kicker">研究進行</div>
+          <div class="lab-level-main">らぼLv.{{ home_lab_level['level'] }}</div>
+        </div>
+        <div class="lab-level-rank">{{ home_lab_level['rank_label'] }}</div>
+      </div>
+      <div class="lab-level-bar" aria-label="らぼLv進捗">
+        <div class="lab-level-bar-fill" style="width: {{ home_lab_level['progress_pct'] }}%"></div>
+      </div>
+      <div class="lab-level-foot">
+        <span>次のLvまで {{ home_lab_level['exp_to_next'] }} EXP</span>
+        <span>出撃・強化・進化で研究が進みます</span>
+      </div>
+    </div>
+    {% endif %}
     {% if has_any_robot %}
       <form method="post" action="{{ url_for('explore') }}" class="inline-form home-explore-utility-form">
         <label>出撃先:</label>
@@ -752,25 +796,6 @@
       {% endif %}
       {% if not trial_mode %}
       <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
-      {% endif %}
-      {% if home_area_cards %}
-      <div class="home-nav-section-title">探索先メモ</div>
-      <div class="home-area-card-grid">
-        {% for area_card in home_area_cards %}
-        <div class="card home-area-card{% if area_card['key'] == selected_explore_area_key %} is-selected{% endif %}">
-          <div><b>{{ area_card['label'] }}</b></div>
-          {% if area_card.get('desc_line') %}
-          <div class="upgrade-cost">{{ area_card['desc_line'] }}</div>
-          {% endif %}
-          {% if area_card.get('recommend_line') %}
-          <div class="robot-part">{{ area_card['recommend_line'] }}</div>
-          {% endif %}
-          {% if area_card.get('tendency_line') %}
-          <div class="robot-part">{{ area_card['tendency_line'] }}</div>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
       {% endif %}
     {% endif %}
       <div class="home-nav-section-title">育成</div>
@@ -888,19 +913,13 @@
 
     {% if not home_beginner_focus %}
     <section class="panel home-nav-panel">
-      <h2>メニュー</h2>
-      <div class="home-nav-section-title">リンク</div>
+      <h2>リンク</h2>
       <div class="home-nav-grid home-nav-links">
         {% if show_lab_menu %}
         <a class="action-card home-nav-card" href="{{ url_for('lab_home') }}"><div class="action-title">実験室</div><div class="action-desc">研究機体と遊ぶ</div></a>
         {% endif %}
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
-      </div>
-      <div class="home-nav-section-title">進捗</div>
-      <div class="home-nav-grid home-nav-progress">
-        <a class="action-card home-nav-card" href="{{ url_for('progress_view') }}"><div class="action-title">今日の進捗</div><div class="action-desc">探索 {{ today_progress['explore_count'] }} / 戦闘力 {{ today_progress['power_gain_text'] }}</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('research_view') }}"><div class="action-title">研究進捗</div><div class="action-desc">stage {{ research_summary['unlocked_stage'] }} / 4</div></a>
       </div>
     </section>
     {% endif %}

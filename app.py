@@ -276,7 +276,7 @@ ROBOT_MAINTENANCE_SLOT_DEFS = (
     {"slot": "DECOR", "slot_key": "decor", "label": "装飾", "part_type": None, "instance_col": None, "key_col": None},
 )
 ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY = {item["slot"]: item for item in ROBOT_MAINTENANCE_SLOT_DEFS}
-HOME_COMM_PREVIEW_LIMIT = 12
+HOME_COMM_PREVIEW_LIMIT = 3
 COMM_ROOM_DEFS = (
     {
         "key": "global_room",
@@ -24974,7 +24974,7 @@ def home():
     home_ranking_rows, home_ranking_metric = _ranking_rows(
         db,
         "weekly_explores",
-        limit=5,
+        limit=3,
         week_key=week_key,
     )
     if home_ranking_rows:

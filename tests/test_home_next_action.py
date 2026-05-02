@@ -728,7 +728,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn('data-home-comms-room-button="beginner_room"', html)
         self.assertIn('data-home-comms-room-button="feedback_room"', html)
         self.assertIn('data-home-comms-scroll-list="1"', html)
-        self.assertIn('data-home-comms-max-visible="5"', html)
+        self.assertIn('data-home-comms-max-visible="3"', html)
         self.assertIn("世界の動きや、他のロボ使いの声がここに流れます。", html)
         self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
         self.assertIn("フィードバック", html)
@@ -749,7 +749,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn('data-presence-state="active"', html)
         self.assertNotIn("?comm_tab=", html)
 
-    def test_home_shows_area_feature_cards_for_unlocked_areas(self):
+    def test_home_hides_area_feature_cards_and_links_to_map(self):
         self._create_active_robot()
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -759,10 +759,11 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("探索先メモ", html)
-        self.assertIn("旧整備通路。最も安定した探索ルート。", html)
-        self.assertIn("放電ノイズ帯。tier1/2が混在する中間層。", html)
-        self.assertIn("推奨: 基本ステ確認と初期ドロップ回収。", html)
+        self.assertNotIn("探索先メモ", html)
+        self.assertNotIn("旧整備通路。最も安定した探索ルート。", html)
+        self.assertNotIn("放電ノイズ帯。tier1/2が混在する中間層。", html)
+        self.assertNotIn("推奨: 基本ステ確認と初期ドロップ回収。", html)
+        self.assertIn("マップへ（出撃先一覧）", html)
 
     def test_home_hides_evolution_actions_until_layer2_boss_defeat(self):
         self._create_active_robot()
