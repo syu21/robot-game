@@ -209,6 +209,9 @@ AUDIT_EVENT_TYPES = {
     "LAB_SMALL_BOOST_USE": "audit.lab.small_boost.use",
     "LAB_TYPING_START": "audit.lab.typing.start",
     "LAB_TYPING_FINISH": "audit.lab.typing.finish",
+    "LAB_LEVEL_EXP_GAIN": "audit.lab_level.exp_gain",
+    "LAB_LEVEL_LEVEL_UP": "audit.lab_level.level_up",
+    "LAB_LEVEL_MILESTONE": "LAB_LEVEL_MILESTONE",
     "SHARE_CLICK": "audit.share.click",
     "STYLE_SNAPSHOT": "audit.style.snapshot",
     "STYLE_RANK_UP": "audit.style.rank_up",
@@ -248,7 +251,4 @@ AUDIT_EVENT_TYPES = {
     "MARKET_BUY": "audit.market.buy",
     "MARKET_REFRESH": "audit.market.refresh",
     "MARKET_DAILY_GENERATE": "audit.market.daily_generate",
-    "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change",
-    "TUTORIAL_LAYER1_FORCED_BOSS": "audit.tutorial.layer1.forced_boss",
-    "TUTORIAL_LAYER1_BOSS_FAIL_GUIDED": "audit.tutorial.layer1.boss_fail_guided",
-}
+    "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change"

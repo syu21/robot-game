@@ -60,6 +60,26 @@
   </div>
 </div>
 {% endif %}
+{% if home_lab_level %}
+<div class="panel lab-level-card">
+  <div class="card">
+    <div class="lab-level-head">
+      <div>
+        <div class="home-explore-kicker">研究進行</div>
+        <div class="lab-level-main">らぼLv.{{ home_lab_level['level'] }}</div>
+      </div>
+      <div class="lab-level-rank">{{ home_lab_level['rank_label'] }}</div>
+    </div>
+    <div class="lab-level-bar" aria-label="らぼLv進捗">
+      <div class="lab-level-bar-fill" style="width: {{ home_lab_level['progress_pct'] }}%"></div>
+    </div>
+    <div class="lab-level-foot">
+      <span>次のLvまで {{ home_lab_level['exp_to_next'] }} EXP</span>
+      <span>出撃・強化・進化で研究が進みます</span>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% if show_beginner_mission %}
 <div class="panel beginner-mission-panel">
   <div class="card">
@@ -938,6 +958,4 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-homefix1"></script>
-<script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-homefix1"

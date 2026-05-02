@@ -64,6 +64,7 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.archetype import compute_archetype
+from services.lab_level import get_lab_rank_label, grant_lab_exp, lab_level_view
 from services.presence import get_presence_count, get_recent_home_robot_presence, get_recent_presence, touch_presence
 from services.robot_titles import (
     ensure_robot_title_system,
@@ -8812,6 +8813,16 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
     if added_lab_coin_converted_at:
         db.execute("ALTER TABLE users ADD COLUMN lab_coin_converted_at INTEGER NOT NULL DEFAULT 0")
+    if "lab_level" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_level INTEGER NOT NULL DEFAULT 1")
+    if "lab_exp" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_exp INTEGER NOT NULL DEFAULT 0")
+    if "lab_total_exp" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_total_exp INTEGER NOT NULL DEFAULT 0")
+    if "lab_rank_label" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_rank_label TEXT NOT NULL DEFAULT '見習い研究員'")
+    if "lab_level_updated_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN lab_level_updated_at TEXT")
     if "market_refresh_count_today" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN market_refresh_count_today INTEGER NOT NULL DEFAULT 0")
     if "market_free_refresh_used_at" not in cols:
@@ -8902,6 +8913,10 @@ def ensure_schema(db):
         (_now_ts(),),
     )
     db.execute("UPDATE users SET lab_coin = 0 WHERE lab_coin IS NULL OR lab_coin < 0")
+    db.execute("UPDATE users SET lab_level = 1 WHERE lab_level IS NULL OR lab_level < 1")
+    db.execute("UPDATE users SET lab_exp = 0 WHERE lab_exp IS NULL OR lab_exp < 0")
+    db.execute("UPDATE users SET lab_total_exp = 0 WHERE lab_total_exp IS NULL OR lab_total_exp < 0")
+    db.execute("UPDATE users SET lab_rank_label = '見習い研究員' WHERE lab_rank_label IS NULL OR TRIM(lab_rank_label) = ''")
     db.execute("UPDATE users SET market_refresh_count_today = 0 WHERE market_refresh_count_today IS NULL OR market_refresh_count_today < 0")
     db.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     user_rows = db.execute("SELECT id FROM users WHERE invite_code IS NULL OR TRIM(invite_code) = ''").fetchall()
@@ -9397,6 +9412,25 @@ def ensure_schema(db):
             client_payload_json TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_lab_exp_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action_key TEXT NOT NULL,
+            exp_delta INTEGER NOT NULL,
+            lab_level_before INTEGER NOT NULL,
+            lab_level_after INTEGER NOT NULL,
+            lab_exp_before INTEGER NOT NULL,
+            lab_exp_after INTEGER NOT NULL,
+            lab_total_exp_after INTEGER NOT NULL,
+            source_entity_type TEXT,
+            source_entity_id INTEGER,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -10494,6 +10528,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_user_created ON user_lab_exp_events(user_id, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_action_created ON user_lab_exp_events(action_key, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
@@ -19374,9 +19410,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER"},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER"}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -19391,6 +19427,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "CHAMP_DEFEAT_UPSET",
     "STYLE_RANK_UP",
     "STYLE_MASTER",
+    AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"],
     *LAB_WORLD_EVENT_TYPES,
 }
 WORLD_LOG_RANKING_METRICS = (
@@ -19422,6 +19459,8 @@ PERSONAL_LOG_EVENT_TYPES = (
     AUDIT_EVENT_TYPES["REFERRAL_QUALIFIED"],
     AUDIT_EVENT_TYPES["CORE_GUARANTEE"],
     AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
+    AUDIT_EVENT_TYPES["LAB_LEVEL_EXP_GAIN"],
+    AUDIT_EVENT_TYPES["LAB_LEVEL_LEVEL_UP"],
 )
 
 
@@ -19556,6 +19595,15 @@ def _feed_card_from_event(db, row):
         robot_instance_id = int(payload.get("robot_instance_id") or 0)
         if robot_instance_id > 0:
             card["link_url"] = url_for("robot_detail", instance_id=robot_instance_id)
+    elif event_type == AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]:
+        actor_label = card["user_label"]
+        level = int(payload.get("milestone_level") or payload.get("level_after") or 0)
+        rank_label = str(payload.get("rank_after") or get_lab_rank_label(level)).strip()
+        card["headline"] = "LAB LEVEL"
+        card["accent"] = "weekly"
+        card["text"] = f"{actor_label}研究室が Lv.{level} に到達。{rank_label}として記録庫に登録されました。"
+        card["meta_lines"] = [f"らぼLv.{level}", f"研究員ランク: {rank_label}"]
+        card["link_url"] = url_for("world_view")
     elif event_type == "LAB_RACE_WIN":
         username = str(payload.get("username") or "LAB ENEMY").strip() or "LAB ENEMY"
         robot_name = str(payload.get("robot_name") or "実験機").strip() or "実験機"
@@ -20293,7 +20341,39 @@ def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
             "meta_lines": [],
             "accent": "default",
         }
-        if event_type == AUDIT_EVENT_TYPES["DROP"]:
+        if event_type == AUDIT_EVENT_TYPES["LAB_LEVEL_EXP_GAIN"]:
+            exp_delta = int(payload.get("exp_delta") or 0)
+            level_after = int(payload.get("lab_level_after") or 1)
+            exp_after = int(payload.get("lab_exp_after") or 0)
+            required = int(payload.get("required_exp") or 0)
+            item = dict(base)
+            meta = [f"らぼLv.{level_after}"]
+            if required > 0:
+                meta.append(f"次まで {max(0, required - exp_after)} EXP")
+            item.update(
+                {
+                    "title": "研究EXP",
+                    "text": f"研究EXP +{exp_delta} を獲得しました。",
+                    "accent": "weekly",
+                    "link_url": url_for("home"),
+                    "meta_lines": meta,
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["LAB_LEVEL_LEVEL_UP"]:
+            level_after = int(payload.get("level_after") or 1)
+            rank_after = str(payload.get("rank_after") or "見習い研究員").strip()
+            item = dict(base)
+            item.update(
+                {
+                    "title": "らぼレベルアップ",
+                    "text": f"らぼLv.{level_after}に上昇。研究員ランク「{rank_after}」になりました。",
+                    "accent": "weekly",
+                    "link_url": url_for("home"),
+                }
+            )
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["DROP"]:
             part_key = str(payload.get("part_key") or "").strip()
             part_row = _get_part_by_key(db, part_key) if part_key else None
             part_name = _part_display_name_ja(part_row) if part_row else (part_key or "パーツ")
@@ -25074,6 +25154,32 @@ def home():
     show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
     show_market_menu = _market_can_access(db, user)
     boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
+    today_key = datetime.now(JST).strftime("%Y-%m-%d")
+    today_start_ts, today_end_ts = _jst_day_key_to_bounds(today_key)
+    daily_lab_login_done = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND action_key = 'login.daily'
+          AND created_at >= ?
+          AND created_at < ?
+        LIMIT 1
+        """,
+        (int(user["id"]), AUDIT_EVENT_TYPES["LAB_LEVEL_EXP_GAIN"], int(today_start_ts), int(today_end_ts)),
+    ).fetchone()
+    if not daily_lab_login_done:
+        grant_lab_exp(
+            db,
+            int(user["id"]),
+            "login.daily",
+            20,
+            source_entity_type="login",
+            payload={"day_key": today_key},
+        )
+        user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    home_lab_level = lab_level_view(user)
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -25205,6 +25311,7 @@ def home():
             research_boost=research_boost,
             research_boost_x_share=research_boost_x_share,
             boss_medal_summary=boss_medal_summary,
+            home_lab_level=home_lab_level,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
@@ -29111,6 +29218,33 @@ def explore():
         ip=request.remote_addr,
     )
     evaluate_referral_qualification(db, user_id, request_ip=request.remote_addr)
+    lab_exp_delta = 5
+    if final_outcome == "win":
+        lab_exp_delta += 3
+    dropped_parts_count_for_lab = sum(len(b.get("drops", []) or []) for b in battle_results)
+    lab_exp_delta += min(int(dropped_parts_count_for_lab) * 5, 10)
+    if area_boss_active:
+        lab_exp_delta += 20
+        if final_outcome == "win":
+            lab_exp_delta += 80
+    if unlocked_layer:
+        lab_exp_delta += 120
+    lab_level_result = grant_lab_exp(
+        db,
+        user_id,
+        "explore.end",
+        lab_exp_delta,
+        source_entity_type="explore",
+        payload={
+            "area_key": area_key,
+            "outcome": final_outcome,
+            "win": bool(final_outcome == "win"),
+            "dropped_parts_count": int(dropped_parts_count_for_lab),
+            "is_area_boss": bool(area_boss_active),
+            "boss_defeated": bool(area_boss_active and final_outcome == "win"),
+            "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
+        },
+    )
     db.commit()
 
     enemy_image_path = last_enemy["image_path"] if last_enemy and "image_path" in last_enemy.keys() else None
@@ -29238,6 +29372,7 @@ def explore():
         "outcome_is_win": bool(final_outcome == "win"),
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
+        "lab_level_result": lab_level_result,
         "reward_core": reward_core,
         "highlight_core_drop": bool(reward_core > 0),
         "dropped_core_name": dropped_core_name,
@@ -30938,6 +31073,15 @@ def build_confirm():
             payload={"robot_instance_id": int(instance_id), "robot_name": robot_name},
             create_log=True,
             week_key=week_key,
+        )
+        grant_lab_exp(
+            db,
+            int(user["id"]),
+            "build.confirm",
+            15,
+            source_entity_type="robot_instance",
+            source_entity_id=int(instance_id),
+            payload={"robot_name": robot_name},
         )
         for pid in consumed_ids:
             audit_log(
@@ -33417,6 +33561,19 @@ def evolve_parts():
                 create_log=True,
                 week_key=_world_week_key(),
             )
+            grant_lab_exp(
+                db,
+                user_id,
+                "part.evolve",
+                40,
+                source_entity_type="part_instance",
+                source_entity_id=int(created_id),
+                payload={
+                    "source_part_key": source_row["part_key"],
+                    "target_part_key": target_part["key"],
+                    "target_part_name": target_name,
+                },
+            )
             for refreshed_robot in refreshed_equipped:
                 refreshed_robot_id = (
                     refreshed_robot.get("robot_instance_id")
@@ -34524,6 +34681,19 @@ def parts_strengthen():
                             },
                             ip=request.remote_addr,
                         )
+                        lab_strengthen_count = max(1, int(execute_plan.get("fuse_count") or 1))
+                        grant_lab_exp(
+                            db,
+                            user_id,
+                            "part.strengthen",
+                            12 * lab_strengthen_count,
+                            source_entity_type="part_instance",
+                            source_entity_id=(execute_plan.get("result_part_ids") or [None])[0],
+                            payload={
+                                "mode": "warehouse_batch",
+                                "count": lab_strengthen_count,
+                            },
+                        )
                         _tutorial_layer1_mark_fuse_success(
                             db,
                             user_id,
@@ -34656,6 +34826,21 @@ def parts_strengthen():
                         },
                         create_log=True,
                         week_key=_world_week_key(),
+                    )
+                    strengthen_count_for_lab = max(1, int(result.get("batch_count") or 1))
+                    grant_lab_exp(
+                        db,
+                        user_id,
+                        "part.strengthen",
+                        12 * strengthen_count_for_lab,
+                        source_entity_type="part_instance",
+                        source_entity_id=result.get("created_id"),
+                        payload={
+                            "mode": mode,
+                            "part_type": result.get("part_type"),
+                            "part_key": result.get("part_key"),
+                            "count": strengthen_count_for_lab,
+                        },
                     )
                     if str(result.get("base_status") or "").strip().lower() == "equipped":
                         active_robot_for_title = db.execute(
@@ -35677,7 +35862,8 @@ def admin_users():
 
     rows_raw = db.execute(
         """
-        SELECT id, username, display_name, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id
+        SELECT id, username, display_name, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id,
+               lab_level, lab_total_exp, lab_rank_label
         FROM users
         ORDER BY id ASC
         """
@@ -37261,215 +37447,4 @@ def admin_decor():
         if not key:
             message = "keyを入力してください。"
         elif not name_ja:
-            message = "表示名を入力してください。"
-        elif not file or not file.filename:
-            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
-            db.execute(
-                """
-                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                """,
-                (key, name_ja, rel_path, int(time.time())),
-            )
-            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-            db.commit()
-            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
-        else:
-            ok, err, warns = _validate_decor_png_soft(file)
-            if not ok:
-                message = err
-            else:
-                rel_path = f"decor/{key}.png"
-                _save_static_png(file, rel_path)
-                db.execute(
-                    """
-                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                    """,
-                    (key, name_ja, rel_path, int(time.time())),
-                )
-                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-                db.commit()
-                message = "装飾アセットを保存しました。"
-                if warns:
-                    message += " " + " / ".join(warns)
-    rows = db.execute(
-        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
-    ).fetchall()
-    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
-    return render_template("admin_decor.html", rows=rows, message=message)
-
-
-@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_decor_toggle_active(decor_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
-    if not row:
-        session["message"] = "対象装飾が見つかりません。"
-        return redirect(url_for("admin_decor"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
-    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-    db.commit()
-    session["message"] = "装飾の有効状態を更新しました。"
-    return redirect(url_for("admin_decor"))
-
-
-@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
-@login_required
-def admin_parts_delete(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
-        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    key = part["key"]
-    ref_counts = {
-        "inventory": db.execute(
-            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
-            (key,),
-        ).fetchone()["c"],
-        "instances": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_instance_parts
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "builds": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_builds
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "milestones": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_milestones
-            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-    }
-    if any(v > 0 for v in ref_counts.values()):
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-        message = (
-            "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+ 

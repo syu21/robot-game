@@ -13,6 +13,7 @@
         <th>is_admin</th>
         <th>is_banned</th>
         <th>is_admin_protected</th>
+        <th>らぼLv</th>
         <th>created_at</th>
         <th>ban_info</th>
         <th>操作</th>
@@ -25,6 +26,9 @@
         <td>
           <div><b>{{ u['display_username'] }}</b></div>
           <div class="robot-time">ID: {{ u['username'] }}</div>
+          {% for identity in u.get('identity_emails', []) %}
+          <div class="robot-time">{{ identity['provider'] }} email: {{ identity['email'] }}</div>
+          {% endfor %}
           {% if u['has_custom_display_name'] %}
           <div class="robot-time">Google/ゲーム表示名を優先表示中</div>
           {% endif %}
@@ -32,6 +36,11 @@
         <td>{{ u['is_admin'] }}</td>
         <td>{{ u['is_banned'] }}</td>
         <td>{{ u['is_admin_protected'] }}</td>
+        <td>
+          <b>Lv.{{ u['lab_level'] or 1 }}</b><br/>
+          {{ u['lab_rank_label'] or '見習い研究員' }}<br/>
+          <span class="robot-time">累計 {{ u['lab_total_exp'] or 0 }} EXP</span>
+        </td>
         <td>{{ u['created_at'] }}</td>
         <td>
           {% if u['is_banned'] == 1 %}
@@ -72,13 +81,4 @@
           <form method="post" class="admin-inline-form">
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="delete" />
-            <button type="submit" {% if u['id'] == self_user_id or u['is_main_admin'] %}disabled{% endif %}>完全削除</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
-{% endblock %}
+            <button type="submit" {% if u['id'] == self_user_id or u['is_ma

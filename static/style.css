@@ -12022,27 +12022,22 @@ body#page-world .world-competition-grid {
   color: #a7f3d0;
   font-weight: 800;
 }
-@media (max-width: 768px) {
-  .home-today-progress-grid {
-    gap: 8px;
-  }
-  .home-today-progress-stat {
-    padding: 10px;
-  }
-  .home-today-progress-value {
-    font-size: 19px;
-  }
-  .robot-maintenance-hero {
-    grid-template-columns: 1fr;
-  }
-  .robot-maintenance-thumb {
-    width: 120px;
-  }
-  .robot-maintenance-delta-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .style-gauge-row {
-    grid-template-columns: 38px minmax(64px, 1fr) 26px;
-    gap: 6px;
-  }
+.lab-level-card .card {
+  border-color: rgba(94, 234, 212, 0.28);
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.28), rgba(15, 23, 42, 0.9));
 }
+.lab-level-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.lab-level-main {
+  margin-top: 2px;
+  color: #f8fafc;
+  font-size: 28px;
+  font-weight: 900;
+}
+.lab-level-rank {
+  padding: 6px 10px;
+ 

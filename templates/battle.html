@@ -80,6 +80,19 @@
     {% endif %}
     {% set reward_front = summary.get('reward_front', {}) %}
     <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ reward_front.get('coin', summary.get('reward_coin', 0)) }}</b></div>
+    {% if summary.get('lab_level_result') %}
+    {% set lab_result = summary.get('lab_level_result') %}
+    <div class="battle-summary-row">
+      <span class="label">研究EXP</span>
+      <b>+{{ lab_result.get('exp_delta', 0) }}</b>
+      <span class="battle-lab-level-inline">らぼLv.{{ lab_result.get('level_after', 1) }} / 次まで {{ lab_result.get('exp_to_next', 0) }} EXP</span>
+    </div>
+    {% if lab_result.get('leveled_up') %}
+    <div class="battle-summary-row battle-lab-level-up">
+      らぼレベルアップ！ Lv.{{ lab_result.get('level_after') }}「{{ lab_result.get('rank_after') }}」になりました
+    </div>
+    {% endif %}
+    {% endif %}
     {% if reward_front.get('part_rows') %}
     <div class="battle-summary-row">ドロップ:</div>
     <div class="battle-drop-list">
@@ -367,27 +380,4 @@
             {% endif %}
             {% if t.get('core_drop_line') %}
               <div class="battle-line drop"><strong>{{ t['core_drop_line'] }}</strong></div>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-      {% endfor %}
-    </details>
-    {% endif %}
-  </details>
-  {% endif %}
-  </div>
-{% else %}
-  <div class="card">
-    <p>探索結果がありません。行動メニューから探索してください。</p>
-  </div>
-{% endif %}
-{% if not (explore_mode and summary) %}
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endif %}
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
-<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version) }}"></script>
-{% endblock %}
+          

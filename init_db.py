@@ -408,6 +408,11 @@ def main():
             lab_coin INTEGER NOT NULL DEFAULT 0,
             lab_coin_last_daily_at TEXT,
             lab_coin_converted_at INTEGER NOT NULL DEFAULT 0,
+            lab_level INTEGER NOT NULL DEFAULT 1,
+            lab_exp INTEGER NOT NULL DEFAULT 0,
+            lab_total_exp INTEGER NOT NULL DEFAULT 0,
+            lab_rank_label TEXT NOT NULL DEFAULT '見習い研究員',
+            lab_level_updated_at TEXT,
             market_refresh_count_today INTEGER NOT NULL DEFAULT 0,
             market_free_refresh_used_at TEXT,
             market_refresh_day_key TEXT,
@@ -1011,6 +1016,25 @@ def main():
             client_payload_json TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_lab_exp_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action_key TEXT NOT NULL,
+            exp_delta INTEGER NOT NULL,
+            lab_level_before INTEGER NOT NULL,
+            lab_level_after INTEGER NOT NULL,
+            lab_exp_before INTEGER NOT NULL,
+            lab_exp_after INTEGER NOT NULL,
+            lab_total_exp_after INTEGER NOT NULL,
+            source_entity_type TEXT,
+            source_entity_id INTEGER,
+            payload_json TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -1653,6 +1677,16 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin_last_daily_at TEXT")
     if added_lab_coin_converted_at:
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin_converted_at INTEGER NOT NULL DEFAULT 0")
+    if "lab_level" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_level INTEGER NOT NULL DEFAULT 1")
+    if "lab_exp" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_exp INTEGER NOT NULL DEFAULT 0")
+    if "lab_total_exp" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_total_exp INTEGER NOT NULL DEFAULT 0")
+    if "lab_rank_label" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_rank_label TEXT NOT NULL DEFAULT '見習い研究員'")
+    if "lab_level_updated_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN lab_level_updated_at TEXT")
     if "market_refresh_count_today" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN market_refresh_count_today INTEGER NOT NULL DEFAULT 0")
     if "market_free_refresh_used_at" not in users_cols:
@@ -1738,6 +1772,10 @@ def main():
         (int(time.time()),),
     )
     cur.execute("UPDATE users SET lab_coin = 0 WHERE lab_coin IS NULL OR lab_coin < 0")
+    cur.execute("UPDATE users SET lab_level = 1 WHERE lab_level IS NULL OR lab_level < 1")
+    cur.execute("UPDATE users SET lab_exp = 0 WHERE lab_exp IS NULL OR lab_exp < 0")
+    cur.execute("UPDATE users SET lab_total_exp = 0 WHERE lab_total_exp IS NULL OR lab_total_exp < 0")
+    cur.execute("UPDATE users SET lab_rank_label = '見習い研究員' WHERE lab_rank_label IS NULL OR TRIM(lab_rank_label) = ''")
     cur.execute("UPDATE users SET market_refresh_count_today = 0 WHERE market_refresh_count_today IS NULL OR market_refresh_count_today < 0")
     cur.execute("UPDATE users SET is_admin_protected = 1 WHERE is_admin = 1")
     ri_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instances)").fetchall()}
@@ -1986,6 +2024,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_user_created ON user_lab_exp_events(user_id, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_action_created ON user_lab_exp_events(action_key, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
@@ -2127,175 +2167,4 @@ def main():
                 image_path = excluded.image_path
             """,
             (key, name_ja, image_path, int(time.time())),
-        )
-    support_decor = cur.execute(
-        "SELECT id FROM robot_decor_assets WHERE key = ? LIMIT 1",
-        (SUPPORT_PACK_FOUNDER_DECOR_KEY,),
-    ).fetchone()
-    if support_decor:
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
-            SELECT
-                po.user_id,
-                ?,
-                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
-            FROM payment_orders po
-            WHERE po.product_key IN (?, ?)
-              AND po.user_id IS NOT NULL
-              AND po.status IN ('completed', 'granted')
-            """,
-            (
-                int(support_decor[0]),
-                int(time.time()),
-                LEGACY_SUPPORT_PACK_PRODUCT_KEY,
-                SUPPORT_PACK_FOUNDER_PRODUCT_KEY,
-            ),
-        )
-    lab_decor = cur.execute(
-        "SELECT id FROM robot_decor_assets WHERE key = ? LIMIT 1",
-        (SUPPORT_PACK_LAB_DECOR_KEY,),
-    ).fetchone()
-    if lab_decor:
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
-            SELECT
-                po.user_id,
-                ?,
-                COALESCE(po.granted_at, po.updated_at, po.created_at, ?)
-            FROM payment_orders po
-            WHERE po.product_key = ?
-              AND po.user_id IS NOT NULL
-              AND po.status IN ('completed', 'granted')
-            """,
-            (int(lab_decor[0]), int(time.time()), SUPPORT_PACK_LAB_PRODUCT_KEY),
-        )
-    cur.execute(
-        """
-        INSERT INTO core_assets (core_key, name_ja, description, icon_path, is_active, created_at)
-        VALUES (?, ?, ?, ?, 1, ?)
-        ON CONFLICT(core_key) DO UPDATE SET
-            name_ja = excluded.name_ja,
-            description = excluded.description,
-            icon_path = excluded.icon_path
-        """,
-        (
-            EVOLUTION_CORE_KEY,
-            "進化コア",
-            "パーツを上位レアリティへ進化させる未知のコア",
-            "images/cores/evolution_core.png",
-            int(time.time()),
-        ),
-    )
-    now_ts = int(time.time())
-    lab_casino_prize_is_active = 1 if LAB_CASINO_PRIZE_EXCHANGE_ENABLED else 0
-    for prize_key, name, description, cost_lab_coin, prize_type, grant_key in LAB_CASINO_PRIZE_SEEDS:
-        cur.execute(
-            """
-            INSERT INTO lab_casino_prizes
-            (prize_key, name, description, cost_lab_coin, prize_type, grant_key, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(prize_key) DO UPDATE SET
-                name = excluded.name,
-                description = excluded.description,
-                cost_lab_coin = excluded.cost_lab_coin,
-                prize_type = excluded.prize_type,
-                grant_key = excluded.grant_key,
-                is_active = excluded.is_active,
-                updated_at = excluded.updated_at
-            """,
-            (
-                prize_key,
-                name,
-                description,
-                int(cost_lab_coin),
-                prize_type,
-                grant_key,
-                lab_casino_prize_is_active,
-                now_ts,
-                now_ts,
-            ),
-        )
-    rh_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_history)").fetchall()}
-    if "wins_this_week_key" not in rh_cols:
-        cur.execute("ALTER TABLE robot_history ADD COLUMN wins_this_week_key TEXT NOT NULL DEFAULT ''")
-    for key, name_ja, desc_ja, sort_order in [
-        ("title_boot", "起動", "初組み立てを完了した相棒", 10),
-        ("title_deployed", "実戦配備", "勝利数10を達成", 20),
-        ("title_first_boss", "初撃破", "ボス初撃破を達成", 30),
-    ]:
-        cur.execute(
-            """
-            INSERT INTO robot_titles (key, name_ja, desc_ja, sort_order, is_active)
-            VALUES (?, ?, ?, ?, 1)
-            ON CONFLICT(key) DO UPDATE SET
-                name_ja = excluded.name_ja,
-                desc_ja = excluded.desc_ja,
-                sort_order = excluded.sort_order,
-                is_active = 1
-            """,
-            (key, name_ja, desc_ja, sort_order),
-        )
-    count = cur.execute("SELECT COUNT(*) FROM robots_master").fetchone()[0]
-    if count == 0:
-        cur.executemany(
-            "INSERT INTO robots_master (head, right_arm, left_arm, legs, name, rarity, type, flavor_text, attack, defense, rarity_bonus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            robots_seed,
-        )
-    base_count = cur.execute("SELECT COUNT(*) FROM robot_bases").fetchone()[0]
-    if base_count == 0:
-        cur.executemany(
-            "INSERT INTO robot_bases (key, image_path) VALUES (?, ?)",
-            [
-                ("normal", "base_bodies/normal.png"),
-                ("angel", "base_bodies/angel.png"),
-                ("devil", "base_bodies/devil.png"),
-            ],
-        )
-    _ensure_default_normal_robot_parts(cur)
-    _upsert_series_rows(cur)
-    _apply_series_part_assignments(cur)
-    milestone_count = cur.execute("SELECT COUNT(*) FROM robot_milestones").fetchone()[0]
-    if milestone_count == 0:
-        cur.executemany(
-            """
-            INSERT INTO robot_milestones
-            (milestone_key, metric, threshold_value, reward_head_key, reward_r_arm_key, reward_l_arm_key, reward_legs_key, active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-            """,
-            [
-                ("wins_3", "wins", 3, "head_1", "r_arm_1", "l_arm_1", "legs_1"),
-                ("wins_10", "wins", 10, "head_2", "r_arm_2", "l_arm_2", "legs_2"),
-            ],
-        )
-    bb_count = cur.execute("SELECT COUNT(*) FROM base_bodies").fetchone()[0]
-    if bb_count == 0:
-        cur.executemany(
-            "INSERT INTO base_bodies (name, sprite_path) VALUES (?, ?)",
-            [
-                ("normal", "base_bodies/normal.png"),
-                ("angel", "base_bodies/angel.png"),
-                ("devil", "base_bodies/devil.png"),
-            ],
-        )
-    part_count = cur.execute("SELECT COUNT(*) FROM parts").fetchone()[0]
-    if part_count == 0:
-        items = []
-        for i in range(1, 11):
-            items.append((f"HEAD-{i}", "HEAD", f"parts/head/{i}.png", 2, 1, 1, 3))
-            items.append((f"R-ARM-{i}", "RIGHT_ARM", f"parts/right_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"L-ARM-{i}", "LEFT_ARM", f"parts/left_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"LEGS-{i}", "LEGS", f"parts/legs/{i}.png", 1, 2, 2, 3))
-        cur.executemany(
-            "INSERT INTO parts (name, type, sprite_path, attack, defense, speed, hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            items,
-        )
-
-    conn.commit()
-    conn.close()
-    print("DB initialized at", DB_PATH)
-
-
-if __name__ == "__main__":
-    main()
+      
