@@ -81,4 +81,13 @@
           <form method="post" class="admin-inline-form">
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="delete" />
-            <button type="submit" {% if u['id'] == self_user_id or u['is_ma
+            <button type="submit" {% if u['id'] == self_user_id or u['is_main_admin'] %}disabled{% endif %}>完全削除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ戻る</a></p>
+{% endblock %}

@@ -218,4 +218,7 @@ def grant_lab_exp(
         "current_exp": lab_exp_after,
         "required_exp": required_after,
         "exp_to_next": max(0, required_after - lab_exp_after),
-        
+        "progress_ratio": progress_ratio,
+        "milestone": milestone,
+        "milestones": crossed,
+    }

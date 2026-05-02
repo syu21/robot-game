@@ -251,4 +251,7 @@ AUDIT_EVENT_TYPES = {
     "MARKET_BUY": "audit.market.buy",
     "MARKET_REFRESH": "audit.market.refresh",
     "MARKET_DAILY_GENERATE": "audit.market.daily_generate",
-    "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change"
+    "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change",
+    "TUTORIAL_LAYER1_FORCED_BOSS": "audit.tutorial.layer1.forced_boss",
+    "TUTORIAL_LAYER1_BOSS_FAIL_GUIDED": "audit.tutorial.layer1.boss_fail_guided",
+}
