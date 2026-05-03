@@ -7139,6 +7139,72 @@ body.home-page.home-mobile .invite-link-row {
   align-items: stretch;
 }
 
+@media (max-width: 640px) {
+  body.home-page .main-robot-layout,
+  body.home-page.home-mobile .main-robot-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 10px !important;
+    align-items: start !important;
+  }
+
+  body.home-page .robot-top-row,
+  body.home-page.home-mobile .robot-top-row {
+    display: contents !important;
+  }
+
+  body.home-page .robot-top-visual,
+  body.home-page.home-mobile .robot-top-visual,
+  body.home-page .robot-image-card,
+  body.home-page.home-mobile .robot-image-card {
+    grid-column: 1 / -1 !important;
+    justify-self: center !important;
+    justify-content: center !important;
+    width: 140px !important;
+  }
+
+  body.home-page .robot-info-row,
+  body.home-page.home-mobile .robot-info-row {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  body.home-page .main-robot-stat-grid,
+  body.home-page .robot-status-grid,
+  body.home-page.home-mobile .main-robot-stat-grid,
+  body.home-page.home-mobile .robot-status-grid {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    align-self: start !important;
+  }
+
+  body.home-page .main-robot-stat-grid .stat-card,
+  body.home-page.home-mobile .main-robot-stat-grid .stat-card {
+    padding: 9px 10px !important;
+    min-height: 0 !important;
+  }
+
+  body.home-page .robot-overview-meta,
+  body.home-page.home-mobile .robot-overview-meta {
+    gap: 6px !important;
+  }
+
+  body.home-page .robot-overview-meta span,
+  body.home-page.home-mobile .robot-overview-meta span {
+    padding: 3px 7px !important;
+    font-size: 13px !important;
+  }
+
+  body.home-page .home-robot-details,
+  body.home-page.home-mobile .home-robot-details {
+    grid-column: 1 / -1 !important;
+  }
+}
+
 @media (min-width: 900px) {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
