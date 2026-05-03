@@ -749,6 +749,33 @@
       </div>
     </div>
     {% endif %}
+    {% if home_insect_research and home_insect_research.get('enabled') %}
+    <div class="card home-insect-research-card">
+      <div class="home-insect-research-head">
+        <div>
+          <div class="home-explore-kicker">期間限定</div>
+          <div class="home-insect-research-title">虫型研究 進行中</div>
+        </div>
+        <a class="battle-home-link" href="{{ url_for('showcase', sort='insect') }}">虫型展示</a>
+      </div>
+      <div class="upgrade-cost">虫型パーツを集めて、研究記録を進めよう。</div>
+      <div class="home-insect-research-grid">
+        <div class="home-insect-research-stat">
+          <span>今週の虫型パーツ入手数</span>
+          <b>{{ home_insect_research.get('part_drops', 0) }}</b>
+        </div>
+        <div class="home-insect-research-stat">
+          <span>今週の虫型ロボ完成数</span>
+          <b>{{ home_insect_research.get('complete_robots', 0) }}</b>
+        </div>
+        <div class="home-insect-research-stat">
+          <span>今週の虫型敵撃破数</span>
+          <b>{{ home_insect_research.get('enemy_defeats', 0) }}</b>
+        </div>
+      </div>
+      <p class="link home-insect-research-link"><a href="{{ url_for('ranking', metric='weekly_insect_parts') }}">虫型研究ランキングを見る</a></p>
+    </div>
+    {% endif %}
     {% if has_any_robot %}
       <form method="post" action="{{ url_for('explore') }}" class="inline-form home-explore-utility-form">
         <label>出撃先:</label>

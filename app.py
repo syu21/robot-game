@@ -1049,12 +1049,16 @@ SHOWCASE_SORT_DEFS = (
     {"key": "week", "label": "今週"},
     {"key": "boss", "label": "ボス"},
     {"key": "like", "label": "いいね"},
+    {"key": "insect", "label": "虫型"},
     {"key": "fastest", "label": "最速"},
     {"key": "durable", "label": "耐久"},
     {"key": "precision", "label": "命中"},
     {"key": "burst", "label": "爆発"},
 )
 SHOWCASE_SORT_OPTIONS = tuple(item["key"] for item in SHOWCASE_SORT_DEFS)
+INSECT_RESEARCH_HOME_ENABLED = True
+INSECT_RESEARCH_PART_SLOTS = ("head", "r_arm", "l_arm", "legs")
+INSECT_RESEARCH_PART_TYPES = ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")
 RANKING_METRIC_DEFS = (
     {
         "key": "wins",
@@ -1089,6 +1093,15 @@ RANKING_METRIC_DEFS = (
         "title": "今週ボス撃破ランキング",
         "metric_label": "今週ボス撃破",
         "description": "今週のボス討伐数を表示します。",
+        "is_weekly": True,
+        "row_kind": "user",
+    },
+    {
+        "key": "weekly_insect_parts",
+        "tab_label": "今週虫型",
+        "title": "今週の虫型研究ランキング",
+        "metric_label": "虫型パーツ",
+        "description": "今週入手した虫型パーツ数を表示します。",
         "is_weekly": True,
         "row_kind": "user",
     },
@@ -5471,6 +5484,121 @@ def _frame_type_label(frame_type):
     return FRAME_TYPE_DEF_BY_KEY.get(key, FRAME_TYPE_DEF_BY_KEY["normal"])["label"]
 
 
+def _series_key_from_row(row):
+    if not row:
+        return ""
+    if isinstance(row, dict):
+        for key in ("series_key", "instance_series", "series"):
+            value = row.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+    for key in ("series_key", "instance_series", "series"):
+        if key in keys and row[key]:
+            return str(row[key]).strip()
+    return ""
+
+
+def _is_insect_series_key(series_key):
+    return str(series_key or "").strip().lower().startswith("insect_")
+
+
+def _is_insect_part_row(row):
+    return _is_insect_series_key(_series_key_from_row(row))
+
+
+def _robot_insect_research_view_from_parts(parts):
+    count = 0
+    for part in list(parts or []):
+        row = dict(part or {})
+        if _norm_part_type(row.get("part_type")) not in INSECT_RESEARCH_PART_TYPES:
+            continue
+        if _is_insect_part_row(row):
+            count += 1
+    count = max(0, min(int(count), 4))
+    is_complete = count >= 4
+    is_insect = count >= 2
+    label = "完全虫型研究機" if is_complete else ("虫型研究機" if is_insect else "")
+    return {
+        "count": count,
+        "is_insect": is_insect,
+        "is_complete": is_complete,
+        "label": label,
+        "short_label": "完全虫型" if is_complete else ("虫型研究機" if is_insect else ""),
+        "badge_class": "complete" if is_complete else ("partial" if is_insect else ""),
+    }
+
+
+def _robot_insect_research_view(db, robot_id):
+    parts_row = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(robot_id),),
+    ).fetchone()
+    if not parts_row:
+        return _robot_insect_research_view_from_parts([])
+    instance_ids = [
+        int(parts_row[f"{slot}_part_instance_id"] or 0)
+        for slot in INSECT_RESEARCH_PART_SLOTS
+        if f"{slot}_part_instance_id" in parts_row.keys()
+    ]
+    instance_ids = [value for value in instance_ids if value > 0]
+    if instance_ids:
+        return _robot_insect_research_view_from_parts(_part_instance_display_rows(db, instance_ids))
+    part_key_cols = ("head_key", "r_arm_key", "l_arm_key", "legs_key")
+    part_keys = [str(parts_row[col] or "").strip() for col in part_key_cols if col in parts_row.keys()]
+    part_keys = [value for value in part_keys if value]
+    if not part_keys:
+        return _robot_insect_research_view_from_parts([])
+    marks = ",".join("?" for _ in part_keys)
+    rows = db.execute(
+        f"""
+        SELECT part_type, key, series, series_key
+        FROM robot_parts
+        WHERE key IN ({marks})
+        """,
+        part_keys,
+    ).fetchall()
+    return _robot_insect_research_view_from_parts([dict(row) for row in rows])
+
+
+def _record_insect_robot_completion_if_needed(db, user_id, robot_id, *, robot_name=None, request_id=None, ip=None):
+    view = _robot_insect_research_view(db, int(robot_id))
+    if not view.get("is_complete"):
+        return view
+    existing = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE event_type = ?
+          AND entity_type = 'robot_instance'
+          AND entity_id = ?
+        LIMIT 1
+        """,
+        (AUDIT_EVENT_TYPES["INSECT_ROBOT_COMPLETE"], int(robot_id)),
+    ).fetchone()
+    if existing:
+        return view
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["INSECT_ROBOT_COMPLETE"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="insect_robot.complete",
+        entity_type="robot_instance",
+        entity_id=int(robot_id),
+        payload={
+            "robot_instance_id": int(robot_id),
+            "robot_name": str(robot_name or "").strip(),
+            "message": f"{str(robot_name or 'ロボ').strip()} が完全虫型研究機として完成しました",
+            "insect_parts": int(view["count"]),
+            "week_key": _world_week_key(),
+        },
+        ip=ip,
+    )
+    return view
+
+
 def _series_weight_bias_for_part_row(part_row):
     row = dict(part_row or {})
     series_key = str(row.get("series_key") or row.get("series") or "").strip()
@@ -6740,8 +6868,22 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
         item["metric_durable"] = _robot_metric_value("durable", stat_obj["stats"] if stat_obj else None)
         item["metric_precision"] = _robot_metric_value("precision", stat_obj["stats"] if stat_obj else None)
         item["metric_burst"] = _robot_metric_value("burst", stat_obj["stats"] if stat_obj else None)
+        item["insect_research"] = _robot_insect_research_view_from_parts(
+            (stat_obj or {}).get("parts")
+        )
         out.append(item)
     out = _decorate_user_rows(db, out, user_key="user_id")
+    if sort_key == "insect":
+        out = [item for item in out if (item.get("insect_research") or {}).get("is_insect")]
+        out.sort(
+            key=lambda item: (
+                -int((item.get("insect_research") or {}).get("count") or 0),
+                -int(item.get("vote_count") or 0),
+                -int(item.get("wins_this_week") or 0),
+                str(item.get("username") or ""),
+                str(item.get("name") or ""),
+            )
+        )
     if sort_key in {"fastest", "durable", "precision", "burst"}:
         value_key = f"metric_{sort_key}"
         out.sort(
@@ -6836,7 +6978,80 @@ def _ranking_rows(db, metric_key, limit=50, week_key=None):
             ),
             metric,
         )
+    if metric["key"] == "weekly_insect_parts":
+        rows = db.execute(
+            """
+            SELECT u.id, u.username, COUNT(pi.id) AS metric_value
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            JOIN users u ON u.id = pi.user_id
+            WHERE COALESCE(u.is_admin, 0) = 0
+              AND COALESCE(NULLIF(rp.series_key, ''), NULLIF(pi.series, ''), NULLIF(rp.series, ''), '') LIKE 'insect_%'
+              AND pi.created_at >= ?
+              AND pi.created_at < ?
+            GROUP BY u.id, u.username
+            ORDER BY metric_value DESC, u.username ASC
+            LIMIT ?
+            """,
+            (int(start_ts), int(end_ts), int(limit)),
+        ).fetchall()
+        return rows, metric
     return _ranking_rows(db, "wins", limit=limit, week_key=wk)
+
+
+def _home_insect_research_view(db, week_key):
+    if not INSECT_RESEARCH_HOME_ENABLED:
+        return {"enabled": False}
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+
+    def _count(sql, params=()):
+        try:
+            row = db.execute(sql, params).fetchone()
+            return int((row or {})["c"] or 0)
+        except Exception:
+            return 0
+
+    part_drops = _count(
+        """
+        SELECT COUNT(*) AS c
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE COALESCE(NULLIF(rp.series_key, ''), NULLIF(pi.series, ''), NULLIF(rp.series, ''), '') LIKE 'insect_%'
+          AND pi.created_at >= ?
+          AND pi.created_at < ?
+        """,
+        (start_ts, end_ts),
+    )
+    complete_robots = _count(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE event_type = ?
+          AND created_at >= ?
+          AND created_at < ?
+        """,
+        (AUDIT_EVENT_TYPES["INSECT_ROBOT_COMPLETE"], start_ts, end_ts),
+    )
+    enemy_defeats = _count(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE event_type IN (?, ?)
+          AND created_at >= ?
+          AND created_at < ?
+          AND payload_json LIKE '%enemy_insect_%'
+        """,
+        (AUDIT_EVENT_TYPES["EXPLORE_END"], AUDIT_EVENT_TYPES["BOSS_DEFEAT"], start_ts, end_ts),
+    )
+    return {
+        "enabled": True,
+        "week_key": week_key,
+        "part_drops": part_drops,
+        "complete_robots": complete_robots,
+        "enemy_defeats": enemy_defeats,
+    }
 
 
 def _issue_explore_submission_id():
@@ -25180,6 +25395,7 @@ def home():
         )
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     home_lab_level = lab_level_view(user)
+    home_insect_research = _home_insect_research_view(db, week_key)
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -25312,6 +25528,7 @@ def home():
             research_boost_x_share=research_boost_x_share,
             boss_medal_summary=boss_medal_summary,
             home_lab_level=home_lab_level,
+            home_insect_research=home_insect_research,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
@@ -26589,6 +26806,7 @@ def records_view():
     weekly_record_groups = (
         _record_preview_rows(db, "weekly_explores", week_key=week_key, limit=3),
         _record_preview_rows(db, "weekly_bosses", week_key=week_key, limit=3),
+        _record_preview_rows(db, "weekly_insect_parts", week_key=week_key, limit=3),
         _record_preview_rows(db, "fastest", limit=3),
         _record_preview_rows(db, "durable", limit=3),
         _record_preview_rows(db, "burst", limit=3),
@@ -30190,6 +30408,14 @@ def robot_maintenance(instance_id):
                 },
                 ip=request.remote_addr,
             )
+            _record_insect_robot_completion_if_needed(
+                db,
+                user_id,
+                int(instance_id),
+                robot_name=robot.get("name"),
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
             db.commit()
         except Exception:
             db.rollback()
@@ -31082,6 +31308,14 @@ def build_confirm():
             source_entity_type="robot_instance",
             source_entity_id=int(instance_id),
             payload={"robot_name": robot_name},
+        )
+        _record_insect_robot_completion_if_needed(
+            db,
+            int(user["id"]),
+            int(instance_id),
+            robot_name=robot_name,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
         )
         for pid in consumed_ids:
             audit_log(

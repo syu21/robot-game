@@ -212,6 +212,8 @@ AUDIT_EVENT_TYPES = {
     "LAB_LEVEL_EXP_GAIN": "audit.lab_level.exp_gain",
     "LAB_LEVEL_LEVEL_UP": "audit.lab_level.level_up",
     "LAB_LEVEL_MILESTONE": "LAB_LEVEL_MILESTONE",
+    "INSECT_ROBOT_COMPLETE": "INSECT_ROBOT_COMPLETE",
+    "INSECT_RESEARCH_PROGRESS": "INSECT_RESEARCH_PROGRESS",
     "SHARE_CLICK": "audit.share.click",
     "STYLE_SNAPSHOT": "audit.style.snapshot",
     "STYLE_RANK_UP": "audit.style.rank_up",

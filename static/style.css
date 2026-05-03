@@ -2026,6 +2026,23 @@ body.lightbox-open .lightbox-overlay {
   font-size: 12px;
   font-weight: 700;
 }
+.insect-research-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(113, 63, 18, 0.32);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 900;
+}
+.insect-research-badge.is-complete {
+  border-color: rgba(52, 211, 153, 0.48);
+  background: rgba(6, 78, 59, 0.36);
+  color: #a7f3d0;
+}
 .title-badge-list-compact {
   gap: 5px;
   margin: 4px 0;
@@ -12137,6 +12154,54 @@ body#page-world .world-competition-grid {
   margin-top: 10px;
   color: rgba(226, 232, 240, 0.78);
   font-weight: 800;
+}
+.home-insect-research-card {
+  border-color: rgba(250, 204, 21, 0.25);
+  background: linear-gradient(135deg, rgba(69, 42, 8, 0.22), rgba(15, 23, 42, 0.94));
+}
+.home-insect-research-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.home-insect-research-title {
+  margin-top: 2px;
+  color: #fef3c7;
+  font-size: 22px;
+  font-weight: 900;
+}
+.home-insect-research-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.home-insect-research-stat {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.48);
+}
+.home-insect-research-stat span {
+  display: block;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 12px;
+  font-weight: 800;
+}
+.home-insect-research-stat b {
+  display: block;
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 24px;
+}
+.home-insect-research-link {
+  margin-bottom: 0;
+}
+@media (max-width: 720px) {
+  .home-insect-research-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .battle-lab-level-inline {
   margin-left: 8px;

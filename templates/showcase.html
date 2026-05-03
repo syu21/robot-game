@@ -49,6 +49,13 @@
         <div class="robot-id">{{ r['name'] }}</div>
         <div class="robot-part">オーナー: {{ r['username'] }}</div>
         <div class="robot-part">フレーム: {{ r['frame_label'] }}</div>
+        {% if r.get('insect_research') and r['insect_research'].get('is_insect') %}
+        <div class="robot-part">
+          <span class="insect-research-badge is-{{ r['insect_research'].get('badge_class', 'partial') }}">
+            {{ r['insect_research']['label'] }}
+          </span>
+        </div>
+        {% endif %}
         <div class="robot-part">
           称号:
           {% if r.get('primary_title_view') %}
@@ -76,6 +83,9 @@
           <div class="robot-thumb empty">no image</div>
         {% endif %}
         <div class="robot-part">今週勝利 {{ r['wins_this_week'] }} / ボス撃破 {{ r['boss_defeats_total'] }}</div>
+        {% if sort_key == 'insect' and r.get('insect_research') %}
+        <div class="robot-part">虫型部位 {{ r['insect_research']['count'] }} / 4</div>
+        {% endif %}
         {% if sort_key in ('fastest', 'durable', 'precision', 'burst') %}
         <div class="robot-part">注目記録: {{ r['metric_' ~ sort_key] }}</div>
         {% endif %}
