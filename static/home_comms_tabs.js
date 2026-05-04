@@ -98,24 +98,7 @@
       lists.forEach((list) => {
         const maxVisible = Math.max(1, Number.parseInt(list.getAttribute("data-home-comms-max-visible") || "5", 10) || 5);
         const visibleItems = Array.from(list.children).filter((child) => !!(child.offsetParent || child.getClientRects().length));
-        if (visibleItems.length <= maxVisible) {
-          list.style.maxHeight = "";
-          list.classList.remove("is-scrollable");
-          return;
-        }
-        const listStyle = window.getComputedStyle(list);
-        const gap = Number.parseFloat(listStyle.rowGap || listStyle.gap || "0") || 0;
-        let height = 0;
-        visibleItems.slice(0, maxVisible).forEach((child, index) => {
-          height += child.getBoundingClientRect().height;
-          if (index > 0) {
-            height += gap;
-          }
-        });
-        if (height > 0) {
-          list.style.maxHeight = `${Math.ceil(height)}px`;
-          list.classList.add("is-scrollable");
-        }
+        list.classList.toggle("is-scrollable", visibleItems.length > maxVisible);
       });
     };
 
