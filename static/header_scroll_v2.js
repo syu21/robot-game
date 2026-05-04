@@ -40,12 +40,9 @@
   function setHeaderOffset() {
     if (isCompactHeaderMode()) {
       header.classList.add("is-compact-static");
-      document.documentElement.style.setProperty("--site-header-height", "0px");
       return;
     }
     header.classList.remove("is-compact-static");
-    const h = Math.max(0, Math.round(header.getBoundingClientRect().height));
-    document.documentElement.style.setProperty("--site-header-height", `${h}px`);
   }
 
   function setHidden(nextHidden) {
