@@ -416,11 +416,11 @@
       const finishText =
         payload.is_boss && targetSide === "enemy"
           ? "BOSS DEFEATED"
-          : (targetSide === "enemy" ? "決着！" : "押し切られた");
+          : (targetSide === "enemy" ? "\u6c7a\u7740\uff01" : "\u62bc\u3057\u5207\u3089\u308c\u305f");
       const finishResult =
-        targetSide === "enemy" ? `${step.target_name} を撃破` : `${step.target_name} が崩れた`;
+        targetSide === "enemy" ? `${step.target_name} \u3092\u6483\u7834` : `${step.target_name} \u304c\u5d29\u308c\u305f`;
       const finishTactical =
-        targetSide === "enemy" ? "最後の一撃が通った" : "最後の一撃を受け切れなかった";
+        targetSide === "enemy" ? "\u6700\u5f8c\u306e\u4e00\u6483\u304c\u901a\u3063\u305f" : "\u6700\u5f8c\u306e\u4e00\u6483\u3092\u53d7\u3051\u5207\u308c\u306a\u304b\u3063\u305f";
 
       queueTimeout(() => {
         visuals.targetUnit && visuals.targetUnit.classList.add("is-finished");
@@ -433,8 +433,8 @@
       }, callDelay, runId);
       queueTimeout(() => {
         setCardText({
-          actorText: `${step.actor_name} が押し切る`,
-          actionText: step.hit_type === "crit" ? "会心の決着" : "決着の一撃",
+          actorText: `${step.actor_name} \u304c\u62bc\u3057\u5207\u308b`,
+          actionText: step.hit_type === "crit" ? "\u4f1a\u5fc3\u306e\u6c7a\u7740" : "\u6c7a\u7740\u306e\u4e00\u6483",
           resultText: finishResult,
           valueText: step.value_label,
           statusText: "",
@@ -467,12 +467,12 @@
       }
       setCardText({
         turnText: `TURN ${index + 1}`,
-        actorText: turn.opening_label || "交戦開始",
-        actionText: payload.is_boss && index === 0 ? "BOSS WARNING" : "次の動きを読む",
-        resultText: payload.is_boss && index === 0 ? "圧力が高まっている" : "戦況を整理中",
+        actorText: turn.opening_label || "\u4ea4\u6226\u958b\u59cb",
+        actionText: payload.is_boss && index === 0 ? "BOSS WARNING" : "\u6b21\u306e\u52d5\u304d\u3092\u8aad\u3080",
+        resultText: payload.is_boss && index === 0 ? "\u5727\u529b\u304c\u9ad8\u307e\u3063\u3066\u3044\u308b" : "\u6226\u6cc1\u3092\u6574\u7406\u4e2d",
         valueText: "",
         statusText: "",
-        tacticalText: turn.tactical_label || "動き出す瞬間を見ている",
+        tacticalText: turn.tactical_label || "\u52d5\u304d\u51fa\u3059\u77ac\u9593\u3092\u898b\u3066\u3044\u308b",
       });
       resetStateBadges();
       await delay(openDelay, runId);
@@ -480,7 +480,7 @@
 
       for (const step of steps) {
         setCardText({
-          actorText: `${step.actor_name} が動く`,
+          actorText: `${step.actor_name} \u304c\u52d5\u304f`,
           actionText: step.action_label,
           resultText: step.result_label,
           valueText: step.value_label,
@@ -497,15 +497,15 @@
       }
 
       const stateLabelText = turn.status_label
-        ? `${turn.status_label}${turn.status_target === "player" ? " / 味方側" : " / 敵側"}`
+        ? `${turn.status_label}${turn.status_target === "player" ? " / \u5473\u65b9\u5074" : " / \u6575\u5074"}`
         : "";
       if (turn.status_target && turn.status_effect && turn.status_label) {
         applyStateBadge(turn.status_target, turn.status_effect, turn.status_label);
       }
       setCardText({
-        actorText: turn.status_label ? "機構状態" : "戦況整理",
-        actionText: turn.steps[turn.steps.length - 1]?.action_label || "戦況整理",
-        resultText: turn.steps[turn.steps.length - 1]?.result_label || "戦況を更新",
+        actorText: turn.status_label ? "\u6a5f\u69cb\u72b6\u614b" : "\u6226\u6cc1\u6574\u7406",
+        actionText: turn.steps[turn.steps.length - 1]?.action_label || "\u6226\u6cc1\u6574\u7406",
+        resultText: turn.steps[turn.steps.length - 1]?.result_label || "\u6226\u6cc1\u3092\u66f4\u65b0",
         valueText: turn.steps[turn.steps.length - 1]?.value_label || "",
         statusText: stateLabelText,
         tacticalText: turn.tactical_label || payload.summary_label,
@@ -526,12 +526,12 @@
       resetStateBadges();
       setCardText({
         turnText: "TURN 1",
-        actorText: payload.is_boss ? "BOSS BATTLE" : "戦闘開始",
-        actionText: payload.is_boss ? "警戒態勢" : "交戦開始",
-        resultText: payload.player_name ? `${payload.player_name} 出撃` : "出撃",
+        actorText: payload.is_boss ? "BOSS BATTLE" : "\u6226\u95d8\u958b\u59cb",
+        actionText: payload.is_boss ? "\u8b66\u6212\u614b\u52e2" : "\u4ea4\u6226\u958b\u59cb",
+        resultText: payload.player_name ? `${payload.player_name} \u51fa\u6483` : "\u51fa\u6483",
         valueText: "",
         statusText: "",
-        tacticalText: payload.is_boss ? "ボスの圧力を見極める" : "先手を見極めている",
+        tacticalText: payload.is_boss ? "\u30dc\u30b9\u306e\u5727\u529b\u3092\u898b\u6975\u3081\u308b" : "\u5148\u624b\u3092\u898b\u6975\u3081\u3066\u3044\u308b",
       });
 
       const introDelay = effectiveDelay(
@@ -550,13 +550,55 @@
         finalBox.hidden = false;
         const finalHeading = finalBox.querySelector(".battle-cinematic-v1-final-heading");
         const finalLabel = finalBox.querySelector(".battle-cinematic-v1-final-label");
-        if (finalHeading) finalHeading.textContent = payload.summary_heading || "今回の勝ち筋";
+        if (finalHeading) finalHeading.textContent = payload.summary_heading || "\u4eca\u56de\u306e\u52dd\u3061\u7b4b";
         if (finalLabel) finalLabel.textContent = payload.summary_label || "";
       }
       setCardText({
-        actorText: payload.summary_heading || "今回の勝ち筋",
+        actorText: payload.summary_heading || "\u4eca\u56de\u306e\u52dd\u3061\u7b4b",
         actionText: payload.summary_label || "",
         resultText: "",
         valueText: "",
         statusText: "",
-        tacticalText: payload.player_won ? "戦利品へ進みます" : "�
+        tacticalText: payload.player_won ? "\u6226\u5229\u54c1\u3078\u9032\u307f\u307e\u3059" : "\u7d50\u679c\u3092\u6574\u7406\u3057\u307e\u3059",
+      });
+
+      const outroHold = effectiveDelay(
+        currentMode === "fast" ? payload.fast_outro_hold_ms || 380 : payload.outro_hold_ms || 860
+      );
+      await delay(outroHold, runId);
+      if (runId !== activeRunId || finished) return;
+      revealFollowup();
+    };
+
+    const start = () => {
+      finished = false;
+      activeRunId += 1;
+      clearTimers();
+      resetTransientClasses();
+      run(activeRunId).catch(() => {
+        revealFollowup();
+      });
+    };
+
+    modeButtons.forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        setMode(button.dataset.cinematicMode || "standard", {
+          persist: button.dataset.cinematicMode !== "instant",
+          rerun: true,
+        });
+      });
+    });
+
+    skipButton &&
+      skipButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        revealFollowup();
+      });
+
+    setMode(currentMode, { persist: false, rerun: false });
+    start();
+  };
+
+  document.addEventListener("DOMContentLoaded", initBattleCinematicV1);
+})();
