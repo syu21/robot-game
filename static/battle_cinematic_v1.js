@@ -106,6 +106,25 @@
 
     const hpRatio = (side, value) => clampRatio(Number(value || 0) / Math.max(1, hpMax[side] || 1));
 
+    const LASER_ELEMENTS = new Set(["fire", "water", "thunder", "wind", "dark", "light", "neutral"]);
+
+    const normalizeLaserElement = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      if (LASER_ELEMENTS.has(key)) return key;
+      if (key === "ice") return "water";
+      if (key === "normal") return "neutral";
+      return "neutral";
+    };
+
+    const applyLaserElementClass = (node, element) => {
+      if (!node) return;
+      node.className = node.className
+        .split(" ")
+        .filter((className) => !/^laser-effect--/.test(className))
+        .join(" ");
+      node.classList.add(`laser-effect--${normalizeLaserElement(element)}`);
+    };
+
     const paintHp = (side, hpValue, lagValue, { immediate = false } = {}) => {
       const bar = hpBars[side];
       if (!bar || !bar.root || !bar.fill || !bar.lag) return;
@@ -171,7 +190,14 @@
         if (!node) return;
         node.className = node.className
           .split(" ")
-          .filter((className) => !/^is-/.test(className) && !/^from-/.test(className) && !/^to-/.test(className) && !/^target-/.test(className))
+          .filter(
+            (className) =>
+              !/^is-/.test(className) &&
+              !/^from-/.test(className) &&
+              !/^to-/.test(className) &&
+              !/^target-/.test(className) &&
+              !/^laser-effect--/.test(className)
+          )
           .join(" ");
       });
       Object.values(damagePops).forEach((node) => {
@@ -322,8 +348,10 @@
       }
       const actorUnit = step.actor === "player" ? playerUnit : enemyUnit;
       const targetUnit = step.target === "player" ? playerUnit : enemyUnit;
+      const laserElement = normalizeLaserElement(step.element || step.attack_element || payload[`${step.actor}_element`]);
       actorUnit && actorUnit.classList.add("is-acting");
       if (projectile && step.projectile === "shot") {
+        applyLaserElementClass(projectile, laserElement);
         projectile.classList.add("is-live", `from-${step.actor}`, `to-${step.target}`);
         if (step.hit_type === "crit" || step.is_finisher) {
           projectile.classList.add("is-critical");
@@ -352,10 +380,12 @@
           }, 140, runId);
         }
         if (hitflash) {
+          applyLaserElementClass(hitflash, laserElement);
           hitflash.classList.add("is-live", `target-${step.target}`);
           if (step.hit_type === "crit") hitflash.classList.add("is-critical");
         }
         if (sparks && (step.hit_type === "crit" || step.is_finisher)) {
+          applyLaserElementClass(sparks, laserElement);
           sparks.classList.add("is-live", `target-${step.target}`);
           if (step.hit_type === "crit") sparks.classList.add("is-critical");
         }
@@ -529,46 +559,4 @@
         resultText: "",
         valueText: "",
         statusText: "",
-        tacticalText: payload.player_won ? "戦利品へ進みます" : "結果を整理します",
-      });
-
-      const outroHold = effectiveDelay(
-        currentMode === "fast" ? payload.fast_outro_hold_ms || 380 : payload.outro_hold_ms || 860
-      );
-      await delay(outroHold, runId);
-      if (runId !== activeRunId || finished) return;
-      revealFollowup();
-    };
-
-    const start = () => {
-      finished = false;
-      activeRunId += 1;
-      clearTimers();
-      resetTransientClasses();
-      run(activeRunId).catch(() => {
-        revealFollowup();
-      });
-    };
-
-    modeButtons.forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        setMode(button.dataset.cinematicMode || "standard", {
-          persist: button.dataset.cinematicMode !== "instant",
-          rerun: true,
-        });
-      });
-    });
-
-    skipButton &&
-      skipButton.addEventListener("click", (event) => {
-        event.preventDefault();
-        revealFollowup();
-      });
-
-    setMode(currentMode, { persist: false, rerun: false });
-    start();
-  };
-
-  document.addEventListener("DOMContentLoaded", initBattleCinematicV1);
-})();
+        tacticalText: payload.player_won ? "戦利品へ進みます" : "�

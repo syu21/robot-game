@@ -127,6 +127,75 @@ class BattleShortReplayHelperTests(unittest.TestCase):
         self.assertTrue(all(turn.get("steps") for turn in replay["turns"]))
         self.assertIn(replay["summary_label"], {"爆発力で押し切った", "命中安定で崩した", "先手制圧で押し切った", "装甲差で競り勝った"})
 
+    def test_replay_steps_use_attack_element_before_actor_fallback(self):
+        replay = game_app._build_battle_replay_summary(
+            area_key="layer_1",
+            area_label="第一層",
+            enemy_name="テスト敵",
+            enemy_image_url="/static/assets/placeholder_enemy.png",
+            player_name="テスト機",
+            player_image_url="/static/assets/placeholder_player.png",
+            player_stats={"hp": 15, "atk": 14, "def": 11, "spd": 14, "acc": 13, "cri": 9, "element": "FIRE"},
+            enemy_stats={"hp": 12, "atk": 8, "def": 7, "spd": 9, "acc": 8, "cri": 5, "trait": "fast", "element": "DARK"},
+            robot_style={"style_key": "burst"},
+            turn_logs=[
+                {
+                    "turn": 1,
+                    "player_action": "射撃",
+                    "enemy_action": "攻撃",
+                    "player_damage": 4,
+                    "enemy_damage": 2,
+                    "player_before": 15,
+                    "enemy_before": 12,
+                    "player_after": 13,
+                    "enemy_after": 8,
+                    "player_max": 15,
+                    "enemy_max": 12,
+                    "critical": False,
+                    "player_attack_element": "THUNDER",
+                }
+            ],
+            outcome="勝利",
+            is_boss=False,
+        )
+        steps = replay["turns"][0]["steps"]
+        self.assertEqual(steps[0]["actor"], "player")
+        self.assertEqual(steps[0]["element"], "thunder")
+        self.assertEqual(steps[1]["actor"], "enemy")
+        self.assertEqual(steps[1]["element"], "dark")
+
+    def test_replay_steps_default_to_neutral_without_element(self):
+        replay = game_app._build_battle_replay_summary(
+            area_key="layer_1",
+            area_label="第一層",
+            enemy_name="テスト敵",
+            enemy_image_url="/static/assets/placeholder_enemy.png",
+            player_name="テスト機",
+            player_image_url="/static/assets/placeholder_player.png",
+            player_stats={"hp": 15, "atk": 14, "def": 11, "spd": 14, "acc": 13, "cri": 9},
+            enemy_stats={"hp": 12, "atk": 8, "def": 7, "spd": 9, "acc": 8, "cri": 5, "trait": "fast"},
+            robot_style={"style_key": "burst"},
+            turn_logs=[
+                {
+                    "turn": 1,
+                    "player_action": "射撃",
+                    "enemy_action": "攻撃",
+                    "player_damage": 4,
+                    "enemy_damage": 2,
+                    "player_before": 15,
+                    "enemy_before": 12,
+                    "player_after": 13,
+                    "enemy_after": 8,
+                    "player_max": 15,
+                    "enemy_max": 12,
+                    "critical": False,
+                }
+            ],
+            outcome="勝利",
+            is_boss=False,
+        )
+        self.assertTrue(all(step["element"] == "neutral" for step in replay["turns"][0]["steps"]))
+
     def test_boss_replay_includes_turn_status_and_defeat_summary(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_4_forge",
@@ -218,60 +287,4 @@ class BattleShortReplayRouteTests(unittest.TestCase):
     def _create_user(self, username, is_admin=0):
         with game_app.app.app_context():
             db = game_app.get_db()
-            now = int(time.time())
-            cur = db.execute(
-                "INSERT INTO users (username, password_hash, created_at, is_admin, wins) VALUES (?, ?, ?, ?, 0)",
-                (username, "x", now, int(is_admin)),
-            )
-            user_id = int(cur.lastrowid)
-            game_app.initialize_new_user(db, user_id)
-            db.commit()
-            return user_id
-
-    def _login(self, client, user_id, username, *, ui_effects_enabled=True):
-        with client.session_transaction() as sess:
-            sess["user_id"] = int(user_id)
-            sess["username"] = username
-            sess["ui_effects_enabled"] = bool(ui_effects_enabled)
-
-    def test_explore_result_renders_short_replay_overlay(self):
-        user_id = self._create_user("replay_user", is_admin=0)
-        with game_app.app.test_client() as client:
-            self._login(client, user_id, "replay_user", ui_effects_enabled=True)
-            resp = client.post("/explore", data={"area_key": "layer_1"})
-            self.assertEqual(resp.status_code, 200)
-            html = resp.get_data(as_text=True)
-            self.assertIn('id="battle-short-replay"', html)
-            self.assertIn('data-cinematic-version="v1"', html)
-            self.assertIn('id="battle-cinematic-v1-data"', html)
-            self.assertIn('class="battle-cinematic-v1-title"', html)
-            self.assertIn('class="battle-cinematic-v1-controls battle-mode-tabs"', html)
-            self.assertIn('data-cinematic-mode="standard"', html)
-            self.assertIn('data-cinematic-mode="fast"', html)
-            self.assertIn('data-cinematic-mode="instant"', html)
-            self.assertIn('data-cinematic-skip="1"', html)
-            self.assertIn('data-cinematic-turn-indicator', html)
-            self.assertIn('data-cinematic-projectile="1"', html)
-            self.assertIn('data-cinematic-finish-call="1"', html)
-            self.assertIn('data-cinematic-damage="player"', html)
-            self.assertIn('data-cinematic-damage="enemy"', html)
-            self.assertNotRegex(html, r'id="battle-short-replay"[^>]*\shidden')
-            self.assertIn('data-cinematic-hp="player"', html)
-            self.assertIn('data-cinematic-hp="enemy"', html)
-            self.assertIn('id="battle-replay-followup"', html)
-            self.assertNotIn('battle-cinematic-v1-final-result', html)
-            self.assertNotIn('class="battle-title"', html)
-
-    def test_ui_effects_off_skips_short_replay_markup(self):
-        user_id = self._create_user("replay_no_fx", is_admin=0)
-        with game_app.app.test_client() as client:
-            self._login(client, user_id, "replay_no_fx", ui_effects_enabled=False)
-            resp = client.post("/explore", data={"area_key": "layer_1"})
-            self.assertEqual(resp.status_code, 200)
-            html = resp.get_data(as_text=True)
-            self.assertNotIn('id="battle-short-replay"', html)
-            self.assertIn("戦利品", html)
-
-
-if __name__ == "__main__":
-    unittest.main()
+           

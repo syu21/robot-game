@@ -4615,6 +4615,53 @@ def _build_battle_replay_summary(
             return int(fallback)
         return int(value)
 
+    def _laser_element(raw_value):
+        raw = str(raw_value or "").strip().upper()
+        if raw in {"FIRE", "FLAME"}:
+            return "fire"
+        if raw in {"WATER", "ICE"}:
+            return "water"
+        if raw in {"THUNDER", "LIGHTNING", "ELECTRIC"}:
+            return "thunder"
+        if raw == "WIND":
+            return "wind"
+        if raw == "DARK":
+            return "dark"
+        if raw == "LIGHT":
+            return "light"
+        return "neutral"
+
+    def _stats_element(stats):
+        stats = stats or {}
+        for key in ("attack_element", "element", "set_bonus", "robot_element"):
+            value = stats.get(key)
+            if value:
+                return value
+        parts = [part for part in (stats.get("parts") or []) if isinstance(part, dict)]
+        part_elements = [str(part.get("element") or "").strip().upper() for part in parts if part.get("element")]
+        if part_elements and len(set(part_elements)) == 1:
+            return part_elements[0]
+        if part_elements:
+            counts = {}
+            for element in part_elements:
+                if element in {"", "NORMAL", "NEUTRAL"}:
+                    continue
+                counts[element] = counts.get(element, 0) + 1
+            if counts:
+                return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        return None
+
+    player_laser_element = _laser_element(_stats_element(player_stats))
+    enemy_laser_element = _laser_element(_stats_element(enemy_stats))
+
+    def _step_element(side, row):
+        row = row or {}
+        for key in (f"{side}_attack_element", "attack_element", f"{side}_element"):
+            value = row.get(key)
+            if value:
+                return _laser_element(value)
+        return player_laser_element if side == "player" else enemy_laser_element
+
     def _infer_step_effect(*, side, row, damage, hit_type, crit, target_side, target_after, target_max):
         row = row or {}
         if hit_type == "miss":
@@ -4781,6 +4828,7 @@ def _build_battle_replay_summary(
             "action_label": _action_label(side, row.get(f"{side}_action"), hit_type, crit=crit, finisher=is_finisher),
             "result_label": _result_label(hit_type, damage, actor=actor_name, target=target_name),
             "value_label": _value_label(hit_type, damage),
+            "element": _step_element(side, row),
             "hit_type": hit_type,
             "is_finisher": bool(is_finisher),
             "projectile": ("shot" if hit_type != "block" else "guard"),
@@ -4871,6 +4919,8 @@ def _build_battle_replay_summary(
         "player_hp_max": int(player_hp_max),
         "enemy_hp_start": int(enemy_hp_start),
         "enemy_hp_max": int(enemy_hp_max),
+        "player_element": player_laser_element,
+        "enemy_element": enemy_laser_element,
         "player_visual_traits": player_traits,
         "enemy_visual_traits": {
             "trait": enemy_trait or "normal",
@@ -29712,6 +29762,7 @@ def explore():
         "acc": int(enemy_acc or 0),
         "cri": int(enemy_cri or 0),
         "trait": enemy_trait_key,
+        "element": (enemy["element"] if "element" in enemy.keys() else None),
     }
     summary["battle_cinematic"] = (
         _build_battle_replay_summary(
@@ -29732,6 +29783,8 @@ def explore():
                 "spd": int(player_spd or 0),
                 "acc": int(player_acc or 0),
                 "cri": int(player_cri or 0),
+                "element": (robot_stats.get("set_bonus") if robot_stats else None),
+                "parts": (robot_stats.get("parts") if robot_stats else []),
             },
             enemy_stats=enemy_replay_stats,
             robot_style=robot_style,

@@ -11199,6 +11199,16 @@ body#page-world .world-competition-grid {
   filter: saturate(1.18);
 }
 
+.battle-cinematic-v1-projectile::before,
+.battle-cinematic-v1-projectile::after {
+  content: "";
+  position: absolute;
+  inset: -7px 18px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .battle-cinematic-v1-projectile.from-player {
   left: calc(50% - 34px);
 }
@@ -11313,6 +11323,155 @@ body#page-world .world-competition-grid {
 
 .battle-cinematic-v1-sparks.is-critical {
   transform: scale(1.16);
+}
+
+.laser-effect--fire.battle-cinematic-v1-projectile {
+  height: 8px;
+  background:
+    radial-gradient(circle at 16% 50%, rgba(255, 255, 255, 0.96), transparent 18%),
+    linear-gradient(90deg, transparent, rgba(251, 146, 60, 0.95) 16%, rgba(239, 68, 68, 1) 52%, rgba(255, 237, 213, 0.78) 78%, transparent);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.74), 0 0 38px rgba(251, 146, 60, 0.36);
+}
+
+.laser-effect--fire.battle-cinematic-v1-projectile::before {
+  opacity: 0.9;
+  background:
+    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.92), transparent 12%),
+    radial-gradient(circle at 46% 66%, rgba(251, 191, 36, 0.9), transparent 11%),
+    radial-gradient(circle at 72% 35%, rgba(248, 113, 113, 0.88), transparent 10%);
+}
+
+.laser-effect--fire.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.92), rgba(248, 113, 113, 0.34), rgba(251, 146, 60, 0.14), transparent 74%);
+}
+
+.laser-effect--fire.battle-cinematic-v1-sparks.is-live {
+  background:
+    radial-gradient(circle at 22% 22%, rgba(255, 255, 255, 0.95), transparent 18%),
+    radial-gradient(circle at 72% 30%, rgba(251, 146, 60, 0.96), transparent 22%),
+    radial-gradient(circle at 42% 74%, rgba(239, 68, 68, 0.9), transparent 22%);
+}
+
+.laser-effect--water.battle-cinematic-v1-projectile {
+  height: 4px;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(240, 249, 255, 0.98), transparent 16%),
+    linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.94) 18%, rgba(14, 165, 233, 0.96) 56%, rgba(224, 242, 254, 0.86) 78%, transparent);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.6), 0 0 30px rgba(186, 230, 253, 0.24);
+}
+
+.laser-effect--water.battle-cinematic-v1-projectile::before {
+  opacity: 0.86;
+  background:
+    linear-gradient(45deg, transparent 40%, rgba(224, 242, 254, 0.95) 42% 46%, transparent 48%),
+    linear-gradient(-38deg, transparent 56%, rgba(125, 211, 252, 0.85) 58% 62%, transparent 64%);
+}
+
+.laser-effect--water.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.9), rgba(125, 211, 252, 0.28), transparent 72%);
+}
+
+.laser-effect--water.battle-cinematic-v1-sparks.is-live {
+  background:
+    radial-gradient(circle at 28% 26%, rgba(224, 242, 254, 0.96), transparent 16%),
+    radial-gradient(circle at 70% 32%, rgba(125, 211, 252, 0.9), transparent 18%),
+    radial-gradient(circle at 48% 76%, rgba(186, 230, 253, 0.82), transparent 20%);
+}
+
+.laser-effect--thunder.battle-cinematic-v1-projectile {
+  height: 7px;
+  border-radius: 2px;
+  background: linear-gradient(108deg, transparent 0 8%, rgba(254, 240, 138, 0.98) 9% 20%, transparent 21% 29%, rgba(250, 204, 21, 1) 30% 48%, transparent 49% 57%, rgba(255, 255, 255, 0.96) 58% 72%, transparent 73%);
+  box-shadow: 0 0 22px rgba(250, 204, 21, 0.8), 0 0 36px rgba(254, 240, 138, 0.32);
+  clip-path: polygon(0 52%, 18% 4%, 34% 52%, 50% 8%, 68% 58%, 100% 18%, 76% 100%, 56% 62%, 38% 100%, 22% 58%);
+}
+
+.laser-effect--thunder.battle-cinematic-v1-projectile.is-live {
+  animation-duration: 220ms;
+}
+
+.laser-effect--thunder.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 1), rgba(250, 204, 21, 0.42), transparent 70%);
+  animation-duration: 160ms;
+}
+
+.laser-effect--thunder.battle-cinematic-v1-sparks.is-live {
+  background:
+    radial-gradient(circle at 20% 28%, rgba(255, 255, 255, 1), transparent 14%),
+    radial-gradient(circle at 72% 24%, rgba(250, 204, 21, 0.96), transparent 18%),
+    linear-gradient(120deg, transparent 44%, rgba(254, 240, 138, 0.92) 46% 50%, transparent 52%);
+  animation-duration: 220ms;
+}
+
+.laser-effect--wind.battle-cinematic-v1-projectile {
+  height: 5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(187, 247, 208, 0.92) 16%, rgba(34, 197, 94, 0.98) 54%, rgba(240, 253, 244, 0.8) 78%, transparent);
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.58), 0 0 30px rgba(134, 239, 172, 0.22);
+}
+
+.laser-effect--wind.battle-cinematic-v1-projectile::after {
+  opacity: 0.82;
+  inset: -10px 8px;
+  background:
+    linear-gradient(135deg, transparent 43%, rgba(220, 252, 231, 0.92) 45% 48%, transparent 50%),
+    linear-gradient(135deg, transparent 60%, rgba(74, 222, 128, 0.76) 62% 65%, transparent 67%);
+}
+
+.laser-effect--wind.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(ellipse at center, rgba(240, 253, 244, 0.86), rgba(34, 197, 94, 0.24), transparent 72%);
+}
+
+.laser-effect--wind.battle-cinematic-v1-sparks.is-live {
+  background:
+    linear-gradient(135deg, transparent 36%, rgba(220, 252, 231, 0.95) 38% 42%, transparent 44%),
+    linear-gradient(135deg, transparent 56%, rgba(74, 222, 128, 0.82) 58% 62%, transparent 64%),
+    radial-gradient(circle at center, rgba(187, 247, 208, 0.16), transparent 70%);
+}
+
+.laser-effect--dark.battle-cinematic-v1-projectile {
+  height: 7px;
+  background: linear-gradient(90deg, transparent, rgba(216, 180, 254, 0.82) 18%, rgba(126, 34, 206, 0.98) 52%, rgba(24, 24, 27, 0.88) 82%, transparent);
+  box-shadow: 0 0 18px rgba(126, 34, 206, 0.72), 0 6px 18px rgba(17, 24, 39, 0.44);
+  filter: saturate(1.15) blur(0.15px);
+}
+
+.laser-effect--dark.battle-cinematic-v1-projectile.is-live {
+  animation-name: battleCinematicProjectileDarkPlayer;
+}
+
+.laser-effect--dark.battle-cinematic-v1-projectile.from-enemy.to-player.is-live {
+  animation-name: battleCinematicProjectileDarkEnemy;
+}
+
+.laser-effect--dark.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(circle at center, rgba(233, 213, 255, 0.72), rgba(126, 34, 206, 0.34), rgba(17, 24, 39, 0.16), transparent 74%);
+}
+
+.laser-effect--dark.battle-cinematic-v1-sparks.is-live {
+  background:
+    radial-gradient(circle at 26% 30%, rgba(216, 180, 254, 0.86), transparent 20%),
+    radial-gradient(circle at 70% 28%, rgba(88, 28, 135, 0.82), transparent 22%),
+    radial-gradient(circle at 48% 72%, rgba(17, 24, 39, 0.62), transparent 24%);
+}
+
+.laser-effect--light.battle-cinematic-v1-projectile {
+  height: 5px;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 1), transparent 18%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 1) 18%, rgba(186, 230, 253, 0.98) 54%, rgba(255, 255, 255, 0.9) 82%, transparent);
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.88), 0 0 42px rgba(125, 211, 252, 0.36);
+}
+
+.laser-effect--light.battle-cinematic-v1-hitflash.is-live {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 1), rgba(186, 230, 253, 0.32), transparent 72%);
+}
+
+.laser-effect--light.battle-cinematic-v1-sparks.is-live {
+  background:
+    radial-gradient(circle at 24% 24%, rgba(255, 255, 255, 1), transparent 20%),
+    radial-gradient(circle at 76% 28%, rgba(224, 242, 254, 0.96), transparent 20%),
+    radial-gradient(circle at 48% 74%, rgba(186, 230, 253, 0.82), transparent 22%);
 }
 
 .battle-cinematic-v1-stage[data-current-actor="player"] .battle-cinematic-v1-unit.is-player.is-acting .battle-cinematic-v1-frame img {
@@ -11464,6 +11623,42 @@ body#page-world .world-competition-grid {
   100% {
     opacity: 0;
     transform: translateX(-156px) scaleX(1.22);
+  }
+}
+
+@keyframes battleCinematicProjectileDarkPlayer {
+  0% {
+    opacity: 0;
+    transform: translateX(0) translateY(0) scaleX(0.2);
+  }
+  12% {
+    opacity: 0.88;
+  }
+  46% {
+    opacity: 1;
+    transform: translateX(72px) translateY(-2px) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(156px) translateY(2px) scaleX(1.2);
+  }
+}
+
+@keyframes battleCinematicProjectileDarkEnemy {
+  0% {
+    opacity: 0;
+    transform: translateX(0) translateY(0) scaleX(0.2);
+  }
+  12% {
+    opacity: 0.88;
+  }
+  46% {
+    opacity: 1;
+    transform: translateX(-72px) translateY(2px) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-156px) translateY(-2px) scaleX(1.2);
   }
 }
 
@@ -11952,342 +12147,4 @@ body#page-world .world-competition-grid {
   image-rendering: pixelated;
 }
 .style-gauge,
-.style-rank {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(94, 234, 212, 0.24);
-  background: rgba(8, 16, 34, 0.46);
-}
-.style-gauge.is-compact,
-.style-rank.is-compact {
-  margin-top: 8px;
-  padding: 8px;
-}
-.style-gauge-head,
-.style-rank-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
-  color: rgba(231, 241, 255, 0.92);
-  font-size: 13px;
-}
-.style-gauge-head span,
-.style-rank-note,
-.style-gauge-next {
-  color: rgba(220, 229, 247, 0.72);
-  font-size: 12px;
-}
-.style-gauge-rows {
-  display: grid;
-  gap: 6px;
-}
-.style-gauge-row {
-  display: grid;
-  grid-template-columns: 42px minmax(80px, 1fr) 28px;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-}
-.style-gauge-label {
-  color: rgba(220, 229, 247, 0.78);
-  font-weight: 700;
-}
-.style-gauge-track {
-  height: 9px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(115, 143, 196, 0.18);
-}
-.style-gauge-fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-}
-.style-gauge-fill::-webkit-progress-bar {
-  background: transparent;
-}
-.style-gauge-fill::-webkit-progress-value {
-  border-radius: 8px;
-  background: linear-gradient(90deg, #22d3ee, #86efac);
-}
-.style-gauge-fill::-moz-progress-bar {
-  border-radius: 8px;
-  background: linear-gradient(90deg, #22d3ee, #86efac);
-}
-.style-gauge-row.is-current .style-gauge-label,
-.style-rank-chip.is-current {
-  color: #a7f3d0;
-}
-.style-gauge-row.is-current .style-gauge-fill::-webkit-progress-value {
-  background: linear-gradient(90deg, #5eead4, #facc15);
-}
-.style-gauge-row.is-current .style-gauge-fill::-moz-progress-bar {
-  background: linear-gradient(90deg, #5eead4, #facc15);
-}
-.style-gauge-row.is-next .style-gauge-fill::-webkit-progress-value {
-  background: linear-gradient(90deg, #38bdf8, #f9a8d4);
-}
-.style-gauge-row.is-next .style-gauge-fill::-moz-progress-bar {
-  background: linear-gradient(90deg, #38bdf8, #f9a8d4);
-}
-.style-gauge-score {
-  text-align: right;
-  color: rgba(231, 241, 255, 0.9);
-  font-variant-numeric: tabular-nums;
-}
-.style-rank-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.style-rank-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  background: rgba(20, 31, 56, 0.72);
-  border: 1px solid rgba(115, 143, 196, 0.22);
-  color: rgba(220, 229, 247, 0.84);
-  font-weight: 800;
-  font-size: 12px;
-}
-.style-rank-chip.is-current {
-  border-color: rgba(94, 234, 212, 0.42);
-  background: rgba(20, 83, 45, 0.2);
-}
-.affinity-card {
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(30, 41, 59, 0.72));
-}
-.affinity-label {
-  color: rgba(226, 232, 240, 0.72);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-.affinity-result {
-  margin: 3px 0 6px;
-  font-size: 24px;
-  font-weight: 900;
-}
-.affinity-card p {
-  margin: 0 0 6px;
-}
-.affinity-advantage {
-  border-color: rgba(34, 211, 238, 0.48);
-  background: linear-gradient(135deg, rgba(8, 47, 73, 0.86), rgba(20, 83, 45, 0.58));
-}
-.affinity-advantage .affinity-result {
-  color: #67e8f9;
-}
-.affinity-disadvantage {
-  border-color: rgba(251, 146, 60, 0.52);
-  background: linear-gradient(135deg, rgba(69, 10, 10, 0.82), rgba(124, 45, 18, 0.58));
-}
-.affinity-disadvantage .affinity-result {
-  color: #fdba74;
-}
-.affinity-neutral .affinity-result,
-.affinity-unknown .affinity-result {
-  color: rgba(226, 232, 240, 0.92);
-}
-.affinity-log-line {
-  color: #a7f3d0;
-  font-weight: 800;
-}
-.lab-level-card .card,
-.card.lab-level-card {
-  border-color: rgba(94, 234, 212, 0.28);
-  background: linear-gradient(135deg, rgba(8, 47, 73, 0.28), rgba(15, 23, 42, 0.9));
-}
-.lab-level-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-.lab-level-main {
-  margin-top: 2px;
-  color: #f8fafc;
-  font-size: 28px;
-  font-weight: 900;
-}
-.lab-level-rank {
-  padding: 6px 10px;
-  border: 1px solid rgba(94, 234, 212, 0.28);
-  border-radius: 999px;
-  background: rgba(14, 165, 233, 0.12);
-  color: #a5f3fc;
-  font-weight: 900;
-}
-.lab-level-bar {
-  overflow: hidden;
-  height: 10px;
-  margin-top: 14px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
-}
-.lab-level-bar-fill {
-  display: block;
-  width: var(--lab-level-progress, 0%);
-  min-width: 0;
-  max-width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #22d3ee, #a3e635);
-}
-.lab-level-foot {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
-  color: rgba(226, 232, 240, 0.78);
-  font-weight: 800;
-}
-.home-insect-research-card {
-  border-color: rgba(250, 204, 21, 0.25);
-  background: linear-gradient(135deg, rgba(69, 42, 8, 0.22), rgba(15, 23, 42, 0.94));
-}
-.home-insect-research-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.home-insect-research-title {
-  margin-top: 2px;
-  color: #fef3c7;
-  font-size: 22px;
-  font-weight: 900;
-}
-.home-insect-research-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-.home-insect-research-stat {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
-  padding: 10px;
-  background: rgba(15, 23, 42, 0.48);
-}
-.home-insect-research-stat span {
-  display: block;
-  color: rgba(226, 232, 240, 0.72);
-  font-size: 12px;
-  font-weight: 800;
-}
-.home-insect-research-stat b {
-  display: block;
-  margin-top: 4px;
-  color: #f8fafc;
-  font-size: 24px;
-}
-.home-insect-research-link {
-  margin-bottom: 0;
-}
-@media (max-width: 720px) {
-  .home-insect-research-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.battle-lab-level-inline {
-  margin-left: 8px;
-  color: rgba(226, 232, 240, 0.76);
-}
-.battle-lab-level-up {
-  color: #a5f3fc;
-  font-weight: 900;
-}
-.robot-overview-row {
-  grid-template-columns: 1fr !important;
-}
-.robot-overview-card {
-  display: grid;
-  gap: 8px;
-}
-.robot-overview-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: rgba(226, 232, 240, 0.82);
-  font-weight: 800;
-}
-.robot-overview-meta span {
-  padding: 4px 8px;
-  border: 1px solid rgba(94, 234, 212, 0.18);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.36);
-}
-.home-robot-details {
-  border: 1px solid rgba(94, 234, 212, 0.18);
-  border-radius: 14px;
-  padding: 10px;
-  background: rgba(15, 23, 42, 0.18);
-}
-.home-robot-details > summary,
-.home-spotlight-tab > summary {
-  cursor: pointer;
-  color: #a5f3fc;
-  font-weight: 900;
-}
-.home-robot-details > .main-robot-meta-grid {
-  margin-top: 10px;
-}
-.home-spotlight-tab {
-  margin-top: 10px;
-}
-@media (max-width: 768px) {
-  .home-today-progress-grid {
-    gap: 8px;
-  }
-  .home-today-progress-stat {
-    padding: 10px;
-  }
-  .home-today-progress-value {
-    font-size: 19px;
-  }
-  .robot-maintenance-hero {
-    grid-template-columns: 1fr;
-  }
-  .robot-maintenance-thumb {
-    width: 120px;
-  }
-  .robot-maintenance-delta-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .style-gauge-row {
-    grid-template-columns: 38px minmax(64px, 1fr) 26px;
-    gap: 6px;
-  }
-  .home-priority-stack {
-    display: flex;
-  }
-  .home-layout-grid,
-  .home-main-stack,
-  .home-right-stack {
-    display: contents;
-  }
-  .home-current-robot { order: 1; }
-  .home-actions-panel { order: 2; }
-  .home-mvp-panel { order: 6; }
-  .home-champion-panel { order: 6; }
-  .home-comms-panel { order: 7; }
-  .home-weekly-panel { order: 8; }
-  .home-faction-panel { order: 9; }
-  .home-nav-panel { order: 10; }
-  .home-ranking-panel { order: 11; }
-  .home-visibility-panel { order: 12; }
-}
+.style
