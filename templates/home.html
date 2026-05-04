@@ -741,7 +741,7 @@
         <div class="lab-level-rank">{{ home_lab_level['rank_label'] }}</div>
       </div>
       <div class="lab-level-bar" aria-label="らぼLv進捗">
-        <div class="lab-level-bar-fill" style="--lab-level-progress: {{ home_lab_level.get('progress_pct', 0) }}%"></div>
+        <progress class="lab-level-bar-fill" value="{{ home_lab_level.get('progress_pct', 0) }}" max="100">{{ home_lab_level.get('progress_pct', 0) }}%</progress>
       </div>
       <div class="lab-level-foot">
         <span>次のLvまで {{ home_lab_level['exp_to_next'] }} EXP</span>

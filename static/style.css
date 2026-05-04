@@ -12335,10 +12335,22 @@ body#page-world .world-competition-grid {
 }
 .lab-level-bar-fill {
   display: block;
-  width: var(--lab-level-progress, 0%);
-  min-width: 0;
-  max-width: 100%;
+  width: 100%;
   height: 100%;
+  appearance: none;
+  border: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  background: transparent;
+}
+.lab-level-bar-fill::-webkit-progress-bar {
+  background: transparent;
+}
+.lab-level-bar-fill::-webkit-progress-value {
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22d3ee, #a3e635);
+}
+.lab-level-bar-fill::-moz-progress-bar {
   border-radius: inherit;
   background: linear-gradient(90deg, #22d3ee, #a3e635);
 }
