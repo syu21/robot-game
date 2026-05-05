@@ -278,8 +278,8 @@
   </div>
 </div>
 {% endif %}
-{% if show_daily_research_modal %}
-<div class="daily-research-modal-backdrop" data-daily-research-modal data-has-rewards="{{ 1 if claimed_research_rewards else 0 }}" data-has-report="{{ 1 if yesterday_report else 0 }}" data-has-task="{{ 1 if daily_task else 0 }}">
+{% if daily_research_available %}
+<div class="daily-research-modal-backdrop{% if not show_daily_research_modal %} is-hidden{% endif %}" data-daily-research-modal data-has-rewards="{{ 1 if claimed_research_rewards else 0 }}" data-has-report="{{ 1 if yesterday_report else 0 }}" data-has-task="{{ 1 if daily_task else 0 }}">
   <div class="daily-research-modal" role="dialog" aria-modal="true" aria-labelledby="daily-research-title">
     <div class="daily-research-modal__header">
       <div class="daily-research-modal__eyebrow">DAILY RESEARCH</div>
@@ -1061,6 +1061,9 @@
             <input type="hidden" name="next" value="{{ request.path }}" />
             <button type="submit" class="btn-secondary">Next Action を開く</button>
           </form>
+          {% endif %}
+          {% if daily_research_available %}
+          <button type="button" class="btn-secondary" data-daily-research-open>デイリー研究レポート</button>
           {% endif %}
         </div>
         {% else %}

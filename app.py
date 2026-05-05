@@ -25608,6 +25608,15 @@ def home():
         today_key,
         daily_research_modal_payload,
     )
+    daily_research_available = bool(
+        claimed_research_rewards
+        or yesterday_report
+        or daily_task
+    )
+    show_home_visibility_controls = bool(
+        show_home_visibility_controls
+        or daily_research_available
+    )
     daily_research_area_key = saved_explore_area_key or selected_explore_area_key or "layer_1"
     daily_research_task_line = None
     if daily_task:
@@ -25798,6 +25807,7 @@ def home():
             home_comm_room_items_by_key=home_comm_room_items_by_key,
             home_comm_personal_items=home_comm_personal_items,
             show_daily_research_modal=show_daily_research_modal,
+            daily_research_available=daily_research_available,
             claimed_research_rewards=claimed_research_rewards,
             yesterday_report=yesterday_report,
             daily_task=daily_task,

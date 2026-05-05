@@ -215,37 +215,43 @@
 
   const bindDailyResearchModal = () => {
     const modal = document.querySelector("[data-daily-research-modal]");
+    const openButtons = Array.from(document.querySelectorAll("[data-daily-research-open]"));
     if (!modal) return;
-    let closed = false;
+    let seenSent = false;
 
-    const closeModal = async () => {
-      if (closed) return;
-      closed = true;
-      const payload = {
-        has_claimed_rewards: String(modal.dataset.hasRewards || "0") === "1",
-        has_yesterday_report: String(modal.dataset.hasReport || "0") === "1",
-        has_daily_task: String(modal.dataset.hasTask || "0") === "1",
-      };
-      modal.remove();
+    const payloadForModal = () => ({
+      has_claimed_rewards: String(modal.dataset.hasRewards || "0") === "1",
+      has_yesterday_report: String(modal.dataset.hasReport || "0") === "1",
+      has_daily_task: String(modal.dataset.hasTask || "0") === "1",
+    });
+
+    const markSeen = async () => {
+      if (seenSent) return;
+      seenSent = true;
       try {
         await fetch("/daily-research/modal-seen", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payloadForModal()),
         });
       } catch (_err) {
         // The modal is closed locally even if the viewed marker fails.
       }
     };
 
+    const closeModal = async () => {
+      modal.classList.add("is-hidden");
+      await markSeen();
+    };
+
+    const openModal = () => {
+      modal.classList.remove("is-hidden");
+    };
+
     const markSeenOnNavigate = () => {
-      if (closed) return;
-      closed = true;
-      const payload = JSON.stringify({
-        has_claimed_rewards: String(modal.dataset.hasRewards || "0") === "1",
-        has_yesterday_report: String(modal.dataset.hasReport || "0") === "1",
-        has_daily_task: String(modal.dataset.hasTask || "0") === "1",
-      });
+      if (seenSent) return;
+      seenSent = true;
+      const payload = JSON.stringify(payloadForModal());
       try {
         if (navigator.sendBeacon) {
           navigator.sendBeacon("/daily-research/modal-seen", new Blob([payload], {type: "application/json"}));
@@ -262,6 +268,12 @@
       }
     };
 
+    openButtons.forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        openModal();
+      });
+    });
     modal.querySelectorAll("[data-daily-research-close]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
@@ -272,7 +284,7 @@
       form.addEventListener("submit", markSeenOnNavigate);
     });
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape") {
+      if (ev.key === "Escape" && !modal.classList.contains("is-hidden")) {
         closeModal();
       }
     });
