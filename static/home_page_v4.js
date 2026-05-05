@@ -213,6 +213,71 @@
     }, 60);
   };
 
+  const bindDailyResearchModal = () => {
+    const modal = document.querySelector("[data-daily-research-modal]");
+    if (!modal) return;
+    let closed = false;
+
+    const closeModal = async () => {
+      if (closed) return;
+      closed = true;
+      const payload = {
+        has_claimed_rewards: String(modal.dataset.hasRewards || "0") === "1",
+        has_yesterday_report: String(modal.dataset.hasReport || "0") === "1",
+        has_daily_task: String(modal.dataset.hasTask || "0") === "1",
+      };
+      modal.remove();
+      try {
+        await fetch("/daily-research/modal-seen", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+      } catch (_err) {
+        // The modal is closed locally even if the viewed marker fails.
+      }
+    };
+
+    const markSeenOnNavigate = () => {
+      if (closed) return;
+      closed = true;
+      const payload = JSON.stringify({
+        has_claimed_rewards: String(modal.dataset.hasRewards || "0") === "1",
+        has_yesterday_report: String(modal.dataset.hasReport || "0") === "1",
+        has_daily_task: String(modal.dataset.hasTask || "0") === "1",
+      });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/daily-research/modal-seen", new Blob([payload], {type: "application/json"}));
+          return;
+        }
+        fetch("/daily-research/modal-seen", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: payload,
+          keepalive: true,
+        });
+      } catch (_err) {
+        // no-op
+      }
+    };
+
+    modal.querySelectorAll("[data-daily-research-close]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        closeModal();
+      });
+    });
+    modal.querySelectorAll("form").forEach((form) => {
+      form.addEventListener("submit", markSeenOnNavigate);
+    });
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        closeModal();
+      }
+    });
+  };
+
   const init = () => {
     markStep("home:init:start");
     if (!isHomePage()) {
@@ -257,6 +322,13 @@
       markStep("home:init:starter-name-bind");
     } catch (err) {
       reportCaught("home:init:starter-name-bind", err);
+    }
+
+    try {
+      bindDailyResearchModal();
+      markStep("home:init:daily-research-bind");
+    } catch (err) {
+      reportCaught("home:init:daily-research-bind", err);
     }
 
     markStep("home:init:done");

@@ -416,6 +416,7 @@ def main():
             market_refresh_count_today INTEGER NOT NULL DEFAULT 0,
             market_free_refresh_used_at TEXT,
             market_refresh_day_key TEXT,
+            last_daily_research_modal_day TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -641,6 +642,23 @@ def main():
             legs_key TEXT NOT NULL,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_instance_decors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER NOT NULL,
+            decor_asset_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            offset_x INTEGER NOT NULL DEFAULT 0,
+            offset_y INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(robot_instance_id, slot_index),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (decor_asset_id) REFERENCES robot_decor_assets(id)
         )
         """
     )
@@ -967,6 +985,46 @@ def main():
             entity_id INTEGER,
             delta_coins INTEGER,
             delta_count INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            task_key TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            target_event TEXT NOT NULL,
+            target_count INTEGER NOT NULL DEFAULT 1,
+            current_count INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            completed_at TEXT,
+            claimed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            source_day_key TEXT NOT NULL,
+            claim_day_key TEXT NOT NULL,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            core_progress_delta INTEGER NOT NULL DEFAULT 0,
+            reason TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            claimed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, source_day_key)
         )
         """
     )
@@ -1693,6 +1751,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN market_free_refresh_used_at TEXT")
     if "market_refresh_day_key" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
+    if "last_daily_research_modal_day" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
     for release_key in RELEASE_FLAG_KEYS:
         cur.execute(
             """
@@ -1979,6 +2039,43 @@ def main():
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_part_instance_id INTEGER")
     if "decor_asset_id" not in rip_cols:
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_instance_decors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER NOT NULL,
+            decor_asset_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            offset_x INTEGER NOT NULL DEFAULT 0,
+            offset_y INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(robot_instance_id, slot_index),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (decor_asset_id) REFERENCES robot_decor_assets(id)
+        )
+        """
+    )
+    rid_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instance_decors)").fetchall()}
+    if "offset_x" not in rid_cols:
+        cur.execute("ALTER TABLE robot_instance_decors ADD COLUMN offset_x INTEGER NOT NULL DEFAULT 0")
+    if "offset_y" not in rid_cols:
+        cur.execute("ALTER TABLE robot_instance_decors ADD COLUMN offset_y INTEGER NOT NULL DEFAULT 0")
+    if "created_at" not in rid_cols:
+        cur.execute("ALTER TABLE robot_instance_decors ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+    if "updated_at" not in rid_cols:
+        cur.execute("ALTER TABLE robot_instance_decors ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO robot_instance_decors (
+            robot_instance_id, decor_asset_id, slot_index, offset_x, offset_y, created_at, updated_at
+        )
+        SELECT robot_instance_id, decor_asset_id, 0, 0, 0, strftime('%s','now'), strftime('%s','now')
+        FROM robot_instance_parts
+        WHERE decor_asset_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM robot_decor_assets rda WHERE rda.id = robot_instance_parts.decor_asset_id)
+        """
+    )
     rda_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_decor_assets)").fetchall()}
     if "key" not in rda_cols:
         cur.execute("ALTER TABLE robot_decor_assets ADD COLUMN key TEXT")

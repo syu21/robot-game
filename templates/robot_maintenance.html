@@ -43,8 +43,8 @@
       <div class="robot-maintenance-current-card">
         <div class="robot-time">装飾</div>
         <div class="robot-part">
-          {% if current_decor_id %}
-          装着中
+          {% if current_decor_slots %}
+          {{ current_decor_slots|selectattr('decor_asset_id')|list|length }} / {{ max_robot_decor_slots }}
           {% else %}
           なし
           {% endif %}
@@ -68,27 +68,43 @@
     </div>
 
     {% if selected_slot == 'DECOR' %}
-    <div class="upgrade-cost">ボス撃破の勲章や支援トロフィーを、ロボの装飾として付け替えられます。</div>
-    <form method="post" class="robot-maintenance-form">
-      <input type="hidden" name="slot" value="DECOR" />
-      <div class="robot-maintenance-option-grid is-decor">
-        {% for option in decor_options %}
-        <label class="robot-card robot-maintenance-option{% if option['is_selected'] %} is-current{% endif %}">
-          <div class="part-check">
-            <input type="radio" name="decor_asset_id" value="{{ option['id'] }}" {% if option['is_selected'] %}checked{% endif %} />
-            <span>{% if option['is_selected'] %}現在の構成{% else %}この装飾にする{% endif %}</span>
+    <div class="upgrade-cost">最大{{ max_robot_decor_slots }}個まで装着できます。初期位置は左上から横並びです。</div>
+    <div class="robot-maintenance-decor-slots">
+      {% for decor_slot in current_decor_slots %}
+      <form method="post" class="robot-card robot-maintenance-decor-slot{% if decor_slot['decor_asset_id'] %} is-current{% endif %}">
+        <input type="hidden" name="slot" value="DECOR" />
+        <input type="hidden" name="decor_slot_index" value="{{ decor_slot['slot_index'] }}" />
+        <div class="robot-maintenance-decor-slot-head">
+          <div>
+            <div class="robot-time">{{ decor_slot['slot_label'] }}</div>
+            <div class="robot-part">{{ decor_slot['label'] }}</div>
           </div>
-          <div class="robot-part">{{ option['label'] }}</div>
-          {% if option['image_url'] %}
-          <img class="robot-maintenance-decor-image" src="{{ option['image_url'] }}" alt="{{ option['label'] }}" loading="lazy" />
-          {% else %}
-          <div class="upgrade-cost">見た目を軽くしたい時はこちら。</div>
+          {% if decor_slot['image_url'] %}
+          <img class="robot-maintenance-decor-image" src="{{ decor_slot['image_url'] }}" alt="{{ decor_slot['label'] }}" loading="lazy" />
           {% endif %}
+        </div>
+        <label class="robot-maintenance-field">
+          <span>装飾</span>
+          <select name="decor_asset_id">
+            {% for option in decor_options %}
+            <option value="{{ option['id'] }}" {% if option['id'] == decor_slot['decor_asset_id'] %}selected{% endif %}>{{ option['label'] }}</option>
+            {% endfor %}
+          </select>
         </label>
-        {% endfor %}
-      </div>
-      <button type="submit" class="fuse-submit-large">装飾を更新する</button>
-    </form>
+        <div class="robot-maintenance-decor-offsets">
+          <label class="robot-maintenance-field">
+            <span>X</span>
+            <input type="number" name="offset_x" value="{{ decor_slot['offset_x'] }}" min="{{ robot_decor_offset_min }}" max="{{ robot_decor_offset_max }}" step="1" />
+          </label>
+          <label class="robot-maintenance-field">
+            <span>Y</span>
+            <input type="number" name="offset_y" value="{{ decor_slot['offset_y'] }}" min="{{ robot_decor_offset_min }}" max="{{ robot_decor_offset_max }}" step="1" />
+          </label>
+        </div>
+        <button type="submit" class="battle-home-link">この枠を更新</button>
+      </form>
+      {% endfor %}
+    </div>
     {% else %}
     {% set current_item = current_part_items.get(maintenance_slot['part_type']) %}
     <div class="robot-maintenance-current-focus">

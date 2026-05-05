@@ -36,6 +36,14 @@
     <div class="upgrade-cost">{% if boss_alert_status %}ボス警報中は自動表示されます。{% else %}今やることを迷わないよう、自動表示しています。{% endif %}</div>
     {% endif %}
     <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
+    {% if daily_research_task_line %}
+    <div class="home-explore-context">{{ daily_research_task_line }}</div>
+    {% if daily_task and daily_task['status'] == 'completed' %}
+    <form method="post" action="{{ url_for('daily_research_task_claim') }}" class="inline-form inline-form-top">
+      <button type="submit" class="btn-secondary">研究課題報酬を受け取る</button>
+    </form>
+    {% endif %}
+    {% endif %}
     {% if home_primary_explore_cta %}
     <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     {% endif %}
@@ -119,6 +127,14 @@
       <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
+    {% if daily_research_task_line %}
+    <div class="home-explore-context">{{ daily_research_task_line }}</div>
+    {% if daily_task and daily_task['status'] == 'completed' %}
+    <form method="post" action="{{ url_for('daily_research_task_claim') }}" class="inline-form inline-form-top">
+      <button type="submit" class="btn-secondary">研究課題報酬を受け取る</button>
+    </form>
+    {% endif %}
+    {% endif %}
     <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
     {% if home_primary_explore_cta['is_post'] %}
     <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
@@ -259,6 +275,59 @@
         <button type="submit" class="btn-secondary" formaction="{{ url_for('home_starter_robot_name_skip') }}">あとで決める</button>
       </div>
     </form>
+  </div>
+</div>
+{% endif %}
+{% if show_daily_research_modal %}
+<div class="daily-research-modal-backdrop" data-daily-research-modal data-has-rewards="{{ 1 if claimed_research_rewards else 0 }}" data-has-report="{{ 1 if yesterday_report else 0 }}" data-has-task="{{ 1 if daily_task else 0 }}">
+  <div class="daily-research-modal" role="dialog" aria-modal="true" aria-labelledby="daily-research-title">
+    <div class="daily-research-modal__header">
+      <div class="daily-research-modal__eyebrow">DAILY RESEARCH</div>
+      <h2 id="daily-research-title">デイリー研究レポート</h2>
+    </div>
+    {% if claimed_research_rewards %}
+    <section class="daily-research-section daily-research-section--reward">
+      <h3>昨日の研究成果が届きました</h3>
+      {% for reward in claimed_research_rewards %}
+      <p>昨日の出撃データの解析が完了しました。</p>
+      <p class="daily-research-reward">コイン +{{ reward['reward_coins'] }}</p>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% if yesterday_report %}
+    <section class="daily-research-section">
+      <h3>昨日の研究レポート</h3>
+      <ul>
+        <li>出撃：{{ yesterday_report['explore_count'] }}回</li>
+        <li>入手パーツ：{{ yesterday_report['drop_count'] }}個</li>
+        <li>強化：{{ yesterday_report['strengthen_count'] }}回</li>
+        <li>ボス遭遇：{{ yesterday_report['boss_encounter_count'] }}回</li>
+      </ul>
+      <p>{{ yesterday_report['suggestion'] }}</p>
+    </section>
+    {% endif %}
+    {% if daily_task %}
+    <section class="daily-research-section">
+      <h3>今日の研究課題</h3>
+      {% if daily_task['status'] == 'completed' %}
+      <p>今日の研究課題を達成済みです。</p>
+      {% else %}
+      <p>{{ daily_task['title'] }}</p>
+      {% endif %}
+      <p>{{ daily_task['current_count_display'] }} / {{ daily_task['target_count'] }}</p>
+      <p>達成報酬：{{ daily_task['reward_coins'] }}コイン</p>
+    </section>
+    {% endif %}
+    <div class="daily-research-modal__actions">
+      <form method="post" action="{{ daily_research_explore_action }}" class="inline-form">
+        <input type="hidden" name="area_key" value="{{ daily_research_area_key }}" />
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        <button type="submit" data-explore-cta="1" {% if ct_remain and ct_remain > 0 and not is_admin %}disabled{% endif %}>出撃する</button>
+      </form>
+      <button type="button" class="btn-secondary" data-daily-research-close>閉じる</button>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -1004,6 +1073,6 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-homefix1"></script>
+<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
 <script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
 {% endblock %}

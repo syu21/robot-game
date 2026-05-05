@@ -57,4 +57,20 @@ def audit_log(
             """,
             (now_ts, event_type, payload_json),
         )
+    if user_id:
+        try:
+            from services.daily_research import (
+                DAILY_RESEARCH_REWARD_SOURCE_EVENTS,
+                DAILY_RESEARCH_TASK_EVENTS,
+                ensure_tomorrow_research_reward,
+                get_day_key,
+                update_daily_task_progress,
+            )
+
+            if event_type in DAILY_RESEARCH_TASK_EVENTS:
+                update_daily_task_progress(db, int(user_id), event_type)
+            if event_type in DAILY_RESEARCH_REWARD_SOURCE_EVENTS:
+                ensure_tomorrow_research_reward(db, int(user_id), get_day_key(now_ts))
+        except Exception:
+            pass
     return rid

@@ -256,4 +256,11 @@ AUDIT_EVENT_TYPES = {
     "TUTORIAL_LAYER1_STATE_CHANGE": "audit.tutorial.layer1.state_change",
     "TUTORIAL_LAYER1_FORCED_BOSS": "audit.tutorial.layer1.forced_boss",
     "TUTORIAL_LAYER1_BOSS_FAIL_GUIDED": "audit.tutorial.layer1.boss_fail_guided",
+    "DAILY_RESEARCH_TASK_CREATE": "audit.daily_research.task.create",
+    "DAILY_RESEARCH_TASK_PROGRESS": "audit.daily_research.task.progress",
+    "DAILY_RESEARCH_TASK_COMPLETE": "audit.daily_research.task.complete",
+    "DAILY_RESEARCH_TASK_CLAIM": "audit.daily_research.task.claim",
+    "DAILY_RESEARCH_REWARD_RESERVE": "audit.daily_research.reward.reserve",
+    "DAILY_RESEARCH_REWARD_CLAIM": "audit.daily_research.reward.claim",
+    "DAILY_RESEARCH_MODAL_VIEW": "audit.daily_research.modal.view",
 }

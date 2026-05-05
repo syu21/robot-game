@@ -211,6 +211,83 @@ class RobotMaintenanceTests(unittest.TestCase):
                 (self.robot_id,),
             ).fetchone()
             self.assertEqual(int(parts_row["decor_asset_id"]), int(decor["id"]))
+            slot_row = db.execute(
+                """
+                SELECT decor_asset_id, slot_index, offset_x, offset_y
+                FROM robot_instance_decors
+                WHERE robot_instance_id = ?
+                """,
+                (self.robot_id,),
+            ).fetchone()
+            self.assertIsNotNone(slot_row)
+            self.assertEqual(int(slot_row["decor_asset_id"]), int(decor["id"]))
+            self.assertEqual(int(slot_row["slot_index"]), 0)
+
+    def test_robot_maintenance_updates_multiple_decor_slots_with_offsets(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            decor_rows = db.execute(
+                "SELECT id FROM robot_decor_assets ORDER BY id ASC LIMIT 2"
+            ).fetchall()
+            self.assertGreaterEqual(len(decor_rows), 2)
+            decor_ids = [int(row["id"]) for row in decor_rows]
+            now = int(time.time())
+            for decor_id in decor_ids:
+                db.execute(
+                    "INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at) VALUES (?, ?, ?)",
+                    (self.user_id, decor_id, now),
+                )
+            db.commit()
+
+        client = self._client()
+        resp = client.post(
+            f"/robots/{self.robot_id}/maintenance?slot=DECOR",
+            data={
+                "slot": "DECOR",
+                "decor_slot_index": "1",
+                "decor_asset_id": str(decor_ids[1]),
+                "offset_x": "18",
+                "offset_y": "7",
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            slot_row = db.execute(
+                """
+                SELECT decor_asset_id, slot_index, offset_x, offset_y
+                FROM robot_instance_decors
+                WHERE robot_instance_id = ? AND slot_index = 1
+                """,
+                (self.robot_id,),
+            ).fetchone()
+            self.assertIsNotNone(slot_row)
+            self.assertEqual(int(slot_row["decor_asset_id"]), decor_ids[1])
+            self.assertEqual(int(slot_row["offset_x"]), 18)
+            self.assertEqual(int(slot_row["offset_y"]), 7)
+
+        clear_resp = client.post(
+            f"/robots/{self.robot_id}/maintenance?slot=DECOR",
+            data={
+                "slot": "DECOR",
+                "decor_slot_index": "1",
+                "decor_asset_id": "0",
+                "offset_x": "18",
+                "offset_y": "7",
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(clear_resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            slot_row = db.execute(
+                "SELECT id FROM robot_instance_decors WHERE robot_instance_id = ? AND slot_index = 1",
+                (self.robot_id,),
+            ).fetchone()
+            self.assertIsNone(slot_row)
 
 
 if __name__ == "__main__":

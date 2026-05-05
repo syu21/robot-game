@@ -63,6 +63,15 @@ from constants import (
 )
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
+from services.daily_research import (
+    build_yesterday_report,
+    claim_daily_task_reward,
+    claim_pending_research_rewards,
+    get_day_key,
+    get_or_create_daily_task,
+    mark_daily_research_modal_viewed,
+    should_show_daily_research_modal,
+)
 from services.archetype import compute_archetype
 from services.lab_level import get_lab_rank_label, grant_lab_exp, lab_level_view
 from services.presence import get_presence_count, get_recent_home_robot_presence, get_recent_presence, touch_presence
@@ -276,6 +285,10 @@ ROBOT_MAINTENANCE_SLOT_DEFS = (
     {"slot": "DECOR", "slot_key": "decor", "label": "装飾", "part_type": None, "instance_col": None, "key_col": None},
 )
 ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY = {item["slot"]: item for item in ROBOT_MAINTENANCE_SLOT_DEFS}
+MAX_ROBOT_DECOR_SLOTS = 5
+ROBOT_DECOR_SLOT_SPACING = 30
+ROBOT_DECOR_OFFSET_MIN = -32
+ROBOT_DECOR_OFFSET_MAX = 96
 HOME_COMM_PREVIEW_LIMIT = 3
 COMM_ROOM_DEFS = (
     {
@@ -8979,6 +8992,46 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            task_key TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            target_event TEXT NOT NULL,
+            target_count INTEGER NOT NULL DEFAULT 1,
+            current_count INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            completed_at TEXT,
+            claimed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            source_day_key TEXT NOT NULL,
+            claim_day_key TEXT NOT NULL,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            core_progress_delta INTEGER NOT NULL DEFAULT 0,
+            reason TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            claimed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, source_day_key)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
@@ -9094,6 +9147,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN market_free_refresh_used_at TEXT")
     if "market_refresh_day_key" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
+    if "last_daily_research_modal_day" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -9325,6 +9380,23 @@ def ensure_schema(db):
             legs_offset_y INTEGER NOT NULL DEFAULT 0,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_instance_decors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER NOT NULL,
+            decor_asset_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            offset_x INTEGER NOT NULL DEFAULT 0,
+            offset_y INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(robot_instance_id, slot_index),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (decor_asset_id) REFERENCES robot_decor_assets(id)
         )
         """
     )
@@ -10649,6 +10721,43 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_offset_y INTEGER NOT NULL DEFAULT 0")
     if "decor_asset_id" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_instance_decors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER NOT NULL,
+            decor_asset_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            offset_x INTEGER NOT NULL DEFAULT 0,
+            offset_y INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(robot_instance_id, slot_index),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (decor_asset_id) REFERENCES robot_decor_assets(id)
+        )
+        """
+    )
+    rid_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_instance_decors)").fetchall()}
+    if "offset_x" not in rid_cols:
+        db.execute("ALTER TABLE robot_instance_decors ADD COLUMN offset_x INTEGER NOT NULL DEFAULT 0")
+    if "offset_y" not in rid_cols:
+        db.execute("ALTER TABLE robot_instance_decors ADD COLUMN offset_y INTEGER NOT NULL DEFAULT 0")
+    if "created_at" not in rid_cols:
+        db.execute("ALTER TABLE robot_instance_decors ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+    if "updated_at" not in rid_cols:
+        db.execute("ALTER TABLE robot_instance_decors ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+    db.execute(
+        """
+        INSERT OR IGNORE INTO robot_instance_decors (
+            robot_instance_id, decor_asset_id, slot_index, offset_x, offset_y, created_at, updated_at
+        )
+        SELECT robot_instance_id, decor_asset_id, 0, 0, 0, strftime('%s','now'), strftime('%s','now')
+        FROM robot_instance_parts
+        WHERE decor_asset_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM robot_decor_assets rda WHERE rda.id = robot_instance_parts.decor_asset_id)
+        """
+    )
     rda_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_decor_assets)").fetchall()}
     if "key" not in rda_cols:
         db.execute("ALTER TABLE robot_decor_assets ADD COLUMN key TEXT")
@@ -13192,7 +13301,11 @@ def _compose_instance_image(db, instance_row, parts_row):
     r_arm = _get_part_by_key(db, parts_row["r_arm_key"])
     l_arm = _get_part_by_key(db, parts_row["l_arm_key"])
     legs = _get_part_by_key(db, parts_row["legs_key"])
-    decor = _get_decor_asset_by_id(db, parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None)
+    decor_layers = _robot_instance_decor_layers(
+        db,
+        instance_row["id"],
+        legacy_decor_id=parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None,
+    )
     if not all([head, r_arm, l_arm, legs]):
         return None
     offsets = _robot_instance_part_offsets(parts_row)
@@ -13218,7 +13331,7 @@ def _compose_instance_image(db, instance_row, parts_row):
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
         },
         out_path,
-        _decor_layer_or_none(decor),
+        decor_layers,
     )
     db.execute(
         "UPDATE robot_instances SET composed_image_path = ?, updated_at = ? WHERE id = ?",
@@ -13257,7 +13370,11 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
     r_arm = _get_part_by_key(db, parts_row["r_arm_key"])
     l_arm = _get_part_by_key(db, parts_row["l_arm_key"])
     legs = _get_part_by_key(db, parts_row["legs_key"])
-    decor = _get_decor_asset_by_id(db, parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None)
+    decor_layers = _robot_instance_decor_layers(
+        db,
+        instance_id,
+        legacy_decor_id=parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None,
+    )
     if not all([head, r_arm, l_arm, legs]):
         raise ValueError("パーツ構成が不正です。")
     offsets = _robot_instance_part_offsets(parts_row)
@@ -13284,7 +13401,7 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
         },
         out_path,
-        _decor_layer_or_none(decor),
+        decor_layers,
     )
 
     badge_rel = f"robot_icons/{instance_id}.png"
@@ -20985,15 +21102,63 @@ def _decor_image_rel(image_path, decor_key=None):
     return DECOR_PLACEHOLDER_REL
 
 
-def _decor_layer_or_none(decor_row):
+def _decor_layer_or_none(decor_row, offset_x=0, offset_y=0):
     if not decor_row:
         return None
     return {
         "path": _static_abs(_decor_image_rel(decor_row["image_path"], decor_row["key"] if "key" in decor_row.keys() else None)),
-        "x": 0,
-        "y": 0,
+        "x": int(offset_x or 0),
+        "y": int(offset_y or 0),
         "is_decor": True,
     }
+
+
+def _default_robot_decor_offset(slot_index):
+    slot_index = max(0, min(MAX_ROBOT_DECOR_SLOTS - 1, int(slot_index or 0)))
+    return {"x": slot_index * ROBOT_DECOR_SLOT_SPACING, "y": 0}
+
+
+def _clamp_robot_decor_offset(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 0
+    return max(ROBOT_DECOR_OFFSET_MIN, min(ROBOT_DECOR_OFFSET_MAX, parsed))
+
+
+def _robot_instance_decor_rows(db, instance_id, legacy_decor_id=None):
+    rows = db.execute(
+        """
+        SELECT rid.slot_index, rid.offset_x, rid.offset_y,
+               rda.id, rda.key, rda.name_ja, rda.image_path
+        FROM robot_instance_decors rid
+        JOIN robot_decor_assets rda ON rda.id = rid.decor_asset_id
+        WHERE rid.robot_instance_id = ? AND rda.is_active = 1
+        ORDER BY rid.slot_index ASC
+        """,
+        (int(instance_id),),
+    ).fetchall()
+    if rows:
+        return rows[:MAX_ROBOT_DECOR_SLOTS]
+    if legacy_decor_id:
+        decor = _get_decor_asset_by_id(db, legacy_decor_id)
+        return [decor] if decor else []
+    return []
+
+
+def _robot_instance_decor_layers(db, instance_id, legacy_decor_id=None):
+    layers = []
+    for index, row in enumerate(_robot_instance_decor_rows(db, instance_id, legacy_decor_id=legacy_decor_id)):
+        slot_index = int(row["slot_index"]) if "slot_index" in row.keys() else index
+        default_offset = _default_robot_decor_offset(slot_index)
+        layers.append(
+            _decor_layer_or_none(
+                row,
+                row["offset_x"] if "offset_x" in row.keys() else default_offset["x"],
+                row["offset_y"] if "offset_y" in row.keys() else default_offset["y"],
+            )
+        )
+    return [layer for layer in layers if layer]
 
 
 def _is_admin_user(user_id):
@@ -21651,6 +21816,10 @@ def _purge_part_with_dependencies(db, part):
             instance_ids,
         )
         db.execute(
+            f"DELETE FROM robot_instance_decors WHERE robot_instance_id IN ({placeholders})",
+            instance_ids,
+        )
+        db.execute(
             f"DELETE FROM robot_instance_parts WHERE robot_instance_id IN ({placeholders})",
             instance_ids,
         )
@@ -21732,7 +21901,10 @@ def compose_robot(head_layer, r_arm_layer, l_arm_layer, legs_layer, out_path, de
     # Fixed composition order for Medarot-style 4-part rendering.
     layers = [legs_layer, head_layer, r_arm_layer, l_arm_layer]
     if decor_layer:
-        layers.append(decor_layer)
+        if isinstance(decor_layer, (list, tuple)):
+            layers.extend([layer for layer in decor_layer if layer])
+        else:
+            layers.append(decor_layer)
     for layer in layers:
         image_path = layer["path"]
         if not image_path or not os.path.exists(image_path):
@@ -25419,7 +25591,30 @@ def home():
     show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
     show_market_menu = _market_can_access(db, user)
     boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
-    today_key = datetime.now(JST).strftime("%Y-%m-%d")
+    today_key = get_day_key()
+    daily_task = get_or_create_daily_task(db, int(user["id"]), today_key)
+    claimed_research_rewards = claim_pending_research_rewards(db, int(user["id"]), today_key)
+    if claimed_research_rewards:
+        user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    yesterday_report = build_yesterday_report(db, int(user["id"]), today_key)
+    daily_research_modal_payload = {
+        "claimed_rewards": claimed_research_rewards,
+        "yesterday_report": yesterday_report,
+        "daily_task": daily_task,
+    }
+    show_daily_research_modal = should_show_daily_research_modal(
+        db,
+        int(user["id"]),
+        today_key,
+        daily_research_modal_payload,
+    )
+    daily_research_area_key = saved_explore_area_key or selected_explore_area_key or "layer_1"
+    daily_research_task_line = None
+    if daily_task:
+        daily_research_task_line = (
+            f"今日の研究課題：{daily_task['title']} "
+            f"{min(int(daily_task['current_count'] or 0), int(daily_task['target_count'] or 1))}/{int(daily_task['target_count'] or 1)}"
+        )
     today_start_ts, today_end_ts = _jst_day_key_to_bounds(today_key)
     daily_lab_login_done = db.execute(
         """
@@ -25601,6 +25796,13 @@ def home():
             home_comm_world_items=home_comm_world_items,
             home_comm_room_items_by_key=home_comm_room_items_by_key,
             home_comm_personal_items=home_comm_personal_items,
+            show_daily_research_modal=show_daily_research_modal,
+            claimed_research_rewards=claimed_research_rewards,
+            yesterday_report=yesterday_report,
+            daily_task=daily_task,
+            daily_research_task_line=daily_research_task_line,
+            daily_research_explore_action=url_for("explore"),
+            daily_research_area_key=daily_research_area_key,
         )
     except Exception as exc:
         app.logger.exception("home rendering failed")
@@ -25665,6 +25867,45 @@ def home_display_name_update():
     session.pop("needs_display_name_setup", None)
     flash("表示名を登録しました。", "notice")
     return redirect(next_path if next_path.startswith("/") else url_for("home"))
+
+
+@app.route("/daily-research/modal-seen", methods=["POST"])
+@login_required
+def daily_research_modal_seen():
+    db = get_db()
+    user_id = int(session["user_id"])
+    today_key = get_day_key()
+    payload = request.get_json(silent=True) or {}
+    mark_daily_research_modal_viewed(
+        db,
+        user_id,
+        today_key,
+        {
+            "claimed_rewards": bool(payload.get("has_claimed_rewards")),
+            "yesterday_report": bool(payload.get("has_yesterday_report")),
+            "daily_task": bool(payload.get("has_daily_task")),
+        },
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/daily-research/task/claim", methods=["POST"])
+@login_required
+def daily_research_task_claim():
+    db = get_db()
+    user_id = int(session["user_id"])
+    task = get_or_create_daily_task(db, user_id, get_day_key())
+    if task and str(task.get("status")) == "completed":
+        result = claim_daily_task_reward(db, user_id, int(task["id"]))
+        if result.get("ok"):
+            flash(f"研究課題の報酬を受け取りました。コイン +{int(result.get('reward_coins') or 0)}", "notice")
+        else:
+            flash("受け取れる研究課題報酬がありません。", "notice")
+    else:
+        flash("研究課題はまだ達成していません。", "notice")
+    db.commit()
+    return redirect(url_for("home"))
 
 
 @app.route("/home/starter-robot-name", methods=["POST"])
@@ -30304,6 +30545,12 @@ def robot_maintenance(instance_id):
         }
         for row in decor_assets
     ]
+    owned_decor_ids = {int(item["id"]) for item in decor_assets}
+    current_decor_rows = _robot_instance_decor_rows(
+        db,
+        int(instance_id),
+        legacy_decor_id=parts_row["decor_asset_id"] if "decor_asset_id" in parts_row.keys() else None,
+    )
     if request.method == "POST" and getattr(db, "in_transaction", False):
         # Legacy robots can be backfilled with part_instance ids above. Commit that
         # repair before opening the explicit maintenance transaction.
@@ -30315,23 +30562,77 @@ def robot_maintenance(instance_id):
         request_id = getattr(g, "request_id", None)
         current_label = slot_def["label"]
         if slot == "DECOR":
+            slot_raw = (request.form.get("decor_slot_index") or "0").strip()
+            decor_slot_index = int(slot_raw) if slot_raw.isdigit() else -1
+            if decor_slot_index < 0 or decor_slot_index >= MAX_ROBOT_DECOR_SLOTS:
+                flash("装飾スロットが不正です。", "error")
+                return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
             decor_raw = (request.form.get("decor_asset_id") or "").strip().lower()
             next_decor_id = None if decor_raw in {"", "0", "none"} else (int(decor_raw) if decor_raw.isdigit() else None)
             if decor_raw not in {"", "0", "none"} and next_decor_id is None:
                 flash("装飾候補が不正です。", "error")
                 return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
-            if next_decor_id is not None and not any(int(item["id"]) == int(next_decor_id) for item in decor_assets):
+            if next_decor_id is not None and int(next_decor_id) not in owned_decor_ids:
                 flash("装飾候補が見つかりません。", "error")
                 return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
-            before_decor_id = int(parts_row["decor_asset_id"] or 0) if "decor_asset_id" in parts_row.keys() and parts_row["decor_asset_id"] else None
-            if before_decor_id == next_decor_id:
+            default_offset = _default_robot_decor_offset(decor_slot_index)
+            before_row = next((row for row in current_decor_rows if int(row["slot_index"] or 0) == decor_slot_index), None)
+            before_decor_id = int(before_row["id"]) if before_row else None
+            before_offset = {
+                "x": int(before_row["offset_x"] or 0) if before_row else default_offset["x"],
+                "y": int(before_row["offset_y"] or 0) if before_row else default_offset["y"],
+            }
+            next_offset = {
+                "x": _clamp_robot_decor_offset(request.form.get("offset_x") if "offset_x" in request.form else default_offset["x"]),
+                "y": _clamp_robot_decor_offset(request.form.get("offset_y") if "offset_y" in request.form else default_offset["y"]),
+            }
+            if before_decor_id == next_decor_id and before_offset == next_offset:
                 flash("装飾はすでにその構成です。", "notice")
                 return redirect(url_for("robot_maintenance", instance_id=instance_id, slot=slot))
             try:
                 db.execute("BEGIN IMMEDIATE")
+                now_ts = int(time.time())
+                if next_decor_id is None:
+                    db.execute(
+                        "DELETE FROM robot_instance_decors WHERE robot_instance_id = ? AND slot_index = ?",
+                        (int(instance_id), decor_slot_index),
+                    )
+                else:
+                    db.execute(
+                        """
+                        INSERT INTO robot_instance_decors (
+                            robot_instance_id, decor_asset_id, slot_index, offset_x, offset_y, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(robot_instance_id, slot_index)
+                        DO UPDATE SET decor_asset_id = excluded.decor_asset_id,
+                                      offset_x = excluded.offset_x,
+                                      offset_y = excluded.offset_y,
+                                      updated_at = excluded.updated_at
+                        """,
+                        (
+                            int(instance_id),
+                            int(next_decor_id),
+                            decor_slot_index,
+                            int(next_offset["x"]),
+                            int(next_offset["y"]),
+                            now_ts,
+                            now_ts,
+                        ),
+                    )
+                first_decor = db.execute(
+                    """
+                    SELECT decor_asset_id
+                    FROM robot_instance_decors
+                    WHERE robot_instance_id = ?
+                    ORDER BY slot_index ASC
+                    LIMIT 1
+                    """,
+                    (int(instance_id),),
+                ).fetchone()
                 db.execute(
                     "UPDATE robot_instance_parts SET decor_asset_id = ? WHERE robot_instance_id = ?",
-                    (next_decor_id, int(instance_id)),
+                    (int(first_decor["decor_asset_id"]) if first_decor else None, int(instance_id)),
                 )
                 refreshed_parts = db.execute(
                     "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
@@ -30350,8 +30651,11 @@ def robot_maintenance(instance_id):
                         "robot_instance_id": int(instance_id),
                         "robot_name": robot.get("name"),
                         "changed_slots": ["DECOR"],
+                        "decor_slot_index": decor_slot_index,
                         "before_part_ids": {"DECOR": before_decor_id},
                         "after_part_ids": {"DECOR": next_decor_id},
+                        "before_offsets": {"DECOR": before_offset},
+                        "after_offsets": {"DECOR": next_offset},
                         "stat_delta": {"power": 0, "hp": 0, "atk": 0, "def": 0, "spd": 0, "acc": 0, "cri": 0},
                         "power_delta": 0,
                     },
@@ -30482,14 +30786,44 @@ def robot_maintenance(instance_id):
     maintenance_candidates = []
     maintenance_stat_rows = []
     decor_options = []
-    current_decor_id = int(parts_row["decor_asset_id"] or 0) if "decor_asset_id" in parts_row.keys() and parts_row["decor_asset_id"] else None
+    current_decor_slots = []
+    current_decor_by_slot = {}
+    for row in current_decor_rows:
+        slot_index = int(row["slot_index"] or 0) if "slot_index" in row.keys() else 0
+        if slot_index < 0 or slot_index >= MAX_ROBOT_DECOR_SLOTS:
+            continue
+        item = {
+            "slot_index": slot_index,
+            "slot_label": f"装飾{slot_index + 1}",
+            "decor_asset_id": int(row["id"]),
+            "label": str(row["name_ja"] or row["key"] or "装飾"),
+            "image_url": url_for("static", filename=_decor_image_rel(row["image_path"], row["key"]), v=APP_VERSION),
+            "offset_x": int(row["offset_x"] or 0) if "offset_x" in row.keys() else _default_robot_decor_offset(slot_index)["x"],
+            "offset_y": int(row["offset_y"] or 0) if "offset_y" in row.keys() else _default_robot_decor_offset(slot_index)["y"],
+        }
+        current_decor_by_slot[slot_index] = item
+    for slot_index in range(MAX_ROBOT_DECOR_SLOTS):
+        default_offset = _default_robot_decor_offset(slot_index)
+        current = current_decor_by_slot.get(slot_index)
+        current_decor_slots.append(
+            current
+            or {
+                "slot_index": slot_index,
+                "slot_label": f"装飾{slot_index + 1}",
+                "decor_asset_id": 0,
+                "label": "なし",
+                "image_url": "",
+                "offset_x": default_offset["x"],
+                "offset_y": default_offset["y"],
+            }
+        )
+    current_decor_id = current_decor_slots[0]["decor_asset_id"] if current_decor_slots else None
     if slot == "DECOR":
         decor_options.append(
             {
                 "id": 0,
                 "label": "装飾なし",
                 "image_url": "",
-                "is_selected": current_decor_id is None,
             }
         )
         for item in decor_assets:
@@ -30498,7 +30832,6 @@ def robot_maintenance(instance_id):
                     "id": int(item["id"]),
                     "label": str(item["name_ja"] or item["key"] or "装飾"),
                     "image_url": item["image_url"],
-                    "is_selected": current_decor_id == int(item["id"]),
                 }
             )
     else:
@@ -30588,6 +30921,10 @@ def robot_maintenance(instance_id):
         maintenance_candidates=maintenance_candidates,
         decor_options=decor_options,
         current_decor_id=current_decor_id,
+        current_decor_slots=current_decor_slots,
+        max_robot_decor_slots=MAX_ROBOT_DECOR_SLOTS,
+        robot_decor_offset_min=ROBOT_DECOR_OFFSET_MIN,
+        robot_decor_offset_max=ROBOT_DECOR_OFFSET_MAX,
         maintenance_stat_rows=maintenance_stat_rows,
     )
 
@@ -35933,6 +36270,7 @@ def _admin_delete_user_hard(db, target_user_id):
         marks = ",".join("?" for _ in robot_ids)
         if "users" in existing_tables:
             db.execute(f"UPDATE users SET active_robot_id = NULL WHERE active_robot_id IN ({marks})", robot_ids)
+        _safe_delete("robot_instance_decors", f"robot_instance_id IN ({marks})", robot_ids)
         _safe_delete("robot_instance_parts", f"robot_instance_id IN ({marks})", robot_ids)
         _safe_delete("robot_history", f"robot_id IN ({marks})", robot_ids)
         _safe_delete("robot_title_unlocks", f"robot_id IN ({marks})", robot_ids)
@@ -37566,383 +37904,4 @@ def admin_parts():
 def admin_parts_align():
     db = get_db()
     if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    def _default_base_key(rows, part_type):
-        candidates = [r for r in rows if r["part_type"] == part_type and int(r["is_active"] or 0) == 1]
-        if not candidates:
-            return ""
-        keyed = next((r for r in candidates if str(r["key"]).endswith("_1")), None)
-        return keyed["key"] if keyed else candidates[0]["key"]
-
-    rows = db.execute(
-        """
-        SELECT id, key, part_type, image_path, offset_x, offset_y, is_active
-        FROM robot_parts
-        ORDER BY part_type ASC, key ASC
-        """
-    ).fetchall()
-    row_by_key = {r["key"]: r for r in rows}
-    row_by_id = {int(r["id"]): r for r in rows}
-
-    selected_part_key = (request.values.get("target_part_key") or request.values.get("part_key") or "").strip()
-    part_id_raw = (request.values.get("part_id") or "").strip()
-    part_id = int(part_id_raw) if part_id_raw.isdigit() else None
-    if not selected_part_key and part_id is not None and part_id in row_by_id:
-        selected_part_key = row_by_id[part_id]["key"]
-    if not selected_part_key:
-        first_active = next((r for r in rows if int(r["is_active"] or 0) == 1), None)
-        if first_active:
-            selected_part_key = first_active["key"]
-    selected_part = row_by_key.get(selected_part_key)
-
-    base_head_key = (request.values.get("base_head") or request.values.get("base_head_key") or "").strip()
-    base_r_arm_key = (request.values.get("base_right") or request.values.get("base_r_arm_key") or "").strip()
-    base_l_arm_key = (request.values.get("base_left") or request.values.get("base_l_arm_key") or "").strip()
-    base_legs_key = (request.values.get("base_legs") or request.values.get("base_legs_key") or "").strip()
-
-    if not base_head_key:
-        base_head_key = _default_base_key(rows, "HEAD")
-    if not base_r_arm_key:
-        base_r_arm_key = _default_base_key(rows, "RIGHT_ARM")
-    if not base_l_arm_key:
-        base_l_arm_key = _default_base_key(rows, "LEFT_ARM")
-    if not base_legs_key:
-        base_legs_key = _default_base_key(rows, "LEGS")
-
-    if request.method == "POST":
-        selected_part_key = (request.form.get("target_part_key") or request.form.get("part_key") or "").strip()
-        base_head_key = (request.form.get("base_head") or request.form.get("base_head_key") or "").strip()
-        base_r_arm_key = (request.form.get("base_right") or request.form.get("base_r_arm_key") or "").strip()
-        base_l_arm_key = (request.form.get("base_left") or request.form.get("base_l_arm_key") or "").strip()
-        base_legs_key = (request.form.get("base_legs") or request.form.get("base_legs_key") or "").strip()
-        selected_part = row_by_key.get(selected_part_key)
-        if not selected_part:
-            flash("対象パーツを選択してください。", "error")
-        else:
-            try:
-                new_x = int(request.form.get("offset_x", selected_part["offset_x"]))
-                new_y = int(request.form.get("offset_y", selected_part["offset_y"]))
-            except ValueError:
-                new_x = int(selected_part["offset_x"] or 0)
-                new_y = int(selected_part["offset_y"] or 0)
-            db.execute(
-                "UPDATE robot_parts SET offset_x = ?, offset_y = ? WHERE key = ?",
-                (new_x, new_y, selected_part_key),
-            )
-            _invalidate_composed_images_for_offset_change(db)
-            refresh_part_offset_cache(db)
-            db.commit()
-            flash(f"オフセットを更新しました（{selected_part_key}: x={new_x}, y={new_y}）。", "notice")
-            return redirect(
-                url_for(
-                    "admin_parts_align",
-                    target_part_key=selected_part_key,
-                    base_head=base_head_key,
-                    base_right=base_r_arm_key,
-                    base_left=base_l_arm_key,
-                    base_legs=base_legs_key,
-                )
-            )
-
-    if selected_part:
-        if selected_part["part_type"] == "HEAD":
-            base_head_key = selected_part["key"]
-        elif selected_part["part_type"] == "RIGHT_ARM":
-            base_r_arm_key = selected_part["key"]
-        elif selected_part["part_type"] == "LEFT_ARM":
-            base_l_arm_key = selected_part["key"]
-        elif selected_part["part_type"] == "LEGS":
-            base_legs_key = selected_part["key"]
-
-    preview_parts = {
-        "HEAD": row_by_key.get(base_head_key),
-        "RIGHT_ARM": row_by_key.get(base_r_arm_key),
-        "LEFT_ARM": row_by_key.get(base_l_arm_key),
-        "LEGS": row_by_key.get(base_legs_key),
-    }
-    preview_layers = {}
-    for slot, row in preview_parts.items():
-        if row and row["image_path"]:
-            preview_layers[slot] = {
-                "key": row["key"],
-                "image_url": url_for("static", filename=f"robot_assets/{row['image_path']}"),
-                "offset_x": int(row["offset_x"] or 0),
-                "offset_y": int(row["offset_y"] or 0),
-            }
-        else:
-            preview_layers[slot] = None
-
-    options = {
-        "HEAD": [r for r in rows if r["part_type"] == "HEAD"],
-        "RIGHT_ARM": [r for r in rows if r["part_type"] == "RIGHT_ARM"],
-        "LEFT_ARM": [r for r in rows if r["part_type"] == "LEFT_ARM"],
-        "LEGS": [r for r in rows if r["part_type"] == "LEGS"],
-    }
-    part_meta = {}
-    for r in rows:
-        part_meta[r["key"]] = {
-            "part_type": r["part_type"],
-            "offset_x": int(r["offset_x"] or 0),
-            "offset_y": int(r["offset_y"] or 0),
-            "image_url": (url_for("static", filename=f"robot_assets/{r['image_path']}") if r["image_path"] else ""),
-        }
-
-    return render_template(
-        "admin_parts_align.html",
-        selected_part=selected_part,
-        preview_layers=preview_layers,
-        options=options,
-        rows=rows,
-        part_meta=part_meta,
-        base_head_key=base_head_key,
-        base_r_arm_key=base_r_arm_key,
-        base_l_arm_key=base_l_arm_key,
-        base_legs_key=base_legs_key,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_parts_toggle_active(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not row:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts"))
-    next_state = 0 if row["is_active"] == 1 else 1
-    db.execute("UPDATE robot_parts SET is_active = ? WHERE id = ?", (next_state, part_id))
-    db.commit()
-    session["message"] = "パーツ状態を更新しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/decor", methods=["GET", "POST"])
-@login_required
-def admin_decor():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    message = None
-    if request.method == "POST":
-        key = _clean_key(request.form.get("key"))
-        name_ja = (request.form.get("name_ja") or "").strip()
-        file = request.files.get("image")
-        existing = db.execute("SELECT id, image_path FROM robot_decor_assets WHERE key = ?", (key,)).fetchone() if key else None
-        if not key:
-            message = "keyを入力してください。"
-        elif not name_ja:
-            message = "表示名を入力してください。"
-        elif not file or not file.filename:
-            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
-            db.execute(
-                """
-                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                """,
-                (key, name_ja, rel_path, int(time.time())),
-            )
-            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-            db.commit()
-            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
-        else:
-            ok, err, warns = _validate_decor_png_soft(file)
-            if not ok:
-                message = err
-            else:
-                rel_path = f"decor/{key}.png"
-                _save_static_png(file, rel_path)
-                db.execute(
-                    """
-                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                    """,
-                    (key, name_ja, rel_path, int(time.time())),
-                )
-                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-                db.commit()
-                message = "装飾アセットを保存しました。"
-                if warns:
-                    message += " " + " / ".join(warns)
-    rows = db.execute(
-        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
-    ).fetchall()
-    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
-    return render_template("admin_decor.html", rows=rows, message=message)
-
-
-@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_decor_toggle_active(decor_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
-    if not row:
-        session["message"] = "対象装飾が見つかりません。"
-        return redirect(url_for("admin_decor"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
-    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-    db.commit()
-    session["message"] = "装飾の有効状態を更新しました。"
-    return redirect(url_for("admin_decor"))
-
-
-@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
-@login_required
-def admin_parts_delete(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
-        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    key = part["key"]
-    ref_counts = {
-        "inventory": db.execute(
-            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
-            (key,),
-        ).fetchone()["c"],
-        "instances": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_instance_parts
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "builds": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_builds
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "milestones": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_milestones
-            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-    }
-    if any(v > 0 for v in ref_counts.values()):
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-        message = (
-            "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+        retur
