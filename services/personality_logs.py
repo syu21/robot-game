@@ -181,16 +181,89 @@ def get_streak_lines(personality: str, robot_name: str, win: bool, win_streak: i
     return {}
 
 
+IDLE_LINES = {
+    "silent": [
+        "……問題ない。",
+        "……行ける。",
+        "……待機中。",
+        "……次はどこだ。",
+        "……少し、強くなった。",
+    ],
+    "cheerful": [
+        "今日も出撃びより！",
+        "パーツ拾いに行こう！",
+        "なんか勝てそうな気がする！",
+        "準備できてるよ！",
+        "次の出撃、楽しみだね！",
+    ],
+    "analyst": [
+        "勝率を上げるには、編成確認が有効です。",
+        "現在の構成、悪くありません。",
+        "次は命中の確認を推奨します。",
+        "戦闘ログに改善点があります。",
+        "出撃先の傾向を記録しています。",
+    ],
+    "charger": [
+        "考える前に出撃だ！",
+        "止まってる時間がもったいない！",
+        "前へ進めば何か拾える！",
+        "敵がいるなら突っ込むだけだ！",
+        "次も全力で行くぞ！",
+    ],
+    "showoff": [
+        "そろそろ見せ場じゃない？",
+        "今日の主役、ぼくでしょ。",
+        "ランキング、狙ってみない？",
+        "この機体、もっと見られるべきだね。",
+        "勝ったらちゃんと見ててよ。",
+    ],
+    "veteran": [
+        "焦るな。勝てる時に勝てばいい。",
+        "昔から、整備が勝敗を分ける。",
+        "無理な出撃はしない方がいい。",
+        "一戦ごとに機体は育つ。",
+        "この程度なら、まだ進める。",
+    ],
+    "supportive": [
+        "パーツ、確認してから行こうね。",
+        "無理せず一回ずつ進もう。",
+        "強化できるもの、あるかも。",
+        "帰ってきたら整備しよう。",
+        "今日も少し進めれば十分だよ。",
+    ],
+    "cold": [
+        "任務を開始する。",
+        "無駄な動きは不要だ。",
+        "勝てばいい。",
+        "状況確認完了。",
+        "次の指示を待つ。",
+    ],
+    "calm": [
+        "落ち着いて行こう。",
+        "焦らなくていい。",
+    ],
+    "hotblood": [
+        "燃えてきた！",
+        "一気に行くぞ！",
+    ],
+    "quiet": [
+        "……。",
+        "……行ける。",
+    ],
+}
+
+DEFAULT_IDLE_LINES = [
+    "待機中。",
+    "次の出撃に備えています。",
+    "整備完了。",
+]
+
+
 def get_idle_line(personality: str, robot_name: str) -> str:
     """
     Return a home-screen idle line by personality.
     """
-    p = (personality or "").strip().lower()
-    rn = robot_name or "探索機"
-    if p == "calm":
-        return f"{rn}「今日も悪くない。」"
-    if p == "hotblood":
-        return f"{rn}「さあ、行こうぜ！」"
-    if p == "quiet":
-        return f"{rn}「……待機中。」"
-    return f"{rn}「……。」"
+    key = (personality or "").strip().lower()
+    name = (robot_name or "").strip() or "ロボ"
+    candidates = IDLE_LINES.get(key) or DEFAULT_IDLE_LINES
+    return f"{name}「{random.choice(candidates)}」"

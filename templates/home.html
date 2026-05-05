@@ -405,8 +405,8 @@
                 <div class="robot-idle-line">{{ idle_line }}</div>
                 {% endif %}
                 <div class="robot-overview-meta">
-                  {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'analyst' %}
-                  <span>性格: {{ personality_labels.get(p, p) }}</span>
+                  {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'silent' %}
+                  <span>性格: {{ personality_labels.get(p, '無口') }}</span>
                   <span>思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</span>
                   <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>

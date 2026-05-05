@@ -1874,16 +1874,17 @@ EXPLORE_AREA_MAP_INFO = {
 }
 ENEMY_IMPORT_MAX_BYTES = 1_000_000
 PERSONALITY_LABELS = {
-    "silent": "寡黙",
+    "silent": "無口",
     "cheerful": "陽気",
     "analyst": "分析型",
     "charger": "突撃型",
     "showoff": "目立ちたがり",
-    "veteran": "熟練",
-    "supportive": "支援型",
-    "cold": "冷徹",
-    "legend": "伝説級",
-    "clumsy": "不器用",
+    "veteran": "ベテラン",
+    "supportive": "世話焼き",
+    "cold": "クール",
+    "calm": "落ち着き",
+    "hotblood": "熱血",
+    "quiet": "無口",
 }
 WORLD_MODE_LEGACY_MAP = {
     "storm": "暴走",
