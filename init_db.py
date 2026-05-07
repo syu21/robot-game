@@ -56,7 +56,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "is_active": 0,
     },
 )
-RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "market", "series_system", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "market", "series_system", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"

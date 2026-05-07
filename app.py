@@ -1268,6 +1268,11 @@ RELEASE_FLAG_DEFS = (
         "summary": "実験室トップ、エネミーレース、投稿、展示を一般公開します。",
     },
     {
+        "key": "lab_mini",
+        "label": "ミニロボ培養室",
+        "summary": "実験室のミニロボ育成を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
         "key": "layer4",
         "label": "第4層",
         "summary": "第4層3エリアと第4層最終試験を一般公開します。",
@@ -32600,8 +32605,14 @@ def _mini_robot_catalog_rows(db, user_id):
     return rows
 
 
-def _require_mini_robot_admin():
-    if _is_admin_user(int(session["user_id"])):
+def _mini_robot_open_for_viewer(db, *, user_row=None, user_id=None):
+    if _viewer_is_admin_for_release(db, user_row=user_row, user_id=user_id):
+        return True
+    return _release_flag_is_public(db, "lab_mini")
+
+
+def _require_mini_robot_open(db):
+    if _mini_robot_open_for_viewer(db, user_id=int(session["user_id"])):
         return None
     flash("ミニロボ培養室は管理者確認中です。", "notice")
     return redirect(url_for("lab_home"))
@@ -32612,9 +32623,9 @@ def _require_mini_robot_admin():
 def lab_home():
     db = get_db()
     user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
-    is_admin = bool(int(user["is_admin"] or 0) == 1)
+    mini_robot_open = _mini_robot_open_for_viewer(db, user_row=user)
     mini_robot = None
-    if is_admin:
+    if mini_robot_open:
         mini_robot_row, created = _ensure_user_mini_robot(db, int(user["id"]))
         if created:
             db.commit()
@@ -32643,17 +32654,18 @@ def lab_home():
         world_items=world_items,
         counts=counts,
         mini_robot=mini_robot,
-        is_admin=is_admin,
+        is_admin=bool(int(user["is_admin"] or 0) == 1),
+        mini_robot_open=mini_robot_open,
     )
 
 
 @app.route("/lab/mini")
 @login_required
 def lab_mini():
-    admin_redirect = _require_mini_robot_admin()
-    if admin_redirect:
-        return admin_redirect
     db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
     user_id = int(session["user_id"])
     robot_row, created = _ensure_user_mini_robot(db, user_id)
     if created:
@@ -32669,10 +32681,10 @@ def lab_mini():
 @app.route("/lab/mini/care", methods=["POST"])
 @login_required
 def lab_mini_care():
-    admin_redirect = _require_mini_robot_admin()
-    if admin_redirect:
-        return admin_redirect
     db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
     user_id = int(session["user_id"])
     robot_row, _created = _ensure_user_mini_robot(db, user_id)
     if _mini_robot_cared_today(robot_row):
@@ -32736,10 +32748,10 @@ def lab_mini_care():
 @app.route("/lab/mini/rename", methods=["POST"])
 @login_required
 def lab_mini_rename():
-    admin_redirect = _require_mini_robot_admin()
-    if admin_redirect:
-        return admin_redirect
     db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
     user_id = int(session["user_id"])
     robot_row, _created = _ensure_user_mini_robot(db, user_id)
     nickname = (request.form.get("nickname") or "").strip()
@@ -32779,10 +32791,10 @@ def lab_mini_rename():
 @app.route("/lab/mini/catalog")
 @login_required
 def lab_mini_catalog():
-    admin_redirect = _require_mini_robot_admin()
-    if admin_redirect:
-        return admin_redirect
     db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
     user_id = int(session["user_id"])
     _ensure_user_mini_robot(db, user_id)
     db.commit()

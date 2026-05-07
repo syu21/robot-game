@@ -7,7 +7,7 @@
   <div class="robot-part">本編とは別に、試作機や投稿ロボを見たり、レースや展示を楽しめる遊び場です。</div>
 </div>
 
-{% if is_admin and mini_robot %}
+{% if mini_robot_open and mini_robot %}
 <a class="card mini-lab-top-card" href="{{ url_for('lab_mini') }}">
   <img src="{{ mini_robot.image_url }}" alt="{{ mini_robot.nickname }}" />
   <div>

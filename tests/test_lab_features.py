@@ -319,7 +319,7 @@ class LabRouteTests(unittest.TestCase):
         self.assertIn("ケルベロス", catalog_html)
         self.assertIn("未解放", catalog_html)
 
-    def test_lab_mini_is_admin_only(self):
+    def test_lab_mini_release_flag_controls_public_access(self):
         client = self._client()
         lab_resp = client.get("/lab")
         self.assertEqual(lab_resp.status_code, 200)
@@ -338,6 +338,24 @@ class LabRouteTests(unittest.TestCase):
                 (self.user_id,),
             ).fetchone()["c"]
             self.assertEqual(int(count), 0)
+
+        admin_client = self._client(admin=True)
+        release_resp = admin_client.post(
+            "/admin/release",
+            data={"feature_key": "lab_mini", "state": "public"},
+            follow_redirects=True,
+        )
+        self.assertEqual(release_resp.status_code, 200)
+        self.assertIn("ミニロボ培養室", release_resp.get_data(as_text=True))
+        self.assertIn("一般公開中", release_resp.get_data(as_text=True))
+
+        public_lab = client.get("/lab")
+        self.assertEqual(public_lab.status_code, 200)
+        self.assertIn("ミニロボ培養室", public_lab.get_data(as_text=True))
+
+        public_mini = client.get("/lab/mini")
+        self.assertEqual(public_mini.status_code, 200)
+        self.assertIn("ケルベロス", public_mini.get_data(as_text=True))
 
     def test_lab_typing_pages_and_result_save(self):
         client = self._client()
