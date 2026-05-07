@@ -7,6 +7,17 @@
   <div class="robot-part">本編とは別に、試作機や投稿ロボを見たり、レースや展示を楽しめる遊び場です。</div>
 </div>
 
+{% if is_admin and mini_robot %}
+<a class="card mini-lab-top-card" href="{{ url_for('lab_mini') }}">
+  <img src="{{ mini_robot.image_url }}" alt="{{ mini_robot.nickname }}" />
+  <div>
+    <h2>ミニロボ培養室</h2>
+    <div class="robot-part">{{ mini_robot.nickname }} / {{ mini_robot.state_label }}</div>
+    <div class="robot-time">1日1回お世話できます</div>
+  </div>
+</a>
+{% endif %}
+
 <div class="card">
   <h2>注目の投稿ロボ</h2>
   <div class="robot-part">研究所で公開中の注目機体</div>

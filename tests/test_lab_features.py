@@ -277,6 +277,68 @@ class LabRouteTests(unittest.TestCase):
             self.assertTrue(all(item["target"] == game_app.LAB_AI_ROBOT_GENERATOR_TARGET for item in payloads))
             self.assertTrue(all(item["url"] == game_app.LAB_AI_ROBOT_GENERATOR_URL for item in payloads))
 
+    def test_lab_mini_initial_grant_rename_care_and_catalog(self):
+        client = self._client(admin=True)
+        resp = client.get("/lab/mini")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ミニロボ培養室", html)
+        self.assertIn("ケルベロス", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            robot = db.execute(
+                "SELECT * FROM user_mini_robots WHERE user_id = ? AND species_key = 'cerberus'",
+                (self.admin_id,),
+            ).fetchone()
+            self.assertIsNotNone(robot)
+            create_log = db.execute(
+                "SELECT COUNT(*) AS c FROM mini_robot_logs WHERE mini_robot_id = ? AND event_type = 'create'",
+                (int(robot["id"]),),
+            ).fetchone()["c"]
+            self.assertEqual(int(create_log), 1)
+
+        rename = client.post("/lab/mini/rename", data={"nickname": "ポチケル"}, follow_redirects=True)
+        self.assertEqual(rename.status_code, 200)
+        self.assertIn("ポチケル", rename.get_data(as_text=True))
+
+        care = client.post("/lab/mini/care", data={"action_key": "pet"}, follow_redirects=True)
+        self.assertEqual(care.status_code, 200)
+        care_html = care.get_data(as_text=True)
+        self.assertIn("喜び", care_html)
+        self.assertIn("頭部センサー", care_html)
+
+        second = client.post("/lab/mini/care", data={"action_key": "energy"}, follow_redirects=True)
+        self.assertEqual(second.status_code, 200)
+        self.assertIn("今日のお世話は完了済み", second.get_data(as_text=True))
+
+        catalog = client.get("/lab/mini/catalog")
+        self.assertEqual(catalog.status_code, 200)
+        catalog_html = catalog.get_data(as_text=True)
+        self.assertIn("ミニロボ図鑑", catalog_html)
+        self.assertIn("ケルベロス", catalog_html)
+        self.assertIn("未解放", catalog_html)
+
+    def test_lab_mini_is_admin_only(self):
+        client = self._client()
+        lab_resp = client.get("/lab")
+        self.assertEqual(lab_resp.status_code, 200)
+        self.assertNotIn("ミニロボ培養室", lab_resp.get_data(as_text=True))
+
+        resp = client.get("/lab/mini", follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("管理者確認中", html)
+        self.assertNotIn("ケルベロス幼体", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = db.execute(
+                "SELECT COUNT(*) AS c FROM user_mini_robots WHERE user_id = ?",
+                (self.user_id,),
+            ).fetchone()["c"]
+            self.assertEqual(int(count), 0)
+
     def test_lab_typing_pages_and_result_save(self):
         client = self._client()
         play_resp = client.get("/lab/typing")

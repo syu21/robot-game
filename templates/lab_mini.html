@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ミニロボ培養室</h1>
+
+<div class="mini-lab-layout">
+  <section class="card mini-lab-stage">
+    <div class="mini-robot-visual">
+      <img src="{{ mini_robot.image_url }}" alt="{{ mini_robot.nickname }}" />
+    </div>
+    <div class="mini-state-badge">{{ mini_robot.state_label }}</div>
+  </section>
+
+  <section class="card">
+    <h2>{{ mini_robot.nickname }}</h2>
+    <div class="robot-part">{{ mini_robot.species_name }} / {{ mini_robot.stage_label }}</div>
+    <div class="mini-status-grid">
+      <div><span>ごきげん</span><b>{{ mini_robot.mood_label }}</b></div>
+      <div><span>安定度</span><b>{{ mini_robot.stability }}</b></div>
+      <div><span>状態</span><b>{{ mini_robot.state_label }}</b></div>
+    </div>
+    <form class="inline-form mini-rename-form" method="post" action="{{ url_for('lab_mini_rename') }}">
+      <input type="text" name="nickname" value="{{ mini_robot.nickname }}" maxlength="18" />
+      <button type="submit">名前変更</button>
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <h2>今日のお世話</h2>
+  {% if mini_robot.cared_today %}
+  <div class="robot-part">今日のお世話は完了済み。</div>
+  {% else %}
+  <div class="mini-care-grid">
+    {% for key, action in care_actions.items() %}
+    <form method="post" action="{{ url_for('lab_mini_care') }}">
+      <input type="hidden" name="action_key" value="{{ key }}" />
+      <button type="submit">{{ action.label }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>反応ログ</h2>
+  <div class="mini-log-list">
+    {% for log in mini_robot.logs %}
+    <div class="mini-log-row">
+      <span>{{ log.created_text }}</span>
+      <b>{{ log.message }}</b>
+    </div>
+    {% else %}
+    <div class="robot-part">まだ反応ログはありません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>成長メーター</h2>
+  <div class="mini-growth-bar"><span style="width: {{ mini_robot.growth_percent }}%"></span></div>
+  <div class="robot-part">{{ mini_robot.growth_note }} / {{ mini_robot.growth_exp }}%</div>
+</section>
+
+<p class="link">
+  <a href="{{ url_for('lab_mini_catalog') }}">図鑑へ</a> |
+  <a href="{{ url_for('lab_home') }}">実験室へ戻る</a>
+</p>
+{% endblock %}

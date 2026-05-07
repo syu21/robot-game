@@ -21,6 +21,41 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
+MINI_ROBOT_SPECIES_SEEDS = (
+    {
+        "species_key": "cerberus",
+        "name_ja": "ケルベロス",
+        "description": "三つの警戒センサーを持つ幼年期ミニロボ。",
+        "type_key": "guard",
+        "image_normal": "mini_robots/cerberus/normal.png",
+        "image_blink": "mini_robots/cerberus/blink.png",
+        "image_happy": "mini_robots/cerberus/happy.png",
+        "image_sleep": "mini_robots/cerberus/sleep.png",
+        "is_active": 1,
+    },
+    {
+        "species_key": "phoenix",
+        "name_ja": "フェニックス",
+        "description": "高熱反応から見つかった未解放ミニロボ。",
+        "type_key": "heat",
+        "image_normal": "mini_robots/phoenix/normal.png",
+        "image_blink": "mini_robots/phoenix/blink.png",
+        "image_happy": "mini_robots/phoenix/happy.png",
+        "image_sleep": "mini_robots/phoenix/sleep.png",
+        "is_active": 0,
+    },
+    {
+        "species_key": "hydra",
+        "name_ja": "ヒュドラ",
+        "description": "実験室ログに断片だけ残る未解放ミニロボ。",
+        "type_key": "multi",
+        "image_normal": "mini_robots/hydra/normal.png",
+        "image_blink": "mini_robots/hydra/blink.png",
+        "image_happy": "mini_robots/hydra/happy.png",
+        "image_sleep": "mini_robots/hydra/sleep.png",
+        "is_active": 0,
+    },
+)
 RELEASE_FLAG_KEYS = ("lab", "layer4", "layer5", "market", "series_system", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
@@ -93,6 +128,37 @@ def _upsert_series_rows(cur):
                 int(bonus["pieces_required"]),
                 bonus["stat_key"],
                 float(bonus["value"]),
+            ),
+            )
+
+
+def _upsert_mini_robot_species(cur):
+    for species in MINI_ROBOT_SPECIES_SEEDS:
+        cur.execute(
+            """
+            INSERT INTO mini_robot_species
+            (species_key, name_ja, description, type_key, image_normal, image_blink, image_happy, image_sleep, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(species_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                type_key = excluded.type_key,
+                image_normal = excluded.image_normal,
+                image_blink = excluded.image_blink,
+                image_happy = excluded.image_happy,
+                image_sleep = excluded.image_sleep,
+                is_active = excluded.is_active
+            """,
+            (
+                species["species_key"],
+                species["name_ja"],
+                species["description"],
+                species["type_key"],
+                species["image_normal"],
+                species["image_blink"],
+                species["image_happy"],
+                species["image_sleep"],
+                int(species["is_active"]),
             ),
         )
 
@@ -1098,6 +1164,57 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS mini_robot_species (
+            species_key TEXT PRIMARY KEY,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            type_key TEXT,
+            image_normal TEXT NOT NULL,
+            image_blink TEXT NOT NULL,
+            image_happy TEXT NOT NULL,
+            image_sleep TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_mini_robots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            species_key TEXT NOT NULL,
+            nickname TEXT NOT NULL,
+            stage TEXT NOT NULL DEFAULT 'child',
+            affection INTEGER NOT NULL DEFAULT 0,
+            stability INTEGER NOT NULL DEFAULT 50,
+            energy INTEGER NOT NULL DEFAULT 60,
+            mood INTEGER NOT NULL DEFAULT 50,
+            growth_exp INTEGER NOT NULL DEFAULT 0,
+            current_state TEXT NOT NULL DEFAULT 'normal',
+            last_cared_at INTEGER,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, species_key),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(species_key) REFERENCES mini_robot_species(species_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mini_robot_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            mini_robot_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(mini_robot_id) REFERENCES user_mini_robots(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_enemy_dex (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -1949,6 +2066,7 @@ def main():
     )
     _ensure_default_normal_robot_parts(cur)
     _upsert_series_rows(cur)
+    _upsert_mini_robot_species(cur)
     _apply_series_part_assignments(cur)
     _sync_insect_part_display_names(cur)
     rows_to_fill = cur.execute(
@@ -2123,6 +2241,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_user_created ON user_lab_exp_events(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_lab_exp_events_action_created ON user_lab_exp_events(action_key, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robots_user_created ON user_mini_robots(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_robot_created ON mini_robot_logs(mini_robot_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_user_created ON mini_robot_logs(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
