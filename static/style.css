@@ -7611,18 +7611,36 @@ body.home-page.home-mobile .invite-link-row {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
 }
-.mini-growth-bar {
+.mini-growth-bar,
+.mini-growth-progress {
   height: 14px;
-  overflow: hidden;
+  width: 100%;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
   margin-bottom: 8px;
+}
+.mini-growth-progress {
+  overflow: hidden;
+  border: 0;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.08);
 }
 .mini-growth-bar span {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent-green), var(--accent-gold));
+}
+.mini-growth-progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+.mini-growth-progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-gold));
+  border-radius: 999px;
+}
+.mini-growth-progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--accent-green), var(--accent-gold));
+  border-radius: 999px;
 }
 .mini-catalog-card {
   text-align: center;

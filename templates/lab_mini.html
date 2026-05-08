@@ -57,7 +57,7 @@
 
 <section class="card">
   <h2>成長メーター</h2>
-  <div class="mini-growth-bar"><span style="width: {{ mini_robot.growth_percent }}%"></span></div>
+  <progress class="mini-growth-progress" max="100" value="{{ mini_robot.growth_percent }}">{{ mini_robot.growth_percent }}%</progress>
   <div class="robot-part">{{ mini_robot.growth_note }} / {{ mini_robot.growth_exp }}%</div>
 </section>
 
