@@ -64,7 +64,7 @@ class LabMiniTests(unittest.TestCase):
         resp = client.get("/lab/mini")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("管理者デバッグ", html)
+        self.assertIn("管理者メモ", html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -97,7 +97,7 @@ class LabMiniTests(unittest.TestCase):
 
         first = client.post("/lab/mini/care", data={"action_key": "pet"}, follow_redirects=True)
         self.assertEqual(first.status_code, 200)
-        self.assertIn("喜び", first.get_data(as_text=True))
+        self.assertIn("ごきげん", first.get_data(as_text=True))
         with game_app.app.app_context():
             db = game_app.get_db()
             after = self._mini_robot(self.admin_id)
@@ -111,7 +111,7 @@ class LabMiniTests(unittest.TestCase):
 
         second = client.post("/lab/mini/care", data={"action_key": "energy"}, follow_redirects=True)
         self.assertEqual(second.status_code, 200)
-        self.assertIn("今日のお世話は完了済み", second.get_data(as_text=True))
+        self.assertIn("今日はもうお世話済みです", second.get_data(as_text=True))
         with game_app.app.app_context():
             after_second_row = self._mini_robot(self.admin_id)
             after_second = {key: after_second_row[key] for key in after_second_row.keys()}
@@ -130,7 +130,7 @@ class LabMiniTests(unittest.TestCase):
 
         first = client.post("/lab/mini/observe", follow_redirects=True)
         self.assertEqual(first.status_code, 200)
-        self.assertIn("ケルベロス幼年期", first.get_data(as_text=True))
+        self.assertIn("ケルベロス", first.get_data(as_text=True))
         second = client.post("/lab/mini/observe", follow_redirects=True)
         self.assertEqual(second.status_code, 200)
 
@@ -157,7 +157,7 @@ class LabMiniTests(unittest.TestCase):
         long_name = "あ" * 19
         resp = client.post("/lab/mini/rename", data={"nickname": long_name}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("名前は18文字以内", resp.get_data(as_text=True))
+        self.assertIn("名前は18文字までです", resp.get_data(as_text=True))
 
     def test_release_gate_controls_public_access(self):
         user_client = self._client()
@@ -166,7 +166,7 @@ class LabMiniTests(unittest.TestCase):
 
         blocked = user_client.get("/lab/mini", follow_redirects=True)
         self.assertEqual(blocked.status_code, 200)
-        self.assertIn("管理者確認中", blocked.get_data(as_text=True))
+        self.assertIn("準備中", blocked.get_data(as_text=True))
         with game_app.app.app_context():
             self.assertIsNone(self._mini_robot(self.user_id))
 
@@ -174,7 +174,7 @@ class LabMiniTests(unittest.TestCase):
         visible = user_client.get("/lab/mini")
         self.assertEqual(visible.status_code, 200)
         self.assertIn("ミニロボ培養室", visible.get_data(as_text=True))
-        self.assertNotIn("管理者デバッグ", visible.get_data(as_text=True))
+        self.assertNotIn("管理者メモ", visible.get_data(as_text=True))
 
 
 if __name__ == "__main__":

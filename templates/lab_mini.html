@@ -23,7 +23,7 @@
     </div>
     <form class="inline-form mini-rename-form" method="post" action="{{ url_for('lab_mini_rename') }}">
       <input type="text" name="nickname" value="{{ mini_robot.nickname }}" maxlength="18" />
-      <button type="submit">名前変更</button>
+      <button type="submit">名前を変える</button>
     </form>
   </section>
 </div>
@@ -31,7 +31,7 @@
 <section class="card">
   <h2>今日のお世話</h2>
   {% if mini_robot.cared_today %}
-  <div class="robot-part">今日のお世話は完了済みです。また明日、様子を見に来てください。</div>
+  <div class="robot-part">今日のお世話はもう済んでいます。また明日、少しだけ様子を見てあげてください。</div>
   {% else %}
   <div class="mini-care-grid">
     {% for key, action in care_actions.items() %}
@@ -46,7 +46,7 @@
 
 <section class="card">
   <h2>今の様子</h2>
-  <div class="robot-part">朝昼夕夜で様子が変わります。観察では本編報酬は増えません。</div>
+  <div class="robot-part">時間帯によって、少しだけ様子が変わります。</div>
   <form method="post" action="{{ url_for('lab_mini_observe') }}" class="inline-form">
     <button type="submit">様子を見る</button>
   </form>
@@ -54,7 +54,7 @@
 
 {% if is_admin %}
 <section class="card">
-  <h2>管理者デバッグ</h2>
+  <h2>管理者メモ</h2>
   <div class="mini-debug-grid">
     {% for key, value in mini_robot.debug.items() %}
     <div><span>{{ key }}</span><b>{{ value }}</b></div>
@@ -64,7 +64,7 @@
 {% endif %}
 
 <section class="card">
-  <h2>反応ログ</h2>
+  <h2>最近の反応</h2>
   <div class="mini-log-list">
     {% for log in mini_robot.logs %}
     <div class="mini-log-row">
@@ -72,19 +72,19 @@
       <b>{{ log.message }}</b>
     </div>
     {% else %}
-    <div class="robot-part">まだ反応ログはありません。</div>
+    <div class="robot-part">まだ反応はありません。</div>
     {% endfor %}
   </div>
 </section>
 
 <section class="card">
-  <h2>成長メーター</h2>
+  <h2>育ち具合</h2>
   <progress class="mini-growth-progress" max="100" value="{{ mini_robot.growth_percent }}">{{ mini_robot.growth_percent }}%</progress>
   <div class="robot-part">{{ mini_robot.growth_note }} / {{ mini_robot.growth_exp }}%</div>
 </section>
 
 <p class="link">
-  <a href="{{ url_for('lab_mini_catalog') }}">図鑑へ</a> |
+  <a href="{{ url_for('lab_mini_catalog') }}">図鑑を見る</a> |
   <a href="{{ url_for('lab_home') }}">実験室へ戻る</a>
 </p>
 {% endblock %}

@@ -832,15 +832,15 @@ LAB_WORLD_EVENT_TYPES = {
 MINI_ROBOT_INITIAL_SPECIES_KEY = "cerberus"
 MINI_ROBOT_STAGE_CHILD = "child"
 MINI_ROBOT_STATE_LABELS = {
-    "normal": "通常",
+    "normal": "いつも通り",
     "blink": "まばたき",
-    "happy": "喜び",
-    "sleep": "睡眠",
+    "happy": "ごきげん",
+    "sleep": "ねむり",
 }
 MINI_ROBOT_STAGE_LABELS = {
-    "child": "幼年期",
-    "growth": "成長期",
-    "mature": "成熟期",
+    "child": "幼体",
+    "growth": "成長体",
+    "mature": "成熟体",
 }
 MINI_ROBOT_PERSONALITY_KEYS = ("timid", "curious", "loyal", "sleepy", "wild", "playful")
 MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
@@ -850,34 +850,35 @@ MINI_ROBOT_EVOLUTION_SEEDS = {
 }
 MINI_ROBOT_OBSERVE_LINES = {
     "morning": (
-        "ケルベロス幼年期が実験槽の中で目を覚ました。",
-        "ケルベロス幼年期がこちらに気づいて、小さく体を揺らした。",
+        "ケルベロスが、ゆっくり目を覚ました。",
+        "こちらに気づいて、三つの頭が少しだけ動いた。",
     ),
     "day": (
-        "ケルベロス幼年期が装置の光をじっと見ている。",
-        "ケルベロス幼年期が実験槽の中をゆっくり歩いている。",
+        "ケルベロスが、装置の光をじっと見ている。",
+        "小さな足音を立てながら、ポッドの中を歩いている。",
     ),
     "evening": (
-        "ケルベロス幼年期が少し眠そうにしている。",
-        "ケルベロス幼年期が今日の記録を見つめている。",
+        "ケルベロスが、少し眠そうにしている。",
+        "今日の記録画面を、なぜかじっと見ている。",
     ),
     "night": (
-        "ケルベロス幼年期は丸くなって眠っている。",
-        "ケルベロス幼年期が寝息のような小さな機械音を立てている。",
+        "ケルベロスは、丸くなって眠っている。",
+        "小さな機械音が、寝息みたいに聞こえる。",
     ),
 }
 MINI_ROBOT_PERSONALITY_OBSERVE_LINES = {
-    "timid": "ケルベロス幼年期が少し隠れながらこちらを見ている。",
-    "curious": "ケルベロス幼年期が培養装置の光をじっと観察している。",
-    "loyal": "ケルベロス幼年期がこちらに気づいて近づいてきた。",
-    "sleepy": "ケルベロス幼年期は観察中にまた眠りそうになった。",
-    "wild": "ケルベロス幼年期が実験槽を軽くひっかいた。",
-    "playful": "ケルベロス幼年期が小さく跳ねて、こちらを見ている。",
+    "timid": "少し隠れながら、こちらを見ている。",
+    "curious": "装置の光を、飽きずに眺めている。",
+    "loyal": "こちらに気づいて、近くまで寄ってきた。",
+    "sleepy": "見ている途中で、また眠そうになっている。",
+    "wild": "ポッドの壁を、前足で軽くひっかいた。",
+    "playful": "小さく跳ねて、こちらの反応を待っている。",
 }
 MINI_ROBOT_CARE_ACTIONS = {
     "energy": {
-        "label": "エネルギー補給",
-        "message": "ピッ。エネルギー、あたたかい。",
+        "label": "ごはんをあげる",
+        "message": "胸のランプが、ゆっくり明るくなった。",
+        "notice": "ごはんをあげました。",
         "affection": 2,
         "stability": 1,
         "energy": 18,
@@ -886,7 +887,8 @@ MINI_ROBOT_CARE_ACTIONS = {
     },
     "pet": {
         "label": "なでる",
-        "message": "ギュイン。頭部センサーがくすぐったい。",
+        "message": "三つの頭が、順番にこちらを見た。",
+        "notice": "そっとなでました。",
         "affection": 4,
         "stability": 1,
         "energy": 4,
@@ -894,8 +896,9 @@ MINI_ROBOT_CARE_ACTIONS = {
         "growth_exp": 4,
     },
     "maintenance": {
-        "label": "メンテする",
-        "message": "カチッ。関節の音が静かになった。",
+        "label": "整えてあげる",
+        "message": "関節の引っかかりが取れて、少し歩きやすそうだ。",
+        "notice": "ゆるんだ部品を整えました。",
         "affection": 2,
         "stability": 5,
         "energy": 6,
@@ -907,7 +910,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "cerberus",
         "name_ja": "ケルベロス",
-        "description": "三つの警戒センサーを持つ幼年期ミニロボ。",
+        "description": "三つの頭を持つ、小さな番犬型ミニロボ。",
         "type_key": "guard",
         "image_normal": "mini_robots/cerberus/normal.png",
         "image_blink": "mini_robots/cerberus/blink.png",
@@ -918,7 +921,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "phoenix",
         "name_ja": "フェニックス",
-        "description": "高熱反応から見つかった未解放ミニロボ。",
+        "description": "高い熱反応だけが確認されているミニロボ。",
         "type_key": "heat",
         "image_normal": "mini_robots/phoenix/normal.png",
         "image_blink": "mini_robots/phoenix/blink.png",
@@ -929,7 +932,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "hydra",
         "name_ja": "ヒュドラ",
-        "description": "実験室ログに断片だけ残る未解放ミニロボ。",
+        "description": "古い実験ログに、名前だけ残っているミニロボ。",
         "type_key": "multi",
         "image_normal": "mini_robots/hydra/normal.png",
         "image_blink": "mini_robots/hydra/blink.png",
@@ -1293,7 +1296,7 @@ RELEASE_FLAG_DEFS = (
     {
         "key": "lab_mini",
         "label": "ミニロボ培養室",
-        "summary": "実験室のミニロボ育成を一般公開します。管理者は非公開中でも確認できます。",
+        "summary": "実験室のミニロボ培養室を公開します。非公開中も管理者は確認できます。",
     },
     {
         "key": "layer4",
@@ -20230,8 +20233,8 @@ def _feed_card_from_event(db, row):
         species_name = species["name_ja"] if species else "ミニロボ"
         card["headline"] = "MINI ROBOT"
         card["accent"] = "weekly"
-        card["text"] = f"{actor_label}の培養室で{species_name}幼年期が誕生"
-        card["meta_lines"] = [f"種族: {species_name}", "本編戦力への補正なし"]
+        card["text"] = f"{actor_label}の培養室で、小さな{species_name}が目を覚ました"
+        card["meta_lines"] = [f"種族: {species_name}", "強さへの影響はありません"]
         card["link_url"] = url_for("lab_mini")
     elif event_type == AUDIT_EVENT_TYPES["LAB_MINI_GROWTH"]:
         actor_label = card["user_label"]
@@ -20241,8 +20244,8 @@ def _feed_card_from_event(db, row):
         stage = MINI_ROBOT_STAGE_LABELS.get(str(payload.get("stage") or ""), str(payload.get("stage") or "成長"))
         card["headline"] = "MINI GROWTH"
         card["accent"] = "weekly"
-        card["text"] = f"{actor_label}の{species_name}が{stage}に到達"
-        card["meta_lines"] = [f"段階: {stage}"]
+        card["text"] = f"{actor_label}の{species_name}が少し成長しました"
+        card["meta_lines"] = [f"成長: {stage}"]
         card["link_url"] = url_for("lab_mini")
     elif event_type == AUDIT_EVENT_TYPES["LAB_MINI_UNLOCK_SPECIES"]:
         species_key = str(payload.get("species_key") or "")
@@ -20250,7 +20253,7 @@ def _feed_card_from_event(db, row):
         species_name = species["name_ja"] if species else "新種ミニロボ"
         card["headline"] = "MINI DISCOVERY"
         card["accent"] = "weekly"
-        card["text"] = f"実験室で{species_name}の培養データが解放"
+        card["text"] = "実験室で、新しいミニロボの反応が見つかりました"
         card["meta_lines"] = [f"種族: {species_name}"]
         card["link_url"] = url_for("lab_mini_catalog")
     elif event_type == "LAB_RACE_WIN":
@@ -32636,7 +32639,7 @@ def _ensure_user_mini_robot(db, user_id):
         user_id=user_id,
         mini_robot_id=mini_robot_id,
         event_type="create",
-        message=f"{species['name_ja']}幼年期が培養ポッドで目を覚ました。",
+        message=f"{species['name_ja']}が、ポッドの中で小さく動いた。",
         payload={"state": "normal", "reason": "created", **traits},
         created_at=now_ts,
     )
@@ -32754,9 +32757,9 @@ def _mini_robot_view(db, robot_row, *, force_state=None):
         "mood": int(robot_row["mood"] or 0),
         "growth_exp": growth_exp,
         "growth_percent": min(100, growth_exp),
-        "growth_note": "幼年期の観察ログを蓄積中",
+        "growth_note": "最初の反応を待っています。",
         "cared_today": _mini_robot_cared_today(robot_row),
-        "personality_public_label": "？？？",
+        "personality_public_label": "調査中",
         "debug": {
             "personality_key": _mini_robot_row_value(robot_row, "personality_key", ""),
             "growth_type": _mini_robot_row_value(robot_row, "growth_type", ""),
@@ -32822,7 +32825,7 @@ def _mini_robot_open_for_viewer(db, *, user_row=None, user_id=None):
 def _require_mini_robot_open(db):
     if _mini_robot_open_for_viewer(db, user_id=int(session["user_id"])):
         return None
-    flash("ミニロボ培養室は管理者確認中です。", "notice")
+    flash("ミニロボ培養室は準備中です。", "notice")
     return redirect(url_for("lab_home"))
 
 
@@ -32948,7 +32951,7 @@ def lab_mini_care():
     user_id = int(session["user_id"])
     robot_row, _created = _ensure_user_mini_robot(db, user_id)
     if _mini_robot_cared_today(robot_row):
-        flash("今日のお世話は完了済み。", "notice")
+        flash("今日はもうお世話済みです。", "notice")
         db.commit()
         return redirect(url_for("lab_mini"))
 
@@ -33057,7 +33060,7 @@ def lab_mini_care():
         ip=request.remote_addr,
     )
     db.commit()
-    flash(f"{action['label']}を実行。", "notice")
+    flash(str(action.get("notice") or f"{action['label']}を実行。"), "notice")
     return redirect(url_for("lab_mini", react="happy"))
 
 
@@ -33130,11 +33133,11 @@ def lab_mini_rename():
     robot_row, _created = _ensure_user_mini_robot(db, user_id)
     nickname = (request.form.get("nickname") or "").strip()
     if len(nickname) > 18:
-        flash("名前は18文字以内。", "error")
+        flash("名前は18文字までです。", "error")
         db.commit()
         return redirect(url_for("lab_mini"))
     if not nickname:
-        flash("名前を入力。", "error")
+        flash("新しい名前を入力", "error")
         db.commit()
         return redirect(url_for("lab_mini"))
     db.execute(
@@ -33146,7 +33149,7 @@ def lab_mini_rename():
         user_id=user_id,
         mini_robot_id=int(robot_row["id"]),
         event_type="rename",
-        message=f"識別名を「{nickname}」に更新した。",
+        message=f"「{nickname}」と呼ぶことにしました。",
     )
     audit_log(
         db,
@@ -33160,7 +33163,7 @@ def lab_mini_rename():
         ip=request.remote_addr,
     )
     db.commit()
-    flash("名前を変更。", "notice")
+    flash("名前を変える", "notice")
     return redirect(url_for("lab_mini"))
 
 

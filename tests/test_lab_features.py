@@ -305,19 +305,19 @@ class LabRouteTests(unittest.TestCase):
         care = client.post("/lab/mini/care", data={"action_key": "pet"}, follow_redirects=True)
         self.assertEqual(care.status_code, 200)
         care_html = care.get_data(as_text=True)
-        self.assertIn("喜び", care_html)
-        self.assertIn("頭部センサー", care_html)
+        self.assertIn("ごきげん", care_html)
+        self.assertIn("三つの頭", care_html)
 
         second = client.post("/lab/mini/care", data={"action_key": "energy"}, follow_redirects=True)
         self.assertEqual(second.status_code, 200)
-        self.assertIn("今日のお世話は完了済み", second.get_data(as_text=True))
+        self.assertIn("今日はもうお世話済みです", second.get_data(as_text=True))
 
         catalog = client.get("/lab/mini/catalog")
         self.assertEqual(catalog.status_code, 200)
         catalog_html = catalog.get_data(as_text=True)
         self.assertIn("ミニロボ図鑑", catalog_html)
         self.assertIn("ケルベロス", catalog_html)
-        self.assertIn("未解放", catalog_html)
+        self.assertIn("未発見", catalog_html)
 
     def test_lab_mini_release_flag_controls_public_access(self):
         client = self._client()
@@ -328,7 +328,7 @@ class LabRouteTests(unittest.TestCase):
         resp = client.get("/lab/mini", follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("管理者確認中", html)
+        self.assertIn("準備中", html)
         self.assertNotIn("ケルベロス幼体", html)
 
         with game_app.app.app_context():

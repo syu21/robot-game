@@ -9,11 +9,11 @@
     <img src="{{ row.image_url }}" alt="{{ row.name_ja }}" />
     <h2>{{ row.name_ja }}</h2>
     <div class="robot-part">{{ row.description }}</div>
-    <div class="weekly-fit-badge">解放済み</div>
+    <div class="weekly-fit-badge">発見済み</div>
     {% else %}
     <div class="mini-silhouette">?</div>
-    <h2>未解放</h2>
-    <div class="robot-part">研究ログの蓄積で発見予定。</div>
+    <h2>未発見</h2>
+    <div class="robot-part">まだ詳しいことは分かっていません。</div>
     {% endif %}
   </div>
   {% endfor %}

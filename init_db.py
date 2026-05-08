@@ -34,7 +34,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "cerberus",
         "name_ja": "ケルベロス",
-        "description": "三つの警戒センサーを持つ幼年期ミニロボ。",
+        "description": "三つの頭を持つ、小さな番犬型ミニロボ。",
         "type_key": "guard",
         "image_normal": "mini_robots/cerberus/normal.png",
         "image_blink": "mini_robots/cerberus/blink.png",
@@ -45,7 +45,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "phoenix",
         "name_ja": "フェニックス",
-        "description": "高熱反応から見つかった未解放ミニロボ。",
+        "description": "高い熱反応だけが確認されているミニロボ。",
         "type_key": "heat",
         "image_normal": "mini_robots/phoenix/normal.png",
         "image_blink": "mini_robots/phoenix/blink.png",
@@ -56,7 +56,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "hydra",
         "name_ja": "ヒュドラ",
-        "description": "実験室ログに断片だけ残る未解放ミニロボ。",
+        "description": "古い実験ログに、名前だけ残っているミニロボ。",
         "type_key": "multi",
         "image_normal": "mini_robots/hydra/normal.png",
         "image_blink": "mini_robots/hydra/blink.png",
