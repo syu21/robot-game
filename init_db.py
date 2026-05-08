@@ -1,6 +1,8 @@
 import os
+import random
 import sqlite3
 import time
+from datetime import datetime, timezone, timedelta
 from balance_config import ENEMY_SEED_STATS
 from series_catalog import (
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
@@ -21,6 +23,13 @@ LAB_CASINO_PRIZE_SEEDS = (
     ("lab_skin_flash", "観戦演出スキン: フラッシュライン", "レース観戦の加速演出をイメージした景品。", 2600, "effect", "lab_skin_flash"),
 )
 LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
+JST = timezone(timedelta(hours=9))
+MINI_ROBOT_PERSONALITY_KEYS = ("timid", "curious", "loyal", "sleepy", "wild", "playful")
+MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
+MINI_ROBOT_TIME_BANDS = ("morning", "day", "evening", "night")
+MINI_ROBOT_EVOLUTION_SEEDS = {
+    "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
+}
 MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "cerberus",
@@ -161,6 +170,60 @@ def _upsert_mini_robot_species(cur):
                 int(species["is_active"]),
             ),
         )
+
+
+def _mini_robot_pick_initial_traits(species_key, *, seed=None):
+    rng = random.Random(seed) if seed is not None else random
+    species = str(species_key or "cerberus")
+    evolution_candidates = MINI_ROBOT_EVOLUTION_SEEDS.get(species) or (f"{species}_default",)
+    return {
+        "personality_key": rng.choice(MINI_ROBOT_PERSONALITY_KEYS),
+        "growth_type": rng.choice(MINI_ROBOT_GROWTH_TYPES),
+        "behavior_seed": rng.randint(1, 999999),
+        "evolution_seed": rng.choice(evolution_candidates),
+        "favorite_time_band": rng.choice(MINI_ROBOT_TIME_BANDS),
+        "instinct": rng.randint(1, 3),
+    }
+
+
+def _mini_robot_day_key_from_ts(ts):
+    return datetime.fromtimestamp(int(ts), JST).strftime("%Y-%m-%d")
+
+
+def _backfill_mini_robot_internal_fields(cur):
+    rows = cur.execute("SELECT * FROM user_mini_robots").fetchall()
+    col_names = [item[0] for item in cur.description]
+    for raw in rows:
+        row = dict(zip(col_names, raw))
+        row_id = int(row["id"])
+        species_key = str(row.get("species_key") or "cerberus")
+        traits = _mini_robot_pick_initial_traits(species_key, seed=f"mini-backfill:{row_id}:{species_key}")
+        last_cared_at = int(row.get("last_cared_at") or 0)
+        last_care_date = _mini_robot_day_key_from_ts(last_cared_at) if last_cared_at > 0 else None
+        care_count = int(
+            cur.execute(
+                "SELECT COUNT(*) FROM mini_robot_logs WHERE mini_robot_id = ? AND event_type = 'care'",
+                (row_id,),
+            ).fetchone()[0]
+            or 0
+        )
+        updates = {}
+        for key in ("personality_key", "growth_type", "evolution_seed", "favorite_time_band"):
+            if not str(row.get(key) or "").strip():
+                updates[key] = traits[key]
+        if int(row.get("behavior_seed") or 0) <= 0:
+            updates["behavior_seed"] = traits["behavior_seed"]
+        if int(row.get("instinct") or 0) <= 0:
+            updates["instinct"] = traits["instinct"]
+        if int(row.get("care_count") or 0) <= 0 and care_count > 0:
+            updates["care_count"] = care_count
+        if not str(row.get("last_care_date") or "").strip() and last_care_date:
+            updates["last_care_date"] = last_care_date
+        if not str(row.get("last_state_reason") or "").strip():
+            updates["last_state_reason"] = "backfilled"
+        if updates:
+            assignments = ", ".join([f"{key} = ?" for key in updates])
+            cur.execute(f"UPDATE user_mini_robots SET {assignments} WHERE id = ?", [*updates.values(), row_id])
 
 
 def _apply_series_part_assignments(cur):
@@ -1192,6 +1255,19 @@ def main():
             growth_exp INTEGER NOT NULL DEFAULT 0,
             current_state TEXT NOT NULL DEFAULT 'normal',
             last_cared_at INTEGER,
+            personality_key TEXT DEFAULT NULL,
+            growth_type TEXT DEFAULT NULL,
+            behavior_seed INTEGER NOT NULL DEFAULT 0,
+            evolution_seed TEXT DEFAULT NULL,
+            trust INTEGER NOT NULL DEFAULT 0,
+            curiosity INTEGER NOT NULL DEFAULT 0,
+            instinct INTEGER NOT NULL DEFAULT 0,
+            stress INTEGER NOT NULL DEFAULT 0,
+            care_count INTEGER NOT NULL DEFAULT 0,
+            consecutive_care_days INTEGER NOT NULL DEFAULT 0,
+            last_care_date TEXT DEFAULT NULL,
+            favorite_time_band TEXT DEFAULT NULL,
+            last_state_reason TEXT DEFAULT NULL,
             created_at INTEGER NOT NULL,
             UNIQUE(user_id, species_key),
             FOREIGN KEY(user_id) REFERENCES users(id),
@@ -1207,6 +1283,7 @@ def main():
             mini_robot_id INTEGER NOT NULL,
             event_type TEXT NOT NULL,
             message TEXT NOT NULL,
+            payload_json TEXT,
             created_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(mini_robot_id) REFERENCES user_mini_robots(id)
@@ -2228,6 +2305,29 @@ def main():
         cur.execute("ALTER TABLE world_events_log ADD COLUMN delta_coins INTEGER")
     if "delta_count" not in wel_cols:
         cur.execute("ALTER TABLE world_events_log ADD COLUMN delta_count INTEGER")
+    mini_robot_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_mini_robots)").fetchall()}
+    mini_robot_column_defs = {
+        "personality_key": "personality_key TEXT DEFAULT NULL",
+        "growth_type": "growth_type TEXT DEFAULT NULL",
+        "behavior_seed": "behavior_seed INTEGER NOT NULL DEFAULT 0",
+        "evolution_seed": "evolution_seed TEXT DEFAULT NULL",
+        "trust": "trust INTEGER NOT NULL DEFAULT 0",
+        "curiosity": "curiosity INTEGER NOT NULL DEFAULT 0",
+        "instinct": "instinct INTEGER NOT NULL DEFAULT 0",
+        "stress": "stress INTEGER NOT NULL DEFAULT 0",
+        "care_count": "care_count INTEGER NOT NULL DEFAULT 0",
+        "consecutive_care_days": "consecutive_care_days INTEGER NOT NULL DEFAULT 0",
+        "last_care_date": "last_care_date TEXT DEFAULT NULL",
+        "favorite_time_band": "favorite_time_band TEXT DEFAULT NULL",
+        "last_state_reason": "last_state_reason TEXT DEFAULT NULL",
+    }
+    for column_name, column_sql in mini_robot_column_defs.items():
+        if column_name not in mini_robot_cols:
+            cur.execute(f"ALTER TABLE user_mini_robots ADD COLUMN {column_sql}")
+    mini_log_cols = {row[1] for row in cur.execute("PRAGMA table_info(mini_robot_logs)").fetchall()}
+    if "payload_json" not in mini_log_cols:
+        cur.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
+    _backfill_mini_robot_internal_fields(cur)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")

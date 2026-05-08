@@ -14,9 +14,12 @@
     <h2>{{ mini_robot.nickname }}</h2>
     <div class="robot-part">{{ mini_robot.species_name }} / {{ mini_robot.stage_label }}</div>
     <div class="mini-status-grid">
-      <div><span>ごきげん</span><b>{{ mini_robot.mood_label }}</b></div>
-      <div><span>安定度</span><b>{{ mini_robot.stability }}</b></div>
+      <div><span>愛着</span><b>{{ mini_robot.affection }}</b></div>
+      <div><span>元気</span><b>{{ mini_robot.energy }}</b></div>
+      <div><span>安定</span><b>{{ mini_robot.stability }}</b></div>
+      <div><span>機嫌</span><b>{{ mini_robot.mood }}</b></div>
       <div><span>状態</span><b>{{ mini_robot.state_label }}</b></div>
+      <div><span>性格</span><b>{{ mini_robot.personality_public_label }}</b></div>
     </div>
     <form class="inline-form mini-rename-form" method="post" action="{{ url_for('lab_mini_rename') }}">
       <input type="text" name="nickname" value="{{ mini_robot.nickname }}" maxlength="18" />
@@ -28,7 +31,7 @@
 <section class="card">
   <h2>今日のお世話</h2>
   {% if mini_robot.cared_today %}
-  <div class="robot-part">今日のお世話は完了済み。</div>
+  <div class="robot-part">今日のお世話は完了済みです。また明日、様子を見に来てください。</div>
   {% else %}
   <div class="mini-care-grid">
     {% for key, action in care_actions.items() %}
@@ -40,6 +43,25 @@
   </div>
   {% endif %}
 </section>
+
+<section class="card">
+  <h2>今の様子</h2>
+  <div class="robot-part">朝昼夕夜で様子が変わります。観察では本編報酬は増えません。</div>
+  <form method="post" action="{{ url_for('lab_mini_observe') }}" class="inline-form">
+    <button type="submit">様子を見る</button>
+  </form>
+</section>
+
+{% if is_admin %}
+<section class="card">
+  <h2>管理者デバッグ</h2>
+  <div class="mini-debug-grid">
+    {% for key, value in mini_robot.debug.items() %}
+    <div><span>{{ key }}</span><b>{{ value }}</b></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="card">
   <h2>反応ログ</h2>

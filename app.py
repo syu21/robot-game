@@ -842,6 +842,38 @@ MINI_ROBOT_STAGE_LABELS = {
     "growth": "成長期",
     "mature": "成熟期",
 }
+MINI_ROBOT_PERSONALITY_KEYS = ("timid", "curious", "loyal", "sleepy", "wild", "playful")
+MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
+MINI_ROBOT_TIME_BANDS = ("morning", "day", "evening", "night")
+MINI_ROBOT_EVOLUTION_SEEDS = {
+    "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
+}
+MINI_ROBOT_OBSERVE_LINES = {
+    "morning": (
+        "ケルベロス幼年期が実験槽の中で目を覚ました。",
+        "ケルベロス幼年期がこちらに気づいて、小さく体を揺らした。",
+    ),
+    "day": (
+        "ケルベロス幼年期が装置の光をじっと見ている。",
+        "ケルベロス幼年期が実験槽の中をゆっくり歩いている。",
+    ),
+    "evening": (
+        "ケルベロス幼年期が少し眠そうにしている。",
+        "ケルベロス幼年期が今日の記録を見つめている。",
+    ),
+    "night": (
+        "ケルベロス幼年期は丸くなって眠っている。",
+        "ケルベロス幼年期が寝息のような小さな機械音を立てている。",
+    ),
+}
+MINI_ROBOT_PERSONALITY_OBSERVE_LINES = {
+    "timid": "ケルベロス幼年期が少し隠れながらこちらを見ている。",
+    "curious": "ケルベロス幼年期が培養装置の光をじっと観察している。",
+    "loyal": "ケルベロス幼年期がこちらに気づいて近づいてきた。",
+    "sleepy": "ケルベロス幼年期は観察中にまた眠りそうになった。",
+    "wild": "ケルベロス幼年期が実験槽を軽くひっかいた。",
+    "playful": "ケルベロス幼年期が小さく跳ねて、こちらを見ている。",
+}
 MINI_ROBOT_CARE_ACTIONS = {
     "energy": {
         "label": "エネルギー補給",
@@ -860,15 +892,6 @@ MINI_ROBOT_CARE_ACTIONS = {
         "energy": 4,
         "mood": 5,
         "growth_exp": 4,
-    },
-    "observe": {
-        "label": "観察する",
-        "message": "ピピ。観察ログを一緒に見ている。",
-        "affection": 1,
-        "stability": 3,
-        "energy": 0,
-        "mood": 1,
-        "growth_exp": 3,
     },
     "maintenance": {
         "label": "メンテする",
@@ -9896,6 +9919,19 @@ def ensure_schema(db):
             growth_exp INTEGER NOT NULL DEFAULT 0,
             current_state TEXT NOT NULL DEFAULT 'normal',
             last_cared_at INTEGER,
+            personality_key TEXT DEFAULT NULL,
+            growth_type TEXT DEFAULT NULL,
+            behavior_seed INTEGER NOT NULL DEFAULT 0,
+            evolution_seed TEXT DEFAULT NULL,
+            trust INTEGER NOT NULL DEFAULT 0,
+            curiosity INTEGER NOT NULL DEFAULT 0,
+            instinct INTEGER NOT NULL DEFAULT 0,
+            stress INTEGER NOT NULL DEFAULT 0,
+            care_count INTEGER NOT NULL DEFAULT 0,
+            consecutive_care_days INTEGER NOT NULL DEFAULT 0,
+            last_care_date TEXT DEFAULT NULL,
+            favorite_time_band TEXT DEFAULT NULL,
+            last_state_reason TEXT DEFAULT NULL,
             created_at INTEGER NOT NULL,
             UNIQUE(user_id, species_key),
             FOREIGN KEY(user_id) REFERENCES users(id),
@@ -9911,6 +9947,7 @@ def ensure_schema(db):
             mini_robot_id INTEGER NOT NULL,
             event_type TEXT NOT NULL,
             message TEXT NOT NULL,
+            payload_json TEXT,
             created_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(mini_robot_id) REFERENCES user_mini_robots(id)
@@ -11018,6 +11055,29 @@ def ensure_schema(db):
         db.execute("ALTER TABLE world_events_log ADD COLUMN delta_coins INTEGER")
     if "delta_count" not in wel_cols:
         db.execute("ALTER TABLE world_events_log ADD COLUMN delta_count INTEGER")
+    mini_robot_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_mini_robots)").fetchall()}
+    mini_robot_column_defs = {
+        "personality_key": "personality_key TEXT DEFAULT NULL",
+        "growth_type": "growth_type TEXT DEFAULT NULL",
+        "behavior_seed": "behavior_seed INTEGER NOT NULL DEFAULT 0",
+        "evolution_seed": "evolution_seed TEXT DEFAULT NULL",
+        "trust": "trust INTEGER NOT NULL DEFAULT 0",
+        "curiosity": "curiosity INTEGER NOT NULL DEFAULT 0",
+        "instinct": "instinct INTEGER NOT NULL DEFAULT 0",
+        "stress": "stress INTEGER NOT NULL DEFAULT 0",
+        "care_count": "care_count INTEGER NOT NULL DEFAULT 0",
+        "consecutive_care_days": "consecutive_care_days INTEGER NOT NULL DEFAULT 0",
+        "last_care_date": "last_care_date TEXT DEFAULT NULL",
+        "favorite_time_band": "favorite_time_band TEXT DEFAULT NULL",
+        "last_state_reason": "last_state_reason TEXT DEFAULT NULL",
+    }
+    for column_name, column_sql in mini_robot_column_defs.items():
+        if column_name not in mini_robot_cols:
+            db.execute(f"ALTER TABLE user_mini_robots ADD COLUMN {column_sql}")
+    mini_log_cols = {row["name"] for row in db.execute("PRAGMA table_info(mini_robot_logs)").fetchall()}
+    if "payload_json" not in mini_log_cols:
+        db.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
+    _backfill_mini_robot_internal_fields(db)
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
@@ -32427,14 +32487,85 @@ def _mini_robot_species_row(db, species_key=MINI_ROBOT_INITIAL_SPECIES_KEY):
     ).fetchone()
 
 
-def _mini_robot_add_log(db, *, user_id, mini_robot_id, event_type, message, created_at=None):
+def _mini_robot_row_value(row, key, default=None):
+    if not row or not hasattr(row, "keys") or key not in row.keys():
+        return default
+    value = row[key]
+    return default if value is None else value
+
+
+def _mini_robot_pick_initial_traits(species_key, *, seed=None):
+    rng = random.Random(seed) if seed is not None else random
+    species = str(species_key or MINI_ROBOT_INITIAL_SPECIES_KEY)
+    evolution_candidates = MINI_ROBOT_EVOLUTION_SEEDS.get(species) or (f"{species}_default",)
+    return {
+        "personality_key": rng.choice(MINI_ROBOT_PERSONALITY_KEYS),
+        "growth_type": rng.choice(MINI_ROBOT_GROWTH_TYPES),
+        "behavior_seed": rng.randint(1, 999999),
+        "evolution_seed": rng.choice(evolution_candidates),
+        "favorite_time_band": rng.choice(MINI_ROBOT_TIME_BANDS),
+        "instinct": rng.randint(1, 3),
+    }
+
+
+def _backfill_mini_robot_internal_fields(db):
+    try:
+        rows = db.execute("SELECT * FROM user_mini_robots").fetchall()
+    except Exception:
+        return
+    for row in rows:
+        row_id = int(row["id"])
+        species_key = str(_mini_robot_row_value(row, "species_key", MINI_ROBOT_INITIAL_SPECIES_KEY))
+        seed = f"mini-backfill:{row_id}:{species_key}"
+        traits = _mini_robot_pick_initial_traits(species_key, seed=seed)
+        last_care_date = _mini_robot_day_key_from_ts(row["last_cared_at"]) if int(row["last_cared_at"] or 0) > 0 else None
+        care_count = int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM mini_robot_logs WHERE mini_robot_id = ? AND event_type = 'care'",
+                (row_id,),
+            ).fetchone()["c"]
+            or 0
+        )
+        updates = {}
+        for key in ("personality_key", "growth_type", "evolution_seed", "favorite_time_band"):
+            if not str(_mini_robot_row_value(row, key, "") or "").strip():
+                updates[key] = traits[key]
+        if int(_mini_robot_row_value(row, "behavior_seed", 0) or 0) <= 0:
+            updates["behavior_seed"] = traits["behavior_seed"]
+        if int(_mini_robot_row_value(row, "instinct", 0) or 0) <= 0:
+            updates["instinct"] = traits["instinct"]
+        for key in ("trust", "curiosity", "stress", "consecutive_care_days"):
+            if _mini_robot_row_value(row, key) is None:
+                updates[key] = 0
+        if int(_mini_robot_row_value(row, "care_count", 0) or 0) <= 0 and care_count > 0:
+            updates["care_count"] = care_count
+        if not str(_mini_robot_row_value(row, "last_care_date", "") or "").strip() and last_care_date:
+            updates["last_care_date"] = last_care_date
+        if not str(_mini_robot_row_value(row, "last_state_reason", "") or "").strip():
+            updates["last_state_reason"] = "backfilled"
+        if updates:
+            assignments = ", ".join([f"{key} = ?" for key in updates])
+            db.execute(
+                f"UPDATE user_mini_robots SET {assignments} WHERE id = ?",
+                [*updates.values(), row_id],
+            )
+
+
+def _mini_robot_add_log(db, *, user_id, mini_robot_id, event_type, message, payload=None, created_at=None):
     now_ts = int(created_at or _now_ts())
     db.execute(
         """
-        INSERT INTO mini_robot_logs (user_id, mini_robot_id, event_type, message, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO mini_robot_logs (user_id, mini_robot_id, event_type, message, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (int(user_id), int(mini_robot_id), str(event_type), str(message or ""), now_ts),
+        (
+            int(user_id),
+            int(mini_robot_id),
+            str(event_type),
+            str(message or ""),
+            json.dumps(payload or {}, ensure_ascii=False) if payload else None,
+            now_ts,
+        ),
     )
     stale_ids = [
         int(row["id"])
@@ -32474,13 +32605,30 @@ def _ensure_user_mini_robot(db, user_id):
     if not species:
         raise RuntimeError("mini robot species seed missing")
     now_ts = _now_ts()
+    traits = _mini_robot_pick_initial_traits(species["species_key"])
     cur = db.execute(
         """
         INSERT INTO user_mini_robots
-        (user_id, species_key, nickname, stage, affection, stability, energy, mood, growth_exp, current_state, created_at)
-        VALUES (?, ?, ?, 'child', 0, 50, 60, 50, 0, 'normal', ?)
+        (
+            user_id, species_key, nickname, stage, affection, stability, energy, mood, growth_exp,
+            current_state, personality_key, growth_type, behavior_seed, evolution_seed, trust,
+            curiosity, instinct, stress, care_count, consecutive_care_days, favorite_time_band,
+            last_state_reason, created_at
+        )
+        VALUES (?, ?, ?, 'child', 0, 50, 60, 50, 0, 'normal', ?, ?, ?, ?, 0, 0, ?, 0, 0, 0, ?, 'created', ?)
         """,
-        (user_id, species["species_key"], f"{species['name_ja']}幼体", now_ts),
+        (
+            user_id,
+            species["species_key"],
+            f"{species['name_ja']}幼体",
+            traits["personality_key"],
+            traits["growth_type"],
+            int(traits["behavior_seed"]),
+            traits["evolution_seed"],
+            int(traits["instinct"]),
+            traits["favorite_time_band"],
+            now_ts,
+        ),
     )
     mini_robot_id = int(cur.lastrowid)
     _mini_robot_add_log(
@@ -32489,6 +32637,7 @@ def _ensure_user_mini_robot(db, user_id):
         mini_robot_id=mini_robot_id,
         event_type="create",
         message=f"{species['name_ja']}幼年期が培養ポッドで目を覚ました。",
+        payload={"state": "normal", "reason": "created", **traits},
         created_at=now_ts,
     )
     audit_log(
@@ -32499,7 +32648,15 @@ def _ensure_user_mini_robot(db, user_id):
         action_key="lab_mini_create",
         entity_type="mini_robot",
         entity_id=mini_robot_id,
-        payload={"species_key": species["species_key"], "stage": MINI_ROBOT_STAGE_CHILD},
+        payload={
+            "mini_robot_id": mini_robot_id,
+            "species_key": species["species_key"],
+            "stage": MINI_ROBOT_STAGE_CHILD,
+            "personality_key": traits["personality_key"],
+            "growth_type": traits["growth_type"],
+            "evolution_seed": traits["evolution_seed"],
+            "favorite_time_band": traits["favorite_time_band"],
+        },
         ip=request.remote_addr,
     )
     return _ensure_user_mini_robot(db, user_id)[0], True
@@ -32513,23 +32670,56 @@ def _mini_robot_day_key_from_ts(ts):
 
 def _mini_robot_cared_today(robot_row, now_ts=None):
     now = _now_ts() if now_ts is None else int(now_ts)
+    last_care_date = str(_mini_robot_row_value(robot_row, "last_care_date", "") or "").strip()
+    if last_care_date:
+        return last_care_date == _jst_day_key_from_ts(now)
     return _mini_robot_day_key_from_ts(robot_row["last_cared_at"]) == _jst_day_key_from_ts(now)
+
+
+def _mini_robot_time_band(now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    hour = datetime.fromtimestamp(now, JST).hour
+    if 5 <= hour <= 10:
+        return "morning"
+    if 11 <= hour <= 15:
+        return "day"
+    if 16 <= hour <= 20:
+        return "evening"
+    return "night"
+
+
+def _mini_robot_state_for_time(robot_row, *, time_band=None, now_ts=None, observe=False):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    band = time_band or _mini_robot_time_band(now)
+    personality = str(_mini_robot_row_value(robot_row, "personality_key", "") or "")
+    favorite = str(_mini_robot_row_value(robot_row, "favorite_time_band", "") or "")
+    behavior_seed = int(_mini_robot_row_value(robot_row, "behavior_seed", 0) or 0)
+    if band == "night":
+        return "sleep", "night_sleep"
+    if personality == "sleepy":
+        rng = random.Random(f"mini-sleepy:{int(robot_row['id'])}:{behavior_seed}:{band}:{now // 3600}")
+        if rng.randint(1, 100) <= (65 if observe else 40):
+            return "sleep", f"time_{band}"
+    if favorite and favorite == band:
+        rng = random.Random(f"mini-favorite:{int(robot_row['id'])}:{behavior_seed}:{band}:{now // 900}")
+        return ("blink", "favorite_time") if rng.randint(1, 100) <= 35 else ("normal", "favorite_time")
+    rng = random.Random(f"mini-blink:{int(robot_row['id'])}:{behavior_seed}:{band}:{now // 7}")
+    if rng.randint(1, 5) == 1:
+        return "blink", "random_blink"
+    return "normal", f"time_{band}" if observe else "normal_idle"
 
 
 def _mini_robot_display_state(robot_row, *, force_state=None, now_ts=None):
     if force_state in MINI_ROBOT_STATE_LABELS:
         return str(force_state)
     now = _now_ts() if now_ts is None else int(now_ts)
-    hour = datetime.fromtimestamp(now, JST).hour
-    if hour >= 22 or hour < 6:
-        return "sleep"
     if _mini_robot_cared_today(robot_row, now):
         return "sleep"
     last_cared_at = int(robot_row["last_cared_at"] or 0)
     if last_cared_at and now - last_cared_at >= 36 * 3600:
         return "sleep"
-    seed = f"mini-blink:{int(robot_row['id'])}:{now // 7}"
-    return "blink" if random.Random(seed).randint(1, 5) == 1 else "normal"
+    state, _reason = _mini_robot_state_for_time(robot_row, now_ts=now)
+    return state
 
 
 def _mini_robot_view(db, robot_row, *, force_state=None):
@@ -32537,7 +32727,7 @@ def _mini_robot_view(db, robot_row, *, force_state=None):
     image_col = f"image_{state}"
     logs = db.execute(
         """
-        SELECT event_type, message, created_at
+        SELECT event_type, message, payload_json, created_at
         FROM mini_robot_logs
         WHERE mini_robot_id = ?
         ORDER BY created_at DESC, id DESC
@@ -32558,11 +32748,29 @@ def _mini_robot_view(db, robot_row, *, force_state=None):
         "state_label": MINI_ROBOT_STATE_LABELS.get(state, state),
         "image_url": url_for("static", filename=robot_row[image_col]),
         "mood_label": "ごきげん" if int(robot_row["mood"] or 0) >= 70 else "ふつう" if int(robot_row["mood"] or 0) >= 40 else "しずか",
+        "affection": int(robot_row["affection"] or 0),
+        "energy": int(robot_row["energy"] or 0),
         "stability": int(robot_row["stability"] or 0),
+        "mood": int(robot_row["mood"] or 0),
         "growth_exp": growth_exp,
         "growth_percent": min(100, growth_exp),
         "growth_note": "幼年期の観察ログを蓄積中",
         "cared_today": _mini_robot_cared_today(robot_row),
+        "personality_public_label": "？？？",
+        "debug": {
+            "personality_key": _mini_robot_row_value(robot_row, "personality_key", ""),
+            "growth_type": _mini_robot_row_value(robot_row, "growth_type", ""),
+            "behavior_seed": int(_mini_robot_row_value(robot_row, "behavior_seed", 0) or 0),
+            "evolution_seed": _mini_robot_row_value(robot_row, "evolution_seed", ""),
+            "trust": int(_mini_robot_row_value(robot_row, "trust", 0) or 0),
+            "curiosity": int(_mini_robot_row_value(robot_row, "curiosity", 0) or 0),
+            "instinct": int(_mini_robot_row_value(robot_row, "instinct", 0) or 0),
+            "stress": int(_mini_robot_row_value(robot_row, "stress", 0) or 0),
+            "care_count": int(_mini_robot_row_value(robot_row, "care_count", 0) or 0),
+            "consecutive_care_days": int(_mini_robot_row_value(robot_row, "consecutive_care_days", 0) or 0),
+            "favorite_time_band": _mini_robot_row_value(robot_row, "favorite_time_band", ""),
+            "last_state_reason": _mini_robot_row_value(robot_row, "last_state_reason", ""),
+        },
         "logs": [
             {
                 "event_type": row["event_type"],
@@ -32616,6 +32824,57 @@ def _require_mini_robot_open(db):
         return None
     flash("ミニロボ培養室は管理者確認中です。", "notice")
     return redirect(url_for("lab_home"))
+
+
+def _mini_robot_next_consecutive_days(last_care_date, today_key):
+    last_text = str(last_care_date or "").strip()
+    if not last_text:
+        return 1
+    try:
+        last_day = datetime.strptime(last_text, "%Y-%m-%d").date()
+        today = datetime.strptime(str(today_key), "%Y-%m-%d").date()
+    except ValueError:
+        return 1
+    if last_day == today:
+        return None
+    if last_day + timedelta(days=1) == today:
+        return "increment"
+    return 1
+
+
+def _mini_robot_observe_message(robot_row, time_band):
+    personality = str(_mini_robot_row_value(robot_row, "personality_key", "") or "")
+    behavior_seed = int(_mini_robot_row_value(robot_row, "behavior_seed", 0) or 0)
+    rng = random.Random(f"mini-observe:{int(robot_row['id'])}:{behavior_seed}:{time_band}:{_jst_day_key_from_ts(_now_ts())}")
+    if personality in MINI_ROBOT_PERSONALITY_OBSERVE_LINES and rng.randint(1, 100) <= 25:
+        return MINI_ROBOT_PERSONALITY_OBSERVE_LINES[personality]
+    lines = MINI_ROBOT_OBSERVE_LINES.get(time_band) or MINI_ROBOT_OBSERVE_LINES["day"]
+    return rng.choice(lines)
+
+
+def _mini_robot_observed_time_band_today(db, mini_robot_id, time_band, now_ts=None):
+    now = _now_ts() if now_ts is None else int(now_ts)
+    start_ts, end_ts = _jst_day_bounds(now)
+    rows = db.execute(
+        """
+        SELECT payload_json
+        FROM mini_robot_logs
+        WHERE mini_robot_id = ?
+          AND event_type = 'observe'
+          AND created_at >= ?
+          AND created_at < ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (int(mini_robot_id), int(start_ts), int(end_ts)),
+    ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("time_band") == time_band:
+            return True
+    return False
 
 
 @app.route("/lab")
@@ -32675,6 +32934,7 @@ def lab_mini():
         "lab_mini.html",
         mini_robot=_mini_robot_view(db, robot_row, force_state=force_state),
         care_actions=MINI_ROBOT_CARE_ACTIONS,
+        is_admin=_is_admin_user(user_id),
     )
 
 
@@ -32692,21 +32952,60 @@ def lab_mini_care():
         db.commit()
         return redirect(url_for("lab_mini"))
 
-    action_key = (request.form.get("action_key") or "energy").strip()
+    action_key = (request.form.get("action_key") or "pet").strip()
     action = MINI_ROBOT_CARE_ACTIONS.get(action_key) or MINI_ROBOT_CARE_ACTIONS["energy"]
     now_ts = _now_ts()
+    today_key = _jst_day_key_from_ts(now_ts)
+    personality = str(_mini_robot_row_value(robot_row, "personality_key", "") or "")
+    consecutive_mode = _mini_robot_next_consecutive_days(_mini_robot_row_value(robot_row, "last_care_date"), today_key)
+    consecutive_days = (
+        int(_mini_robot_row_value(robot_row, "consecutive_care_days", 0) or 0) + 1
+        if consecutive_mode == "increment"
+        else int(consecutive_mode or 1)
+    )
+    delta = {
+        "affection": int(action["affection"]) + 1,
+        "stability": int(action["stability"]),
+        "energy": int(action["energy"]) + (0 if personality == "sleepy" else 1),
+        "mood": int(action["mood"]),
+        "growth_exp": int(action["growth_exp"]),
+        "trust": 1,
+        "curiosity": 0,
+        "instinct": 0,
+        "stress": -1,
+    }
+    if personality == "curious":
+        delta["curiosity"] += 1
+    elif personality == "loyal":
+        delta["trust"] += 1
+    elif personality == "wild":
+        delta["instinct"] += 1
+        delta["stability"] -= 1
+    elif personality == "playful":
+        delta["mood"] += 1
+        delta["curiosity"] += 1
+    elif personality == "timid":
+        delta["stress"] -= 1
+        delta["stability"] += 1
     new_values = {
-        "affection": _clamp(int(robot_row["affection"] or 0) + int(action["affection"]), 0, 100),
-        "stability": _clamp(int(robot_row["stability"] or 0) + int(action["stability"]), 0, 100),
-        "energy": _clamp(int(robot_row["energy"] or 0) + int(action["energy"]), 0, 100),
-        "mood": _clamp(int(robot_row["mood"] or 0) + int(action["mood"]), 0, 100),
-        "growth_exp": _clamp(int(robot_row["growth_exp"] or 0) + int(action["growth_exp"]), 0, 100),
+        "affection": _clamp(int(robot_row["affection"] or 0) + int(delta["affection"]), 0, 100),
+        "stability": _clamp(int(robot_row["stability"] or 0) + int(delta["stability"]), 0, 100),
+        "energy": _clamp(int(robot_row["energy"] or 0) + int(delta["energy"]), 0, 100),
+        "mood": _clamp(int(robot_row["mood"] or 0) + int(delta["mood"]), 0, 100),
+        "growth_exp": _clamp(int(robot_row["growth_exp"] or 0) + int(delta["growth_exp"]), 0, 100),
+        "trust": _clamp(int(_mini_robot_row_value(robot_row, "trust", 0) or 0) + int(delta["trust"]), 0, 100),
+        "curiosity": _clamp(int(_mini_robot_row_value(robot_row, "curiosity", 0) or 0) + int(delta["curiosity"]), 0, 100),
+        "instinct": _clamp(int(_mini_robot_row_value(robot_row, "instinct", 0) or 0) + int(delta["instinct"]), 0, 100),
+        "stress": _clamp(int(_mini_robot_row_value(robot_row, "stress", 0) or 0) + int(delta["stress"]), 0, 100),
+        "care_count": int(_mini_robot_row_value(robot_row, "care_count", 0) or 0) + 1,
     }
     db.execute(
         """
         UPDATE user_mini_robots
         SET affection = ?, stability = ?, energy = ?, mood = ?, growth_exp = ?,
-            current_state = 'happy', last_cared_at = ?
+            trust = ?, curiosity = ?, instinct = ?, stress = ?, care_count = ?,
+            consecutive_care_days = ?, last_care_date = ?,
+            current_state = 'happy', last_cared_at = ?, last_state_reason = 'after_care'
         WHERE id = ? AND user_id = ?
         """,
         (
@@ -32715,6 +33014,13 @@ def lab_mini_care():
             new_values["energy"],
             new_values["mood"],
             new_values["growth_exp"],
+            new_values["trust"],
+            new_values["curiosity"],
+            new_values["instinct"],
+            new_values["stress"],
+            new_values["care_count"],
+            consecutive_days,
+            today_key,
             now_ts,
             int(robot_row["id"]),
             user_id,
@@ -32726,6 +33032,7 @@ def lab_mini_care():
         mini_robot_id=int(robot_row["id"]),
         event_type="care",
         message=action["message"],
+        payload={"care_action": action_key, "state": "happy", "reason": "after_care", "delta": delta},
         created_at=now_ts,
     )
     audit_log(
@@ -32737,12 +33044,79 @@ def lab_mini_care():
         entity_type="mini_robot",
         entity_id=int(robot_row["id"]),
         delta_count=int(action["growth_exp"]),
-        payload={"care_action": action_key, "growth_exp": new_values["growth_exp"]},
+        payload={
+            "mini_robot_id": int(robot_row["id"]),
+            "species_key": robot_row["species_key"],
+            "care_action": action_key,
+            "care_count": new_values["care_count"],
+            "consecutive_care_days": consecutive_days,
+            "personality_key": personality,
+            "growth_exp": new_values["growth_exp"],
+            "delta": delta,
+        },
         ip=request.remote_addr,
     )
     db.commit()
     flash(f"{action['label']}を実行。", "notice")
     return redirect(url_for("lab_mini", react="happy"))
+
+
+@app.route("/lab/mini/observe", methods=["POST"])
+@login_required
+def lab_mini_observe():
+    db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
+    user_id = int(session["user_id"])
+    robot_row, _created = _ensure_user_mini_robot(db, user_id)
+    now_ts = _now_ts()
+    time_band = _mini_robot_time_band(now_ts)
+    state, reason = _mini_robot_state_for_time(robot_row, time_band=time_band, now_ts=now_ts, observe=True)
+    message = _mini_robot_observe_message(robot_row, time_band)
+    already_observed = _mini_robot_observed_time_band_today(db, int(robot_row["id"]), time_band, now_ts)
+    logged = not already_observed
+    if logged:
+        _mini_robot_add_log(
+            db,
+            user_id=user_id,
+            mini_robot_id=int(robot_row["id"]),
+            event_type="observe",
+            message=message,
+            payload={"time_band": time_band, "state": state, "reason": reason},
+            created_at=now_ts,
+        )
+    db.execute(
+        """
+        UPDATE user_mini_robots
+        SET current_state = ?, last_state_reason = 'observe'
+        WHERE id = ? AND user_id = ?
+        """,
+        (state, int(robot_row["id"]), user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAB_MINI_OBSERVE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="lab_mini_observe",
+        entity_type="mini_robot",
+        entity_id=int(robot_row["id"]),
+        payload={
+            "mini_robot_id": int(robot_row["id"]),
+            "species_key": robot_row["species_key"],
+            "time_band": time_band,
+            "current_state": state,
+            "personality_key": _mini_robot_row_value(robot_row, "personality_key", ""),
+            "favorite_time_band": _mini_robot_row_value(robot_row, "favorite_time_band", ""),
+            "logged": bool(logged),
+            "reason": (None if logged else "already_observed_this_time_band"),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(message, "notice")
+    return redirect(url_for("lab_mini"))
 
 
 @app.route("/lab/mini/rename", methods=["POST"])
@@ -32756,7 +33130,9 @@ def lab_mini_rename():
     robot_row, _created = _ensure_user_mini_robot(db, user_id)
     nickname = (request.form.get("nickname") or "").strip()
     if len(nickname) > 18:
-        nickname = nickname[:18]
+        flash("名前は18文字以内。", "error")
+        db.commit()
+        return redirect(url_for("lab_mini"))
     if not nickname:
         flash("名前を入力。", "error")
         db.commit()

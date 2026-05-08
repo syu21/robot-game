@@ -7569,16 +7569,23 @@ body.home-page.home-mobile .invite-link-row {
   gap: 10px;
   margin: 14px 0;
 }
-.mini-status-grid div {
+.mini-status-grid div,
+.mini-debug-grid div {
   padding: 10px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
 }
 .mini-status-grid span,
+.mini-debug-grid span,
 .mini-log-row span {
   display: block;
   color: var(--text-muted);
   font-size: 12px;
+}
+.mini-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
 }
 .mini-rename-form {
   display: flex;

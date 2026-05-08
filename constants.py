@@ -251,6 +251,7 @@ AUDIT_EVENT_TYPES = {
     "LAB_CASINO_PRIZE_CLAIM": "audit.lab.casino.prize.claim",
     "LAB_MINI_CREATE": "audit.lab.mini.create",
     "LAB_MINI_CARE": "audit.lab.mini.care",
+    "LAB_MINI_OBSERVE": "audit.lab.mini.observe",
     "LAB_MINI_RENAME": "audit.lab.mini.rename",
     "LAB_MINI_STATE_CHANGE": "audit.lab.mini.state_change",
     "LAB_MINI_GROWTH": "audit.lab.mini.growth",
