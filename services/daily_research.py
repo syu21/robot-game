@@ -486,4 +486,17 @@ def mark_daily_research_modal_viewed(db, user_id, today_key, modal_payload=None)
         "UPDATE users SET last_daily_research_modal_day = ? WHERE id = ?",
         (str(today_key), int(user_id)),
     )
-    payload = modal_p
+    payload = modal_payload or {}
+    _audit(
+        db,
+        DAILY_RESEARCH_MODAL_VIEW,
+        user_id,
+        {
+            "day_key": str(today_key),
+            "has_claimed_rewards": bool(payload.get("claimed_rewards")),
+            "has_yesterday_report": bool(payload.get("yesterday_report")),
+            "has_daily_task": bool(payload.get("daily_task")),
+        },
+        action_key="daily_research.modal.view",
+        entity_type="daily_research_modal",
+    )
