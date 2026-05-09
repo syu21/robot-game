@@ -5,15 +5,13 @@
 <div class="lab-card-grid mini-catalog-grid">
   {% for row in catalog_rows %}
   <div class="card mini-catalog-card{% if not row.unlocked %} is-locked{% endif %}">
-    {% if row.unlocked %}
     <img src="{{ row.image_url }}" alt="{{ row.name_ja }}" />
     <h2>{{ row.name_ja }}</h2>
     <div class="robot-part">{{ row.description }}</div>
-    <div class="weekly-fit-badge">発見済み</div>
+    {% if row.unlocked %}
+    <div class="weekly-fit-badge">所持済み</div>
     {% else %}
-    <div class="mini-silhouette">?</div>
-    <h2>未発見</h2>
-    <div class="robot-part">まだ詳しいことは分かっていません。</div>
+    <div class="weekly-fit-badge">未所持</div>
     {% endif %}
   </div>
   {% endfor %}

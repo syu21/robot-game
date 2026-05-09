@@ -29,12 +29,14 @@ MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
 MINI_ROBOT_TIME_BANDS = ("morning", "day", "evening", "night")
 MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
+    "phoenix": ("phoenix_flare", "phoenix_ember", "phoenix_aura"),
+    "hydra": ("hydra_many", "hydra_mist", "hydra_orbit"),
 }
 MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "cerberus",
         "name_ja": "ケルベロス",
-        "description": "三つの頭を持つ、小さな番犬型ミニロボ。",
+        "description": "三つの頭を持つ、元気いっぱいの番犬型ミニロボ。",
         "type_key": "guard",
         "image_normal": "mini_robots/cerberus/normal.png",
         "image_blink": "mini_robots/cerberus/blink.png",
@@ -45,24 +47,24 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "phoenix",
         "name_ja": "フェニックス",
-        "description": "高い熱反応だけが確認されているミニロボ。",
+        "description": "小さな火花をまとった、静かで神秘的なミニロボ。",
         "type_key": "heat",
         "image_normal": "mini_robots/phoenix/normal.png",
         "image_blink": "mini_robots/phoenix/blink.png",
         "image_happy": "mini_robots/phoenix/happy.png",
         "image_sleep": "mini_robots/phoenix/sleep.png",
-        "is_active": 0,
+        "is_active": 1,
     },
     {
         "species_key": "hydra",
         "name_ja": "ヒュドラ",
-        "description": "古い実験ログに、名前だけ残っているミニロボ。",
+        "description": "複数の頭がそれぞれ違う反応をする、不思議なミニロボ。",
         "type_key": "multi",
         "image_normal": "mini_robots/hydra/normal.png",
         "image_blink": "mini_robots/hydra/blink.png",
         "image_happy": "mini_robots/hydra/happy.png",
         "image_sleep": "mini_robots/hydra/sleep.png",
-        "is_active": 0,
+        "is_active": 1,
     },
 )
 RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "market", "series_system", "research_boost")

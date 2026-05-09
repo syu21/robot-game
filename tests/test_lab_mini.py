@@ -59,20 +59,46 @@ class LabMiniTests(unittest.TestCase):
         db = game_app.get_db()
         return db.execute("SELECT * FROM user_mini_robots WHERE user_id = ?", (int(user_id),)).fetchone()
 
+    def _select_mini_robot(self, client, species_key="cerberus"):
+        return client.post("/lab/mini/select", data={"species_key": species_key}, follow_redirects=True)
+
+    def test_species_definitions_and_safe_lines(self):
+        for key in ("cerberus", "phoenix", "hydra"):
+            self.assertIn(key, game_app.MINI_ROBOT_SPECIES_META)
+            self.assertIn(key, game_app.MINI_ROBOT_EVOLUTION_SEEDS)
+            for state in ("normal", "blink", "happy", "sleep"):
+                self.assertIn(state, game_app.MINI_ROBOT_STATE_LABELS)
+                self.assertEqual(game_app._mini_robot_image_rel(key, state), f"mini_robots/{key}/{state}.png")
+
+        ng_words = ("嫌", "怒", "悲", "無視", "警戒", "不満", "失敗", "寂し", "下がった")
+        lines = []
+        for species_lines in game_app.MINI_ROBOT_CARE_LINES.values():
+            lines.extend(species_lines)
+        lines.extend(game_app.COMMON_MINI_ROBOT_CARE_LINES)
+        for line in lines:
+            self.assertFalse(any(word in line for word in ng_words), line)
+
     def test_create_sets_internal_fields_and_audit(self):
         client = self._client(admin=True)
         resp = client.get("/lab/mini")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("管理者メモ", html)
+        self.assertIn("最初のミニロボを選ぶ", html)
+        self.assertIn("フェニックス", html)
+        self.assertIn("ヒュドラ", html)
+
+        resp = self._select_mini_robot(client, "phoenix")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("管理者メモ", resp.get_data(as_text=True))
 
         with game_app.app.app_context():
             db = game_app.get_db()
             robot = self._mini_robot(self.admin_id)
+            self.assertEqual(robot["species_key"], "phoenix")
             self.assertIn(robot["personality_key"], game_app.MINI_ROBOT_PERSONALITY_KEYS)
             self.assertIn(robot["growth_type"], game_app.MINI_ROBOT_GROWTH_TYPES)
             self.assertGreater(int(robot["behavior_seed"]), 0)
-            self.assertIn(robot["evolution_seed"], game_app.MINI_ROBOT_EVOLUTION_SEEDS["cerberus"])
+            self.assertIn(robot["evolution_seed"], game_app.MINI_ROBOT_EVOLUTION_SEEDS["phoenix"])
             self.assertIn(robot["favorite_time_band"], game_app.MINI_ROBOT_TIME_BANDS)
             self.assertEqual(robot["last_state_reason"], "created")
             audit = db.execute(
@@ -85,7 +111,7 @@ class LabMiniTests(unittest.TestCase):
 
     def test_care_once_updates_internal_values_and_second_does_not(self):
         client = self._client(admin=True)
-        client.get("/lab/mini")
+        self._select_mini_robot(client, "cerberus")
         with game_app.app.app_context():
             db = game_app.get_db()
             robot = self._mini_robot(self.admin_id)
@@ -121,7 +147,7 @@ class LabMiniTests(unittest.TestCase):
 
     def test_observe_logs_once_per_time_band_without_rewards(self):
         client = self._client(admin=True)
-        client.get("/lab/mini")
+        self._select_mini_robot(client, "cerberus")
         with game_app.app.app_context():
             db = game_app.get_db()
             before_user = db.execute("SELECT coins FROM users WHERE id = ?", (self.admin_id,)).fetchone()
@@ -153,7 +179,7 @@ class LabMiniTests(unittest.TestCase):
 
     def test_rename_rejects_too_long_name(self):
         client = self._client(admin=True)
-        client.get("/lab/mini")
+        self._select_mini_robot(client, "cerberus")
         long_name = "あ" * 19
         resp = client.post("/lab/mini/rename", data={"nickname": long_name}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
@@ -174,6 +200,7 @@ class LabMiniTests(unittest.TestCase):
         visible = user_client.get("/lab/mini")
         self.assertEqual(visible.status_code, 200)
         self.assertIn("ミニロボ培養室", visible.get_data(as_text=True))
+        self.assertIn("最初のミニロボを選ぶ", visible.get_data(as_text=True))
         self.assertNotIn("管理者メモ", visible.get_data(as_text=True))
 
 

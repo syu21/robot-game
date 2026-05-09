@@ -7609,6 +7609,30 @@ body.home-page.home-mobile .invite-link-row {
   color: #f8f3e9;
   cursor: pointer;
 }
+.mini-select-intro {
+  margin-bottom: 16px;
+}
+.mini-select-card {
+  display: grid;
+  gap: 10px;
+  text-align: center;
+}
+.mini-select-card img {
+  width: min(180px, 70vw);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.mini-select-card button {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #1e1c17;
+  color: #f8f3e9;
+  cursor: pointer;
+}
 .mini-log-list {
   display: grid;
   gap: 8px;

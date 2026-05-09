@@ -16,6 +16,17 @@
     <div class="robot-time">小さなロボの様子を見る</div>
   </div>
 </a>
+{% elif mini_robot_open %}
+<a class="card mini-lab-top-card" href="{{ url_for('lab_mini') }}">
+  {% if mini_robot_choices and mini_robot_choices[0] %}
+  <img src="{{ mini_robot_choices[0].image_url }}" alt="ミニロボ" />
+  {% endif %}
+  <div>
+    <h2>ミニロボ培養室</h2>
+    <div class="robot-part">実験室で小さなロボを観察できます。</div>
+    <div class="robot-time">ケルベロス、フェニックス、ヒュドラの3体が追加されました。</div>
+  </div>
+</a>
 {% endif %}
 
 <div class="card">

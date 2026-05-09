@@ -284,11 +284,17 @@ class LabRouteTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("ミニロボ培養室", html)
         self.assertIn("ケルベロス", html)
+        self.assertIn("フェニックス", html)
+        self.assertIn("ヒュドラ", html)
+
+        selected = client.post("/lab/mini/select", data={"species_key": "hydra"}, follow_redirects=True)
+        self.assertEqual(selected.status_code, 200)
+        self.assertIn("ヒュドラ", selected.get_data(as_text=True))
 
         with game_app.app.app_context():
             db = game_app.get_db()
             robot = db.execute(
-                "SELECT * FROM user_mini_robots WHERE user_id = ? AND species_key = 'cerberus'",
+                "SELECT * FROM user_mini_robots WHERE user_id = ? AND species_key = 'hydra'",
                 (self.admin_id,),
             ).fetchone()
             self.assertIsNotNone(robot)
@@ -306,7 +312,7 @@ class LabRouteTests(unittest.TestCase):
         self.assertEqual(care.status_code, 200)
         care_html = care.get_data(as_text=True)
         self.assertIn("ごきげん", care_html)
-        self.assertIn("三つの頭", care_html)
+        self.assertIn("ヒュドラ", care_html)
 
         second = client.post("/lab/mini/care", data={"action_key": "energy"}, follow_redirects=True)
         self.assertEqual(second.status_code, 200)
@@ -317,7 +323,9 @@ class LabRouteTests(unittest.TestCase):
         catalog_html = catalog.get_data(as_text=True)
         self.assertIn("ミニロボ図鑑", catalog_html)
         self.assertIn("ケルベロス", catalog_html)
-        self.assertIn("未発見", catalog_html)
+        self.assertIn("フェニックス", catalog_html)
+        self.assertIn("ヒュドラ", catalog_html)
+        self.assertIn("未所持", catalog_html)
 
     def test_lab_mini_release_flag_controls_public_access(self):
         client = self._client()
@@ -356,6 +364,8 @@ class LabRouteTests(unittest.TestCase):
         public_mini = client.get("/lab/mini")
         self.assertEqual(public_mini.status_code, 200)
         self.assertIn("ケルベロス", public_mini.get_data(as_text=True))
+        self.assertIn("フェニックス", public_mini.get_data(as_text=True))
+        self.assertIn("ヒュドラ", public_mini.get_data(as_text=True))
 
     def test_lab_typing_pages_and_result_save(self):
         client = self._client()

@@ -173,4 +173,11 @@
 - [ ] `robot-game-healthcheck.timer` が active
 - [ ] `robot-game-backup.timer` が active
 - [ ] `robot-game-portal-online.timer` が active
-- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-a
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
+- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
+- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
+- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
+- [ ] `backups/` に当日バックアップがある
+- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
+- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
+- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す

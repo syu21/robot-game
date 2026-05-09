@@ -847,6 +847,31 @@ MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
 MINI_ROBOT_TIME_BANDS = ("morning", "day", "evening", "night")
 MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
+    "phoenix": ("phoenix_flare", "phoenix_ember", "phoenix_aura"),
+    "hydra": ("hydra_many", "hydra_mist", "hydra_orbit"),
+}
+MINI_ROBOT_SPECIES_META = {
+    "cerberus": {
+        "name": "ケルベロス",
+        "short_name": "ケルベロス",
+        "description": "三つの頭を持つ、元気いっぱいの番犬型ミニロボ。",
+        "personality": "よく反応して、少し騒がしいタイプ。",
+        "asset_dir": "cerberus",
+    },
+    "phoenix": {
+        "name": "フェニックス",
+        "short_name": "フェニックス",
+        "description": "小さな火花をまとった、静かで神秘的なミニロボ。",
+        "personality": "落ち着いていて、あたたかい雰囲気。",
+        "asset_dir": "phoenix",
+    },
+    "hydra": {
+        "name": "ヒュドラ",
+        "short_name": "ヒュドラ",
+        "description": "複数の頭がそれぞれ違う反応をする、不思議なミニロボ。",
+        "personality": "少し変わっていて、観察しがいがあるタイプ。",
+        "asset_dir": "hydra",
+    },
 }
 MINI_ROBOT_OBSERVE_LINES = {
     "morning": (
@@ -873,6 +898,44 @@ MINI_ROBOT_PERSONALITY_OBSERVE_LINES = {
     "sleepy": "見ている途中で、また眠そうになっている。",
     "wild": "ポッドの壁を、前足で軽くひっかいた。",
     "playful": "小さく跳ねて、こちらの反応を待っている。",
+}
+MINI_ROBOT_SPECIES_OBSERVE_LINES = {
+    "phoenix": {
+        "morning": (
+            "フェニックスが、静かに羽を広げた。",
+            "羽先の光が、朝のポッドにふわっと浮かんだ。",
+        ),
+        "day": (
+            "フェニックスが、装置の光を静かに見つめている。",
+            "小さな火花が、羽のまわりをゆっくり流れている。",
+        ),
+        "evening": (
+            "フェニックスが、羽を整えながら休んでいる。",
+            "フェニックスのまわりが、少しだけあたたかい。",
+        ),
+        "night": (
+            "フェニックスは静かに休んでいる。",
+            "羽先の光が、ゆっくり明るくなったり弱くなったりしている。",
+        ),
+    },
+    "hydra": {
+        "morning": (
+            "ヒュドラの頭たちが、順番に目を覚ました。",
+            "ヒュドラが、ゆっくりこちらを見た。",
+        ),
+        "day": (
+            "ヒュドラの頭たちが、それぞれ別の装置を見ている。",
+            "ヒュドラが、ポッドの中をマイペースに歩いている。",
+        ),
+        "evening": (
+            "ヒュドラの頭たちが、なにか相談しているように見える。",
+            "ヒュドラが、今日の記録画面を不思議そうに見ている。",
+        ),
+        "night": (
+            "ヒュドラの頭たちは、順番に休んでいる。",
+            "ヒュドラはポッドの中で静かに休んでいる。",
+        ),
+    },
 }
 MINI_ROBOT_CARE_ACTIONS = {
     "energy": {
@@ -906,11 +969,41 @@ MINI_ROBOT_CARE_ACTIONS = {
         "growth_exp": 5,
     },
 }
+MINI_ROBOT_CARE_LINES = {
+    "cerberus": (
+        "ケルベロスが三つの頭で同時にこちらを見た。",
+        "ケルベロスのしっぽが小さく揺れている。",
+        "三つの頭が順番にまばたきした。元気そうだ。",
+        "ケルベロスが少し得意げに胸を張った。",
+        "ケルベロスがこちらに気づいて、ぴょこっと反応した。",
+    ),
+    "phoenix": (
+        "フェニックスの羽先が、ほんの少し光った。",
+        "フェニックスは静かに目を閉じて、安心したように見える。",
+        "小さな火花がふわっと舞った。調子はよさそうだ。",
+        "フェニックスがゆっくり羽を整えている。",
+        "フェニックスのまわりが、少しだけあたたかくなった気がする。",
+    ),
+    "hydra": (
+        "ヒュドラの頭たちが、それぞれ違う方向を見ている。",
+        "ヒュドラが少しだけ近づいてきた。観察されている気もする。",
+        "ヒュドラの一つの頭が、こっそりまばたきした。",
+        "ヒュドラは不思議そうにこちらを見ている。",
+        "ヒュドラの頭たちが、なにか相談しているように見える。",
+    ),
+}
+COMMON_MINI_ROBOT_CARE_LINES = (
+    "{name}が少し反応した。",
+    "{name}は今日も元気そうだ。",
+    "{name}がこちらを見ている。",
+    "{name}の様子が少し変わった気がする。",
+    "{name}は落ち着いて過ごしている。",
+)
 MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "cerberus",
         "name_ja": "ケルベロス",
-        "description": "三つの頭を持つ、小さな番犬型ミニロボ。",
+        "description": "三つの頭を持つ、元気いっぱいの番犬型ミニロボ。",
         "type_key": "guard",
         "image_normal": "mini_robots/cerberus/normal.png",
         "image_blink": "mini_robots/cerberus/blink.png",
@@ -921,24 +1014,24 @@ MINI_ROBOT_SPECIES_SEEDS = (
     {
         "species_key": "phoenix",
         "name_ja": "フェニックス",
-        "description": "高い熱反応だけが確認されているミニロボ。",
+        "description": "小さな火花をまとった、静かで神秘的なミニロボ。",
         "type_key": "heat",
         "image_normal": "mini_robots/phoenix/normal.png",
         "image_blink": "mini_robots/phoenix/blink.png",
         "image_happy": "mini_robots/phoenix/happy.png",
         "image_sleep": "mini_robots/phoenix/sleep.png",
-        "is_active": 0,
+        "is_active": 1,
     },
     {
         "species_key": "hydra",
         "name_ja": "ヒュドラ",
-        "description": "古い実験ログに、名前だけ残っているミニロボ。",
+        "description": "複数の頭がそれぞれ違う反応をする、不思議なミニロボ。",
         "type_key": "multi",
         "image_normal": "mini_robots/hydra/normal.png",
         "image_blink": "mini_robots/hydra/blink.png",
         "image_happy": "mini_robots/hydra/happy.png",
         "image_sleep": "mini_robots/hydra/sleep.png",
-        "is_active": 0,
+        "is_active": 1,
     },
 )
 LAB_SUBMISSION_SORT_DEFS = (
@@ -32670,6 +32763,55 @@ def _mini_robot_row_value(row, key, default=None):
     return default if value is None else value
 
 
+def _mini_robot_image_rel(species_key, state_key="normal"):
+    species = str(species_key or MINI_ROBOT_INITIAL_SPECIES_KEY).strip()
+    state = str(state_key or "normal").strip()
+    if state not in MINI_ROBOT_STATE_LABELS:
+        state = "normal"
+    rel = f"mini_robots/{species}/{state}.png"
+    if os.path.exists(_static_abs(rel)):
+        return rel
+    fallback = f"mini_robots/{species}/normal.png"
+    if os.path.exists(_static_abs(fallback)):
+        return fallback
+    cerberus = "mini_robots/cerberus/normal.png"
+    if os.path.exists(_static_abs(cerberus)):
+        return cerberus
+    return "assets/placeholder_enemy.png"
+
+
+def _mini_robot_image_url(species_key, state_key="normal"):
+    return _versioned_static_url(
+        _mini_robot_image_rel(species_key, state_key),
+        fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+    )
+
+
+def _mini_robot_species_choices(db):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM mini_robot_species
+        WHERE is_active = 1
+        ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 ELSE 9 END
+        """
+    ).fetchall()
+    choices = []
+    for row in rows:
+        meta = MINI_ROBOT_SPECIES_META.get(row["species_key"], {})
+        choices.append(
+            {
+                "species_key": row["species_key"],
+                "name": meta.get("name") or row["name_ja"],
+                "short_name": meta.get("short_name") or row["name_ja"],
+                "description": meta.get("description") or row["description"],
+                "personality": meta.get("personality") or "性格は調査中。",
+                "image_url": _mini_robot_image_url(row["species_key"], "normal"),
+            }
+        )
+    return choices
+
+
 def _mini_robot_pick_initial_traits(species_key, *, seed=None):
     rng = random.Random(seed) if seed is not None else random
     species = str(species_key or MINI_ROBOT_INITIAL_SPECIES_KEY)
@@ -32761,9 +32903,9 @@ def _mini_robot_add_log(db, *, user_id, mini_robot_id, event_type, message, payl
         db.execute(f"DELETE FROM mini_robot_logs WHERE id IN ({marks})", stale_ids)
 
 
-def _ensure_user_mini_robot(db, user_id):
+def _get_user_mini_robot(db, user_id):
     user_id = int(user_id)
-    row = db.execute(
+    return db.execute(
         """
         SELECT mr.*, s.name_ja, s.description, s.type_key, s.image_normal, s.image_blink, s.image_happy, s.image_sleep
         FROM user_mini_robots mr
@@ -32774,12 +32916,19 @@ def _ensure_user_mini_robot(db, user_id):
         """,
         (user_id,),
     ).fetchone()
-    if row:
-        return row, False
 
-    species = _mini_robot_species_row(db)
+
+def _create_user_mini_robot(db, user_id, species_key=MINI_ROBOT_INITIAL_SPECIES_KEY):
+    user_id = int(user_id)
+    requested_key = str(species_key or MINI_ROBOT_INITIAL_SPECIES_KEY).strip()
+    species = _mini_robot_species_row(db, requested_key)
+    if not species or int(species["is_active"] or 0) != 1:
+        species = _mini_robot_species_row(db, MINI_ROBOT_INITIAL_SPECIES_KEY)
     if not species:
         raise RuntimeError("mini robot species seed missing")
+    existing = _get_user_mini_robot(db, user_id)
+    if existing:
+        return existing, False
     now_ts = _now_ts()
     traits = _mini_robot_pick_initial_traits(species["species_key"])
     cur = db.execute(
@@ -32835,7 +32984,14 @@ def _ensure_user_mini_robot(db, user_id):
         },
         ip=request.remote_addr,
     )
-    return _ensure_user_mini_robot(db, user_id)[0], True
+    return _get_user_mini_robot(db, user_id), True
+
+
+def _ensure_user_mini_robot(db, user_id):
+    row = _get_user_mini_robot(db, user_id)
+    if row:
+        return row, False
+    return _create_user_mini_robot(db, user_id, MINI_ROBOT_INITIAL_SPECIES_KEY)
 
 
 def _mini_robot_day_key_from_ts(ts):
@@ -32900,7 +33056,6 @@ def _mini_robot_display_state(robot_row, *, force_state=None, now_ts=None):
 
 def _mini_robot_view(db, robot_row, *, force_state=None):
     state = _mini_robot_display_state(robot_row, force_state=force_state)
-    image_col = f"image_{state}"
     logs = db.execute(
         """
         SELECT event_type, message, payload_json, created_at
@@ -32922,7 +33077,7 @@ def _mini_robot_view(db, robot_row, *, force_state=None):
         "stage_label": MINI_ROBOT_STAGE_LABELS.get(robot_row["stage"], robot_row["stage"]),
         "state": state,
         "state_label": MINI_ROBOT_STATE_LABELS.get(state, state),
-        "image_url": url_for("static", filename=robot_row[image_col]),
+        "image_url": _mini_robot_image_url(robot_row["species_key"], state),
         "mood_label": "ごきげん" if int(robot_row["mood"] or 0) >= 70 else "ふつう" if int(robot_row["mood"] or 0) >= 40 else "しずか",
         "affection": int(robot_row["affection"] or 0),
         "energy": int(robot_row["energy"] or 0),
@@ -32974,16 +33129,14 @@ def _mini_robot_catalog_rows(db, user_id):
         ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 ELSE 9 END
         """
     ).fetchall():
-        unlocked = species["species_key"] in owned or (
-            int(species["is_active"] or 0) == 1 and species["species_key"] == MINI_ROBOT_INITIAL_SPECIES_KEY
-        )
+        unlocked = species["species_key"] in owned
         rows.append(
             {
                 "species_key": species["species_key"],
                 "name_ja": species["name_ja"],
                 "description": species["description"],
                 "unlocked": bool(unlocked),
-                "image_url": url_for("static", filename=species["image_normal"]) if unlocked else None,
+                "image_url": _mini_robot_image_url(species["species_key"], "normal"),
             }
         )
     return rows
@@ -33024,8 +33177,22 @@ def _mini_robot_observe_message(robot_row, time_band):
     rng = random.Random(f"mini-observe:{int(robot_row['id'])}:{behavior_seed}:{time_band}:{_jst_day_key_from_ts(_now_ts())}")
     if personality in MINI_ROBOT_PERSONALITY_OBSERVE_LINES and rng.randint(1, 100) <= 25:
         return MINI_ROBOT_PERSONALITY_OBSERVE_LINES[personality]
-    lines = MINI_ROBOT_OBSERVE_LINES.get(time_band) or MINI_ROBOT_OBSERVE_LINES["day"]
+    species_key = str(_mini_robot_row_value(robot_row, "species_key", MINI_ROBOT_INITIAL_SPECIES_KEY) or MINI_ROBOT_INITIAL_SPECIES_KEY)
+    species_lines = MINI_ROBOT_SPECIES_OBSERVE_LINES.get(species_key) or MINI_ROBOT_OBSERVE_LINES
+    lines = species_lines.get(time_band) or species_lines.get("day") or MINI_ROBOT_OBSERVE_LINES["day"]
     return rng.choice(lines)
+
+
+def _mini_robot_care_message(robot_row):
+    species_key = str(_mini_robot_row_value(robot_row, "species_key", MINI_ROBOT_INITIAL_SPECIES_KEY) or MINI_ROBOT_INITIAL_SPECIES_KEY)
+    species_name = str(_mini_robot_row_value(robot_row, "name_ja", "") or MINI_ROBOT_SPECIES_META.get(species_key, {}).get("name") or "ミニロボ")
+    behavior_seed = int(_mini_robot_row_value(robot_row, "behavior_seed", 0) or 0)
+    care_count = int(_mini_robot_row_value(robot_row, "care_count", 0) or 0)
+    rng = random.Random(f"mini-care-line:{int(robot_row['id'])}:{species_key}:{behavior_seed}:{care_count}:{_jst_day_key_from_ts(_now_ts())}")
+    lines = MINI_ROBOT_CARE_LINES.get(species_key)
+    if lines:
+        return rng.choice(lines)
+    return rng.choice(COMMON_MINI_ROBOT_CARE_LINES).format(name=species_name)
 
 
 def _mini_robot_observed_time_band_today(db, mini_robot_id, time_band, now_ts=None):
@@ -33060,11 +33227,13 @@ def lab_home():
     user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
     mini_robot_open = _mini_robot_open_for_viewer(db, user_row=user)
     mini_robot = None
+    mini_robot_choices = []
     if mini_robot_open:
-        mini_robot_row, created = _ensure_user_mini_robot(db, int(user["id"]))
-        if created:
-            db.commit()
-        mini_robot = _mini_robot_view(db, mini_robot_row)
+        mini_robot_row = _get_user_mini_robot(db, int(user["id"]))
+        if mini_robot_row:
+            mini_robot = _mini_robot_view(db, mini_robot_row)
+        else:
+            mini_robot_choices = _mini_robot_species_choices(db)
     latest_race = _lab_casino_latest_race(db, status="finished")
     latest_results = _lab_casino_results(db, latest_race["id"])[:3] if latest_race else []
     showcase_rows = _lab_showcase_query_rows(db, viewer_user_id=int(user["id"]), sort_key="popular", limit=4)
@@ -33089,6 +33258,7 @@ def lab_home():
         world_items=world_items,
         counts=counts,
         mini_robot=mini_robot,
+        mini_robot_choices=mini_robot_choices,
         is_admin=bool(int(user["is_admin"] or 0) == 1),
         mini_robot_open=mini_robot_open,
     )
@@ -33102,16 +33272,47 @@ def lab_mini():
     if closed_redirect:
         return closed_redirect
     user_id = int(session["user_id"])
-    robot_row, created = _ensure_user_mini_robot(db, user_id)
-    if created:
-        db.commit()
+    robot_row = _get_user_mini_robot(db, user_id)
+    if not robot_row:
+        return render_template(
+            "lab_mini.html",
+            mini_robot=None,
+            species_choices=_mini_robot_species_choices(db),
+            care_actions=MINI_ROBOT_CARE_ACTIONS,
+            is_admin=_is_admin_user(user_id),
+        )
     force_state = "happy" if request.args.get("react") == "happy" else None
     return render_template(
         "lab_mini.html",
         mini_robot=_mini_robot_view(db, robot_row, force_state=force_state),
+        species_choices=[],
         care_actions=MINI_ROBOT_CARE_ACTIONS,
         is_admin=_is_admin_user(user_id),
     )
+
+
+@app.route("/lab/mini/select", methods=["POST"])
+@login_required
+def lab_mini_select():
+    db = get_db()
+    closed_redirect = _require_mini_robot_open(db)
+    if closed_redirect:
+        return closed_redirect
+    user_id = int(session["user_id"])
+    if _get_user_mini_robot(db, user_id):
+        flash("ミニロボはすでに選択済みです。", "notice")
+        db.commit()
+        return redirect(url_for("lab_mini"))
+    species_key = (request.form.get("species_key") or "").strip()
+    allowed = {choice["species_key"] for choice in _mini_robot_species_choices(db)}
+    if species_key not in allowed:
+        flash("選べないミニロボです。", "error")
+        db.commit()
+        return redirect(url_for("lab_mini"))
+    robot_row, _created = _create_user_mini_robot(db, user_id, species_key)
+    db.commit()
+    flash(f"{robot_row['name_ja']}を培養室に迎えました。", "notice")
+    return redirect(url_for("lab_mini"))
 
 
 @app.route("/lab/mini/care", methods=["POST"])
@@ -33122,7 +33323,11 @@ def lab_mini_care():
     if closed_redirect:
         return closed_redirect
     user_id = int(session["user_id"])
-    robot_row, _created = _ensure_user_mini_robot(db, user_id)
+    robot_row = _get_user_mini_robot(db, user_id)
+    if not robot_row:
+        flash("先にミニロボを選んでください。", "notice")
+        db.commit()
+        return redirect(url_for("lab_mini"))
     if _mini_robot_cared_today(robot_row):
         flash("今日はもうお世話済みです。", "notice")
         db.commit()
@@ -33202,12 +33407,13 @@ def lab_mini_care():
             user_id,
         ),
     )
+    care_message = _mini_robot_care_message(robot_row)
     _mini_robot_add_log(
         db,
         user_id=user_id,
         mini_robot_id=int(robot_row["id"]),
         event_type="care",
-        message=action["message"],
+        message=care_message,
         payload={"care_action": action_key, "state": "happy", "reason": "after_care", "delta": delta},
         created_at=now_ts,
     )
@@ -33245,7 +33451,11 @@ def lab_mini_observe():
     if closed_redirect:
         return closed_redirect
     user_id = int(session["user_id"])
-    robot_row, _created = _ensure_user_mini_robot(db, user_id)
+    robot_row = _get_user_mini_robot(db, user_id)
+    if not robot_row:
+        flash("先にミニロボを選んでください。", "notice")
+        db.commit()
+        return redirect(url_for("lab_mini"))
     now_ts = _now_ts()
     time_band = _mini_robot_time_band(now_ts)
     state, reason = _mini_robot_state_for_time(robot_row, time_band=time_band, now_ts=now_ts, observe=True)
@@ -33303,7 +33513,11 @@ def lab_mini_rename():
     if closed_redirect:
         return closed_redirect
     user_id = int(session["user_id"])
-    robot_row, _created = _ensure_user_mini_robot(db, user_id)
+    robot_row = _get_user_mini_robot(db, user_id)
+    if not robot_row:
+        flash("先にミニロボを選んでください。", "notice")
+        db.commit()
+        return redirect(url_for("lab_mini"))
     nickname = (request.form.get("nickname") or "").strip()
     if len(nickname) > 18:
         flash("名前は18文字までです。", "error")
@@ -33348,8 +33562,6 @@ def lab_mini_catalog():
     if closed_redirect:
         return closed_redirect
     user_id = int(session["user_id"])
-    _ensure_user_mini_robot(db, user_id)
-    db.commit()
     return render_template("lab_mini_catalog.html", catalog_rows=_mini_robot_catalog_rows(db, user_id))
 
 

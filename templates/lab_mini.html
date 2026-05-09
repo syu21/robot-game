@@ -2,6 +2,33 @@
 {% block content %}
 <h1>ミニロボ培養室</h1>
 
+{% if not mini_robot %}
+<section class="card mini-select-intro">
+  <h2>最初のミニロボを選ぶ</h2>
+  <div class="robot-part">ミニロボは実験室で観察する小さな相棒です。本編の戦力には影響しません。</div>
+</section>
+
+<div class="lab-card-grid mini-select-grid">
+  {% for species in species_choices %}
+  <section class="card mini-select-card">
+    <img src="{{ species.image_url }}" alt="{{ species.name }}" loading="lazy" />
+    <h2>{{ species.name }}</h2>
+    <div class="robot-part">{{ species.description }}</div>
+    <div class="robot-time">{{ species.personality }}</div>
+    <form method="post" action="{{ url_for('lab_mini_select') }}">
+      <input type="hidden" name="species_key" value="{{ species.species_key }}" />
+      <button type="submit">このミニロボにする</button>
+    </form>
+  </section>
+  {% endfor %}
+</div>
+
+<p class="link">
+  <a href="{{ url_for('lab_mini_catalog') }}">図鑑を見る</a> |
+  <a href="{{ url_for('lab_home') }}">実験室へ戻る</a>
+</p>
+{% else %}
+
 <div class="mini-lab-layout">
   <section class="card mini-lab-stage">
     <div class="mini-robot-visual">
@@ -87,4 +114,5 @@
   <a href="{{ url_for('lab_mini_catalog') }}">図鑑を見る</a> |
   <a href="{{ url_for('lab_home') }}">実験室へ戻る</a>
 </p>
+{% endif %}
 {% endblock %}
