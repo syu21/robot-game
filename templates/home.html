@@ -476,7 +476,7 @@
       {% else %}
         <div class="card">
           <p>出撃機体が未設定です。</p>
-          <p><a href="{{ url_for('build') }}">ロボ編成へ</a></p>
+          <p><a href="{{ url_for('build') }}">ロボを組み立てる</a></p>
         </div>
       {% endif %}
     </section>
@@ -853,6 +853,9 @@
           <option value="{{ area['key'] }}" {% if selected_explore_area_key == area['key'] %}selected{% endif %}>{{ area['label'] }}</option>
           {% endfor %}
         </select>
+        {% if selected_explore_tendency_line %}
+        <div class="robot-time">{{ selected_explore_tendency_line }}</div>
+        {% endif %}
         {% if explore_submission_id %}
         <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
         {% endif %}
@@ -900,12 +903,21 @@
         {% if not trial_mode %}
         <a class="action-card" href="{{ url_for('robots') }}"><div class="action-title">ロボ一覧</div><div class="action-desc">組み立てたロボを確認</div></a>
         {% endif %}
-        <a class="action-card" href="{{ url_for('parts_strengthen') }}"><div class="action-title">パーツ強化</div><div class="action-desc">素材2つで強化</div></a>
+        <a class="action-card" href="{{ url_for('parts_strengthen') }}">
+          {% if strengthen_candidate_count|default(0)|int > 0 %}
+          <div class="action-title">パーツを強化する</div><div class="action-desc">強化できるパーツがあります</div>
+          {% else %}
+          <div class="action-title">パーツ強化</div><div class="action-desc">同じ名前・同じレアリティのパーツが3個そろうと強化できます</div>
+          {% endif %}
+        </a>
         {% if show_evolution_actions %}
         <a class="action-card" href="{{ url_for('evolve_parts') }}"><div class="action-title">進化合成</div><div class="action-desc">{{ evolution_core_status['home_label'] }}</div></a>
         {% endif %}
         {% endif %}
-        <a class="action-card" href="{{ url_for('build') }}"><div class="action-title">ロボ編成</div><div class="action-desc">パーツを選んで完成登録</div></a>
+        <a class="action-card" href="{{ url_for('build') }}">
+          <div class="action-title">ロボを組み立てる</div>
+          <div class="action-desc">パーツを4つ選んで、新しいロボを保存できます<br>今のロボは消えません。ロボは複数作れます。</div>
+        </a>
         <a class="action-card" href="{{ url_for('parts') }}"><div class="action-title">所持パーツ</div><div class="action-desc">個体差を見比べる</div></a>
         {% if show_market_menu %}
         <a class="action-card" href="{{ url_for('market') }}"><div class="action-title">廃品市場</div><div class="action-desc">余剰パーツを売って補填を買う</div></a>
@@ -1063,21 +1075,4 @@
           </form>
           {% endif %}
           {% if daily_research_available %}
-          <button type="button" class="btn-secondary" data-daily-research-open>デイリー研究レポート</button>
-          {% endif %}
-        </div>
-        {% else %}
-        <div class="upgrade-cost">いまは表示を戻せる項目がありません。</div>
-        {% endif %}
-      </div>
-    </section>
-    {% endif %}
-</div>
-</div>
-</div>
-{% endif %}
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
-<script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
-{% endblock %}
+        

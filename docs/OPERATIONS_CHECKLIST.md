@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-04-19
+最終更新日: 2026-05-04
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -11,10 +11,14 @@
 - [ ] `もう一度出撃` 表示残秒とサーバ判定が一致
 - [ ] battle結果で `pageshow / visibilitychange` 復帰後も CT 表示が古いまま残らない
 - [ ] battle結果の `もう一度出撃` が 0秒到達でリロードなしに活性化する
+- [ ] battle-cinematic-v1 で攻撃属性に応じた `laser-effect--fire/water/thunder/wind/dark/light/neutral` が付く
+- [ ] element未設定の戦闘でも `laser-effect--neutral` で表示され、勝敗・報酬・監査ログに影響しない
+- [ ] `/explore` のConsoleに `battle_cinematic_v1.js` の `SyntaxError` が出ない
 - [ ] 基地のCT状態がリアルタイム更新される
   - CT中: `クールタイム中 あと mm:ss`
   - 0秒到達: `出撃可能`
   - 非管理者はCT中disabled / 管理者は常時出撃可
+- [ ] `/home` のConsoleに `style-src 'self'` のinline style違反が出ない
 
 ## 2. ボス
 - [ ] 遭遇で `audit.boss.encounter`
@@ -120,6 +124,13 @@
 ## 8. リリース前検証
 - [ ] `python3 -m py_compile app.py init_db.py services/stats.py services/fuse.py services/champion_battle.py services/battle_affinity.py constants.py`
 - [ ] `python3 -m unittest discover -s tests -q`
+- [ ] `/build` で「今のロボは消えない」「ロボは複数作れる」が表示される
+- [ ] `/parts/strengthen` で候補0件時にフォームが出ない
+- [ ] `/parts/strengthen` で強化条件、ベース、素材、結果が大きく表示される
+- [ ] 保護中パーツが売却・完全削除・強化素材使用から除外される
+- [ ] まとめ売りで保護中パーツが除外され、除外件数が表示される
+- [ ] 完全削除がコインなしであることが明示される
+- [ ] ホームで強化候補0件時に強化へ強く誘導しない
 - [ ] `python3 -m unittest tests.test_battle_affinity tests.test_weekly_champion`
 - [ ] `python3 -m unittest tests.test_market tests.test_lab_casino tests.test_explore_drop_budget tests.test_tier_growth_staging tests.test_streak_bonus tests.test_parts_fuse_route`
 - [ ] `python3 -m unittest tests.test_trial_mode`
@@ -162,11 +173,4 @@
 - [ ] `robot-game-healthcheck.timer` が active
 - [ ] `robot-game-backup.timer` が active
 - [ ] `robot-game-portal-online.timer` が active
-- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
-- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
-- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
-- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
-- [ ] `backups/` に当日バックアップがある
-- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
-- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
-- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-a

@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-04-17
+最終更新日: 2026-05-04
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -127,7 +127,12 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.10 システム
+### 4.10 パーツ保護
+- `audit.part.lock`
+- `audit.part.unlock`
+- payload推奨: `part_instance_id`, `part_key`, `part_name`, `rarity`, `plus`, `locked`
+
+### 4.11 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
@@ -136,6 +141,7 @@
 ## 5. payload方針
 - 表示用テキストだけでなく、再計算可能な値を保持
 - 追加は可、既存キーの意味変更は不可
+- `battle-cinematic-v1` の属性レーザーは表示専用。`turn_logs` や表示payloadに `element` が増えても、既存 `audit.*` event_type の意味は変えない
 - `audit.chat.post` は少なくとも `room_key / surface / message_length / preview` を保持する
 - 実験室系 payload は可能な範囲で以下を保持する
   - race: `race_id / course_key / seed / special_count / features / robot_instance_id / robot_name / finish_time_ms / winner`
@@ -155,4 +161,25 @@
   - `starts_at`
   - `ends_at`
   - `duplicate_reason`
-- チャンプ系 payload は可
+- チャンプ系 payload は可能な範囲で以下を保持する
+  - `week_key`
+  - `champion_snapshot_id`
+  - `champion_user_id`
+  - `champion_robot_instance_id`
+  - `champion_robot_name`
+  - `champion_owner_name`
+  - `challenger_user_id`
+  - `challenger_robot_instance_id`
+  - `challenger_robot_name`
+  - `result`
+  - `turn_count`
+  - `timeout`
+  - `summary_label`
+
+## 6. 管理UI
+- `/admin/audit` で検索
+- 推奨フィルタ:
+  - `user_id`
+  - `event_type`
+  - `request_id`
+  - `after` / `befo

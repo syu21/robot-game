@@ -111,12 +111,28 @@
   </div>
 {%- endmacro %}
 {% block content %}
-<h1>ロボ編成</h1>
+<h1>ロボを組み立てる</h1>
 {% if message %}
 <div class="card">
   <div><b>{{ message }}</b></div>
 </div>
 {% endif %}
+<section class="card">
+  <h2>ここでは新しいロボを組み立てられます</h2>
+  <div class="upgrade-cost">
+    ・今使っているロボは消えません<br>
+    ・ロボは複数作れます<br>
+    ・作ったロボはあとから出撃機体に選べます
+  </div>
+  <div class="part-summary-pills">
+    <span class="part-summary-pill">保存中のロボ：{{ robot_slot_used }} / {{ robot_slot_limit }}</span>
+  </div>
+  {% if robot_slot_full %}
+  <div class="error">
+    保存枠がいっぱいです。新しいロボを作るには、不要なロボを整理してください。
+  </div>
+  {% endif %}
+</section>
 {% if missing_part_types %}
 <div class="card">
   <p><b>不足部位:</b> {{ missing_part_types | join(' / ') }}</p>
@@ -358,7 +374,7 @@
       <div class="card build-submit-card">
         <label>ロボ名（空欄なら自動命名）</label>
         <input type="text" name="robot_name" maxlength="40" />
-        <button type="submit">完成登録</button>
+        <button type="submit">組み立てたロボを保存する</button>
       </div>
     </section>
   </div>
@@ -367,14 +383,4 @@
 <input type="hidden" id="build-element-label-map" value='{{ element_label_map | tojson }}' />
 <input type="hidden" id="build-current-hp" value="{{ current_robot_stats['hp'] }}" />
 <input type="hidden" id="build-current-atk" value="{{ current_robot_stats['atk'] }}" />
-<input type="hidden" id="build-current-def" value="{{ current_robot_stats['def'] }}" />
-<input type="hidden" id="build-current-spd" value="{{ current_robot_stats['spd'] }}" />
-<input type="hidden" id="build-current-acc" value="{{ current_robot_stats['acc'] }}" />
-<input type="hidden" id="build-current-cri" value="{{ current_robot_stats['cri'] }}" />
-<input type="hidden" id="build-current-power" value="{{ current_robot_stats['power'] }}" />
-<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='build_preview.js') }}?v={{ app_version }}"></script>
-<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+<input type="hidden" id="build-current-def" value="{{ current_robot_stats[

@@ -392,7 +392,7 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("出撃してパーツを集めよう", html)
+        self.assertIn("まずは出撃してパーツを集めましょう", html)
         self.assertIn('name="area_key" value="layer_1"', html)
 
     def test_home_chat_dedupes_and_hides_build_system_log(self):
@@ -899,4 +899,4 @@ class HomeNextActionTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    u

@@ -147,9 +147,9 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("装備中", html)
-        self.assertIn("強化素材に使える", html)
+        self.assertIn("売却：コインになります", html)
         self.assertIn("選んだパーツを見比べる", html)
-        self.assertIn("選択した所持パーツを破棄", html)
+        self.assertNotIn("選択した所持パーツを破棄", html)
         self.assertIn(">選択<", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
@@ -237,7 +237,7 @@ class PartsUiTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertNotIn("保管中の個体があるため", html)
         self.assertNotIn("旧保管強化ヘッド", html)
-        self.assertNotIn("#part-storage", html)
+        self.assertIn("#part-storage", html)
 
     def test_parts_restore_route_is_legacy_noop(self):
         overflow_part = self._create_custom_part("HEAD", "restore_head_proto", "復帰ヘッド")
@@ -460,7 +460,7 @@ class PartsUiTests(unittest.TestCase):
         resp = client.get("/build")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("ロボ編成", html)
+        self.assertIn("ロボを組み立てる", html)
         self.assertIn("HEAD（頭）", html)
         self.assertIn("RIGHT_ARM（右腕）", html)
         self.assertIn("現在装備", html)
@@ -471,4 +471,3 @@ class PartsUiTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()

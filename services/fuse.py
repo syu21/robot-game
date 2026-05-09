@@ -40,7 +40,7 @@ def fuse_parts(db, user_id, part_instance_ids, use_protect_core, rand_int, rand_
         SELECT pi.*, rp.part_type, rp.key AS part_key
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE pi.user_id = ? AND pi.status = 'inventory' AND pi.id IN ({placeholders})
+        WHERE pi.user_id = ? AND pi.status = 'inventory' AND COALESCE(pi.locked, 0) = 0 AND pi.id IN ({placeholders})
         """,
         [user_id, *valid_ids],
     ).fetchall()
@@ -194,5 +194,4 @@ def fuse_parts(db, user_id, part_instance_ids, use_protect_core, rand_int, rand_
             "consumed_ids": [],
             "created_id": None,
             "refund_id": None,
-            "coin_cost": None,
-        }
+          
