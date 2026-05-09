@@ -201,4 +201,26 @@
       {% if has_prev %}
         <a class="part-page-link" href="{{ prev_url }}" data-busy-link="1">前へ</a>
       {% else %}
-        <span class="part-page-link is-disabled">
+        <span class="part-page-link is-disabled">前のページはありません</span>
+      {% endif %}
+      <span class="part-page-indicator">{{ page }}ページ目</span>
+      {% if has_next %}
+        <a class="part-page-link" href="{{ next_url }}" data-busy-link="1">次へ</a>
+      {% else %}
+        <span class="part-page-link is-disabled">次のページはありません</span>
+      {% endif %}
+    </div>
+  </form>
+  {% else %}
+  <div class="card">
+    <p><b>対象のパーツがありません</b></p>
+    <p class="robot-time">部位フィルターを切り替えるか、出撃で新しいパーツを集めてみましょう。</p>
+  </div>
+  {% endif %}
+
+  <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
+{% endblock %}
