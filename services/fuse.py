@@ -194,4 +194,5 @@ def fuse_parts(db, user_id, part_instance_ids, use_protect_core, rand_int, rand_
             "consumed_ids": [],
             "created_id": None,
             "refund_id": None,
-          
+            "coin_cost": None,
+        }
