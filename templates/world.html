@@ -127,4 +127,12 @@
 <section class="panel">
   <h2>研究進捗</h2>
   <div class="world-env-card">
-    <div><b>勝�
+    <div><b>勝利属性:</b> {{ element_label_map.get(research_summary['current_research_element'], research_summary['current_research_element']) if research_summary['current_research_element'] else '-' }}</div>
+    <div class="upgrade-cost">stage {{ research_summary['unlocked_stage'] }} / 4</div>
+    <div class="upgrade-cost">next unlock: {{ research_summary['next_part_type'] or '-' }}</div>
+    <div class="link"><a href="{{ url_for('research_view') }}">研究進捗を見る</a></div>
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+{% endblock %}
