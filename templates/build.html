@@ -383,4 +383,14 @@
 <input type="hidden" id="build-element-label-map" value='{{ element_label_map | tojson }}' />
 <input type="hidden" id="build-current-hp" value="{{ current_robot_stats['hp'] }}" />
 <input type="hidden" id="build-current-atk" value="{{ current_robot_stats['atk'] }}" />
-<input type="hidden" id="build-current-def" value="{{ current_robot_stats[
+<input type="hidden" id="build-current-def" value="{{ current_robot_stats['def'] }}" />
+<input type="hidden" id="build-current-spd" value="{{ current_robot_stats['spd'] }}" />
+<input type="hidden" id="build-current-acc" value="{{ current_robot_stats['acc'] }}" />
+<input type="hidden" id="build-current-cri" value="{{ current_robot_stats['cri'] }}" />
+<input type="hidden" id="build-current-power" value="{{ current_robot_stats['power'] }}" />
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='build_preview.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
+{% endblock %}
