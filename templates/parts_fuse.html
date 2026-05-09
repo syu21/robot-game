@@ -412,4 +412,45 @@
                 </div>
                 <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
                 <div class="part-meta-line">{% if candidate.get('focus_line') %}注目 {{ candidate['focus_line'] }} / {% endif %}所持 {{ candidate['qty_total'] }}個</div>
-     
+                <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
+              </div>
+            </div>
+            {{ stat_grid(candidate['stat_rows']) }}
+            <div class="part-subsection">
+              <div class="part-subsection-title">素材として使う2個</div>
+              <div class="part-mini-grid">
+                {% for material in candidate['material_cards'] %}
+                  <div class="part-mini-card">
+                    <img class="part-mini-image" src="{{ material['image_url'] }}" alt="{{ material['display_name'] }}" loading="lazy" decoding="async" />
+                    <div>
+                      <div class="part-mini-name">#{{ material['id'] }} {{ material['display_name'] }}</div>
+                      <div class="robot-time">+{{ material['plus'] }} / {{ material['status_label'] }}</div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="fuse-exec-summary">消費: ベース1 + 素材2 / 上昇量: +1 / 成功率: 100%</div>
+      <button type="submit" id="fuse-select-submit" class="fuse-submit-large">選んだ個体を強化する</button>
+    {% else %}
+      <div class="card">
+        <div><b>使える素材がありません</b></div>
+        <div class="robot-time">
+          同じパーツを3個そろえると強化できます。
+          部位を切り替えると候補が見つかることがあります。
+        </div>
+      </div>
+    {% endif %}
+  </form>
+  {% endif %}
+
+  <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
+{% endblock %}
