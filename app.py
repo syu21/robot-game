@@ -33129,13 +33129,16 @@ def _mini_robot_catalog_rows(db, user_id):
         ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 ELSE 9 END
         """
     ).fetchall():
-        unlocked = species["species_key"] in owned
+        is_owned = species["species_key"] in owned
+        meta = MINI_ROBOT_SPECIES_META.get(species["species_key"], {})
         rows.append(
             {
                 "species_key": species["species_key"],
                 "name_ja": species["name_ja"],
-                "description": species["description"],
-                "unlocked": bool(unlocked),
+                "description": species["description"] if is_owned else None,
+                "personality_label": meta.get("personality") if is_owned else None,
+                "is_owned": bool(is_owned),
+                "unlocked": bool(is_owned),
                 "image_url": _mini_robot_image_url(species["species_key"], "normal"),
             }
         )

@@ -7677,6 +7677,7 @@ body.home-page.home-mobile .invite-link-row {
   text-align: center;
 }
 .mini-catalog-card img,
+.mini-catalog-image,
 .mini-silhouette {
   width: 120px;
   height: 120px;
@@ -7692,8 +7693,13 @@ body.home-page.home-mobile .invite-link-row {
   font-size: 54px;
   font-weight: 900;
 }
-.mini-catalog-card.is-locked {
+.mini-catalog-card.is-locked,
+.mini-catalog-card--locked {
   opacity: 0.72;
+}
+.mini-catalog-image--locked {
+  filter: grayscale(1) brightness(0.6);
+  opacity: 0.75;
 }
 
 .lab-live-grid {

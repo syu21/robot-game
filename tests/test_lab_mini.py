@@ -203,6 +203,26 @@ class LabMiniTests(unittest.TestCase):
         self.assertIn("最初のミニロボを選ぶ", visible.get_data(as_text=True))
         self.assertNotIn("管理者メモ", visible.get_data(as_text=True))
 
+    def test_catalog_hides_unowned_species_details(self):
+        client = self._client(admin=True)
+        self._select_mini_robot(client, "cerberus")
+
+        resp = client.get("/lab/mini/catalog")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ケルベロス", html)
+        self.assertIn("三つの頭を持つ、元気いっぱいの番犬型ミニロボ。", html)
+        self.assertIn("よく反応して、少し騒がしいタイプ。", html)
+        self.assertIn("フェニックス", html)
+        self.assertIn("ヒュドラ", html)
+        self.assertIn("まだ一緒に過ごしたことがありません。今後の研究で出会えるかもしれません。", html)
+        self.assertIn("mini-catalog-card--locked", html)
+        self.assertIn("mini-catalog-image--locked", html)
+        self.assertNotIn("小さな火花をまとった、静かで神秘的なミニロボ。", html)
+        self.assertNotIn("落ち着いていて、あたたかい雰囲気。", html)
+        self.assertNotIn("複数の頭がそれぞれ違う反応をする、不思議なミニロボ。", html)
+        self.assertNotIn("少し変わっていて、観察しがいがあるタイプ。", html)
+
 
 if __name__ == "__main__":
     unittest.main()
