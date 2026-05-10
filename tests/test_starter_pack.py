@@ -58,6 +58,19 @@ class StarterPackTests(unittest.TestCase):
             self.assertIsNotNone(rip["l_arm_part_instance_id"])
             self.assertIsNotNone(rip["legs_part_instance_id"])
 
+    def test_register_redirect_lands_on_first_explore_home_flow(self):
+        with game_app.app.test_client() as client:
+            resp = client.post(
+                "/register",
+                data={"username": "starter_flow", "password": "pass123"},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            html = resp.get_data(as_text=True)
+            self.assertIn("最初のミッション", html)
+            self.assertIn("第1層へ出撃", html)
+            self.assertIn("まずは第1層でパーツを集めよう", html)
+
     def test_home_shows_build_cta_when_user_has_no_robot(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -74,7 +87,7 @@ class StarterPackTests(unittest.TestCase):
             resp = client.get("/home")
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
-            self.assertIn("ロボを編成する", html)
+            self.assertIn("組み立てる", html)
             self.assertNotIn("スターターパックを受け取る", html)
             self.assertNotIn("探索する", html)
 
@@ -92,7 +105,7 @@ class StarterPackTests(unittest.TestCase):
         with game_app.app.test_client() as client:
             self._session_login(client, user_id, "claim_user")
             before = client.get("/home")
-            self.assertIn("ロボを編成する", before.get_data(as_text=True))
+            self.assertIn("組み立てる", before.get_data(as_text=True))
             claim = client.post("/starter-pack/claim", follow_redirects=True)
             self.assertEqual(claim.status_code, 200)
             html = claim.get_data(as_text=True)

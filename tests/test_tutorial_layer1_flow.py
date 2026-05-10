@@ -165,7 +165,7 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         self.assertEqual(boss.status_code, 200)
         html = boss.get_data(as_text=True)
         self.assertIn("第1層ボスの圧力", html)
-        self.assertIn("パーツ強化へ", html)
+        self.assertIn("強化する", html)
         row = self._user_tutorial_row()
         self.assertEqual(row["tutorial_layer1_state"], game_app.TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE)
         self.assertGreater(int(row["tutorial_layer1_boss_seen_at"] or 0), 0)
@@ -175,8 +175,8 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         home = self._client().get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("強化して再挑戦", home_html)
-        self.assertIn("1回強化するだけでも突破率が上がります", home_html)
+        self.assertIn("まずは出撃してパーツを集めましょう", home_html)
+        self.assertIn("同じ名前・同じレアリティのパーツが3個そろうと強化できます", home_html)
 
     def test_fuse_after_boss_fail_guarantees_retry_and_clear(self):
         self._explore(self._resolve_player_win)

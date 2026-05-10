@@ -46,7 +46,7 @@ class TrialModeTests(unittest.TestCase):
         self.assertIn("お試しプレイ中", start_html)
         self.assertIn("出撃機体", start_html)
         self.assertIn("最初の出撃", start_html)
-        self.assertIn("本番のロボ編成と同じ考え方で動きます。", start_html)
+        self.assertIn("本番のロボ組み立てと同じ考え方で動きます。", start_html)
         self.assertNotIn("体験ガイド", start_html)
         self.assertIn("アーク・プロト", start_html)
         self.assertIn("robot_composed/trial_", start_html)
@@ -77,7 +77,7 @@ class TrialModeTests(unittest.TestCase):
         self.assertEqual(strengthen_resp.status_code, 200)
         strengthen_html = strengthen_resp.get_data(as_text=True)
         self.assertIn("強くなった！", strengthen_html)
-        self.assertIn("ロボ編成へ", strengthen_html)
+        self.assertIn("ロボを組み立てる", strengthen_html)
 
         build_resp = client.post("/build", data={"build_key": "swift"})
         self.assertEqual(build_resp.status_code, 200)

@@ -165,7 +165,7 @@ class FrameTypeSystemTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertIn(
-            "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで編成できます。",
+            "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで組み立てできます。",
             resp.get_data(as_text=True),
         )
 
@@ -205,7 +205,7 @@ class FrameTypeSystemTests(unittest.TestCase):
         self.assertIn("通常型", html)
         self.assertIn("虫型", html)
         self.assertIn("フレーム：虫型", html)
-        self.assertIn("カブトヘッド", html)
+        self.assertIn("剛角ヘッド", html)
         self.assertIn("シリーズ：カブト", html)
         self.assertIn("このシリーズは現在Nパーツのみです", html)
 
