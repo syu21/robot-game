@@ -36,7 +36,7 @@
   <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts_strengthen') }}">パーツ強化へ</a></p>
   {% elif trial_state.get('step') == 'build' %}
   <p class="upgrade-cost">強化できました。次はロボを組み替えてみよう。</p>
-  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボ編成へ</a></p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボを組み立てる</a></p>
   {% else %}
   <p class="upgrade-cost">まずは第1層へ出撃して、戦利品を見てみよう。</p>
   <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('home') }}">第1層へ出撃</a></p>

@@ -21,7 +21,7 @@
       <img class="robot-thumb" src="{{ strengthen_base['image_url'] }}" alt="{{ strengthen_base['name'] }}" loading="lazy" />
       <div class="robot-id">{{ strengthen_base['name'] }} +{{ strengthen_base['plus'] }}</div>
       <div class="robot-part">{{ strengthen_base['part_type_label'] }} / {{ strengthen_base['rarity'] }}</div>
-      <div class="upgrade-cost">素材2つで +1 強化できます。</div>
+      <div class="upgrade-cost">ベースを残して素材2個を使い、+1 強化できます。</div>
     </article>
     {% for part in strengthen_materials %}
     <article class="robot-card compact-part-card">
@@ -41,7 +41,7 @@
   <h2>② パーツを強くしてみよう！</h2>
   {% if trial_state.get('strengthened') %}
   <p class="upgrade-cost">強化済みです。次はロボを組み替えてみよう。</p>
-  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボ編成へ</a></p>
+  <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボを組み立てる</a></p>
   {% elif strengthen_base %}
   <form method="post" action="{{ url_for('parts_strengthen') }}">
     <button type="submit">素材を使って強化する</button>
