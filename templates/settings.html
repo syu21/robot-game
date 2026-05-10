@@ -27,7 +27,13 @@
     </form>
     {% endif %}
   </div>
-  <p class="link"><a href="{{ url_for('build') }}">ロボ編成へ</a> | <a href="{{ url_for('robots') }}">ロボ一覧へ</a></p>
+  <p class="link"><a href="{{ url_for('build') }}">ロボを組み立てる</a> | <a href="{{ url_for('robots') }}">ロボ一覧へ</a></p>
+</div>
+<div class="card">
+  <h2>最初からやり直したい場合</h2>
+  <p>お問い合わせから「アカウント削除希望」と送ってください。確認後、運営側で削除対応します。</p>
+  <p>削除後はデータを戻せません。</p>
+  <p class="link"><a href="{{ url_for('contact') }}">お問い合わせ</a></p>
 </div>
 <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
 {% endblock %}

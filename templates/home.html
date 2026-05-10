@@ -36,6 +36,9 @@
     <div class="upgrade-cost">{% if boss_alert_status %}ボス警報中は自動表示されます。{% else %}今やることを迷わないよう、自動表示しています。{% endif %}</div>
     {% endif %}
     <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
+    {% if boss_goal_hint %}
+    <div class="home-explore-context">{{ boss_goal_hint }}</div>
+    {% endif %}
     {% if daily_research_task_line %}
     <div class="home-explore-context">{{ daily_research_task_line }}</div>
     {% if daily_task and daily_task['status'] == 'completed' %}
@@ -990,7 +993,10 @@
       <div>所属: 未所属</div>
       {% endif %}
       {% if not faction_status['is_joined'] %}
-      <div>{{ faction_unlock_progress_line }}</div>
+      <div aria-label="陣営選択まで:"><b>陣営参加まで</b></div>
+      {% for row in faction_unlock_progress_rows %}
+      <div>{{ row['label'] }}：{{ row['value'] }}</div>
+      {% endfor %}
       <div class="robot-part">条件を満たすと、3つの研究陣営から所属先を選べます。所属後は、あなたの出撃や強化が毎週の陣営戦に反映されます。</div>
       {% if faction_status['can_choose'] %}
       <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>

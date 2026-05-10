@@ -3856,12 +3856,17 @@ body.battle-page .layer-boss-victory-sub {
   position: relative;
   display: grid;
   place-items: center;
-  min-width: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  flex: 0 0 48px;
+  min-width: 48px;
 }
 
 .recent-robot-icon {
-  width: 42px;
-  height: 42px;
+  display: block;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.45);
@@ -7055,8 +7060,8 @@ body.home-page.home-mobile .recent-robot-card {
 }
 
 body.home-page.home-mobile .recent-robot-icon {
-  width: 38px !important;
-  height: 38px !important;
+  width: 48px !important;
+  height: 48px !important;
 }
 
 @media (max-width: 420px) {

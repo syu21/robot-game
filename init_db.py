@@ -759,6 +759,7 @@ def main():
             honor_title_key TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
+            decomposed_at INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
@@ -2040,6 +2041,8 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN personality TEXT")
     if "icon_32_path" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN icon_32_path TEXT")
+    if "decomposed_at" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN decomposed_at INTEGER")
     if "combat_mode" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
     if "frame_type" not in ri_cols:

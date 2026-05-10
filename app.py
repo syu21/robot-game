@@ -227,9 +227,8 @@ EVOLUTION_CORE_PROGRESS_TARGET = max(1, int(os.getenv("EVOLUTION_CORE_PROGRESS_T
 EVOLUTION_PATH = {"N": "R", "R": "SR", "SR": "UR"}
 FACTION_KEYS = ("ignis", "ventra", "aurix")
 FACTION_UNLOCK_REQUIREMENTS = {
-    "explore": {"event_type": AUDIT_EVENT_TYPES["EXPLORE_END"], "required": 20},
-    "build": {"event_type": AUDIT_EVENT_TYPES["BUILD_CONFIRM"], "required": 5},
-    "fuse": {"event_type": AUDIT_EVENT_TYPES["FUSE"], "required": 3},
+    "layer1_explore": {"required": 3},
+    "strengthen": {"required": 1},
 }
 FACTION_WAR_POINTS = {
     "explore_win": 1,
@@ -5972,6 +5971,16 @@ def _part_item_status_rank(item):
     return 1
 
 
+def _part_item_group_key(item):
+    part_key = str(item.get("part_key") or item.get("key") or "").strip().lower()
+    base_key = re.sub(r"_(n|r|sr|ssr|ur)(?=_|$)", "_", part_key)
+    base_key = re.sub(r"_(n|r|sr|ssr|ur)$", "", base_key)
+    base_key = re.sub(r"_+", "_", base_key).strip("_")
+    series_key = str(item.get("series_key") or item.get("series") or "").strip().lower()
+    display_name = str(item.get("display_name") or item.get("display_name_ja") or "")
+    return (series_key, base_key or part_key, display_name)
+
+
 def _part_item_sort_key(item, sort_key):
     item_id = int(item.get("id") or item.get("instance_id") or 0)
     total_value = int(item.get("total_value") or 0)
@@ -5980,6 +5989,7 @@ def _part_item_sort_key(item, sort_key):
     rarity_rank = _part_item_rarity_rank(item)
     status_rank = _part_item_status_rank(item)
     display_name = str(item.get("display_name") or "")
+    group_key = _part_item_group_key(item)
     if sort_key == "new":
         return (-item_id, part_type_rank, -rarity_rank, -plus)
     if sort_key == "old":
@@ -5991,8 +6001,8 @@ def _part_item_sort_key(item, sort_key):
     if sort_key == "rarity":
         return (-rarity_rank, -plus, -total_value, part_type_rank, status_rank, -item_id)
     if sort_key == "part_type":
-        return (part_type_rank, -rarity_rank, -plus, -total_value, status_rank, display_name, -item_id)
-    return (status_rank, part_type_rank, -rarity_rank, -plus, -total_value, -item_id)
+        return (part_type_rank, *group_key, -rarity_rank, -plus, status_rank, -total_value, -item_id)
+    return (status_rank, part_type_rank, *group_key, -rarity_rank, -plus, -total_value, -item_id)
 
 
 def _sort_part_card_items(items, sort_key):
@@ -6277,7 +6287,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     else:
         item["status_label"] = "所持中"
     if item["locked"]:
-        item["material_hint"] = "保護中: 売却・完全削除・素材使用されない"
+        item["material_hint"] = "完全保護中: 素材・売却・処分に使えない"
     elif item["is_inventory"]:
         item["material_hint"] = "強化素材に使える"
     elif item["is_sold"]:
@@ -9565,6 +9575,7 @@ def ensure_schema(db):
             status TEXT NOT NULL DEFAULT 'active',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
+            decomposed_at INTEGER,
             combat_mode TEXT NOT NULL DEFAULT 'normal',
             frame_type TEXT DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
@@ -10833,6 +10844,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN personality TEXT")
     if "icon_32_path" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN icon_32_path TEXT")
+    if "decomposed_at" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN decomposed_at INTEGER")
     if "combat_mode" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
     if "frame_type" not in ri_cols:
@@ -16851,6 +16864,16 @@ def _boss_alert_recommendation_context(boss_alert_status):
     }
 
 
+def _boss_goal_hint(db, user_id, *, boss_alert_status=None, max_unlocked_layer=1):
+    if boss_alert_status:
+        return ""
+    if not _has_fixed_boss_defeat_in_area(db, int(user_id), "layer_1"):
+        return "目標：第1層ボスを撃破する。出撃中にボス警報が出たら挑戦できます。"
+    if int(max_unlocked_layer or 1) >= 2:
+        return "固定ボス撃破で次の層が開放されます。"
+    return "出撃中にボス警報が発生することがあります。固定ボスを倒すと次の層が開放されます。"
+
+
 def _has_any_active_boss_alert(db, user_id, now_ts=None):
     return len(_home_boss_alert_status(db, user_id, now_ts=now_ts)) > 0
 
@@ -18245,32 +18268,68 @@ def build_share_text(event_type, payload):
 
 
 def _faction_unlock_counts(db, user_id):
-    out = {}
-    for key, rule in FACTION_UNLOCK_REQUIREMENTS.items():
-        row = db.execute(
-            """
-            SELECT COUNT(*) AS c
-            FROM world_events_log
-            WHERE user_id = ? AND event_type = ?
-            """,
-            (int(user_id), rule["event_type"]),
-        ).fetchone()
-        out[key] = int((row["c"] if row else 0) or 0)
+    explore_row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND (
+              COALESCE(json_extract(payload_json, '$.area_key'), '') = ''
+              OR json_extract(payload_json, '$.area_key') = 'layer_1'
+          )
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+    ).fetchone()
+    strengthen_row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND LOWER(COALESCE(CAST(json_extract(payload_json, '$.success') AS TEXT), 'true')) NOT IN ('0', 'false', 'no')
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["FUSE"]),
+    ).fetchone()
+    out = {
+        "layer1_explore": int((explore_row["c"] if explore_row else 0) or 0),
+        "strengthen": int((strengthen_row["c"] if strengthen_row else 0) or 0),
+        "layer1_boss_defeated": bool(_has_fixed_boss_defeat_in_area(db, int(user_id), "layer_1")),
+    }
     return out
 
 
 def _faction_unlock_ready(counts):
-    for key, rule in FACTION_UNLOCK_REQUIREMENTS.items():
-        if int(counts.get(key, 0)) < int(rule["required"]):
-            return False
-    return True
+    if counts.get("layer1_boss_defeated"):
+        return True
+    return (
+        int(counts.get("layer1_explore", 0)) >= int(FACTION_UNLOCK_REQUIREMENTS["layer1_explore"]["required"])
+        and int(counts.get("strengthen", 0)) >= int(FACTION_UNLOCK_REQUIREMENTS["strengthen"]["required"])
+    )
 
 
 def _faction_unlock_progress_line(counts):
     return (
-        f"陣営選択まで: 探索 {int(counts.get('explore', 0))}/{FACTION_UNLOCK_REQUIREMENTS['explore']['required']}, "
-        f"組み立て {int(counts.get('build', 0))}/{FACTION_UNLOCK_REQUIREMENTS['build']['required']}, "
-        f"強化 {int(counts.get('fuse', 0))}/{FACTION_UNLOCK_REQUIREMENTS['fuse']['required']}"
+        f"陣営参加まで: 出撃 {min(int(counts.get('layer1_explore', 0)), FACTION_UNLOCK_REQUIREMENTS['layer1_explore']['required'])}/{FACTION_UNLOCK_REQUIREMENTS['layer1_explore']['required']} / "
+        f"パーツ強化 {min(int(counts.get('strengthen', 0)), FACTION_UNLOCK_REQUIREMENTS['strengthen']['required'])}/{FACTION_UNLOCK_REQUIREMENTS['strengthen']['required']} / "
+        f"第1層ボス撃破 {'達成' if counts.get('layer1_boss_defeated') else '未達成'}"
+    )
+
+
+def _faction_unlock_progress_rows(counts):
+    return (
+        {
+            "label": "出撃",
+            "value": f"{min(int(counts.get('layer1_explore', 0)), FACTION_UNLOCK_REQUIREMENTS['layer1_explore']['required'])} / {FACTION_UNLOCK_REQUIREMENTS['layer1_explore']['required']}",
+        },
+        {
+            "label": "パーツ強化",
+            "value": f"{min(int(counts.get('strengthen', 0)), FACTION_UNLOCK_REQUIREMENTS['strengthen']['required'])} / {FACTION_UNLOCK_REQUIREMENTS['strengthen']['required']}",
+        },
+        {
+            "label": "第1層ボス撃破",
+            "value": "達成" if counts.get("layer1_boss_defeated") else "未達成",
+        },
     )
 
 
@@ -26149,6 +26208,7 @@ def home():
             user_faction=user_faction,
             faction_status=faction_status,
             faction_unlock_progress_line=_faction_unlock_progress_line(faction_unlock_counts),
+            faction_unlock_progress_rows=_faction_unlock_progress_rows(faction_unlock_counts),
             faction_member_counts=faction_member_counts,
             faction_recommended=faction_recommended,
             faction_week_scores=faction_week_scores,
@@ -26193,6 +26253,12 @@ def home():
             today_progress_cards=today_progress_cards,
             boss_pity_status=boss_pity_status,
             boss_alert_status=boss_alert_status,
+            boss_goal_hint=_boss_goal_hint(
+                db,
+                int(user["id"]),
+                boss_alert_status=boss_alert_status,
+                max_unlocked_layer=max_unlocked_layer,
+            ),
             boss_alert_active=boss_alert_hint["boss_alert_active"],
             boss_type=boss_alert_hint["boss_type"],
             recommended_build=boss_alert_hint["recommended_build"],
@@ -27358,6 +27424,7 @@ def faction_choose():
                 can_choose=False,
                 unlock_counts=counts,
                 unlock_progress_line=_faction_unlock_progress_line(counts),
+                unlock_progress_rows=_faction_unlock_progress_rows(counts),
                 faction_labels=FACTION_LABELS,
                 faction_emblems=FACTION_EMBLEMS,
                 member_counts=member_counts,
@@ -27407,6 +27474,7 @@ def faction_choose():
         can_choose=can_choose,
         unlock_counts=counts,
         unlock_progress_line=_faction_unlock_progress_line(counts),
+        unlock_progress_rows=_faction_unlock_progress_rows(counts),
         faction_labels=FACTION_LABELS,
         faction_emblems=FACTION_EMBLEMS,
         member_counts=member_counts,
@@ -27517,6 +27585,7 @@ def world_view():
         user_faction=user_faction,
         faction_can_choose=faction_can_choose,
         faction_unlock_progress_line=_faction_unlock_progress_line(faction_unlock_counts),
+        faction_unlock_progress_rows=_faction_unlock_progress_rows(faction_unlock_counts),
         faction_buff_winner=faction_buff_winner,
         faction_buff_active=faction_buff_active,
         weekly_faction_key=weekly_faction_key,
@@ -27736,6 +27805,7 @@ def comms_faction():
         can_choose=can_choose,
         unlock_counts=unlock_counts,
         unlock_progress_line=_faction_unlock_progress_line(unlock_counts),
+        unlock_progress_rows=_faction_unlock_progress_rows(unlock_counts),
         faction_labels=FACTION_LABELS,
         contribution=contribution,
         faction_rank=(user_faction_row.get("rank") if user_faction_row else None),
@@ -27975,6 +28045,10 @@ def _part_lock_redirect_params():
     return params
 
 
+def _parts_anchor_redirect(params, part_instance_id):
+    return redirect(url_for("parts", **(params or {})) + f"#part-{int(part_instance_id)}")
+
+
 def _part_lock_row(db, user_id, part_instance_id):
     return db.execute(
         """
@@ -28027,8 +28101,8 @@ def part_lock(part_instance_id):
     )
     _audit_part_lock_change(db, user_id=user_id, part_row=part_row, locked=True)
     db.commit()
-    flash("パーツを保護しました。売却・完全削除・素材使用から除外されます。", "notice")
-    return redirect(url_for("parts", **redirect_params))
+    flash("パーツを完全保護しました。素材・売却・処分に使えません。", "notice")
+    return _parts_anchor_redirect(redirect_params, part_instance_id)
 
 
 @app.route("/parts/<int:part_instance_id>/unlock", methods=["POST"])
@@ -28048,7 +28122,7 @@ def part_unlock(part_instance_id):
     _audit_part_lock_change(db, user_id=user_id, part_row=part_row, locked=False)
     db.commit()
     flash("パーツの保護を解除しました。", "notice")
-    return redirect(url_for("parts", **redirect_params))
+    return _parts_anchor_redirect(redirect_params, part_instance_id)
 
 
 @app.route("/parts/discard", methods=["POST"])
@@ -31600,8 +31674,8 @@ def robot_instance_decompose(instance_id):
                 ip=request.remote_addr,
             )
     db.execute(
-        "UPDATE robot_instances SET status = 'decomposed', updated_at = ? WHERE id = ?",
-        (int(time.time()), instance_id),
+        "UPDATE robot_instances SET status = 'decomposed', decomposed_at = ?, updated_at = ? WHERE id = ?",
+        (int(time.time()), int(time.time()), instance_id),
     )
     audit_log(
         db,
@@ -32142,7 +32216,7 @@ def build_confirm():
     ).fetchone()["c"]
     if active_count >= limits["robot_slots"]:
         flash(
-            f"保存枠がいっぱいです（{int(active_count)}/{int(limits['robot_slots'])}）。ロボを整理してください。",
+            f"ロボ格納庫がいっぱいです（{int(active_count)}/{int(limits['robot_slots'])}）。新しく保存する場合は、既存ロボを整理してください。",
             "error",
         )
         return redirect(url_for("build", frame_type=selected_frame_type))
@@ -32351,7 +32425,7 @@ def showcase():
     _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
     rows = _showcase_rows(db, user["id"])
     robots = db.execute(
-        "SELECT id, name, status, composed_image_path FROM robot_instances WHERE user_id = ? ORDER BY updated_at DESC",
+        "SELECT id, name, status, composed_image_path FROM robot_instances WHERE user_id = ? AND status != 'decomposed' ORDER BY updated_at DESC",
         (user["id"],),
     ).fetchall()
     public_rows = _showcase_query_rows(
