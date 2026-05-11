@@ -411,6 +411,51 @@ class PartsFuseRouteTests(unittest.TestCase):
             self.assertTrue(bool(payload.get("batch_mode")))
             self.assertEqual(int(payload.get("batch_count") or 0), 2)
 
+    def test_locked_part_can_be_base_but_not_material_and_keeps_weights(self):
+        self._clear_part_instances()
+        seed = self._active_part_seeds(limit=1)[0]
+        ids = self._seed_part_instances_for_seed(seed, [0, 0, 0, 0], created_at_start=6000)
+        base_id = ids[0]
+        locked_material_id = ids[1]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                UPDATE part_instances
+                SET locked = 1,
+                    w_hp = 0.70,
+                    w_atk = 0.10,
+                    w_def = 0.08,
+                    w_spd = 0.05,
+                    w_acc = 0.04,
+                    w_cri = 0.03
+                WHERE id = ?
+                """,
+                (base_id,),
+            )
+            db.execute("UPDATE part_instances SET locked = 1 WHERE id = ?", (locked_material_id,))
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            before_weights = db.execute(
+                "SELECT w_hp, w_atk, w_def, w_spd, w_acc, w_cri FROM part_instances WHERE id = ?",
+                (base_id,),
+            ).fetchone()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, base_id)
+            self.assertTrue(result["ok"])
+            self.assertNotIn(locked_material_id, result["consumed_ids"])
+            after = db.execute(
+                "SELECT plus, locked, w_hp, w_atk, w_def, w_spd, w_acc, w_cri FROM part_instances WHERE id = ?",
+                (base_id,),
+            ).fetchone()
+            self.assertEqual(int(after["plus"]), 1)
+            self.assertEqual(int(after["locked"]), 1)
+            for key in ("w_hp", "w_atk", "w_def", "w_spd", "w_acc", "w_cri"):
+                self.assertEqual(float(after[key]), float(before_weights[key]))
+
+            locked_material = db.execute("SELECT id FROM part_instances WHERE id = ?", (locked_material_id,)).fetchone()
+            self.assertIsNotNone(locked_material)
+
     def test_warehouse_plan_prefers_equipped_then_oldest_high_plus(self):
         self._clear_part_instances()
         seed = self._active_part_seeds(limit=1)[0]

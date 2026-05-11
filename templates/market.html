@@ -11,6 +11,12 @@
     <div class="robot-time">次回更新: {{ next_update_label }}</div>
   </div>
 </section>
+<div class="market-protect-note">
+  保護中のパーツは売却候補から外れます。解除は所持パーツ画面から行えます。
+  {% if locked_sell_excluded_count|default(0)|int > 0 %}
+  保護中パーツ {{ locked_sell_excluded_count }}個は売却候補から除外されています。
+  {% endif %}
+</div>
 
 <section class="panel market-section">
   <div class="market-section-heading">
@@ -60,7 +66,7 @@
   <div class="market-section-heading">
     <div>
       <h2>パーツ売却</h2>
-      <p class="robot-time">装備中のパーツは売却対象外です。余ったNパーツをコインへ戻せます。</p>
+      <p class="robot-time">保護中のパーツは売却候補から外れます。解除は所持パーツ画面から行えます。</p>
     </div>
   </div>
 
@@ -90,6 +96,7 @@
       <div class="market-summary-count"><span id="marketSellCount">0</span>件</div>
       <div class="robot-time">合計</div>
       <div class="market-summary-total"><span id="marketSellTotal">0</span> コイン</div>
+      <div class="robot-time">売却対象：選択した所持パーツ / 保護中と装備中は売却されません。</div>
       <ul class="market-summary-list" id="marketSellNames">
         <li>まだ選択されていません</li>
       </ul>
@@ -100,7 +107,7 @@
   {% else %}
   <div class="card">
     <div><b>売却できる所持パーツはありません。</b></div>
-    <div class="upgrade-cost">装備中のパーツは市場売却の対象外です。</div>
+    <div class="upgrade-cost">装備中・保護中のパーツは市場売却の対象外です。</div>
   </div>
   {% endif %}
 </section>

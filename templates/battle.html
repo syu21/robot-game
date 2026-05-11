@@ -103,6 +103,14 @@
         {% if (row.get('count') or 1) > 1 %}
         <span class="battle-drop-count-mini">×{{ row.get('count') }}</span>
         {% endif %}
+        {% if row.get('locked') %}
+        <span class="part-chip is-locked">保護中</span>
+        {% elif row.get('part_instance_id') and row.get('storage_status') == 'inventory' and not row.get('auto_sold') %}
+        <form method="post" action="{{ url_for('part_lock', part_instance_id=row.get('part_instance_id')) }}" class="inline-form battle-drop-lock-form">
+          <input type="hidden" name="return_to" value="{{ url_for('parts') }}#part-{{ row.get('part_instance_id') }}" />
+          <button type="submit" class="btn-secondary battle-drop-lock-btn" data-loading-text="保護中...">保護する</button>
+        </form>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

@@ -6287,7 +6287,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     else:
         item["status_label"] = "所持中"
     if item["locked"]:
-        item["material_hint"] = "完全保護中: 素材・売却・処分に使えない"
+        item["material_hint"] = "保護中：素材・売却・処分に使えません"
     elif item["is_inventory"]:
         item["material_hint"] = "強化素材に使える"
     elif item["is_sold"]:
@@ -8786,6 +8786,10 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
                 "label": label,
                 "image_url": item.get("image_url"),
                 "count": 0,
+                "part_instance_id": item.get("part_instance_id"),
+                "storage_status": str(item.get("storage_status") or "").strip().lower(),
+                "auto_sold": bool(item.get("auto_sold")),
+                "locked": bool(int(item.get("locked") or 0)),
             }
         part_row_map[row_key]["count"] += 1
     for label, count in drop_counter.items():
@@ -12963,6 +12967,20 @@ def _market_sellable_part_rows(db, user_id, limit=80):
         item["sell_value"] = _market_sell_value(row)
         items.append(item)
     return items
+
+
+def _market_locked_inventory_part_count(db, user_id):
+    row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM part_instances
+        WHERE user_id = ?
+          AND status = 'inventory'
+          AND COALESCE(locked, 0) = 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    return int(row["c"] or 0) if row else 0
 
 
 def cleanup_overflow_parts_to_coins(db, *, user_id=None, execute=False, request_id=None):
@@ -26551,6 +26569,7 @@ def market():
         day_key=day_key,
         listings=_market_listing_rows(db, user_id, day_key),
         sellable_parts=_market_sellable_part_rows(db, user_id),
+        locked_sell_excluded_count=_market_locked_inventory_part_count(db, user_id),
         refresh_cost=refresh_cost,
         next_refresh_number=int(state.get("market_refresh_count_today") or 0) + 1,
         next_update_label=_market_next_update_label(),
@@ -28049,6 +28068,13 @@ def _parts_anchor_redirect(params, part_instance_id):
     return redirect(url_for("parts", **(params or {})) + f"#part-{int(part_instance_id)}")
 
 
+def _part_lock_redirect(part_instance_id, params=None):
+    return_to = str(request.form.get("return_to") or "").strip()
+    if return_to and return_to.startswith("/") and not return_to.startswith("//"):
+        return redirect(return_to)
+    return _parts_anchor_redirect(params or {}, part_instance_id)
+
+
 def _part_lock_row(db, user_id, part_instance_id):
     return db.execute(
         """
@@ -28101,8 +28127,8 @@ def part_lock(part_instance_id):
     )
     _audit_part_lock_change(db, user_id=user_id, part_row=part_row, locked=True)
     db.commit()
-    flash("パーツを完全保護しました。素材・売却・処分に使えません。", "notice")
-    return _parts_anchor_redirect(redirect_params, part_instance_id)
+    flash("パーツを保護しました。", "notice")
+    return _part_lock_redirect(part_instance_id, redirect_params)
 
 
 @app.route("/parts/<int:part_instance_id>/unlock", methods=["POST"])
@@ -28122,7 +28148,7 @@ def part_unlock(part_instance_id):
     _audit_part_lock_change(db, user_id=user_id, part_row=part_row, locked=False)
     db.commit()
     flash("パーツの保護を解除しました。", "notice")
-    return _parts_anchor_redirect(redirect_params, part_instance_id)
+    return _part_lock_redirect(part_instance_id, redirect_params)
 
 
 @app.route("/parts/discard", methods=["POST"])

@@ -199,6 +199,42 @@ class MarketRouteTests(unittest.TestCase):
             self.assertEqual(int(user["coins"]), 1010)
             self.assertIsNotNone(still_there)
 
+    def test_market_excludes_and_blocks_locked_parts(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            part = db.execute(
+                "SELECT * FROM robot_parts WHERE is_active = 1 AND UPPER(COALESCE(rarity, 'N')) = 'N' ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            locked_id = game_app._create_part_instance_from_master(db, self.admin_id, part, plus=2, status="inventory")
+            unlocked_id = game_app._create_part_instance_from_master(db, self.admin_id, part, plus=0, status="inventory")
+            db.execute("UPDATE part_instances SET locked = 1 WHERE id = ?", (int(locked_id),))
+            db.commit()
+
+        page = client.get("/market")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("保護中のパーツは売却候補から外れます。解除は所持パーツ画面から行えます。", html)
+        self.assertIn("保護中パーツ 1個は売却候補から除外されています。", html)
+        self.assertNotIn(f'value="{int(locked_id)}"', html)
+        self.assertIn(f'value="{int(unlocked_id)}"', html)
+
+        blocked = client.post("/market/sell", data={"part_instance_id": int(locked_id)}, follow_redirects=False)
+        self.assertEqual(blocked.status_code, 302)
+        bulk = client.post(
+            "/market/sell-bulk",
+            data={"part_instance_ids": [str(locked_id), str(unlocked_id)]},
+            follow_redirects=False,
+        )
+        self.assertEqual(bulk.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            locked_row = db.execute("SELECT status, locked FROM part_instances WHERE id = ?", (int(locked_id),)).fetchone()
+            unlocked_row = db.execute("SELECT status FROM part_instances WHERE id = ?", (int(unlocked_id),)).fetchone()
+            self.assertEqual(str(locked_row["status"]), "inventory")
+            self.assertEqual(int(locked_row["locked"]), 1)
+            self.assertEqual(str(unlocked_row["status"]), "sold")
+
     def test_market_sell_bulk_sells_checked_inventory_parts(self):
         client = self._client(admin=True)
         with game_app.app.app_context():

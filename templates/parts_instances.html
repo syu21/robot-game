@@ -50,7 +50,8 @@
       </select>
       <button type="submit">適用</button>
     </form>
-    <div class="robot-time">売却：コインになります / 完全削除：コインなしで消えます / 完全保護中：素材・売却・処分に使えません。</div>
+    <div class="robot-time">売却：コインになります / 完全削除：コインなしで消えます / 保護中：素材・売却・処分に使えません。</div>
+    <div class="robot-time">注目能力は、この個体で高く出やすい能力です。同じ名前のパーツでも個体差があり、強化や進化をしてもその傾向は引き継がれます。</div>
     <div class="robot-time">所持上限を超えた新規戦利品は自動売却されます。</div>
   </div>
 
@@ -65,7 +66,7 @@
     </div>
     <div class="part-card-grid">
       {% for p in compare_items %}
-        <article class="robot-card part-compare-card{% if p.get('is_equipped') %} is-equipped{% endif %}">
+        <article class="robot-card part-compare-card{% if p.get('is_equipped') %} is-equipped{% endif %}{% if p.get('locked') %} is-locked{% endif %}">
           <div class="part-card-topline">
             <span class="part-chip">比較中</span>
             <span class="robot-time">#{{ p['id'] }}</span>
@@ -87,6 +88,9 @@
                   <span class="part-chip is-equipped">装備中</span>
                 {% else %}
                   <span class="part-chip">所持中</span>
+                {% endif %}
+                {% if p.get('locked') %}
+                  <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
@@ -132,12 +136,15 @@
     </div>
     <div class="part-card-grid">
       {% for p in items %}
-        <article id="part-{{ p['id'] }}" class="robot-card part-compare-card{% if p.get('is_equipped') %} is-equipped{% endif %}">
+        <article id="part-{{ p['id'] }}" class="robot-card part-compare-card{% if p.get('is_equipped') %} is-equipped{% endif %}{% if p.get('locked') %} is-locked{% endif %}">
           <div class="part-card-topline">
             <label class="part-check">
               <input type="checkbox" name="instance_ids" value="{{ p['id'] }}" />
               <span>選択</span>
             </label>
+            {% if p.get('locked') %}
+            <span class="part-lock-badge">保護中</span>
+            {% endif %}
             <span class="robot-time">#{{ p['id'] }}</span>
           </div>
           <div class="part-card-main">
@@ -159,7 +166,7 @@
                   <span class="part-chip">所持中</span>
                 {% endif %}
                 {% if p.get('locked') %}
-                  <span class="part-chip is-equipped">保護中</span>
+                  <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
@@ -172,10 +179,9 @@
               {% endif %}
               <div class="part-meta-line">{{ p['material_hint'] }}</div>
               {% if p.get('locked') %}
-              <div class="part-meta-line">完全保護中：素材・売却・処分に使えません</div>
               <button
                 type="submit"
-                class="btn-secondary"
+                class="btn-unlock"
                 formaction="{{ url_for('part_unlock', part_instance_id=p['id']) }}"
                 data-loading-text="保護解除中..."
               >保護解除</button>

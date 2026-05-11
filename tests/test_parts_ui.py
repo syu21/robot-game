@@ -334,6 +334,50 @@ class PartsUiTests(unittest.TestCase):
             self.assertEqual(str(equipped_status), "equipped")
             self.assertIsNone(removed_row)
 
+    def test_parts_locked_card_shows_clear_state_and_discard_keeps_it(self):
+        locked_part = self._create_custom_part("HEAD", "locked_head_proto", "保護ヘッド")
+        self._create_extra_instance(locked_part, plus=0, status="inventory")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            locked_id = db.execute(
+                """
+                SELECT pi.id
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND rp.key = ?
+                ORDER BY pi.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "locked_head_proto"),
+            ).fetchone()["id"]
+            db.execute("UPDATE part_instances SET locked = 1 WHERE id = ?", (locked_id,))
+            db.commit()
+
+        client = self._client()
+        page = client.get("/parts?part_type=HEAD")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("part-lock-badge", html)
+        self.assertIn("保護中", html)
+        self.assertIn("保護解除", html)
+        self.assertIn("btn-unlock", html)
+        self.assertIn("保護中：素材・売却・処分に使えません", html)
+        self.assertEqual(html.count("保護中：素材・売却・処分に使えません"), 2)
+        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
+
+        resp = client.post(
+            "/parts/discard",
+            data={"instance_ids": [str(locked_id)], "confirm": "yes", "part_type": "HEAD"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT locked, status FROM part_instances WHERE id = ?", (locked_id,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row["locked"]), 1)
+            self.assertEqual(str(row["status"]), "inventory")
+
     def test_parts_sort_orders_by_plus_and_keeps_sort_in_pagination_and_forms(self):
         strong_head = self._create_custom_part("HEAD", "sort_head_strong", "高強化ヘッド")
         weak_head = self._create_custom_part("HEAD", "sort_head_weak", "低強化ヘッド")
@@ -392,6 +436,87 @@ class PartsUiTests(unittest.TestCase):
             self.assertEqual(coins_after, coins_before + game_app.AUTO_SELL_PRICE_BY_RARITY["N"])
             self.assertIsNotNone(audit)
 
+    def test_battle_reward_front_keeps_part_instance_id_and_lock_button_rules(self):
+        with game_app.app.app_context():
+            inventory_front = game_app._build_battle_reward_front(
+                reward_coin=1,
+                reward_core=0,
+                dropped_core_name=None,
+                drop_items=[
+                    {
+                        "part_instance_id": 123,
+                        "part_key": "test_part",
+                        "part_display_name": "テストパーツ",
+                        "plus": 0,
+                        "storage_status": "inventory",
+                        "auto_sold": False,
+                        "image_url": "/static/test.png",
+                    }
+                ],
+            )
+            sold_front = game_app._build_battle_reward_front(
+                reward_coin=1,
+                reward_core=0,
+                dropped_core_name=None,
+                drop_items=[
+                    {
+                        "part_instance_id": 456,
+                        "part_key": "sold_part",
+                        "part_display_name": "売却パーツ",
+                        "plus": 0,
+                        "storage_status": "sold",
+                        "auto_sold": True,
+                        "auto_sell_price": 3,
+                        "image_url": "/static/test.png",
+                    }
+                ],
+            )
+            self.assertEqual(inventory_front["part_rows"][0]["part_instance_id"], 123)
+            self.assertEqual(inventory_front["part_rows"][0]["storage_status"], "inventory")
+            self.assertTrue(sold_front["part_rows"][0]["auto_sold"])
+
+            base_summary = {
+                "enemy_name": "敵",
+                "outcome": "勝利",
+                "outcome_is_win": True,
+                "reward_coin": 1,
+                "reward_front": inventory_front,
+                "highlight_core_drop": False,
+            }
+            with game_app.app.test_request_context("/explore"):
+                html = game_app.render_template(
+                    "battle.html",
+                    summary=base_summary,
+                    state={},
+                    active_robot={"name": "R", "image_url": ""},
+                    explore_mode=True,
+                    explore_area_key="layer_1",
+                    message=None,
+                    ui_effects_enabled=False,
+                    battle_ritual_overlay_enabled=False,
+                    battle_short_replay_enabled=False,
+                )
+            self.assertIn("part_instance_id", str(inventory_front["part_rows"][0]))
+            self.assertIn("保護する", html)
+            self.assertIn("/parts/123/lock", html)
+
+            base_summary["reward_front"] = sold_front
+            with game_app.app.test_request_context("/explore"):
+                sold_html = game_app.render_template(
+                    "battle.html",
+                    summary=base_summary,
+                    state={},
+                    active_robot={"name": "R", "image_url": ""},
+                    explore_mode=True,
+                    explore_area_key="layer_1",
+                    message=None,
+                    ui_effects_enabled=False,
+                    battle_ritual_overlay_enabled=False,
+                    battle_short_replay_enabled=False,
+                )
+            self.assertNotIn("/parts/456/lock", sold_html)
+            self.assertNotIn("保護する</button>", sold_html)
+
     def test_legacy_materialization_respects_capacity_and_does_not_create_overflow(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -422,6 +547,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ強化", html)
+        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("素材として使う2個", html)
@@ -455,6 +581,46 @@ class PartsUiTests(unittest.TestCase):
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 
+    def test_evolve_keeps_weight_tendency(self):
+        self._unlock_evolution()
+        head_part = self._seed_evolvable_pair("HEAD", "weight_head", "傾向ヘッド")
+        self._create_extra_instance(head_part, plus=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            source = db.execute(
+                """
+                SELECT pi.*
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND rp.key = ?
+                ORDER BY pi.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "weight_head_n_proto"),
+            ).fetchone()
+            source_id = int(source["id"])
+            before_weights = tuple(float(source[f"w_{key}"]) for key in game_app.PART_STAT_KEYS)
+
+        client = self._client()
+        resp = client.post("/parts/evolve", data={"part_instance_id": str(source_id)}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            evolved = db.execute(
+                """
+                SELECT pi.*
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND rp.key = ?
+                ORDER BY pi.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "weight_head_r_proto"),
+            ).fetchone()
+            self.assertIsNotNone(evolved)
+            after_weights = tuple(float(evolved[f"w_{key}"]) for key in game_app.PART_STAT_KEYS)
+            self.assertEqual(after_weights, before_weights)
+
     def test_build_picker_shows_total_and_stats_for_each_part_option(self):
         client = self._client()
         resp = client.get("/build")
@@ -466,6 +632,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("現在装備", html)
         self.assertIn("総合差分", html)
         self.assertIn("詳細を開く", html)
+        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 
