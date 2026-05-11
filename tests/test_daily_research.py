@@ -86,6 +86,24 @@ class DailyResearchTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual(int(claimed_row["current_count"]), 3)
 
+    def test_existing_build_task_uses_current_wording(self):
+        today_key = get_day_key()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO daily_research_tasks
+                (user_id, day_key, task_key, title, description, target_event, target_count, reward_coins)
+                VALUES (?, ?, 'build_1', 'ロボ編成を1回更新しよう', '旧説明', ?, 1, 120)
+                """,
+                (self.user_id, today_key, EVENT_BUILD_CONFIRM),
+            )
+            db.commit()
+
+            task = get_or_create_daily_task(db, self.user_id, today_key)
+            self.assertEqual(task["title"], "ロボを1回組み立てよう")
+            self.assertEqual(task["description"], "拾ったパーツを見直して、新しいロボを組み立てよう。")
+
     def test_tomorrow_reward_is_reserved_and_claimed_once(self):
         today_key = get_day_key()
         tomorrow_key = get_day_key(datetime.now() + timedelta(days=1))

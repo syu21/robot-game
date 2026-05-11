@@ -59,8 +59,8 @@ DAILY_RESEARCH_TASKS = [
     },
     {
         "key": "build_1",
-        "title": "ロボ編成を1回更新しよう",
-        "description": "拾ったパーツを見直して、今の機体を調整しよう。",
+        "title": "ロボを1回組み立てよう",
+        "description": "拾ったパーツを見直して、新しいロボを組み立てよう。",
         "target_event": EVENT_BUILD_CONFIRM,
         "target_count": 1,
         "reward_coins": 120,
@@ -107,6 +107,10 @@ def _row_to_task(row):
     if not row:
         return None
     data = dict(row)
+    canonical = DAILY_RESEARCH_TASK_BY_KEY.get(str(data.get("task_key") or ""))
+    if canonical:
+        data["title"] = canonical["title"]
+        data["description"] = canonical["description"]
     data["current_count_display"] = min(int(data.get("current_count") or 0), int(data.get("target_count") or 1))
     data["is_completed"] = data.get("status") in {"completed", "claimed"}
     data["is_claimed"] = data.get("status") == "claimed"
@@ -350,7 +354,7 @@ def build_yesterday_report(db, user_id, today_key):
     if counts["strengthen_count"] == 0 and counts["explore_count"] >= 3:
         suggestion = "次は、拾ったパーツを1つ強化してみると良さそうです。"
     elif counts["build_count"] == 0 and counts["drop_count"] > 0:
-        suggestion = "持ち帰ったパーツでロボ編成を見直してみましょう。"
+        suggestion = "持ち帰ったパーツで新しいロボを組み立ててみましょう。"
     elif counts["boss_encounter_count"] > 0 and counts["boss_defeat_count"] == 0:
         suggestion = "ボス反応がありました。少し強化して再挑戦してみましょう。"
     else:

@@ -28048,6 +28048,9 @@ def milestone_claim():
 
 def _part_lock_redirect_params():
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    selected_frame_type = str(request.form.get("frame_type") or "").strip().lower()
+    if selected_frame_type not in {"", "normal", "insect"}:
+        selected_frame_type = ""
     selected_sort = _normalize_parts_sort(request.form.get("sort"))
     page_raw = request.form.get("page", "1")
     try:
@@ -28057,6 +28060,8 @@ def _part_lock_redirect_params():
     params = {}
     if selected_part_type:
         params["part_type"] = selected_part_type
+    if selected_frame_type:
+        params["frame_type"] = selected_frame_type
     if selected_sort != "recommended":
         params["sort"] = selected_sort
     if page > 1:
