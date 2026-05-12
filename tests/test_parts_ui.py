@@ -147,7 +147,9 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("装備中", html)
-        self.assertIn("売却：コインになります", html)
+        self.assertIn("廃品市場", html)
+        self.assertIn("完全削除はコインにならず元に戻せません", html)
+        self.assertIn("完全削除（コインなし）", html)
         self.assertIn("選んだパーツを見比べる", html)
         self.assertNotIn("選択した所持パーツを破棄", html)
         self.assertIn(">選択<", html)
@@ -378,6 +380,42 @@ class PartsUiTests(unittest.TestCase):
             self.assertEqual(int(row["locked"]), 1)
             self.assertEqual(str(row["status"]), "inventory")
 
+    def test_parts_discard_requires_confirm_and_keeps_filters(self):
+        discard_part = self._create_custom_part("HEAD", "confirm_discard_head", "確認削除ヘッド", frame_type="insect")
+        self._create_extra_instance(discard_part, plus=0, status="inventory")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            part_id = int(
+                db.execute(
+                    """
+                    SELECT pi.id
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.user_id = ? AND rp.key = ?
+                    ORDER BY pi.id DESC
+                    LIMIT 1
+                    """,
+                    (self.user_id, "confirm_discard_head"),
+                ).fetchone()["id"]
+            )
+
+        client = self._client()
+        resp = client.post(
+            "/parts/discard",
+            data={"instance_ids": [str(part_id)], "part_type": "HEAD", "frame_type": "insect", "sort": "part_type", "page": "2"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        location = resp.headers.get("Location", "")
+        self.assertIn("part_type=HEAD", location)
+        self.assertIn("frame_type=insect", location)
+        self.assertIn("sort=part_type", location)
+        self.assertIn("page=2", location)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT id FROM part_instances WHERE id = ?", (part_id,)).fetchone()
+            self.assertIsNotNone(row)
+
     def test_part_lock_redirect_keeps_frame_type_filter(self):
         insect_part = self._create_custom_part("HEAD", "lock_insect_head_proto", "保護虫ヘッド", frame_type="insect")
         self._create_extra_instance(insect_part, plus=0, status="inventory")
@@ -434,6 +472,23 @@ class PartsUiTests(unittest.TestCase):
         second_html = second_page.get_data(as_text=True)
         self.assertIn("/parts?page=1&amp;part_type=HEAD&amp;sort=plus", second_html)
         self.assertIn('name="sort" value="plus"', second_html)
+
+    def test_parts_type_sort_groups_same_part_instances(self):
+        alpha = self._create_custom_part("HEAD", "aa_group_head_proto", "まとまりヘッド")
+        beta = self._create_custom_part("HEAD", "zz_group_head_proto", "別ヘッド")
+        self._create_extra_instance(alpha, plus=0, status="inventory")
+        self._create_extra_instance(beta, plus=5, status="inventory")
+        self._create_extra_instance(alpha, plus=2, status="inventory")
+
+        client = self._client()
+        resp = client.get("/parts?part_type=HEAD&sort=part_type")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("部位・種類順", html)
+        first_alpha = html.index("まとまりヘッド")
+        second_alpha = html.index("まとまりヘッド", first_alpha + 1)
+        beta_pos = html.index("別ヘッド")
+        self.assertLess(second_alpha, beta_pos)
 
     def test_battle_drop_over_capacity_auto_sells_part(self):
         with game_app.app.app_context():

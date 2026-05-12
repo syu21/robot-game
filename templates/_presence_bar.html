@@ -19,15 +19,15 @@
     <article class="recent-robot-card is-{{ entry['status_key'] }}{% if entry['is_featured'] %} is-featured{% endif %}{% if entry['is_supporter'] %} is-supporter{% endif %}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
     {% endif %}
       <div class="recent-robot-visual">
-        <img class="recent-robot-icon" src="{{ entry['icon_url'] }}" alt="{{ entry['display_name'] }}の研究機体" loading="lazy" width="42" height="42" />
-        {% if entry['badges'] %}
-        <div class="recent-robot-badges" aria-label="注目マーク">
-          {% for badge in entry['badges'] %}
-          <span class="is-{{ badge['kind'] }}" title="{{ badge['title'] }}">{{ badge['label'] }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
+        <img class="recent-robot-icon" src="{{ entry['icon_url'] }}" alt="{{ entry['display_name'] }}の研究機体" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async" width="48" height="48" />
       </div>
+      {% if entry['badges'] %}
+      <div class="recent-robot-badges" aria-label="注目マーク">
+        {% for badge in entry['badges'] %}
+        <span class="is-{{ badge['kind'] }}" title="{{ badge['title'] }}">{{ badge['label'] }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="recent-robot-name">
         <span class="recent-robot-name-text">{{ entry['display_name'] }}</span>
         {% if entry.get('supporter_mark') %}

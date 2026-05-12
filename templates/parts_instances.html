@@ -50,7 +50,8 @@
       </select>
       <button type="submit">適用</button>
     </form>
-    <div class="robot-time">売却：コインになります / 完全削除：コインなしで消えます / 保護中：素材・売却・処分に使えません。</div>
+    <div class="robot-time">整理したい場合は、基本的に <a href="{{ url_for('market') }}">廃品市場</a> で売却するとコインになります。完全削除はコインにならず元に戻せません。</div>
+    <div class="robot-time">保護中・装備中パーツは完全削除されません。保護中：素材・売却・処分に使えません。</div>
     <div class="robot-time">注目能力は、この個体で高く出やすい能力です。同じ名前のパーツでも個体差があり、強化や進化をしてもその傾向は引き継がれます。</div>
     <div class="robot-time">所持上限を超えた新規戦利品は自動売却されます。</div>
   </div>
@@ -216,6 +217,17 @@
         <span class="part-page-link is-disabled">次のページはありません</span>
       {% endif %}
     </div>
+    <details class="parts-danger-zone">
+      <summary>完全削除（コインなし）</summary>
+      <div class="robot-time">選択した所持パーツを完全削除します。コインは増えず、元に戻せません。コインにしたい場合は <a href="{{ url_for('market') }}">廃品市場</a> で売却してください。</div>
+      <button
+        type="submit"
+        class="btn-danger-subtle"
+        formaction="{{ url_for('parts_discard') }}"
+        onclick="return confirm('選択したパーツを完全削除します。コインは増えず、元に戻せません。実行しますか？');"
+        data-loading-text="完全削除中..."
+      >完全削除（コインなし）</button>
+    </details>
   </form>
   {% else %}
   <div class="card">

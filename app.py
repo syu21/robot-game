@@ -5932,7 +5932,7 @@ PARTS_SORT_DEFS = (
     {"key": "total", "label": "総合値が高い順"},
     {"key": "plus", "label": "+値が高い順"},
     {"key": "rarity", "label": "レアリティ順"},
-    {"key": "part_type", "label": "部位順"},
+    {"key": "part_type", "label": "部位・種類順"},
 )
 PARTS_SORT_DEF_BY_KEY = {item["key"]: item for item in PARTS_SORT_DEFS}
 PART_TYPE_DISPLAY_SORT_ORDER = {
@@ -16886,10 +16886,40 @@ def _boss_goal_hint(db, user_id, *, boss_alert_status=None, max_unlocked_layer=1
     if boss_alert_status:
         return ""
     if not _has_fixed_boss_defeat_in_area(db, int(user_id), "layer_1"):
-        return "目標：第1層ボスを撃破する。出撃中にボス警報が出たら挑戦できます。"
+        return "目標：第1層ボスを撃破する。第1層を出撃していると低確率でボス警報が出ます。"
     if int(max_unlocked_layer or 1) >= 2:
-        return "固定ボス撃破で次の層が開放されます。"
-    return "出撃中にボス警報が発生することがあります。固定ボスを倒すと次の層が開放されます。"
+        return "第N層は前の層のボス撃破で解放されます。"
+    return "出撃中にボス警報が発生することがあります。ボス撃破で次の層が解放されます。"
+
+
+def _boss_unlock_guide_lines(db, user_row, *, compact=False):
+    max_layer = _visible_user_max_unlocked_layer(user_row, db=db)
+    release_cap = _release_layer_cap_for_viewer(db, user_row=user_row) if db and user_row else MAX_UNLOCKABLE_LAYER
+    user_id = int(user_row["id"]) if user_row and "id" in user_row.keys() and user_row["id"] is not None else 0
+    lines = []
+    if user_id > 0 and not _has_fixed_boss_defeat_in_area(db, user_id, "layer_1"):
+        lines.append("第1層ボス：第1層を出撃していると低確率で警報")
+    else:
+        lines.append(f"現在：第{max_layer}層まで解放済み")
+    next_layer = max_layer + 1
+    if next_layer <= min(MAX_UNLOCKABLE_LAYER, release_cap):
+        lines.append(f"第{next_layer}層：第{next_layer - 1}層ボス撃破で解放")
+    elif (
+        release_cap >= 4
+        and max_layer >= 4
+        and user_id > 0
+        and not _is_special_area_unlocked(db, user_id, LAYER4_FINAL_AREA_KEY)
+    ):
+        lines.append("第4層最終試験：3ボス撃破で解放")
+    elif (
+        release_cap >= 5
+        and max_layer >= 5
+        and user_id > 0
+        and not _is_special_area_unlocked(db, user_id, LAYER5_FINAL_AREA_KEY)
+    ):
+        lines.append("第5層最終試験：2ボス撃破で解放")
+    lines.append("ボス撃破で次の層や特別報酬につながります")
+    return lines[:2] if compact else lines
 
 
 def _has_any_active_boss_alert(db, user_id, now_ts=None):
@@ -26277,6 +26307,7 @@ def home():
                 boss_alert_status=boss_alert_status,
                 max_unlocked_layer=max_unlocked_layer,
             ),
+            boss_unlock_guide_lines=_boss_unlock_guide_lines(db, user, compact=True),
             boss_alert_active=boss_alert_hint["boss_alert_active"],
             boss_type=boss_alert_hint["boss_type"],
             recommended_build=boss_alert_hint["recommended_build"],
@@ -27864,6 +27895,7 @@ def map_view():
         "map.html",
         nodes=nodes,
         locked_layers=locked_layers,
+        boss_unlock_guide_lines=_boss_unlock_guide_lines(db, user),
         stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,
         max_unlocked_layer=_visible_user_max_unlocked_layer(user, db=db),
         wins_total=int(user["wins"] if user else 0),
@@ -28161,15 +28193,27 @@ def part_unlock(part_instance_id):
 def parts_discard():
     db = get_db()
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
+    selected_frame_type = str(request.form.get("frame_type") or "").strip().lower()
+    if selected_frame_type not in {"", "normal", "insect"}:
+        selected_frame_type = ""
     selected_sort = _normalize_parts_sort(request.form.get("sort"))
-    page = max(1, int(request.form.get("page", "1")))
+    try:
+        page = max(1, int(request.form.get("page", "1")))
+    except (TypeError, ValueError):
+        page = 1
     redirect_params = {}
     if selected_part_type:
         redirect_params["part_type"] = selected_part_type
+    if selected_frame_type:
+        redirect_params["frame_type"] = selected_frame_type
     if selected_sort != "recommended":
         redirect_params["sort"] = selected_sort
     if page > 1:
         redirect_params["page"] = page
+    confirm = request.form.get("confirm")
+    if confirm != "yes":
+        session["message"] = "完全削除の確認が必要です。コインは増えず、元に戻せません。"
+        return redirect(url_for("parts", **redirect_params))
     instance_ids = request.form.getlist("instance_ids")
     valid_instance_ids = [pid for pid in instance_ids if pid.isdigit()]
     if valid_instance_ids:
@@ -28202,10 +28246,6 @@ def parts_discard():
     single_id = request.form.get("part_id")
     if single_id:
         part_ids.append(single_id)
-    confirm = request.form.get("confirm")
-    if confirm != "yes":
-        session["message"] = "完全削除の確認が必要です。"
-        return redirect(url_for("parts", **redirect_params))
     valid_ids = [pid for pid in part_ids if pid.isdigit()]
     if not valid_ids:
         session["message"] = "完全削除の対象が選択されていません。"

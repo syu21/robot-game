@@ -4,6 +4,13 @@
 <div class="card">
   <div>現在の勝利数: <b>{{ wins_total }}</b></div>
   <div>現在解放層: <b>第{{ max_unlocked_layer }}層</b></div>
+  {% if boss_unlock_guide_lines %}
+  <div class="boss-unlock-lines">
+    {% for line in boss_unlock_guide_lines %}
+    <div>{{ line }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="robot-grid">

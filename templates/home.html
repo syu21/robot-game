@@ -39,6 +39,13 @@
     {% if boss_goal_hint %}
     <div class="home-explore-context">{{ boss_goal_hint }}</div>
     {% endif %}
+    {% if boss_unlock_guide_lines %}
+    <div class="boss-unlock-inline" aria-label="ボス解放条件">
+      {% for line in boss_unlock_guide_lines %}
+      <span>{{ line }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if daily_research_task_line %}
     <div class="home-explore-context">{{ daily_research_task_line }}</div>
     {% if daily_task and daily_task['status'] == 'completed' %}
@@ -139,6 +146,13 @@
     {% endif %}
     {% endif %}
     <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
+    {% if boss_unlock_guide_lines %}
+    <div class="boss-unlock-inline" aria-label="ボス解放条件">
+      {% for line in boss_unlock_guide_lines %}
+      <span>{{ line }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if home_primary_explore_cta['is_post'] %}
     <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
       {% if home_primary_explore_cta['area_key'] %}
@@ -858,6 +872,9 @@
         </select>
         {% if selected_explore_tendency_line %}
         <div class="robot-time">{{ selected_explore_tendency_line }}</div>
+        {% endif %}
+        {% if boss_unlock_guide_lines %}
+        <div class="robot-time">ボス目標：{{ boss_unlock_guide_lines[0] }}</div>
         {% endif %}
         {% if explore_submission_id %}
         <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />

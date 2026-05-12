@@ -141,6 +141,16 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("ボスに挑戦（残り●●）", html)
         self.assertNotIn("NEW 第3層へ行く", html)
 
+    def test_home_shows_short_boss_unlock_goal(self):
+        self._create_active_robot()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("第1層ボス：第1層を出撃していると低確率で警報", html)
+        self.assertIn("第2層：第1層ボス撃破で解放", html)
+        self.assertNotIn("第5層最終試験", html)
+
     def test_home_next_action_new_layer_routes_to_map(self):
         self._create_active_robot()
         client = self._new_client(new_layer_badge=2)

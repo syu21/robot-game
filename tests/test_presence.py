@@ -221,6 +221,10 @@ class PresenceTests(unittest.TestCase):
         self.assertIn("最近の研究機体", html)
         self.assertIn("出撃、強化、遭遇。最近動いた研究機体を観測しています。", html)
         self.assertIn("PresenceRunner", html)
+        self.assertIn('class="recent-robot-visual"', html)
+        self.assertIn('class="recent-robot-icon"', html)
+        self.assertIn('loading="eager"', html)
+        self.assertIn('width="48" height="48"', html)
         self.assertNotIn("研究員 " + "1名 参加中", html)
         self.assertNotIn("現在の" + "参加研究員", html)
 
