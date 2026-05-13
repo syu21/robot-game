@@ -80,6 +80,16 @@
     {% endif %}
     {% set reward_front = summary.get('reward_front', {}) %}
     <div class="battle-summary-row"><span class="label">獲得コイン</span> <b>+{{ reward_front.get('coin', summary.get('reward_coin', 0)) }}</b></div>
+    {% if summary.get('part_inventory_status') %}
+    {% set inv = summary.get('part_inventory_status') %}
+    <div class="battle-summary-row battle-inventory-status">
+      所持パーツ：{{ inv.get('count', 0) }} / {{ inv.get('limit', 0) }}
+      {% if inv.get('storage_count', 0) %}<span class="robot-time">保管 {{ inv.get('storage_count') }}</span>{% endif %}
+    </div>
+    {% if inv.get('note') %}
+    <div class="battle-summary-row battle-inventory-note">{{ inv.get('note') }}</div>
+    {% endif %}
+    {% endif %}
     {% if summary.get('lab_level_result') %}
     {% set lab_result = summary.get('lab_level_result') %}
     <div class="battle-summary-row">
@@ -97,7 +107,7 @@
     <div class="battle-summary-row">ドロップ:</div>
     <div class="battle-drop-list">
       {% for row in reward_front.get('part_rows', []) %}
-      <div class="battle-drop-row">
+      <div class="battle-drop-row"{% if row.get('part_instance_id') %} id="part-{{ row.get('part_instance_id') }}"{% endif %}>
         <img class="battle-drop-mini" src="{{ row.get('image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ row.get('label', 'パーツ') }}" loading="lazy" />
         <span class="battle-drop-name">{{ row.get('label', '不明パーツ') }}</span>
         {% if (row.get('count') or 1) > 1 %}
@@ -107,7 +117,7 @@
         <span class="part-chip is-locked">保護中</span>
         {% elif row.get('part_instance_id') and row.get('storage_status') == 'inventory' and not row.get('auto_sold') %}
         <form method="post" action="{{ url_for('part_lock', part_instance_id=row.get('part_instance_id')) }}" class="inline-form battle-drop-lock-form">
-          <input type="hidden" name="return_to" value="{{ url_for('parts') }}#part-{{ row.get('part_instance_id') }}" />
+          <input type="hidden" name="return_to" value="{{ url_for('battle_result') }}#part-{{ row.get('part_instance_id') }}" />
           <button type="submit" class="btn-secondary battle-drop-lock-btn" data-loading-text="保護中...">保護する</button>
         </form>
         {% endif %}

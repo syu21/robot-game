@@ -129,6 +129,7 @@
     {% endif %}
     <input type="hidden" name="sort" value="{{ selected_sort }}" />
     <input type="hidden" name="page" value="{{ page }}" />
+    <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}" />
     <div class="part-list-header">
       <div class="robot-time">見比べたい個体を選べます。大事なパーツは先に「保護」しておくと、売却や素材使用から外れます。</div>
       <div class="part-header-actions">

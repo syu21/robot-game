@@ -8808,6 +8808,86 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
     }
 
 
+def _part_inventory_status_payload(db, user_id, user_row=None):
+    if user_row is None:
+        user_row = db.execute(
+            "SELECT id, part_inventory_limit FROM users WHERE id = ?",
+            (int(user_id),),
+        ).fetchone()
+    limit = int(user_row["part_inventory_limit"] or 0) if user_row else 0
+    count = _count_part_inventory(db, int(user_id))
+    storage = _part_storage_snapshot(db, int(user_id))
+    note = ""
+    if limit > 0 and count >= limit:
+        note = "所持枠がいっぱいです。整理すると、残したいパーツを選びやすくなります。"
+    elif limit > 0 and count >= max(1, limit - 2):
+        note = "そろそろ整理すると、素材にしたいパーツを残しやすくなります。"
+    return {
+        "count": int(count),
+        "limit": int(limit),
+        "storage_count": int(storage.get("legacy_storage_count") or storage.get("storage_count") or 0),
+        "note": note,
+    }
+
+
+def _battle_result_session_summary(summary):
+    excluded = {
+        "battle_cinematic",
+        "battle_replay",
+        "drop_items",
+        "bonus_events",
+        "stage_modifier",
+        "world_bonus_notes",
+    }
+    compact = {k: v for k, v in (summary or {}).items() if k not in excluded}
+    return json.loads(json.dumps(compact, ensure_ascii=False, default=str))
+
+
+def _store_last_battle_result(user_id, *, summary, area_key, area_label):
+    session["last_battle_result"] = {
+        "user_id": int(user_id),
+        "area_key": str(area_key or ""),
+        "area_label": str(area_label or ""),
+        "summary": _battle_result_session_summary(summary),
+        "saved_at": int(time.time()),
+    }
+
+
+def _refresh_battle_result_summary(db, user_id, user_row, summary):
+    refreshed = dict(summary or {})
+    reward_front = dict(refreshed.get("reward_front") or {})
+    rows = []
+    for row in reward_front.get("part_rows") or []:
+        next_row = dict(row)
+        part_instance_id = next_row.get("part_instance_id")
+        if part_instance_id:
+            part_row = db.execute(
+                "SELECT locked, status FROM part_instances WHERE id = ? AND user_id = ? LIMIT 1",
+                (int(part_instance_id), int(user_id)),
+            ).fetchone()
+            if part_row:
+                next_row["locked"] = bool(int(part_row["locked"] or 0))
+                next_row["storage_status"] = str(part_row["status"] or "").strip().lower()
+        rows.append(next_row)
+    reward_front["part_rows"] = rows
+    refreshed["reward_front"] = reward_front
+    refreshed["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user_row)
+
+    remain, _ = _explore_remaining_seconds_for_user(db, user_row, user_id)
+    is_admin = bool(int(user_row["is_admin"] or 0) == 1)
+    remain = 0 if is_admin else int(remain or 0)
+    refreshed["explore_ct_remain"] = int(remain)
+    refreshed["explore_ct_ready_at"] = 0 if is_admin else int(time.time() + max(0, remain))
+    refreshed["explore_ct_is_admin"] = bool(is_admin)
+    if is_admin or remain <= 0:
+        refreshed["explore_ct_button_label"] = "もう一度出撃"
+        refreshed["explore_ct_status_label"] = "" if is_admin else "出撃可能"
+    else:
+        refreshed["explore_ct_button_label"] = f"もう一度出撃（あと{remain}秒）"
+        refreshed["explore_ct_status_label"] = f"CT中: あと{remain}秒"
+    return refreshed
+
+
 def _extract_part_extreme_title(part_instance):
     if not part_instance:
         return None
@@ -23435,6 +23515,30 @@ def inject_app_meta():
     }
 
 
+@app.context_processor
+def inject_quick_nav():
+    if _is_trial_session() or not session.get("user_id"):
+        return {"quick_nav": None}
+    try:
+        db = get_db()
+        user = db.execute(
+            "SELECT id, is_admin, part_inventory_limit FROM users WHERE id = ?",
+            (int(session["user_id"]),),
+        ).fetchone()
+        if not user:
+            return {"quick_nav": None}
+        remain, _ = _explore_remaining_seconds_for_user(db, user, int(user["id"]))
+        is_admin = bool(int(user["is_admin"] or 0) == 1)
+        return {
+            "quick_nav": {
+                "ct_remain": 0 if is_admin else max(0, int(remain or 0)),
+                "show_market": bool(_market_can_access(db, user)),
+            }
+        }
+    except Exception:
+        return {"quick_nav": None}
+
+
 @app.before_request
 def apply_safe_mode():
     if "safe" in request.args:
@@ -25702,7 +25806,7 @@ def home():
     has_any_robot = int(instance_count or 0) > 0
     part_storage = _part_storage_snapshot(db, user["id"])
     part_inventory_count = int(part_storage["inventory_count"])
-    part_storage_count = int(part_storage["storage_count"])
+    part_storage_count = int(part_storage.get("legacy_storage_count") or part_storage["storage_count"])
     limits = _effective_limits(db, user)
     _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
     showcase_rows = _showcase_rows(db, user["id"])
@@ -28083,6 +28187,10 @@ def _part_lock_redirect_params():
     selected_frame_type = str(request.form.get("frame_type") or "").strip().lower()
     if selected_frame_type not in {"", "normal", "insect"}:
         selected_frame_type = ""
+    selected_rarity = str(request.form.get("rarity") or "").strip().upper()
+    if selected_rarity not in {"", "N", "R", "SR", "SSR", "UR"}:
+        selected_rarity = ""
+    selected_series_key = str(request.form.get("series_key") or "").strip()
     selected_sort = _normalize_parts_sort(request.form.get("sort"))
     page_raw = request.form.get("page", "1")
     try:
@@ -28094,6 +28202,10 @@ def _part_lock_redirect_params():
         params["part_type"] = selected_part_type
     if selected_frame_type:
         params["frame_type"] = selected_frame_type
+    if selected_rarity:
+        params["rarity"] = selected_rarity
+    if selected_series_key:
+        params["series_key"] = selected_series_key
     if selected_sort != "recommended":
         params["sort"] = selected_sort
     if page > 1:
@@ -28106,8 +28218,8 @@ def _parts_anchor_redirect(params, part_instance_id):
 
 
 def _part_lock_redirect(part_instance_id, params=None):
-    return_to = str(request.form.get("return_to") or "").strip()
-    if return_to and return_to.startswith("/") and not return_to.startswith("//"):
+    return_to = _relative_redirect_target(request.form.get("return_to"), "")
+    if return_to:
         return redirect(return_to)
     return _parts_anchor_redirect(params or {}, part_instance_id)
 
@@ -28157,7 +28269,7 @@ def part_lock(part_instance_id):
     part_row = _part_lock_row(db, user_id, part_instance_id)
     if not part_row:
         flash("保護するパーツが見つかりません。", "error")
-        return redirect(url_for("parts", **redirect_params))
+        return redirect(_relative_redirect_target(request.form.get("return_to"), url_for("parts", **redirect_params)))
     db.execute(
         "UPDATE part_instances SET locked = 1, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
         (int(part_instance_id), user_id),
@@ -28177,7 +28289,7 @@ def part_unlock(part_instance_id):
     part_row = _part_lock_row(db, user_id, part_instance_id)
     if not part_row:
         flash("保護解除するパーツが見つかりません。", "error")
-        return redirect(url_for("parts", **redirect_params))
+        return redirect(_relative_redirect_target(request.form.get("return_to"), url_for("parts", **redirect_params)))
     db.execute(
         "UPDATE part_instances SET locked = 0, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
         (int(part_instance_id), user_id),
@@ -30658,6 +30770,7 @@ def explore():
         dropped_core_name=dropped_core_name,
         drop_items=drop_items,
     )
+    summary["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user)
     if area_boss_reward and area_boss_reward.get("decor_name"):
         summary["boss_reward_display"] = {
             "name": area_boss_reward.get("decor_name"),
@@ -30714,6 +30827,12 @@ def explore():
         else None
     )
     summary["battle_replay"] = summary["battle_cinematic"]
+    _store_last_battle_result(
+        user_id,
+        summary=summary,
+        area_key=area["key"],
+        area_label=area["label"],
+    )
     return render_template(
         "battle.html",
         state={"active": 0, "enemy_name": summary["enemy_name"], "enemy_hp": 0},
@@ -30733,6 +30852,43 @@ def explore():
         battle_short_replay_enabled=_battle_short_replay_open_for_viewer(
             db, user_row=user, user_id=user_id
         ),
+    )
+
+
+@app.route("/battle/result")
+@login_required
+def battle_result():
+    saved = session.get("last_battle_result") or {}
+    user_id = int(session["user_id"])
+    if int(saved.get("user_id") or 0) != user_id or not saved.get("summary"):
+        flash("戦闘結果を再表示できませんでした。", "error")
+        return redirect(url_for("home"))
+    db = get_db()
+    user = db.execute(
+        "SELECT id, is_admin, part_inventory_limit FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    summary = _refresh_battle_result_summary(db, user_id, user, saved.get("summary") or {})
+    active_robot_view = _get_active_robot(db, user_id)
+    return render_template(
+        "battle.html",
+        state={"active": 0, "enemy_name": summary.get("enemy_name", "謎の敵"), "enemy_hp": 0},
+        log=[],
+        log_entries=[],
+        message=None,
+        new_robot=None,
+        explore_mode=True,
+        explore_area_key=str(saved.get("area_key") or "layer_1"),
+        explore_area_label=str(saved.get("area_label") or ""),
+        active_robot=active_robot_view,
+        no_active_robot=False,
+        turn_logs=[],
+        summary=summary,
+        battle_log_mode="collapsed",
+        battle_ritual_overlay_enabled=False,
+        battle_short_replay_enabled=False,
     )
 
 

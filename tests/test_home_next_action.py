@@ -269,7 +269,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ在庫: 所持 4 / 4", html)
-        self.assertNotIn("| 保管", html)
+        self.assertIn("所持 4/4 | 保管 2", html)
 
     def test_home_today_progress_card_shows_empty_state(self):
         client = self._new_client()

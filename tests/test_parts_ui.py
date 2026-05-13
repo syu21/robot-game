@@ -450,6 +450,45 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("page=2", location)
         self.assertIn(f"#part-{part_id}", location)
 
+    def test_part_lock_redirect_uses_safe_return_to(self):
+        head_part = self._create_custom_part("HEAD", "lock_safe_return_head", "保護戻り先ヘッド")
+        self._create_extra_instance(head_part, plus=0, status="inventory")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            part_id = int(
+                db.execute(
+                    """
+                    SELECT pi.id
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.user_id = ? AND rp.key = ?
+                    ORDER BY pi.id DESC
+                    LIMIT 1
+                    """,
+                    (self.user_id, "lock_safe_return_head"),
+                ).fetchone()["id"]
+            )
+
+        client = self._client()
+        resp = client.post(
+            f"/parts/{part_id}/lock",
+            data={"return_to": "/parts?part_type=HEAD&sort=part_type&page=2#part-1"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/parts?part_type=HEAD&sort=part_type&page=2#part-1", resp.headers.get("Location", ""))
+
+        resp = client.post(
+            f"/parts/{part_id}/unlock",
+            data={"return_to": "https://example.com/phishing", "part_type": "HEAD", "sort": "part_type"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        location = resp.headers.get("Location", "")
+        self.assertIn("/parts?", location)
+        self.assertIn("part_type=HEAD", location)
+        self.assertNotIn("example.com", location)
+
     def test_parts_sort_orders_by_plus_and_keeps_sort_in_pagination_and_forms(self):
         strong_head = self._create_custom_part("HEAD", "sort_head_strong", "高強化ヘッド")
         weak_head = self._create_custom_part("HEAD", "sort_head_weak", "低強化ヘッド")
@@ -588,6 +627,7 @@ class PartsUiTests(unittest.TestCase):
             self.assertIn("part_instance_id", str(inventory_front["part_rows"][0]))
             self.assertIn("保護する", html)
             self.assertIn("/parts/123/lock", html)
+            self.assertIn("/battle/result#part-123", html)
 
             base_summary["reward_front"] = sold_front
             with game_app.app.test_request_context("/explore"):

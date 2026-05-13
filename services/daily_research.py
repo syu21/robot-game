@@ -59,7 +59,7 @@ DAILY_RESEARCH_TASKS = [
     },
     {
         "key": "build_1",
-        "title": "ロボを1回組み立てよう",
+        "title": "ロボを1回組み直そう",
         "description": "拾ったパーツを見直して、新しいロボを組み立てよう。",
         "target_event": EVENT_BUILD_CONFIRM,
         "target_count": 1,

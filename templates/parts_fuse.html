@@ -6,16 +6,17 @@
   <div id="fuse-filter-error" class="error is-hidden" role="alert"></div>
 
   <section class="card">
-    <h2>パーツ強化のしくみ</h2>
-    <div class="upgrade-cost">同じ名前・同じレアリティのパーツを3個使います。</div>
-    <div class="robot-time">・ベース：強化して残すパーツ</div>
-    <div class="robot-time">・素材：強化に使うため消えるパーツ2個</div>
-    <div class="robot-time">・結果：ベースの +値 が1上がります</div>
-    <div class="robot-time">保護中：素材・売却・処分に使えません。保護中でもベースには使えます。</div>
-    <div class="robot-time">注目能力は、この個体で高く出やすい能力です。同じ名前のパーツでも個体差があり、強化や進化をしてもその傾向は引き継がれます。</div>
+    <h2>パーツ強化とは</h2>
+    <div class="upgrade-cost">同じ名前・同じレアリティのパーツを使って、ベースの +値 を1つ上げる育成です。</div>
     <div class="upgrade-cost">
-      例：チョウ右腕 +0 をベース / チョウ右腕 +0 を素材2個 → チョウ右腕 +1 が残ります
+      強化の例：チョウ右腕 +0 をベースにして、同じ チョウ右腕 +0 を2つ素材にすると、チョウ右腕 +1 になります。
     </div>
+    <div class="robot-time">条件・注意点</div>
+    <div class="robot-time">・ベース1つ、素材2つを使います</div>
+    <div class="robot-time">・素材にした2つは消えます</div>
+    <div class="robot-time">・装備中のパーツは素材として消えません</div>
+    <div class="robot-time">・保護中のパーツは素材に使われません。保護中でもベースには使えます</div>
+    <div class="robot-time">注目能力は、この個体で高く出やすい能力です。同じ名前のパーツでも個体差があり、強化や進化をしてもその傾向は引き継がれます。</div>
   </section>
 
   {% if tutorial_layer1_strengthen_hint %}
@@ -51,7 +52,7 @@
   <div class="card strengthen-hub-card">
     <div><b>強化メニュー</b></div>
     <div class="robot-time">通常ルールはすべて共通です。ベース1 + 素材2 / 成功率100% / +1固定で進みます。</div>
-    <div class="robot-time">装備中の個体は素材に使いません。所持上限を超えた新規戦利品は自動売却されます。</div>
+    <div class="robot-time">装備中の個体は素材に使いません。所持枠が少ない時は、先に所持パーツや廃品市場で整理できます。</div>
     <div class="actions-grid strengthen-entry-grid">
       <a class="action-card{% if selected_mode == 'select' %} is-active{% endif %}" href="{{ url_for('parts_strengthen', mode='select', part_type=selected_part_type or '', rarity=selected_rarity or '', plus=selected_plus if selected_plus is not none else '') }}#individual-strengthen">
         <div class="action-title">個別強化</div>

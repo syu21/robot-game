@@ -81,6 +81,19 @@
     <div class="maintenance-banner-inner">{{ maintenance_banner_text }}</div>
   </div>
   {% endif %}
+  {% if quick_nav %}
+  <nav class="quick-nav-bar" aria-label="主要導線">
+    <a href="{{ url_for('home') }}" class="{% if request.endpoint == 'home' %}is-active{% endif %}">基地</a>
+    <a href="{{ url_for('home') }}#explore" class="{% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}">
+      {% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}
+    </a>
+    <a href="{{ url_for('parts_strengthen') }}" class="{% if request.endpoint == 'parts_strengthen' %}is-active{% endif %}">強化</a>
+    <a href="{{ url_for('parts') }}" class="{% if request.endpoint == 'parts' %}is-active{% endif %}">パーツ</a>
+    {% if quick_nav.show_market %}
+    <a href="{{ url_for('market') }}" class="{% if request.endpoint == 'market' %}is-active{% endif %}">市場</a>
+    {% endif %}
+  </nav>
+  {% endif %}
   <main class="container">
     {% if message %}<div class="notice">{{ message }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
