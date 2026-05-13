@@ -231,6 +231,20 @@ class PartsFuseRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertGreaterEqual(int(row["p"] or 0), 2)
 
+    def test_fuse_transfers_material_plus_to_base(self):
+        ids = self._seed_same_part_instances([0, 3, 0])
+        base_id = ids[0]
+        client = self._client()
+        resp = client.post("/parts/fuse", data={"mode": "select", "base_id": str(base_id)}, follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT plus FROM part_instances WHERE id = ? AND user_id = ?",
+                (base_id, self.user_id),
+            ).fetchone()
+            self.assertEqual(int(row["plus"] or 0), 4)
+
     def test_fuse_bonus_cap(self):
         ids = self._seed_same_part_instances([1, 2, 2])
         base_id = ids[0]
@@ -243,7 +257,7 @@ class PartsFuseRouteTests(unittest.TestCase):
                 "SELECT MAX(plus) AS p FROM part_instances WHERE user_id = ? AND status = 'inventory'",
                 (self.user_id,),
             ).fetchone()
-            self.assertEqual(int(row["p"] or 0), 2)
+            self.assertEqual(int(row["p"] or 0), int(game_app.MAX_PART_PLUS))
 
     def test_fuse_failure_result_shows_reason(self):
         ids = self._seed_same_part_instances([0, 0, 0])

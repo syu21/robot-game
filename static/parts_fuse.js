@@ -86,7 +86,7 @@
       selectedCountEl.textContent = "0";
       baseSelectedEl.textContent = "未選択";
       materialSelectedEl.textContent = "自動選択（2個・低+優先）";
-      resultExpectedEl.textContent = "+1固定";
+      resultExpectedEl.textContent = "素材の+値を引き継ぎ";
       submitBtn.disabled = true;
       baseIdInput.value = "";
       return;
@@ -114,8 +114,9 @@
         : "在庫素材が不足";
     const partLabel = String(stack.dataset.partLabel || "パーツ");
     const basePlus = Number(base && base.plus ? base.plus : 0);
-    const inc = 1;
-    resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${basePlus + inc}（+1固定）`;
+    const materialPlusTotal = materials.reduce((sum, m) => sum + Math.max(0, Number(m.plus || 0)), 0);
+    const targetPlus = Math.min(5, basePlus + 1 + materialPlusTotal);
+    resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${targetPlus}（素材+値引き継ぎ）`;
 
     baseIdInput.value = base ? String(base.id) : "";
     submitBtn.disabled = !(base && materials.length === 2);

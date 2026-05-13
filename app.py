@@ -36096,10 +36096,11 @@ def _strengthen_parts_selected(db, user_id, base_id):
     preview_row = dict(base_row)
     base_plus_preview = int(base_row["plus"] or 0)
     base_assist_preview = int(base_row["r_assist_points"] or 0)
+    material_pluses_preview = [int(material_rows[0]["plus"] or 0), int(material_rows[1]["plus"] or 0)]
     if material_mode == "r_n_assist":
         preview_plus = base_plus_preview + (1 if base_assist_preview + R_PART_N_ASSIST_GAIN >= R_PART_N_ASSIST_THRESHOLD else 0)
     else:
-        preview_plus = base_plus_preview + 1
+        preview_plus = base_plus_preview + _strengthen_same_part_gain(material_pluses_preview)
     preview_row["plus"] = min(int(MAX_PART_PLUS), preview_plus)
     compare_payload = _part_card_payload(base_row, compare_row=preview_row)
 
@@ -36126,6 +36127,9 @@ def _strengthen_parts_selected(db, user_id, base_id):
             inc = 1 if assist_after >= int(R_PART_N_ASSIST_THRESHOLD) else 0
             if inc:
                 assist_after -= int(R_PART_N_ASSIST_THRESHOLD)
+        else:
+            inc = _strengthen_same_part_gain(material_pluses)
+            bonus = max(0, int(mat_plus_sum))
         new_plus = min(int(MAX_PART_PLUS), base_plus + inc)
         db.execute("BEGIN IMMEDIATE")
         db.execute("UPDATE users SET coins = coins - ? WHERE id = ?", (coin_cost, int(user_id)))
@@ -36197,6 +36201,10 @@ def _strengthen_part_type_sort_value(part_type):
         "LEFT_ARM": 3,
         "LEGS": 4,
     }.get(str(part_type or "").strip().upper(), 9)
+
+
+def _strengthen_same_part_gain(material_pluses):
+    return max(1, 1 + sum(max(0, int(value or 0)) for value in (material_pluses or [])))
 
 
 def _strengthen_base_sort_key(row):
@@ -36366,12 +36374,16 @@ def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
     while current_plus < int(MAX_PART_PLUS) and len(material_rows) - cursor >= 2:
         pair = [dict(material_rows[cursor]), dict(material_rows[cursor + 1])]
         cursor += 2
-        next_plus = min(int(MAX_PART_PLUS), current_plus + 1)
+        material_pluses = [int(pair[0].get("plus") or 0), int(pair[1].get("plus") or 0)]
+        inc = _strengthen_same_part_gain(material_pluses)
+        next_plus = min(int(MAX_PART_PLUS), current_plus + inc)
         cost = int(FUSE_COST_BY_PLUS.get(int(current_plus), 20))
         runs.append(
             {
                 "from_plus": int(current_plus),
                 "to_plus": int(next_plus),
+                "inc": int(inc),
+                "material_pluses": material_pluses,
                 "coin_cost": int(cost),
                 "consumed_ids": [int(pair[0]["id"]), int(pair[1]["id"])],
             }
@@ -37394,7 +37406,9 @@ def parts_strengthen():
             if len(materials) != 2:
                 continue
             next_row = dict(row_dict)
-            next_row["plus"] = min(int(MAX_PART_PLUS), int(next_row.get("plus") or 0) + 1)
+            material_pluses = [int(material.get("plus") or 0) for material in materials]
+            material_gain = _strengthen_same_part_gain(material_pluses)
+            next_row["plus"] = min(int(MAX_PART_PLUS), int(next_row.get("plus") or 0) + material_gain)
             candidate_item = _part_card_payload(row_dict, compare_row=next_row)
             candidate_item["group_display_name"] = group_display_name
             candidate_item["part_key"] = group_row["part_key"]
@@ -37411,11 +37425,13 @@ def parts_strengthen():
             candidate_item["material_notice"] = (
                 "装備中ベースのまま強化できます。素材は所持中から2個使います。"
                 if row_status == "equipped"
-                else "素材は所持中から2個使います。"
+                else "素材は所持中から2個使います。素材の+値も引き継がれます。"
             )
             candidate_item["expected_plus_text"] = (
                 f"+{int(row_dict.get('plus') or 0)} → +{int(next_row.get('plus') or 0)}"
             )
+            candidate_item["expected_gain"] = int(material_gain)
+            candidate_item["target_plus"] = int(next_row.get("plus") or 0)
             candidate_item["stack_key"] = f"{group_row['part_key']}|{group_row['rarity']}|{int(row_dict['id'])}"
             base_candidates.append(candidate_item)
         batch_base_rows = sorted(

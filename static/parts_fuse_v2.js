@@ -75,7 +75,7 @@
       selectedCountEl.textContent = "0";
       baseSelectedEl.textContent = "未選択";
       materialSelectedEl.textContent = "同じパーツの所持中2個を使います";
-      resultExpectedEl.textContent = "+1固定";
+      resultExpectedEl.textContent = "素材の+値を引き継ぎ";
       submitBtn.disabled = true;
       return;
     }
@@ -85,8 +85,8 @@
     materialSelectedEl.textContent = String(stack.dataset.materialLabels || "同じパーツの所持中2個を使います");
     const partLabel = String(stack.dataset.partLabel || "パーツ");
     const basePlus = Number(stack.dataset.basePlus || 0);
-    const inc = 1;
-    resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${basePlus + inc}（+1固定）`;
+    const targetPlus = Number(stack.dataset.targetPlus || basePlus);
+    resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${targetPlus}（素材+値引き継ぎ）`;
     submitBtn.disabled = false;
   }
 
