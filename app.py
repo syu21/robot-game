@@ -23500,6 +23500,11 @@ def inject_ui_effects():
 
 
 @app.context_processor
+def inject_fixed_nav_pref():
+    return {"fixed_nav_hidden": bool(session.get("fixed_nav_hidden"))}
+
+
+@app.context_processor
 def inject_app_meta():
     maintenance_mode = "off" if _is_trial_session() else _maintenance_mode()
     return {
@@ -25561,6 +25566,20 @@ def debug_ui_effects_off():
     return redirect(next_path)
 
 
+@app.route("/settings/fixed-nav/hide", methods=["POST"])
+@login_required
+def settings_fixed_nav_hide():
+    session["fixed_nav_hidden"] = True
+    return _safe_home_next_redirect()
+
+
+@app.route("/settings/fixed-nav/show", methods=["POST"])
+@login_required
+def settings_fixed_nav_show():
+    session["fixed_nav_hidden"] = False
+    return _safe_home_next_redirect()
+
+
 @app.route("/logout")
 def logout():
     session.clear()
@@ -26275,6 +26294,7 @@ def home():
     show_home_visibility_controls = bool(
         show_home_visibility_controls
         or daily_research_available
+        or bool(session.get("fixed_nav_hidden"))
     )
     daily_research_area_key = saved_explore_area_key or selected_explore_area_key or "layer_1"
     daily_research_task_line = None
@@ -26704,7 +26724,7 @@ def home_starter_robot_name_skip():
 
 def _safe_home_next_redirect():
     next_path = (request.form.get("next") or "").strip()
-    if next_path.startswith("/"):
+    if next_path.startswith("/") and not next_path.startswith("//"):
         return redirect(next_path)
     return redirect(url_for("home"))
 

@@ -13009,3 +13009,92 @@ body#page-world .world-competition-grid {
   margin: 0;
 }
 
+.robo-fixed-nav-hide-form {
+  flex: 0 0 auto;
+}
+
+.robo-fixed-nav-item {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  background: rgba(30, 41, 59, 0.9);
+}
+
+button.robo-fixed-nav-item {
+  width: 100%;
+  cursor: pointer;
+}
+
+.robo-fixed-nav-toggle {
+  padding-inline: 9px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.robo-fixed-nav-item.is-active {
+  border-color: rgba(56, 189, 248, 0.62);
+  color: #e0f2fe;
+  background: rgba(14, 116, 144, 0.42);
+}
+
+.robo-fixed-nav-explore.is-ready {
+  border-color: rgba(34, 197, 94, 0.65);
+  color: #ecfdf5;
+  background: rgba(22, 101, 52, 0.78);
+}
+
+.robo-fixed-nav-explore.is-waiting,
+.robo-fixed-nav-explore:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+  opacity: 0.72;
+  background: rgba(51, 65, 85, 0.72);
+}
+
+.parts-bottom-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 18px 0 4px;
+}
+
+.parts-bottom-actions a {
+  padding: 9px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-weight: 700;
+  text-decoration: none;
+  background: rgba(30, 41, 59, 0.72);
+}
+
+@media (max-width: 520px) {
+  .robo-fixed-nav {
+    gap: 5px;
+    padding: 6px;
+  }
+
+  .robo-fixed-nav-item {
+    padding: 8px 7px;
+    font-size: 0.76rem;
+  }
+}
+
+.battle-inventory-status {
+  font-weight: 700;
+}
+
+.battle-inventory-note {
+  color: #facc15;
+}

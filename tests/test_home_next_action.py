@@ -283,6 +283,27 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("data-ready-at", html)
         self.assertIn("出撃OK", html)
 
+    def test_fixed_nav_can_be_hidden_and_restored_from_visibility_controls(self):
+        self._create_active_robot()
+        client = self._new_client()
+
+        hide_resp = client.post("/settings/fixed-nav/hide", data={"next": "/home"})
+        self.assertEqual(hide_resp.status_code, 302)
+        self.assertIn("/home", hide_resp.headers.get("Location", ""))
+
+        hidden_resp = client.get("/home")
+        self.assertEqual(hidden_resp.status_code, 200)
+        hidden_html = hidden_resp.get_data(as_text=True)
+        self.assertNotIn('<nav class="robo-fixed-nav"', hidden_html)
+        self.assertIn("表示調整", hidden_html)
+        self.assertIn("固定ショートカットを表示", hidden_html)
+
+        show_resp = client.post("/settings/fixed-nav/show", data={"next": "/home"})
+        self.assertEqual(show_resp.status_code, 302)
+        shown_html = client.get("/home").get_data(as_text=True)
+        self.assertIn('<nav class="robo-fixed-nav"', shown_html)
+        self.assertIn("隠す", shown_html)
+
     def test_home_today_progress_card_shows_empty_state(self):
         client = self._new_client()
         resp = client.get("/home")

@@ -32,7 +32,7 @@
 {% set home_restore_home_page = request.args.get('restore_home_page_js') == '1' %}
 <body
   id="page-{{ (request.endpoint or 'unknown')|replace('.', '-')|replace('_', '-') }}"
-  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore' or request.endpoint.startswith('champion')) %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}{% if quick_nav %} has-fixed-nav{% endif %}"
+  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore' or request.endpoint.startswith('champion')) %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}{% if quick_nav and not fixed_nav_hidden %} has-fixed-nav{% endif %}"
   data-page-name="{{ request.endpoint or 'unknown' }}"
   data-page-template="{{ request.endpoint or 'unknown' }}"
   data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"
@@ -93,7 +93,7 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
-  {% if quick_nav %}
+  {% if quick_nav and not fixed_nav_hidden %}
   <nav class="robo-fixed-nav" aria-label="主要導線">
     <a href="{{ url_for('home') }}" class="robo-fixed-nav-item {% if request.endpoint == 'home' %}is-active{% endif %}">基地</a>
     {% if quick_nav.can_direct_explore and quick_nav.area_key %}
@@ -118,6 +118,10 @@
     {% if quick_nav.show_market %}
     <a href="{{ url_for('market') }}" class="robo-fixed-nav-item {% if request.endpoint == 'market' %}is-active{% endif %}">市場</a>
     {% endif %}
+    <form method="post" action="{{ url_for('settings_fixed_nav_hide') }}" class="robo-fixed-nav-form robo-fixed-nav-hide-form">
+      <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}" />
+      <button type="submit" class="robo-fixed-nav-item robo-fixed-nav-toggle">隠す</button>
+    </form>
   </nav>
   {% endif %}
   {% if not no_js %}
@@ -137,7 +141,7 @@
     {% if load_header_scroll %}
       <script src="{{ url_for('static', filename='header_scroll_v2.js') }}?v={{ app_version }}"></script>
     {% endif %}
-    {% if quick_nav %}
+    {% if quick_nav and not fixed_nav_hidden %}
     <script>
     (function () {
       var buttons = document.querySelectorAll('.robo-fixed-nav-explore[data-ready-at]');

@@ -1088,6 +1088,12 @@
         <div><b>表示調整</b></div>
         {% if show_home_visibility_controls %}
         <div class="home-inline-actions">
+          {% if fixed_nav_hidden %}
+          <form method="post" action="{{ url_for('settings_fixed_nav_show') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}" />
+            <button type="submit" class="btn-secondary">固定ショートカットを表示</button>
+          </form>
+          {% endif %}
           {% if beginner_mission_available and not show_beginner_mission %}
           <form method="post" action="{{ url_for('home_beginner_mission_show') }}" class="inline-form inline-form-top">
             <input type="hidden" name="next" value="{{ request.path }}" />
