@@ -161,6 +161,9 @@
       {% else %}
       <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="{{ explore_area_key }}" />
+        {% if summary.get('next_explore_submission_id') %}
+        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+        {% endif %}
         {% if summary.get('explore_ct_is_admin') %}
         <button type="submit" id="explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="1" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
         {% elif (summary.get('explore_ct_remain') or 0) > 0 %}

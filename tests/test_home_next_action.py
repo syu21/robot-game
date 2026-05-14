@@ -280,6 +280,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("robo-fixed-nav", html)
         self.assertIn('action="/explore"', html)
         self.assertIn('name="area_key" value="layer_1"', html)
+        self.assertIn('name="explore_submission_id"', html)
         self.assertIn("data-ready-at", html)
         self.assertIn("出撃OK", html)
 
@@ -904,7 +905,7 @@ class HomeNextActionTests(unittest.TestCase):
             user = db.execute("SELECT last_explore_area_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(user["last_explore_area_key"], "layer_1")
 
-    def test_explore_reuses_same_battle_id_on_post_resend(self):
+    def test_explore_post_resend_does_not_grant_rewards_twice(self):
         self._create_active_robot()
         client = self._new_client()
         home = client.get("/home")
@@ -913,12 +914,26 @@ class HomeNextActionTests(unittest.TestCase):
         m = re.search(r'name="explore_submission_id" value="([^"]+)"', html)
         self.assertIsNotNone(m)
         submission_id = m.group(1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            before = db.execute(
+                """
+                SELECT u.wins, u.coins, COUNT(pi.id) AS part_count
+                FROM users u
+                LEFT JOIN part_instances pi ON pi.user_id = u.id
+                WHERE u.id = ?
+                GROUP BY u.id
+                """,
+                (self.user_id,),
+            ).fetchone()
 
-        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+        with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False), mock.patch.object(
+            game_app, "_market_part_drop_chance", return_value=1.0
+        ):
             resp1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
             self.assertEqual(resp1.status_code, 200)
             resp2 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
-            self.assertEqual(resp2.status_code, 200)
+            self.assertEqual(resp2.status_code, 302)
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -932,13 +947,22 @@ class HomeNextActionTests(unittest.TestCase):
                 """,
                 (self.user_id,),
             ).fetchall()
-            self.assertGreaterEqual(len(rows), 2)
-            payload1 = json.loads(rows[0]["payload_json"] or "{}")
-            payload2 = json.loads(rows[1]["payload_json"] or "{}")
-            battle_id_1 = (((payload1.get("result") or {}).get("battle_id")) or "")
-            battle_id_2 = (((payload2.get("result") or {}).get("battle_id")) or "")
-            self.assertTrue(battle_id_1)
-            self.assertEqual(battle_id_1, battle_id_2)
+            self.assertEqual(len(rows), 1)
+            payload = json.loads(rows[0]["payload_json"] or "{}")
+            self.assertTrue(((payload.get("result") or {}).get("battle_id")) or "")
+            after = db.execute(
+                """
+                SELECT u.wins, u.coins, COUNT(pi.id) AS part_count
+                FROM users u
+                LEFT JOIN part_instances pi ON pi.user_id = u.id
+                WHERE u.id = ?
+                GROUP BY u.id
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(after["wins"] or 0), int(before["wins"] or 0) + 1)
+            self.assertGreater(int(after["coins"] or 0), int(before["coins"] or 0))
+            self.assertEqual(int(after["part_count"] or 0), int(before["part_count"] or 0) + 1)
 
 
 if __name__ == "__main__":

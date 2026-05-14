@@ -99,6 +99,9 @@
     {% if quick_nav.can_direct_explore and quick_nav.area_key %}
     <form method="post" action="{{ url_for('explore') }}" class="robo-fixed-nav-form">
       <input type="hidden" name="area_key" value="{{ quick_nav.area_key }}" />
+      {% if quick_nav.explore_submission_id %}
+      <input type="hidden" name="explore_submission_id" value="{{ quick_nav.explore_submission_id }}" />
+      {% endif %}
       <button
         type="submit"
         class="robo-fixed-nav-item robo-fixed-nav-explore {% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}{% if quick_nav.ct_remain|int <= 0 %} is-ready{% else %} is-waiting{% endif %}"

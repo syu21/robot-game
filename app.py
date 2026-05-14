@@ -7376,6 +7376,36 @@ def _battle_id_for_explore_submission(submission_id):
     return battle_id
 
 
+def _explore_end_row_for_battle_id(db, user_id, battle_id):
+    battle_key = str(battle_id or "").strip()
+    if not battle_key:
+        return None
+    return db.execute(
+        """
+        SELECT id, payload_json
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND json_extract(payload_json, '$.result.battle_id') = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"], battle_key),
+    ).fetchone()
+
+
+def _redirect_processed_explore_result(db, user_id, battle_id):
+    if not _explore_end_row_for_battle_id(db, user_id, battle_id):
+        return None
+    saved = session.get("last_battle_result") or {}
+    saved_summary = saved.get("summary") or {}
+    if int(saved.get("user_id") or 0) == int(user_id) and str(saved_summary.get("battle_id") or "") == str(battle_id):
+        flash("この出撃結果はすでに反映済みです。", "notice")
+        return redirect(url_for("battle_result"))
+    session["message"] = "この出撃はすでに反映済みです。勝利数や戦利品は重複して増えません。"
+    return redirect(url_for("home"))
+
+
 def _robot_style_description(style_key):
     return (ROBOT_STYLE_DEFINITIONS.get(style_key) or {}).get("description_jp", "長く戦って確実に勝つ型")
 
@@ -8876,6 +8906,7 @@ def _refresh_battle_result_summary(db, user_id, user_row, summary):
     reward_front["part_rows"] = rows
     refreshed["reward_front"] = reward_front
     refreshed["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user_row)
+    refreshed["next_explore_submission_id"] = _issue_explore_submission_id()
 
     remain, _ = _explore_remaining_seconds_for_user(db, user_row, user_id)
     is_admin = bool(int(user_row["is_admin"] or 0) == 1)
@@ -23565,6 +23596,7 @@ def inject_quick_nav():
                 "ct_ready_at": int(time.time()) + int(ct_remain),
                 "area_key": area_key,
                 "can_direct_explore": bool(area_key and user["active_robot_id"]),
+                "explore_submission_id": (_issue_explore_submission_id() if area_key and user["active_robot_id"] else ""),
                 "show_market": bool(_market_can_access(db, user)),
             }
         }
@@ -28954,6 +28986,7 @@ def explore():
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
     explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
+    battle_id = _battle_id_for_explore_submission(explore_submission_id)
     battle_debug = (request.args.get("debug") or "").strip() == "1"
     boss_enter_requested = (request.form.get("boss_enter") or "").strip().lower() in {"1", "true", "on", "yes"}
     area = next((a for a in EXPLORE_AREAS if a["key"] == area_key), None)
@@ -28981,6 +29014,9 @@ def explore():
     if _get_active_robot(db, user_id) is None:
         session["message"] = "先にロボを組み立てよう。/build で保存できます。"
         return redirect(url_for("build"))
+    duplicate_redirect = _redirect_processed_explore_result(db, user_id, battle_id)
+    if duplicate_redirect is not None:
+        return duplicate_redirect
     evolution_feature_unlocked = _evolution_feature_unlocked(db, user=user, user_id=user_id)
 
     now = _now_ts()
@@ -29080,7 +29116,6 @@ def explore():
     spawned_bonus_applied = False
     promoted_drop_applied = False
     battle_results = []
-    battle_id = _battle_id_for_explore_submission(explore_submission_id)
     damage_taken_total = 0
     crit_finisher_kills = 0
     consecutive_bonus_applied = False
@@ -30728,6 +30763,7 @@ def explore():
         "outcome": outcome_display,
         "outcome_base": ("勝利" if final_outcome == "win" else "敗北"),
         "outcome_is_win": bool(final_outcome == "win"),
+        "battle_id": battle_id,
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
         "lab_level_result": lab_level_result,
@@ -30831,6 +30867,7 @@ def explore():
         drop_items=drop_items,
     )
     summary["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user)
+    summary["next_explore_submission_id"] = _issue_explore_submission_id()
     if area_boss_reward and area_boss_reward.get("decor_name"):
         summary["boss_reward_display"] = {
             "name": area_boss_reward.get("decor_name"),
