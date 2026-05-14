@@ -23637,6 +23637,8 @@ def inject_quick_nav():
             "index",
             "login",
             "register",
+            "explore",
+            "battle_result",
             "terms",
             "privacy",
             "commerce",
@@ -23662,10 +23664,12 @@ def inject_quick_nav():
         available_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
         area_key = _default_explore_area_key(user, available_areas, db=db)
         ct_remain = 0 if is_admin else max(0, int(remain or 0))
+        server_now = int(time.time())
         return {
             "quick_nav": {
                 "ct_remain": ct_remain,
-                "ct_ready_at": int(time.time()) + int(ct_remain),
+                "ct_ready_at": server_now + int(ct_remain),
+                "server_now": server_now,
                 "area_key": area_key,
                 "can_direct_explore": bool(area_key and user["active_robot_id"]),
                 "explore_submission_id": (_issue_explore_submission_id() if area_key and user["active_robot_id"] else ""),

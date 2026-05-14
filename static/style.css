@@ -13061,40 +13061,31 @@ button.robo-fixed-nav-item {
   background: rgba(51, 65, 85, 0.72);
 }
 
+.robo-fixed-nav-restore-form {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  margin: 0;
+}
+
+.robo-fixed-nav-restore {
+  padding: 10px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.34);
+}
+
+.battle-result-saved-note {
+  margin: -6px 0 14px;
+  text-align: center;
+}
+
 .parts-bottom-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin: 18px 0 4px;
-}
-
-.parts-bottom-actions a {
-  padding: 9px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  color: #e5e7eb;
-  font-weight: 700;
-  text-decoration: none;
-  background: rgba(30, 41, 59, 0.72);
-}
-
-@media (max-width: 520px) {
-  .robo-fixed-nav {
-    gap: 5px;
-    padding: 6px;
-  }
-
-  .robo-fixed-nav-item {
-    padding: 8px 7px;
-    font-size: 0.76rem;
-  }
-}
-
-.battle-inventory-status {
-  font-weight: 700;
-}
-
-.battle-inventory-note {
-  color: #facc15;
-}

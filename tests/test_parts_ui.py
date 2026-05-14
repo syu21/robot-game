@@ -370,7 +370,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("btn-unlock", html)
         self.assertIn("保護中：素材・売却・処分に使えません", html)
         self.assertEqual(html.count("保護中：素材・売却・処分に使えません"), 2)
-        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
+        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
 
         resp = client.post(
             "/parts/discard",
@@ -633,6 +633,7 @@ class PartsUiTests(unittest.TestCase):
             self.assertIn("保護する", html)
             self.assertIn("/parts/123/lock", html)
             self.assertIn("/battle/result#part-123", html)
+            self.assertIn("勝敗と戦利品は保存済みです。", html)
 
             base_summary["reward_front"] = sold_front
             with game_app.app.test_request_context("/explore"):
@@ -681,7 +682,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ強化", html)
-        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
+        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("素材として使う2個", html)
@@ -766,7 +767,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("現在装備", html)
         self.assertIn("総合差分", html)
         self.assertIn("詳細を開く", html)
-        self.assertIn("注目能力は、この個体で高く出やすい能力です。", html)
+        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 

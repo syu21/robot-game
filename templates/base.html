@@ -106,6 +106,7 @@
         type="submit"
         class="robo-fixed-nav-item robo-fixed-nav-explore {% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}{% if quick_nav.ct_remain|int <= 0 %} is-ready{% else %} is-waiting{% endif %}"
         data-ready-at="{{ quick_nav.ct_ready_at }}"
+        data-now="{{ quick_nav.server_now }}"
         {% if quick_nav.ct_remain|int > 0 %}disabled{% endif %}
       >{% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}</button>
     </form>
@@ -114,6 +115,7 @@
       href="{{ url_for('home') }}#explore"
       class="robo-fixed-nav-item robo-fixed-nav-explore {% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}{% if quick_nav.ct_remain|int <= 0 %} is-ready{% else %} is-waiting{% endif %}"
       data-ready-at="{{ quick_nav.ct_ready_at }}"
+      data-now="{{ quick_nav.server_now }}"
     >{% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}</a>
     {% endif %}
     <a href="{{ url_for('parts_strengthen') }}" class="robo-fixed-nav-item {% if request.endpoint == 'parts_strengthen' %}is-active{% endif %}">強化</a>
@@ -126,6 +128,11 @@
       <button type="submit" class="robo-fixed-nav-item robo-fixed-nav-toggle">隠す</button>
     </form>
   </nav>
+  {% elif quick_nav and fixed_nav_hidden %}
+  <form method="post" action="{{ url_for('settings_fixed_nav_show') }}" class="robo-fixed-nav-restore-form" aria-label="固定ナビを再表示">
+    <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}" />
+    <button type="submit" class="robo-fixed-nav-restore">メニュー</button>
+  </form>
   {% endif %}
   {% if not no_js %}
     {% set load_global_error_guard = (not is_home) or home_restore_global_error_guard %}
@@ -149,8 +156,10 @@
     (function () {
       var buttons = document.querySelectorAll('.robo-fixed-nav-explore[data-ready-at]');
       if (!buttons.length) return;
+      var clientStart = Math.floor(Date.now() / 1000);
+      var firstNow = parseInt(buttons[0].getAttribute('data-now') || '0', 10);
       function tick() {
-        var now = Math.floor(Date.now() / 1000);
+        var now = (firstNow > 0) ? firstNow + (Math.floor(Date.now() / 1000) - clientStart) : Math.floor(Date.now() / 1000);
         buttons.forEach(function (button) {
           var readyAt = parseInt(button.getAttribute('data-ready-at') || '0', 10);
           var remain = Math.max(0, readyAt - now);
