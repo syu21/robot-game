@@ -1123,6 +1123,19 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS battle_result_cache (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            area_key TEXT NOT NULL,
+            area_label TEXT,
+            summary_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_battle_result_cache_user_created ON battle_result_cache(user_id, created_at)")
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS daily_research_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

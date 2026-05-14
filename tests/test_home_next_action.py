@@ -932,8 +932,24 @@ class HomeNextActionTests(unittest.TestCase):
         ):
             resp1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
             self.assertEqual(resp1.status_code, 200)
+            with client.session_transaction() as sess:
+                self.assertNotIn("last_battle_result", sess)
+                self.assertTrue(sess.get("last_battle_result_id"))
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                after_first = db.execute(
+                    """
+                    SELECT u.wins, u.coins, COUNT(pi.id) AS part_count
+                    FROM users u
+                    LEFT JOIN part_instances pi ON pi.user_id = u.id
+                    WHERE u.id = ?
+                    GROUP BY u.id
+                    """,
+                    (self.user_id,),
+                ).fetchone()
             resp2 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
             self.assertEqual(resp2.status_code, 302)
+            self.assertIn("/battle/result", resp2.headers.get("Location", ""))
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -950,7 +966,13 @@ class HomeNextActionTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             payload = json.loads(rows[0]["payload_json"] or "{}")
             self.assertTrue(((payload.get("result") or {}).get("battle_id")) or "")
-            after = db.execute(
+            battle_id = ((payload.get("result") or {}).get("battle_id")) or ""
+            cache_row = db.execute(
+                "SELECT summary_json FROM battle_result_cache WHERE id = ? AND user_id = ?",
+                (battle_id, self.user_id),
+            ).fetchone()
+            self.assertIsNotNone(cache_row)
+            after_second = db.execute(
                 """
                 SELECT u.wins, u.coins, COUNT(pi.id) AS part_count
                 FROM users u
@@ -960,9 +982,12 @@ class HomeNextActionTests(unittest.TestCase):
                 """,
                 (self.user_id,),
             ).fetchone()
-            self.assertEqual(int(after["wins"] or 0), int(before["wins"] or 0) + 1)
-            self.assertGreater(int(after["coins"] or 0), int(before["coins"] or 0))
-            self.assertEqual(int(after["part_count"] or 0), int(before["part_count"] or 0) + 1)
+            self.assertEqual(int(after_first["wins"] or 0), int(before["wins"] or 0) + 1)
+            self.assertGreater(int(after_first["coins"] or 0), int(before["coins"] or 0))
+            self.assertGreater(int(after_first["part_count"] or 0), int(before["part_count"] or 0))
+            self.assertEqual(int(after_second["wins"] or 0), int(after_first["wins"] or 0))
+            self.assertEqual(int(after_second["coins"] or 0), int(after_first["coins"] or 0))
+            self.assertEqual(int(after_second["part_count"] or 0), int(after_first["part_count"] or 0))
 
 
 if __name__ == "__main__":

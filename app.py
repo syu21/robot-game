@@ -7397,9 +7397,7 @@ def _explore_end_row_for_battle_id(db, user_id, battle_id):
 def _redirect_processed_explore_result(db, user_id, battle_id):
     if not _explore_end_row_for_battle_id(db, user_id, battle_id):
         return None
-    saved = session.get("last_battle_result") or {}
-    saved_summary = saved.get("summary") or {}
-    if int(saved.get("user_id") or 0) == int(user_id) and str(saved_summary.get("battle_id") or "") == str(battle_id):
+    if str(session.get("last_battle_result_id") or "") == str(battle_id):
         flash("この出撃結果はすでに反映済みです。", "notice")
         return redirect(url_for("battle_result"))
     session["message"] = "この出撃はすでに反映済みです。勝利数や戦利品は重複して増えません。"
@@ -8877,13 +8875,61 @@ def _battle_result_session_summary(summary):
     return json.loads(json.dumps(compact, ensure_ascii=False, default=str))
 
 
-def _store_last_battle_result(user_id, *, summary, area_key, area_label):
-    session["last_battle_result"] = {
-        "user_id": int(user_id),
-        "area_key": str(area_key or ""),
-        "area_label": str(area_label or ""),
-        "summary": _battle_result_session_summary(summary),
-        "saved_at": int(time.time()),
+def _store_last_battle_result(db, user_id, *, summary, area_key, area_label):
+    summary_payload = _battle_result_session_summary(summary)
+    result_id = str(summary_payload.get("battle_id") or uuid.uuid4())
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO battle_result_cache
+        (id, user_id, area_key, area_label, summary_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            user_id = excluded.user_id,
+            area_key = excluded.area_key,
+            area_label = excluded.area_label,
+            summary_json = excluded.summary_json,
+            created_at = excluded.created_at
+        """,
+        (
+            result_id,
+            int(user_id),
+            str(area_key or ""),
+            str(area_label or ""),
+            json.dumps(summary_payload, ensure_ascii=False, default=str),
+            now_ts,
+        ),
+    )
+    db.execute("DELETE FROM battle_result_cache WHERE created_at < ?", (now_ts - 86400 * 3,))
+    session["last_battle_result_id"] = result_id
+    session.pop("last_battle_result", None)
+    return result_id
+
+
+def _load_battle_result_cache(db, user_id, result_id):
+    key = str(result_id or "").strip()
+    if not key:
+        return None
+    row = db.execute(
+        """
+        SELECT id, area_key, area_label, summary_json
+        FROM battle_result_cache
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+        """,
+        (key, int(user_id)),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        summary = json.loads(row["summary_json"] or "{}")
+    except Exception:
+        summary = {}
+    return {
+        "id": row["id"],
+        "area_key": row["area_key"],
+        "area_label": row["area_label"],
+        "summary": summary,
     }
 
 
@@ -10234,6 +10280,19 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS battle_result_cache (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            area_key TEXT NOT NULL,
+            area_label TEXT,
+            summary_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_battle_result_cache_user_created ON battle_result_cache(user_id, created_at)")
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_user_id INTEGER NOT NULL,
@@ -11292,6 +11351,19 @@ def ensure_schema(db):
         db.execute("ALTER TABLE world_events_log ADD COLUMN delta_coins INTEGER")
     if "delta_count" not in wel_cols:
         db.execute("ALTER TABLE world_events_log ADD COLUMN delta_count INTEGER")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battle_result_cache (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            area_key TEXT NOT NULL,
+            area_label TEXT,
+            summary_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_battle_result_cache_user_created ON battle_result_cache(user_id, created_at)")
     mini_robot_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_mini_robots)").fetchall()}
     mini_robot_column_defs = {
         "personality_key": "personality_key TEXT DEFAULT NULL",
@@ -30925,11 +30997,13 @@ def explore():
     )
     summary["battle_replay"] = summary["battle_cinematic"]
     _store_last_battle_result(
+        db,
         user_id,
         summary=summary,
         area_key=area["key"],
         area_label=area["label"],
     )
+    db.commit()
     return render_template(
         "battle.html",
         state={"active": 0, "enemy_name": summary["enemy_name"], "enemy_hp": 0},
@@ -30955,12 +31029,13 @@ def explore():
 @app.route("/battle/result")
 @login_required
 def battle_result():
-    saved = session.get("last_battle_result") or {}
     user_id = int(session["user_id"])
-    if int(saved.get("user_id") or 0) != user_id or not saved.get("summary"):
+    db = get_db()
+    session.pop("last_battle_result", None)
+    saved = _load_battle_result_cache(db, user_id, session.get("last_battle_result_id"))
+    if not saved or not saved.get("summary"):
         flash("戦闘結果を再表示できませんでした。", "error")
         return redirect(url_for("home"))
-    db = get_db()
     user = db.execute(
         "SELECT id, is_admin, part_inventory_limit FROM users WHERE id = ?",
         (user_id,),
