@@ -2157,7 +2157,8 @@ body.lightbox-open .lightbox-overlay {
   border: 1px solid rgba(33, 28, 20, 0.18);
   background: #f6f1e6;
   image-rendering: pixelated;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   flex: 0 0 auto;
 }
 .presence-user-line {
@@ -6808,6 +6809,16 @@ body.home-page .locked-layer-card {
   border-radius: 8px;
   background: rgba(255, 250, 240, 0.92);
   color: #5b3b11;
+  font-size: 13px;
+}
+.market-inventory-note {
+  max-width: 1120px;
+  margin: 8px auto 14px;
+  padding: 9px 12px;
+  border: 1px solid rgba(46, 125, 50, 0.24);
+  border-radius: 8px;
+  background: rgba(237, 247, 237, 0.94);
+  color: #24562a;
   font-size: 13px;
 }
 .market-section-heading {
@@ -12907,4 +12918,94 @@ body#page-world .world-competition-grid {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2
+  gap: 2px;
+  max-width: 58px;
+  pointer-events: none;
+}
+
+.recent-robot-badges span {
+  max-width: 58px;
+  padding: 2px 5px;
+  font-size: 0.58rem;
+  line-height: 1.05;
+}
+
+.recent-robot-name,
+.recent-robot-unit {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recent-robot-status {
+  justify-content: center;
+  min-height: 22px;
+}
+
+.boss-unlock-inline,
+.boss-unlock-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: 0.86rem;
+}
+
+.boss-unlock-inline span,
+.boss-unlock-lines div {
+  padding: 3px 7px;
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  border-radius: 6px;
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.parts-danger-zone {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.parts-danger-zone summary {
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.btn-danger-subtle {
+  margin-top: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  background: rgba(127, 29, 29, 0.18);
+  color: #fecaca;
+}
+
+.has-fixed-nav {
+  padding-bottom: calc(82px + env(safe-area-inset-bottom));
+}
+
+.robo-fixed-nav {
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: min(96vw, 720px);
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.38);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+}
+
+.robo-fixed-nav-form {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+

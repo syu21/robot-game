@@ -87,6 +87,8 @@ class MarketRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("今日の入荷", html)
+        self.assertIn("所持パーツ：", html)
+        self.assertIn("保管", html)
         self.assertIn("まとめて売る", html)
         self.assertIn("marketSellTotal", html)
         self.assertIn('id="marketSellSubmit">まとめて売る', html)

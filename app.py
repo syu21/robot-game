@@ -7904,6 +7904,7 @@ def _robot_metric_rows(db, metric_key, limit=50):
             continue
         metric_value = _robot_metric_value(metric_key, stat_obj.get("stats"))
         profile = _robot_profile_view(stat_obj)
+        icon_rel = _safe_static_rel(row["icon_32_path"]) if row["icon_32_path"] else None
         item = {
             "id": int(row["user_id"]),
             "user_id": int(row["user_id"]),
@@ -7913,7 +7914,10 @@ def _robot_metric_rows(db, metric_key, limit=50):
             "frame_type": _normalize_frame_type(row["frame_type"]),
             "frame_label": _frame_type_label(row["frame_type"]),
             "metric_value": int(metric_value),
-            "image_url": _composed_image_url(row["composed_image_path"], row["updated_at"]),
+            "image_url": _versioned_static_url(
+                icon_rel,
+                fallback_url=_composed_image_url(row["composed_image_path"], row["updated_at"]),
+            ),
             "profile": profile,
         }
         existing = best_by_user.get(item["user_id"])
@@ -23520,18 +23524,42 @@ def inject_quick_nav():
     if _is_trial_session() or not session.get("user_id"):
         return {"quick_nav": None}
     try:
+        endpoint = request.endpoint or ""
+        hidden_endpoints = {
+            "index",
+            "login",
+            "register",
+            "terms",
+            "privacy",
+            "commerce",
+            "contact",
+            "support",
+            "static",
+        }
+        if endpoint in hidden_endpoints or endpoint.startswith("admin"):
+            return {"quick_nav": None}
         db = get_db()
         user = db.execute(
-            "SELECT id, is_admin, part_inventory_limit FROM users WHERE id = ?",
+            """
+            SELECT id, is_admin, active_robot_id, last_explore_area_key, max_unlocked_layer, part_inventory_limit
+            FROM users
+            WHERE id = ?
+            """,
             (int(session["user_id"]),),
         ).fetchone()
         if not user:
             return {"quick_nav": None}
         remain, _ = _explore_remaining_seconds_for_user(db, user, int(user["id"]))
         is_admin = bool(int(user["is_admin"] or 0) == 1)
+        available_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
+        area_key = _default_explore_area_key(user, available_areas, db=db)
+        ct_remain = 0 if is_admin else max(0, int(remain or 0))
         return {
             "quick_nav": {
-                "ct_remain": 0 if is_admin else max(0, int(remain or 0)),
+                "ct_remain": ct_remain,
+                "ct_ready_at": int(time.time()) + int(ct_remain),
+                "area_key": area_key,
+                "can_direct_explore": bool(area_key and user["active_robot_id"]),
                 "show_market": bool(_market_can_access(db, user)),
             }
         }
@@ -26687,7 +26715,7 @@ def market():
     db = get_db()
     user_id = int(session["user_id"])
     user = db.execute(
-        "SELECT id, username, is_admin, coins, market_refresh_count_today, market_refresh_day_key FROM users WHERE id = ?",
+        "SELECT id, username, is_admin, coins, market_refresh_count_today, market_refresh_day_key, part_inventory_limit FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -26698,6 +26726,16 @@ def market():
     db.commit()
     state = _market_user_state(db, user_id) or {}
     refresh_cost = _market_refresh_cost(state.get("market_refresh_count_today", 0))
+    part_inventory_status = _part_inventory_status_payload(db, user_id, user)
+    market_inventory_note = ""
+    if int(part_inventory_status.get("limit") or 0) > 0 and int(part_inventory_status.get("count") or 0) >= int(
+        part_inventory_status.get("limit") or 0
+    ):
+        market_inventory_note = "所持枠がいっぱいです。購入前に整理すると選びやすくなります。"
+    elif int(part_inventory_status.get("limit") or 0) > 0 and int(part_inventory_status.get("count") or 0) >= max(
+        1, int(part_inventory_status.get("limit") or 0) - 2
+    ):
+        market_inventory_note = "そろそろ整理すると、買ったパーツを選びやすくなります。"
     return render_template(
         "market.html",
         user=state,
@@ -26706,6 +26744,8 @@ def market():
         sellable_parts=_market_sellable_part_rows(db, user_id),
         locked_sell_excluded_count=_market_locked_inventory_part_count(db, user_id),
         refresh_cost=refresh_cost,
+        part_inventory_status=part_inventory_status,
+        market_inventory_note=market_inventory_note,
         next_refresh_number=int(state.get("market_refresh_count_today") or 0) + 1,
         next_update_label=_market_next_update_label(),
     )
@@ -35616,6 +35656,7 @@ def parts():
             allow_all=True,
         ),
         show_evolution_actions=_evolution_feature_unlocked(db, user=user_row, user_id=user_id),
+        show_market_menu=_market_can_access(db, user_row),
     )
 
 

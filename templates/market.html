@@ -17,6 +17,14 @@
   保護中パーツ {{ locked_sell_excluded_count }}個は売却候補から除外されています。
   {% endif %}
 </div>
+{% if part_inventory_status %}
+<div class="market-inventory-note">
+  <div><b>所持パーツ：{{ part_inventory_status['count'] }} / {{ part_inventory_status['limit'] }}</b> | 保管 {{ part_inventory_status['storage_count'] }}</div>
+  {% if market_inventory_note %}
+  <div class="robot-time">{{ market_inventory_note }}</div>
+  {% endif %}
+</div>
+{% endif %}
 
 <section class="panel market-section">
   <div class="market-section-heading">

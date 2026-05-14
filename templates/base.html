@@ -32,7 +32,7 @@
 {% set home_restore_home_page = request.args.get('restore_home_page_js') == '1' %}
 <body
   id="page-{{ (request.endpoint or 'unknown')|replace('.', '-')|replace('_', '-') }}"
-  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore' or request.endpoint.startswith('champion')) %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}"
+  class="{% if request.endpoint == 'home' %}home-page{% endif %}{% if request.endpoint and request.endpoint.startswith('parts') %} parts-page{% endif %}{% if request.endpoint == 'robots' or (request.endpoint and request.endpoint.startswith('robot_')) %} robots-page{% endif %}{% if request.endpoint and (request.endpoint.startswith('battle') or request.endpoint == 'explore' or request.endpoint.startswith('champion')) %} battle-page{% endif %}{% if safe_mode %} safe-mode{% endif %}{% if not ui_effects_enabled %} ui-effects-off{% endif %}{% if quick_nav %} has-fixed-nav{% endif %}"
   data-page-name="{{ request.endpoint or 'unknown' }}"
   data-page-template="{{ request.endpoint or 'unknown' }}"
   data-ui-effects-enabled="{{ '1' if ui_effects_enabled else '0' }}"
@@ -81,19 +81,6 @@
     <div class="maintenance-banner-inner">{{ maintenance_banner_text }}</div>
   </div>
   {% endif %}
-  {% if quick_nav %}
-  <nav class="quick-nav-bar" aria-label="主要導線">
-    <a href="{{ url_for('home') }}" class="{% if request.endpoint == 'home' %}is-active{% endif %}">基地</a>
-    <a href="{{ url_for('home') }}#explore" class="{% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}">
-      {% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}
-    </a>
-    <a href="{{ url_for('parts_strengthen') }}" class="{% if request.endpoint == 'parts_strengthen' %}is-active{% endif %}">強化</a>
-    <a href="{{ url_for('parts') }}" class="{% if request.endpoint == 'parts' %}is-active{% endif %}">パーツ</a>
-    {% if quick_nav.show_market %}
-    <a href="{{ url_for('market') }}" class="{% if request.endpoint == 'market' %}is-active{% endif %}">市場</a>
-    {% endif %}
-  </nav>
-  {% endif %}
   <main class="container">
     {% if message %}<div class="notice">{{ message }}</div>{% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
@@ -106,6 +93,33 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  {% if quick_nav %}
+  <nav class="robo-fixed-nav" aria-label="主要導線">
+    <a href="{{ url_for('home') }}" class="robo-fixed-nav-item {% if request.endpoint == 'home' %}is-active{% endif %}">基地</a>
+    {% if quick_nav.can_direct_explore and quick_nav.area_key %}
+    <form method="post" action="{{ url_for('explore') }}" class="robo-fixed-nav-form">
+      <input type="hidden" name="area_key" value="{{ quick_nav.area_key }}" />
+      <button
+        type="submit"
+        class="robo-fixed-nav-item robo-fixed-nav-explore {% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}{% if quick_nav.ct_remain|int <= 0 %} is-ready{% else %} is-waiting{% endif %}"
+        data-ready-at="{{ quick_nav.ct_ready_at }}"
+        {% if quick_nav.ct_remain|int > 0 %}disabled{% endif %}
+      >{% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}</button>
+    </form>
+    {% else %}
+    <a
+      href="{{ url_for('home') }}#explore"
+      class="robo-fixed-nav-item robo-fixed-nav-explore {% if request.endpoint == 'explore' or request.endpoint == 'battle_result' %}is-active{% endif %}{% if quick_nav.ct_remain|int <= 0 %} is-ready{% else %} is-waiting{% endif %}"
+      data-ready-at="{{ quick_nav.ct_ready_at }}"
+    >{% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}</a>
+    {% endif %}
+    <a href="{{ url_for('parts_strengthen') }}" class="robo-fixed-nav-item {% if request.endpoint == 'parts_strengthen' %}is-active{% endif %}">強化</a>
+    <a href="{{ url_for('parts') }}" class="robo-fixed-nav-item {% if request.endpoint == 'parts' %}is-active{% endif %}">パーツ</a>
+    {% if quick_nav.show_market %}
+    <a href="{{ url_for('market') }}" class="robo-fixed-nav-item {% if request.endpoint == 'market' %}is-active{% endif %}">市場</a>
+    {% endif %}
+  </nav>
+  {% endif %}
   {% if not no_js %}
     {% set load_global_error_guard = (not is_home) or home_restore_global_error_guard %}
     {% set load_base_cleanup = (not no_layout_js) and ((not is_home) or home_restore_base_cleanup) and (not no_base_cleanup) %}
@@ -122,6 +136,34 @@
     {% endif %}
     {% if load_header_scroll %}
       <script src="{{ url_for('static', filename='header_scroll_v2.js') }}?v={{ app_version }}"></script>
+    {% endif %}
+    {% if quick_nav %}
+    <script>
+    (function () {
+      var buttons = document.querySelectorAll('.robo-fixed-nav-explore[data-ready-at]');
+      if (!buttons.length) return;
+      function tick() {
+        var now = Math.floor(Date.now() / 1000);
+        buttons.forEach(function (button) {
+          var readyAt = parseInt(button.getAttribute('data-ready-at') || '0', 10);
+          var remain = Math.max(0, readyAt - now);
+          if (remain > 0) {
+            button.textContent = '出撃 ' + remain + '秒';
+            button.classList.remove('is-ready');
+            button.classList.add('is-waiting');
+            if ('disabled' in button) button.disabled = true;
+          } else {
+            button.textContent = '出撃OK';
+            button.classList.remove('is-waiting');
+            button.classList.add('is-ready');
+            if ('disabled' in button) button.disabled = false;
+          }
+        });
+      }
+      tick();
+      window.setInterval(tick, 1000);
+    })();
+    </script>
     {% endif %}
     {% if load_page_scripts %}
     {% block scripts %}{% endblock %}

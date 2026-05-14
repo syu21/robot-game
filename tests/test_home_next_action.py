@@ -271,6 +271,18 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("パーツ在庫: 所持 4 / 4", html)
         self.assertIn("所持 4/4 | 保管 2", html)
 
+    def test_fixed_nav_uses_direct_explore_form_when_ready(self):
+        self._create_active_robot()
+        client = self._new_client()
+        resp = client.get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("robo-fixed-nav", html)
+        self.assertIn('action="/explore"', html)
+        self.assertIn('name="area_key" value="layer_1"', html)
+        self.assertIn("data-ready-at", html)
+        self.assertIn("出撃OK", html)
+
     def test_home_today_progress_card_shows_empty_state(self):
         client = self._new_client()
         resp = client.get("/home")
