@@ -103,6 +103,23 @@ class RobotMaintenanceTests(unittest.TestCase):
             sess["username"] = "maintenance_tester"
         return client
 
+    def _fill_inventory_to(self, target_count):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET part_inventory_limit = 60 WHERE id = ?", (self.user_id,))
+            part = db.execute(
+                "SELECT * FROM robot_parts WHERE part_type = 'HEAD' AND is_active = 1 ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            while game_app._count_part_inventory(db, self.user_id) < int(target_count):
+                game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    part,
+                    plus=0,
+                    status="inventory",
+                )
+            db.commit()
+
     def test_robot_maintenance_swaps_slot_and_refreshes_assets(self):
         client = self._client()
         get_resp = client.get(f"/robots/{self.robot_id}/maintenance?slot=HEAD")
@@ -171,6 +188,47 @@ class RobotMaintenanceTests(unittest.TestCase):
             self.assertEqual(payload.get("changed_slots"), ["HEAD"])
             self.assertEqual(int((payload.get("after_part_ids") or {}).get("HEAD") or 0), self.candidate_head_instance_id)
 
+    def test_robot_decompose_blocks_when_returned_parts_exceed_inventory_limit(self):
+        self._fill_inventory_to(57)
+        client = self._client()
+
+        resp = client.post(f"/robot-instance/{self.robot_id}/decompose", follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+
+        with client.session_transaction() as sess:
+            self.assertEqual(
+                sess.get("message"),
+                "分解すると所持パーツが上限を超えます。先にパーツを整理してから分解してください。",
+            )
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            robot_row = db.execute("SELECT status FROM robot_instances WHERE id = ?", (self.robot_id,)).fetchone()
+            self.assertEqual(robot_row["status"], "active")
+            self.assertEqual(game_app._count_part_inventory(db, self.user_id), 57)
+
+        self._fill_inventory_to(60)
+        resp = client.post(f"/robot-instance/{self.robot_id}/decompose", follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            robot_row = db.execute("SELECT status FROM robot_instances WHERE id = ?", (self.robot_id,)).fetchone()
+            self.assertEqual(robot_row["status"], "active")
+            self.assertEqual(game_app._count_part_inventory(db, self.user_id), 60)
+
+    def test_robot_decompose_allows_when_returned_parts_fit_inventory_limit(self):
+        self._fill_inventory_to(56)
+        client = self._client()
+
+        resp = client.post(f"/robot-instance/{self.robot_id}/decompose", follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            robot_row = db.execute("SELECT status FROM robot_instances WHERE id = ?", (self.robot_id,)).fetchone()
+            self.assertEqual(robot_row["status"], "decomposed")
+            self.assertEqual(game_app._count_part_inventory(db, self.user_id), 60)
+
     def test_robot_maintenance_updates_decor_after_backfilling_part_instances(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -217,78 +275,4 @@ class RobotMaintenanceTests(unittest.TestCase):
                 FROM robot_instance_decors
                 WHERE robot_instance_id = ?
                 """,
-                (self.robot_id,),
-            ).fetchone()
-            self.assertIsNotNone(slot_row)
-            self.assertEqual(int(slot_row["decor_asset_id"]), int(decor["id"]))
-            self.assertEqual(int(slot_row["slot_index"]), 0)
-
-    def test_robot_maintenance_updates_multiple_decor_slots_with_offsets(self):
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            decor_rows = db.execute(
-                "SELECT id FROM robot_decor_assets ORDER BY id ASC LIMIT 2"
-            ).fetchall()
-            self.assertGreaterEqual(len(decor_rows), 2)
-            decor_ids = [int(row["id"]) for row in decor_rows]
-            now = int(time.time())
-            for decor_id in decor_ids:
-                db.execute(
-                    "INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at) VALUES (?, ?, ?)",
-                    (self.user_id, decor_id, now),
-                )
-            db.commit()
-
-        client = self._client()
-        resp = client.post(
-            f"/robots/{self.robot_id}/maintenance?slot=DECOR",
-            data={
-                "slot": "DECOR",
-                "decor_slot_index": "1",
-                "decor_asset_id": str(decor_ids[1]),
-                "offset_x": "18",
-                "offset_y": "7",
-            },
-            follow_redirects=False,
-        )
-        self.assertIn(resp.status_code, (302, 303))
-
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            slot_row = db.execute(
-                """
-                SELECT decor_asset_id, slot_index, offset_x, offset_y
-                FROM robot_instance_decors
-                WHERE robot_instance_id = ? AND slot_index = 1
-                """,
-                (self.robot_id,),
-            ).fetchone()
-            self.assertIsNotNone(slot_row)
-            self.assertEqual(int(slot_row["decor_asset_id"]), decor_ids[1])
-            self.assertEqual(int(slot_row["offset_x"]), 18)
-            self.assertEqual(int(slot_row["offset_y"]), 7)
-
-        clear_resp = client.post(
-            f"/robots/{self.robot_id}/maintenance?slot=DECOR",
-            data={
-                "slot": "DECOR",
-                "decor_slot_index": "1",
-                "decor_asset_id": "0",
-                "offset_x": "18",
-                "offset_y": "7",
-            },
-            follow_redirects=False,
-        )
-        self.assertIn(clear_resp.status_code, (302, 303))
-
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            slot_row = db.execute(
-                "SELECT id FROM robot_instance_decors WHERE robot_instance_id = ? AND slot_index = 1",
-                (self.robot_id,),
-            ).fetchone()
-            self.assertIsNone(slot_row)
-
-
-if __name__ == "__main__":
-    unittest.main()
+                (self.

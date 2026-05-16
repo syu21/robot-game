@@ -119,7 +119,12 @@
     >{% if quick_nav.ct_remain|int > 0 %}出撃 {{ quick_nav.ct_remain }}秒{% else %}出撃OK{% endif %}</a>
     {% endif %}
     <a href="{{ url_for('parts_strengthen') }}" class="robo-fixed-nav-item {% if request.endpoint == 'parts_strengthen' %}is-active{% endif %}">強化</a>
-    <a href="{{ url_for('parts') }}" class="robo-fixed-nav-item {% if request.endpoint == 'parts' %}is-active{% endif %}">パーツ</a>
+    <a href="{{ url_for('parts') }}" class="robo-fixed-nav-item robo-fixed-nav-parts {% if request.endpoint == 'parts' %}is-active{% endif %}">
+      <span>パーツ</span>
+      {% if quick_nav.part_inventory_status and quick_nav.part_inventory_status.limit|int > 0 %}
+      <small class="robo-fixed-nav-count is-{{ quick_nav.part_inventory_status.level }}">{{ quick_nav.part_inventory_status.count }}/{{ quick_nav.part_inventory_status.limit }}</small>
+      {% endif %}
+    </a>
     {% if quick_nav.show_market %}
     <a href="{{ url_for('market') }}" class="robo-fixed-nav-item {% if request.endpoint == 'market' %}is-active{% endif %}">市場</a>
     {% endif %}
@@ -194,13 +199,4 @@
     | <a href="{{ url_for('support') }}">支援</a>
     | <a href="{{ url_for('terms') }}">利用規約</a>
     | <a href="{{ url_for('privacy') }}">プライバシー</a>
-    | <a href="{{ url_for('commerce') }}">特商法表記</a>
-    | <a href="{{ url_for('contact') }}">お問い合わせ</a>
-    {% if official_x_url %}
-    | <a href="{{ official_x_url }}" rel="noopener noreferrer" target="_blank">公式X</a>
-    {% endif %}
-    | <a href="{{ url_for('changelog') }}">更新履歴</a>
-    {% endif %}
-  </footer>
-</body>
-</html>
+    | <a href="{{ u

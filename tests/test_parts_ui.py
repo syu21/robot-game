@@ -370,7 +370,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("btn-unlock", html)
         self.assertIn("保護中：素材・売却・処分に使えません", html)
         self.assertEqual(html.count("保護中：素材・売却・処分に使えません"), 2)
-        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
+        self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
 
         resp = client.post(
             "/parts/discard",
@@ -682,7 +682,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ強化", html)
-        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
+        self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
         self.assertIn("素材として使う2個", html)
@@ -767,10 +767,10 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("現在装備", html)
         self.assertIn("総合差分", html)
         self.assertIn("詳細を開く", html)
-        self.assertIn("注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。", html)
+        self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 
 
 if __name__ == "__main__":
-    unittest.main()
+  

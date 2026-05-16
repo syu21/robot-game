@@ -304,7 +304,7 @@
 
     <section class="card build-picker">
       <h2>所持パーツから選択</h2>
-      <div class="robot-time">注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。</div>
+      <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
 
       <details class="picker-section" data-picker-section="head" open>
         <summary><b>HEAD（頭）</b></summary>
@@ -394,4 +394,4 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='build_preview.js') }}?v={{ app_version }}"></script>
 <script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+{% endblo

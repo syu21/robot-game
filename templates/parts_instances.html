@@ -52,7 +52,7 @@
     </form>
     <div class="robot-time">使わないパーツは <a href="{{ url_for('market') }}">廃品市場</a> で売却できます。コインにして次の育成に使いましょう。</div>
     <div class="robot-time">保護中：素材・売却・処分に使えません。</div>
-    <div class="robot-time">注目能力は伸びやすい傾向です。現在値が高い能力が必ず逆転されるとは限りません。</div>
+    <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
   </div>
 
   {% if compare_items %}
@@ -236,4 +236,4 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+{% endblo

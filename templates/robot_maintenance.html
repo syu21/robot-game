@@ -108,6 +108,7 @@
     </div>
     {% else %}
     {% set current_item = current_part_items.get(maintenance_slot['part_type']) %}
+    <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
     <div class="robot-maintenance-current-focus">
       <div class="robot-time">現在装備</div>
       {% if current_item %}
@@ -172,10 +173,4 @@
           </div>
         </label>
         {% endfor %}
-      </div>
-      <button type="submit" class="fuse-submit-large">この部位を整備する</button>
-    </form>
-    {% endif %}
-  </section>
-</div>
-{% endblock %}
+      </d

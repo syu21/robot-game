@@ -57,6 +57,11 @@
     {% if home_primary_explore_cta %}
     <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     {% endif %}
+    {% if part_inventory_status %}
+    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }}">
+      {{ part_inventory_status['line'] }}
+    </div>
+    {% endif %}
     <div class="home-inline-actions">
       {% if next_action_card['is_post'] %}
       <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
@@ -137,6 +142,11 @@
       <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
+    {% if part_inventory_status %}
+    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }}">
+      {{ part_inventory_status['line'] }}
+    </div>
+    {% endif %}
     {% if daily_research_task_line %}
     <div class="home-explore-context">{{ daily_research_task_line }}</div>
     {% if daily_task and daily_task['status'] == 'completed' %}
@@ -1111,17 +1121,4 @@
           {% endif %}
         </div>
         {% else %}
-        <div class="upgrade-cost">いまは表示を戻せる項目がありません。</div>
-        {% endif %}
-      </div>
-    </section>
-    {% endif %}
-</div>
-</div>
-</div>
-{% endif %}
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
-<script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
-{% endblock %}
+        <div class="upgrade-cost">いまは表示を戻せる項目がありま

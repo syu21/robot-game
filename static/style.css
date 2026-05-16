@@ -13061,6 +13061,28 @@ button.robo-fixed-nav-item {
   background: rgba(51, 65, 85, 0.72);
 }
 
+.robo-fixed-nav-parts {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+}
+
+.robo-fixed-nav-count {
+  color: #cbd5e1;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.robo-fixed-nav-count.is-warning {
+  color: #fde68a;
+}
+
+.robo-fixed-nav-count.is-full {
+  color: #fecaca;
+}
+
 .robo-fixed-nav-restore-form {
   position: fixed;
   right: max(12px, env(safe-area-inset-right));
@@ -13089,3 +13111,14 @@ button.robo-fixed-nav-item {
 .parts-bottom-actions {
   display: flex;
   flex-wrap: wrap;
+  gap: 12px 14px;
+  justify-content: center;
+  margin: 22px 0 4px;
+}
+
+.parts-bottom-actions a {
+  min-width: 112px;
+  padding: 11px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  

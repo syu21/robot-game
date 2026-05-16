@@ -8850,8 +8850,16 @@ def _part_inventory_status_payload(db, user_id, user_row=None):
     count = _count_part_inventory(db, int(user_id))
     storage = _part_storage_snapshot(db, int(user_id))
     note = ""
+    level = "normal"
+    line = f"所持パーツ {count} / {limit}" if limit > 0 else f"所持パーツ {count}"
     if limit > 0 and count >= limit:
+        level = "full"
         note = "所持枠がいっぱいです。整理すると、残したいパーツを選びやすくなります。"
+        line = f"所持パーツ {count} / {limit}　出撃前に整理がおすすめです。"
+    elif limit > 0 and count >= math.ceil(limit * 0.9):
+        level = "warning"
+        note = "そろそろ整理すると安心です。"
+        line = f"所持パーツ {count} / {limit}　そろそろ整理すると安心です。"
     elif limit > 0 and count >= max(1, limit - 2):
         note = "そろそろ整理すると、素材にしたいパーツを残しやすくなります。"
     return {
@@ -8859,6 +8867,8 @@ def _part_inventory_status_payload(db, user_id, user_row=None):
         "limit": int(limit),
         "storage_count": int(storage.get("legacy_storage_count") or storage.get("storage_count") or 0),
         "note": note,
+        "level": level,
+        "line": line,
     }
 
 
@@ -12251,6 +12261,24 @@ def _return_part_instance_to_pool(db, user_id, part_instance_id, user_row=None):
         (int(part_instance_id), int(user_id)),
     )
     return "inventory"
+
+
+def _robot_decompose_return_part_count(rip_row, robot_row):
+    if not rip_row:
+        return 0
+    slots = (
+        ("head_part_instance_id", "head_key"),
+        ("r_arm_part_instance_id", "r_arm_key"),
+        ("l_arm_part_instance_id", "l_arm_key"),
+        ("legs_part_instance_id", "legs_key"),
+    )
+    count = 0
+    for instance_col, key_col in slots:
+        if instance_col in rip_row.keys() and rip_row[instance_col]:
+            count += 1
+        elif key_col in robot_row.keys() and robot_row[key_col]:
+            count += 1
+    return count
 
 
 def _effective_limits(db, user):
@@ -23665,6 +23693,7 @@ def inject_quick_nav():
         area_key = _default_explore_area_key(user, available_areas, db=db)
         ct_remain = 0 if is_admin else max(0, int(remain or 0))
         server_now = int(time.time())
+        part_inventory_status = _part_inventory_status_payload(db, int(user["id"]), user)
         return {
             "quick_nav": {
                 "ct_remain": ct_remain,
@@ -23674,6 +23703,7 @@ def inject_quick_nav():
                 "can_direct_explore": bool(area_key and user["active_robot_id"]),
                 "explore_submission_id": (_issue_explore_submission_id() if area_key and user["active_robot_id"] else ""),
                 "show_market": bool(_market_can_access(db, user)),
+                "part_inventory_status": part_inventory_status,
             }
         }
     except Exception:
@@ -25962,6 +25992,7 @@ def home():
     part_storage = _part_storage_snapshot(db, user["id"])
     part_inventory_count = int(part_storage["inventory_count"])
     part_storage_count = int(part_storage.get("legacy_storage_count") or part_storage["storage_count"])
+    part_inventory_status = _part_inventory_status_payload(db, int(user["id"]), user)
     limits = _effective_limits(db, user)
     _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
     showcase_rows = _showcase_rows(db, user["id"])
@@ -26469,6 +26500,7 @@ def home():
             has_any_robot=has_any_robot,
             part_count=part_inventory_count,
             part_inventory_count=part_inventory_count,
+            part_inventory_status=part_inventory_status,
             part_storage_count=part_storage_count,
             strengthen_candidate_count=strengthen_candidate_count,
             milestones=milestones,
@@ -32036,6 +32068,17 @@ def robot_instance_decompose(instance_id):
     if not row or row["status"] == "decomposed":
         session["message"] = "分解対象が見つかりません。"
         return redirect(url_for("robots"))
+    rip = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (instance_id,),
+    ).fetchone()
+    user_row = db.execute("SELECT id, part_inventory_limit FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    return_part_count = _robot_decompose_return_part_count(rip, row)
+    inventory_count = _count_part_inventory(db, int(session["user_id"]))
+    inventory_limit = int(user_row["part_inventory_limit"] or 0) if user_row else 0
+    if inventory_limit > 0 and inventory_count + return_part_count > inventory_limit:
+        session["message"] = "分解すると所持パーツが上限を超えます。先にパーツを整理してから分解してください。"
+        return redirect(url_for("robots"))
     _ensure_robot_instance_part_instances(db, instance_id)
     rip = db.execute(
         "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
@@ -32043,7 +32086,6 @@ def robot_instance_decompose(instance_id):
     ).fetchone()
     restored = 0
     restored_ids = []
-    user_row = db.execute("SELECT id, part_inventory_limit FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     for col in ("head_part_instance_id", "r_arm_part_instance_id", "l_arm_part_instance_id", "legs_part_instance_id"):
         if col in rip.keys() and rip[col]:
             _return_part_instance_to_pool(db, session["user_id"], rip[col], user_row=user_row)
@@ -40090,46 +40132,4 @@ def admin_parts_purge(part_id):
     try:
         result = _purge_part_with_dependencies(db, part)
         session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+            "危険一
