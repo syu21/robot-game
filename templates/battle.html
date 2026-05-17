@@ -425,12 +425,4 @@
     <p>探索結果がありません。行動メニューから探索してください。</p>
   </div>
 {% endif %}
-{% if not (explore_mode and summary) %}
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endif %}
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
-<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version ~ '-fix1') }}"></script>
-{% endblock %}
+{% if not (explor

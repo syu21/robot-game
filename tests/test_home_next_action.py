@@ -989,9 +989,4 @@ class HomeNextActionTests(unittest.TestCase):
             self.assertGreater(int(after_first["coins"] or 0), int(before["coins"] or 0))
             self.assertGreater(int(after_first["part_count"] or 0), int(before["part_count"] or 0))
             self.assertEqual(int(after_second["wins"] or 0), int(after_first["wins"] or 0))
-            self.assertEqual(int(after_second["coins"] or 0), int(after_first["coins"] or 0))
-            self.assertEqual(int(after_second["part_count"] or 0), int(after_first["part_count"] or 0))
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.assertEqual(int(after_second["coins"] 
