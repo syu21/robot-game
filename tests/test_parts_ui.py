@@ -368,8 +368,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("保護中", html)
         self.assertIn("保護解除", html)
         self.assertIn("btn-unlock", html)
-        self.assertIn("保護中のパーツは、破棄・強化素材・進化素材に使われません", html)
-        self.assertIn("保護中：破棄や素材消費の対象になりません", html)
+        self.assertIn("保護中：破棄・素材消費に使われません", html)
         self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
 
         resp = client.post(
@@ -772,4 +771,5 @@ class PartsUiTests(unittest.TestCase):
             self.assertIn(label, html)
 
 
-if __
+if __name__ == "__main__":
+    unittest.main()

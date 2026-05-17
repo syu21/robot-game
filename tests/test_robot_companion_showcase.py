@@ -270,4 +270,8 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
         personal_html = personal_resp.get_data(as_text=True)
         self.assertIn("展示ロボ模擬戦", personal_html)
         self.assertIn("Bastion Owner", personal_html)
-        self.assertIn(f"報酬: {game_app.SHOWCASE_BATTLE_WIN_REWARD_COINS}コ�
+        self.assertIn(f"報酬: {game_app.SHOWCASE_BATTLE_WIN_REWARD_COINS}コイン", personal_html)
+
+
+if __name__ == "__main__":
+    unittest.main()

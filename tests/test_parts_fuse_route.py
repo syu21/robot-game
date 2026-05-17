@@ -606,4 +606,34 @@ class PartsFuseRouteTests(unittest.TestCase):
             self.assertEqual(int(fuse_events["c"] or 0), 2)
 
             preview_events = db.execute(
-                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type =
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = 'audit.fuse.batch_preview'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(preview_events["c"] or 0), 1)
+
+            execute_event = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = 'audit.fuse.batch_execute'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(execute_event)
+            payload = json.loads(execute_event["payload_json"] or "{}")
+            self.assertEqual(str(payload.get("mode")), "warehouse_batch")
+            self.assertEqual(int(payload.get("group_count") or 0), 2)
+            self.assertEqual(int(payload.get("fuse_count") or 0), 3)
+            self.assertEqual(int(payload.get("total_material_count") or 0), 6)
+
+            fusion_rows = db.execute(
+                "SELECT COUNT(*) AS c FROM fusion_audit_logs WHERE user_id = ? AND mode = 'warehouse_batch'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(fusion_rows["c"] or 0), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

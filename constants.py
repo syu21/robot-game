@@ -175,6 +175,7 @@ AUDIT_EVENT_TYPES = {
     "FUSE_BATCH_EXECUTE": "audit.fuse.batch_execute",
     "BUILD_CONFIRM": "audit.build.confirm",
     "ROBOT_DECOMPOSE": "audit.robot.decompose",
+    "ROBOT_DECOMPOSE_BLOCKED": "audit.robot.decompose.blocked",
     "ROBOT_RENAME": "audit.robot.rename",
     "ROBOT_MAINTENANCE": "audit.robot.maintenance",
     "CHAMPION_SELECT": "audit.champion.select",
@@ -271,5 +272,4 @@ AUDIT_EVENT_TYPES = {
     "DAILY_RESEARCH_TASK_CLAIM": "audit.daily_research.task.claim",
     "DAILY_RESEARCH_REWARD_RESERVE": "audit.daily_research.reward.reserve",
     "DAILY_RESEARCH_REWARD_CLAIM": "audit.daily_research.reward.claim",
-    "DAILY_RESEARCH_MODAL_VIEW": "audit.daily_research.modal.view",
-}
+    "D

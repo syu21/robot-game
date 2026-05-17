@@ -85,4 +85,18 @@
             <input type="text" name="robot_name" maxlength="40" placeholder="新しい名前" required />
             <button type="submit">改名（500コイン）</button>
           </form>
-          <form method="post" action="{{ url_for('robot_instance_decompose', insta
+          <form method="post" action="{{ url_for('robot_instance_decompose', instance_id=i['id']) }}">
+            <button type="submit">分解してパーツ化</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='robots_page.js') }}?v={{ app_version }}"></script>
+{% endblock %}
