@@ -352,6 +352,12 @@
       {% endfor %}
     </div>
   </div>
+  {% else %}
+  <div class="card fuse-batch-panel" id="group-strengthen">
+    <div><b>まとめて強化</b></div>
+    <div class="robot-time">この条件でまとめて強化できる組み合わせはありません。</div>
+    <div class="robot-time">素材が2個足りない、保護中・装備中・保管中の個体しかない、または最大強化済みの可能性があります。</div>
+  </div>
   {% endif %}
 
   <form
@@ -377,6 +383,7 @@
       <div>素材: <span id="fuse-material-selected">同じパーツの所持中2個を使います</span></div>
       <div>結果: <span id="fuse-result-expected">素材の+値を引き継ぎ</span></div>
     </div>
+    <div class="robot-time">ボタンが押せない場合は、ベース候補を1つ選んでください。候補がない場合は素材が2個足りません。</div>
     <div class="fuse-select-status">選択数 <b id="fuse-selected-count">0</b>/1</div>
     <p class="robot-time">1個体を選んで、強化するとどう変わるかを見比べてから実行できます。</p>
 
@@ -442,20 +449,4 @@
       <button type="submit" id="fuse-select-submit" class="fuse-submit-large">選んだ個体を強化する</button>
     {% else %}
       <div class="card">
-        <div><b>使える素材がありません</b></div>
-        <div class="robot-time">
-          同じパーツを3個そろえると強化できます。
-          部位を切り替えると候補が見つかることがあります。
-        </div>
-      </div>
-    {% endif %}
-  </form>
-  {% endif %}
-
-  <p class="link"><a href="{{ url_for('parts') }}">所持パーツへ戻る</a></p>
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='parts_fuse_v2.js') }}?v={{ app_version }}"></script>
-<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+        <div><b>使える素材がありません</b>

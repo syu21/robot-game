@@ -425,6 +425,35 @@ class PartsFuseRouteTests(unittest.TestCase):
             self.assertTrue(bool(payload.get("batch_mode")))
             self.assertEqual(int(payload.get("batch_count") or 0), 2)
 
+    def test_fuse_batch_allows_plus3_to_plus4_with_two_materials(self):
+        ids = self._seed_same_part_instances([3, 0, 0])
+        base_id = ids[0]
+        client = self._client()
+
+        resp = client.get("/parts/strengthen")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("この組み合わせをまとめて強化", html)
+        self.assertIn("+3 → +4", html)
+
+        resp = client.post("/parts/fuse", data={"mode": "batch", "base_id": str(base_id)}, follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            base_row = db.execute(
+                "SELECT plus, status FROM part_instances WHERE id = ?",
+                (base_id,),
+            ).fetchone()
+            self.assertEqual(int(base_row["plus"] or 0), 4)
+            self.assertEqual(str(base_row["status"]), "inventory")
+
+            remaining = db.execute(
+                "SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ? AND status = 'inventory'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(remaining["c"] or 0), 1)
+
     def test_locked_part_can_be_base_but_not_material_and_keeps_weights(self):
         self._clear_part_instances()
         seed = self._active_part_seeds(limit=1)[0]

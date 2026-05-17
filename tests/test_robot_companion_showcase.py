@@ -116,7 +116,8 @@ class RobotCompanionShowcaseTests(unittest.TestCase):
         r1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": sid})
         self.assertEqual(r1.status_code, 200)
         r2 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": sid})
-        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.status_code, 302)
+        self.assertIn("/battle/result", r2.headers.get("Location", ""))
         with game_app.app.app_context():
             db = game_app.get_db()
             hist = db.execute(

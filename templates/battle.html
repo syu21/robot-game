@@ -192,6 +192,14 @@
       <a class="battle-home-link" href="{{ url_for('parts') }}">パーツ一覧へ</a>
     </section>
 
+    {% if summary.get('show_market_after_battle') %}
+    <section class="card battle-next-card">
+      <div><b>廃品市場へ</b></div>
+      <div class="upgrade-cost">所持枠が近いときは、不要なパーツを整理できます。</div>
+      <a class="battle-home-link" href="{{ url_for('market') }}">廃品市場へ</a>
+    </section>
+    {% endif %}
+
     <section class="card battle-next-card">
       <div><b>基地へ戻る</b></div>
       <div class="upgrade-cost">ホームで次の行動や今週のランキング、世界の動きを確認できます。</div>

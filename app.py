@@ -6287,7 +6287,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     else:
         item["status_label"] = "所持中"
     if item["locked"]:
-        item["material_hint"] = "保護中：素材・売却・処分に使えません"
+        item["material_hint"] = "保護中：破棄や素材消費の対象になりません"
     elif item["is_inventory"]:
         item["material_hint"] = "強化素材に使える"
     elif item["is_sold"]:
@@ -8851,15 +8851,15 @@ def _part_inventory_status_payload(db, user_id, user_row=None):
     storage = _part_storage_snapshot(db, int(user_id))
     note = ""
     level = "normal"
-    line = f"所持パーツ {count} / {limit}" if limit > 0 else f"所持パーツ {count}"
+    line = f"パーツ所持 {count} / {limit}" if limit > 0 else f"パーツ所持 {count}"
     if limit > 0 and count >= limit:
         level = "full"
         note = "所持枠がいっぱいです。整理すると、残したいパーツを選びやすくなります。"
-        line = f"所持パーツ {count} / {limit}　出撃前に整理がおすすめです。"
-    elif limit > 0 and count >= math.ceil(limit * 0.9):
+        line = f"パーツ所持 {count} / {limit}　満杯です。"
+    elif limit > 0 and count >= math.ceil(limit * 0.8):
         level = "warning"
         note = "そろそろ整理すると安心です。"
-        line = f"所持パーツ {count} / {limit}　そろそろ整理すると安心です。"
+        line = f"パーツ所持 {count} / {limit}　そろそろ整理"
     elif limit > 0 and count >= max(1, limit - 2):
         note = "そろそろ整理すると、素材にしたいパーツを残しやすくなります。"
     return {
@@ -8870,6 +8870,15 @@ def _part_inventory_status_payload(db, user_id, user_row=None):
         "level": level,
         "line": line,
     }
+
+
+def _should_show_market_after_battle(part_inventory_status, reward_front):
+    inv = part_inventory_status or {}
+    limit = int(inv.get("limit") or 0)
+    count = int(inv.get("count") or 0)
+    ratio = (count / float(limit)) if limit > 0 else 0.0
+    has_part_reward = bool((reward_front or {}).get("part_rows") or [])
+    return bool(has_part_reward or ratio >= 0.8)
 
 
 def _battle_result_session_summary(summary):
@@ -8961,7 +8970,12 @@ def _refresh_battle_result_summary(db, user_id, user_row, summary):
         rows.append(next_row)
     reward_front["part_rows"] = rows
     refreshed["reward_front"] = reward_front
-    refreshed["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user_row)
+    part_inventory_status = _part_inventory_status_payload(db, user_id, user_row)
+    refreshed["part_inventory_status"] = part_inventory_status
+    refreshed["show_market_after_battle"] = bool(
+        _market_can_access(db, user_row)
+        and _should_show_market_after_battle(part_inventory_status, reward_front)
+    )
     refreshed["next_explore_submission_id"] = _issue_explore_submission_id()
 
     remain, _ = _explore_remaining_seconds_for_user(db, user_row, user_id)
@@ -23957,6 +23971,17 @@ def handle_500(err):
 def _public_changelog_entries():
     return [
         {
+            "version": "0.1.55",
+            "date": "2026/05/17",
+            "title": "コメント対応で所持枠表示と周回導線を改善",
+            "notes": [
+                "保護中パーツの説明文を現在の操作名に合わせ、破棄や素材消費の対象外であることが分かるよう修正",
+                "出撃前と固定ナビでパーツ所持数を確認しやすくし、上限に近いと注意表示になるよう改善",
+                "戦闘後から廃品市場へ移動しやすくし、ロボ分解で所持上限を超える場合は先に整理を案内するよう変更",
+                "所持パーツ画面下部のリンク間隔と、パーツ強化ボタンが押せない場合の理由表示を調整",
+            ],
+        },
+        {
             "version": "0.1.54",
             "date": "2026/04/14",
             "title": "ボス撃破勲章の表示と装飾画像を更新",
@@ -30975,6 +31000,10 @@ def explore():
         drop_items=drop_items,
     )
     summary["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user)
+    summary["show_market_after_battle"] = bool(
+        _market_can_access(db, user)
+        and _should_show_market_after_battle(summary["part_inventory_status"], summary["reward_front"])
+    )
     summary["next_explore_submission_id"] = _issue_explore_submission_id()
     if area_boss_reward and area_boss_reward.get("decor_name"):
         summary["boss_reward_display"] = {
@@ -31287,9 +31316,13 @@ def robots():
     ).fetchone()["c"]
     used_display = min(used_all, limits["robot_slots"])
     overflow = max(0, used_all - limits["robot_slots"])
+    message = session.pop("message", None)
+    decompose_blocked = bool(session.pop("robot_decompose_blocked", None))
     return render_template(
         "robots.html",
         instances=instances,
+        message=message,
+        decompose_blocked=decompose_blocked,
         limits=limits,
         active_robot_id=user["active_robot_id"],
         weekly_element=weekly_element,
@@ -32077,7 +32110,26 @@ def robot_instance_decompose(instance_id):
     inventory_count = _count_part_inventory(db, int(session["user_id"]))
     inventory_limit = int(user_row["part_inventory_limit"] or 0) if user_row else 0
     if inventory_limit > 0 and inventory_count + return_part_count > inventory_limit:
-        session["message"] = "分解すると所持パーツが上限を超えます。先にパーツを整理してから分解してください。"
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["ROBOT_DECOMPOSE_BLOCKED"],
+            user_id=session["user_id"],
+            request_id=getattr(g, "request_id", None),
+            action_key="decompose_blocked",
+            entity_type="robot_instance",
+            entity_id=instance_id,
+            payload={
+                "robot_instance_id": int(instance_id),
+                "inventory_count": int(inventory_count),
+                "inventory_limit": int(inventory_limit),
+                "return_count": int(return_part_count),
+                "reason": "inventory_limit",
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        session["message"] = "所持パーツがいっぱいのため、このロボは分解できません。先に不要なパーツを整理してください。"
+        session["robot_decompose_blocked"] = True
         return redirect(url_for("robots"))
     _ensure_robot_instance_part_instances(db, instance_id)
     rip = db.execute(
@@ -40070,108 +40122,4 @@ def admin_parts_delete(part_id):
         rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
         message = (
             "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts[

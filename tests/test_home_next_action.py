@@ -270,6 +270,8 @@ class HomeNextActionTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("パーツ在庫: 所持 4 / 4", html)
         self.assertIn("所持 4/4 | 保管 2", html)
+        self.assertIn("パーツ所持 4 / 4　満杯です。", html)
+        self.assertIn("inventory-full", html)
 
     def test_fixed_nav_uses_direct_explore_form_when_ready(self):
         self._create_active_robot()
@@ -932,6 +934,7 @@ class HomeNextActionTests(unittest.TestCase):
         ):
             resp1 = client.post("/explore", data={"area_key": "layer_1", "explore_submission_id": submission_id})
             self.assertEqual(resp1.status_code, 200)
+            self.assertIn("廃品市場へ", resp1.get_data(as_text=True))
             with client.session_transaction() as sess:
                 self.assertNotIn("last_battle_result", sess)
                 self.assertTrue(sess.get("last_battle_result_id"))

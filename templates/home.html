@@ -58,7 +58,7 @@
     <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     {% endif %}
     {% if part_inventory_status %}
-    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }}">
+    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
       {{ part_inventory_status['line'] }}
     </div>
     {% endif %}
@@ -143,7 +143,7 @@
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
     {% if part_inventory_status %}
-    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }}">
+    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
       {{ part_inventory_status['line'] }}
     </div>
     {% endif %}

@@ -51,7 +51,7 @@
       <button type="submit">適用</button>
     </form>
     <div class="robot-time">使わないパーツは <a href="{{ url_for('market') }}">廃品市場</a> で売却できます。コインにして次の育成に使いましょう。</div>
-    <div class="robot-time">保護中：素材・売却・処分に使えません。</div>
+    <div class="robot-time">保護中のパーツは、破棄・強化素材・進化素材に使われません。大事なパーツを残したいときに使ってください。</div>
     <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
   </div>
 
@@ -187,7 +187,7 @@
                 data-loading-text="保護解除中..."
               >保護解除</button>
               {% elif p.get('is_inventory') %}
-              <div class="part-meta-line">保護すると素材・売却・処分に使えません</div>
+              <div class="part-meta-line">保護中のパーツは、破棄や素材消費の対象になりません</div>
               <button
                 type="submit"
                 class="btn-secondary"
@@ -234,6 +234,4 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='parts_ui.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+{% bloc

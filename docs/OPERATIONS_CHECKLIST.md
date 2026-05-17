@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-05-04
+最終更新日: 2026-05-17
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -19,6 +19,8 @@
   - 0秒到達: `出撃可能`
   - 非管理者はCT中disabled / 管理者は常時出撃可
 - [ ] `/home` のConsoleに `style-src 'self'` のinline style違反が出ない
+- [ ] 出撃前にパーツ所持数 / 上限が確認できる
+- [ ] 所持数80%以上・満杯時に表示が目立つ
 
 ## 2. ボス
 - [ ] 遭遇で `audit.boss.encounter`
@@ -30,6 +32,7 @@
 - [ ] 前面は `獲得コイン` + `ドロップ結果` のみ
 - [ ] ドロップなしで `戦利品なし`
 - [ ] 所持満杯時の新規パーツ報酬は消えず `自動売却 +NNコイン` と短く表示される
+- [ ] 戦闘後から廃品市場へ移動できる
 - [ ] 画面が縦長化しすぎない
 
 ## 4. 編成/育成
@@ -40,6 +43,7 @@
 - [ ] `/parts` のソート `おすすめ順 / 新しい順 / 古い順 / 総合値順 / +値順 / レアリティ順 / 部位順` が分かりやすく切り替わる
 - [ ] `/parts` のソートが部位フィルターやページ送りと併用しても落ちない
 - [ ] `/parts` のチェック文言が `選択` で統一され、主操作が `見比べる / 破棄` に分かれている
+- [ ] `/parts` 下部の `基地へ / パーツ強化へ / 廃品市場へ` リンクが離れて見える
 - [ ] `/parts` の `見比べる` で選択した個体だけの比較セクションが出る
 - [ ] `/parts` の `次へ` が無反応にならない
   - 進めるときは遷移する
@@ -58,6 +62,7 @@
 - [ ] `/robots/<id>/maintenance` で1部位ずつ差し替え候補を見て整備できる
 - [ ] 機体整備後に `composed_image_path / icon_32_path` が更新される
 - [ ] `audit.robot.maintenance` が `changed_slots / before_part_ids / after_part_ids / stat_delta / power_delta` つきで残る
+- [ ] ロボ分解で所持上限を超える場合は分解できず、理由が表示される
 - [ ] `/parts/strengthen` で候補0件時の案内表示
 - [ ] `/parts/strengthen` に旧保管確認導線が残っていない
 - [ ] `/parts/strengthen` の部位フィルターが動く
@@ -69,6 +74,8 @@
 - [ ] `/parts/strengthen` で装備中ベースと消える素材2個が分かる
 - [ ] `/parts/strengthen` の失敗時に理由が結果面で分かる
 - [ ] `/parts/strengthen` の `まとめて強化` が装備中素材を勝手に消費しない
+- [ ] パーツ強化で `+3 -> +4` が成立条件を満たせば実行できる
+- [ ] 強化ボタンが押せない場合、理由が表示される
 - [ ] `/parts/strengthen` の `まとめて強化` で `残る個体 / 消える個体数 / 強化後 +値 / 実行回数` が事前に分かる
 - [ ] `まとめて強化` 実行後に `batch_mode / batch_count` つきの `audit.fuse` が残る
 - [ ] `/parts/strengthen` の `倉庫整理合成` がワンクリック即実行ではなく、必ず一覧プレビューを挟む
@@ -174,10 +181,4 @@
 - [ ] `robot-game-backup.timer` が active
 - [ ] `robot-game-portal-online.timer` が active
 - [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
-- [ ] `.env.production` に `POCHI_PORTAL_GAME_KEY=robolabo` を設定済み
-- [ ] `.env.production` に発行済み `POCHI_PORTAL_API_KEY` を設定済み
-- [ ] `python3 send_online_count.py --flush-limit 20` 手動実行または timer 実行結果を確認済み
-- [ ] `backups/` に当日バックアップがある
-- [ ] `https://pochi-games.com/pochi-game/portal/edit` のゲーム情報を更新済み
-- [ ] 編集完了後の報告をあるけみすと公式へ送信済み
-- [ ] ポチゲーポータルへの掲載相談/連絡状況をメモへ残す
+- [ ] `.env.production` に `POC

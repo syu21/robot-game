@@ -2,6 +2,15 @@
 {% block content %}
 <div id="robot-list-root">
 <h1>所有ロボ一覧</h1>
+{% if decompose_blocked %}
+<div class="home-inline-actions">
+  <a class="battle-home-link" href="{{ url_for('parts') }}">所持パーツへ</a>
+  {% if quick_nav and quick_nav.show_market %}
+  <a class="battle-home-link" href="{{ url_for('market') }}">廃品市場へ</a>
+  {% endif %}
+  <a class="battle-home-link" href="{{ url_for('robots') }}">ロボ一覧へ戻る</a>
+</div>
+{% endif %}
 
 <div class="card">
   <h2>完成ロボ</h2>
