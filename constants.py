@@ -272,4 +272,5 @@ AUDIT_EVENT_TYPES = {
     "DAILY_RESEARCH_TASK_CLAIM": "audit.daily_research.task.claim",
     "DAILY_RESEARCH_REWARD_RESERVE": "audit.daily_research.reward.reserve",
     "DAILY_RESEARCH_REWARD_CLAIM": "audit.daily_research.reward.claim",
-    "D
+    "DAILY_RESEARCH_MODAL_VIEW": "audit.daily_research.modal.view",
+}
