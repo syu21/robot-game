@@ -32112,7 +32112,7 @@ def robot_instance_decompose(instance_id):
     if inventory_limit > 0 and inventory_count + return_part_count > inventory_limit:
         audit_log(
             db,
-            AUDIT_EVENT_TYPES["ROBOT_DECOMPOSE_BLOCKED"],
+            AUDIT_EVENT_TYPES.get("ROBOT_DECOMPOSE_BLOCKED", "audit.robot.decompose.blocked"),
             user_id=session["user_id"],
             request_id=getattr(g, "request_id", None),
             action_key="decompose_blocked",
