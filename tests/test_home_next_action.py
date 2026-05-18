@@ -928,6 +928,14 @@ class HomeNextActionTests(unittest.TestCase):
                 """,
                 (self.user_id,),
             ).fetchone()
+            db.execute(
+                """
+                UPDATE enemies
+                SET hp = 1, atk = 0, def = 0, spd = 0, acc = 0, cri = 0
+                WHERE is_active = 1 AND is_boss = 0 AND tier = 1
+                """
+            )
+            db.commit()
 
         with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False), mock.patch.object(
             game_app, "_market_part_drop_chance", return_value=1.0
