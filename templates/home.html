@@ -19,6 +19,14 @@
   <div class="robot-time">この体験の報酬は保存されません。</div>
 </section>
 {% endif %}
+{% if layer1_first_clear_card %}
+<section class="card trial-home-banner">
+  <div><span class="weekly-fit-badge">研究員登録試験</span></div>
+  <h1>{{ layer1_first_clear_card['title'] }}</h1>
+  <div class="upgrade-cost">{{ layer1_first_clear_card['text'] }}</div>
+  <div class="robot-time">{{ layer1_first_clear_card['reward_line'] }}</div>
+</section>
+{% endif %}
 <div class="home-priority-stack">
 {% if show_next_action_card and next_action_card %}
 <div class="panel home-explore-card">

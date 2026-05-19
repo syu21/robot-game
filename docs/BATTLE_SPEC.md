@@ -265,6 +265,19 @@ crit_chance = clamp(CRI * 0.01, 0.01, 0.25)
 
 管理者は、警報なしでもボス戦へ直接入れます。
 
+### 8.4 第1層試験支援
+
+第1層固定ボス未撃破ユーザーだけ、既存チュートリアル導線とボス警報制の内側で支援します。
+
+- 対象判定は `_tutorial_layer1_is_subject(db, user, "layer_1")` を正本にする
+- 管理者、第2層以上解放済み、第1層固定ボス撃破済みは対象外
+- `tutorial_layer1_forced_boss_ready=1` の場合は既存の強制ボス戦を優先
+- 既存導線が動いていない状態で第1層探索10回目以降に到達した場合、即戦闘ではなく第1層ボス警報を確定付与
+- 第1層固定ボス戦のみ、`HP x0.8 / ATK x0.9 / player damage x1.1` を適用
+- 既存の初回ボス補正とは二重適用しない。現在はこの補正に置換
+- 第2層以降、第4層、第5層、通常敵、NPCボスには適用しない
+- 監査: `audit.newbie_protection.boss_alert_guaranteed`, `audit.newbie_protection.battle_assist`
+
 ## 9. 勝敗と報酬
 
 ### 9.1 勝利時
@@ -300,6 +313,10 @@ crit_chance = clamp(CRI * 0.01, 0.01, 0.25)
   - DECOR 報酬中心
 - NPCボス
   - 進化コア報酬
+- 第1層固定ボス初突破
+  - 既存の `boss_emblem_aurix` とは別に `layer1_clear_emblem_001` とコイン `+100`
+  - `layer1_first_clear_reward_claimed` で冪等化
+  - 監査: `audit.layer1.first_clear`, `audit.layer1.first_clear.reward`
 
 ### 9.5 連勝
 

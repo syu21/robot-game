@@ -536,6 +536,8 @@ def main():
             tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0,
+            layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0,
+            layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0,
             lab_coin INTEGER NOT NULL DEFAULT 0,
             lab_coin_last_daily_at TEXT,
             lab_coin_converted_at INTEGER NOT NULL DEFAULT 0,
@@ -1939,6 +1941,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_updated_at" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
+    if "layer1_first_clear_reward_claimed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0")
+    if "layer1_first_clear_home_seen" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0")
     added_lab_coin_converted_at = "lab_coin_converted_at" not in users_cols
     if "lab_coin" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
@@ -1997,6 +2003,8 @@ def main():
     cur.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
     cur.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
     cur.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
+    cur.execute("UPDATE users SET layer1_first_clear_reward_claimed = 0 WHERE layer1_first_clear_reward_claimed IS NULL")
+    cur.execute("UPDATE users SET layer1_first_clear_home_seen = 0 WHERE layer1_first_clear_home_seen IS NULL")
     cur.execute("UPDATE users SET is_banned = 0 WHERE is_banned IS NULL")
     cur.execute("UPDATE users SET is_admin_protected = 0 WHERE is_admin_protected IS NULL")
     cur.execute("UPDATE users SET banned_at = NULL WHERE banned_at IS NOT NULL AND TRIM(banned_at) = ''")
@@ -2484,6 +2492,7 @@ def main():
         )
     decor_seed = [
         ("boss_emblem_aurix", "オリクス紋章", "images/factions/aurix.png"),
+        ("layer1_clear_emblem_001", "第1層突破エンブレム", "decor/aurix_trophy.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "images/factions/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "images/factions/ignis.png"),
         ("fortress_badge_001", "要塞勲章", "decor/fortress_badge_001.png"),

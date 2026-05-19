@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import time
@@ -117,12 +118,38 @@ class TutorialLayer1FlowTests(unittest.TestCase):
                 SELECT tutorial_layer1_state, tutorial_layer1_normal_win_count,
                        tutorial_layer1_boss_seen_at, tutorial_layer1_boss_fail_count,
                        tutorial_layer1_forced_boss_ready, tutorial_layer1_fuse_after_boss_fail_count,
-                       max_unlocked_layer
+                       max_unlocked_layer, coins, layer1_first_clear_reward_claimed,
+                       layer1_first_clear_home_seen
                 FROM users
                 WHERE id = ?
                 """,
                 (self.user_id,),
             ).fetchone()
+
+    def _insert_layer1_explore_end_events(self, count):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for i in range(int(count)):
+                game_app.audit_log(
+                    db,
+                    game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                    user_id=self.user_id,
+                    action_key="explore",
+                    payload={"area_key": "layer_1", "idx": i},
+                )
+            db.commit()
+
+    def _insert_layer1_boss_defeat(self, user_id=None):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.audit_log(
+                db,
+                game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                user_id=int(user_id or self.user_id),
+                action_key="explore",
+                payload={"area_key": "layer_1", "boss_kind": "fixed", "enemy_key": game_app.LAYER_BOSS_KEY_BY_LAYER[1]},
+            )
+            db.commit()
 
     def _insert_strengthen_materials(self):
         with game_app.app.app_context():
@@ -164,13 +191,30 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         boss = self._explore(self._resolve_player_loss)
         self.assertEqual(boss.status_code, 200)
         html = boss.get_data(as_text=True)
-        self.assertIn("第1層ボスの圧力", html)
-        self.assertIn("強化する", html)
+        self.assertIn("第1層ボスに敗北しました", html)
+        self.assertIn("パーツを強化する", html)
+        self.assertIn("ロボを組み立てる", html)
+        self.assertIn("もう一度出撃", html)
         row = self._user_tutorial_row()
         self.assertEqual(row["tutorial_layer1_state"], game_app.TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE)
         self.assertGreater(int(row["tutorial_layer1_boss_seen_at"] or 0), 0)
         self.assertEqual(int(row["tutorial_layer1_boss_fail_count"]), 1)
         self.assertEqual(int(row["tutorial_layer1_forced_boss_ready"]), 0)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            payload = json.loads(db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BATTLE_ASSIST"]),
+            ).fetchone()["payload_json"])
+            self.assertEqual(payload["hp_multiplier"], 0.8)
+            self.assertEqual(payload["atk_multiplier"], 0.9)
+            self.assertEqual(payload["player_damage_multiplier"], 1.1)
 
         home = self._client().get("/home")
         self.assertEqual(home.status_code, 200)
@@ -202,3 +246,99 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         row = self._user_tutorial_row()
         self.assertEqual(row["tutorial_layer1_state"], game_app.TUTORIAL_LAYER1_STATE_CLEARED)
         self.assertEqual(int(row["max_unlocked_layer"]), 2)
+        self.assertEqual(int(row["layer1_first_clear_reward_claimed"]), 1)
+        self.assertGreaterEqual(int(row["coins"]), 1100)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            decor = db.execute(
+                """
+                SELECT 1
+                FROM user_decor_inventory udi
+                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+                WHERE udi.user_id = ? AND rda.key = ?
+                """,
+                (self.user_id, game_app.LAYER1_FIRST_CLEAR_DECOR_KEY),
+            ).fetchone()
+            self.assertIsNotNone(decor)
+            duplicate = game_app._grant_layer1_first_clear_reward(db, self.user_id)
+            self.assertFalse(duplicate["reward_granted"])
+            self.assertEqual(duplicate["duplicate_skip_reason"], "already_claimed")
+            db.commit()
+
+        home = self._client().get("/home")
+        self.assertEqual(home.status_code, 200)
+        home_html = home.get_data(as_text=True)
+        self.assertIn("第1層突破！", home_html)
+        self.assertIn("研究員として最初の試験を突破しました", home_html)
+        second_home = self._client().get("/home")
+        self.assertNotIn("研究員として最初の試験を突破しました", second_home.get_data(as_text=True))
+
+    def test_layer1_protection_subject_conditions(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertTrue(game_app.is_layer1_protection_active(db, user))
+
+            db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (self.user_id,))
+            admin_user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertFalse(game_app.is_layer1_protection_active(db, admin_user))
+
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 2 WHERE id = ?", (self.user_id,))
+            layer2_user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertFalse(game_app.is_layer1_protection_active(db, layer2_user))
+
+            db.execute("UPDATE users SET max_unlocked_layer = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+        self._insert_layer1_boss_defeat()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            defeated_user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertFalse(game_app.is_layer1_protection_active(db, defeated_user))
+
+    def test_layer1_tenth_explore_guarantees_alert_not_immediate_battle(self):
+        self._insert_layer1_explore_end_events(9)
+        client = self._client()
+        with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
+            game_app, "_enforce_explore_cooldown_or_wait", return_value=0
+        ):
+            resp = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            progress = db.execute(
+                """
+                SELECT active_boss_enemy_id, boss_attempts_left, boss_alert_expires_at
+                FROM user_boss_progress
+                WHERE user_id = ? AND area_key = 'layer_1'
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(progress)
+            self.assertIsNotNone(progress["active_boss_enemy_id"])
+            self.assertGreater(int(progress["boss_attempts_left"]), 0)
+            guaranteed = db.execute(
+                "SELECT 1 FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BOSS_ALERT_GUARANTEED"]),
+            ).fetchone()
+            self.assertIsNotNone(guaranteed)
+            explore_end_count = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"]),
+            ).fetchone()["c"]
+            self.assertEqual(int(explore_end_count), 9)
+
+    def test_forced_boss_tutorial_priority_over_alert_guarantee(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+        self._insert_layer1_explore_end_events(9)
+        resp = self._explore(self._resolve_player_loss)
+        self.assertEqual(resp.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            guaranteed = db.execute(
+                "SELECT 1 FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BOSS_ALERT_GUARANTEED"]),
+            ).fetchone()
+            self.assertIsNone(guaranteed)

@@ -60,6 +60,25 @@
     {% if t1.get('cta_url') %}
     <p class="link"><a class="battle-home-link battle-next-cta" href="{{ t1['cta_url'] }}">{{ t1.get('cta_label', '次へ') }}</a></p>
     {% endif %}
+    {% if t1.get('actions') %}
+    <div class="home-inline-actions">
+      {% for action in t1.get('actions', []) %}
+        {% if action.get('is_post') %}
+        <form method="post" action="{{ action['url'] }}" class="inline-form inline-form-top">
+          {% if action.get('area_key') %}
+          <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
+          {% endif %}
+          {% if summary.get('next_explore_submission_id') %}
+          <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+          {% endif %}
+          <button type="submit" class="btn-secondary">{{ action['label'] }}</button>
+        </form>
+        {% else %}
+        <p class="link"><a class="battle-home-link" href="{{ action['url'] }}">{{ action['label'] }}</a></p>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -157,6 +176,25 @@
       <div class="upgrade-cost">{% if tutorial_next %}{{ tutorial_next['desc'] }}{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
       {% if tutorial_next %}
       <a class="battle-home-link battle-next-cta" href="{{ tutorial_next['cta_url'] }}">{{ tutorial_next['cta_label'] }}</a>
+      {% if tutorial_next.get('actions') %}
+      <div class="home-inline-actions">
+        {% for action in tutorial_next.get('actions', []) %}
+          {% if action.get('is_post') %}
+          <form method="post" action="{{ action['url'] }}" class="inline-form inline-form-top">
+            {% if action.get('area_key') %}
+            <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
+            {% endif %}
+            {% if summary.get('next_explore_submission_id') %}
+            <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+            {% endif %}
+            <button type="submit" class="btn-secondary">{{ action['label'] }}</button>
+          </form>
+          {% else %}
+          <p class="link"><a class="battle-home-link" href="{{ action['url'] }}">{{ action['label'] }}</a></p>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
       {% elif summary.get('unlocked_layer') %}
       <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
       {% else %}

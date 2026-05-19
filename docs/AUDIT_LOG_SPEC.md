@@ -34,6 +34,10 @@
 - `audit.boss.encounter`
 - `audit.boss.attempt`
 - `audit.boss.defeat`
+- `audit.newbie_protection.boss_alert_guaranteed`
+- `audit.newbie_protection.battle_assist`
+- `audit.layer1.first_clear`
+- `audit.layer1.first_clear.reward`
 
 ### 4.2 経済/在庫
 - `audit.coin.delta`
@@ -175,6 +179,17 @@
   - `turn_count`
   - `timeout`
   - `summary_label`
+- 第1層試験支援 payload は可能な範囲で以下を保持する
+  - `user_id`
+  - `robot_instance_id`
+  - `boss_key`
+  - `protection_applied`
+  - `hp_multiplier`
+  - `atk_multiplier`
+  - `player_damage_multiplier`
+  - `alert_guaranteed`
+  - `reward_granted`
+  - `duplicate_skip_reason`
 
 ## 6. 管理UI
 - `/admin/audit` で検索

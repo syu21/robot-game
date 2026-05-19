@@ -1833,6 +1833,12 @@ TUTORIAL_LAYER1_STATES = {
     TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE,
     TUTORIAL_LAYER1_STATE_CLEARED,
 }
+LAYER1_PROTECTION_ALERT_EXPLORE_THRESHOLD = 10
+LAYER1_PROTECTION_BOSS_HP_MULTIPLIER = 0.80
+LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER = 0.90
+LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER = 1.10
+LAYER1_FIRST_CLEAR_REWARD_COINS = 100
+LAYER1_FIRST_CLEAR_DECOR_KEY = "layer1_clear_emblem_001"
 AREA_BOSS_KEYS = (
     "layer_1",
     "layer_2",
@@ -8475,10 +8481,74 @@ def _grant_boss_decor_reward(db, user_id, area_key):
     }
 
 
+def _grant_layer1_first_clear_reward(db, user_id, *, request_id=None, ip=None):
+    row = db.execute("SELECT layer1_first_clear_reward_claimed FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not row:
+        return {"reward_granted": False, "duplicate_skip_reason": "missing_user", "coins": 0, "decor_key": LAYER1_FIRST_CLEAR_DECOR_KEY}
+    if int(row["layer1_first_clear_reward_claimed"] or 0) == 1:
+        result = {
+            "reward_granted": False,
+            "duplicate_skip_reason": "already_claimed",
+            "coins": 0,
+            "decor_key": LAYER1_FIRST_CLEAR_DECOR_KEY,
+        }
+    else:
+        decor = _get_decor_asset_by_key(db, LAYER1_FIRST_CLEAR_DECOR_KEY)
+        decor_granted = False
+        decor_missing = decor is None
+        if decor is not None:
+            decor_granted = db.execute(
+                """
+                INSERT OR IGNORE INTO user_decor_inventory (user_id, decor_asset_id, acquired_at)
+                VALUES (?, ?, ?)
+                """,
+                (int(user_id), int(decor["id"]), int(time.time())),
+            ).rowcount > 0
+        db.execute(
+            """
+            UPDATE users
+            SET layer1_first_clear_reward_claimed = 1,
+                layer1_first_clear_home_seen = 0
+            WHERE id = ?
+            """,
+            (int(user_id),),
+        )
+        result = {
+            "reward_granted": True,
+            "duplicate_skip_reason": None,
+            "coins": int(LAYER1_FIRST_CLEAR_REWARD_COINS),
+            "decor_key": LAYER1_FIRST_CLEAR_DECOR_KEY,
+            "decor_granted": bool(decor_granted),
+            "decor_missing": bool(decor_missing),
+        }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAYER1_FIRST_CLEAR_REWARD"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="layer1_first_clear_reward",
+        entity_type="user",
+        entity_id=int(user_id),
+        delta_coins=int(result.get("coins") or 0),
+        payload={
+            "user_id": int(user_id),
+            "reward_granted": bool(result.get("reward_granted")),
+            "duplicate_skip_reason": result.get("duplicate_skip_reason"),
+            "coins": int(result.get("coins") or 0),
+            "decor_key": result.get("decor_key"),
+            "decor_granted": bool(result.get("decor_granted")),
+            "decor_missing": bool(result.get("decor_missing")),
+        },
+        ip=ip,
+    )
+    return result
+
+
 def _seed_default_decor_assets(db):
     now_ts = int(time.time())
     seeds = [
         ("boss_emblem_aurix", "オリクス紋章", "decor/aurix.png"),
+        (LAYER1_FIRST_CLEAR_DECOR_KEY, "第1層突破エンブレム", "decor/aurix_trophy.png"),
         ("boss_emblem_ventra", "ヴェントラ紋章", "decor/ventra.png"),
         ("boss_emblem_ignis", "イグニス紋章", "decor/ignis.png"),
         ("fortress_badge_001", "要塞勲章", "decor/fortress_badge_001.png"),
@@ -9542,6 +9612,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_updated_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0")
+    if "layer1_first_clear_reward_claimed" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0")
+    if "layer1_first_clear_home_seen" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0")
     added_lab_coin_converted_at = "lab_coin_converted_at" not in cols
     if "lab_coin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
@@ -9638,6 +9712,8 @@ def ensure_schema(db):
     db.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
     db.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
     db.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
+    db.execute("UPDATE users SET layer1_first_clear_reward_claimed = 0 WHERE layer1_first_clear_reward_claimed IS NULL")
+    db.execute("UPDATE users SET layer1_first_clear_home_seen = 0 WHERE layer1_first_clear_home_seen IS NULL")
     db.execute(
         """
         UPDATE users
@@ -20017,6 +20093,14 @@ def _tutorial_layer1_is_subject(db, user_row, area_key="layer_1"):
     return not _has_fixed_boss_defeat_in_area(db, int(user_row["id"]), "layer_1")
 
 
+def is_layer1_protection_active(db, user_row):
+    return _tutorial_layer1_is_subject(db, user_row, "layer_1")
+
+
+def _layer1_protection_explore_count(db, user_id):
+    return _count_user_explore_end_in_areas(db, int(user_id), ("layer_1",))
+
+
 def _tutorial_layer1_snapshot(user_row):
     if not user_row:
         return {}
@@ -26493,6 +26577,19 @@ def home():
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     home_lab_level = lab_level_view(user)
     home_insect_research = _home_insect_research_view(db, week_key)
+    layer1_first_clear_card = None
+    if (
+        "layer1_first_clear_reward_claimed" in user.keys()
+        and "layer1_first_clear_home_seen" in user.keys()
+        and int(user["layer1_first_clear_reward_claimed"] or 0) == 1
+        and int(user["layer1_first_clear_home_seen"] or 0) == 0
+    ):
+        layer1_first_clear_card = {
+            "title": "第1層突破！",
+            "text": "研究員として最初の試験を突破しました。あなたのロボは、正式にロボらぼの記録に登録されました。",
+            "reward_line": f"初突破報酬 +{int(LAYER1_FIRST_CLEAR_REWARD_COINS)}コイン / 第1層突破エンブレム",
+        }
+        db.execute("UPDATE users SET layer1_first_clear_home_seen = 1 WHERE id = ?", (int(user["id"]),))
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -26668,6 +26765,7 @@ def home():
             daily_research_task_line=daily_research_task_line,
             daily_research_explore_action=url_for("explore"),
             daily_research_area_key=daily_research_area_key,
+            layer1_first_clear_card=layer1_first_clear_card,
         )
     except Exception as exc:
         app.logger.exception("home rendering failed")
@@ -29278,7 +29376,7 @@ def explore():
     npc_analysis_line = None
     layer1_boss_hint_line = None
     layer1_boss_spawn_p = 0.0
-    tutorial_layer1_subject = _tutorial_layer1_is_subject(db, user, area_key)
+    tutorial_layer1_subject = is_layer1_protection_active(db, user) and area_key == "layer_1"
     tutorial_layer1_state_before = _tutorial_layer1_state(user)
     tutorial_layer1_snapshot_before = _tutorial_layer1_snapshot(user)
     tutorial_layer1_forced_boss = bool(
@@ -29305,6 +29403,10 @@ def explore():
         }
     )
     tutorial_layer1_boss_softened = False
+    layer1_protection_battle_assist = False
+    layer1_protection_alert_guaranteed = False
+    layer1_protection_explore_count = _layer1_protection_explore_count(db, user_id) if tutorial_layer1_subject else 0
+    layer1_first_clear_reward_result = None
     tutorial_layer1_result_card = None
     active_alert = _get_active_boss_alert(db, user_id, area_key, now_ts=now) if _area_supports_boss_alert(area_key) else None
     last_enemy_tendency_tag = None
@@ -29533,6 +29635,92 @@ def explore():
                 ip=request.remote_addr,
             )
     elif (
+        tutorial_layer1_subject
+        and (not tutorial_layer1_forced_boss)
+        and (not active_alert)
+        and _area_supports_boss_alert(area_key)
+        and _has_area_boss_candidates(db, area_key)
+        and int(layer1_protection_explore_count) >= int(LAYER1_PROTECTION_ALERT_EXPLORE_THRESHOLD) - 1
+    ):
+        picked = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
+        if picked is not None:
+            picked_kind = str(picked.get("_boss_kind") or "fixed")
+            picked_template_id = int(picked.get("_npc_boss_template_id") or 0) if picked_kind == "npc" else None
+            picked_meta = _boss_type_meta(picked)
+            alert_state = _activate_boss_alert(
+                db,
+                user_id=user_id,
+                area_key=area_key,
+                enemy_id=int(picked.get("_alert_enemy_id") or picked["id"]),
+                now_ts=now,
+            )
+            layer1_protection_alert_guaranteed = True
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BOSS_ALERT_GUARANTEED"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if picked_kind == "npc" else "enemy"),
+                entity_id=(
+                    picked_template_id
+                    if picked_kind == "npc"
+                    else (int(picked["id"]) if "id" in picked.keys() and picked["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "robot_instance_id": int(active["id"]) if active else None,
+                    "area_key": area_key,
+                    "boss_key": picked["key"] if "key" in picked.keys() else None,
+                    "protection_applied": True,
+                    "alert_guaranteed": True,
+                    "explore_count": int(layer1_protection_explore_count) + 1,
+                    "tutorial_layer1_forced_boss_ready": False,
+                    "boss_kind": picked_kind,
+                    "boss_type": (picked_meta["code"] if picked_meta else None),
+                    "alert_attempts_left": int(alert_state["attempts_left"]),
+                    "alert_expires_at": int(alert_state["expires_at"]),
+                },
+                ip=request.remote_addr,
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if picked_kind == "npc" else "enemy"),
+                entity_id=(
+                    picked_template_id
+                    if picked_kind == "npc"
+                    else (int(picked["id"]) if "id" in picked.keys() and picked["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": picked["key"] if "key" in picked.keys() else None,
+                    "is_boss": True,
+                    "boss_kind": picked_kind,
+                    "area_label": _boss_area_label(area_key),
+                    "enemy_name": picked["name_ja"] if "name_ja" in picked.keys() else "第1層ボス",
+                    "boss_type": (picked_meta["code"] if picked_meta else None),
+                    "spawn_probability": 1.0,
+                    "pity_forced": True,
+                    "streak_before": int(area_boss_streak_before),
+                    "alert_attempts_left": int(alert_state["attempts_left"]),
+                    "alert_expires_at": int(alert_state["expires_at"]),
+                    "newbie_protection_applied": True,
+                    "alert_guaranteed": True,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            session["message"] = (
+                f"【ボス警報】{_boss_area_label(area_key)}で{picked['name_ja']}を検知。"
+                "第1層試験支援により挑戦準備が整いました。"
+            )
+            return redirect(url_for("home"))
+    elif (
         (not tutorial_layer1_skip_random_boss)
         and _area_supports_boss_alert(area_key)
         and _has_area_boss_candidates(db, area_key)
@@ -29629,11 +29817,36 @@ def explore():
         enemy = dict(enemy) if not isinstance(enemy, dict) else dict(enemy)
         if area_boss_active and battle_no == 1 and str(enemy.get("_boss_kind") or area_boss_kind) == "fixed":
             enemy = _apply_boss_type_modifiers(enemy)
-            if tutorial_layer1_subject and area_key == "layer_1" and tutorial_layer1_first_boss:
-                enemy["hp"] = max(1, int(round(int(enemy.get("hp") or 1) * 0.88)))
-                enemy["acc"] = max(1, int(round(int(enemy.get("acc") or 1) * 0.92)))
-                enemy["_special_line"] = "初回解析補助: 防衛機の出力が少し不安定です"
+            if (
+                tutorial_layer1_subject
+                and area_key == "layer_1"
+                and str(enemy.get("key") or "") == LAYER_BOSS_KEY_BY_LAYER.get(1)
+            ):
+                enemy["hp"] = max(1, int(round(int(enemy.get("hp") or 1) * float(LAYER1_PROTECTION_BOSS_HP_MULTIPLIER))))
+                enemy["atk"] = max(1, int(round(int(enemy.get("atk") or 1) * float(LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER))))
+                enemy["_special_line"] = "第1層試験支援: 防衛機の出力が少し不安定です"
                 tutorial_layer1_boss_softened = True
+                layer1_protection_battle_assist = True
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BATTLE_ASSIST"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="explore",
+                    entity_type="enemy",
+                    entity_id=(int(enemy["id"]) if "id" in enemy.keys() and enemy["id"] else None),
+                    payload={
+                        "user_id": user_id,
+                        "robot_instance_id": int(active["id"]) if active else None,
+                        "boss_key": enemy["key"] if "key" in enemy.keys() else None,
+                        "protection_applied": True,
+                        "newbie_protection_applied": True,
+                        "hp_multiplier": float(LAYER1_PROTECTION_BOSS_HP_MULTIPLIER),
+                        "atk_multiplier": float(LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER),
+                        "player_damage_multiplier": float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER),
+                    },
+                    ip=request.remote_addr,
+                )
         elif (not app.config.get("TESTING")) and area_key in MINI_BOSS_AREA_KEYS and random.random() < float(MINI_BOSS_SPAWN_RATE):
             enemy["hp"] = max(1, int(round(int(enemy.get("hp") or 1) * float(MINI_BOSS_HP_MULT))))
             enemy["atk"] = max(1, int(round(int(enemy.get("atk") or 1) * float(MINI_BOSS_ATK_MULT))))
@@ -29770,6 +29983,8 @@ def explore():
                     damage_noise_range=player_damage_noise_range,
                 )
                 player_damage = apply_affinity_damage(player_damage, player_type_affinity)
+                if layer1_protection_battle_assist and player_damage > 0:
+                    player_damage = max(1, int(round(player_damage * float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER))))
                 player_attack_note = _attack_note(player_action, player_damage, player_attack_detail, debug=battle_debug)
                 player_missed = bool(player_attack_detail.get("miss")) or player_damage <= 0
                 if force_player_hit:
@@ -29877,6 +30092,8 @@ def explore():
                         damage_noise_range=player_damage_noise_range,
                     )
                     player_damage = apply_affinity_damage(player_damage, player_type_affinity)
+                    if layer1_protection_battle_assist and player_damage > 0:
+                        player_damage = max(1, int(round(player_damage * float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER))))
                     player_attack_note = _attack_note(player_action, player_damage, player_attack_detail, debug=battle_debug)
                     player_missed = bool(player_attack_detail.get("miss")) or player_damage <= 0
                     if force_player_hit:
@@ -30192,9 +30409,85 @@ def explore():
                         "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
                         "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
                         "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                        "newbie_protection_applied": bool(layer1_protection_battle_assist),
+                        "hp_multiplier": (
+                            float(LAYER1_PROTECTION_BOSS_HP_MULTIPLIER)
+                            if layer1_protection_battle_assist
+                            else None
+                        ),
+                        "atk_multiplier": (
+                            float(LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER)
+                            if layer1_protection_battle_assist
+                            else None
+                        ),
+                        "player_damage_multiplier": (
+                            float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER)
+                            if layer1_protection_battle_assist
+                            else None
+                        ),
                     },
                     ip=request.remote_addr,
                 )
+                if (
+                    tutorial_layer1_subject
+                    and area_key == "layer_1"
+                    and area_boss_kind == "fixed"
+                    and str(enemy.get("key") or "") == LAYER_BOSS_KEY_BY_LAYER.get(1)
+                ):
+                    layer1_first_clear_reward_result = _grant_layer1_first_clear_reward(
+                        db,
+                        user_id,
+                        request_id=request_id,
+                        ip=request.remote_addr,
+                    )
+                    reward_coin += int(layer1_first_clear_reward_result.get("coins") or 0)
+                    audit_log(
+                        db,
+                        AUDIT_EVENT_TYPES["LAYER1_FIRST_CLEAR"],
+                        user_id=user_id,
+                        request_id=request_id,
+                        action_key="explore",
+                        entity_type="enemy",
+                        entity_id=(int(enemy["id"]) if "id" in enemy.keys() and enemy["id"] else None),
+                        payload={
+                            "user_id": user_id,
+                            "robot_instance_id": int(active["id"]) if active else None,
+                            "robot_name": active["name"] if active and "name" in active.keys() else None,
+                            "boss_key": enemy["key"] if "key" in enemy.keys() else None,
+                            "area_key": area_key,
+                            "protection_applied": bool(layer1_protection_battle_assist),
+                            "newbie_protection_applied": bool(layer1_protection_battle_assist),
+                            "hp_multiplier": (
+                                float(LAYER1_PROTECTION_BOSS_HP_MULTIPLIER)
+                                if layer1_protection_battle_assist
+                                else None
+                            ),
+                            "atk_multiplier": (
+                                float(LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER)
+                                if layer1_protection_battle_assist
+                                else None
+                            ),
+                            "player_damage_multiplier": (
+                                float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER)
+                                if layer1_protection_battle_assist
+                                else None
+                            ),
+                            "reward_granted": bool(layer1_first_clear_reward_result.get("reward_granted")),
+                            "duplicate_skip_reason": layer1_first_clear_reward_result.get("duplicate_skip_reason"),
+                        },
+                        ip=request.remote_addr,
+                    )
+                    display_name = _display_username_for_user_row(db, user)
+                    robot_name = active["name"] if active and "name" in active.keys() and active["name"] else "探索機"
+                    db.execute(
+                        "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
+                        (
+                            user_id,
+                            "SYSTEM",
+                            f"{display_name}のロボ『{robot_name}』が第1層試験を突破。新たな研究員として記録されました。",
+                            now_str(),
+                        ),
+                    )
                 add_faction_points(
                     db,
                     user_id,
@@ -30329,6 +30622,8 @@ def explore():
     if area_boss_reward and area_boss_reward.get("decor_name"):
         suffix = "入手" if area_boss_reward.get("granted") else "重複（既所持）"
         world_bonus_notes.append(f"エリアボス報酬: {area_boss_reward['decor_name']} ({suffix})")
+    if layer1_first_clear_reward_result and layer1_first_clear_reward_result.get("reward_granted"):
+        world_bonus_notes.append(f"第1層初突破報酬: +{int(layer1_first_clear_reward_result.get('coins') or 0)}コイン")
     elif (
         area_boss_active
         and final_outcome == "win"
@@ -30561,10 +30856,15 @@ def explore():
                     )
                 tutorial_layer1_result_card = {
                     "kind": "guide",
-                    "title": "第1層ボスの圧力に押し切られました",
-                    "text": "あと一歩です。ベースを残して素材2個でパーツを強化してからもう一度挑めば突破が見えてきます。",
-                    "cta_label": "強化する",
+                    "title": "第1層ボスに敗北しました。",
+                    "text": "まだ大丈夫です。パーツを強化すると、次はかなり勝ちやすくなります。",
+                    "cta_label": "パーツを強化する",
                     "cta_url": url_for("parts_strengthen", mode="select"),
+                    "actions": [
+                        {"label": "パーツを強化する", "url": url_for("parts_strengthen", mode="select"), "is_post": False},
+                        {"label": "ロボを組み立てる", "url": url_for("build"), "is_post": False},
+                        {"label": "もう一度出撃", "url": url_for("explore"), "is_post": True, "area_key": "layer_1"},
+                    ],
                 }
         elif final_outcome == "win":
             _tutorial_layer1_mark_normal_win(
@@ -30739,6 +31039,35 @@ def explore():
                 "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
                 "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
                 "boss_softened": bool(tutorial_layer1_boss_softened),
+            },
+            "newbie_protection": {
+                "protection_applied": bool(layer1_protection_battle_assist),
+                "newbie_protection_applied": bool(layer1_protection_battle_assist),
+                "alert_guaranteed": bool(layer1_protection_alert_guaranteed),
+                "hp_multiplier": (
+                    float(LAYER1_PROTECTION_BOSS_HP_MULTIPLIER)
+                    if layer1_protection_battle_assist
+                    else None
+                ),
+                "atk_multiplier": (
+                    float(LAYER1_PROTECTION_BOSS_ATK_MULTIPLIER)
+                    if layer1_protection_battle_assist
+                    else None
+                ),
+                "player_damage_multiplier": (
+                    float(LAYER1_PROTECTION_PLAYER_DAMAGE_MULTIPLIER)
+                    if layer1_protection_battle_assist
+                    else None
+                ),
+                "reward_granted": bool(
+                    layer1_first_clear_reward_result
+                    and layer1_first_clear_reward_result.get("reward_granted")
+                ),
+                "duplicate_skip_reason": (
+                    layer1_first_clear_reward_result.get("duplicate_skip_reason")
+                    if layer1_first_clear_reward_result
+                    else None
+                ),
             },
         },
         ip=request.remote_addr,
@@ -30983,15 +31312,17 @@ def explore():
         "tutorial_layer1_result_card": tutorial_layer1_result_card,
         "tutorial_layer1_next_action": (
             {
-                "title": "パーツを強化する",
-                "desc": "第1層ボスに挑戦済みです。ベースを残して素材2個でパーツを強化し、もう一度挑みましょう。",
-                "cta_label": "強化する",
+                "title": "第1層試験支援",
+                "desc": "第1層ボスに敗北しました。パーツを強化すると、次はかなり勝ちやすくなります。",
+                "cta_label": "パーツを強化する",
                 "cta_url": url_for("parts_strengthen", mode="select"),
                 "is_post": False,
+                "actions": tutorial_layer1_result_card.get("actions") or [],
             }
             if tutorial_layer1_result_card and tutorial_layer1_result_card.get("kind") == "guide"
             else None
         ),
+        "newbie_protection_applied": bool(layer1_protection_battle_assist),
     }
     summary["reward_front"] = _build_battle_reward_front(
         reward_coin=int(reward_coin) + int(auto_sell_coin_total),
