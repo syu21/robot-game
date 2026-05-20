@@ -21,6 +21,9 @@
 {% endif %}
 {% if battle_cinematic_enabled %}
   {% include '_battle_cinematic_v1.html' %}
+  {% if summary and summary.get('battle_kind_label') %}
+  <div class="notice boss-alert-line"><b>区分：</b>{{ summary.get('battle_kind_label') }}</div>
+  {% endif %}
   {% if summary and summary.get('is_area_boss') %}
   <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>
   {% endif %}
@@ -29,6 +32,9 @@
 <h1 class="battle-title">{{ enemy_name }}が襲いかかってきた！！！</h1>
 {% if summary and summary.get('enemy_faction_label') %}
   <div class="upgrade-cost">所属: {{ summary['enemy_faction_label'] }} / Tier {{ summary.get('enemy_tier', '-') }}</div>
+{% endif %}
+{% if summary and summary.get('battle_kind_label') %}
+  <div class="notice boss-alert-line"><b>区分：</b>{{ summary.get('battle_kind_label') }}</div>
 {% endif %}
 {% if summary and summary.get('is_area_boss') %}
   <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>

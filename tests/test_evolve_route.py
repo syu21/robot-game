@@ -152,6 +152,52 @@ class EvolveRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(event)
 
+    def test_evolve_plus_five_stays_plus_five_and_hits_strengthen_cap(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "UPDATE part_instances SET plus = 5, rarity = 'N' WHERE id = ? AND user_id = ?",
+                (self.part_instance_id, self.user_id),
+            )
+            core_asset_id = db.execute(
+                "SELECT id FROM core_assets WHERE core_key = ?",
+                (game_app.EVOLUTION_CORE_KEY,),
+            ).fetchone()["id"]
+            db.execute(
+                "INSERT OR REPLACE INTO user_core_inventory (user_id, core_asset_id, quantity, updated_at) VALUES (?, ?, 1, datetime('now'))",
+                (self.user_id, int(core_asset_id)),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.post(
+            "/parts/evolve",
+            data={"part_instance_id": str(self.part_instance_id)},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("+5", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            evolved = db.execute(
+                """
+                SELECT id, rarity, plus
+                FROM part_instances
+                WHERE user_id = ? AND status = 'inventory' AND UPPER(COALESCE(rarity, 'N')) = 'R'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(evolved)
+            self.assertEqual(int(evolved["plus"]), 5)
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, int(evolved["id"]))
+            self.assertFalse(result["ok"])
+            self.assertIn("最大強化", result["message"])
+
     def test_evolve_requires_core(self):
         with game_app.app.app_context():
             db = game_app.get_db()

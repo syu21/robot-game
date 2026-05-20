@@ -48,7 +48,9 @@
   const scrollKey = "parts_strengthen_scroll_y";
 
   const stackRadios = Array.from(panel.querySelectorAll("input.fuse-base-radio"));
+  const materialChecks = Array.from(panel.querySelectorAll("input.fuse-material-checkbox"));
   const selectedCountEl = document.getElementById("fuse-selected-count");
+  const selectedMaterialCountEl = document.getElementById("fuse-material-count");
   const submitBtn = document.getElementById("fuse-select-submit");
   const baseSelectedEl = document.getElementById("fuse-base-selected");
   const materialSelectedEl = document.getElementById("fuse-material-selected");
@@ -57,6 +59,7 @@
   if (
     stackRadios.length === 0 ||
     !selectedCountEl ||
+    !selectedMaterialCountEl ||
     !submitBtn ||
     !baseSelectedEl ||
     !materialSelectedEl ||
@@ -69,25 +72,48 @@
     return stackRadios.find((r) => r.checked) || null;
   }
 
+  function materialChecksForBase(baseId) {
+    return materialChecks.filter((check) => String(check.dataset.baseId || "") === String(baseId || ""));
+  }
+
+  function selectedMaterialsForBase(baseId) {
+    return materialChecksForBase(baseId).filter((check) => check.checked);
+  }
+
+  function syncMaterialAvailability(stack) {
+    const activeBaseId = stack ? String(stack.value || "") : "";
+    materialChecks.forEach((check) => {
+      const belongsToActiveBase = activeBaseId && String(check.dataset.baseId || "") === activeBaseId;
+      check.disabled = !belongsToActiveBase;
+    });
+  }
+
   function syncState() {
     const stack = selectedStack();
+    syncMaterialAvailability(stack);
     if (!stack) {
       selectedCountEl.textContent = "0";
+      selectedMaterialCountEl.textContent = "0";
       baseSelectedEl.textContent = "未選択";
-      materialSelectedEl.textContent = "同じパーツの所持中2個を使います";
+      materialSelectedEl.textContent = "ベースを選んでから素材2個を選択";
       resultExpectedEl.textContent = "素材の+値を引き継ぎ";
       submitBtn.disabled = true;
       return;
     }
 
+    const selectedMaterials = selectedMaterialsForBase(stack.value);
     selectedCountEl.textContent = "1";
+    selectedMaterialCountEl.textContent = String(selectedMaterials.length);
     baseSelectedEl.textContent = String(stack.dataset.partLabel || "未選択");
-    materialSelectedEl.textContent = String(stack.dataset.materialLabels || "同じパーツの所持中2個を使います");
+    materialSelectedEl.textContent =
+      selectedMaterials.length > 0
+        ? selectedMaterials.map((check) => String(check.dataset.materialLabel || check.value)).join(", ")
+        : "素材を2個選択";
     const partLabel = String(stack.dataset.partLabel || "パーツ");
     const basePlus = Number(stack.dataset.basePlus || 0);
     const targetPlus = Number(stack.dataset.targetPlus || basePlus);
     resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${targetPlus}（素材+値引き継ぎ）`;
-    submitBtn.disabled = false;
+    submitBtn.disabled = selectedMaterials.length !== 2;
   }
 
   // Keep continuous strengthen UX stable: return to previous viewport after redirect.
@@ -114,6 +140,18 @@
 
   stackRadios.forEach((radio) => {
     radio.addEventListener("change", syncState);
+  });
+  materialChecks.forEach((check) => {
+    check.addEventListener("change", () => {
+      const stack = selectedStack();
+      if (stack && String(check.dataset.baseId || "") === String(stack.value || "")) {
+        const selected = selectedMaterialsForBase(stack.value);
+        if (selected.length > 2 && check.checked) {
+          check.checked = false;
+        }
+      }
+      syncState();
+    });
   });
   try {
     syncState();

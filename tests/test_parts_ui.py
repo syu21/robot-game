@@ -368,7 +368,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("保護中", html)
         self.assertIn("保護解除", html)
         self.assertIn("btn-unlock", html)
-        self.assertIn("保護中：破棄・素材消費に使われません", html)
+        self.assertIn("保護中：売却・素材消費に使われません", html)
         self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
 
         resp = client.post(
@@ -709,7 +709,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("進化合成", html)
         self.assertIn(head_name, html)
         self.assertNotIn(right_arm_name, html)
-        self.assertIn("強化値と個体性能はそのまま引き継がれます。", html)
+        self.assertIn("強化値（+値）と個体性能は進化後も引き継がれます。", html)
         self.assertIn("進化するとこう変わる", html)
         self.assertIn("進化 →", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):

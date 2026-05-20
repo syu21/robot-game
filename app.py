@@ -461,7 +461,7 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "label": "突破育成",
         "short_label": "攻撃・耐久寄り",
         "home_line": "育成傾向: 攻撃・耐久寄り",
-        "map_line": "攻撃と耐久の両立で突破型が育つ",
+        "map_line": "進化コア集めと基礎強化に向いた安定周回",
         "weight_bias": {"atk": 0.08, "hp": 0.06, "def": 0.03},
     },
     "layer_4_forge": {
@@ -469,7 +469,7 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "label": "要塞育成",
         "short_label": "耐久・防御寄り",
         "home_line": "育成傾向: 耐久・防御が大きく伸びる",
-        "map_line": "長期戦向け。耐久と防御を明確に伸ばせる",
+        "map_line": "型ごとの育成傾向が強い高難度エリア",
         "weight_bias": {"hp": 0.20, "def": 0.18, "atk": 0.08, "acc": 0.03, "spd": -0.10, "cri": -0.08},
     },
     "layer_4_haze": {
@@ -477,7 +477,7 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "label": "霧界育成",
         "short_label": "命中・安定寄り",
         "home_line": "育成傾向: 命中・安定寄り",
-        "map_line": "命中と安定で高速機を捉える型が育つ",
+        "map_line": "型ごとの育成傾向が強い高難度エリア",
         "weight_bias": {"hp": 0.04, "def": 0.08, "atk": -0.04, "acc": 0.22, "spd": 0.12, "cri": -0.04},
     },
     "layer_4_burst": {
@@ -485,7 +485,7 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "label": "暴走育成",
         "short_label": "攻撃・会心寄り",
         "home_line": "育成傾向: 攻撃・会心が大きく伸びる",
-        "map_line": "背水と爆発の王道。速攻で抜ける型が育つ",
+        "map_line": "型ごとの育成傾向が強い高難度エリア",
         "weight_bias": {"hp": -0.10, "def": -0.10, "atk": 0.20, "acc": 0.06, "spd": 0.08, "cri": 0.18},
     },
     "layer_4_final": {
@@ -2028,7 +2028,7 @@ EXPLORE_AREA_MAP_INFO = {
     "layer_3": {
         "desc": [
             "旧防衛区画。高tier混在の終盤ルート。",
-            "推奨: 耐久と火力の両立で短期決着を狙う。",
+            "推奨: 進化コア集めと基礎強化に向いた安定周回。",
             "注意: タイムアウト負けの管理が重要。",
         ],
         "recommended_archetype": "fortress",
@@ -2037,7 +2037,7 @@ EXPLORE_AREA_MAP_INFO = {
         "desc": [
             "重装機が多い。長く戦える機体向き。",
             "推奨: 耐久・防御寄りの型で押し切る。",
-            "注意: 短期火力だけでは抜けきりにくい。",
+            "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "fortress",
     },
@@ -2045,7 +2045,7 @@ EXPLORE_AREA_MAP_INFO = {
         "desc": [
             "霧機が多い。命中と安定が重要。",
             "推奨: ACC重視の安定構成で崩れを防ぐ。",
-            "注意: MISSが続くと一気にテンポを失う。",
+            "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "sniper",
     },
@@ -2053,7 +2053,7 @@ EXPLORE_AREA_MAP_INFO = {
         "desc": [
             "暴走機が多い。速攻と爆発力が活きる。",
             "推奨: 背水・爆発寄りで短期決着を狙う。",
-            "注意: もたつくと事故が連鎖しやすい。",
+            "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "swift",
     },
@@ -6293,7 +6293,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     else:
         item["status_label"] = "所持中"
     if item["locked"]:
-        item["material_hint"] = "保護中：破棄や素材消費の対象になりません"
+        item["material_hint"] = "保護中：売却や素材消費の対象になりません"
     elif item["is_inventory"]:
         item["material_hint"] = "強化素材に使える"
     elif item["is_sold"]:
@@ -24059,7 +24059,7 @@ def _public_changelog_entries():
             "date": "2026/05/17",
             "title": "コメント対応で所持枠表示と周回導線を改善",
             "notes": [
-                "保護中パーツの説明文を現在の操作名に合わせ、破棄や素材消費の対象外であることが分かるよう修正",
+                "保護中パーツの説明文を現在の操作名に合わせ、売却や素材消費の対象外であることが分かるよう修正",
                 "出撃前と固定ナビでパーツ所持数を確認しやすくし、上限に近いと注意表示になるよう改善",
                 "戦闘後から廃品市場へ移動しやすくし、ロボ分解で所持上限を超える場合は先に整理を案内するよう変更",
                 "所持パーツ画面下部のリンク間隔と、パーツ強化ボタンが押せない場合の理由表示を調整",
@@ -31220,12 +31220,23 @@ def explore():
     else:
         explore_ct_button_label = "もう一度出撃"
         explore_ct_status_label = "出撃可能"
+    if area_boss_active and area_key == LAYER4_FINAL_AREA_KEY:
+        battle_kind_label = "第4層 最終試験"
+    elif area_boss_active and _area_layer(area_key) == 4:
+        battle_kind_label = "第4層ボス警報"
+    elif _area_layer(area_key) == 4:
+        battle_kind_label = "第4層 出撃試験"
+    elif area_boss_active:
+        battle_kind_label = "ボス警報"
+    else:
+        battle_kind_label = "通常出撃"
 
     summary = {
         "outcome": outcome_display,
         "outcome_base": ("勝利" if final_outcome == "win" else "敗北"),
         "outcome_is_win": bool(final_outcome == "win"),
         "battle_id": battle_id,
+        "battle_kind_label": battle_kind_label,
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
         "lab_level_result": lab_level_result,
@@ -36579,7 +36590,7 @@ def evolve_parts_legacy():
     return redirect(url_for("evolve_parts", mode=mode) if mode else url_for("evolve_parts"))
 
 
-def _strengthen_parts_selected(db, user_id, base_id):
+def _strengthen_parts_selected(db, user_id, base_id, material_ids=None):
     def _fail(message, *, base_row=None, coin_cost=None):
         payload = {
             "ok": False,
@@ -36601,6 +36612,15 @@ def _strengthen_parts_selected(db, user_id, base_id):
         if coin_cost is not None:
             payload["coin_cost"] = int(coin_cost)
         return payload
+
+    selected_material_ids = []
+    for raw_id in material_ids or []:
+        try:
+            material_id = int(raw_id)
+        except Exception:
+            continue
+        if material_id > 0 and material_id not in selected_material_ids:
+            selected_material_ids.append(material_id)
 
     try:
         base_id_int = int(base_id)
@@ -36630,65 +36650,124 @@ def _strengthen_parts_selected(db, user_id, base_id):
         )
 
     material_mode = "same_rarity"
-    material_rows = db.execute(
-        """
-        SELECT
-            pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
-            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-            rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
-        FROM part_instances pi
-        JOIN robot_parts rp ON rp.id = pi.part_id
-        WHERE pi.user_id = ?
-          AND pi.status = 'inventory'
-          AND COALESCE(pi.locked, 0) = 0
-          AND pi.id != ?
-          AND rp.key = ?
-          AND UPPER(COALESCE(pi.rarity, '')) = UPPER(COALESCE(?, ''))
-        ORDER BY pi.plus ASC, pi.id ASC
-        LIMIT 2
-        """,
-        (
-            int(user_id),
-            base_id_int,
-            str(base_row["part_key"] or ""),
-            str(base_row["rarity"] or ""),
-        ),
-    ).fetchall()
-    if len(material_rows) != 2:
+    if selected_material_ids:
+        if len(selected_material_ids) != 2:
+            return _fail("素材個体を2個選択してください。", base_row=base_row)
+        placeholders = ",".join("?" for _ in selected_material_ids)
+        material_lookup = db.execute(
+            f"""
+            SELECT
+                pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series, pi.status,
+                COALESCE(pi.locked, 0) AS locked,
+                pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.user_id = ?
+              AND pi.id IN ({placeholders})
+            """,
+            [int(user_id), *selected_material_ids],
+        ).fetchall()
+        material_by_id = {int(row["id"]): row for row in material_lookup}
+        material_rows = [material_by_id.get(mid) for mid in selected_material_ids]
+        if any(row is None for row in material_rows):
+            return _fail("選択した素材個体が見つかりません。", base_row=base_row)
+        if any(int(row["id"]) == base_id_int for row in material_rows):
+            return _fail("ベース個体は素材にできません。", base_row=base_row)
+        if any(str(row["status"] or "").strip().lower() != "inventory" for row in material_rows):
+            return _fail("装備中または所持中でない個体は素材にできません。", base_row=base_row)
+        if any(int(row["locked"] or 0) != 0 for row in material_rows):
+            return _fail("保護中の個体は素材にできません。", base_row=base_row)
+        same_rarity_match = all(
+            str(row["part_key"] or "") == str(base_row["part_key"] or "")
+            and str(row["rarity"] or "").upper() == str(base_row["rarity"] or "").upper()
+            for row in material_rows
+        )
         base_rarity = str(base_row["rarity"] or "").strip().upper()
-        if base_rarity == "R":
+        r_assist_match = False
+        if not same_rarity_match and base_rarity == "R":
             aliases = _market_part_type_aliases(base_row["part_type"])
-            marks = ",".join("?" for _ in aliases)
-            material_rows = db.execute(
-                f"""
-                SELECT
-                    pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
-                    pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
-                    rp.part_type, rp.key AS part_key
-                FROM part_instances pi
-                JOIN robot_parts rp ON rp.id = pi.part_id
-                WHERE pi.user_id = ?
-                  AND pi.status = 'inventory'
-                  AND COALESCE(pi.locked, 0) = 0
-                  AND pi.id != ?
-                  AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) = 'N'
-                  AND UPPER(COALESCE(pi.element, rp.element, '')) = UPPER(COALESCE(?, ''))
-                  AND UPPER(COALESCE(rp.part_type, pi.part_type, '')) IN ({marks})
-                  AND COALESCE(rp.frame_type, 'normal') = ?
-                ORDER BY pi.plus ASC, pi.id ASC
-                LIMIT 2
-                """,
-                (
-                    int(user_id),
-                    base_id_int,
-                    str(base_row["element"] or ""),
-                    *aliases,
-                    _normalize_frame_type(base_row["frame_type"]),
-                ),
-            ).fetchall()
-            if len(material_rows) == 2:
-                material_mode = "r_n_assist"
+            r_assist_match = all(
+                str(row["rarity"] or "").upper() == "N"
+                and str(row["element"] or "").upper() == str(base_row["element"] or "").upper()
+                and str(row["part_type"] or "").upper() in aliases
+                and _normalize_frame_type(row["frame_type"]) == _normalize_frame_type(base_row["frame_type"])
+                for row in material_rows
+            )
+        if r_assist_match:
+            material_mode = "r_n_assist"
+        elif not same_rarity_match:
+            return _fail(
+                "選択した素材は、同じパーツ2個またはR強化用の対応N素材2個にしてください。",
+                base_row=base_row,
+            )
+    else:
+        material_rows = db.execute(
+            """
+            SELECT
+                pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
+                COALESCE(pi.locked, 0) AS locked,
+                pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
+            FROM part_instances pi
+            JOIN robot_parts rp ON rp.id = pi.part_id
+            WHERE pi.user_id = ?
+              AND pi.status = 'inventory'
+              AND COALESCE(pi.locked, 0) = 0
+              AND pi.id != ?
+              AND rp.key = ?
+              AND UPPER(COALESCE(pi.rarity, '')) = UPPER(COALESCE(?, ''))
+            ORDER BY pi.plus ASC, pi.id ASC
+            LIMIT 2
+            """,
+            (
+                int(user_id),
+                base_id_int,
+                str(base_row["part_key"] or ""),
+                str(base_row["rarity"] or ""),
+            ),
+        ).fetchall()
         if len(material_rows) != 2:
+            base_rarity = str(base_row["rarity"] or "").strip().upper()
+            if base_rarity == "R":
+                aliases = _market_part_type_aliases(base_row["part_type"])
+                marks = ",".join("?" for _ in aliases)
+                material_rows = db.execute(
+                    f"""
+                    SELECT
+                        pi.id, pi.part_id, pi.plus, pi.rarity, pi.element, pi.series,
+                        COALESCE(pi.locked, 0) AS locked,
+                        pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                        rp.part_type, rp.key AS part_key, COALESCE(rp.frame_type, 'normal') AS frame_type
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.user_id = ?
+                      AND pi.status = 'inventory'
+                      AND COALESCE(pi.locked, 0) = 0
+                      AND pi.id != ?
+                      AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) = 'N'
+                      AND UPPER(COALESCE(pi.element, rp.element, '')) = UPPER(COALESCE(?, ''))
+                      AND UPPER(COALESCE(rp.part_type, pi.part_type, '')) IN ({marks})
+                      AND COALESCE(rp.frame_type, 'normal') = ?
+                    ORDER BY pi.plus ASC, pi.id ASC
+                    LIMIT 2
+                    """,
+                    (
+                        int(user_id),
+                        base_id_int,
+                        str(base_row["element"] or ""),
+                        *aliases,
+                        _normalize_frame_type(base_row["frame_type"]),
+                    ),
+                ).fetchall()
+                if len(material_rows) == 2:
+                    material_mode = "r_n_assist"
+            if len(material_rows) != 2:
+                return _fail(
+                    "同じパーツ2個、またはR強化用の対応N素材2個が不足しています。",
+                    base_row=base_row,
+                )
+    if len(material_rows) != 2:
             return _fail(
                 "同じパーツ2個、またはR強化用の対応N素材2個が不足しています。",
                 base_row=base_row,
@@ -36782,6 +36861,12 @@ def _strengthen_parts_selected(db, user_id, base_id):
         "assist_after": int(assist_after),
         "assist_threshold": int(R_PART_N_ASSIST_THRESHOLD),
         "consumed_ids": [int(x) for x in material_ids],
+        "material_part_instance_ids": [int(x) for x in material_ids],
+        "base_locked": bool(int(base_row["locked"] or 0)),
+        "material_locked_states": [
+            {"id": int(row["id"]), "locked": bool(int(row["locked"] or 0))}
+            for row in material_rows
+        ],
         "created_id": int(base_id_int),
         "updated_id": int(base_id_int),
         "coin_cost": coin_cost,
@@ -37628,7 +37713,12 @@ def parts_strengthen():
                     if mode == "batch":
                         result = _strengthen_parts_batch_selected(db, user_id, base_id=int(base_id_raw))
                     else:
-                        result = _strengthen_parts_selected(db, user_id, base_id=int(base_id_raw))
+                        result = _strengthen_parts_selected(
+                            db,
+                            user_id,
+                            base_id=int(base_id_raw),
+                            material_ids=request.form.getlist("material_ids"),
+                        )
                 except Exception:
                     app.logger.exception(
                         "parts_strengthen.failed user_id=%s mode=%s args=%s form=%s",
@@ -37681,6 +37771,12 @@ def parts_strengthen():
                         "from_plus": result.get("base_plus"),
                         "to_plus": result.get("new_plus"),
                         "consumed_ids": result.get("consumed_ids", []),
+                        "material_part_instance_ids": result.get(
+                            "material_part_instance_ids",
+                            result.get("consumed_ids", []),
+                        ),
+                        "base_locked": result.get("base_locked"),
+                        "material_locked_states": result.get("material_locked_states", []),
                         "created_id": result.get("created_id"),
                         "coin_cost": result.get("coin_cost"),
                         "mat_plus_sum": result.get("mat_plus_sum"),
@@ -38004,6 +38100,7 @@ def parts_strengthen():
                 and int(candidate["locked"] or 0) == 0
             ]
             materials.sort(key=lambda item: (int(item.get("plus") or 0), int(item.get("id") or 0)))
+            material_choices = list(materials)
             materials = materials[:2]
             if len(materials) != 2:
                 continue
@@ -38021,13 +38118,17 @@ def parts_strengthen():
             candidate_item["cost"] = int(FUSE_COST_BY_PLUS.get(int(row_dict.get("plus") or 0), 20))
             candidate_item["material_cards"] = [_part_card_payload(material, can_discard=False) for material in materials]
             candidate_item["material_ids"] = [int(material["id"]) for material in materials]
+            candidate_item["material_choice_cards"] = [
+                _part_card_payload(material, can_discard=False) for material in material_choices[:12]
+            ]
+            candidate_item["auto_material_ids"] = [int(material["id"]) for material in materials]
             candidate_item["material_plus_text"] = " / ".join(
                 f"+{int(material.get('plus') or 0)}" for material in materials
             )
             candidate_item["material_notice"] = (
-                "装備中ベースのまま強化できます。素材は所持中から2個使います。"
+                "装備中ベースのまま強化できます。素材は所持中から2個選びます。"
                 if row_status == "equipped"
-                else "素材は所持中から2個使います。素材の+値も引き継がれます。"
+                else "素材は所持中から2個選びます。素材の+値も引き継がれます。"
             )
             candidate_item["expected_plus_text"] = (
                 f"+{int(row_dict.get('plus') or 0)} → +{int(next_row.get('plus') or 0)}"

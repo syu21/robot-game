@@ -25,7 +25,8 @@
     </div>
   </div>
   <div class="evolve-help-list">
-    <div>強化値と個体性能はそのまま引き継がれます。</div>
+    <div>強化値（+値）と個体性能は進化後も引き継がれます。</div>
+    <div>+5のパーツを進化すると、進化後も+5として引き継がれます。現在の強化上限に達している場合、追加強化はできません。</div>
     <div>進化後の伸び方を見比べてから選べます。</div>
     {% if core_qty < 1 %}
       <div class="robot-time">進化コアがないため、今は実行できません。</div>
@@ -58,7 +59,7 @@
   {% if last_evolve_result.get('stat_rows') %}
     {{ stat_grid(last_evolve_result['stat_rows'], 'is-compare') }}
   {% endif %}
-  <p>強化値と個体性能はそのまま引き継がれました。</p>
+  <p>強化値（+値）と個体性能は進化後も引き継がれました。</p>
   <div class="actions-grid">
     <a class="action-card" href="{{ url_for('evolve_parts', mode='select', part_type=selected_part_type or '') }}">
       <div class="action-title">もう一度進化する</div>
@@ -116,7 +117,7 @@
       {{ stat_grid(p['stat_rows'], 'is-compare') }}
       <div class="part-subsection">
         <div class="part-subsection-title">進化するとこう変わる</div>
-        <div class="robot-time">強化値と個体性能は引き継がれます。見た目とレアリティが上がります。</div>
+        <div class="robot-time">強化値（+値）と個体性能は進化後も引き継がれます。見た目とレアリティが上がります。</div>
       </div>
     </label>
     {% endfor %}

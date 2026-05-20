@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import app as game_app
 import init_db
@@ -44,7 +45,8 @@ class BattleReturnCooldownTests(unittest.TestCase):
         user_id = self._create_user("ct_user", is_admin=0)
         with game_app.app.test_client() as client:
             self._login(client, user_id, "ct_user")
-            resp = client.post("/explore", data={"area_key": "layer_1"})
+            with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+                resp = client.post("/explore", data={"area_key": "layer_1"})
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn('id="explore-return-btn"', html)
@@ -59,7 +61,8 @@ class BattleReturnCooldownTests(unittest.TestCase):
         user_id = self._create_user("ct_admin", is_admin=1)
         with game_app.app.test_client() as client:
             self._login(client, user_id, "ct_admin")
-            resp = client.post("/explore", data={"area_key": "layer_1"})
+            with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
+                resp = client.post("/explore", data={"area_key": "layer_1"})
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
             self.assertIn('id="explore-return-btn"', html)

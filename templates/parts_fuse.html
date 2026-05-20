@@ -374,18 +374,18 @@
     <div id="individual-strengthen"><b>個別強化</b></div>
     <div class="fuse-selection-summary" id="fuse-selection-summary">
       <div>ベース: <span id="fuse-base-selected">未選択</span></div>
-      <div>素材: <span id="fuse-material-selected">同じパーツの所持中2個を使います</span></div>
+      <div>素材: <span id="fuse-material-selected">ベースを選んでから素材2個を選択</span></div>
       <div>結果: <span id="fuse-result-expected">素材の+値を引き継ぎ</span></div>
     </div>
-    <div class="fuse-select-status">選択数 <b id="fuse-selected-count">0</b>/1</div>
-    <p class="robot-time">1個体を選んで、強化するとどう変わるかを見比べてから実行できます。</p>
+    <div class="fuse-select-status">選択数 ベース <b id="fuse-selected-count">0</b>/1 / 素材 <b id="fuse-material-count">0</b>/2</div>
+    <p class="robot-time">ベース1個体と、消費する素材2個を指定してから実行できます。</p>
 
     {% if base_candidates %}
       <div class="part-card-grid">
         {% for candidate in base_candidates %}
-          <label class="robot-card part-compare-card fuse-candidate-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}">
+          <div class="robot-card part-compare-card fuse-candidate-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}">
             <div class="part-card-topline">
-              <span class="part-check">
+              <label class="part-check">
                 <input
                   type="radio"
                   name="base_id"
@@ -398,7 +398,7 @@
                   data-material-labels="{% for material in candidate['material_cards'] %}#{{ material['id'] }} {{ material['display_name'] }} +{{ material['plus'] }}{% if not loop.last %}, {% endif %}{% endfor %}"
                 />
                 <span>この個体をベースにする</span>
-              </span>
+              </label>
               <span class="robot-time">コスト {{ candidate['cost'] }}コイン</span>
             </div>
             <div class="part-card-main">
@@ -422,23 +422,31 @@
             </div>
             {{ stat_grid(candidate['stat_rows']) }}
             <div class="part-subsection">
-              <div class="part-subsection-title">素材として使う2個</div>
+              <div class="part-subsection-title">素材として使う2個を選択</div>
               <div class="part-mini-grid">
-                {% for material in candidate['material_cards'] %}
-                  <div class="part-mini-card">
+                {% for material in candidate.get('material_choice_cards', candidate['material_cards']) %}
+                  <label class="part-mini-card">
+                    <input
+                      type="checkbox"
+                      name="material_ids"
+                      value="{{ material['id'] }}"
+                      class="fuse-material-checkbox"
+                      data-base-id="{{ candidate['id'] }}"
+                      data-material-label="#{{ material['id'] }} {{ material['display_name'] }} +{{ material['plus'] }}"
+                    />
                     <img class="part-mini-image" src="{{ material['image_url'] }}" alt="{{ material['display_name'] }}" loading="lazy" decoding="async" />
                     <div>
                       <div class="part-mini-name">#{{ material['id'] }} {{ material['display_name'] }}</div>
                       <div class="robot-time">+{{ material['plus'] }} / {{ material['status_label'] }}</div>
                     </div>
-                  </div>
+                  </label>
                 {% endfor %}
               </div>
             </div>
-          </label>
+          </div>
         {% endfor %}
       </div>
-      <div class="fuse-exec-summary">消費: ベース1 + 素材2 / 素材の+値引き継ぎ / 成功率: 100%</div>
+      <div class="fuse-exec-summary">消費: ベース1 + 選択した素材2 / 素材の+値引き継ぎ / 成功率: 100%</div>
       <button type="submit" id="fuse-select-submit" class="fuse-submit-large">選んだ個体を強化する</button>
     {% else %}
       <div class="card">

@@ -217,6 +217,50 @@ class PartsFuseRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertGreaterEqual(int(row["c"] or 0), 1)
 
+    def test_parts_fuse_uses_selected_material_instances(self):
+        ids = self._seed_same_part_instances([0, 0, 2, 0])
+        base_id = ids[0]
+        selected_material_ids = [ids[1], ids[2]]
+        unselected_material_id = ids[3]
+
+        client = self._client()
+        resp = client.post(
+            "/parts/fuse",
+            data={
+                "mode": "select",
+                "base_id": str(base_id),
+                "material_ids": [str(selected_material_ids[0]), str(selected_material_ids[1])],
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            base = db.execute("SELECT plus FROM part_instances WHERE id = ?", (base_id,)).fetchone()
+            self.assertEqual(int(base["plus"]), 3)
+            consumed_count = db.execute(
+                "SELECT COUNT(*) AS c FROM part_instances WHERE id IN (?, ?)",
+                tuple(selected_material_ids),
+            ).fetchone()
+            self.assertEqual(int(consumed_count["c"] or 0), 0)
+            remaining = db.execute("SELECT id FROM part_instances WHERE id = ?", (unselected_material_id,)).fetchone()
+            self.assertIsNotNone(remaining)
+            event = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = 'audit.fuse'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            payload = json.loads(event["payload_json"])
+            self.assertEqual(payload["base_part_instance_id"], base_id)
+            self.assertEqual(payload["material_part_instance_ids"], selected_material_ids)
+            self.assertEqual([row["locked"] for row in payload["material_locked_states"]], [False, False])
+
     def test_fuse_allows_mixed_plus_same_part_key(self):
         ids = self._seed_same_part_instances([1, 0, 0])
         base_id = ids[0]

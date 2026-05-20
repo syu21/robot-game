@@ -197,6 +197,19 @@ class Layer4ProgressionTests(unittest.TestCase):
         self.assertEqual(open_resp.status_code, 200)
         html = open_resp.get_data(as_text=True)
         self.assertIn('name="area_key" value="layer_4_forge"', html)
+        self.assertIn("第4層 出撃試験", html)
+        self.assertNotIn("エリアボス反応！", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                """,
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]),
+            ).fetchone()
+            self.assertEqual(int(row["c"] or 0), 0)
 
     def test_layer4_final_unlock_requires_three_area_bosses(self):
         with game_app.app.app_context():
@@ -231,7 +244,9 @@ class Layer4ProgressionTests(unittest.TestCase):
         ):
             resp = client.post("/explore", data={"area_key": "layer_4_forge", "boss_enter": "1"}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("要塞勲章", resp.get_data(as_text=True))
+        boss_html = resp.get_data(as_text=True)
+        self.assertIn("要塞勲章", boss_html)
+        self.assertIn("第4層ボス警報", boss_html)
 
         with game_app.app.app_context():
             db = game_app.get_db()
