@@ -195,6 +195,62 @@ class AreaGrowthTendencyTests(unittest.TestCase):
         self.assertEqual(result["growth_tendency_label"], "観測育成")
         self.assertIsNotNone(result["part_instance_id"])
 
+    def test_all_explore_areas_have_growth_tendency_definitions(self):
+        for area in game_app.EXPLORE_AREAS:
+            key = area["key"]
+            tendency = game_app._area_growth_tendency(key)
+            self.assertTrue(tendency, key)
+            self.assertTrue(tendency.get("short_label"), key)
+            self.assertTrue(tendency.get("weight_bias"), key)
+
+    def test_growth_tendency_display_uses_public_stat_labels(self):
+        line = game_app._area_growth_tendency_line("layer_4_haze", context="map")
+
+        self.assertIn("育成傾向", line)
+        self.assertIn("命中", line)
+        for internal_key in ("w_hp", "w_atk", "w_def", "w_spd", "w_acc", "w_cri", "acc", "cri"):
+            self.assertNotIn(internal_key, line)
+
+    def test_area_growth_simulation_matches_configured_biases(self):
+        mist = game_app.simulate_area_growth_tendency(
+            "layer_2_mist",
+            sample_size=1000,
+            part_type="LEFT_ARM",
+            seed=21,
+        )
+        rush = game_app.simulate_area_growth_tendency(
+            "layer_2_rush",
+            sample_size=1000,
+            part_type="LEFT_ARM",
+            seed=21,
+        )
+        layer3 = game_app.simulate_area_growth_tendency(
+            "layer_3",
+            sample_size=1000,
+            part_type="LEFT_ARM",
+            seed=21,
+        )
+
+        self.assertGreater(mist["averages"]["acc"], rush["averages"]["acc"])
+        self.assertGreater(rush["averages"]["spd"], mist["averages"]["spd"])
+        self.assertGreater(rush["averages"]["cri"], mist["averages"]["cri"])
+        self.assertGreater(layer3["averages"]["atk"], mist["averages"]["atk"])
+        self.assertGreater(layer3["averages"]["hp"], mist["averages"]["hp"])
+
+    def test_robot_current_growth_tendency_uses_actual_stats(self):
+        self.assertEqual(
+            game_app._robot_current_growth_tendency({"hp": 80, "def": 70, "atk": 20, "cri": 10, "spd": 15, "acc": 20})["label"],
+            "安定寄り",
+        )
+        self.assertEqual(
+            game_app._robot_current_growth_tendency({"hp": 20, "def": 18, "atk": 70, "cri": 65, "spd": 24, "acc": 25})["label"],
+            "爆発寄り",
+        )
+        self.assertEqual(
+            game_app._robot_current_growth_tendency({"hp": 30, "def": 30, "atk": 28, "cri": 28, "spd": 30, "acc": 31})["label"],
+            "バランス型",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

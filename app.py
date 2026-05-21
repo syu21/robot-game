@@ -436,31 +436,31 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "key": "control",
         "label": "制圧育成",
         "short_label": "命中・防御寄り",
-        "home_line": "育成傾向: 命中・防御寄り",
-        "map_line": "命中を伸ばして崩れにくくなる",
+        "home_line": "育成傾向: 命中・防御寄りを狙いやすい",
+        "map_line": "命中・防御寄りを狙いやすい",
         "weight_bias": {"acc": 0.08, "def": 0.06, "hp": 0.03},
     },
     "layer_2_mist": {
         "key": "precision",
         "label": "狙撃育成",
         "short_label": "命中寄り",
-        "home_line": "育成傾向: 命中寄り",
-        "map_line": "命中の伸びで狙撃型が生まれやすい",
+        "home_line": "育成傾向: 命中寄りの個体が出やすい",
+        "map_line": "命中寄りの個体が出やすい",
         "weight_bias": {"acc": 0.12, "spd": 0.03},
     },
     "layer_2_rush": {
         "key": "fastest",
         "label": "速攻育成",
         "short_label": "素早さ・会心寄り",
-        "home_line": "育成傾向: 素早さ・会心寄り",
-        "map_line": "速攻と会心で展開を押し切る",
+        "home_line": "育成傾向: 素早さ・会心寄りを狙いやすい",
+        "map_line": "素早さ・会心寄りを狙いやすい",
         "weight_bias": {"spd": 0.12, "atk": 0.05, "cri": 0.06},
     },
     "layer_3": {
         "key": "burst",
         "label": "突破育成",
         "short_label": "攻撃・耐久寄り",
-        "home_line": "育成傾向: 攻撃・耐久寄り",
+        "home_line": "育成傾向: 攻撃・耐久寄りを狙いやすい",
         "map_line": "進化コア集めと基礎強化に向いた安定周回",
         "weight_bias": {"atk": 0.08, "hp": 0.06, "def": 0.03},
     },
@@ -468,24 +468,24 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "key": "fortress",
         "label": "要塞育成",
         "short_label": "耐久・防御寄り",
-        "home_line": "育成傾向: 耐久・防御が大きく伸びる",
-        "map_line": "型ごとの育成傾向が強い高難度エリア",
+        "home_line": "育成傾向: 耐久・防御を伸ばしやすい",
+        "map_line": "耐久・防御を伸ばしやすい高難度エリア",
         "weight_bias": {"hp": 0.20, "def": 0.18, "atk": 0.08, "acc": 0.03, "spd": -0.10, "cri": -0.08},
     },
     "layer_4_haze": {
         "key": "precision_master",
         "label": "霧界育成",
         "short_label": "命中・安定寄り",
-        "home_line": "育成傾向: 命中・安定寄り",
-        "map_line": "型ごとの育成傾向が強い高難度エリア",
+        "home_line": "育成傾向: 命中を伸ばしやすい",
+        "map_line": "命中を伸ばしやすい高難度エリア",
         "weight_bias": {"hp": 0.04, "def": 0.08, "atk": -0.04, "acc": 0.22, "spd": 0.12, "cri": -0.04},
     },
     "layer_4_burst": {
         "key": "detonate",
         "label": "暴走育成",
         "short_label": "攻撃・会心寄り",
-        "home_line": "育成傾向: 攻撃・会心が大きく伸びる",
-        "map_line": "型ごとの育成傾向が強い高難度エリア",
+        "home_line": "育成傾向: 攻撃・会心を伸ばしやすい",
+        "map_line": "攻撃・会心を伸ばしやすい高難度エリア",
         "weight_bias": {"hp": -0.10, "def": -0.10, "atk": 0.20, "acc": 0.06, "spd": 0.08, "cri": 0.18},
     },
     "layer_4_final": {
@@ -4298,8 +4298,9 @@ def _build_map_nodes(user_row, area_streaks=None, db=None):
             },
         )
         stage_modifier = _stage_modifier_for_area(key, is_admin=is_admin)
-        tendency = _area_growth_tendency(key)
-        tendency_line = str(tendency.get("map_line") or _stage_modifier_summary_line(stage_modifier) or "")
+        tendency_line = _area_growth_tendency_line(key, context="map")
+        if not tendency_line:
+            tendency_line = str(_stage_modifier_summary_line(stage_modifier) or "")
         archetype_label = str(info.get("recommended_archetype") or "自由")
         if archetype_label in {"sniper", "swift", "fortress"}:
             archetype_label = {
@@ -4313,6 +4314,7 @@ def _build_map_nodes(user_row, area_streaks=None, db=None):
                 "label": area["label"],
                 "layer": layer,
                 "description_lines": info["desc"][:3],
+                "growth_tendency_label": _area_growth_tendency_label(key),
                 "tendency_line": tendency_line,
                 "recommended_archetype": archetype_label,
                 "win_streak": int(streaks.get(key, 0)),
@@ -7774,6 +7776,104 @@ def _area_weight_bias(area_key):
     return {str(k): float(v) for k, v in bias.items()}
 
 
+def _area_growth_tendency_label(area_key):
+    tendency = _area_growth_tendency(area_key)
+    short_label = str(tendency.get("short_label") or "").strip()
+    if not short_label or short_label == "型理解試験":
+        return "通常探索" if not short_label else short_label
+    return short_label
+
+
+def _area_growth_tendency_line(area_key, *, context="map"):
+    tendency = _area_growth_tendency(area_key)
+    if not tendency:
+        return "育成傾向: 通常探索"
+    if context == "home":
+        configured = str(tendency.get("home_line") or "").strip()
+        if configured:
+            return configured
+    configured = str(tendency.get("map_line") or "").strip()
+    if configured:
+        return f"育成傾向: {configured}"
+    label = _area_growth_tendency_label(area_key)
+    return f"育成傾向: {label}"
+
+
+def _area_growth_expected_stats(area_key):
+    bias = _area_weight_bias(area_key)
+    return tuple(
+        key
+        for key, _ in sorted(
+            ((key, float(value)) for key, value in bias.items() if float(value) > 0.0),
+            key=lambda item: (-item[1], _stat_label(item[0])),
+        )[:2]
+    )
+
+
+def simulate_area_growth_tendency(area_key, *, sample_size=1000, part_type="RIGHT_ARM", seed=0):
+    """Return average generated weights for one area without writing DB rows."""
+    from services import stats as stats_service
+
+    sample_count = max(1, int(sample_size or 1))
+    normalized_part_type = _norm_part_type(str(part_type or "RIGHT_ARM").strip().upper())
+    if normalized_part_type not in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}:
+        normalized_part_type = "RIGHT_ARM"
+    state = stats_service.random.getstate()
+    try:
+        stats_service.random.seed(int(seed or 0))
+        totals = {key: 0.0 for key in ("hp", "atk", "def", "spd", "acc", "cri")}
+        bias = _area_weight_bias(area_key)
+        for _ in range(sample_count):
+            weights = generate_noisy_weights(normalized_part_type, bias=bias)
+            for key in totals.keys():
+                totals[key] += float(weights.get(f"w_{key}") or 0.0)
+        averages = {key: totals[key] / float(sample_count) for key in totals.keys()}
+    finally:
+        stats_service.random.setstate(state)
+    top_stats = tuple(
+        key
+        for key, _ in sorted(
+            averages.items(),
+            key=lambda item: (-float(item[1]), _stat_label(item[0])),
+        )[:2]
+    )
+    return {
+        "area_key": str(area_key or "").strip(),
+        "sample_size": sample_count,
+        "part_type": normalized_part_type,
+        "averages": averages,
+        "expected_stats": _area_growth_expected_stats(area_key),
+        "top_stats": top_stats,
+        "label": _area_growth_tendency_label(area_key),
+    }
+
+
+def _robot_current_growth_tendency(stats):
+    data = {key: int((stats or {}).get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")}
+    if not any(data.values()):
+        return {"key": "balanced", "label": "バランス型", "line": "現在傾向: バランス型"}
+    scores = {
+        "stable": int(data["hp"]) + int(data["def"]),
+        "burst": int(data["atk"]) + int(data["cri"]),
+        "rush": int(data["spd"]) + int(data["cri"]),
+        "precision": int(data["acc"]) * 2,
+    }
+    labels = {
+        "stable": "安定寄り",
+        "burst": "爆発寄り",
+        "rush": "速攻寄り",
+        "precision": "命中寄り",
+        "balanced": "バランス型",
+    }
+    ordered = sorted(scores.items(), key=lambda item: (-int(item[1]), item[0]))
+    top_key, top_score = ordered[0]
+    second_score = ordered[1][1] if len(ordered) > 1 else 0
+    if int(top_score) <= 0 or (second_score > 0 and float(top_score) < float(second_score) * 1.08):
+        top_key = "balanced"
+    label = labels.get(top_key, labels["balanced"])
+    return {"key": top_key, "label": label, "line": f"現在傾向: {label}"}
+
+
 def _robot_focus_stat_rows(stats, limit=2):
     stat_map = stats or {}
     pairs = [
@@ -7883,6 +7983,7 @@ def _robot_profile_view(stat_obj):
         else f"{robot_style['style_label']}寄り"
     )
     focus_line = " / ".join(f"{row['label']} {row['value']}" for row in focus_stats)
+    current_tendency = _robot_current_growth_tendency(stats)
     profile = {
         "archetype_name": archetype.get("name_ja") or "無印",
         "archetype_key": archetype.get("key") or "none",
@@ -7892,6 +7993,9 @@ def _robot_profile_view(stat_obj):
         "signature_label": signature_label,
         "focus_stats": focus_stats,
         "focus_line": focus_line,
+        "current_tendency": current_tendency,
+        "current_tendency_label": current_tendency["label"],
+        "current_tendency_line": current_tendency["line"],
         "battle_style_line": _robot_style_battle_line(robot_style.get("style_key")),
         "style_support_line": _robot_style_support_line(robot_style.get("style_key")),
         "style_strong_line": _robot_style_strong_line(robot_style.get("style_key")),
@@ -26375,8 +26479,7 @@ def home():
     for area_row in unlocked_explore_areas:
         area_info = EXPLORE_AREA_MAP_INFO.get(area_row["key"]) or {}
         area_desc = area_info.get("desc") or []
-        tendency = _area_growth_tendency(area_row["key"])
-        line = str(tendency.get("home_line") or "")
+        line = _area_growth_tendency_line(area_row["key"], context="home")
         home_area_cards.append(
             {
                 "key": area_row["key"],
@@ -26384,6 +26487,7 @@ def home():
                 "desc_line": str(area_desc[0]) if len(area_desc) >= 1 else "",
                 "recommend_line": str(area_desc[1]) if len(area_desc) >= 2 else "",
                 "warning_line": str(area_desc[2]) if len(area_desc) >= 3 else "",
+                "growth_tendency_label": _area_growth_tendency_label(area_row["key"]),
                 "tendency_line": line,
             }
         )

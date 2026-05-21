@@ -475,6 +475,9 @@
             <div class="upgrade-cost">{{ main_robot_set_bonus_view['effect_text'] }}</div>
             <div class="robot-time">{{ main_robot_set_bonus_view['detail_text'] }}</div>
             <div class="upgrade-cost">思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</div>
+            {% if main_robot_profile and main_robot_profile.get('current_tendency_line') %}
+            <div class="upgrade-cost">{{ main_robot_profile['current_tendency_line'] }}</div>
+            {% endif %}
             {% if main_robot_profile and main_robot_profile.get('battle_style_line') %}
             <div class="upgrade-cost">{{ main_robot_profile['battle_style_line'] }}</div>
             {% endif %}
