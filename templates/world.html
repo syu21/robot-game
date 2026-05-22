@@ -61,7 +61,7 @@
       {% if weekly_mvp.get('style_title') %}
       <div class="upgrade-cost">思想: {{ weekly_mvp['style_title']['label'] }}</div>
       {% endif %}
-      {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb world-mvp-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
+      {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb world-mvp-thumb robo-anim robo-anim-focus" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
       {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">機体を見る</a></div>{% endif %}
       {% else %}
       <div class="upgrade-cost">まだ今週のMVPは決まっていません。</div>

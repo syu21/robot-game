@@ -68,7 +68,15 @@ def audit_log(
             )
 
             if event_type in DAILY_RESEARCH_TASK_EVENTS:
-                update_daily_task_progress(db, int(user_id), event_type)
+                result = update_daily_task_progress(db, int(user_id), event_type, payload=payload or {})
+                if result and result.get("claimed"):
+                    try:
+                        from flask import has_request_context, session
+
+                        if has_request_context():
+                            session["message"] = "今日の研究テーマ達成。コインを受け取りました。"
+                    except Exception:
+                        pass
             if event_type in DAILY_RESEARCH_REWARD_SOURCE_EVENTS:
                 ensure_tomorrow_research_reward(db, int(user_id), get_day_key(now_ts))
         except Exception:

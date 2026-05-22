@@ -64,6 +64,8 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.daily_research import (
+    EVENT_BUILD_VIEW,
+    EVENT_WORLD_VIEW,
     build_yesterday_report,
     claim_daily_task_reward,
     claim_pending_research_rewards,
@@ -7874,6 +7876,17 @@ def _robot_current_growth_tendency(stats):
     return {"key": top_key, "label": label, "line": f"現在傾向: {label}"}
 
 
+def _robot_tendency_comment(tendency_key):
+    comments = {
+        "stable": "継戦能力重視。",
+        "burst": "高出力調整中。",
+        "rush": "短期決戦仕様。",
+        "precision": "命中優先設定。",
+        "balanced": "汎用調整中。",
+    }
+    return comments.get(str(tendency_key or "").strip(), comments["balanced"])
+
+
 def _robot_focus_stat_rows(stats, limit=2):
     stat_map = stats or {}
     pairs = [
@@ -7996,6 +8009,7 @@ def _robot_profile_view(stat_obj):
         "current_tendency": current_tendency,
         "current_tendency_label": current_tendency["label"],
         "current_tendency_line": current_tendency["line"],
+        "current_tendency_comment": _robot_tendency_comment(current_tendency["key"]),
         "battle_style_line": _robot_style_battle_line(robot_style.get("style_key")),
         "style_support_line": _robot_style_support_line(robot_style.get("style_key")),
         "style_strong_line": _robot_style_strong_line(robot_style.get("style_key")),
@@ -26164,6 +26178,44 @@ def api_presence_recent():
     )
 
 
+def _daily_research_task_view(task):
+    if not task:
+        return None
+    task_key = str(task.get("task_key") or "").strip()
+    progress = min(int(task.get("current_count") or 0), int(task.get("target_count") or 1))
+    target = max(1, int(task.get("target_count") or 1))
+    status = str(task.get("status") or "active")
+    is_done = status in {"completed", "claimed"}
+    cta = {
+        "label": "詳しく見る",
+        "url": url_for("research_daily"),
+        "is_post": False,
+        "area_key": None,
+    }
+    if task_key == "explore_layer1_2":
+        cta = {"label": "出撃する", "url": url_for("explore"), "is_post": True, "area_key": "layer_1"}
+    elif task_key == "explore_layer2_1":
+        cta = {"label": "出撃する", "url": url_for("explore"), "is_post": True, "area_key": "layer_2"}
+    elif task_key == "strengthen_1":
+        cta = {"label": "強化する", "url": url_for("parts_strengthen"), "is_post": False, "area_key": None}
+    elif task_key == "build_view_1":
+        cta = {"label": "編成を見る", "url": url_for("build"), "is_post": False, "area_key": None}
+    elif task_key == "world_view_1":
+        cta = {"label": "世界ログを見る", "url": url_for("comms_world"), "is_post": False, "area_key": None}
+    return {
+        "task_key": task_key,
+        "title": str(task.get("title") or "今日の研究テーマ").strip(),
+        "description": str(task.get("description") or "").strip(),
+        "progress": progress,
+        "target": target,
+        "progress_line": f"{progress}/{target}",
+        "status": status,
+        "is_done": bool(is_done),
+        "reward_coins": int(task.get("reward_coins") or 0),
+        "cta": cta,
+    }
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -26623,29 +26675,14 @@ def home():
     boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
     today_key = get_day_key()
     daily_task = get_or_create_daily_task(db, int(user["id"]), today_key)
-    claimed_research_rewards = claim_pending_research_rewards(db, int(user["id"]), today_key)
+    claimed_research_rewards = []
     if claimed_research_rewards:
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    yesterday_report = build_yesterday_report(db, int(user["id"]), today_key)
-    daily_research_modal_payload = {
-        "claimed_rewards": claimed_research_rewards,
-        "yesterday_report": yesterday_report,
-        "daily_task": daily_task,
-    }
-    show_daily_research_modal = should_show_daily_research_modal(
-        db,
-        int(user["id"]),
-        today_key,
-        daily_research_modal_payload,
-    )
-    daily_research_available = bool(
-        claimed_research_rewards
-        or yesterday_report
-        or daily_task
-    )
+    yesterday_report = None
+    show_daily_research_modal = False
+    daily_research_available = False
     show_home_visibility_controls = bool(
         show_home_visibility_controls
-        or daily_research_available
         or bool(session.get("fixed_nav_hidden"))
     )
     daily_research_area_key = saved_explore_area_key or selected_explore_area_key or "layer_1"
@@ -26655,6 +26692,7 @@ def home():
             f"今日の研究課題：{daily_task['title']} "
             f"{min(int(daily_task['current_count'] or 0), int(daily_task['target_count'] or 1))}/{int(daily_task['target_count'] or 1)}"
         )
+    daily_research_card = _daily_research_task_view(daily_task)
     today_start_ts, today_end_ts = _jst_day_key_to_bounds(today_key)
     daily_lab_login_done = db.execute(
         """
@@ -26867,6 +26905,7 @@ def home():
             yesterday_report=yesterday_report,
             daily_task=daily_task,
             daily_research_task_line=daily_research_task_line,
+            daily_research_card=daily_research_card,
             daily_research_explore_action=url_for("explore"),
             daily_research_area_key=daily_research_area_key,
             layer1_first_clear_card=layer1_first_clear_card,
@@ -26973,6 +27012,27 @@ def daily_research_task_claim():
         flash("研究課題はまだ達成していません。", "notice")
     db.commit()
     return redirect(url_for("home"))
+
+
+@app.route("/research/daily")
+@login_required
+def research_daily():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    task = get_or_create_daily_task(db, user_id, get_day_key())
+    task_view = _daily_research_task_view(task)
+    db.commit()
+    return render_template(
+        "research_daily.html",
+        user=user,
+        task=task,
+        task_view=task_view,
+        message=session.pop("message", None),
+    )
 
 
 @app.route("/home/starter-robot-name", methods=["POST"])
@@ -28289,6 +28349,17 @@ def comms_world():
             room_key=COMM_WORLD_ROOM_KEY,
             surface="comms_world",
         )
+    audit_log(
+        db,
+        EVENT_WORLD_VIEW,
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="daily_research.world_view",
+        entity_type="page",
+        payload={"task_date": get_day_key()},
+        ip=request.remote_addr,
+    )
+    db.commit()
     items = _world_timeline_items(
         db,
         limit=COMM_WORLD_TIMELINE_LIMIT,
@@ -32735,6 +32806,17 @@ def build():
     db = get_db()
     user_id = session["user_id"]
     now = int(time.time())
+    audit_log(
+        db,
+        EVENT_BUILD_VIEW,
+        user_id=int(user_id),
+        request_id=getattr(g, "request_id", None),
+        action_key="daily_research.build_view",
+        entity_type="page",
+        payload={"task_date": get_day_key()},
+        ip=request.remote_addr,
+    )
+    db.commit()
     requested_frame_type = (request.args.get("frame_type") or "").strip()
     selected_frame_type = _normalize_frame_type(requested_frame_type or "normal")
     series_progress_layer = _series_progress_layer_for_user(db, user_id)

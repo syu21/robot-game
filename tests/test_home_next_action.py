@@ -161,6 +161,46 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("NEW 第2層へ行く", html)
         self.assertIn('href="/map"', html)
 
+    def test_home_shows_robot_tendency_comment_without_new_card(self):
+        self._create_active_robot()
+
+        with mock.patch.object(game_app, "_robot_tendency_comment", return_value="命中優先設定。"):
+            comment_html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertIn('<div class="upgrade-cost">ひとこと: 命中優先設定。</div>', comment_html)
+        self.assertNotIn("tendency-comment-card", comment_html)
+        self.assertNotIn("robot-tendency-comment-card", comment_html)
+
+    def test_home_hides_robot_tendency_comment_without_active_robot(self):
+        html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertNotIn("ひとこと:", html)
+        self.assertNotIn("継戦能力重視。", html)
+        self.assertNotIn("高出力調整中。", html)
+        self.assertNotIn("短期決戦仕様。", html)
+        self.assertNotIn("命中優先設定。", html)
+        self.assertNotIn("汎用調整中。", html)
+
+    def test_home_shows_one_daily_research_card_without_reward_list(self):
+        self._create_active_robot()
+        html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertEqual(html.count("daily-research-home-card"), 1)
+        self.assertIn("今日の研究テーマ", html)
+        self.assertNotIn("達成報酬：", html)
+        self.assertNotIn("研究課題報酬を受け取る", html)
+        self.assertNotIn("デイリー研究レポート", html)
+
+    def test_research_daily_page_renders(self):
+        self._create_active_robot()
+        resp = self._new_client().get("/research/daily")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+
+        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("進捗:", html)
+        self.assertIn("報酬:", html)
+
     def test_home_next_action_targets_current_layer_boss_when_not_max(self):
         self._create_active_robot()
         with game_app.app.app_context():

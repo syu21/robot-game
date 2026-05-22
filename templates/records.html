@@ -139,7 +139,7 @@
             {% if group['metric'].get('row_kind') == 'robot' %}
             <div class="ranking-robot-cell">
               {% if row.get('image_url') %}
-              <img class="ranking-robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
+              <img class="ranking-robot-thumb{% if loop.index <= 5 %} robo-anim robo-anim-idle{% endif %}" src="{{ row['image_url'] }}" alt="{{ row['title'] }}" loading="lazy" />
               {% endif %}
               <div>
                 <div><b>{{ row['rank'] }}位 {{ row['title'] }}</b></div>
@@ -183,7 +183,7 @@
     <div class="card">
       <div><b>{{ row['title'] }}</b></div>
       {% if row.get('image_url') %}
-      <img class="robot-thumb record-highlight-thumb" src="{{ row['image_url'] }}" alt="{{ row['robot_name'] }}" loading="lazy" decoding="async" />
+      <img class="robot-thumb record-highlight-thumb robo-anim robo-anim-idle" src="{{ row['image_url'] }}" alt="{{ row['robot_name'] }}" loading="lazy" decoding="async" />
       {% endif %}
       <div>{{ row['robot_name'] }}</div>
       <div class="presence-user-line record-user-line user-signal">

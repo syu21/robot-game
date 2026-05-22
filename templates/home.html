@@ -54,14 +54,6 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% if daily_research_task_line %}
-    <div class="home-explore-context">{{ daily_research_task_line }}</div>
-    {% if daily_task and daily_task['status'] == 'completed' %}
-    <form method="post" action="{{ url_for('daily_research_task_claim') }}" class="inline-form inline-form-top">
-      <button type="submit" class="btn-secondary">研究課題報酬を受け取る</button>
-    </form>
-    {% endif %}
-    {% endif %}
     {% if home_primary_explore_cta %}
     <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     {% endif %}
@@ -155,14 +147,6 @@
       {{ part_inventory_status['line'] }}
     </div>
     {% endif %}
-    {% if daily_research_task_line %}
-    <div class="home-explore-context">{{ daily_research_task_line }}</div>
-    {% if daily_task and daily_task['status'] == 'completed' %}
-    <form method="post" action="{{ url_for('daily_research_task_claim') }}" class="inline-form inline-form-top">
-      <button type="submit" class="btn-secondary">研究課題報酬を受け取る</button>
-    </form>
-    {% endif %}
-    {% endif %}
     <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
     {% if boss_unlock_guide_lines %}
     <div class="boss-unlock-inline" aria-label="ボス解放条件">
@@ -196,6 +180,35 @@
     {% if home_primary_explore_cta['show_map_link'] %}
     <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">{{ home_primary_explore_cta['map_link_label'] }}</a></p>
     {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if daily_research_card %}
+<div class="panel daily-research-home-panel">
+  <div class="card daily-research-home-card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">今日の研究テーマ</div>
+        <div><b>{{ daily_research_card['title'] }}</b></div>
+      </div>
+      <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
+    </div>
+    {% if not daily_research_card['is_done'] %}
+    <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
+    {% endif %}
+    <div class="home-inline-actions">
+      {% if daily_research_card['cta']['is_post'] %}
+      <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
+        <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
+        {% if explore_submission_id %}
+        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+        {% endif %}
+        <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
+      </form>
+      {% else %}
+      <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endif %}
@@ -419,7 +432,7 @@
             <a class="robot-top-visual robot-image-card" href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">
             {% endif %}
               {% if main_robot.get('image_url') %}
-              <img class="robot-thumb main-robot-thumb" src="{{ main_robot['image_url'] }}" alt="main robot" loading="lazy" />
+              <img class="robot-thumb main-robot-thumb robo-anim {% if daily_research_card and daily_research_card['is_done'] %}robo-anim-complete{% else %}robo-anim-idle{% endif %}" src="{{ main_robot['image_url'] }}" alt="main robot" loading="lazy" />
               {% else %}
               <div class="robot-thumb empty main-robot-thumb">no image</div>
               {% endif %}
@@ -477,6 +490,9 @@
             <div class="upgrade-cost">思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</div>
             {% if main_robot_profile and main_robot_profile.get('current_tendency_line') %}
             <div class="upgrade-cost">{{ main_robot_profile['current_tendency_line'] }}</div>
+            {% endif %}
+            {% if main_robot_profile and main_robot_profile.get('current_tendency_comment') %}
+            <div class="upgrade-cost">ひとこと: {{ main_robot_profile['current_tendency_comment'] }}</div>
             {% endif %}
             {% if main_robot_profile and main_robot_profile.get('battle_style_line') %}
             <div class="upgrade-cost">{{ main_robot_profile['battle_style_line'] }}</div>
@@ -539,7 +555,7 @@
         {% if weekly_mvp.get('style_title') %}
         <div class="upgrade-cost">思想: {{ weekly_mvp['style_title']['label'] }}</div>
         {% endif %}
-        {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
+        {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb robo-anim robo-anim-focus" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
         {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">詳細を見る</a></div>{% endif %}
         {% else %}
         <div>まだ集計対象がありません。</div>
@@ -574,7 +590,7 @@
         <div class="upgrade-cost">特徴: {{ weekly_champion.get('trait_summary') }}</div>
         {% endif %}
         {% if weekly_champion.get('robot_image_url') %}
-        <img class="robot-thumb champion-hero-thumb" src="{{ weekly_champion.get('robot_image_url') }}" alt="{{ weekly_champion.get('robot_name', 'champion robot') }}" loading="lazy" decoding="async" />
+        <img class="robot-thumb champion-hero-thumb robo-anim robo-anim-focus" src="{{ weekly_champion.get('robot_image_url') }}" alt="{{ weekly_champion.get('robot_name', 'champion robot') }}" loading="lazy" decoding="async" />
         {% endif %}
         <div class="home-champion-stats">
           <span>挑戦 {{ weekly_champion.get('challenge_count', 0) }}</span>

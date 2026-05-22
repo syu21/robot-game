@@ -10,7 +10,7 @@
   >
     <span class="user-chip-main">
       <img
-        class="user-chip-robot"
+        class="user-chip-robot{% if podium %} robo-anim robo-anim-focus{% endif %}"
         src="{{ url_for('static', filename=main_path) }}"
         alt="{{ alt }}"
         {% if loading %}loading="{{ loading }}"{% endif %}

@@ -2032,6 +2032,47 @@ body.lightbox-open .lightbox-overlay {
   color: rgba(33, 28, 20, 0.6);
   font-size: 12px;
 }
+
+.robo-anim {
+  transform-origin: 50% 88%;
+  animation: robo-idle-float 5.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.robo-anim-idle {
+  animation-name: robo-idle-float;
+}
+
+.robo-anim-focus {
+  animation-name: robo-focus-float;
+  animation-duration: 4.8s;
+}
+
+.robo-anim-complete {
+  animation: robo-complete-hop 900ms ease-out 1;
+}
+
+@keyframes robo-idle-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2px) rotate(0.6deg); }
+}
+
+@keyframes robo-focus-float {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  45% { transform: translateY(-3px) rotate(-0.8deg) scale(1.01); }
+}
+
+@keyframes robo-complete-hop {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  35% { transform: translateY(-3px) rotate(1deg) scale(1.01); }
+  65% { transform: translateY(-1px) rotate(-0.6deg) scale(1.005); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robo-anim {
+    animation: none !important;
+  }
+}
 .title-badge-list {
   display: flex;
   flex-wrap: wrap;

@@ -251,6 +251,13 @@ class AreaGrowthTendencyTests(unittest.TestCase):
             "バランス型",
         )
 
+    def test_robot_tendency_comment_is_fixed_by_tendency(self):
+        self.assertEqual(game_app._robot_tendency_comment("stable"), "継戦能力重視。")
+        self.assertEqual(game_app._robot_tendency_comment("burst"), "高出力調整中。")
+        self.assertEqual(game_app._robot_tendency_comment("rush"), "短期決戦仕様。")
+        self.assertEqual(game_app._robot_tendency_comment("precision"), "命中優先設定。")
+        self.assertEqual(game_app._robot_tendency_comment("balanced"), "汎用調整中。")
+
 
 if __name__ == "__main__":
     unittest.main()

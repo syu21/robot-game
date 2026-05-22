@@ -35,7 +35,7 @@
       <td>
         <div class="ranking-robot-cell">
           {% if r.get('image_url') %}
-          <img class="ranking-robot-thumb" src="{{ r['image_url'] }}" alt="{{ r['robot_name'] }}" loading="lazy" />
+          <img class="ranking-robot-thumb{% if loop.index <= 5 %} robo-anim robo-anim-idle{% endif %}" src="{{ r['image_url'] }}" alt="{{ r['robot_name'] }}" loading="lazy" />
           {% endif %}
           <div>
             <div><b><a href="{{ url_for('robot_detail', instance_id=r['robot_id']) }}">{{ r['robot_name'] }}</a></b></div>
