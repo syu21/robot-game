@@ -167,6 +167,23 @@ class MarketRouteTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(history)
 
+        sold_page = client.get("/market")
+        self.assertEqual(sold_page.status_code, 200)
+        sold_html = sold_page.get_data(as_text=True)
+        self.assertIn("market-buy-button is-sold", sold_html)
+        self.assertIn("disabled aria-disabled=\"true\"", sold_html)
+        self.assertIn("購入済み", sold_html)
+
+        blocked = client.post(f"/market/buy/{int(listing['id'])}", follow_redirects=False)
+        self.assertEqual(blocked.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = db.execute(
+                "SELECT COUNT(*) AS c FROM market_purchase_history WHERE user_id = ? AND listing_id = ?",
+                (self.admin_id, int(listing["id"])),
+            ).fetchone()
+            self.assertEqual(int(count["c"] or 0), 1)
+
     def test_market_sell_only_inventory_parts(self):
         client = self._client(admin=True)
         with game_app.app.app_context():

@@ -95,7 +95,7 @@
       selectedCountEl.textContent = "0";
       selectedMaterialCountEl.textContent = "0";
       baseSelectedEl.textContent = "未選択";
-      materialSelectedEl.textContent = "ベースを選んでから素材2個を選択";
+      materialSelectedEl.textContent = "自動選択（ベース選択後に確定）";
       resultExpectedEl.textContent = "素材の+値を引き継ぎ";
       submitBtn.disabled = true;
       return;
@@ -108,12 +108,12 @@
     materialSelectedEl.textContent =
       selectedMaterials.length > 0
         ? selectedMaterials.map((check) => String(check.dataset.materialLabel || check.value)).join(", ")
-        : "素材を2個選択";
+        : "自動選択: " + String(stack.dataset.materialLabels || "候補から2個");
     const partLabel = String(stack.dataset.partLabel || "パーツ");
     const basePlus = Number(stack.dataset.basePlus || 0);
     const targetPlus = Number(stack.dataset.targetPlus || basePlus);
     resultExpectedEl.textContent = `${partLabel} +${basePlus} → +${targetPlus}（素材+値引き継ぎ）`;
-    submitBtn.disabled = selectedMaterials.length !== 2;
+    submitBtn.disabled = selectedMaterials.length === 1 || selectedMaterials.length > 2;
   }
 
   // Keep continuous strengthen UX stable: return to previous viewport after redirect.

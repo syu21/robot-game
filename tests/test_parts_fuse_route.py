@@ -543,6 +543,85 @@ class PartsFuseRouteTests(unittest.TestCase):
             locked_material = db.execute("SELECT id FROM part_instances WHERE id = ?", (locked_material_id,)).fetchone()
             self.assertIsNotNone(locked_material)
 
+    def test_individual_strengthen_shows_base_search_info_and_optional_materials(self):
+        self._clear_part_instances()
+        seed = self._active_part_seeds(limit=1)[0]
+        ids = self._seed_part_instances_for_seed(
+            seed,
+            [2, 1, 0, 0, 0],
+            statuses=["inventory", "equipped", "inventory", "inventory", "inventory"],
+            created_at_start=7000,
+        )
+        locked_base_id = ids[0]
+        equipped_base_id = ids[1]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE part_instances SET locked = 1 WHERE id = ?", (locked_base_id,))
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        client = self._client()
+        page = client.get("/parts/strengthen?base_lock=protect_first&base_sort=plus")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("保護中を先頭", html)
+        self.assertIn("+値順", html)
+        self.assertIn("素材を手動で指定する（任意）", html)
+        self.assertIn("通常はベースだけ選べば実行できます", html)
+        self.assertIn("保護中", html)
+        self.assertIn("装備中", html)
+        self.assertIn("主要", html)
+        self.assertIn("総合", html)
+        self.assertIn(f'value="{locked_base_id}"', html)
+        self.assertIn(f'value="{equipped_base_id}"', html)
+
+        protected_only = client.get("/parts/strengthen?base_lock=protected_only")
+        self.assertEqual(protected_only.status_code, 200)
+        protected_html = protected_only.get_data(as_text=True)
+        self.assertIn(f'value="{locked_base_id}"', protected_html)
+        self.assertNotIn(f'class="fuse-base-radio"\n                  value="{equipped_base_id}"', protected_html)
+
+    def test_auto_material_selection_excludes_locked_equipped_and_base(self):
+        self._clear_part_instances()
+        seed = self._active_part_seeds(limit=1)[0]
+        ids = self._seed_part_instances_for_seed(
+            seed,
+            [0, 4, 3, 0, 0],
+            statuses=["inventory", "inventory", "equipped", "inventory", "inventory"],
+            created_at_start=8000,
+        )
+        base_id = ids[0]
+        locked_material_id = ids[1]
+        equipped_material_id = ids[2]
+        expected_material_ids = [ids[3], ids[4]]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE part_instances SET locked = 1 WHERE id = ?", (locked_material_id,))
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        client = self._client()
+        resp = client.post("/parts/fuse", data={"mode": "select", "base_id": str(base_id)}, follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            payload_row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = 'audit.fuse'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            payload = json.loads(payload_row["payload_json"] or "{}")
+            self.assertEqual(payload["base_part_instance_id"], base_id)
+            self.assertEqual(payload["material_part_instance_ids"], expected_material_ids)
+            self.assertNotIn(base_id, payload["material_part_instance_ids"])
+            self.assertNotIn(locked_material_id, payload["material_part_instance_ids"])
+            self.assertNotIn(equipped_material_id, payload["material_part_instance_ids"])
+
     def test_warehouse_plan_prefers_equipped_then_oldest_high_plus(self):
         self._clear_part_instances()
         seed = self._active_part_seeds(limit=1)[0]

@@ -58,8 +58,12 @@
           <div class="robot-part">{{ item['price'] }} コイン / 残り{{ item['stock_remaining'] }}</div>
         </div>
       </div>
-      <form method="post" action="{{ url_for('market_buy', listing_id=item['id']) }}" class="post-form">
-        <button type="submit" {% if item['is_sold'] or user['coins'] < item['price'] %}disabled{% endif %}>
+      <form method="post" action="{{ url_for('market_buy', listing_id=item['id']) }}" class="post-form market-buy-form">
+        <button
+          type="submit"
+          class="market-buy-button{% if item['is_sold'] %} is-sold{% elif user['coins'] < item['price'] %} is-unavailable{% else %} is-available{% endif %}"
+          {% if item['is_sold'] or user['coins'] < item['price'] %}disabled aria-disabled="true"{% endif %}
+        >
           {% if item['is_sold'] %}購入済み{% else %}購入する{% endif %}
         </button>
       </form>

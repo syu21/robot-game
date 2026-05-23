@@ -72,6 +72,35 @@
     {% if selected_mode in ('select', 'warehouse_preview') %}
     {{ render_part_type_filters(part_type_filters) }}
     <div class="robot-time">部位フィルターは個別強化 / まとめて強化の候補一覧に反映されます。倉庫整理合成は所持中全体を対象にします。</div>
+    <form method="get" action="{{ url_for('parts_strengthen') }}" class="fuse-base-controls" id="individual-strengthen-filters">
+      <input type="hidden" name="mode" value="select" />
+      {% if selected_part_type %}
+      <input type="hidden" name="part_type" value="{{ selected_part_type }}" />
+      {% endif %}
+      {% if selected_rarity %}
+      <input type="hidden" name="rarity" value="{{ selected_rarity }}" />
+      {% endif %}
+      {% if selected_plus is not none %}
+      <input type="hidden" name="plus" value="{{ selected_plus }}" />
+      {% endif %}
+      <label>
+        保護
+        <select name="base_lock">
+          <option value="protect_first" {% if selected_base_lock == 'protect_first' %}selected{% endif %}>保護中を先頭</option>
+          <option value="protected_only" {% if selected_base_lock == 'protected_only' %}selected{% endif %}>保護中のみ</option>
+          <option value="all" {% if selected_base_lock == 'all' %}selected{% endif %}>指定なし</option>
+        </select>
+      </label>
+      <label>
+        並び替え
+        <select name="base_sort">
+          <option value="plus" {% if selected_base_sort == 'plus' %}selected{% endif %}>+値順</option>
+          <option value="total" {% if selected_base_sort == 'total' %}selected{% endif %}>総合値順</option>
+          <option value="new" {% if selected_base_sort == 'new' %}selected{% endif %}>新しい順</option>
+        </select>
+      </label>
+      <button type="submit" class="fuse-filter-apply">反映</button>
+    </form>
     {% endif %}
   </div>
   {% endif %}
@@ -374,16 +403,16 @@
     <div id="individual-strengthen"><b>個別強化</b></div>
     <div class="fuse-selection-summary" id="fuse-selection-summary">
       <div>ベース: <span id="fuse-base-selected">未選択</span></div>
-      <div>素材: <span id="fuse-material-selected">ベースを選んでから素材2個を選択</span></div>
+      <div>素材: <span id="fuse-material-selected">自動選択（任意で変更可）</span></div>
       <div>結果: <span id="fuse-result-expected">素材の+値を引き継ぎ</span></div>
     </div>
     <div class="fuse-select-status">選択数 ベース <b id="fuse-selected-count">0</b>/1 / 素材 <b id="fuse-material-count">0</b>/2</div>
-    <p class="robot-time">ベース1個体と、消費する素材2個を指定してから実行できます。</p>
+    <p class="robot-time">通常はベースだけ選べば実行できます。素材は保護中・装備中・ベース自身を除いて自動選択します。</p>
 
     {% if base_candidates %}
       <div class="part-card-grid">
         {% for candidate in base_candidates %}
-          <div class="robot-card part-compare-card fuse-candidate-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}">
+          <div class="robot-card part-compare-card fuse-candidate-card{% if candidate.get('is_equipped') %} is-equipped{% endif %}{% if candidate.get('locked') %} is-locked{% endif %}">
             <div class="part-card-topline">
               <label class="part-check">
                 <input
@@ -408,21 +437,32 @@
                 <div class="part-chip-row">
                   <span class="part-chip">{{ candidate['part_type_label'] }}</span>
                   <span class="part-chip rarity-{{ candidate['rarity_label']|lower }}">{{ candidate['rarity_label'] }}</span>
+                  <span class="part-chip">+{{ candidate['plus'] }}</span>
                   <span class="part-chip">{{ candidate['expected_plus_text'] }}</span>
+                  {% if candidate.get('locked') %}
+                    <span class="part-chip is-locked">保護中</span>
+                  {% endif %}
                   {% if candidate.get('is_equipped') %}
                     <span class="part-chip is-equipped">装備中</span>
                   {% else %}
                     <span class="part-chip">所持中</span>
                   {% endif %}
                 </div>
+                <div class="fuse-base-facts">
+                  <span>部位 {{ candidate['part_type_label'] }}</span>
+                  <span>レア {{ candidate['rarity_label'] }}</span>
+                  <span>+{{ candidate['plus'] }}</span>
+                  <span>総合 {{ candidate['total_value'] }}</span>
+                </div>
                 <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
-                <div class="part-meta-line">{% if candidate.get('focus_line') %}注目 {{ candidate['focus_line'] }} / {% endif %}所持 {{ candidate['qty_total'] }}個</div>
+                <div class="part-meta-line">{% if candidate.get('focus_line') %}主要 {{ candidate['focus_line'] }} / {% endif %}所持 {{ candidate['qty_total'] }}個</div>
                 <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
               </div>
             </div>
             {{ stat_grid(candidate['stat_rows']) }}
-            <div class="part-subsection">
-              <div class="part-subsection-title">素材として使う2個を選択</div>
+            <details class="part-subsection fuse-material-details">
+              <summary class="part-subsection-title">素材を手動で指定する（任意）</summary>
+              <div class="robot-time">未選択なら下の自動素材2個を使います。手動指定する場合は2個だけ選択。</div>
               <div class="part-mini-grid">
                 {% for material in candidate.get('material_choice_cards', candidate['material_cards']) %}
                   <label class="part-mini-card">
@@ -442,11 +482,11 @@
                   </label>
                 {% endfor %}
               </div>
-            </div>
+            </details>
           </div>
         {% endfor %}
       </div>
-      <div class="fuse-exec-summary">消費: ベース1 + 選択した素材2 / 素材の+値引き継ぎ / 成功率: 100%</div>
+      <div class="fuse-exec-summary">消費: ベース1 + 自動素材2（手動指定も可） / 素材の+値引き継ぎ / 成功率: 100%</div>
       <button type="submit" id="fuse-select-submit" class="fuse-submit-large">選んだ個体を強化する</button>
     {% else %}
       <div class="card">

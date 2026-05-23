@@ -9714,6 +9714,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "home_daily_research_collapsed" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
     if "starter_robot_name_pending" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN starter_robot_name_pending INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_state" not in cols:
@@ -9815,6 +9817,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
+    db.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
     db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE starter_robot_name_pending IS NULL")
     db.execute(
         """
@@ -26591,6 +26594,11 @@ def home():
         if "home_next_action_collapsed" in user.keys()
         else False
     )
+    home_daily_research_collapsed = (
+        int(user["home_daily_research_collapsed"] or 0) == 1
+        if "home_daily_research_collapsed" in user.keys()
+        else False
+    )
     home_next_action_force_open = bool(
         home_next_action_collapsed
         and (boss_alert_status or (next_action_card and next_action_card.get("force_open")))
@@ -26599,6 +26607,7 @@ def home():
     show_home_visibility_controls = bool(
         (beginner_mission_available and beginner_mission_hidden)
         or (next_action_card and home_next_action_collapsed and not home_next_action_force_open)
+        or home_daily_research_collapsed
     )
     home_summary_line = "パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。"
     strengthen_candidate_count = get_strengthen_candidate_count(db, int(user["id"]))
@@ -26692,7 +26701,7 @@ def home():
             f"今日の研究課題：{daily_task['title']} "
             f"{min(int(daily_task['current_count'] or 0), int(daily_task['target_count'] or 1))}/{int(daily_task['target_count'] or 1)}"
         )
-    daily_research_card = _daily_research_task_view(daily_task)
+    daily_research_card = None if home_daily_research_collapsed else _daily_research_task_view(daily_task)
     today_start_ts, today_end_ts = _jst_day_key_to_bounds(today_key)
     daily_lab_login_done = db.execute(
         """
@@ -26844,6 +26853,7 @@ def home():
             show_next_action_card=show_next_action_card,
             home_next_action_collapsed=home_next_action_collapsed,
             home_next_action_force_open=home_next_action_force_open,
+            home_daily_research_collapsed=home_daily_research_collapsed,
             show_home_visibility_controls=show_home_visibility_controls,
             show_intro_modal=show_intro_modal,
             show_display_name_setup=show_display_name_setup,
@@ -27576,6 +27586,30 @@ def home_next_action_expand():
     db = get_db()
     db.execute(
         "UPDATE users SET home_next_action_collapsed = 0 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/daily-research/collapse", methods=["POST"])
+@login_required
+def home_daily_research_collapse():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_daily_research_collapsed = 1 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/daily-research/expand", methods=["POST"])
+@login_required
+def home_daily_research_expand():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_daily_research_collapsed = 0 WHERE id = ?",
         (int(session["user_id"]),),
     )
     db.commit()
@@ -37673,6 +37707,12 @@ def parts_strengthen():
     filter_rarity = (request.values.get("rarity") or "").strip().upper()
     plus_raw = (request.values.get("plus") or "").strip()
     filter_plus = int(plus_raw) if plus_raw.isdigit() else None
+    base_lock_filter = (request.values.get("base_lock") or "protect_first").strip().lower()
+    if base_lock_filter not in {"protect_first", "protected_only", "all"}:
+        base_lock_filter = "protect_first"
+    base_sort = (request.values.get("base_sort") or "plus").strip().lower()
+    if base_sort not in {"plus", "total", "new"}:
+        base_sort = "plus"
     if request.method == "POST":
         mode = (request.form.get("mode") or "select").strip().lower()
         if mode == "warehouse_preview":
@@ -38277,6 +38317,8 @@ def parts_strengthen():
         plus_max = max(plus_values) if plus_values else 0
         for row in eligible_base_rows:
             row_dict = dict(row)
+            if base_lock_filter == "protected_only" and int(row_dict.get("locked") or 0) == 0:
+                continue
             row_status = (row_dict.get("status") or "inventory").strip().lower()
             materials = [
                 dict(candidate)
@@ -38383,15 +38425,24 @@ def parts_strengthen():
                 _part_card_payload(material, can_discard=False) for material in (group_plan.get("consumed_rows") or [])[:4]
             ]
             warehouse_preview["groups_view"].append(group_card)
-    base_candidates.sort(
-        key=lambda item: (
-            0 if item.get("is_equipped") else 1,
-            _strengthen_part_type_sort_value(item.get("part_type")),
-            -int(item.get("total_value") or 0),
-            -int(item.get("plus") or 0),
-            int(item.get("id") or 0),
-        )
-    )
+    def _base_candidate_sort_key(item):
+        lock_rank = 0 if base_lock_filter == "protect_first" and item.get("locked") else 1
+        equipped_rank = 0 if item.get("is_equipped") else 1
+        part_rank = _strengthen_part_type_sort_value(item.get("part_type"))
+        item_id = int(item.get("id") or 0)
+        created_at = int(item.get("created_at") or 0)
+        if base_sort == "total":
+            primary = -int(item.get("total_value") or 0)
+            secondary = -int(item.get("plus") or 0)
+        elif base_sort == "new":
+            primary = -created_at
+            secondary = -item_id
+        else:
+            primary = -int(item.get("plus") or 0)
+            secondary = -int(item.get("total_value") or 0)
+        return (lock_rank, equipped_rank, part_rank, primary, secondary, item_id)
+
+    base_candidates.sort(key=_base_candidate_sort_key)
     batch_candidates.sort(
         key=lambda item: (
             0 if item.get("is_equipped") else 1,
@@ -38437,9 +38488,13 @@ def parts_strengthen():
                 "mode": "select",
                 "rarity": filter_rarity or "",
                 "plus": filter_plus if filter_plus is not None else "",
+                "base_lock": base_lock_filter,
+                "base_sort": base_sort,
             },
         ),
         selected_mode=selected_mode,
+        selected_base_lock=base_lock_filter,
+        selected_base_sort=base_sort,
         plus_options=plus_options,
         element_labels=ELEMENT_LABEL_MAP,
         last_fuse_result=last_fuse_result,
