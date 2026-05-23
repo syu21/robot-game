@@ -54,6 +54,12 @@
 </div>
 
 <div class="lab-card-grid lab-top-action-grid">
+  {% if is_admin %}
+  <a class="action-card home-nav-card" href="{{ url_for('admin_lab_mini_tactics') }}">
+    <div class="action-title">ミニロボ戦術試験 <span class="weekly-fit-badge">管理人限定</span></div>
+    <div class="action-desc">5x5盤面でミニロボの自動移動を確認する</div>
+  </a>
+  {% endif %}
   <a class="action-card home-nav-card" href="{{ url_for('lab_race') }}">
     <div class="action-title">エネミーレース</div>
     <div class="action-desc">敵ロボ6体のレースを予想して遊ぶ</div>

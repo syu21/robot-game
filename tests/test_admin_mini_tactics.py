@@ -145,6 +145,11 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertNotIn("ミニロボ戦術試験", html)
         self.assertNotIn("/admin/lab/mini-tactics", html)
 
+    def test_admin_lab_shows_mini_tactics_link(self):
+        html = self._client(admin=True).get("/lab").get_data(as_text=True)
+        self.assertIn("ミニロボ戦術試験", html)
+        self.assertIn("/admin/lab/mini-tactics", html)
+
 
 if __name__ == "__main__":
     unittest.main()
