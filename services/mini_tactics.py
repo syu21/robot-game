@@ -27,7 +27,11 @@ def build_initial_units():
             "species_key": "cerberus",
             "x": 0,
             "y": 1,
-            "hp": 10,
+            "hp": 18,
+            "max_hp": 18,
+            "atk": 5,
+            "def": 2,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "mini_robots/cerberus/normal.png",
             "direction": "right",
@@ -39,7 +43,11 @@ def build_initial_units():
             "species_key": "phoenix",
             "x": 0,
             "y": 2,
-            "hp": 10,
+            "hp": 14,
+            "max_hp": 14,
+            "atk": 4,
+            "def": 1,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "mini_robots/phoenix/normal.png",
             "direction": "right",
@@ -51,7 +59,11 @@ def build_initial_units():
             "species_key": "hydra",
             "x": 0,
             "y": 3,
-            "hp": 10,
+            "hp": 20,
+            "max_hp": 20,
+            "atk": 3,
+            "def": 3,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "mini_robots/hydra/normal.png",
             "direction": "right",
@@ -63,7 +75,11 @@ def build_initial_units():
             "species_key": "dummy_a",
             "x": 4,
             "y": 1,
-            "hp": 10,
+            "hp": 12,
+            "max_hp": 12,
+            "atk": 3,
+            "def": 1,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "",
             "direction": "left",
@@ -75,7 +91,11 @@ def build_initial_units():
             "species_key": "dummy_b",
             "x": 4,
             "y": 2,
-            "hp": 10,
+            "hp": 12,
+            "max_hp": 12,
+            "atk": 3,
+            "def": 1,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "",
             "direction": "left",
@@ -87,7 +107,11 @@ def build_initial_units():
             "species_key": "dummy_c",
             "x": 4,
             "y": 3,
-            "hp": 10,
+            "hp": 12,
+            "max_hp": 12,
+            "atk": 3,
+            "def": 1,
+            "defeated": False,
             "ai_type": "assault",
             "image_path": "",
             "direction": "left",
@@ -120,7 +144,7 @@ def _direction_from_delta(dx, dy, fallback):
 
 
 def get_next_step_toward_enemy(unit, units, map_payload, rng):
-    enemies = [u for u in units if u.get("side") != unit.get("side")]
+    enemies = [u for u in units if u.get("side") != unit.get("side") and not u.get("defeated")]
     if not enemies:
         return int(unit["x"]), int(unit["y"]), "wait"
 
@@ -156,16 +180,71 @@ def get_next_step_toward_enemy(unit, units, map_payload, rng):
     return int(nx), int(ny), "move"
 
 
+def get_adjacent_enemy(unit, units):
+    enemies = [
+        u
+        for u in units
+        if u.get("side") != unit.get("side") and not u.get("defeated") and manhattan(unit, u) == 1
+    ]
+    if not enemies:
+        return None
+    return min(enemies, key=lambda enemy: (int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
+
+
+def _battle_result(units):
+    ally_alive = any(u.get("side") == "ally" and not u.get("defeated") for u in units)
+    enemy_alive = any(u.get("side") == "enemy" and not u.get("defeated") for u in units)
+    if ally_alive and not enemy_alive:
+        return "ally_win"
+    if enemy_alive and not ally_alive:
+        return "enemy_win"
+    if not ally_alive and not enemy_alive:
+        return "draw"
+    return None
+
+
+def _result_log(result):
+    if result == "ally_win":
+        return "味方側の勝利"
+    if result == "enemy_win":
+        return "敵側の勝利"
+    return "10ターン経過で引き分け"
+
+
 def serialize_frames(frames):
     return json.dumps(frames, ensure_ascii=False, separators=(",", ":"))
 
 
 def simulate_mini_tactics_battle(seed, map_payload, units_payload):
     units = [dict(unit) for unit in units_payload]
+    for unit in units:
+        unit["max_hp"] = int(unit.get("max_hp") or unit.get("hp") or 10)
+        unit["hp"] = int(unit.get("hp") or unit["max_hp"])
+        unit["atk"] = int(unit.get("atk") or 1)
+        unit["def"] = int(unit.get("def") or 0)
+        unit["defeated"] = bool(unit.get("defeated")) or int(unit["hp"]) <= 0
     frames = []
+    result = None
     for turn in range(1, MAX_TURNS + 1):
         logs = []
         for unit in sorted(units, key=lambda item: str(item.get("unit_id") or "")):
+            if unit.get("defeated"):
+                continue
+
+            target = get_adjacent_enemy(unit, units)
+            if target is not None:
+                damage = max(1, int(unit.get("atk") or 1) - int(target.get("def") or 0))
+                target["hp"] = max(0, int(target.get("hp") or 0) - int(damage))
+                logs.append(f"{unit['name']}が{target['name']}を攻撃、{damage}ダメージ")
+                if int(target["hp"]) <= 0 and not target.get("defeated"):
+                    target["defeated"] = True
+                    logs.append(f"{target['name']}を撃破")
+                result = _battle_result(units)
+                if result:
+                    logs.append(_result_log(result))
+                    break
+                continue
+
             before_x = int(unit["x"])
             before_y = int(unit["y"])
             rng = random.Random(f"{int(seed)}:{turn}:{unit.get('unit_id')}")
@@ -179,13 +258,19 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
                 logs.append(f"{unit['name']}が接敵")
             else:
                 logs.append(f"{unit['name']}が待機")
+        if not result and turn >= MAX_TURNS:
+            result = _battle_result(units) or "draw"
+            logs.append(_result_log(result))
         frames.append(
             {
                 "turn": turn,
                 "units": [dict(unit) for unit in units],
                 "logs": logs,
+                "result": result,
             }
         )
+        if result:
+            break
     return frames
 
 
@@ -199,7 +284,7 @@ def create_mini_tactics_battle(db, admin_user_id, seed=None):
         """
         INSERT INTO mini_tactics_battles
         (seed, status, map_json, units_json, frames_json, created_at, created_by_user_id)
-        VALUES (?, 'prototype', ?, ?, ?, ?, ?)
+        VALUES (?, 'finished', ?, ?, ?, ?, ?)
         """,
         (
             int(battle_seed),

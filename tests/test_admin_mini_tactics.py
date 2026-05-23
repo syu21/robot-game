@@ -95,6 +95,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
             row = db.execute("SELECT * FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(int(row["seed"]), 12345)
+            self.assertEqual(row["status"], "finished")
             self.assertEqual(int(row["created_by_user_id"]), self.admin_id)
             map_payload = json.loads(row["map_json"])
             units_payload = json.loads(row["units_json"])
@@ -104,11 +105,13 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertTrue(frames_payload)
             self.assertEqual(len([u for u in units_payload if u["side"] == "ally"]), 3)
             self.assertEqual(len([u for u in units_payload if u["side"] == "enemy"]), 3)
+            self.assertTrue(all("max_hp" in u and "atk" in u and "def" in u for u in units_payload))
 
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
         self.assertIn("miniTacticsBoard", html)
+        self.assertIn("miniTacticsRoster", html)
         self.assertIn("最初から再生", html)
 
     def test_simulation_bounds_collision_and_assault(self):
@@ -116,7 +119,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         units_payload = build_initial_units()
         initial_by_id = {u["unit_id"]: dict(u) for u in units_payload}
         frames = simulate_mini_tactics_battle(777, map_payload, units_payload)
-        self.assertEqual(len(frames), 10)
+        self.assertLessEqual(len(frames), 10)
 
         width = int(map_payload["width"])
         height = int(map_payload["height"])
@@ -139,6 +142,93 @@ class AdminMiniTacticsTests(unittest.TestCase):
             before_distance = min(manhattan(before, enemy) for enemy in before_enemies)
             after_distance = min(manhattan(unit, enemy) for enemy in after_enemies)
             self.assertLessEqual(after_distance, before_distance)
+
+    def test_adjacent_units_attack_and_reduce_hp(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_attacker",
+                "side": "ally",
+                "name": "ケルベロス",
+                "species_key": "cerberus",
+                "x": 1,
+                "y": 1,
+                "hp": 18,
+                "max_hp": 18,
+                "atk": 5,
+                "def": 2,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 2,
+                "y": 1,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(1, map_payload, units_payload)[0]
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 8)
+        self.assertFalse(enemy["defeated"])
+        self.assertTrue(any("ケルベロスがダミーAを攻撃、4ダメージ" in line for line in frame["logs"]))
+
+    def test_defeated_unit_stops_acting_and_ally_win(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_attacker",
+                "side": "ally",
+                "name": "ケルベロス",
+                "species_key": "cerberus",
+                "x": 1,
+                "y": 1,
+                "hp": 18,
+                "max_hp": 18,
+                "atk": 5,
+                "def": 2,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 2,
+                "y": 1,
+                "hp": 4,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(1, map_payload, units_payload)[0]
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 0)
+        self.assertTrue(enemy["defeated"])
+        self.assertEqual(frame["result"], "ally_win")
+        self.assertTrue(any("ダミーAを撃破" in line for line in frame["logs"]))
+        self.assertTrue(any("味方側の勝利" in line for line in frame["logs"]))
+        self.assertFalse(any("ダミーAが" in line for line in frame["logs"]))
 
     def test_not_exposed_on_public_lab(self):
         html = self._client().get("/lab").get_data(as_text=True)

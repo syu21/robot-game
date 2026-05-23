@@ -15,6 +15,7 @@
   <div class="mini-tactics-layout">
     <div class="mini-tactics-board-wrap">
       <div class="mini-tactics-turn" id="miniTacticsTurn">turn -</div>
+      <div class="mini-tactics-result" id="miniTacticsResult"></div>
       <div
         class="mini-tactics-board"
         id="miniTacticsBoard"
@@ -23,6 +24,7 @@
     </div>
     <aside class="mini-tactics-log card">
       <h2>イベントログ</h2>
+      <div class="mini-tactics-roster" id="miniTacticsRoster"></div>
       <ul id="miniTacticsLog"></ul>
     </aside>
   </div>
@@ -35,7 +37,9 @@
   var unitAssets = {{ unit_assets|tojson }};
   var board = document.getElementById("miniTacticsBoard");
   var turnEl = document.getElementById("miniTacticsTurn");
+  var resultEl = document.getElementById("miniTacticsResult");
   var logEl = document.getElementById("miniTacticsLog");
+  var rosterEl = document.getElementById("miniTacticsRoster");
   var replayBtn = document.getElementById("miniTacticsReplay");
   if (!board || !turnEl || !logEl || !frames.length) return;
 
@@ -60,16 +64,59 @@
     var img = unitAssets[String(unit.unit_id || "")];
     var el = document.createElement("div");
     el.className = "mini-tactics-unit is-" + String(unit.side || "ally");
+    if (unit.defeated) el.className += " is-defeated";
     el.title = String(unit.name || "");
+    var core = document.createElement("div");
+    core.className = "mini-tactics-unit-core";
     if (img) {
       var image = document.createElement("img");
       image.src = img;
       image.alt = String(unit.name || "");
-      el.appendChild(image);
+      core.appendChild(image);
     } else {
-      el.textContent = String(unit.name || "?").slice(0, 3);
+      core.textContent = String(unit.name || "?").slice(0, 3);
     }
+    el.appendChild(core);
+    el.appendChild(hpBar(unit));
     return el;
+  }
+
+  function hpBar(unit) {
+    var hp = Math.max(0, Number(unit.hp || 0));
+    var maxHp = Math.max(1, Number(unit.max_hp || hp || 1));
+    var bar = document.createElement("div");
+    bar.className = "mini-tactics-hp";
+    var fill = document.createElement("span");
+    fill.style.width = String(Math.max(0, Math.min(100, Math.round((hp / maxHp) * 100)))) + "%";
+    bar.appendChild(fill);
+    return bar;
+  }
+
+  function resultLabel(result) {
+    if (result === "ally_win") return "味方側の勝利";
+    if (result === "enemy_win") return "敵側の勝利";
+    if (result === "draw") return "10ターン経過で引き分け";
+    return "交戦中";
+  }
+
+  function renderRoster(frame) {
+    if (!rosterEl) return;
+    rosterEl.innerHTML = "";
+    (frame.units || []).forEach(function (unit) {
+      var row = document.createElement("div");
+      row.className = "mini-tactics-roster-row is-" + String(unit.side || "ally");
+      if (unit.defeated) row.className += " is-defeated";
+      var name = document.createElement("div");
+      name.className = "mini-tactics-roster-name";
+      name.textContent = String(unit.name || "");
+      var hpText = document.createElement("div");
+      hpText.className = "mini-tactics-roster-hp";
+      hpText.textContent = "HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
+      row.appendChild(name);
+      row.appendChild(hpText);
+      row.appendChild(hpBar(unit));
+      rosterEl.appendChild(row);
+    });
   }
 
   function renderFrame(frame) {
@@ -88,6 +135,8 @@
       }
     }
     turnEl.textContent = "turn " + String(frame.turn || 0) + " / " + String(frames.length);
+    if (resultEl) resultEl.textContent = resultLabel(frame.result || "");
+    renderRoster(frame);
     logEl.innerHTML = "";
     (frame.logs || []).forEach(function (line) {
       var li = document.createElement("li");
