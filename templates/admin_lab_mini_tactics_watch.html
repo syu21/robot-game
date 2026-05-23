@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-tactics-watch" id="miniTacticsWatch">
+  <div class="mini-tactics-watch-head">
+    <div>
+      <h1>ミニロボ戦術試験 #{{ battle['id'] }}</h1>
+      <div class="robot-part">seed {{ battle['seed'] }} / {{ battle['status'] }}</div>
+    </div>
+    <div class="mini-tactics-controls">
+      <button type="button" id="miniTacticsReplay">最初から再生</button>
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
+    </div>
+  </div>
+
+  <div class="mini-tactics-layout">
+    <div class="mini-tactics-board-wrap">
+      <div class="mini-tactics-turn" id="miniTacticsTurn">turn -</div>
+      <div
+        class="mini-tactics-board"
+        id="miniTacticsBoard"
+        style="--mini-tactics-width: {{ map_payload.get('width', 5) }}; --mini-tactics-height: {{ map_payload.get('height', 5) }};"
+      ></div>
+    </div>
+    <aside class="mini-tactics-log card">
+      <h2>イベントログ</h2>
+      <ul id="miniTacticsLog"></ul>
+    </aside>
+  </div>
+</section>
+
+<script>
+(function () {
+  var mapPayload = {{ map_payload|tojson }};
+  var frames = {{ frames_payload|tojson }};
+  var unitAssets = {{ unit_assets|tojson }};
+  var board = document.getElementById("miniTacticsBoard");
+  var turnEl = document.getElementById("miniTacticsTurn");
+  var logEl = document.getElementById("miniTacticsLog");
+  var replayBtn = document.getElementById("miniTacticsReplay");
+  if (!board || !turnEl || !logEl || !frames.length) return;
+
+  var width = Number(mapPayload.width || 5);
+  var height = Number(mapPayload.height || 5);
+  var timer = null;
+  var index = 0;
+
+  function tileTerrain(x, y) {
+    var rows = mapPayload.tiles || [];
+    for (var rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      var row = rows[rowIndex] || [];
+      for (var colIndex = 0; colIndex < row.length; colIndex += 1) {
+        var tile = row[colIndex] || {};
+        if (Number(tile.x) === x && Number(tile.y) === y) return String(tile.terrain || "floor");
+      }
+    }
+    return "floor";
+  }
+
+  function unitToken(unit) {
+    var img = unitAssets[String(unit.unit_id || "")];
+    var el = document.createElement("div");
+    el.className = "mini-tactics-unit is-" + String(unit.side || "ally");
+    el.title = String(unit.name || "");
+    if (img) {
+      var image = document.createElement("img");
+      image.src = img;
+      image.alt = String(unit.name || "");
+      el.appendChild(image);
+    } else {
+      el.textContent = String(unit.name || "?").slice(0, 3);
+    }
+    return el;
+  }
+
+  function renderFrame(frame) {
+    var unitsByCell = {};
+    (frame.units || []).forEach(function (unit) {
+      unitsByCell[String(Number(unit.x)) + "," + String(Number(unit.y))] = unit;
+    });
+    board.innerHTML = "";
+    for (var y = 0; y < height; y += 1) {
+      for (var x = 0; x < width; x += 1) {
+        var cell = document.createElement("div");
+        cell.className = "mini-tactics-cell terrain-" + tileTerrain(x, y);
+        var unit = unitsByCell[String(x) + "," + String(y)];
+        if (unit) cell.appendChild(unitToken(unit));
+        board.appendChild(cell);
+      }
+    }
+    turnEl.textContent = "turn " + String(frame.turn || 0) + " / " + String(frames.length);
+    logEl.innerHTML = "";
+    (frame.logs || []).forEach(function (line) {
+      var li = document.createElement("li");
+      li.textContent = String(line || "");
+      logEl.appendChild(li);
+    });
+  }
+
+  function play() {
+    renderFrame(frames[index]);
+    index += 1;
+    if (index >= frames.length) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function restart() {
+    if (timer) window.clearInterval(timer);
+    index = 0;
+    play();
+    timer = window.setInterval(play, 650);
+  }
+
+  if (replayBtn) replayBtn.addEventListener("click", restart);
+  restart();
+})();
+</script>
+{% endblock %}

@@ -684,7 +684,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
         self.assertIn(self.head_name, html)
         self.assertNotIn(self.right_arm_name, html)
-        self.assertIn("素材として使う2個", html)
+        self.assertIn("素材を手動で指定する（任意）", html)
         self.assertIn("装備中", html)
         self.assertIn("→", html)
         self.assertIn("選んだ個体を強化する", html)

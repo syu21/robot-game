@@ -106,6 +106,7 @@ from services.style import (
     style_score_payload_from_stats,
 )
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
+from services.mini_tactics import create_mini_tactics_battle
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
     LAB_CASINO_COIN_CAP,
@@ -10908,6 +10909,21 @@ def ensure_schema(db):
             FOREIGN KEY (race_id) REFERENCES lab_races(id),
             FOREIGN KEY (entry_id) REFERENCES lab_race_entries(id),
             FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mini_tactics_battles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seed INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'prototype',
+            map_json TEXT NOT NULL,
+            units_json TEXT NOT NULL,
+            frames_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            created_by_user_id INTEGER NOT NULL,
+            FOREIGN KEY (created_by_user_id) REFERENCES users(id)
         )
         """
     )
@@ -35625,6 +35641,73 @@ def admin_lab():
     return render_template("admin_lab.html", counts=counts, latest_races=latest_races)
 
 
+@app.route("/admin/lab/mini-tactics")
+@login_required
+def admin_lab_mini_tactics():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    latest_battles = db.execute(
+        """
+        SELECT id, seed, status, created_at
+        FROM mini_tactics_battles
+        ORDER BY id DESC
+        LIMIT 8
+        """
+    ).fetchall()
+    return render_template("admin_lab_mini_tactics.html", latest_battles=latest_battles)
+
+
+@app.route("/admin/lab/mini-tactics/start", methods=["POST"])
+@login_required
+def admin_lab_mini_tactics_start():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    seed_raw = (request.form.get("seed") or "").strip()
+    seed = int(seed_raw) if seed_raw.isdigit() else None
+    battle_id = create_mini_tactics_battle(db, int(session["user_id"]), seed=seed)
+    return redirect(url_for("admin_lab_mini_tactics_watch", battle_id=int(battle_id)))
+
+
+@app.route("/admin/lab/mini-tactics/watch/<int:battle_id>")
+@login_required
+def admin_lab_mini_tactics_watch(battle_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    row = db.execute(
+        """
+        SELECT *
+        FROM mini_tactics_battles
+        WHERE id = ?
+        """,
+        (int(battle_id),),
+    ).fetchone()
+    if not row:
+        return abort(404)
+    try:
+        map_payload = json.loads(row["map_json"] or "{}")
+        units_payload = json.loads(row["units_json"] or "[]")
+        frames_payload = json.loads(row["frames_json"] or "[]")
+    except json.JSONDecodeError:
+        return abort(500)
+
+    unit_assets = {}
+    for unit in units_payload:
+        image_path = str(unit.get("image_path") or "").strip()
+        if image_path and os.path.exists(_static_abs(image_path)):
+            unit_assets[str(unit.get("unit_id") or "")] = url_for("static", filename=image_path, v=APP_VERSION)
+    return render_template(
+        "admin_lab_mini_tactics_watch.html",
+        battle=row,
+        map_payload=map_payload,
+        units_payload=units_payload,
+        frames_payload=frames_payload,
+        unit_assets=unit_assets,
+    )
+
+
 @app.route("/admin/lab/race")
 @login_required
 def admin_lab_race():
@@ -40843,60 +40926,4 @@ def admin_parts_purge(part_id):
     db = get_db()
     typed_part_id = request.form.get("typed_part_id", "").strip()
     confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+    acknowledged = req

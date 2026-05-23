@@ -529,6 +529,7 @@ def main():
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
+            home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_state TEXT NOT NULL DEFAULT 'new',
             tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_boss_seen_at INTEGER,
@@ -1697,6 +1698,20 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS mini_tactics_battles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seed INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'prototype',
+            map_json TEXT NOT NULL,
+            units_json TEXT NOT NULL,
+            frames_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            created_by_user_id INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_casino_races (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             race_key TEXT NOT NULL,
@@ -1927,6 +1942,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
+    if "home_daily_research_collapsed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_state" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_state TEXT NOT NULL DEFAULT 'new'")
     if "tutorial_layer1_normal_win_count" not in users_cols:
@@ -2038,6 +2055,7 @@ def main():
     cur.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
+    cur.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
     cur.execute(
         """
         UPDATE users
@@ -2674,17 +2692,4 @@ def main():
         for i in range(1, 11):
             items.append((f"HEAD-{i}", "HEAD", f"parts/head/{i}.png", 2, 1, 1, 3))
             items.append((f"R-ARM-{i}", "RIGHT_ARM", f"parts/right_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"L-ARM-{i}", "LEFT_ARM", f"parts/left_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"LEGS-{i}", "LEGS", f"parts/legs/{i}.png", 1, 2, 2, 3))
-        cur.executemany(
-            "INSERT INTO parts (name, type, sprite_path, attack, defense, speed, hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            items,
-        )
-
-    conn.commit()
-    conn.close()
-    print("DB initialized at", DB_PATH)
-
-
-if __name__ == "__main__":
-    main()
+     

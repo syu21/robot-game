@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-tactics-admin-hero">
+  <div>
+    <h1>ミニロボ戦術試験</h1>
+    <div class="robot-part">管理人限定プロトタイプ。5x5盤面でミニロボの自動移動だけを確認します。</div>
+  </div>
+  <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
+    <label>
+      seed 任意
+      <input type="number" name="seed" min="1" placeholder="空ならランダム" />
+    </label>
+    <button type="submit">試験開始</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>最近の試験</h2>
+  {% for row in latest_battles %}
+  <div class="mini-tactics-history-row">
+    <span>#{{ row['id'] }} / seed {{ row['seed'] }} / {{ row['status'] }}</span>
+    <a href="{{ url_for('admin_lab_mini_tactics_watch', battle_id=row['id']) }}">観戦</a>
+  </div>
+  {% else %}
+  <div class="robot-part">まだ試験はありません。</div>
+  {% endfor %}
+</section>
+
+<p class="link"><a href="{{ url_for('admin_lab') }}">実験室管理へ戻る</a></p>
+{% endblock %}
