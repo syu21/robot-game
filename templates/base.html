@@ -19,6 +19,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}?v={{ app_version }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}-ui3" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='fixed_nav.css') }}?v={{ app_version }}-csp1" />
 </head>
 {% from '_user_chip.html' import render_user_chip %}
 {% set js_diag = request.args.get('js_diag') == '1' %}

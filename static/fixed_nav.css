@@ -1,0 +1,121 @@
+.has-fixed-nav {
+  padding-bottom: calc(82px + env(safe-area-inset-bottom));
+}
+
+.robo-fixed-nav {
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: min(96vw, 720px);
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.38);
+  backdrop-filter: blur(12px);
+  transform: translateX(-50%);
+}
+
+.robo-fixed-nav-form {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.robo-fixed-nav-hide-form {
+  flex: 0 0 auto;
+}
+
+.robo-fixed-nav-item {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  background: rgba(30, 41, 59, 0.9);
+}
+
+button.robo-fixed-nav-item {
+  width: 100%;
+  cursor: pointer;
+}
+
+.robo-fixed-nav-toggle {
+  padding-inline: 9px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.robo-fixed-nav-item.is-active {
+  border-color: rgba(56, 189, 248, 0.62);
+  color: #e0f2fe;
+  background: rgba(14, 116, 144, 0.42);
+}
+
+.robo-fixed-nav-explore.is-ready {
+  border-color: rgba(34, 197, 94, 0.65);
+  color: #ecfdf5;
+  background: rgba(22, 101, 52, 0.78);
+}
+
+.robo-fixed-nav-explore.is-waiting,
+.robo-fixed-nav-explore:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+  opacity: 0.72;
+  background: rgba(51, 65, 85, 0.72);
+}
+
+.robo-fixed-nav-parts {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+}
+
+.robo-fixed-nav-count {
+  color: #cbd5e1;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.robo-fixed-nav-count.is-warning {
+  color: #fde68a;
+}
+
+.robo-fixed-nav-count.is-full {
+  color: #fecaca;
+}
+
+.robo-fixed-nav-restore-form {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  margin: 0;
+}
+
+.robo-fixed-nav-restore {
+  padding: 10px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  background: rgba(15, 23, 42, 0.92);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.34);
+}
