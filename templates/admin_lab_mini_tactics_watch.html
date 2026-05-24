@@ -6,26 +6,34 @@
       <h1>ミニロボ戦術試験 #{{ battle['id'] }}</h1>
       <div class="robot-part">seed {{ battle['seed'] }} / {{ battle['status'] }}</div>
     </div>
+    <div class="mini-tactics-status-panel">
+      <div class="mini-tactics-turn" id="miniTacticsTurn">turn -</div>
+      <div class="mini-tactics-result" id="miniTacticsResult"></div>
+    </div>
     <div class="mini-tactics-controls">
       <button type="button" id="miniTacticsReplay">最初から再生</button>
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
     </div>
   </div>
 
-  <div class="mini-tactics-layout">
+  <div class="mini-tactics-stage">
     <div class="mini-tactics-board-wrap">
-      <div class="mini-tactics-turn" id="miniTacticsTurn">turn -</div>
-      <div class="mini-tactics-result" id="miniTacticsResult"></div>
       <div
         class="mini-tactics-board"
         id="miniTacticsBoard"
         style="--mini-tactics-width: {{ map_payload.get('width', 5) }}; --mini-tactics-height: {{ map_payload.get('height', 5) }};"
       ></div>
     </div>
-    <aside class="mini-tactics-log card">
-      <h2>イベントログ</h2>
-      <div class="mini-tactics-roster" id="miniTacticsRoster"></div>
-      <ul id="miniTacticsLog"></ul>
+
+    <aside class="mini-tactics-info-panel">
+      <section class="mini-tactics-roster-panel">
+        <h2>ユニット情報</h2>
+        <div class="mini-tactics-roster" id="miniTacticsRoster"></div>
+      </section>
+      <section class="mini-tactics-log">
+        <h2>イベントログ</h2>
+        <ul id="miniTacticsLog"></ul>
+      </section>
     </aside>
   </div>
 </section>
