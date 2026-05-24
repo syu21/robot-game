@@ -50,7 +50,9 @@
                   {{ unit.get('name', '?')[:3] }}
                   {% endif %}
                 </span>
+                {% if unit.get('max_hp') %}
                 <span class="mini-tactics-hp"><span style="width: {{ (100 * (unit.get('hp', 0) / unit.get('max_hp', 1)))|round|int }}%"></span></span>
+                {% endif %}
               </span>
               {% endif %}
             {% endfor %}
@@ -72,7 +74,7 @@
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
         </form>
         <div class="robot-time">
-          1ターンに1体だけ行動 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / リーダー撃破で勝利
+          1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / リーダー撃破で勝利
         </div>
       </section>
 
@@ -81,7 +83,10 @@
         {% for unit in units_payload if unit.get('side') == 'ally' %}
         <div class="mini-tactics-roster-row is-ally {% if unit.get('defeated') %}is-defeated{% endif %}">
           <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+          <div class="mini-tactics-roster-hp">
+            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
+            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
+          </div>
         </div>
         {% endfor %}
       </section>
@@ -91,7 +96,10 @@
         {% for unit in units_payload if unit.get('side') == 'enemy' %}
         <div class="mini-tactics-roster-row is-enemy {% if unit.get('defeated') %}is-defeated{% endif %}">
           <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+          <div class="mini-tactics-roster-hp">
+            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
+            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
+          </div>
         </div>
         {% endfor %}
       </section>
