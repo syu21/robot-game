@@ -1312,6 +1312,32 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_mini_robot_profiles (
+            user_id INTEGER PRIMARY KEY,
+            active_mini_robot_id INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(active_mini_robot_id) REFERENCES user_mini_robots(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mini_tactics_teams (
+            user_id INTEGER PRIMARY KEY,
+            slot_1_mini_robot_id INTEGER,
+            slot_2_mini_robot_id INTEGER,
+            slot_3_mini_robot_id INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
+            FOREIGN KEY(slot_2_mini_robot_id) REFERENCES user_mini_robots(id),
+            FOREIGN KEY(slot_3_mini_robot_id) REFERENCES user_mini_robots(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_enemy_dex (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -2373,6 +2399,25 @@ def main():
     if "payload_json" not in mini_log_cols:
         cur.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
     _backfill_mini_robot_internal_fields(cur)
+    now_ts = int(time.time())
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_mini_robot_profiles (user_id, active_mini_robot_id, updated_at)
+        SELECT mr.user_id, MIN(mr.id), ?
+        FROM user_mini_robots mr
+        GROUP BY mr.user_id
+        """,
+        (now_ts,),
+    )
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO mini_tactics_teams (user_id, slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id, updated_at)
+        SELECT mr.user_id, MIN(mr.id), NULL, NULL, ?
+        FROM user_mini_robots mr
+        GROUP BY mr.user_id
+        """,
+        (now_ts,),
+    )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
@@ -2389,6 +2434,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robots_user_created ON user_mini_robots(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_robot_created ON mini_robot_logs(mini_robot_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_user_created ON mini_robot_logs(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robot_profiles_active ON user_mini_robot_profiles(active_mini_robot_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_faction ON users(faction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_scores_week_points ON world_faction_weekly_scores(week_key, points DESC)")
@@ -2651,45 +2697,4 @@ def main():
             robots_seed,
         )
     base_count = cur.execute("SELECT COUNT(*) FROM robot_bases").fetchone()[0]
-    if base_count == 0:
-        cur.executemany(
-            "INSERT INTO robot_bases (key, image_path) VALUES (?, ?)",
-            [
-                ("normal", "base_bodies/normal.png"),
-                ("angel", "base_bodies/angel.png"),
-                ("devil", "base_bodies/devil.png"),
-            ],
-        )
-    _ensure_default_normal_robot_parts(cur)
-    _upsert_series_rows(cur)
-    _apply_series_part_assignments(cur)
-    milestone_count = cur.execute("SELECT COUNT(*) FROM robot_milestones").fetchone()[0]
-    if milestone_count == 0:
-        cur.executemany(
-            """
-            INSERT INTO robot_milestones
-            (milestone_key, metric, threshold_value, reward_head_key, reward_r_arm_key, reward_l_arm_key, reward_legs_key, active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-            """,
-            [
-                ("wins_3", "wins", 3, "head_1", "r_arm_1", "l_arm_1", "legs_1"),
-                ("wins_10", "wins", 10, "head_2", "r_arm_2", "l_arm_2", "legs_2"),
-            ],
-        )
-    bb_count = cur.execute("SELECT COUNT(*) FROM base_bodies").fetchone()[0]
-    if bb_count == 0:
-        cur.executemany(
-            "INSERT INTO base_bodies (name, sprite_path) VALUES (?, ?)",
-            [
-                ("normal", "base_bodies/normal.png"),
-                ("angel", "base_bodies/angel.png"),
-                ("devil", "base_bodies/devil.png"),
-            ],
-        )
-    part_count = cur.execute("SELECT COUNT(*) FROM parts").fetchone()[0]
-    if part_count == 0:
-        items = []
-        for i in range(1, 11):
-            items.append((f"HEAD-{i}", "HEAD", f"parts/head/{i}.png", 2, 1, 1, 3))
-            items.append((f"R-ARM-{i}", "RIGHT_ARM", f"parts/right_arm/{i}.png", 2, 1, 1, 2))
-     
+    if base_

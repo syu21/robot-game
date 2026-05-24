@@ -111,7 +111,7 @@
       name.textContent = String(unit.name || "");
       var hpText = document.createElement("div");
       hpText.className = "mini-tactics-roster-hp";
-      hpText.textContent = "HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
+      hpText.textContent = String(unit.ai_type || "assault") + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
       row.appendChild(name);
       row.appendChild(hpText);
       row.appendChild(hpBar(unit));

@@ -5,6 +5,12 @@ import time
 
 BOARD_SIZE = 5
 MAX_TURNS = 10
+ALLY_START_POSITIONS = ((0, 1), (0, 2), (0, 3))
+RENTAL_ALLY_SPECS = (
+    ("rental_cerberus", "ケルベロス", "cerberus", "assault", 18, 5, 2, "mini_robots/cerberus/normal.png"),
+    ("rental_phoenix", "フェニックス", "phoenix", "cautious", 14, 4, 1, "mini_robots/phoenix/normal.png"),
+    ("rental_hydra", "ヒュドラ", "hydra", "guardian", 20, 3, 3, "mini_robots/hydra/normal.png"),
+)
 
 
 def build_initial_map():
@@ -48,7 +54,7 @@ def build_initial_units():
             "atk": 4,
             "def": 1,
             "defeated": False,
-            "ai_type": "assault",
+            "ai_type": "cautious",
             "image_path": "mini_robots/phoenix/normal.png",
             "direction": "right",
         },
@@ -64,7 +70,7 @@ def build_initial_units():
             "atk": 3,
             "def": 3,
             "defeated": False,
-            "ai_type": "assault",
+            "ai_type": "guardian",
             "image_path": "mini_robots/hydra/normal.png",
             "direction": "right",
         },
@@ -119,6 +125,67 @@ def build_initial_units():
     ]
 
 
+def build_rental_ally_units():
+    units = []
+    for index, (unit_id, name, species_key, ai_type, hp, atk, defense, image_path) in enumerate(RENTAL_ALLY_SPECS):
+        x, y = ALLY_START_POSITIONS[index]
+        units.append(
+            {
+                "unit_id": unit_id,
+                "side": "ally",
+                "name": name,
+                "species_key": species_key,
+                "x": x,
+                "y": y,
+                "hp": hp,
+                "max_hp": hp,
+                "atk": atk,
+                "def": defense,
+                "defeated": False,
+                "ai_type": ai_type,
+                "image_path": image_path,
+                "direction": "right",
+                "source": "rental",
+            }
+        )
+    return units
+
+
+def build_units_with_allies(ally_units=None):
+    rentals = build_rental_ally_units()
+    allies = []
+    used_species = set()
+    for unit in ally_units or []:
+        if len(allies) >= 3:
+            break
+        copied = dict(unit)
+        copied["side"] = "ally"
+        copied["defeated"] = bool(copied.get("defeated"))
+        copied.setdefault("direction", "right")
+        copied.setdefault("source", "owned")
+        allies.append(copied)
+        used_species.add(str(copied.get("species_key") or ""))
+    for rental in rentals:
+        if len(allies) >= 3:
+            break
+        if str(rental.get("species_key") or "") in used_species and len(rentals) - len(used_species) >= 3 - len(allies):
+            continue
+        allies.append(dict(rental))
+        used_species.add(str(rental.get("species_key") or ""))
+    while len(allies) < 3:
+        rental = rentals[len(allies) % len(rentals)]
+        copied = dict(rental)
+        copied["unit_id"] = f"{copied['unit_id']}_{len(allies) + 1}"
+        allies.append(copied)
+    for index, unit in enumerate(allies[:3]):
+        x, y = ALLY_START_POSITIONS[index]
+        unit["x"] = x
+        unit["y"] = y
+
+    enemies = [dict(unit) for unit in build_initial_units() if unit.get("side") == "enemy"]
+    return allies[:3] + enemies
+
+
 def manhattan(a, b):
     return abs(int(a["x"]) - int(b["x"])) + abs(int(a["y"]) - int(b["y"]))
 
@@ -143,157 +210,25 @@ def _direction_from_delta(dx, dy, fallback):
     return fallback or "right"
 
 
-def get_next_step_toward_enemy(unit, units, map_payload, rng):
-    enemies = [u for u in units if u.get("side") != unit.get("side") and not u.get("defeated")]
-    if not enemies:
-        return int(unit["x"]), int(unit["y"]), "wait"
-
-    target = min(enemies, key=lambda enemy: (manhattan(unit, enemy), str(enemy.get("unit_id") or "")))
-    current_distance = manhattan(unit, target)
-    if current_distance <= 1:
-        return int(unit["x"]), int(unit["y"]), "contact"
-
-    occupied = {
-        (int(other["x"]), int(other["y"]))
-        for other in units
-        if str(other.get("unit_id") or "") != str(unit.get("unit_id") or "")
-    }
-    width = int(map_payload.get("width") or BOARD_SIZE)
-    height = int(map_payload.get("height") or BOARD_SIZE)
-    candidates = []
-    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        nx = int(unit["x"]) + dx
-        ny = int(unit["y"]) + dy
-        if nx < 0 or ny < 0 or nx >= width or ny >= height:
-            continue
-        if (nx, ny) in occupied or _tile_is_wall(map_payload, nx, ny):
-            continue
-        next_distance = abs(nx - int(target["x"])) + abs(ny - int(target["y"]))
-        if next_distance < current_distance:
-            candidates.append((next_distance, nx, ny))
-    if not candidates:
-        return int(unit["x"]), int(unit["y"]), "wait"
-
-    best_distance = min(item[0] for item in candidates)
-    best = [(nx, ny) for dist, nx, ny in candidates if dist == best_distance]
-    nx, ny = rng.choice(best)
-    return int(nx), int(ny), "move"
+def living_enemies(unit, units):
+    return [u for u in units if u.get("side") != unit.get("side") and not u.get("defeated")]
 
 
-def get_adjacent_enemy(unit, units):
-    enemies = [
+def living_allies(unit, units):
+    return [
         u
         for u in units
-        if u.get("side") != unit.get("side") and not u.get("defeated") and manhattan(unit, u) == 1
+        if u.get("side") == unit.get("side")
+        and str(u.get("unit_id") or "") != str(unit.get("unit_id") or "")
+        and not u.get("defeated")
     ]
+
+
+def find_nearest_enemy(unit, units):
+    enemies = living_enemies(unit, units)
     if not enemies:
         return None
-    return min(enemies, key=lambda enemy: (int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
+    return min(enemies, key=lambda enemy: (manhattan(unit, enemy), str(enemy.get("unit_id") or "")))
 
 
-def _battle_result(units):
-    ally_alive = any(u.get("side") == "ally" and not u.get("defeated") for u in units)
-    enemy_alive = any(u.get("side") == "enemy" and not u.get("defeated") for u in units)
-    if ally_alive and not enemy_alive:
-        return "ally_win"
-    if enemy_alive and not ally_alive:
-        return "enemy_win"
-    if not ally_alive and not enemy_alive:
-        return "draw"
-    return None
-
-
-def _result_log(result):
-    if result == "ally_win":
-        return "味方側の勝利"
-    if result == "enemy_win":
-        return "敵側の勝利"
-    return "10ターン経過で引き分け"
-
-
-def serialize_frames(frames):
-    return json.dumps(frames, ensure_ascii=False, separators=(",", ":"))
-
-
-def simulate_mini_tactics_battle(seed, map_payload, units_payload):
-    units = [dict(unit) for unit in units_payload]
-    for unit in units:
-        unit["max_hp"] = int(unit.get("max_hp") or unit.get("hp") or 10)
-        unit["hp"] = int(unit.get("hp") or unit["max_hp"])
-        unit["atk"] = int(unit.get("atk") or 1)
-        unit["def"] = int(unit.get("def") or 0)
-        unit["defeated"] = bool(unit.get("defeated")) or int(unit["hp"]) <= 0
-    frames = []
-    result = None
-    for turn in range(1, MAX_TURNS + 1):
-        logs = []
-        for unit in sorted(units, key=lambda item: str(item.get("unit_id") or "")):
-            if unit.get("defeated"):
-                continue
-
-            target = get_adjacent_enemy(unit, units)
-            if target is not None:
-                damage = max(1, int(unit.get("atk") or 1) - int(target.get("def") or 0))
-                target["hp"] = max(0, int(target.get("hp") or 0) - int(damage))
-                logs.append(f"{unit['name']}が{target['name']}を攻撃、{damage}ダメージ")
-                if int(target["hp"]) <= 0 and not target.get("defeated"):
-                    target["defeated"] = True
-                    logs.append(f"{target['name']}を撃破")
-                result = _battle_result(units)
-                if result:
-                    logs.append(_result_log(result))
-                    break
-                continue
-
-            before_x = int(unit["x"])
-            before_y = int(unit["y"])
-            rng = random.Random(f"{int(seed)}:{turn}:{unit.get('unit_id')}")
-            nx, ny, action = get_next_step_toward_enemy(unit, units, map_payload, rng)
-            unit["x"] = int(nx)
-            unit["y"] = int(ny)
-            unit["direction"] = _direction_from_delta(nx - before_x, ny - before_y, unit.get("direction"))
-            if action == "move":
-                logs.append(f"{unit['name']}が前進")
-            elif action == "contact":
-                logs.append(f"{unit['name']}が接敵")
-            else:
-                logs.append(f"{unit['name']}が待機")
-        if not result and turn >= MAX_TURNS:
-            result = _battle_result(units) or "draw"
-            logs.append(_result_log(result))
-        frames.append(
-            {
-                "turn": turn,
-                "units": [dict(unit) for unit in units],
-                "logs": logs,
-                "result": result,
-            }
-        )
-        if result:
-            break
-    return frames
-
-
-def create_mini_tactics_battle(db, admin_user_id, seed=None):
-    battle_seed = int(seed if seed is not None else random.randint(100000, 999999999))
-    map_payload = build_initial_map()
-    units_payload = build_initial_units()
-    frames = simulate_mini_tactics_battle(battle_seed, map_payload, units_payload)
-    now = int(time.time())
-    cur = db.execute(
-        """
-        INSERT INTO mini_tactics_battles
-        (seed, status, map_json, units_json, frames_json, created_at, created_by_user_id)
-        VALUES (?, 'finished', ?, ?, ?, ?, ?)
-        """,
-        (
-            int(battle_seed),
-            json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")),
-            json.dumps(units_payload, ensure_ascii=False, separators=(",", ":")),
-            serialize_frames(frames),
-            int(now),
-            int(admin_user_id),
-        ),
-    )
-    db.commit()
-    return int(cur.lastrowid)
+def f

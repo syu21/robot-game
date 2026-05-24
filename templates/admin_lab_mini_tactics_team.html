@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-tactics-admin-hero">
+  <div>
+    <h1>戦術チーム確認</h1>
+    <div class="robot-part">管理人限定。/lab/mini の現在の育成個体を1枠目に使い、不足分はレンタル機で補完します。</div>
+  </div>
+  <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
+    <label>
+      seed 任意
+      <input type="number" name="seed" min="1" placeholder="空ならランダム" />
+    </label>
+    <button type="submit">この編成で試験開始</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>編成スロット</h2>
+  <div class="mini-tactics-team-grid">
+    {% for slot in team_slots %}
+    <div class="mini-tactics-team-card is-{{ slot.source }}">
+      <div class="mini-tactics-team-slot">slot {{ slot.slot }} / {{ '育成個体' if slot.source == 'owned' else 'レンタル機' }}</div>
+      {% if slot.image_url %}
+      <img src="{{ slot.image_url }}" alt="{{ slot.name }}" loading="lazy" />
+      {% endif %}
+      <h3>{{ slot.name }}</h3>
+      <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_type }}</div>
+      <div class="robot-time">HP {{ slot.hp }} / ATK {{ slot.atk }} / DEF {{ slot.def }}</div>
+      {% if slot.mini_robot_id %}
+      <div class="robot-time">mini_robot_id {{ slot.mini_robot_id }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>所持ミニロボ</h2>
+  {% for row in owned_rows %}
+  <div class="mini-tactics-history-row">
+    <span>#{{ row['id'] }} {{ row['nickname'] }} / {{ row['species_key'] }} / {{ row['current_state'] }}</span>
+    <span class="robot-time">現在は自動で先頭枠へ反映</span>
+  </div>
+  {% else %}
+  <div class="robot-part">所持ミニロボなし。レンタル3体で試験します。</div>
+  {% endfor %}
+</section>
+
+<p class="link"><a href="{{ url_for('admin_lab_mini_tactics') }}">ミニロボ戦術試験へ戻る</a></p>
+{% endblock %}

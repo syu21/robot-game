@@ -106,7 +106,7 @@ from services.style import (
     style_score_payload_from_stats,
 )
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
-from services.mini_tactics import create_mini_tactics_battle
+from services.mini_tactics import build_rental_ally_units, create_mini_tactics_battle
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
     LAB_CASINO_COIN_CAP,
@@ -10454,6 +10454,32 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_mini_robot_profiles (
+            user_id INTEGER PRIMARY KEY,
+            active_mini_robot_id INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(active_mini_robot_id) REFERENCES user_mini_robots(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mini_tactics_teams (
+            user_id INTEGER PRIMARY KEY,
+            slot_1_mini_robot_id INTEGER,
+            slot_2_mini_robot_id INTEGER,
+            slot_3_mini_robot_id INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
+            FOREIGN KEY(slot_2_mini_robot_id) REFERENCES user_mini_robots(id),
+            FOREIGN KEY(slot_3_mini_robot_id) REFERENCES user_mini_robots(id)
+        )
+        """
+    )
     for species in MINI_ROBOT_SPECIES_SEEDS:
         db.execute(
             """
@@ -11624,12 +11650,32 @@ def ensure_schema(db):
     if "payload_json" not in mini_log_cols:
         db.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
     _backfill_mini_robot_internal_fields(db)
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_mini_robot_profiles (user_id, active_mini_robot_id, updated_at)
+        SELECT mr.user_id, MIN(mr.id), ?
+        FROM user_mini_robots mr
+        GROUP BY mr.user_id
+        """,
+        (now_ts,),
+    )
+    db.execute(
+        """
+        INSERT OR IGNORE INTO mini_tactics_teams (user_id, slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id, updated_at)
+        SELECT mr.user_id, MIN(mr.id), NULL, NULL, ?
+        FROM user_mini_robots mr
+        GROUP BY mr.user_id
+        """,
+        (now_ts,),
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robots_user_created ON user_mini_robots(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_robot_created ON mini_robot_logs(mini_robot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_user_created ON mini_robot_logs(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robot_profiles_active ON user_mini_robot_profiles(active_mini_robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
     lab_submission_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_robot_submissions)").fetchall()}
@@ -34105,6 +34151,21 @@ def _create_user_mini_robot(db, user_id, species_key=MINI_ROBOT_INITIAL_SPECIES_
         ),
     )
     mini_robot_id = int(cur.lastrowid)
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_mini_robot_profiles (user_id, active_mini_robot_id, updated_at)
+        VALUES (?, ?, ?)
+        """,
+        (user_id, mini_robot_id, now_ts),
+    )
+    db.execute(
+        """
+        INSERT OR IGNORE INTO mini_tactics_teams
+        (user_id, slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id, updated_at)
+        VALUES (?, ?, NULL, NULL, ?)
+        """,
+        (user_id, mini_robot_id, now_ts),
+    )
     _mini_robot_add_log(
         db,
         user_id=user_id,
@@ -34292,6 +34353,139 @@ def _mini_robot_catalog_rows(db, user_id):
             }
         )
     return rows
+
+
+MINI_TACTICS_SPECIES_STATS = {
+    "cerberus": {"hp": 18, "atk": 5, "def": 2, "ai_type": "assault"},
+    "phoenix": {"hp": 14, "atk": 4, "def": 1, "ai_type": "cautious"},
+    "hydra": {"hp": 20, "atk": 3, "def": 3, "ai_type": "guardian"},
+}
+
+
+def _mini_tactics_ai_for_robot(robot_row):
+    species_key = str(_mini_robot_row_value(robot_row, "species_key", "cerberus") or "cerberus")
+    return MINI_TACTICS_SPECIES_STATS.get(species_key, MINI_TACTICS_SPECIES_STATS["cerberus"])["ai_type"]
+
+
+def _mini_tactics_owned_rows(db, user_id):
+    return db.execute(
+        """
+        SELECT mr.*, s.name_ja, s.description, s.type_key, s.image_normal, s.image_blink, s.image_happy, s.image_sleep
+        FROM user_mini_robots mr
+        JOIN mini_robot_species s ON s.species_key = mr.species_key
+        WHERE mr.user_id = ?
+        ORDER BY mr.created_at ASC, mr.id ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+
+
+def _mini_tactics_unit_from_robot(robot_row, slot_index):
+    species_key = str(_mini_robot_row_value(robot_row, "species_key", "cerberus") or "cerberus")
+    stats = MINI_TACTICS_SPECIES_STATS.get(species_key, MINI_TACTICS_SPECIES_STATS["cerberus"])
+    stage = str(_mini_robot_row_value(robot_row, "stage", "child") or "child")
+    growth_bonus = 1 if stage not in {"child", "幼体"} else 0
+    hp = int(stats["hp"]) + growth_bonus
+    state_key = str(_mini_robot_row_value(robot_row, "current_state", "normal") or "normal")
+    nickname = str(_mini_robot_row_value(robot_row, "nickname", "") or _mini_robot_row_value(robot_row, "name_ja", "ミニロボ"))
+    return {
+        "unit_id": f"owned_mini_{int(robot_row['id'])}",
+        "side": "ally",
+        "name": nickname,
+        "species_key": species_key,
+        "x": 0,
+        "y": int(slot_index) + 1,
+        "hp": hp,
+        "max_hp": hp,
+        "atk": int(stats["atk"]) + growth_bonus,
+        "def": int(stats["def"]),
+        "defeated": False,
+        "ai_type": _mini_tactics_ai_for_robot(robot_row),
+        "image_path": _mini_robot_image_rel(species_key, state_key),
+        "direction": "right",
+        "source": "owned",
+        "mini_robot_id": int(robot_row["id"]),
+    }
+
+
+def _mini_tactics_team_rows(db, user_id):
+    owned_rows = _mini_tactics_owned_rows(db, user_id)
+    by_id = {int(row["id"]): row for row in owned_rows}
+    profile = db.execute(
+        "SELECT active_mini_robot_id FROM user_mini_robot_profiles WHERE user_id = ?",
+        (int(user_id),),
+    ).fetchone()
+    team = db.execute(
+        """
+        SELECT slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id
+        FROM mini_tactics_teams
+        WHERE user_id = ?
+        """,
+        (int(user_id),),
+    ).fetchone()
+    ordered_ids = []
+    if team:
+        for key in ("slot_1_mini_robot_id", "slot_2_mini_robot_id", "slot_3_mini_robot_id"):
+            if team[key] is not None and int(team[key]) in by_id and int(team[key]) not in ordered_ids:
+                ordered_ids.append(int(team[key]))
+    if not ordered_ids and profile and profile["active_mini_robot_id"] is not None:
+        active_id = int(profile["active_mini_robot_id"])
+        if active_id in by_id:
+            ordered_ids.append(active_id)
+    for row in owned_rows:
+        row_id = int(row["id"])
+        if len(ordered_ids) >= 3:
+            break
+        if row_id not in ordered_ids:
+            ordered_ids.append(row_id)
+    return [by_id[row_id] for row_id in ordered_ids[:3]]
+
+
+def _mini_tactics_team_units_for_user(db, user_id):
+    owned_units = [
+        _mini_tactics_unit_from_robot(row, index)
+        for index, row in enumerate(_mini_tactics_team_rows(db, user_id))
+    ]
+    rental_units = build_rental_ally_units()
+    owned_species = {unit["species_key"] for unit in owned_units}
+    team_units = list(owned_units)
+    for rental in rental_units:
+        if len(team_units) >= 3:
+            break
+        if rental["species_key"] in owned_species and len(rental_units) - len(owned_species) >= 3 - len(team_units):
+            continue
+        copied = dict(rental)
+        copied["name"] = f"レンタル{copied['name']}"
+        team_units.append(copied)
+        owned_species.add(copied["species_key"])
+    while len(team_units) < 3:
+        rental = dict(rental_units[len(team_units) % len(rental_units)])
+        rental["unit_id"] = f"{rental['unit_id']}_fill_{len(team_units) + 1}"
+        rental["name"] = f"レンタル{rental['name']}"
+        team_units.append(rental)
+    for index, unit in enumerate(team_units[:3]):
+        unit["x"] = 0
+        unit["y"] = index + 1
+    return team_units[:3]
+
+
+def _mini_tactics_team_view(db, user_id):
+    units = _mini_tactics_team_units_for_user(db, user_id)
+    return [
+        {
+            "slot": index + 1,
+            "name": unit["name"],
+            "species_key": unit["species_key"],
+            "ai_type": unit["ai_type"],
+            "hp": unit["hp"],
+            "atk": unit["atk"],
+            "def": unit["def"],
+            "source": unit.get("source") or "owned",
+            "mini_robot_id": unit.get("mini_robot_id"),
+            "image_url": url_for("static", filename=unit["image_path"]) if unit.get("image_path") else None,
+        }
+        for index, unit in enumerate(units)
+    ]
 
 
 def _mini_robot_open_for_viewer(db, *, user_row=None, user_id=None):
@@ -35658,6 +35852,22 @@ def admin_lab_mini_tactics():
     return render_template("admin_lab_mini_tactics.html", latest_battles=latest_battles)
 
 
+@app.route("/admin/lab/mini-tactics/team")
+@login_required
+def admin_lab_mini_tactics_team():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    user_id = int(session["user_id"])
+    owned_rows = _mini_tactics_owned_rows(db, user_id)
+    team_slots = _mini_tactics_team_view(db, user_id)
+    return render_template(
+        "admin_lab_mini_tactics_team.html",
+        owned_rows=owned_rows,
+        team_slots=team_slots,
+    )
+
+
 @app.route("/admin/lab/mini-tactics/start", methods=["POST"])
 @login_required
 def admin_lab_mini_tactics_start():
@@ -35666,7 +35876,12 @@ def admin_lab_mini_tactics_start():
         return abort(404)
     seed_raw = (request.form.get("seed") or "").strip()
     seed = int(seed_raw) if seed_raw.isdigit() else None
-    battle_id = create_mini_tactics_battle(db, int(session["user_id"]), seed=seed)
+    battle_id = create_mini_tactics_battle(
+        db,
+        int(session["user_id"]),
+        seed=seed,
+        ally_units=_mini_tactics_team_units_for_user(db, int(session["user_id"])),
+    )
     return redirect(url_for("admin_lab_mini_tactics_watch", battle_id=int(battle_id)))
 
 
@@ -40739,191 +40954,4 @@ def admin_parts_align():
     )
 
 
-@app.route("/admin/parts/<int:part_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_parts_toggle_active(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not row:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts"))
-    next_state = 0 if row["is_active"] == 1 else 1
-    db.execute("UPDATE robot_parts SET is_active = ? WHERE id = ?", (next_state, part_id))
-    db.commit()
-    session["message"] = "パーツ状態を更新しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/decor", methods=["GET", "POST"])
-@login_required
-def admin_decor():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    message = None
-    if request.method == "POST":
-        key = _clean_key(request.form.get("key"))
-        name_ja = (request.form.get("name_ja") or "").strip()
-        file = request.files.get("image")
-        existing = db.execute("SELECT id, image_path FROM robot_decor_assets WHERE key = ?", (key,)).fetchone() if key else None
-        if not key:
-            message = "keyを入力してください。"
-        elif not name_ja:
-            message = "表示名を入力してください。"
-        elif not file or not file.filename:
-            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
-            db.execute(
-                """
-                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                """,
-                (key, name_ja, rel_path, int(time.time())),
-            )
-            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-            db.commit()
-            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
-        else:
-            ok, err, warns = _validate_decor_png_soft(file)
-            if not ok:
-                message = err
-            else:
-                rel_path = f"decor/{key}.png"
-                _save_static_png(file, rel_path)
-                db.execute(
-                    """
-                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                    """,
-                    (key, name_ja, rel_path, int(time.time())),
-                )
-                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-                db.commit()
-                message = "装飾アセットを保存しました。"
-                if warns:
-                    message += " " + " / ".join(warns)
-    rows = db.execute(
-        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
-    ).fetchall()
-    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
-    return render_template("admin_decor.html", rows=rows, message=message)
-
-
-@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_decor_toggle_active(decor_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
-    if not row:
-        session["message"] = "対象装飾が見つかりません。"
-        return redirect(url_for("admin_decor"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
-    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-    db.commit()
-    session["message"] = "装飾の有効状態を更新しました。"
-    return redirect(url_for("admin_decor"))
-
-
-@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
-@login_required
-def admin_parts_delete(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
-        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    key = part["key"]
-    ref_counts = {
-        "inventory": db.execute(
-            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
-            (key,),
-        ).fetchone()["c"],
-        "instances": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_instance_parts
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "builds": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_builds
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "milestones": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_milestones
-            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-    }
-    if any(v > 0 for v in ref_counts.values()):
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-        message = (
-            "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = req
+@
