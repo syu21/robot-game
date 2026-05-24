@@ -4,7 +4,7 @@
   <div class="mini-tactics-watch-head">
     <div>
       <h1>手動戦術試験 #{{ battle['id'] }}</h1>
-      <div class="robot-part">seed {{ battle['seed'] }} / turn {{ board_state.get('turn_number', 1) }} / {{ board_state.get('current_turn_side', 'ally') }}</div>
+      <div class="robot-part">seed {{ battle['seed'] }} / {{ manual_mode }} / turn {{ board_state.get('turn_number', 1) }} / {{ board_state.get('current_turn_side', 'ally') }}</div>
     </div>
     <div class="mini-tactics-status-panel">
       <div class="mini-tactics-turn">味方ターン: 1体だけ行動</div>
@@ -38,6 +38,7 @@
               {% if not unit.get('defeated') and unit.get('x') == cell['x'] and unit.get('y') == cell['y'] %}
               <span
                 class="mini-tactics-unit is-{{ unit.get('side') }} {% if unit.get('unit_type') == 'core' %}is-core{% endif %}"
+                {% if unit.get('is_leader') %}data-leader="1"{% endif %}
                 data-unit-id="{{ unit.get('unit_id') }}"
                 data-side="{{ unit.get('side') }}"
                 title="{{ unit.get('name') }}"
@@ -70,15 +71,17 @@
           <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
         </form>
-        <div class="robot-time">移動後攻撃可。攻撃後移動不可。</div>
+        <div class="robot-time">
+          1ターンに1体だけ行動 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / リーダー撃破で勝利
+        </div>
       </section>
 
       <section class="mini-tactics-manual-panel">
         <h2>味方</h2>
         {% for unit in units_payload if unit.get('side') == 'ally' %}
         <div class="mini-tactics-roster-row is-ally {% if unit.get('defeated') %}is-defeated{% endif %}">
-          <div class="mini-tactics-roster-name">{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
         </div>
         {% endfor %}
       </section>
@@ -87,8 +90,8 @@
         <h2>敵</h2>
         {% for unit in units_payload if unit.get('side') == 'enemy' %}
         <div class="mini-tactics-roster-row is-enemy {% if unit.get('defeated') %}is-defeated{% endif %}">
-          <div class="mini-tactics-roster-name">{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
         </div>
         {% endfor %}
       </section>
@@ -111,6 +114,7 @@
 (function () {
   var boardState = {{ board_state|tojson }};
   var optionsByUnit = {{ options_by_unit|tojson }};
+  var zocCells = {{ zoc_cells|tojson }};
   var board = document.getElementById("miniTacticsManualBoard");
   var selectedEl = document.getElementById("miniTacticsManualSelected");
   var actorInput = document.getElementById("manualActorUnitId");
@@ -137,6 +141,13 @@
     });
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unit) {
       unit.classList.remove("is-selected");
+    });
+  }
+
+  function markZoc() {
+    (zocCells || []).forEach(function (point) {
+      var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
+      if (cell) cell.classList.add("is-zoc");
     });
   }
 
@@ -185,6 +196,18 @@
         cell.classList.add("is-selected-move");
       }
     });
+    var options = optionsByUnit[selectedUnitId] || {};
+    var afterMove = (options.after_move || {})[String(x) + "," + String(y)] || {};
+    (afterMove.attackable_cells || []).forEach(function (attack) {
+      var attackCell = board.querySelector('[data-x="' + attack.x + '"][data-y="' + attack.y + '"]');
+      if (attackCell) attackCell.classList.add("is-attack-option");
+    });
+    (afterMove.targetable_unit_ids || []).forEach(function (targetId) {
+      var target = unitById(targetId);
+      if (!target) return;
+      var targetCell = board.querySelector('[data-x="' + target.x + '"][data-y="' + target.y + '"]');
+      if (targetCell) targetCell.classList.add("is-target-option");
+    });
   }
 
   board.addEventListener("click", function (event) {
@@ -205,6 +228,7 @@
       submit.disabled = false;
     }
   });
+  markZoc();
 })();
 </script>
 {% endblock %}

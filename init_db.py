@@ -1740,7 +1740,7 @@ def main():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             seed INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'prototype',
-            mode TEXT NOT NULL DEFAULT 'auto',
+            mode TEXT NOT NULL DEFAULT 'auto_watch',
             map_json TEXT NOT NULL,
             units_json TEXT NOT NULL,
             frames_json TEXT NOT NULL,
@@ -2436,7 +2436,7 @@ def main():
             cur.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
     mini_tactics_battle_cols = {row[1] for row in cur.execute("PRAGMA table_info(mini_tactics_battles)").fetchall()}
     mini_tactics_battle_column_defs = {
-        "mode": "mode TEXT NOT NULL DEFAULT 'auto'",
+        "mode": "mode TEXT NOT NULL DEFAULT 'auto_watch'",
         "board_state_json": "board_state_json TEXT",
         "action_log_json": "action_log_json TEXT",
         "current_turn_side": "current_turn_side TEXT",

@@ -7300,6 +7300,10 @@ body.home-page .locked-layer-card {
   background: rgba(194, 65, 12, 0.24);
   box-shadow: inset 0 0 22px rgba(251, 146, 60, 0.2);
 }
+.mini-tactics-manual-board .mini-tactics-cell.is-zoc {
+  background-image: linear-gradient(135deg, rgba(248, 113, 113, 0.16) 25%, transparent 25%, transparent 50%, rgba(248, 113, 113, 0.16) 50%, rgba(248, 113, 113, 0.16) 75%, transparent 75%);
+  background-size: 12px 12px;
+}
 .mini-tactics-manual-board .mini-tactics-cell.is-selected-move {
   border-color: rgba(167, 243, 208, 0.92);
   box-shadow: inset 0 0 22px rgba(45, 212, 191, 0.28), 0 0 16px rgba(45, 212, 191, 0.22);
@@ -7321,6 +7325,11 @@ body.home-page .locked-layer-card {
 .mini-tactics-unit.is-core {
   border-style: double;
   border-color: rgba(250, 204, 21, 0.72);
+}
+.mini-tactics-unit[data-leader="1"] {
+  border-style: double;
+  border-color: rgba(250, 204, 21, 0.82);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.18);
 }
 .mini-tactics-unit.is-selected {
   box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.3), 0 0 22px rgba(34, 211, 238, 0.32);

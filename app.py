@@ -108,10 +108,14 @@ from services.style import (
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
 from services.mini_tactics import (
     apply_manual_turn_action,
+    apply_manual_action,
     build_initial_map,
     build_rental_ally_units,
+    create_manual_board_battle,
     create_manual_mini_tactics_battle,
     create_mini_tactics_battle,
+    manual_board_v1_action_options,
+    manual_board_v1_zoc_cells,
     manual_action_options,
     is_wall,
 )
@@ -10964,7 +10968,7 @@ def ensure_schema(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             seed INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'prototype',
-            mode TEXT NOT NULL DEFAULT 'auto',
+            mode TEXT NOT NULL DEFAULT 'auto_watch',
             map_json TEXT NOT NULL,
             units_json TEXT NOT NULL,
             frames_json TEXT NOT NULL,
@@ -11695,7 +11699,7 @@ def ensure_schema(db):
             db.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
     mini_tactics_battle_cols = {row["name"] for row in db.execute("PRAGMA table_info(mini_tactics_battles)").fetchall()}
     mini_tactics_battle_column_defs = {
-        "mode": "mode TEXT NOT NULL DEFAULT 'auto'",
+        "mode": "mode TEXT NOT NULL DEFAULT 'auto_watch'",
         "board_state_json": "board_state_json TEXT",
         "action_log_json": "action_log_json TEXT",
         "current_turn_side": "current_turn_side TEXT",
@@ -36207,6 +36211,23 @@ def admin_lab_mini_tactics_manual_start():
     return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
 
 
+@app.route("/admin/lab/mini-tactics/manual/new")
+@login_required
+def admin_lab_mini_tactics_manual_new():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    seed_raw = (request.args.get("seed") or "").strip()
+    seed = int(seed_raw) if seed_raw.isdigit() else None
+    battle_id = create_manual_board_battle(
+        db,
+        int(session["user_id"]),
+        seed=seed,
+        ally_units=_mini_tactics_team_units_for_user(db, int(session["user_id"])),
+    )
+    return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+
+
 @app.route("/admin/lab/mini-tactics/manual/<int:battle_id>")
 @login_required
 def admin_lab_mini_tactics_manual(battle_id):
@@ -36214,7 +36235,7 @@ def admin_lab_mini_tactics_manual(battle_id):
     if not _is_admin_user(session["user_id"]):
         return abort(404)
     row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
-    if not row or str(row["mode"] if "mode" in row.keys() else "") != "manual_board":
+    if not row or str(row["mode"] if "mode" in row.keys() else "") not in {"manual_board", "manual_board_v1"}:
         return abort(404)
     return _render_mini_tactics_manual(row)
 
@@ -36226,7 +36247,10 @@ def admin_lab_mini_tactics_manual_action(battle_id):
     if not _is_admin_user(session["user_id"]):
         return abort(404)
     row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
-    if not row or str(row["mode"] if "mode" in row.keys() else "") != "manual_board":
+    if not row:
+        return abort(404)
+    mode = str(row["mode"] if "mode" in row.keys() else "")
+    if mode not in {"manual_board", "manual_board_v1"}:
         return abort(404)
     try:
         board_state = json.loads(row["board_state_json"] or "{}")
@@ -36245,14 +36269,24 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         except ValueError:
             flash("移動先が不正です。", "error")
             return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
-    next_state, logs, error = apply_manual_turn_action(
-        board_state,
-        actor_unit_id,
-        move_to=move_to,
-        target_unit_id=target_unit_id,
-        attack_first=(request.form.get("attack_first") or "") == "1",
-        map_payload=map_payload,
-    )
+    if mode == "manual_board_v1":
+        next_state, logs, error = apply_manual_action(
+            board_state,
+            {
+                "actor_unit_id": actor_unit_id,
+                "move_to": move_to,
+                "target_unit_id": target_unit_id,
+            },
+        )
+    else:
+        next_state, logs, error = apply_manual_turn_action(
+            board_state,
+            actor_unit_id,
+            move_to=move_to,
+            target_unit_id=target_unit_id,
+            attack_first=(request.form.get("attack_first") or "") == "1",
+            map_payload=map_payload,
+        )
     if error:
         flash(error, "error")
         return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
@@ -36303,10 +36337,19 @@ def _render_mini_tactics_manual(row):
         for unit in units_payload
         if unit.get("side") == "ally" and not unit.get("defeated") and unit.get("unit_type") != "core"
     ]
-    options_by_unit = {
-        str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
-        for unit in ally_units
-    }
+    mode = str(row["mode"] if "mode" in row.keys() else "")
+    if mode == "manual_board_v1":
+        options_by_unit = {
+            str(unit.get("unit_id") or ""): manual_board_v1_action_options(board_state, unit.get("unit_id"))
+            for unit in ally_units
+        }
+        zoc_cells = manual_board_v1_zoc_cells(board_state, "ally")
+    else:
+        options_by_unit = {
+            str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
+            for unit in ally_units
+        }
+        zoc_cells = []
     return render_template(
         "admin_lab_mini_tactics_manual.html",
         battle=row,
@@ -36317,6 +36360,8 @@ def _render_mini_tactics_manual(row):
         unit_assets=unit_assets,
         ally_units=ally_units,
         options_by_unit=options_by_unit,
+        zoc_cells=zoc_cells,
+        manual_mode=mode,
     )
 
 
@@ -36336,7 +36381,7 @@ def admin_lab_mini_tactics_watch(battle_id):
     ).fetchone()
     if not row:
         return abort(404)
-    if str(row["mode"] if "mode" in row.keys() else "") == "manual_board":
+    if str(row["mode"] if "mode" in row.keys() else "") in {"manual_board", "manual_board_v1"}:
         return _render_mini_tactics_manual(row)
     try:
         map_payload = json.loads(row["map_json"] or "{}")

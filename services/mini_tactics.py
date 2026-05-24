@@ -42,6 +42,41 @@ ROLE_ADVANTAGE = {
     "shooting": "guard",
     "guard": "assault",
 }
+BOARD_V1_SIZE = 4
+MANUAL_V1_ROLE_ADVANTAGE = {
+    "assault": "sniper",
+    "sniper": "guardian",
+    "guardian": "assault",
+}
+MANUAL_V1_WEAPON_LABELS = {
+    "melee": "格闘",
+    "laser": "レーザー",
+    "missile": "ミサイル",
+}
+MANUAL_V1_MOVE_LABELS = {
+    "walker": "歩行",
+    "flyer": "飛行",
+}
+MANUAL_V1_ROLE_LABELS = {
+    "assault": "突撃",
+    "sniper": "射撃",
+    "guardian": "守備",
+}
+MANUAL_V1_TRAIT_LABELS = {
+    "guard_dog": "番犬",
+    "retreat_shot": "退き撃ち",
+    "fortress": "要塞",
+}
+MANUAL_V1_ALLY_SPECS = (
+    ("ally_cerberus", "ケルベロス", "cerberus", True, 0, 1, 8, 3, 1, "walker", "assault", "melee", "guard_dog", "right"),
+    ("ally_phoenix", "フェニックス", "phoenix", False, 0, 2, 5, 2, 0, "flyer", "sniper", "laser", "retreat_shot", "right"),
+    ("ally_hydra", "ヒュドラ", "hydra", False, 1, 3, 7, 2, 1, "walker", "guardian", "missile", "fortress", "right"),
+)
+MANUAL_V1_ENEMY_SPECS = (
+    ("enemy_dummy_a", "ダミーA", "dummy_a", True, 3, 1, 8, 3, 1, "walker", "assault", "melee", "guard_dog", "left"),
+    ("enemy_dummy_b", "ダミーB", "dummy_b", False, 3, 2, 5, 2, 0, "walker", "sniper", "laser", "retreat_shot", "left"),
+    ("enemy_dummy_c", "ダミーC", "dummy_c", False, 2, 0, 7, 2, 1, "walker", "guardian", "missile", "fortress", "left"),
+)
 SPECIES_WEAPONS = {
     "cerberus": "melee",
     "phoenix": "laser",
@@ -915,6 +950,444 @@ def apply_manual_turn_action(state, actor_unit_id, move_to=None, target_unit_id=
     return next_state, logs, None
 
 
+def build_manual_board_v1_map():
+    return {
+        "width": BOARD_V1_SIZE,
+        "height": BOARD_V1_SIZE,
+        "board_size": BOARD_V1_SIZE,
+        "tiles": [
+            [
+                {"x": x, "y": y, "terrain": "floor"}
+                for x in range(BOARD_V1_SIZE)
+            ]
+            for y in range(BOARD_V1_SIZE)
+        ],
+    }
+
+
+def _manual_v1_attack_range(weapon_type):
+    return 1 if str(weapon_type or "melee") == "melee" else 2
+
+
+def _manual_v1_unit(spec, side, ally_unit=None):
+    (
+        unit_id,
+        name,
+        species_key,
+        is_leader,
+        x,
+        y,
+        hp,
+        atk,
+        defense,
+        move_type,
+        role_type,
+        weapon_type,
+        trait_key,
+        facing,
+    ) = spec
+    source = None
+    image_path = ""
+    if ally_unit:
+        name = str(ally_unit.get("name") or name)
+        image_path = str(ally_unit.get("image_path") or "")
+        source = ally_unit.get("source")
+    return {
+        "unit_id": unit_id,
+        "side": side,
+        "is_leader": bool(is_leader),
+        "name": name,
+        "species_key": species_key,
+        "x": int(x),
+        "y": int(y),
+        "hp": int(hp),
+        "max_hp": int(hp),
+        "atk": int(atk),
+        "def": int(defense),
+        "move_type": move_type,
+        "move_type_label": MANUAL_V1_MOVE_LABELS.get(move_type, move_type),
+        "role_type": role_type,
+        "role_label": MANUAL_V1_ROLE_LABELS.get(role_type, role_type),
+        "weapon_type": weapon_type,
+        "weapon_label": MANUAL_V1_WEAPON_LABELS.get(weapon_type, weapon_type),
+        "attack_range": _manual_v1_attack_range(weapon_type),
+        "range": _manual_v1_attack_range(weapon_type),
+        "trait_key": trait_key,
+        "trait_label": MANUAL_V1_TRAIT_LABELS.get(trait_key, trait_key),
+        "facing": facing,
+        "direction": facing,
+        "defeated": False,
+        "unit_type": "robot",
+        "image_path": image_path,
+        "source": source,
+    }
+
+
+def build_manual_initial_board_v1(seed=None, ally_units=None):
+    ally_by_species = {str(unit.get("species_key") or ""): unit for unit in ally_units or []}
+    allies = [
+        _manual_v1_unit(spec, "ally", ally_by_species.get(spec[2]))
+        for spec in MANUAL_V1_ALLY_SPECS
+    ]
+    enemies = [_manual_v1_unit(spec, "enemy") for spec in MANUAL_V1_ENEMY_SPECS]
+    return {
+        "mode": "manual_board_v1",
+        "board_size": BOARD_V1_SIZE,
+        "terrain": build_manual_board_v1_map()["tiles"],
+        "seed": int(seed or 0),
+        "turn_number": 1,
+        "current_turn_side": "ally",
+        "units": allies + enemies,
+        "result": None,
+    }
+
+
+def serialize_manual_board_state(state):
+    return json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+
+
+def _manual_v1_units(state, side=None, include_defeated=False):
+    units = []
+    for unit in state.get("units") or []:
+        if not include_defeated and unit.get("defeated"):
+            continue
+        if side is not None and unit.get("side") != side:
+            continue
+        units.append(unit)
+    return units
+
+
+def _manual_v1_unit_by_id(state, unit_id):
+    for unit in state.get("units") or []:
+        if str(unit.get("unit_id") or "") == str(unit_id):
+            return unit
+    return None
+
+
+def _manual_v1_in_bounds(x, y):
+    return 0 <= int(x) < BOARD_V1_SIZE and 0 <= int(y) < BOARD_V1_SIZE
+
+
+def _manual_v1_occupied(state, x, y, except_unit_id=None):
+    for unit in _manual_v1_units(state):
+        if except_unit_id is not None and str(unit.get("unit_id") or "") == str(except_unit_id):
+            continue
+        if int(unit.get("x") or 0) == int(x) and int(unit.get("y") or 0) == int(y):
+            return True
+    return False
+
+
+def manual_board_v1_zoc_cells(state, side):
+    enemy_side = "enemy" if side == "ally" else "ally"
+    cells = set()
+    for unit in _manual_v1_units(state, enemy_side):
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            x = int(unit.get("x") or 0) + dx
+            y = int(unit.get("y") or 0) + dy
+            if _manual_v1_in_bounds(x, y):
+                cells.add((x, y))
+    return [{"x": x, "y": y} for x, y in sorted(cells)]
+
+
+def _manual_v1_is_zoc(state, side, x, y):
+    return (int(x), int(y)) in {(cell["x"], cell["y"]) for cell in manual_board_v1_zoc_cells(state, side)}
+
+
+def get_legal_moves(unit, board_state):
+    if not unit or unit.get("defeated"):
+        return []
+    side = str(unit.get("side") or "ally")
+    x = int(unit.get("x") or 0)
+    y = int(unit.get("y") or 0)
+    if str(unit.get("move_type") or "walker") == "flyer":
+        forward = 1 if side == "ally" else -1
+        deltas = ((forward, 0), (1, 1), (1, -1), (-1, 1), (-1, -1))
+    else:
+        deltas = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    start_in_zoc = _manual_v1_is_zoc(board_state, side, x, y)
+    moves = []
+    for dx, dy in deltas:
+        nx = x + dx
+        ny = y + dy
+        if not _manual_v1_in_bounds(nx, ny):
+            continue
+        if _manual_v1_occupied(board_state, nx, ny, except_unit_id=unit.get("unit_id")):
+            continue
+        if start_in_zoc and _manual_v1_is_zoc(board_state, side, nx, ny):
+            continue
+        moves.append({"x": nx, "y": ny})
+    return moves
+
+
+def _manual_v1_attack_cells_from(unit):
+    weapon_type = str(unit.get("weapon_type") or "melee")
+    x = int(unit.get("x") or 0)
+    y = int(unit.get("y") or 0)
+    cells = []
+    if weapon_type == "laser":
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for distance in (1, 2):
+                nx = x + dx * distance
+                ny = y + dy * distance
+                if _manual_v1_in_bounds(nx, ny):
+                    cells.append({"x": nx, "y": ny})
+        return cells
+    attack_range = _manual_v1_attack_range(weapon_type)
+    for ny in range(y - attack_range, y + attack_range + 1):
+        for nx in range(x - attack_range, x + attack_range + 1):
+            if nx == x and ny == y:
+                continue
+            if not _manual_v1_in_bounds(nx, ny):
+                continue
+            if abs(nx - x) + abs(ny - y) <= attack_range:
+                cells.append({"x": nx, "y": ny})
+    return cells
+
+
+def can_attack_manual(attacker, target, board_state, moved=False):
+    if not attacker or not target or attacker.get("defeated") or target.get("defeated"):
+        return False
+    if attacker.get("side") == target.get("side"):
+        return False
+    weapon_type = str(attacker.get("weapon_type") or "melee")
+    if moved and weapon_type in {"laser", "missile"}:
+        return False
+    distance = abs(int(attacker.get("x") or 0) - int(target.get("x") or 0)) + abs(int(attacker.get("y") or 0) - int(target.get("y") or 0))
+    if weapon_type == "melee":
+        return distance == 1
+    if weapon_type == "laser":
+        same_line = int(attacker.get("x") or 0) == int(target.get("x") or 0) or int(attacker.get("y") or 0) == int(target.get("y") or 0)
+        return same_line and 1 <= distance <= 2
+    if weapon_type == "missile":
+        return 1 <= distance <= 2
+    return False
+
+
+def get_legal_targets(unit, board_state, moved=False):
+    return [
+        target
+        for target in _manual_v1_units(board_state)
+        if can_attack_manual(unit, target, board_state, moved=moved)
+    ]
+
+
+def calculate_manual_damage(attacker, target):
+    damage = max(1, int(attacker.get("atk") or 0) - int(target.get("def") or 0))
+    attacker_role = str(attacker.get("role_type") or "")
+    target_role = str(target.get("role_type") or "")
+    if MANUAL_V1_ROLE_ADVANTAGE.get(attacker_role) == target_role:
+        damage += 1
+    elif MANUAL_V1_ROLE_ADVANTAGE.get(target_role) == attacker_role:
+        damage -= 1
+    return max(1, damage)
+
+
+def check_manual_result(board_state):
+    ally_leader = next((u for u in board_state.get("units") or [] if u.get("side") == "ally" and u.get("is_leader")), None)
+    enemy_leader = next((u for u in board_state.get("units") or [] if u.get("side") == "enemy" and u.get("is_leader")), None)
+    if ally_leader and ally_leader.get("defeated"):
+        return "enemy_win"
+    if enemy_leader and enemy_leader.get("defeated"):
+        return "ally_win"
+    if not _manual_v1_units(board_state, "ally"):
+        return "enemy_win"
+    if not _manual_v1_units(board_state, "enemy"):
+        return "ally_win"
+    return None
+
+
+def _manual_v1_log(logs, text, event_type="log", **payload):
+    item = {"type": event_type, "text": str(text), **payload}
+    logs.append(item)
+    return item
+
+
+def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
+    if not can_attack_manual(attacker, target, state, moved=moved):
+        return False, "攻撃できない対象です。"
+    damage = calculate_manual_damage(attacker, target)
+    target["hp"] = max(0, int(target.get("hp") or 0) - damage)
+    _manual_v1_log(
+        logs,
+        f"{attacker['name']}が{attacker['weapon_label']}で{target['name']}を攻撃、{damage}ダメージ",
+        "attack",
+        actor_unit_id=attacker.get("unit_id"),
+        target_unit_id=target.get("unit_id"),
+        damage=damage,
+    )
+    if int(target["hp"]) <= 0:
+        target["defeated"] = True
+        suffix = "、味方勝利" if target.get("side") == "enemy" and target.get("is_leader") else ""
+        _manual_v1_log(logs, f"{target['name']}を撃破{suffix}", "defeated", actor_unit_id=target.get("unit_id"))
+    return True, None
+
+
+def _manual_v1_apply_move(state, unit, move_to, logs):
+    allowed = {(cell["x"], cell["y"]) for cell in get_legal_moves(unit, state)}
+    dest = (int(move_to["x"]), int(move_to["y"]))
+    if dest not in allowed:
+        return False, "移動できないマスです。"
+    from_x = int(unit.get("x") or 0)
+    from_y = int(unit.get("y") or 0)
+    unit["x"], unit["y"] = dest
+    unit["facing"] = _direction_from_delta(dest[0] - from_x, dest[1] - from_y, unit.get("facing"))
+    _manual_v1_log(
+        logs,
+        f"{unit['name']}が前進",
+        "move",
+        actor_unit_id=unit.get("unit_id"),
+        **{"from": {"x": from_x, "y": from_y}, "to": {"x": dest[0], "y": dest[1]}},
+    )
+    return True, None
+
+
+def _manual_v1_ai_choose_unit(state):
+    enemies = sorted(_manual_v1_units(state, "enemy"), key=lambda u: (not bool(u.get("is_leader")), str(u.get("unit_id") or "")))
+    ally_leader = next((u for u in _manual_v1_units(state, "ally") if u.get("is_leader")), None)
+    for enemy in enemies:
+        targets = get_legal_targets(enemy, state, moved=False)
+        if targets:
+            return enemy, None, min(targets, key=lambda t: (not bool(t.get("is_leader")), int(t.get("hp") or 0), str(t.get("unit_id") or "")))
+    if not ally_leader:
+        return (enemies[0], None, None) if enemies else (None, None, None)
+    best = None
+    for enemy in enemies:
+        for move in get_legal_moves(enemy, state):
+            score = abs(move["x"] - int(ally_leader["x"])) + abs(move["y"] - int(ally_leader["y"]))
+            candidate = (score, str(enemy.get("unit_id") or ""), enemy, move)
+            if best is None or candidate < best:
+                best = candidate
+    if best:
+        _, _, enemy, move = best
+        return enemy, move, None
+    return (enemies[0], None, None) if enemies else (None, None, None)
+
+
+def run_enemy_manual_turn(board_state, rng=None):
+    logs = []
+    enemy, move, target = _manual_v1_ai_choose_unit(board_state)
+    if not enemy:
+        return logs
+    moved = False
+    if move:
+        ok, error = _manual_v1_apply_move(board_state, enemy, move, logs)
+        moved = bool(ok)
+        if error:
+            return logs
+        targets = get_legal_targets(enemy, board_state, moved=moved)
+        if targets:
+            target = min(targets, key=lambda t: (not bool(t.get("is_leader")), int(t.get("hp") or 0), str(t.get("unit_id") or "")))
+    if target:
+        _manual_v1_apply_attack(board_state, enemy, target, logs, moved=moved)
+    elif not move:
+        _manual_v1_log(logs, f"{enemy['name']}が待機", "wait", actor_unit_id=enemy.get("unit_id"))
+    return logs
+
+
+def apply_manual_action(board_state, action_payload):
+    state = dict(board_state)
+    state["units"] = [dict(unit) for unit in board_state.get("units") or []]
+    logs = []
+    if state.get("result"):
+        return state, logs, "すでに決着しています。"
+    if str(state.get("current_turn_side") or "ally") != "ally":
+        return state, logs, "現在は味方ターンではありません。"
+    actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
+    if not actor or actor.get("side") != "ally" or actor.get("defeated"):
+        return state, logs, "行動できないユニットです。"
+    move_to = action_payload.get("move_to")
+    target_id = action_payload.get("target_unit_id")
+    moved = False
+    if move_to:
+        ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+        if not ok:
+            return state, logs, error
+        moved = True
+    if target_id:
+        target = _manual_v1_unit_by_id(state, target_id)
+        if not target:
+            return state, logs, "攻撃対象が見つかりません。"
+        ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
+        if not ok:
+            return state, logs, error
+    if not move_to and not target_id:
+        return state, logs, "行動内容がありません。"
+    result = check_manual_result(state)
+    if not result:
+        state["current_turn_side"] = "enemy"
+        logs.extend(run_enemy_manual_turn(state, random.Random(int(state.get("seed") or 0) + int(state.get("turn_number") or 1))))
+        result = check_manual_result(state)
+    state["result"] = result
+    if result:
+        state["current_turn_side"] = "finished"
+        _manual_v1_log(logs, "味方側の勝利" if result == "ally_win" else "敵側の勝利", "result", result=result)
+    else:
+        state["current_turn_side"] = "ally"
+        state["turn_number"] = int(state.get("turn_number") or 1) + 1
+    return state, logs, None
+
+
+def get_manual_board_state(db, battle_id):
+    row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
+    if not row:
+        return None
+    return json.loads(row["board_state_json"] or "{}")
+
+
+def manual_board_v1_action_options(board_state, unit_id):
+    unit = _manual_v1_unit_by_id(board_state, unit_id)
+    if not unit:
+        return {"move_cells": [], "attackable_cells": [], "targetable_unit_ids": [], "after_move": {}}
+    targets = get_legal_targets(unit, board_state, moved=False)
+    options = {
+        "move_cells": get_legal_moves(unit, board_state),
+        "attackable_cells": _manual_v1_attack_cells_from(unit),
+        "targetable_unit_ids": [str(target.get("unit_id") or "") for target in targets],
+        "after_move": {},
+    }
+    for move in options["move_cells"]:
+        moved_state = dict(board_state)
+        moved_state["units"] = [dict(u) for u in board_state.get("units") or []]
+        moved_unit = _manual_v1_unit_by_id(moved_state, unit_id)
+        moved_unit["x"] = int(move["x"])
+        moved_unit["y"] = int(move["y"])
+        moved_targets = get_legal_targets(moved_unit, moved_state, moved=True)
+        options["after_move"][f"{move['x']},{move['y']}"] = {
+            "attackable_cells": _manual_v1_attack_cells_from(moved_unit) if str(moved_unit.get("weapon_type")) == "melee" else [],
+            "targetable_unit_ids": [str(target.get("unit_id") or "") for target in moved_targets],
+        }
+    return options
+
+
+def create_manual_board_battle(db, admin_user_id, ally_units=None, seed=None):
+    battle_seed = int(seed if seed is not None else random.randint(100000, 999999999))
+    map_payload = build_manual_board_v1_map()
+    board_state = build_manual_initial_board_v1(battle_seed, ally_units)
+    units_payload = board_state.get("units") or []
+    now = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO mini_tactics_battles
+        (
+            seed, status, mode, map_json, units_json, frames_json,
+            board_state_json, action_log_json, current_turn_side, turn_number, result,
+            created_at, created_by_user_id
+        )
+        VALUES (?, 'manual_active', 'manual_board_v1', ?, ?, '[]', ?, '[]', 'ally', 1, NULL, ?, ?)
+        """,
+        (
+            int(battle_seed),
+            json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(units_payload, ensure_ascii=False, separators=(",", ":")),
+            serialize_manual_board_state(board_state),
+            int(now),
+            int(admin_user_id),
+        ),
+    )
+    db.commit()
+    return int(cur.lastrowid)
+
+
 def choose_attack_target(unit, units, ai_type=None, map_payload=None):
     targets = find_targets_in_range(unit, units, map_payload)
     if not targets:
@@ -1200,8 +1673,8 @@ def create_mini_tactics_battle(db, admin_user_id, seed=None, ally_units=None):
     cur = db.execute(
         """
         INSERT INTO mini_tactics_battles
-        (seed, status, map_json, units_json, frames_json, created_at, created_by_user_id)
-        VALUES (?, 'finished', ?, ?, ?, ?, ?)
+        (seed, status, mode, map_json, units_json, frames_json, created_at, created_by_user_id)
+        VALUES (?, 'finished', 'auto_watch', ?, ?, ?, ?, ?)
         """,
         (
             int(battle_seed),

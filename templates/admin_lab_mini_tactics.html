@@ -7,7 +7,8 @@
   </div>
   <div class="mini-tactics-controls">
     <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">戦術チーム確認</a>
-    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_start') }}">手動戦術試験を開始</a>
+    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">手動ボード試験 4x4 を開始</a>
+    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_start') }}">旧5x5手動試験</a>
     <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
       <label>
         seed 任意
@@ -23,7 +24,7 @@
   {% for row in latest_battles %}
   <div class="mini-tactics-history-row">
     <span>#{{ row['id'] }} / seed {{ row['seed'] }} / {{ row['mode'] or 'auto' }} / {{ row['status'] }}</span>
-    {% if row['mode'] == 'manual_board' %}
+    {% if row['mode'] == 'manual_board' or row['mode'] == 'manual_board_v1' %}
     <a href="{{ url_for('admin_lab_mini_tactics_manual', battle_id=row['id']) }}">手動盤面</a>
     {% else %}
     <a href="{{ url_for('admin_lab_mini_tactics_watch', battle_id=row['id']) }}">観戦</a>

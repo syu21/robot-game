@@ -5,12 +5,12 @@
     <h1>戦術チーム確認</h1>
     <div class="robot-part">管理人限定。/lab/mini の現在の育成個体を1枠目に使い、不足分はレンタル機で補完します。</div>
   </div>
-  <form method="get" action="{{ url_for('admin_lab_mini_tactics_manual_start') }}" class="post-form mini-tactics-start-form">
+  <form method="get" action="{{ url_for('admin_lab_mini_tactics_manual_new') }}" class="post-form mini-tactics-start-form">
     <label>
       seed 任意
       <input type="number" name="seed" min="1" placeholder="空ならランダム" />
     </label>
-    <button type="submit">この編成で手動試験開始</button>
+    <button type="submit">この編成で4x4手動試験開始</button>
   </form>
 </section>
 
