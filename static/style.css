@@ -7033,6 +7033,20 @@ body.home-page .locked-layer-card {
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.58);
 }
+.mini-tactics-team-card.is-selected {
+  border-color: rgba(103, 232, 249, 0.78);
+  box-shadow: 0 0 24px rgba(34, 211, 238, 0.24);
+}
+.mini-tactics-slot-pick {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 8px;
+  background: rgba(8, 145, 178, 0.22);
+  color: #ecfeff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
 .mini-tactics-team-card.is-owned {
   border-color: rgba(103, 232, 249, 0.42);
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.12);
@@ -7072,6 +7086,101 @@ body.home-page .locked-layer-card {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+.mini-tactics-position-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 72px)) 1fr;
+  gap: 8px;
+  align-items: end;
+  margin-top: 10px;
+  color: var(--text-sub);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.mini-tactics-position-editor label {
+  display: grid;
+  gap: 4px;
+}
+.mini-tactics-position-editor select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+  color: var(--text-main);
+}
+.mini-tactics-placement-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.28);
+}
+.mini-tactics-placement-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+}
+.mini-tactics-placement-head h3 {
+  margin: 0 0 4px;
+}
+.mini-tactics-placement-alert {
+  min-height: 1.4em;
+  color: #fbbf24;
+  font-size: 0.85rem;
+  font-weight: 900;
+  text-align: right;
+}
+.mini-tactics-placement-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(42px, 1fr));
+  gap: 7px;
+  width: min(100%, 460px);
+}
+.mini-tactics-placement-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #ecfeff;
+  font-size: clamp(10px, 2.5vw, 13px);
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: center;
+}
+.mini-tactics-placement-cell.is-placeable {
+  border-color: rgba(103, 232, 249, 0.34);
+  background: rgba(8, 145, 178, 0.16);
+  cursor: pointer;
+}
+.mini-tactics-placement-cell.is-placeable:hover {
+  border-color: rgba(103, 232, 249, 0.78);
+  box-shadow: inset 0 0 18px rgba(34, 211, 238, 0.18);
+}
+.mini-tactics-placement-cell.is-blocked {
+  cursor: not-allowed;
+  opacity: 0.76;
+}
+.mini-tactics-placement-cell.terrain-wall {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.96), rgba(71, 85, 105, 0.9));
+  border-color: rgba(148, 163, 184, 0.28);
+}
+.mini-tactics-placement-cell.is-enemy-area {
+  background: rgba(127, 29, 29, 0.26);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+.mini-tactics-placement-cell.is-occupied {
+  background: rgba(14, 165, 233, 0.28);
+  border-color: rgba(103, 232, 249, 0.7);
+}
+.mini-tactics-placement-cell.is-active-slot {
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.34), inset 0 0 14px rgba(236, 254, 255, 0.14);
 }
 .mini-tactics-stage {
   display: grid;
@@ -7356,6 +7465,16 @@ button.secondary {
   .mini-tactics-status-panel,
   .mini-tactics-controls {
     width: 100%;
+  }
+  .mini-tactics-placement-head {
+    display: grid;
+  }
+  .mini-tactics-placement-alert {
+    text-align: left;
+  }
+  .mini-tactics-placement-board {
+    width: 100%;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
   .mini-tactics-board-wrap {
     width: 100%;

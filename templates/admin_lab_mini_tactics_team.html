@@ -16,11 +16,36 @@
 
 <section class="card">
   <h2>編成スロット</h2>
-  <form method="post" action="{{ url_for('admin_lab_mini_tactics_team') }}">
+  <form method="post" action="{{ url_for('admin_lab_mini_tactics_team') }}" id="miniTacticsTeamForm">
+    <section class="mini-tactics-placement-panel" data-placement-board>
+      <div class="mini-tactics-placement-head">
+        <div>
+          <h3>配置盤面</h3>
+          <div class="robot-part" id="miniTacticsPlacementCurrent">配置中: Slot 1</div>
+        </div>
+        <div class="mini-tactics-placement-alert" id="miniTacticsPlacementAlert" aria-live="polite"></div>
+      </div>
+      <div class="mini-tactics-placement-board" aria-label="ミニロボ配置盤面">
+        {% for row in placement_rows %}
+          {% for cell in row %}
+          <button
+            type="button"
+            class="mini-tactics-placement-cell terrain-{{ cell.terrain }} {% if cell.placeable %}is-placeable{% else %}is-blocked{% endif %} {% if cell.x > 2 %}is-enemy-area{% endif %}"
+            data-x="{{ cell.x }}"
+            data-y="{{ cell.y }}"
+            data-placeable="{{ 1 if cell.placeable else 0 }}"
+            aria-label="x{{ cell.x }} y{{ cell.y }}"
+          ></button>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </section>
+
     <div class="mini-tactics-team-grid">
     {% for slot in team_slots %}
-    <div class="mini-tactics-team-card is-{{ slot.source }}">
+    <div class="mini-tactics-team-card is-{{ slot.source }}" data-slot-card="{{ slot.slot }}" data-slot-name="{{ slot.name }}">
       <div class="mini-tactics-team-slot">slot {{ slot.slot }} / {{ '育成個体' if slot.source == 'owned' else 'レンタル機' }}</div>
+      <button type="button" class="mini-tactics-slot-pick" data-slot-pick="{{ slot.slot }}">このSlotを配置</button>
       <label class="mini-tactics-team-select">
         Slot {{ slot.slot }}
         <select name="slot_{{ slot.slot }}_mini_robot_id">
@@ -38,6 +63,27 @@
       <h3>{{ slot.name }}</h3>
       <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_type }} / {{ slot.weapon_type }} / 射程{{ slot.range }}</div>
       <div class="robot-time">HP {{ slot.hp }} / ATK {{ slot.atk }} / DEF {{ slot.def }} / SPD {{ slot.spd }}</div>
+      <div class="mini-tactics-position-editor">
+        <input type="hidden" name="slot_{{ slot.slot }}_x" value="{{ slot.x }}" data-slot-x="{{ slot.slot }}" />
+        <input type="hidden" name="slot_{{ slot.slot }}_y" value="{{ slot.y }}" data-slot-y="{{ slot.slot }}" />
+        <label>
+          X
+          <select data-slot-x-fallback="{{ slot.slot }}" aria-label="Slot {{ slot.slot }} X">
+            {% for x in range(0, 3) %}
+            <option value="{{ x }}" {% if slot.x == x %}selected{% endif %}>{{ x }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Y
+          <select data-slot-y-fallback="{{ slot.slot }}" aria-label="Slot {{ slot.slot }} Y">
+            {% for y in range(0, 5) %}
+            <option value="{{ y }}" {% if slot.y == y %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <span data-slot-position="{{ slot.slot }}">配置 {{ slot.x }},{{ slot.y }}</span>
+      </div>
       {% if slot.mini_robot_id %}
       <div class="robot-time">mini_robot_id {{ slot.mini_robot_id }}</div>
       {% endif %}
@@ -49,6 +95,116 @@
     </div>
   </form>
 </section>
+
+<script>
+(function () {
+  var form = document.getElementById("miniTacticsTeamForm");
+  var board = document.querySelector("[data-placement-board]");
+  if (!form || !board) return;
+
+  var slots = {{ team_slots|tojson }};
+  var activeSlot = slots.length ? Number(slots[0].slot) : 1;
+  var alertEl = document.getElementById("miniTacticsPlacementAlert");
+  var currentEl = document.getElementById("miniTacticsPlacementCurrent");
+
+  function slotState(slotNo) {
+    return slots.find(function (slot) { return Number(slot.slot) === Number(slotNo); });
+  }
+
+  function showAlert(message) {
+    if (!alertEl) return;
+    alertEl.textContent = String(message || "");
+    if (message) window.setTimeout(function () {
+      if (alertEl.textContent === String(message)) alertEl.textContent = "";
+    }, 1800);
+  }
+
+  function occupiedSlot(x, y, exceptSlot) {
+    return slots.find(function (slot) {
+      return Number(slot.slot) !== Number(exceptSlot) && Number(slot.x) === Number(x) && Number(slot.y) === Number(y);
+    });
+  }
+
+  function syncInputs(slot) {
+    var xInput = form.querySelector('[data-slot-x="' + slot.slot + '"]');
+    var yInput = form.querySelector('[data-slot-y="' + slot.slot + '"]');
+    var xFallback = form.querySelector('[data-slot-x-fallback="' + slot.slot + '"]');
+    var yFallback = form.querySelector('[data-slot-y-fallback="' + slot.slot + '"]');
+    var pos = form.querySelector('[data-slot-position="' + slot.slot + '"]');
+    if (xInput) xInput.value = String(slot.x);
+    if (yInput) yInput.value = String(slot.y);
+    if (xFallback) xFallback.value = String(slot.x);
+    if (yFallback) yFallback.value = String(slot.y);
+    if (pos) pos.textContent = "配置 " + String(slot.x) + "," + String(slot.y);
+  }
+
+  function render() {
+    form.querySelectorAll("[data-slot-card]").forEach(function (card) {
+      card.classList.toggle("is-selected", Number(card.dataset.slotCard) === Number(activeSlot));
+    });
+    var current = slotState(activeSlot);
+    if (currentEl && current) currentEl.textContent = "配置中: Slot " + String(current.slot) + " " + String(current.name || "");
+    form.querySelectorAll(".mini-tactics-placement-cell").forEach(function (cell) {
+      var x = Number(cell.dataset.x);
+      var y = Number(cell.dataset.y);
+      var placed = slots.find(function (slot) { return Number(slot.x) === x && Number(slot.y) === y; });
+      cell.classList.toggle("is-occupied", Boolean(placed));
+      cell.classList.toggle("is-active-slot", Boolean(placed && Number(placed.slot) === Number(activeSlot)));
+      cell.textContent = placed ? "S" + String(placed.slot) + " " + String(placed.name || "").slice(0, 3) : "";
+    });
+  }
+
+  form.querySelectorAll("[data-slot-pick]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      activeSlot = Number(button.dataset.slotPick);
+      render();
+    });
+  });
+
+  form.querySelectorAll("[data-slot-x-fallback], [data-slot-y-fallback]").forEach(function (select) {
+    select.addEventListener("change", function () {
+      var slotNo = Number(select.dataset.slotXFallback || select.dataset.slotYFallback);
+      var slot = slotState(slotNo);
+      if (!slot) return;
+      var nextX = Number((form.querySelector('[data-slot-x-fallback="' + slotNo + '"]') || {}).value || slot.x);
+      var nextY = Number((form.querySelector('[data-slot-y-fallback="' + slotNo + '"]') || {}).value || slot.y);
+      if (occupiedSlot(nextX, nextY, slotNo)) {
+        showAlert("同じマスには配置できません");
+        syncInputs(slot);
+        return;
+      }
+      slot.x = nextX;
+      slot.y = nextY;
+      syncInputs(slot);
+      render();
+    });
+  });
+
+  form.querySelectorAll(".mini-tactics-placement-cell").forEach(function (cell) {
+    cell.addEventListener("click", function () {
+      var x = Number(cell.dataset.x);
+      var y = Number(cell.dataset.y);
+      var slot = slotState(activeSlot);
+      if (!slot) return;
+      if (cell.dataset.placeable !== "1") {
+        showAlert(cell.classList.contains("terrain-wall") ? "壁マスには配置できません" : "敵側エリアには配置できません");
+        return;
+      }
+      if (occupiedSlot(x, y, activeSlot)) {
+        showAlert("同じマスには配置できません");
+        return;
+      }
+      slot.x = x;
+      slot.y = y;
+      syncInputs(slot);
+      render();
+    });
+  });
+
+  slots.forEach(syncInputs);
+  render();
+})();
+</script>
 
 <section class="card">
   <h2>所持ミニロボ</h2>

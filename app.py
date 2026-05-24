@@ -106,7 +106,7 @@ from services.style import (
     style_score_payload_from_stats,
 )
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
-from services.mini_tactics import build_rental_ally_units, create_mini_tactics_battle
+from services.mini_tactics import build_initial_map, build_rental_ally_units, create_mini_tactics_battle, is_wall
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
     LAB_CASINO_COIN_CAP,
@@ -10470,8 +10470,14 @@ def ensure_schema(db):
         CREATE TABLE IF NOT EXISTS mini_tactics_teams (
             user_id INTEGER PRIMARY KEY,
             slot_1_mini_robot_id INTEGER,
+            slot_1_x INTEGER NOT NULL DEFAULT 0,
+            slot_1_y INTEGER NOT NULL DEFAULT 1,
             slot_2_mini_robot_id INTEGER,
+            slot_2_x INTEGER NOT NULL DEFAULT 0,
+            slot_2_y INTEGER NOT NULL DEFAULT 2,
             slot_3_mini_robot_id INTEGER,
+            slot_3_x INTEGER NOT NULL DEFAULT 0,
+            slot_3_y INTEGER NOT NULL DEFAULT 3,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
@@ -11649,6 +11655,18 @@ def ensure_schema(db):
     mini_log_cols = {row["name"] for row in db.execute("PRAGMA table_info(mini_robot_logs)").fetchall()}
     if "payload_json" not in mini_log_cols:
         db.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
+    mini_tactics_team_cols = {row["name"] for row in db.execute("PRAGMA table_info(mini_tactics_teams)").fetchall()}
+    mini_tactics_team_column_defs = {
+        "slot_1_x": "slot_1_x INTEGER NOT NULL DEFAULT 0",
+        "slot_1_y": "slot_1_y INTEGER NOT NULL DEFAULT 1",
+        "slot_2_x": "slot_2_x INTEGER NOT NULL DEFAULT 0",
+        "slot_2_y": "slot_2_y INTEGER NOT NULL DEFAULT 2",
+        "slot_3_x": "slot_3_x INTEGER NOT NULL DEFAULT 0",
+        "slot_3_y": "slot_3_y INTEGER NOT NULL DEFAULT 3",
+    }
+    for column_name, column_sql in mini_tactics_team_column_defs.items():
+        if column_name not in mini_tactics_team_cols:
+            db.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
     _backfill_mini_robot_internal_fields(db)
     now_ts = int(time.time())
     db.execute(
@@ -34412,26 +34430,45 @@ def _mini_tactics_unit_from_robot(robot_row, slot_index):
 
 
 def _mini_tactics_saved_slot_ids(db, user_id):
+    return [slot["mini_robot_id"] for slot in _mini_tactics_saved_slots(db, user_id)]
+
+
+def _mini_tactics_default_slot_positions():
+    return [(0, 1), (0, 2), (0, 3)]
+
+
+def _mini_tactics_saved_slots(db, user_id):
     team = db.execute(
         """
-        SELECT slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id
+        SELECT *
         FROM mini_tactics_teams
         WHERE user_id = ?
         """,
         (int(user_id),),
     ).fetchone()
     if team:
-        return [
-            int(team[key]) if team[key] is not None else None
-            for key in ("slot_1_mini_robot_id", "slot_2_mini_robot_id", "slot_3_mini_robot_id")
-        ]
+        slots = []
+        for index, key in enumerate(("slot_1", "slot_2", "slot_3")):
+            default_x, default_y = _mini_tactics_default_slot_positions()[index]
+            slots.append(
+                {
+                    "slot": index + 1,
+                    "mini_robot_id": int(team[f"{key}_mini_robot_id"]) if team[f"{key}_mini_robot_id"] is not None else None,
+                    "x": int(team[f"{key}_x"] if f"{key}_x" in team.keys() and team[f"{key}_x"] is not None else default_x),
+                    "y": int(team[f"{key}_y"] if f"{key}_y" in team.keys() and team[f"{key}_y"] is not None else default_y),
+                }
+            )
+        return slots
 
     profile = db.execute(
         "SELECT active_mini_robot_id FROM user_mini_robot_profiles WHERE user_id = ?",
         (int(user_id),),
     ).fetchone()
     active_id = int(profile["active_mini_robot_id"]) if profile and profile["active_mini_robot_id"] is not None else None
-    return [active_id, None, None]
+    return [
+        {"slot": index + 1, "mini_robot_id": active_id if index == 0 else None, "x": x, "y": y}
+        for index, (x, y) in enumerate(_mini_tactics_default_slot_positions())
+    ]
 
 
 def _mini_tactics_team_rows(db, user_id):
@@ -34456,7 +34493,9 @@ def _mini_tactics_team_units_for_user(db, user_id):
     rental_units = build_rental_ally_units()
     team_units = []
     used_ids = set()
-    for index, row_id in enumerate(_mini_tactics_saved_slot_ids(db, user_id)[:3]):
+    saved_slots = _mini_tactics_saved_slots(db, user_id)
+    for index, slot in enumerate(saved_slots[:3]):
+        row_id = slot["mini_robot_id"]
         unit = None
         if row_id is not None and int(row_id) in by_id and int(row_id) not in used_ids:
             unit = _mini_tactics_unit_from_robot(by_id[int(row_id)], index)
@@ -34464,6 +34503,8 @@ def _mini_tactics_team_units_for_user(db, user_id):
         if unit is None:
             unit = dict(rental_units[index % len(rental_units)])
             unit["name"] = f"レンタル{unit['name']}"
+        unit["x"] = int(slot["x"])
+        unit["y"] = int(slot["y"])
         team_units.append(unit)
 
     while len(team_units) < 3:
@@ -34472,9 +34513,6 @@ def _mini_tactics_team_units_for_user(db, user_id):
         unit["name"] = f"レンタル{unit['name']}"
         team_units.append(unit)
 
-    for index, unit in enumerate(team_units[:3]):
-        unit["x"] = 0
-        unit["y"] = index + 1
     return team_units[:3]
 
 
@@ -34492,12 +34530,53 @@ def _mini_tactics_team_view(db, user_id):
             "atk": unit["atk"],
             "def": unit["def"],
             "spd": int(unit.get("spd") or 0),
+            "x": int(unit.get("x") or 0),
+            "y": int(unit.get("y") or 0),
             "source": unit.get("source") or "owned",
             "mini_robot_id": unit.get("mini_robot_id"),
             "image_url": url_for("static", filename=unit["image_path"]) if unit.get("image_path") else None,
         }
         for index, unit in enumerate(units)
     ]
+
+
+def _mini_tactics_placement_rows():
+    map_payload = build_initial_map()
+    rows = []
+    for y, tile_row in enumerate(map_payload.get("tiles") or []):
+        row = []
+        for x, tile in enumerate(tile_row):
+            terrain = str(tile.get("terrain") or "floor")
+            row.append(
+                {
+                    "x": int(x),
+                    "y": int(y),
+                    "terrain": terrain,
+                    "placeable": int(x) <= 2 and terrain != "wall",
+                }
+            )
+        rows.append(row)
+    return rows
+
+
+def _mini_tactics_parse_slot_positions(form):
+    positions = []
+    map_payload = build_initial_map()
+    for index, (default_x, default_y) in enumerate(_mini_tactics_default_slot_positions(), start=1):
+        raw_x = (form.get(f"slot_{index}_x") or str(default_x)).strip()
+        raw_y = (form.get(f"slot_{index}_y") or str(default_y)).strip()
+        if not raw_x.isdigit() or not raw_y.isdigit():
+            return None, "配置座標が不正です。"
+        x = int(raw_x)
+        y = int(raw_y)
+        if x < 0 or x > 2 or y < 0 or y > 4:
+            return None, "配置は味方側エリアにしてください。"
+        if is_wall(map_payload, x, y):
+            return None, "壁マスには配置できません。"
+        positions.append((x, y))
+    if len(set(positions)) != len(positions):
+        return None, "同じマスに複数配置できません。"
+    return positions, None
 
 
 def _mini_robot_open_for_viewer(db, *, user_row=None, user_id=None):
@@ -35899,20 +35978,48 @@ def admin_lab_mini_tactics_team():
         if duplicate:
             flash("同じ所持ミニロボは複数枠に設定できません。", "error")
             return redirect(url_for("admin_lab_mini_tactics_team"))
+        positions, position_error = _mini_tactics_parse_slot_positions(request.form)
+        if position_error:
+            flash(position_error, "error")
+            return redirect(url_for("admin_lab_mini_tactics_team"))
 
         now_ts = int(time.time())
         db.execute(
             """
             INSERT INTO mini_tactics_teams
-            (user_id, slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            (
+                user_id,
+                slot_1_mini_robot_id, slot_1_x, slot_1_y,
+                slot_2_mini_robot_id, slot_2_x, slot_2_y,
+                slot_3_mini_robot_id, slot_3_x, slot_3_y,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 slot_1_mini_robot_id = excluded.slot_1_mini_robot_id,
+                slot_1_x = excluded.slot_1_x,
+                slot_1_y = excluded.slot_1_y,
                 slot_2_mini_robot_id = excluded.slot_2_mini_robot_id,
+                slot_2_x = excluded.slot_2_x,
+                slot_2_y = excluded.slot_2_y,
                 slot_3_mini_robot_id = excluded.slot_3_mini_robot_id,
+                slot_3_x = excluded.slot_3_x,
+                slot_3_y = excluded.slot_3_y,
                 updated_at = excluded.updated_at
             """,
-            (user_id, selected_ids[0], selected_ids[1], selected_ids[2], now_ts),
+            (
+                user_id,
+                selected_ids[0],
+                positions[0][0],
+                positions[0][1],
+                selected_ids[1],
+                positions[1][0],
+                positions[1][1],
+                selected_ids[2],
+                positions[2][0],
+                positions[2][1],
+                now_ts,
+            ),
         )
         db.commit()
         flash("戦術チームを保存しました。", "notice")
@@ -35923,6 +36030,7 @@ def admin_lab_mini_tactics_team():
         "admin_lab_mini_tactics_team.html",
         owned_rows=owned_rows,
         team_slots=team_slots,
+        placement_rows=_mini_tactics_placement_rows(),
     )
 
 

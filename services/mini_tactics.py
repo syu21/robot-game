@@ -243,8 +243,8 @@ def build_units_with_allies(ally_units=None):
         allies.append(copied)
     for index, unit in enumerate(allies[:3]):
         x, y = ALLY_START_POSITIONS[index]
-        unit["x"] = x
-        unit["y"] = y
+        unit.setdefault("x", x)
+        unit.setdefault("y", y)
 
     enemies = [dict(unit) for unit in build_initial_units() if unit.get("side") == "enemy"]
     return allies[:3] + enemies

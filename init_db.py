@@ -1326,8 +1326,14 @@ def main():
         CREATE TABLE IF NOT EXISTS mini_tactics_teams (
             user_id INTEGER PRIMARY KEY,
             slot_1_mini_robot_id INTEGER,
+            slot_1_x INTEGER NOT NULL DEFAULT 0,
+            slot_1_y INTEGER NOT NULL DEFAULT 1,
             slot_2_mini_robot_id INTEGER,
+            slot_2_x INTEGER NOT NULL DEFAULT 0,
+            slot_2_y INTEGER NOT NULL DEFAULT 2,
             slot_3_mini_robot_id INTEGER,
+            slot_3_x INTEGER NOT NULL DEFAULT 0,
+            slot_3_y INTEGER NOT NULL DEFAULT 3,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
@@ -2398,6 +2404,18 @@ def main():
     mini_log_cols = {row[1] for row in cur.execute("PRAGMA table_info(mini_robot_logs)").fetchall()}
     if "payload_json" not in mini_log_cols:
         cur.execute("ALTER TABLE mini_robot_logs ADD COLUMN payload_json TEXT")
+    mini_tactics_team_cols = {row[1] for row in cur.execute("PRAGMA table_info(mini_tactics_teams)").fetchall()}
+    mini_tactics_team_column_defs = {
+        "slot_1_x": "slot_1_x INTEGER NOT NULL DEFAULT 0",
+        "slot_1_y": "slot_1_y INTEGER NOT NULL DEFAULT 1",
+        "slot_2_x": "slot_2_x INTEGER NOT NULL DEFAULT 0",
+        "slot_2_y": "slot_2_y INTEGER NOT NULL DEFAULT 2",
+        "slot_3_x": "slot_3_x INTEGER NOT NULL DEFAULT 0",
+        "slot_3_y": "slot_3_y INTEGER NOT NULL DEFAULT 3",
+    }
+    for column_name, column_sql in mini_tactics_team_column_defs.items():
+        if column_name not in mini_tactics_team_cols:
+            cur.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
     _backfill_mini_robot_internal_fields(cur)
     now_ts = int(time.time())
     cur.execute(

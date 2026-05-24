@@ -99,6 +99,11 @@ class AdminMiniTacticsTests(unittest.TestCase):
         html = admin.get_data(as_text=True)
         self.assertIn("戦術チーム確認", html)
         self.assertIn("レンタル機", html)
+        self.assertIn("mini-tactics-placement-board", html)
+        self.assertIn("data-placement-board", html)
+        self.assertIn('name="slot_1_x"', html)
+        self.assertIn('name="slot_1_y"', html)
+        self.assertIn('data-slot-card="1"', html)
 
     def test_team_page_uses_existing_mini_robot_and_rentals(self):
         client = self._client(admin=True)
@@ -148,6 +153,64 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(units[1]["species_key"], "hydra")
             self.assertEqual(units[2]["source"], "rental")
 
+    def test_team_page_saves_start_positions(self):
+        client = self._client(admin=True)
+        resp = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_mini_robot_id": "",
+                "slot_1_x": "0",
+                "slot_1_y": "0",
+                "slot_2_mini_robot_id": "",
+                "slot_2_x": "1",
+                "slot_2_y": "2",
+                "slot_3_mini_robot_id": "",
+                "slot_3_x": "2",
+                "slot_3_y": "4",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            team = db.execute("SELECT * FROM mini_tactics_teams WHERE user_id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual((team["slot_1_x"], team["slot_1_y"]), (0, 0))
+            self.assertEqual((team["slot_2_x"], team["slot_2_y"]), (1, 2))
+            self.assertEqual((team["slot_3_x"], team["slot_3_y"]), (2, 4))
+            units = game_app._mini_tactics_team_units_for_user(db, self.admin_id)
+            self.assertEqual([(u["x"], u["y"]) for u in units], [(0, 0), (1, 2), (2, 4)])
+
+    def test_team_page_rejects_invalid_positions(self):
+        client = self._client(admin=True)
+        duplicate = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_x": "0",
+                "slot_1_y": "1",
+                "slot_2_x": "0",
+                "slot_2_y": "1",
+                "slot_3_x": "0",
+                "slot_3_y": "3",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("同じマス", duplicate.get_data(as_text=True))
+
+        wall = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_x": "0",
+                "slot_1_y": "1",
+                "slot_2_x": "2",
+                "slot_2_y": "1",
+                "slot_3_x": "0",
+                "slot_3_y": "3",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("壁マス", wall.get_data(as_text=True))
+
     def test_team_page_rejects_duplicate_owned_robot(self):
         client = self._client(admin=True)
         client.post("/lab/mini/select", data={"species_key": "cerberus"}, follow_redirects=True)
@@ -188,6 +251,30 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(allies[0]["species_key"], "hydra")
             self.assertEqual(allies[0]["ai_type"], "guardian")
             self.assertEqual(len([u for u in allies if u["source"] == "rental"]), 2)
+
+    def test_start_uses_saved_positions(self):
+        client = self._client(admin=True)
+        client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_x": "0",
+                "slot_1_y": "0",
+                "slot_2_x": "1",
+                "slot_2_y": "2",
+                "slot_3_x": "2",
+                "slot_3_y": "4",
+            },
+            follow_redirects=True,
+        )
+        resp = client.post("/admin/lab/mini-tactics/start", data={"seed": "444"}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT units_json FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            units = json.loads(row["units_json"])
+            allies = [u for u in units if u["side"] == "ally"]
+            self.assertEqual([(u["x"], u["y"]) for u in allies], [(0, 0), (1, 2), (2, 4)])
 
     def test_start_without_mini_robot_uses_three_rentals(self):
         client = self._client(admin=True)
