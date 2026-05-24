@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-tactics-manual" id="miniTacticsManual">
+  <div class="mini-tactics-watch-head">
+    <div>
+      <h1>手動戦術試験 #{{ battle['id'] }}</h1>
+      <div class="robot-part">seed {{ battle['seed'] }} / turn {{ board_state.get('turn_number', 1) }} / {{ board_state.get('current_turn_side', 'ally') }}</div>
+    </div>
+    <div class="mini-tactics-status-panel">
+      <div class="mini-tactics-turn">味方ターン: 1体だけ行動</div>
+      <div class="mini-tactics-result">
+        {% if board_state.get('result') == 'ally_win' %}味方側の勝利{% elif board_state.get('result') == 'enemy_win' %}敵側の勝利{% else %}交戦中{% endif %}
+      </div>
+    </div>
+    <div class="mini-tactics-controls">
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">編成へ</a>
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
+    </div>
+  </div>
+
+  <div class="mini-tactics-manual-layout">
+    <div class="mini-tactics-board-wrap">
+      <div
+        class="mini-tactics-board mini-tactics-manual-board"
+        id="miniTacticsManualBoard"
+        style="--mini-tactics-width: {{ map_payload.get('width', 5) }}; --mini-tactics-height: {{ map_payload.get('height', 5) }};"
+      >
+        {% for row in map_payload.get('tiles', []) %}
+          {% for cell in row %}
+          <button
+            type="button"
+            class="mini-tactics-cell terrain-{{ cell.get('terrain', 'floor') }}"
+            data-x="{{ cell['x'] }}"
+            data-y="{{ cell['y'] }}"
+            data-terrain="{{ cell.get('terrain', 'floor') }}"
+          >
+            {% for unit in units_payload %}
+              {% if not unit.get('defeated') and unit.get('x') == cell['x'] and unit.get('y') == cell['y'] %}
+              <span
+                class="mini-tactics-unit is-{{ unit.get('side') }} {% if unit.get('unit_type') == 'core' %}is-core{% endif %}"
+                data-unit-id="{{ unit.get('unit_id') }}"
+                data-side="{{ unit.get('side') }}"
+                title="{{ unit.get('name') }}"
+              >
+                <span class="mini-tactics-unit-core">
+                  {% if unit_assets.get(unit.get('unit_id')) %}
+                  <img src="{{ unit_assets.get(unit.get('unit_id')) }}" alt="{{ unit.get('name') }}" loading="lazy" />
+                  {% else %}
+                  {{ unit.get('name', '?')[:3] }}
+                  {% endif %}
+                </span>
+                <span class="mini-tactics-hp"><span style="width: {{ (100 * (unit.get('hp', 0) / unit.get('max_hp', 1)))|round|int }}%"></span></span>
+              </span>
+              {% endif %}
+            {% endfor %}
+          </button>
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="mini-tactics-manual-side">
+      <section class="mini-tactics-manual-panel">
+        <h2>選択中ユニット</h2>
+        <div id="miniTacticsManualSelected" class="robot-part">味方ユニットを選択</div>
+        <form method="post" action="{{ url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
+          <input type="hidden" name="actor_unit_id" id="manualActorUnitId" />
+          <input type="hidden" name="move_x" id="manualMoveX" />
+          <input type="hidden" name="move_y" id="manualMoveY" />
+          <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
+          <button type="submit" id="manualSubmit" disabled>行動確定</button>
+        </form>
+        <div class="robot-time">移動後攻撃可。攻撃後移動不可。</div>
+      </section>
+
+      <section class="mini-tactics-manual-panel">
+        <h2>味方</h2>
+        {% for unit in units_payload if unit.get('side') == 'ally' %}
+        <div class="mini-tactics-roster-row is-ally {% if unit.get('defeated') %}is-defeated{% endif %}">
+          <div class="mini-tactics-roster-name">{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+        </div>
+        {% endfor %}
+      </section>
+
+      <section class="mini-tactics-manual-panel">
+        <h2>敵</h2>
+        {% for unit in units_payload if unit.get('side') == 'enemy' %}
+        <div class="mini-tactics-roster-row is-enemy {% if unit.get('defeated') %}is-defeated{% endif %}">
+          <div class="mini-tactics-roster-name">{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">{{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}</div>
+        </div>
+        {% endfor %}
+      </section>
+
+      <section class="mini-tactics-log">
+        <h2>操作ログ</h2>
+        <ul>
+          {% for log in action_log[-12:]|reverse %}
+          <li>{{ log.get('text') }}</li>
+          {% else %}
+          <li>まだ行動はありません。</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </aside>
+  </div>
+</section>
+
+<script>
+(function () {
+  var boardState = {{ board_state|tojson }};
+  var optionsByUnit = {{ options_by_unit|tojson }};
+  var board = document.getElementById("miniTacticsManualBoard");
+  var selectedEl = document.getElementById("miniTacticsManualSelected");
+  var actorInput = document.getElementById("manualActorUnitId");
+  var moveXInput = document.getElementById("manualMoveX");
+  var moveYInput = document.getElementById("manualMoveY");
+  var targetInput = document.getElementById("manualTargetUnitId");
+  var submit = document.getElementById("manualSubmit");
+  if (!board || boardState.result) return;
+
+  var selectedUnitId = "";
+  var selectedMove = null;
+
+  function unitById(unitId) {
+    return (boardState.units || []).find(function (unit) { return String(unit.unit_id) === String(unitId); });
+  }
+
+  function sameCell(a, b) {
+    return Number(a.x) === Number(b.x) && Number(a.y) === Number(b.y);
+  }
+
+  function clearMarks() {
+    board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
+      cell.classList.remove("is-move-option", "is-attack-option", "is-target-option", "is-selected-move");
+    });
+    board.querySelectorAll(".mini-tactics-unit").forEach(function (unit) {
+      unit.classList.remove("is-selected");
+    });
+  }
+
+  function markForUnit(unitId) {
+    clearMarks();
+    selectedUnitId = unitId;
+    selectedMove = null;
+    actorInput.value = unitId;
+    moveXInput.value = "";
+    moveYInput.value = "";
+    targetInput.value = "";
+    submit.disabled = true;
+    var unit = unitById(unitId);
+    var options = optionsByUnit[unitId] || {};
+    if (selectedEl && unit) selectedEl.textContent = unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
+    var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
+    if (unitEl) unitEl.classList.add("is-selected");
+    board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
+      var point = {x: Number(cell.dataset.x), y: Number(cell.dataset.y)};
+      if ((options.move_cells || []).some(function (move) { return sameCell(move, point); })) {
+        cell.classList.add("is-move-option");
+      }
+      if ((options.attackable_cells || []).some(function (attack) { return sameCell(attack, point); })) {
+        cell.classList.add("is-attack-option");
+      }
+    });
+    (options.targetable_unit_ids || []).forEach(function (targetId) {
+      var target = unitById(targetId);
+      if (!target) return;
+      var targetCell = board.querySelector('[data-x="' + target.x + '"][data-y="' + target.y + '"]');
+      if (targetCell) targetCell.classList.add("is-target-option");
+    });
+  }
+
+  function markAfterMove(x, y) {
+    var unit = unitById(selectedUnitId);
+    if (!unit) return;
+    selectedMove = {x: Number(x), y: Number(y)};
+    moveXInput.value = String(x);
+    moveYInput.value = String(y);
+    targetInput.value = "";
+    submit.disabled = false;
+    board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
+      cell.classList.remove("is-selected-move", "is-target-option");
+      if (Number(cell.dataset.x) === Number(x) && Number(cell.dataset.y) === Number(y)) {
+        cell.classList.add("is-selected-move");
+      }
+    });
+  }
+
+  board.addEventListener("click", function (event) {
+    var unitEl = event.target.closest("[data-unit-id]");
+    if (unitEl && unitEl.dataset.side === "ally" && !unitEl.classList.contains("is-core")) {
+      markForUnit(unitEl.dataset.unitId);
+      return;
+    }
+    if (!selectedUnitId) return;
+    var cell = event.target.closest(".mini-tactics-cell");
+    if (!cell) return;
+    if (cell.classList.contains("is-move-option")) {
+      markAfterMove(cell.dataset.x, cell.dataset.y);
+      return;
+    }
+    if (unitEl && unitEl.dataset.side === "enemy") {
+      targetInput.value = unitEl.dataset.unitId;
+      submit.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

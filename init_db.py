@@ -1328,12 +1328,18 @@ def main():
             slot_1_mini_robot_id INTEGER,
             slot_1_x INTEGER NOT NULL DEFAULT 0,
             slot_1_y INTEGER NOT NULL DEFAULT 1,
+            slot_1_ai_type TEXT,
+            slot_1_weapon_type TEXT,
             slot_2_mini_robot_id INTEGER,
             slot_2_x INTEGER NOT NULL DEFAULT 0,
             slot_2_y INTEGER NOT NULL DEFAULT 2,
+            slot_2_ai_type TEXT,
+            slot_2_weapon_type TEXT,
             slot_3_mini_robot_id INTEGER,
             slot_3_x INTEGER NOT NULL DEFAULT 0,
             slot_3_y INTEGER NOT NULL DEFAULT 3,
+            slot_3_ai_type TEXT,
+            slot_3_weapon_type TEXT,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
@@ -1734,9 +1740,15 @@ def main():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             seed INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'prototype',
+            mode TEXT NOT NULL DEFAULT 'auto',
             map_json TEXT NOT NULL,
             units_json TEXT NOT NULL,
             frames_json TEXT NOT NULL,
+            board_state_json TEXT,
+            action_log_json TEXT,
+            current_turn_side TEXT,
+            turn_number INTEGER NOT NULL DEFAULT 1,
+            result TEXT,
             created_at INTEGER NOT NULL,
             created_by_user_id INTEGER NOT NULL
         )
@@ -2408,14 +2420,32 @@ def main():
     mini_tactics_team_column_defs = {
         "slot_1_x": "slot_1_x INTEGER NOT NULL DEFAULT 0",
         "slot_1_y": "slot_1_y INTEGER NOT NULL DEFAULT 1",
+        "slot_1_ai_type": "slot_1_ai_type TEXT",
+        "slot_1_weapon_type": "slot_1_weapon_type TEXT",
         "slot_2_x": "slot_2_x INTEGER NOT NULL DEFAULT 0",
         "slot_2_y": "slot_2_y INTEGER NOT NULL DEFAULT 2",
+        "slot_2_ai_type": "slot_2_ai_type TEXT",
+        "slot_2_weapon_type": "slot_2_weapon_type TEXT",
         "slot_3_x": "slot_3_x INTEGER NOT NULL DEFAULT 0",
         "slot_3_y": "slot_3_y INTEGER NOT NULL DEFAULT 3",
+        "slot_3_ai_type": "slot_3_ai_type TEXT",
+        "slot_3_weapon_type": "slot_3_weapon_type TEXT",
     }
     for column_name, column_sql in mini_tactics_team_column_defs.items():
         if column_name not in mini_tactics_team_cols:
             cur.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
+    mini_tactics_battle_cols = {row[1] for row in cur.execute("PRAGMA table_info(mini_tactics_battles)").fetchall()}
+    mini_tactics_battle_column_defs = {
+        "mode": "mode TEXT NOT NULL DEFAULT 'auto'",
+        "board_state_json": "board_state_json TEXT",
+        "action_log_json": "action_log_json TEXT",
+        "current_turn_side": "current_turn_side TEXT",
+        "turn_number": "turn_number INTEGER NOT NULL DEFAULT 1",
+        "result": "result TEXT",
+    }
+    for column_name, column_sql in mini_tactics_battle_column_defs.items():
+        if column_name not in mini_tactics_battle_cols:
+            cur.execute(f"ALTER TABLE mini_tactics_battles ADD COLUMN {column_sql}")
     _backfill_mini_robot_internal_fields(cur)
     now_ts = int(time.time())
     cur.execute(

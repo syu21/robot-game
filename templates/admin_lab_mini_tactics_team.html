@@ -5,12 +5,12 @@
     <h1>戦術チーム確認</h1>
     <div class="robot-part">管理人限定。/lab/mini の現在の育成個体を1枠目に使い、不足分はレンタル機で補完します。</div>
   </div>
-  <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
+  <form method="get" action="{{ url_for('admin_lab_mini_tactics_manual_start') }}" class="post-form mini-tactics-start-form">
     <label>
       seed 任意
       <input type="number" name="seed" min="1" placeholder="空ならランダム" />
     </label>
-    <button type="submit">この編成で試験開始</button>
+    <button type="submit">この編成で手動試験開始</button>
   </form>
 </section>
 
@@ -61,7 +61,32 @@
       <img src="{{ slot.image_url }}" alt="{{ slot.name }}" loading="lazy" />
       {% endif %}
       <h3>{{ slot.name }}</h3>
-      <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_type }} / {{ slot.weapon_type }} / 射程{{ slot.range }}</div>
+      <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_label }} / {{ slot.weapon_label }} / 射程{{ slot.range }}</div>
+      <div class="mini-tactics-loadout-editor">
+        <label>
+          AIタイプ
+          <select name="slot_{{ slot.slot }}_ai_type" data-slot-ai="{{ slot.slot }}">
+            {% for choice in ai_choices %}
+            <option value="{{ choice.value }}" {% if slot.ai_type == choice.value %}selected{% endif %}>
+              {{ choice.label }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          武器タイプ
+          <select name="slot_{{ slot.slot }}_weapon_type" data-slot-weapon="{{ slot.slot }}">
+            {% for choice in weapon_choices %}
+            <option value="{{ choice.value }}" {% if slot.weapon_type == choice.value %}selected{% endif %}>
+              {{ choice.label }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="mini-tactics-role-preview" data-role-preview="{{ slot.slot }}">
+        {{ slot.ai_label }} + {{ slot.weapon_label }} = {{ slot.role_preview }}
+      </div>
       <div class="robot-time">HP {{ slot.hp }} / ATK {{ slot.atk }} / DEF {{ slot.def }} / SPD {{ slot.spd }}</div>
       <div class="mini-tactics-position-editor">
         <input type="hidden" name="slot_{{ slot.slot }}_x" value="{{ slot.x }}" data-slot-x="{{ slot.slot }}" />
@@ -106,6 +131,23 @@
   var activeSlot = slots.length ? Number(slots[0].slot) : 1;
   var alertEl = document.getElementById("miniTacticsPlacementAlert");
   var currentEl = document.getElementById("miniTacticsPlacementCurrent");
+  var aiLabels = {{ ai_choices|tojson }};
+  var weaponLabels = {{ weapon_choices|tojson }};
+  var rolePreviews = {{ role_previews|tojson }};
+
+  function labelFor(list, value) {
+    var found = list.find(function (item) { return item.value === value; });
+    return found ? found.label : value;
+  }
+
+  function syncRolePreview(slotNo) {
+    var aiSelect = form.querySelector('[data-slot-ai="' + slotNo + '"]');
+    var weaponSelect = form.querySelector('[data-slot-weapon="' + slotNo + '"]');
+    var previewEl = form.querySelector('[data-role-preview="' + slotNo + '"]');
+    if (!aiSelect || !weaponSelect || !previewEl) return;
+    var key = aiSelect.value + ":" + weaponSelect.value;
+    previewEl.textContent = labelFor(aiLabels, aiSelect.value) + " + " + labelFor(weaponLabels, weaponSelect.value) + " = " + (rolePreviews[key] || "汎用戦術");
+  }
 
   function slotState(slotNo) {
     return slots.find(function (slot) { return Number(slot.slot) === Number(slotNo); });
@@ -180,6 +222,12 @@
     });
   });
 
+  form.querySelectorAll("[data-slot-ai], [data-slot-weapon]").forEach(function (select) {
+    select.addEventListener("change", function () {
+      syncRolePreview(select.dataset.slotAi || select.dataset.slotWeapon);
+    });
+  });
+
   form.querySelectorAll(".mini-tactics-placement-cell").forEach(function (cell) {
     cell.addEventListener("click", function () {
       var x = Number(cell.dataset.x);
@@ -202,6 +250,7 @@
   });
 
   slots.forEach(syncInputs);
+  slots.forEach(function (slot) { syncRolePreview(slot.slot); });
   render();
 })();
 </script>

@@ -7082,6 +7082,38 @@ body.home-page .locked-layer-card {
   background: rgba(2, 6, 23, 0.72);
   color: var(--text-main);
 }
+.mini-tactics-loadout-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.mini-tactics-loadout-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-sub);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.mini-tactics-loadout-editor select {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+  color: var(--text-main);
+}
+.mini-tactics-role-preview {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #a7f3d0;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
 .mini-tactics-team-actions {
   display: flex;
   justify-content: flex-end;
@@ -7243,6 +7275,63 @@ body.home-page .locked-layer-card {
   border-color: rgba(251, 146, 60, 0.78);
   background: rgba(194, 65, 12, 0.28);
   box-shadow: inset 0 0 20px rgba(251, 146, 60, 0.22), 0 0 14px rgba(251, 146, 60, 0.16);
+}
+.mini-tactics-manual-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 680px) minmax(260px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.mini-tactics-manual-board .mini-tactics-cell {
+  position: relative;
+  cursor: pointer;
+}
+.mini-tactics-manual-board .mini-tactics-cell.is-move-option {
+  border-color: rgba(34, 211, 238, 0.72);
+  background: rgba(8, 145, 178, 0.2);
+  box-shadow: inset 0 0 20px rgba(34, 211, 238, 0.18);
+}
+.mini-tactics-manual-board .mini-tactics-cell.is-attack-option {
+  outline: 2px solid rgba(14, 165, 233, 0.24);
+  outline-offset: -5px;
+}
+.mini-tactics-manual-board .mini-tactics-cell.is-target-option {
+  border-color: rgba(251, 146, 60, 0.82);
+  background: rgba(194, 65, 12, 0.24);
+  box-shadow: inset 0 0 22px rgba(251, 146, 60, 0.2);
+}
+.mini-tactics-manual-board .mini-tactics-cell.is-selected-move {
+  border-color: rgba(167, 243, 208, 0.92);
+  box-shadow: inset 0 0 22px rgba(45, 212, 191, 0.28), 0 0 16px rgba(45, 212, 191, 0.22);
+}
+.mini-tactics-manual-side {
+  display: grid;
+  gap: 12px;
+}
+.mini-tactics-manual-panel {
+  padding: 14px;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.62);
+}
+.mini-tactics-manual-panel h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+.mini-tactics-unit.is-core {
+  border-style: double;
+  border-color: rgba(250, 204, 21, 0.72);
+}
+.mini-tactics-unit.is-selected {
+  box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.3), 0 0 22px rgba(34, 211, 238, 0.32);
+}
+#miniTacticsManualAction {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+#miniTacticsManualAction button:disabled {
+  opacity: 0.45;
 }
 .mini-tactics-unit {
   display: grid;
@@ -7475,6 +7564,9 @@ button.secondary {
   .mini-tactics-placement-board {
     width: 100%;
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .mini-tactics-manual-layout {
+    grid-template-columns: 1fr;
   }
   .mini-tactics-board-wrap {
     width: 100%;

@@ -7,12 +7,13 @@
   </div>
   <div class="mini-tactics-controls">
     <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">戦術チーム確認</a>
+    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_start') }}">手動戦術試験を開始</a>
     <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
       <label>
         seed 任意
         <input type="number" name="seed" min="1" placeholder="空ならランダム" />
       </label>
-      <button type="submit">試験開始</button>
+      <button type="submit">自動試験開始</button>
     </form>
   </div>
 </section>
@@ -21,8 +22,12 @@
   <h2>最近の試験</h2>
   {% for row in latest_battles %}
   <div class="mini-tactics-history-row">
-    <span>#{{ row['id'] }} / seed {{ row['seed'] }} / {{ row['status'] }}</span>
+    <span>#{{ row['id'] }} / seed {{ row['seed'] }} / {{ row['mode'] or 'auto' }} / {{ row['status'] }}</span>
+    {% if row['mode'] == 'manual_board' %}
+    <a href="{{ url_for('admin_lab_mini_tactics_manual', battle_id=row['id']) }}">手動盤面</a>
+    {% else %}
     <a href="{{ url_for('admin_lab_mini_tactics_watch', battle_id=row['id']) }}">観戦</a>
+    {% endif %}
   </div>
   {% else %}
   <div class="robot-part">まだ試験はありません。</div>

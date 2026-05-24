@@ -106,7 +106,15 @@ from services.style import (
     style_score_payload_from_stats,
 )
 from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entries, simulate_race
-from services.mini_tactics import build_initial_map, build_rental_ally_units, create_mini_tactics_battle, is_wall
+from services.mini_tactics import (
+    apply_manual_turn_action,
+    build_initial_map,
+    build_rental_ally_units,
+    create_manual_mini_tactics_battle,
+    create_mini_tactics_battle,
+    manual_action_options,
+    is_wall,
+)
 from services.lab_race_service import (
     LAB_CASINO_BET_AMOUNTS,
     LAB_CASINO_COIN_CAP,
@@ -10472,12 +10480,18 @@ def ensure_schema(db):
             slot_1_mini_robot_id INTEGER,
             slot_1_x INTEGER NOT NULL DEFAULT 0,
             slot_1_y INTEGER NOT NULL DEFAULT 1,
+            slot_1_ai_type TEXT,
+            slot_1_weapon_type TEXT,
             slot_2_mini_robot_id INTEGER,
             slot_2_x INTEGER NOT NULL DEFAULT 0,
             slot_2_y INTEGER NOT NULL DEFAULT 2,
+            slot_2_ai_type TEXT,
+            slot_2_weapon_type TEXT,
             slot_3_mini_robot_id INTEGER,
             slot_3_x INTEGER NOT NULL DEFAULT 0,
             slot_3_y INTEGER NOT NULL DEFAULT 3,
+            slot_3_ai_type TEXT,
+            slot_3_weapon_type TEXT,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(slot_1_mini_robot_id) REFERENCES user_mini_robots(id),
@@ -10950,9 +10964,15 @@ def ensure_schema(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             seed INTEGER NOT NULL,
             status TEXT NOT NULL DEFAULT 'prototype',
+            mode TEXT NOT NULL DEFAULT 'auto',
             map_json TEXT NOT NULL,
             units_json TEXT NOT NULL,
             frames_json TEXT NOT NULL,
+            board_state_json TEXT,
+            action_log_json TEXT,
+            current_turn_side TEXT,
+            turn_number INTEGER NOT NULL DEFAULT 1,
+            result TEXT,
             created_at INTEGER NOT NULL,
             created_by_user_id INTEGER NOT NULL,
             FOREIGN KEY (created_by_user_id) REFERENCES users(id)
@@ -11659,14 +11679,32 @@ def ensure_schema(db):
     mini_tactics_team_column_defs = {
         "slot_1_x": "slot_1_x INTEGER NOT NULL DEFAULT 0",
         "slot_1_y": "slot_1_y INTEGER NOT NULL DEFAULT 1",
+        "slot_1_ai_type": "slot_1_ai_type TEXT",
+        "slot_1_weapon_type": "slot_1_weapon_type TEXT",
         "slot_2_x": "slot_2_x INTEGER NOT NULL DEFAULT 0",
         "slot_2_y": "slot_2_y INTEGER NOT NULL DEFAULT 2",
+        "slot_2_ai_type": "slot_2_ai_type TEXT",
+        "slot_2_weapon_type": "slot_2_weapon_type TEXT",
         "slot_3_x": "slot_3_x INTEGER NOT NULL DEFAULT 0",
         "slot_3_y": "slot_3_y INTEGER NOT NULL DEFAULT 3",
+        "slot_3_ai_type": "slot_3_ai_type TEXT",
+        "slot_3_weapon_type": "slot_3_weapon_type TEXT",
     }
     for column_name, column_sql in mini_tactics_team_column_defs.items():
         if column_name not in mini_tactics_team_cols:
             db.execute(f"ALTER TABLE mini_tactics_teams ADD COLUMN {column_sql}")
+    mini_tactics_battle_cols = {row["name"] for row in db.execute("PRAGMA table_info(mini_tactics_battles)").fetchall()}
+    mini_tactics_battle_column_defs = {
+        "mode": "mode TEXT NOT NULL DEFAULT 'auto'",
+        "board_state_json": "board_state_json TEXT",
+        "action_log_json": "action_log_json TEXT",
+        "current_turn_side": "current_turn_side TEXT",
+        "turn_number": "turn_number INTEGER NOT NULL DEFAULT 1",
+        "result": "result TEXT",
+    }
+    for column_name, column_sql in mini_tactics_battle_column_defs.items():
+        if column_name not in mini_tactics_battle_cols:
+            db.execute(f"ALTER TABLE mini_tactics_battles ADD COLUMN {column_sql}")
     _backfill_mini_robot_internal_fields(db)
     now_ts = int(time.time())
     db.execute(
@@ -34378,6 +34416,55 @@ MINI_TACTICS_SPECIES_STATS = {
     "phoenix": {"hp": 14, "atk": 4, "def": 1, "spd": 6, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
     "hydra": {"hp": 20, "atk": 3, "def": 3, "spd": 3, "ai_type": "guardian", "weapon_type": "missile", "range": 2},
 }
+MINI_TACTICS_AI_LABELS = {
+    "assault": "突撃",
+    "cautious": "慎重",
+    "guardian": "守護",
+}
+MINI_TACTICS_WEAPON_LABELS = {
+    "melee": "格闘",
+    "laser": "レーザー",
+    "missile": "ミサイル",
+}
+MINI_TACTICS_ROLE_PREVIEWS = {
+    ("assault", "melee"): "前衛特攻",
+    ("assault", "laser"): "前進射撃",
+    ("assault", "missile"): "強襲砲撃",
+    ("cautious", "melee"): "慎重前衛",
+    ("cautious", "laser"): "後衛射撃",
+    ("cautious", "missile"): "逃げ撃ち砲撃",
+    ("guardian", "melee"): "護衛壁役",
+    ("guardian", "laser"): "守護射線",
+    ("guardian", "missile"): "支援砲撃",
+}
+
+
+def _mini_tactics_sanitize_ai_type(value):
+    value = str(value or "").strip()
+    return value if value in MINI_TACTICS_AI_LABELS else None
+
+
+def _mini_tactics_sanitize_weapon_type(value):
+    value = str(value or "").strip()
+    return value if value in MINI_TACTICS_WEAPON_LABELS else None
+
+
+def _mini_tactics_role_preview(ai_type, weapon_type):
+    return MINI_TACTICS_ROLE_PREVIEWS.get((ai_type, weapon_type), "汎用戦術")
+
+
+def _mini_tactics_ai_for_species(species_key):
+    stats = MINI_TACTICS_SPECIES_STATS.get(str(species_key or "cerberus"), MINI_TACTICS_SPECIES_STATS["cerberus"])
+    return str(stats["ai_type"])
+
+
+def _mini_tactics_weapon_for_species(species_key):
+    stats = MINI_TACTICS_SPECIES_STATS.get(str(species_key or "cerberus"), MINI_TACTICS_SPECIES_STATS["cerberus"])
+    return str(stats["weapon_type"])
+
+
+def _mini_tactics_weapon_range(weapon_type):
+    return 1 if weapon_type == "melee" else 2
 
 
 def _mini_tactics_ai_for_robot(robot_row):
@@ -34456,6 +34543,10 @@ def _mini_tactics_saved_slots(db, user_id):
                     "mini_robot_id": int(team[f"{key}_mini_robot_id"]) if team[f"{key}_mini_robot_id"] is not None else None,
                     "x": int(team[f"{key}_x"] if f"{key}_x" in team.keys() and team[f"{key}_x"] is not None else default_x),
                     "y": int(team[f"{key}_y"] if f"{key}_y" in team.keys() and team[f"{key}_y"] is not None else default_y),
+                    "ai_type": _mini_tactics_sanitize_ai_type(team[f"{key}_ai_type"] if f"{key}_ai_type" in team.keys() else None),
+                    "weapon_type": _mini_tactics_sanitize_weapon_type(
+                        team[f"{key}_weapon_type"] if f"{key}_weapon_type" in team.keys() else None
+                    ),
                 }
             )
         return slots
@@ -34466,7 +34557,14 @@ def _mini_tactics_saved_slots(db, user_id):
     ).fetchone()
     active_id = int(profile["active_mini_robot_id"]) if profile and profile["active_mini_robot_id"] is not None else None
     return [
-        {"slot": index + 1, "mini_robot_id": active_id if index == 0 else None, "x": x, "y": y}
+        {
+            "slot": index + 1,
+            "mini_robot_id": active_id if index == 0 else None,
+            "x": x,
+            "y": y,
+            "ai_type": None,
+            "weapon_type": None,
+        }
         for index, (x, y) in enumerate(_mini_tactics_default_slot_positions())
     ]
 
@@ -34505,6 +34603,12 @@ def _mini_tactics_team_units_for_user(db, user_id):
             unit["name"] = f"レンタル{unit['name']}"
         unit["x"] = int(slot["x"])
         unit["y"] = int(slot["y"])
+        if slot.get("ai_type"):
+            unit["ai_type"] = slot["ai_type"]
+        if slot.get("weapon_type"):
+            unit["weapon_type"] = slot["weapon_type"]
+            unit.pop("range", None)
+            unit.pop("attack_range", None)
         team_units.append(unit)
 
     while len(team_units) < 3:
@@ -34518,26 +34622,35 @@ def _mini_tactics_team_units_for_user(db, user_id):
 
 def _mini_tactics_team_view(db, user_id):
     units = _mini_tactics_team_units_for_user(db, user_id)
-    return [
-        {
-            "slot": index + 1,
-            "name": unit["name"],
-            "species_key": unit["species_key"],
-            "ai_type": unit["ai_type"],
-            "weapon_type": unit.get("weapon_type") or "melee",
-            "range": int(unit.get("range") or 1),
-            "hp": unit["hp"],
-            "atk": unit["atk"],
-            "def": unit["def"],
-            "spd": int(unit.get("spd") or 0),
-            "x": int(unit.get("x") or 0),
-            "y": int(unit.get("y") or 0),
-            "source": unit.get("source") or "owned",
-            "mini_robot_id": unit.get("mini_robot_id"),
-            "image_url": url_for("static", filename=unit["image_path"]) if unit.get("image_path") else None,
-        }
-        for index, unit in enumerate(units)
-    ]
+    rows = []
+    for index, unit in enumerate(units):
+        ai_type = _mini_tactics_sanitize_ai_type(unit.get("ai_type")) or _mini_tactics_ai_for_species(unit.get("species_key"))
+        weapon_type = _mini_tactics_sanitize_weapon_type(unit.get("weapon_type")) or _mini_tactics_weapon_for_species(
+            unit.get("species_key")
+        )
+        rows.append(
+            {
+                "slot": index + 1,
+                "name": unit["name"],
+                "species_key": unit["species_key"],
+                "ai_type": ai_type,
+                "ai_label": MINI_TACTICS_AI_LABELS.get(ai_type, ai_type),
+                "weapon_type": weapon_type,
+                "weapon_label": MINI_TACTICS_WEAPON_LABELS.get(weapon_type, weapon_type),
+                "role_preview": _mini_tactics_role_preview(ai_type, weapon_type),
+                "range": int(unit.get("range") or unit.get("attack_range") or _mini_tactics_weapon_range(weapon_type)),
+                "hp": unit["hp"],
+                "atk": unit["atk"],
+                "def": unit["def"],
+                "spd": int(unit.get("spd") or 0),
+                "x": int(unit.get("x") or 0),
+                "y": int(unit.get("y") or 0),
+                "source": unit.get("source") or "owned",
+                "mini_robot_id": unit.get("mini_robot_id"),
+                "image_url": url_for("static", filename=unit["image_path"]) if unit.get("image_path") else None,
+            }
+        )
+    return rows
 
 
 def _mini_tactics_placement_rows():
@@ -35934,7 +36047,7 @@ def admin_lab_mini_tactics():
         return abort(404)
     latest_battles = db.execute(
         """
-        SELECT id, seed, status, created_at
+        SELECT id, seed, status, mode, created_at
         FROM mini_tactics_battles
         ORDER BY id DESC
         LIMIT 8
@@ -35982,6 +36095,14 @@ def admin_lab_mini_tactics_team():
         if position_error:
             flash(position_error, "error")
             return redirect(url_for("admin_lab_mini_tactics_team"))
+        selected_ai_types = [
+            _mini_tactics_sanitize_ai_type(request.form.get(f"slot_{index}_ai_type"))
+            for index in range(1, 4)
+        ]
+        selected_weapon_types = [
+            _mini_tactics_sanitize_weapon_type(request.form.get(f"slot_{index}_weapon_type"))
+            for index in range(1, 4)
+        ]
 
         now_ts = int(time.time())
         db.execute(
@@ -35989,22 +36110,28 @@ def admin_lab_mini_tactics_team():
             INSERT INTO mini_tactics_teams
             (
                 user_id,
-                slot_1_mini_robot_id, slot_1_x, slot_1_y,
-                slot_2_mini_robot_id, slot_2_x, slot_2_y,
-                slot_3_mini_robot_id, slot_3_x, slot_3_y,
+                slot_1_mini_robot_id, slot_1_x, slot_1_y, slot_1_ai_type, slot_1_weapon_type,
+                slot_2_mini_robot_id, slot_2_x, slot_2_y, slot_2_ai_type, slot_2_weapon_type,
+                slot_3_mini_robot_id, slot_3_x, slot_3_y, slot_3_ai_type, slot_3_weapon_type,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 slot_1_mini_robot_id = excluded.slot_1_mini_robot_id,
                 slot_1_x = excluded.slot_1_x,
                 slot_1_y = excluded.slot_1_y,
+                slot_1_ai_type = excluded.slot_1_ai_type,
+                slot_1_weapon_type = excluded.slot_1_weapon_type,
                 slot_2_mini_robot_id = excluded.slot_2_mini_robot_id,
                 slot_2_x = excluded.slot_2_x,
                 slot_2_y = excluded.slot_2_y,
+                slot_2_ai_type = excluded.slot_2_ai_type,
+                slot_2_weapon_type = excluded.slot_2_weapon_type,
                 slot_3_mini_robot_id = excluded.slot_3_mini_robot_id,
                 slot_3_x = excluded.slot_3_x,
                 slot_3_y = excluded.slot_3_y,
+                slot_3_ai_type = excluded.slot_3_ai_type,
+                slot_3_weapon_type = excluded.slot_3_weapon_type,
                 updated_at = excluded.updated_at
             """,
             (
@@ -36012,12 +36139,18 @@ def admin_lab_mini_tactics_team():
                 selected_ids[0],
                 positions[0][0],
                 positions[0][1],
+                selected_ai_types[0],
+                selected_weapon_types[0],
                 selected_ids[1],
                 positions[1][0],
                 positions[1][1],
+                selected_ai_types[1],
+                selected_weapon_types[1],
                 selected_ids[2],
                 positions[2][0],
                 positions[2][1],
+                selected_ai_types[2],
+                selected_weapon_types[2],
                 now_ts,
             ),
         )
@@ -36031,6 +36164,12 @@ def admin_lab_mini_tactics_team():
         owned_rows=owned_rows,
         team_slots=team_slots,
         placement_rows=_mini_tactics_placement_rows(),
+        ai_choices=[{"value": key, "label": label} for key, label in MINI_TACTICS_AI_LABELS.items()],
+        weapon_choices=[{"value": key, "label": label} for key, label in MINI_TACTICS_WEAPON_LABELS.items()],
+        role_previews={
+            f"{ai_type}:{weapon_type}": preview
+            for (ai_type, weapon_type), preview in MINI_TACTICS_ROLE_PREVIEWS.items()
+        },
     )
 
 
@@ -36051,6 +36190,136 @@ def admin_lab_mini_tactics_start():
     return redirect(url_for("admin_lab_mini_tactics_watch", battle_id=int(battle_id)))
 
 
+@app.route("/admin/lab/mini-tactics/manual/start")
+@login_required
+def admin_lab_mini_tactics_manual_start():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    seed_raw = (request.args.get("seed") or "").strip()
+    seed = int(seed_raw) if seed_raw.isdigit() else None
+    battle_id = create_manual_mini_tactics_battle(
+        db,
+        int(session["user_id"]),
+        seed=seed,
+        ally_units=_mini_tactics_team_units_for_user(db, int(session["user_id"])),
+    )
+    return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+
+
+@app.route("/admin/lab/mini-tactics/manual/<int:battle_id>")
+@login_required
+def admin_lab_mini_tactics_manual(battle_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
+    if not row or str(row["mode"] if "mode" in row.keys() else "") != "manual_board":
+        return abort(404)
+    return _render_mini_tactics_manual(row)
+
+
+@app.route("/admin/lab/mini-tactics/manual/<int:battle_id>/action", methods=["POST"])
+@login_required
+def admin_lab_mini_tactics_manual_action(battle_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(404)
+    row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
+    if not row or str(row["mode"] if "mode" in row.keys() else "") != "manual_board":
+        return abort(404)
+    try:
+        board_state = json.loads(row["board_state_json"] or "{}")
+        map_payload = json.loads(row["map_json"] or "{}")
+        action_log = json.loads(row["action_log_json"] or "[]")
+    except json.JSONDecodeError:
+        return abort(500)
+    actor_unit_id = (request.form.get("actor_unit_id") or "").strip()
+    target_unit_id = (request.form.get("target_unit_id") or "").strip() or None
+    move_to = None
+    move_x = (request.form.get("move_x") or "").strip()
+    move_y = (request.form.get("move_y") or "").strip()
+    if move_x and move_y:
+        try:
+            move_to = {"x": int(move_x), "y": int(move_y)}
+        except ValueError:
+            flash("移動先が不正です。", "error")
+            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+    next_state, logs, error = apply_manual_turn_action(
+        board_state,
+        actor_unit_id,
+        move_to=move_to,
+        target_unit_id=target_unit_id,
+        attack_first=(request.form.get("attack_first") or "") == "1",
+        map_payload=map_payload,
+    )
+    if error:
+        flash(error, "error")
+        return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+    action_log.extend(logs)
+    result = next_state.get("result")
+    db.execute(
+        """
+        UPDATE mini_tactics_battles
+        SET status = ?,
+            board_state_json = ?,
+            action_log_json = ?,
+            units_json = ?,
+            current_turn_side = ?,
+            turn_number = ?,
+            result = ?
+        WHERE id = ?
+        """,
+        (
+            "finished" if result else "manual_active",
+            json.dumps(next_state, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(action_log, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(next_state.get("units") or [], ensure_ascii=False, separators=(",", ":")),
+            str(next_state.get("current_turn_side") or "ally"),
+            int(next_state.get("turn_number") or 1),
+            result,
+            int(battle_id),
+        ),
+    )
+    db.commit()
+    return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+
+
+def _render_mini_tactics_manual(row):
+    try:
+        map_payload = json.loads(row["map_json"] or "{}")
+        board_state = json.loads(row["board_state_json"] or "{}")
+        action_log = json.loads(row["action_log_json"] or "[]")
+    except json.JSONDecodeError:
+        return abort(500)
+    units_payload = board_state.get("units") or []
+    unit_assets = {}
+    for unit in units_payload:
+        image_path = str(unit.get("image_path") or "").strip()
+        if image_path and os.path.exists(_static_abs(image_path)):
+            unit_assets[str(unit.get("unit_id") or "")] = url_for("static", filename=image_path, v=APP_VERSION)
+    ally_units = [
+        unit
+        for unit in units_payload
+        if unit.get("side") == "ally" and not unit.get("defeated") and unit.get("unit_type") != "core"
+    ]
+    options_by_unit = {
+        str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
+        for unit in ally_units
+    }
+    return render_template(
+        "admin_lab_mini_tactics_manual.html",
+        battle=row,
+        map_payload=map_payload,
+        board_state=board_state,
+        units_payload=units_payload,
+        action_log=action_log,
+        unit_assets=unit_assets,
+        ally_units=ally_units,
+        options_by_unit=options_by_unit,
+    )
+
+
 @app.route("/admin/lab/mini-tactics/watch/<int:battle_id>")
 @login_required
 def admin_lab_mini_tactics_watch(battle_id):
@@ -36067,6 +36336,8 @@ def admin_lab_mini_tactics_watch(battle_id):
     ).fetchone()
     if not row:
         return abort(404)
+    if str(row["mode"] if "mode" in row.keys() else "") == "manual_board":
+        return _render_mini_tactics_manual(row)
     try:
         map_payload = json.loads(row["map_json"] or "{}")
         units_payload = json.loads(row["units_json"] or "[]")

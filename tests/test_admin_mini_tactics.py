@@ -7,12 +7,15 @@ import unittest
 import app as game_app
 import init_db
 from services.mini_tactics import (
+    apply_manual_turn_action,
     attackable_cells,
     build_initial_map,
     build_initial_units,
+    build_manual_board_state,
     build_turn_order,
     can_attack,
     manhattan,
+    manual_action_options,
     simulate_mini_tactics_battle,
 )
 
@@ -103,6 +106,9 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("data-placement-board", html)
         self.assertIn('name="slot_1_x"', html)
         self.assertIn('name="slot_1_y"', html)
+        self.assertIn('name="slot_1_ai_type"', html)
+        self.assertIn('name="slot_1_weapon_type"', html)
+        self.assertIn("前衛特攻", html)
         self.assertIn('data-slot-card="1"', html)
 
     def test_team_page_uses_existing_mini_robot_and_rentals(self):
@@ -152,6 +158,103 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(units[1]["source"], "owned")
             self.assertEqual(units[1]["species_key"], "hydra")
             self.assertEqual(units[2]["source"], "rental")
+
+    def test_team_page_saves_ai_and_weapon_types(self):
+        client = self._client(admin=True)
+        resp = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_mini_robot_id": "",
+                "slot_1_x": "0",
+                "slot_1_y": "0",
+                "slot_1_ai_type": "cautious",
+                "slot_1_weapon_type": "laser",
+                "slot_2_mini_robot_id": "",
+                "slot_2_x": "1",
+                "slot_2_y": "2",
+                "slot_2_ai_type": "guardian",
+                "slot_2_weapon_type": "missile",
+                "slot_3_mini_robot_id": "",
+                "slot_3_x": "2",
+                "slot_3_y": "4",
+                "slot_3_ai_type": "assault",
+                "slot_3_weapon_type": "melee",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("慎重 + レーザー = 後衛射撃", html)
+        self.assertIn("守護 + ミサイル = 支援砲撃", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            team = db.execute("SELECT * FROM mini_tactics_teams WHERE user_id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(team["slot_1_ai_type"], "cautious")
+            self.assertEqual(team["slot_1_weapon_type"], "laser")
+            self.assertEqual(team["slot_2_ai_type"], "guardian")
+            self.assertEqual(team["slot_2_weapon_type"], "missile")
+
+    def test_start_uses_saved_ai_and_weapon_types(self):
+        client = self._client(admin=True)
+        client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_x": "0",
+                "slot_1_y": "0",
+                "slot_1_ai_type": "cautious",
+                "slot_1_weapon_type": "laser",
+                "slot_2_x": "1",
+                "slot_2_y": "2",
+                "slot_2_ai_type": "guardian",
+                "slot_2_weapon_type": "missile",
+                "slot_3_x": "2",
+                "slot_3_y": "4",
+                "slot_3_ai_type": "assault",
+                "slot_3_weapon_type": "melee",
+            },
+            follow_redirects=True,
+        )
+        resp = client.post("/admin/lab/mini-tactics/start", data={"seed": "555"}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT units_json FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            allies = [u for u in json.loads(row["units_json"]) if u["side"] == "ally"]
+            self.assertEqual(allies[0]["ai_type"], "cautious")
+            self.assertEqual(allies[0]["weapon_type"], "laser")
+            self.assertEqual(allies[0]["weapon_label"], "レーザー")
+            self.assertEqual(allies[0]["attack_range"], 2)
+            self.assertEqual(allies[1]["ai_type"], "guardian")
+            self.assertEqual(allies[1]["weapon_type"], "missile")
+
+    def test_invalid_ai_and_weapon_values_fall_back_to_defaults(self):
+        client = self._client(admin=True)
+        resp = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_x": "0",
+                "slot_1_y": "0",
+                "slot_1_ai_type": "bad_ai",
+                "slot_1_weapon_type": "bad_weapon",
+                "slot_2_x": "1",
+                "slot_2_y": "2",
+                "slot_3_x": "2",
+                "slot_3_y": "4",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            team = db.execute("SELECT * FROM mini_tactics_teams WHERE user_id = ?", (self.admin_id,)).fetchone()
+            self.assertIsNone(team["slot_1_ai_type"])
+            self.assertIsNone(team["slot_1_weapon_type"])
+            units = game_app._mini_tactics_team_units_for_user(db, self.admin_id)
+            self.assertEqual(units[0]["ai_type"], "assault")
+            self.assertEqual(units[0]["weapon_type"], "melee")
 
     def test_team_page_saves_start_positions(self):
         client = self._client(admin=True)
@@ -288,6 +391,150 @@ class AdminMiniTacticsTests(unittest.TestCase):
             allies = [u for u in units if u["side"] == "ally"]
             self.assertEqual(len(allies), 3)
             self.assertTrue(all(u["source"] == "rental" for u in allies))
+
+    def test_manual_routes_are_admin_only(self):
+        anon = self._client(login=False).get("/admin/lab/mini-tactics/manual/start")
+        self.assertIn(anon.status_code, (302, 401))
+
+        user = self._client().get("/admin/lab/mini-tactics/manual/start")
+        self.assertEqual(user.status_code, 404)
+
+        admin = self._client(admin=True).get("/admin/lab/mini-tactics/manual/start?seed=777", follow_redirects=False)
+        self.assertEqual(admin.status_code, 302)
+        self.assertRegex(admin.headers.get("Location", ""), r"/admin/lab/mini-tactics/manual/\d+")
+
+    def test_manual_start_creates_board_state(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/start?seed=778", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            self.assertEqual(row["mode"], "manual_board")
+            self.assertEqual(row["status"], "manual_active")
+            state = json.loads(row["board_state_json"])
+            self.assertEqual(state["current_turn_side"], "ally")
+            self.assertEqual(state["turn_number"], 1)
+            self.assertTrue(any(u["unit_id"] == "ally_core" for u in state["units"]))
+            self.assertTrue(any(u["unit_id"] == "enemy_core" for u in state["units"]))
+
+        page = client.get(resp.headers["Location"])
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("手動戦術試験", page.get_data(as_text=True))
+
+    def test_manual_action_moves_one_ally_and_enemy_cpu_once(self):
+        client = self._client(admin=True)
+        start = client.get("/admin/lab/mini-tactics/manual/start?seed=779", follow_redirects=False)
+        battle_id = int(start.headers["Location"].rstrip("/").split("/")[-1])
+        resp = client.post(
+            f"/admin/lab/mini-tactics/manual/{battle_id}/action",
+            data={"actor_unit_id": "rental_cerberus", "move_x": "1", "move_y": "1"},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            state = json.loads(row["board_state_json"])
+            logs = json.loads(row["action_log_json"])
+            ally = next(u for u in state["units"] if u["unit_id"] == "rental_cerberus")
+            self.assertEqual((ally["x"], ally["y"]), (1, 1))
+            self.assertEqual(row["current_turn_side"], "ally")
+            self.assertEqual(int(row["turn_number"]), 2)
+            self.assertGreaterEqual(len(logs), 2)
+
+    def test_manual_move_then_attack_is_allowed(self):
+        state = build_manual_board_state(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        enemy = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_a")
+        ally.update({"x": 0, "y": 0, "weapon_type": "melee", "attack_range": 1, "atk": 8})
+        enemy.update({"x": 2, "y": 0, "hp": 6, "max_hp": 6})
+
+        next_state, logs, error = apply_manual_turn_action(
+            state,
+            ally["unit_id"],
+            move_to={"x": 1, "y": 0},
+            target_unit_id=enemy["unit_id"],
+            map_payload=build_initial_map(),
+        )
+        self.assertIsNone(error)
+        updated_enemy = next(u for u in next_state["units"] if u["unit_id"] == enemy["unit_id"])
+        self.assertLess(updated_enemy["hp"], 6)
+        self.assertTrue(any(log["type"] == "attack" for log in logs))
+
+    def test_manual_attack_then_move_is_rejected(self):
+        state = build_manual_board_state(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        enemy = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_a")
+        ally.update({"x": 1, "y": 1, "weapon_type": "melee", "attack_range": 1})
+        enemy.update({"x": 2, "y": 1})
+        _, _, error = apply_manual_turn_action(
+            state,
+            ally["unit_id"],
+            move_to={"x": 1, "y": 0},
+            target_unit_id=enemy["unit_id"],
+            attack_first=True,
+            map_payload=build_initial_map(),
+        )
+        self.assertIn("攻撃後の移動", error)
+
+    def test_manual_weapon_ranges_and_line_of_sight(self):
+        map_payload = build_initial_map()
+        attacker = {"x": 1, "y": 1, "weapon_type": "melee", "attack_range": 1}
+        target = {"x": 2, "y": 1, "defeated": False}
+        self.assertTrue(can_attack(attacker, target, map_payload))
+        target["x"] = 3
+        self.assertFalse(can_attack(attacker, target, map_payload))
+
+        laser = {"x": 1, "y": 1, "weapon_type": "laser", "attack_range": 2}
+        blocked = {"x": 3, "y": 1, "defeated": False}
+        self.assertFalse(can_attack(laser, blocked, map_payload))
+
+        missile = {"x": 1, "y": 1, "weapon_type": "missile", "attack_range": 2}
+        self.assertTrue(can_attack(missile, blocked, map_payload))
+
+    def test_manual_core_destroy_sets_result(self):
+        state = build_manual_board_state(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        core = next(u for u in state["units"] if u["unit_id"] == "enemy_core")
+        ally.update({"x": 3, "y": 2, "weapon_type": "melee", "attack_range": 1, "atk": 20})
+        next_state, logs, error = apply_manual_turn_action(
+            state,
+            ally["unit_id"],
+            target_unit_id=core["unit_id"],
+            map_payload=build_initial_map(),
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+        self.assertTrue(any(log["type"] == "result" for log in logs))
+
+    def test_manual_enemy_defeat_sets_result_even_core_alive(self):
+        state = build_manual_board_state(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        enemies = [u for u in state["units"] if u["side"] == "enemy" and u.get("unit_type") != "core"]
+        for enemy in enemies:
+            enemy["defeated"] = True
+            enemy["hp"] = 0
+        last_enemy = enemies[0]
+        last_enemy.update({"defeated": False, "hp": 1, "x": 2, "y": 0})
+        ally.update({"x": 1, "y": 0, "weapon_type": "melee", "attack_range": 1, "atk": 20})
+        next_state, _, error = apply_manual_turn_action(
+            state,
+            ally["unit_id"],
+            target_unit_id=last_enemy["unit_id"],
+            map_payload=build_initial_map(),
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+
+    def test_manual_action_options_include_move_and_attack_cells(self):
+        state = build_manual_board_state(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
+        options = manual_action_options(state, ally["unit_id"], build_initial_map())
+        self.assertIn({"x": 2, "y": 2}, options["move_cells"])
+        self.assertTrue(options["attackable_cells"])
 
     def test_existing_mini_tactics_battle_without_source_still_watches(self):
         with game_app.app.app_context():
