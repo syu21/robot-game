@@ -6990,7 +6990,22 @@ body.home-page .locked-layer-card {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: center;
+}
+.mini-tactics-speed {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-sub);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.mini-tactics-speed select {
+  padding: 7px 9px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+  color: var(--text-main);
 }
 .mini-tactics-start-form label {
   display: grid;
@@ -7122,6 +7137,8 @@ body.home-page .locked-layer-card {
   font-weight: 900;
   text-align: center;
   line-height: 1.1;
+  transition: transform 220ms ease, filter 160ms ease, opacity 180ms ease, box-shadow 180ms ease;
+  will-change: transform;
 }
 .mini-tactics-unit-core {
   display: grid;
@@ -7150,6 +7167,28 @@ body.home-page .locked-layer-card {
   border-color: rgba(248, 113, 113, 0.72);
   color: #fee2e2;
   box-shadow: 0 0 18px rgba(248, 113, 113, 0.22);
+}
+.mini-tactics-unit.is-moving {
+  z-index: 2;
+}
+.mini-tactics-unit.is-attacking {
+  filter: brightness(1.45);
+  box-shadow: 0 0 24px rgba(250, 250, 210, 0.58);
+}
+.mini-tactics-unit.is-hit {
+  animation: miniTacticsHit 260ms ease;
+}
+.mini-tactics-unit.is-ko {
+  animation: miniTacticsKo 420ms ease forwards;
+}
+.mini-tactics-unit.weapon-melee {
+  animation: miniTacticsMelee 260ms ease;
+}
+.mini-tactics-unit.weapon-laser {
+  box-shadow: 0 0 28px rgba(103, 232, 249, 0.72), 0 0 10px rgba(236, 254, 255, 0.72) inset;
+}
+.mini-tactics-unit.weapon-missile {
+  box-shadow: 0 0 28px rgba(251, 191, 36, 0.74), 0 0 14px rgba(248, 113, 113, 0.42) inset;
 }
 .mini-tactics-info-panel {
   display: grid;
@@ -7190,8 +7229,18 @@ body.home-page .locked-layer-card {
 }
 .mini-tactics-roster {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 10px 0 14px;
+}
+.mini-tactics-roster h3 {
+  margin: 0 0 8px;
+  color: #a5f3fc;
+  font-size: 0.9rem;
+}
+.mini-tactics-roster-list {
+  display: grid;
+  gap: 8px;
 }
 .mini-tactics-roster-row {
   display: grid;
@@ -7229,6 +7278,19 @@ body.home-page .locked-layer-card {
   padding-left: 18px;
   color: var(--text-sub);
 }
+@keyframes miniTacticsHit {
+  0%, 100% { transform: translate(0, 0); filter: brightness(1); }
+  35% { transform: translate(-4px, 1px); filter: brightness(1.4); }
+  65% { transform: translate(4px, -1px); filter: brightness(0.88); }
+}
+@keyframes miniTacticsKo {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.86); opacity: 0.34; filter: grayscale(0.9); }
+}
+@keyframes miniTacticsMelee {
+  0%, 100% { transform: translateX(0); }
+  45% { transform: translateX(8px) scale(1.05); }
+}
 button.secondary {
   margin-top: 8px;
   background: rgba(30, 41, 59, 0.72);
@@ -7238,6 +7300,7 @@ button.secondary {
   .market-section-heading,
   .market-sell-layout,
   .mini-tactics-info-panel,
+  .mini-tactics-roster,
   .mini-tactics-team-grid {
     grid-template-columns: 1fr;
   }

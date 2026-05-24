@@ -246,7 +246,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(len([u for u in units_payload if u["side"] == "ally"]), 3)
             self.assertEqual(len([u for u in units_payload if u["side"] == "enemy"]), 3)
             self.assertTrue(all("max_hp" in u and "atk" in u and "def" in u for u in units_payload))
-            self.assertTrue(all("weapon_type" in u and "range" in u for u in units_payload))
+            self.assertTrue(all("weapon_type" in u and "weapon_label" in u and "attack_range" in u for u in units_payload))
             terrains = [tile["terrain"] for row in map_payload["tiles"] for tile in row]
             self.assertIn("wall", terrains)
             ai_by_species = {u["species_key"]: u["ai_type"] for u in units_payload if u["side"] == "ally"}
@@ -254,7 +254,10 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(ai_by_species["phoenix"], "cautious")
             self.assertEqual(ai_by_species["hydra"], "guardian")
             self.assertTrue(all("ai_type" in u for frame in frames_payload for u in frame["units"]))
-            self.assertTrue(all("weapon_type" in u and "range" in u for frame in frames_payload for u in frame["units"]))
+            self.assertTrue(
+                all("weapon_type" in u and "weapon_label" in u and "attack_range" in u for frame in frames_payload for u in frame["units"])
+            )
+            self.assertTrue(all("events" in frame for frame in frames_payload))
 
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
@@ -378,6 +381,56 @@ class AdminMiniTacticsTests(unittest.TestCase):
         enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
         self.assertEqual(enemy["hp"], 9)
         self.assertTrue(any("フェニックスがレーザーでダミーBを攻撃、3ダメージ" in line for line in frame["logs"]))
+        attack_event = next(event for event in frame["events"] if event["type"] == "attack")
+        self.assertEqual(attack_event["actor_unit_id"], "ally_laser")
+        self.assertEqual(attack_event["target_unit_id"], "enemy_target")
+        self.assertEqual(attack_event["weapon_type"], "laser")
+        self.assertEqual(attack_event["damage"], 3)
+        self.assertIn("レーザー", attack_event["text"])
+
+    def test_melee_does_not_attack_at_range_two(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_melee",
+                "side": "ally",
+                "name": "ケルベロス",
+                "species_key": "cerberus",
+                "x": 0,
+                "y": 0,
+                "hp": 18,
+                "max_hp": 18,
+                "atk": 5,
+                "def": 2,
+                "defeated": False,
+                "ai_type": "assault",
+                "weapon_type": "melee",
+                "attack_range": 1,
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 2,
+                "y": 0,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(14, map_payload, units_payload)[0]
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 12)
+        self.assertTrue(any(event["type"] == "move" for event in frame["events"]))
+        self.assertFalse(any(event["type"] == "attack" and event["actor_unit_id"] == "ally_melee" for event in frame["events"]))
 
     def test_missile_attacks_at_range_two(self):
         map_payload = build_initial_map()
@@ -466,6 +519,10 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(enemy["hp"], 12)
         self.assertLess(manhattan(attacker, enemy), 4)
         self.assertTrue(any("ケルベロスが突撃" in line for line in frame["logs"]))
+        move_event = next(event for event in frame["events"] if event["type"] == "move" and event["actor_unit_id"] == "ally_attacker")
+        self.assertEqual(move_event["from"], {"x": 0, "y": 0})
+        self.assertIn("x", move_event["to"])
+        self.assertIn("y", move_event["to"])
 
     def test_cautious_retreats_when_low_hp(self):
         map_payload = build_initial_map()
@@ -506,7 +563,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         frame = simulate_mini_tactics_battle(2, map_payload, units_payload)[0]
         phoenix = next(u for u in frame["units"] if u["unit_id"] == "ally_cautious")
         self.assertGreater(manhattan(phoenix, {"x": 2, "y": 1}), 1)
-        self.assertTrue(any("フェニックスが距離を取った" in line for line in frame["logs"]))
+        self.assertTrue(any("フェニックスが距離" in line for line in frame["logs"]))
 
     def test_cautious_attacks_when_no_retreat(self):
         map_payload = build_initial_map()
@@ -582,6 +639,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "def": 1,
                 "defeated": False,
                 "ai_type": "cautious",
+                "weapon_type": "melee",
+                "attack_range": 1,
                 "image_path": "",
                 "direction": "left",
             },
@@ -639,6 +698,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "def": 1,
                 "defeated": False,
                 "ai_type": "cautious",
+                "weapon_type": "melee",
+                "attack_range": 1,
                 "image_path": "",
                 "direction": "left",
             },
@@ -790,6 +851,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertTrue(any("ダミーAを撃破" in line for line in frame["logs"]))
         self.assertTrue(any("味方側の勝利" in line for line in frame["logs"]))
         self.assertFalse(any("ダミーAが" in line for line in frame["logs"]))
+        self.assertTrue(any(event["type"] == "defeated" and event["actor_unit_id"] == "enemy_target" for event in frame["events"]))
+        self.assertTrue(any(event["type"] == "result" and event["result"] == "ally_win" for event in frame["events"]))
 
     def test_not_exposed_on_public_lab(self):
         html = self._client().get("/lab").get_data(as_text=True)

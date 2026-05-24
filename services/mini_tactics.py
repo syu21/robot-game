@@ -12,6 +12,14 @@ WEAPON_SPECS = {
     "laser": {"range": 2, "label": "レーザー"},
     "missile": {"range": 2, "label": "ミサイル"},
 }
+SPECIES_WEAPONS = {
+    "cerberus": "melee",
+    "phoenix": "laser",
+    "hydra": "missile",
+    "dummy_a": "melee",
+    "dummy_b": "melee",
+    "dummy_c": "melee",
+}
 RENTAL_ALLY_SPECS = (
     ("rental_cerberus", "ケルベロス", "cerberus", "assault", "melee", 18, 5, 2, "mini_robots/cerberus/normal.png"),
     ("rental_phoenix", "フェニックス", "phoenix", "cautious", "laser", 14, 4, 1, "mini_robots/phoenix/normal.png"),
@@ -53,6 +61,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
+            "weapon_label": "格闘",
+            "attack_range": 1,
             "range": 1,
             "image_path": "mini_robots/cerberus/normal.png",
             "direction": "right",
@@ -71,6 +81,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "cautious",
             "weapon_type": "laser",
+            "weapon_label": "レーザー",
+            "attack_range": 2,
             "range": 2,
             "image_path": "mini_robots/phoenix/normal.png",
             "direction": "right",
@@ -89,6 +101,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "guardian",
             "weapon_type": "missile",
+            "weapon_label": "ミサイル",
+            "attack_range": 2,
             "range": 2,
             "image_path": "mini_robots/hydra/normal.png",
             "direction": "right",
@@ -107,6 +121,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
+            "weapon_label": "格闘",
+            "attack_range": 1,
             "range": 1,
             "image_path": "",
             "direction": "left",
@@ -125,6 +141,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
+            "weapon_label": "格闘",
+            "attack_range": 1,
             "range": 1,
             "image_path": "",
             "direction": "left",
@@ -143,6 +161,8 @@ def build_initial_units():
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
+            "weapon_label": "格闘",
+            "attack_range": 1,
             "range": 1,
             "image_path": "",
             "direction": "left",
@@ -169,6 +189,8 @@ def build_rental_ally_units():
                 "defeated": False,
                 "ai_type": ai_type,
                 "weapon_type": weapon_type,
+                "weapon_label": weapon_label(weapon_type),
+                "attack_range": resolve_weapon_range(weapon_type),
                 "range": resolve_weapon_range(weapon_type),
                 "image_path": image_path,
                 "direction": "right",
@@ -227,6 +249,41 @@ def resolve_weapon_range(weapon_type):
 
 def weapon_label(weapon_type):
     return str(WEAPON_SPECS.get(str(weapon_type or "melee"), WEAPON_SPECS["melee"])["label"])
+
+
+def resolve_weapon_profile(species_key=None, ai_type=None, existing_unit=None):
+    unit = existing_unit or {}
+    weapon_type = str(unit.get("weapon_type") or "").strip()
+    if not weapon_type:
+        weapon_type = SPECIES_WEAPONS.get(str(species_key or unit.get("species_key") or ""), "melee")
+    if weapon_type not in WEAPON_SPECS:
+        weapon_type = "melee"
+    return {
+        "weapon_type": weapon_type,
+        "weapon_label": weapon_label(weapon_type),
+        "attack_range": resolve_weapon_range(weapon_type),
+        "range": resolve_weapon_range(weapon_type),
+    }
+
+
+def normalize_unit(unit):
+    normalized = dict(unit)
+    profile = resolve_weapon_profile(
+        normalized.get("species_key"),
+        normalized.get("ai_type"),
+        normalized,
+    )
+    normalized["max_hp"] = int(normalized.get("max_hp") or normalized.get("hp") or 10)
+    normalized["hp"] = int(normalized.get("hp") or normalized["max_hp"])
+    normalized["atk"] = int(normalized.get("atk") or 1)
+    normalized["def"] = int(normalized.get("def") or 0)
+    normalized["ai_type"] = str(normalized.get("ai_type") or "assault")
+    normalized["weapon_type"] = profile["weapon_type"]
+    normalized["weapon_label"] = profile["weapon_label"]
+    normalized["attack_range"] = int(normalized.get("attack_range") or normalized.get("range") or profile["attack_range"])
+    normalized["range"] = int(normalized["attack_range"])
+    normalized["defeated"] = bool(normalized.get("defeated")) or int(normalized["hp"]) <= 0
+    return normalized
 
 
 def is_wall(map_payload, x, y):
@@ -340,6 +397,52 @@ def _action_wait(unit, message=None):
     return {"type": "wait", "message": message or f"{unit['name']}が待機"}
 
 
+def build_move_event(unit, from_x, from_y, to_x, to_y, text):
+    return {
+        "type": "move",
+        "actor_unit_id": str(unit.get("unit_id") or ""),
+        "from": {"x": int(from_x), "y": int(from_y)},
+        "to": {"x": int(to_x), "y": int(to_y)},
+        "text": str(text),
+    }
+
+
+def build_attack_event(unit, target, weapon_type, damage, text):
+    return {
+        "type": "attack",
+        "actor_unit_id": str(unit.get("unit_id") or ""),
+        "target_unit_id": str(target.get("unit_id") or ""),
+        "weapon_type": str(weapon_type or "melee"),
+        "weapon_label": weapon_label(weapon_type),
+        "damage": int(damage),
+        "text": str(text),
+    }
+
+
+def build_defeated_event(unit, text):
+    return {
+        "type": "defeated",
+        "actor_unit_id": str(unit.get("unit_id") or ""),
+        "text": str(text),
+    }
+
+
+def build_wait_event(unit, text):
+    return {
+        "type": "wait",
+        "actor_unit_id": str(unit.get("unit_id") or ""),
+        "text": str(text),
+    }
+
+
+def build_result_event(result, text):
+    return {
+        "type": "result",
+        "result": str(result),
+        "text": str(text),
+    }
+
+
 def get_adjacent_enemy(unit, units):
     enemies = [
         u
@@ -352,7 +455,7 @@ def get_adjacent_enemy(unit, units):
 
 
 def find_targets_in_range(unit, units, map_payload=None):
-    attack_range = int(unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
+    attack_range = int(unit.get("attack_range") or unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
     targets = [
         enemy
         for enemy in living_enemies(unit, units)
@@ -361,9 +464,34 @@ def find_targets_in_range(unit, units, map_payload=None):
     return sorted(targets, key=lambda enemy: (manhattan(unit, enemy), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
 
 
+def can_attack(attacker, target):
+    if not target or target.get("defeated"):
+        return False
+    return manhattan(attacker, target) <= int(
+        attacker.get("attack_range") or attacker.get("range") or resolve_weapon_range(attacker.get("weapon_type"))
+    )
+
+
+def choose_attack_target(unit, units, ai_type=None):
+    targets = find_targets_in_range(unit, units)
+    if not targets:
+        return None
+    if str(ai_type or unit.get("ai_type") or "assault") == "guardian":
+        allies = living_allies(unit, units)
+        return min(
+            targets,
+            key=lambda enemy: (
+                _enemy_pressure_score(enemy, allies),
+                int(enemy.get("hp") or 0),
+                manhattan(unit, enemy),
+                str(enemy.get("unit_id") or ""),
+            ),
+        )
+    return min(targets, key=lambda enemy: (manhattan(unit, enemy), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
+
+
 def get_attack_target(unit, units, map_payload=None):
-    targets = find_targets_in_range(unit, units, map_payload)
-    return targets[0] if targets else None
+    return choose_attack_target(unit, units, unit.get("ai_type"))
 
 
 def _enemy_pressure_score(enemy, allies):
@@ -373,14 +501,7 @@ def _enemy_pressure_score(enemy, allies):
 
 
 def get_guardian_adjacent_enemy(unit, units):
-    enemies = find_targets_in_range(unit, units)
-    if not enemies:
-        return None
-    allies = living_allies(unit, units)
-    return min(
-        enemies,
-        key=lambda enemy: (_enemy_pressure_score(enemy, allies), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")),
-    )
+    return choose_attack_target(unit, units, "guardian")
 
 
 def find_guardian_enemy(unit, units):
@@ -413,6 +534,8 @@ def choose_cautious_move(unit, units, map_payload, rng):
     if is_low_hp:
         step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="far")
         if step:
+            if get_attack_target(unit, units, map_payload):
+                return _action_move(unit, step[0], step[1], f"{unit['name']}が距離を取りながら射程を維持")
             return _action_move(unit, step[0], step[1], f"{unit['name']}が距離を取った")
         adjacent = get_attack_target(unit, units, map_payload)
         if adjacent:
@@ -430,6 +553,8 @@ def choose_cautious_move(unit, units, map_payload, rng):
 def choose_guardian_move(unit, units, map_payload, rng):
     adjacent = get_guardian_adjacent_enemy(unit, units)
     if adjacent:
+        if str(unit.get("weapon_type") or "") == "missile":
+            return _action_attack(unit, adjacent, f"{unit['name']}が味方を守る位置からミサイル支援")
         return _action_attack(unit, adjacent)
     nearest_ally = find_nearest_ally(unit, units)
     if nearest_ally and manhattan(unit, nearest_ally) > 1:
@@ -486,20 +611,12 @@ def serialize_frames(frames):
 
 
 def simulate_mini_tactics_battle(seed, map_payload, units_payload):
-    units = [dict(unit) for unit in units_payload]
-    for unit in units:
-        unit["max_hp"] = int(unit.get("max_hp") or unit.get("hp") or 10)
-        unit["hp"] = int(unit.get("hp") or unit["max_hp"])
-        unit["atk"] = int(unit.get("atk") or 1)
-        unit["def"] = int(unit.get("def") or 0)
-        unit["ai_type"] = str(unit.get("ai_type") or "assault")
-        unit["weapon_type"] = str(unit.get("weapon_type") or "melee")
-        unit["range"] = int(unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
-        unit["defeated"] = bool(unit.get("defeated")) or int(unit["hp"]) <= 0
+    units = [normalize_unit(unit) for unit in units_payload]
     frames = []
     result = None
     for turn in range(1, MAX_TURNS + 1):
         logs = []
+        events = []
         for unit in sorted(units, key=lambda item: str(item.get("unit_id") or "")):
             if unit.get("defeated"):
                 continue
@@ -518,17 +635,26 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
                     None,
                 )
                 if target is None:
-                    logs.append(f"{unit['name']}が待機")
+                    text = f"{unit['name']}が待機"
+                    logs.append(text)
+                    events.append(build_wait_event(unit, text))
                     continue
                 damage = max(1, int(unit.get("atk") or 1) - int(target.get("def") or 0))
                 target["hp"] = max(0, int(target.get("hp") or 0) - int(damage))
-                logs.append(f"{action['message']}、{damage}ダメージ")
+                weapon_type = str(unit.get("weapon_type") or "melee")
+                text = f"{action['message']}、{damage}ダメージ"
+                logs.append(text)
+                events.append(build_attack_event(unit, target, weapon_type, damage, text))
                 if int(target["hp"]) <= 0 and not target.get("defeated"):
                     target["defeated"] = True
-                    logs.append(f"{target['name']}を撃破")
+                    defeated_text = f"{target['name']}を撃破"
+                    logs.append(defeated_text)
+                    events.append(build_defeated_event(target, defeated_text))
                 result = _battle_result(units)
                 if result:
-                    logs.append(_result_log(result))
+                    result_text = _result_log(result)
+                    logs.append(result_text)
+                    events.append(build_result_event(result, result_text))
                     break
                 continue
 
@@ -541,16 +667,21 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
                 unit["y"] = int(ny)
                 unit["direction"] = _direction_from_delta(nx - before_x, ny - before_y, unit.get("direction"))
                 logs.append(action["message"])
+                events.append(build_move_event(unit, before_x, before_y, nx, ny, action["message"]))
             else:
                 logs.append(action["message"])
+                events.append(build_wait_event(unit, action["message"]))
         if not result and turn >= MAX_TURNS:
             result = _battle_result(units) or "draw"
-            logs.append(_result_log(result))
+            result_text = _result_log(result)
+            logs.append(result_text)
+            events.append(build_result_event(result, result_text))
         frames.append(
             {
                 "turn": turn,
                 "units": [dict(unit) for unit in units],
                 "logs": logs,
+                "events": events,
                 "result": result,
             }
         )
@@ -562,7 +693,7 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
 def create_mini_tactics_battle(db, admin_user_id, seed=None, ally_units=None):
     battle_seed = int(seed if seed is not None else random.randint(100000, 999999999))
     map_payload = build_initial_map()
-    units_payload = build_units_with_allies(ally_units) if ally_units is not None else build_initial_units()
+    units_payload = [normalize_unit(unit) for unit in (build_units_with_allies(ally_units) if ally_units is not None else build_initial_units())]
     frames = simulate_mini_tactics_battle(battle_seed, map_payload, units_payload)
     now = int(time.time())
     cur = db.execute(

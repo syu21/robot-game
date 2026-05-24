@@ -11,7 +11,18 @@
       <div class="mini-tactics-result" id="miniTacticsResult"></div>
     </div>
     <div class="mini-tactics-controls">
+      <button type="button" id="miniTacticsPrev">1ターン戻る</button>
+      <button type="button" id="miniTacticsToggle">一時停止</button>
+      <button type="button" id="miniTacticsNext">1ターン進む</button>
       <button type="button" id="miniTacticsReplay">最初から再生</button>
+      <label class="mini-tactics-speed">
+        速度
+        <select id="miniTacticsSpeed">
+          <option value="1300">x0.5</option>
+          <option value="650" selected>x1</option>
+          <option value="325">x2</option>
+        </select>
+      </label>
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
     </div>
   </div>
@@ -28,7 +39,16 @@
     <aside class="mini-tactics-info-panel">
       <section class="mini-tactics-roster-panel">
         <h2>ユニット情報</h2>
-        <div class="mini-tactics-roster" id="miniTacticsRoster"></div>
+        <div class="mini-tactics-roster" id="miniTacticsRoster">
+          <div>
+            <h3>味方チーム</h3>
+            <div class="mini-tactics-roster-list" id="miniTacticsRosterAlly"></div>
+          </div>
+          <div>
+            <h3>敵チーム</h3>
+            <div class="mini-tactics-roster-list" id="miniTacticsRosterEnemy"></div>
+          </div>
+        </div>
       </section>
       <section class="mini-tactics-log">
         <h2>イベントログ</h2>
@@ -48,13 +68,21 @@
   var resultEl = document.getElementById("miniTacticsResult");
   var logEl = document.getElementById("miniTacticsLog");
   var rosterEl = document.getElementById("miniTacticsRoster");
+  var rosterAllyEl = document.getElementById("miniTacticsRosterAlly");
+  var rosterEnemyEl = document.getElementById("miniTacticsRosterEnemy");
   var replayBtn = document.getElementById("miniTacticsReplay");
+  var toggleBtn = document.getElementById("miniTacticsToggle");
+  var prevBtn = document.getElementById("miniTacticsPrev");
+  var nextBtn = document.getElementById("miniTacticsNext");
+  var speedSelect = document.getElementById("miniTacticsSpeed");
   if (!board || !turnEl || !logEl || !frames.length) return;
 
   var width = Number(mapPayload.width || 5);
   var height = Number(mapPayload.height || 5);
   var timer = null;
   var index = 0;
+  var isPaused = false;
+  var previousPositions = {};
 
   function tileTerrain(x, y) {
     var rows = mapPayload.tiles || [];
@@ -73,6 +101,7 @@
     var el = document.createElement("div");
     el.className = "mini-tactics-unit is-" + String(unit.side || "ally");
     if (unit.defeated) el.className += " is-defeated";
+    el.setAttribute("data-unit-id", String(unit.unit_id || ""));
     el.title = String(unit.name || "");
     var core = document.createElement("div");
     core.className = "mini-tactics-unit-core";
@@ -87,7 +116,7 @@
     el.appendChild(core);
     var weapon = document.createElement("div");
     weapon.className = "mini-tactics-weapon";
-    weapon.textContent = String(unit.weapon_type || "melee") + " R" + String(unit.range || 1);
+    weapon.textContent = String(unit.weapon_label || unit.weapon_type || "格闘") + " R" + String(unit.attack_range || unit.range || 1);
     el.appendChild(weapon);
     el.appendChild(hpBar(unit));
     return el;
@@ -113,7 +142,8 @@
 
   function renderRoster(frame) {
     if (!rosterEl) return;
-    rosterEl.innerHTML = "";
+    if (rosterAllyEl) rosterAllyEl.innerHTML = "";
+    if (rosterEnemyEl) rosterEnemyEl.innerHTML = "";
     (frame.units || []).forEach(function (unit) {
       var row = document.createElement("div");
       row.className = "mini-tactics-roster-row is-" + String(unit.side || "ally");
@@ -123,11 +153,58 @@
       name.textContent = String(unit.name || "");
       var hpText = document.createElement("div");
       hpText.className = "mini-tactics-roster-hp";
-      hpText.textContent = String(unit.ai_type || "assault") + " / " + String(unit.weapon_type || "melee") + " / 射程" + String(unit.range || 1) + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
+      hpText.textContent = String(unit.ai_type || "assault") + " / " + String(unit.weapon_label || unit.weapon_type || "格闘") + " / 射程" + String(unit.attack_range || unit.range || 1) + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0)) + (unit.defeated ? " / 撃破" : "");
       row.appendChild(name);
       row.appendChild(hpText);
       row.appendChild(hpBar(unit));
-      rosterEl.appendChild(row);
+      if (String(unit.side || "ally") === "enemy") {
+        if (rosterEnemyEl) rosterEnemyEl.appendChild(row);
+      } else if (rosterAllyEl) {
+        rosterAllyEl.appendChild(row);
+      }
+    });
+  }
+
+  function unitElement(unitId) {
+    return board.querySelector('[data-unit-id="' + String(unitId).replace(/"/g, "") + '"]');
+  }
+
+  function applyMoveAnimation(unit, cell) {
+    var unitId = String(unit.unit_id || "");
+    var prev = previousPositions[unitId];
+    if (!prev) return;
+    var dx = Number(prev.x) - Number(unit.x);
+    var dy = Number(prev.y) - Number(unit.y);
+    if (!dx && !dy) return;
+    var rect = cell.getBoundingClientRect();
+    var el = cell.querySelector("[data-unit-id]");
+    if (!el) return;
+    el.style.transform = "translate(" + String(dx * rect.width) + "px, " + String(dy * rect.height) + "px)";
+    window.requestAnimationFrame(function () {
+      el.classList.add("is-moving");
+      el.style.transform = "translate(0, 0)";
+    });
+  }
+
+  function flashUnit(unitId, className) {
+    var el = unitElement(unitId);
+    if (!el) return;
+    el.classList.add(className);
+    window.setTimeout(function () {
+      el.classList.remove(className);
+    }, 360);
+  }
+
+  function flashEvents(frame) {
+    (frame.events || []).forEach(function (event) {
+      if (event.type === "attack") {
+        flashUnit(event.actor_unit_id, "is-attacking");
+        flashUnit(event.target_unit_id, "is-hit");
+        flashUnit(event.actor_unit_id, "weapon-" + String(event.weapon_type || "melee"));
+      }
+      if (event.type === "defeated") {
+        flashUnit(event.actor_unit_id, "is-ko");
+      }
     });
   }
 
@@ -142,7 +219,10 @@
         var cell = document.createElement("div");
         cell.className = "mini-tactics-cell terrain-" + tileTerrain(x, y);
         var unit = unitsByCell[String(x) + "," + String(y)];
-        if (unit) cell.appendChild(unitToken(unit));
+        if (unit) {
+          cell.appendChild(unitToken(unit));
+          applyMoveAnimation(unit, cell);
+        }
         board.appendChild(cell);
       }
     }
@@ -155,25 +235,75 @@
       li.textContent = String(line || "");
       logEl.appendChild(li);
     });
+    window.setTimeout(function () {
+      flashEvents(frame);
+    }, 40);
+    previousPositions = {};
+    (frame.units || []).forEach(function (unit) {
+      previousPositions[String(unit.unit_id || "")] = {x: Number(unit.x), y: Number(unit.y)};
+    });
+  }
+
+  function delay() {
+    return Number(speedSelect && speedSelect.value ? speedSelect.value : 650);
+  }
+
+  function stopTimer() {
+    if (timer) window.clearInterval(timer);
+    timer = null;
   }
 
   function play() {
     renderFrame(frames[index]);
     index += 1;
     if (index >= frames.length) {
-      window.clearInterval(timer);
-      timer = null;
+      stopTimer();
+      isPaused = true;
+      if (toggleBtn) toggleBtn.textContent = "再開";
     }
   }
 
+  function startTimer() {
+    stopTimer();
+    if (!isPaused) timer = window.setInterval(play, delay());
+  }
+
   function restart() {
-    if (timer) window.clearInterval(timer);
+    stopTimer();
+    previousPositions = {};
     index = 0;
+    isPaused = false;
+    if (toggleBtn) toggleBtn.textContent = "一時停止";
     play();
-    timer = window.setInterval(play, 650);
+    startTimer();
+  }
+
+  function showFrame(nextIndex) {
+    stopTimer();
+    isPaused = true;
+    if (toggleBtn) toggleBtn.textContent = "再開";
+    index = Math.max(0, Math.min(frames.length - 1, nextIndex));
+    previousPositions = {};
+    renderFrame(frames[index]);
+    index = Math.min(frames.length, index + 1);
+  }
+
+  function toggle() {
+    isPaused = !isPaused;
+    if (toggleBtn) toggleBtn.textContent = isPaused ? "再開" : "一時停止";
+    if (isPaused) {
+      stopTimer();
+    } else {
+      if (index >= frames.length) index = 0;
+      startTimer();
+    }
   }
 
   if (replayBtn) replayBtn.addEventListener("click", restart);
+  if (toggleBtn) toggleBtn.addEventListener("click", toggle);
+  if (prevBtn) prevBtn.addEventListener("click", function () { showFrame(index - 2); });
+  if (nextBtn) nextBtn.addEventListener("click", function () { showFrame(index); });
+  if (speedSelect) speedSelect.addEventListener("change", startTimer);
   restart();
 })();
 </script>
