@@ -20,10 +20,18 @@ SPECIES_WEAPONS = {
     "dummy_b": "melee",
     "dummy_c": "melee",
 }
+SPECIES_SPD = {
+    "cerberus": 4,
+    "phoenix": 6,
+    "hydra": 3,
+    "dummy_a": 4,
+    "dummy_b": 4,
+    "dummy_c": 4,
+}
 RENTAL_ALLY_SPECS = (
-    ("rental_cerberus", "ケルベロス", "cerberus", "assault", "melee", 18, 5, 2, "mini_robots/cerberus/normal.png"),
-    ("rental_phoenix", "フェニックス", "phoenix", "cautious", "laser", 14, 4, 1, "mini_robots/phoenix/normal.png"),
-    ("rental_hydra", "ヒュドラ", "hydra", "guardian", "missile", 20, 3, 3, "mini_robots/hydra/normal.png"),
+    ("rental_cerberus", "ケルベロス", "cerberus", "assault", "melee", 18, 5, 2, 4, "mini_robots/cerberus/normal.png"),
+    ("rental_phoenix", "フェニックス", "phoenix", "cautious", "laser", 14, 4, 1, 6, "mini_robots/phoenix/normal.png"),
+    ("rental_hydra", "ヒュドラ", "hydra", "guardian", "missile", 20, 3, 3, 3, "mini_robots/hydra/normal.png"),
 )
 
 
@@ -58,6 +66,7 @@ def build_initial_units():
             "max_hp": 18,
             "atk": 5,
             "def": 2,
+            "spd": 4,
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
@@ -78,6 +87,7 @@ def build_initial_units():
             "max_hp": 14,
             "atk": 4,
             "def": 1,
+            "spd": 6,
             "defeated": False,
             "ai_type": "cautious",
             "weapon_type": "laser",
@@ -98,6 +108,7 @@ def build_initial_units():
             "max_hp": 20,
             "atk": 3,
             "def": 3,
+            "spd": 3,
             "defeated": False,
             "ai_type": "guardian",
             "weapon_type": "missile",
@@ -118,6 +129,7 @@ def build_initial_units():
             "max_hp": 12,
             "atk": 3,
             "def": 1,
+            "spd": 4,
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
@@ -138,6 +150,7 @@ def build_initial_units():
             "max_hp": 12,
             "atk": 3,
             "def": 1,
+            "spd": 4,
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
@@ -158,6 +171,7 @@ def build_initial_units():
             "max_hp": 12,
             "atk": 3,
             "def": 1,
+            "spd": 4,
             "defeated": False,
             "ai_type": "assault",
             "weapon_type": "melee",
@@ -172,7 +186,7 @@ def build_initial_units():
 
 def build_rental_ally_units():
     units = []
-    for index, (unit_id, name, species_key, ai_type, weapon_type, hp, atk, defense, image_path) in enumerate(RENTAL_ALLY_SPECS):
+    for index, (unit_id, name, species_key, ai_type, weapon_type, hp, atk, defense, spd, image_path) in enumerate(RENTAL_ALLY_SPECS):
         x, y = ALLY_START_POSITIONS[index]
         units.append(
             {
@@ -186,6 +200,7 @@ def build_rental_ally_units():
                 "max_hp": hp,
                 "atk": atk,
                 "def": defense,
+                "spd": spd,
                 "defeated": False,
                 "ai_type": ai_type,
                 "weapon_type": weapon_type,
@@ -277,6 +292,7 @@ def normalize_unit(unit):
     normalized["hp"] = int(normalized.get("hp") or normalized["max_hp"])
     normalized["atk"] = int(normalized.get("atk") or 1)
     normalized["def"] = int(normalized.get("def") or 0)
+    normalized["spd"] = int(normalized.get("spd") or SPECIES_SPD.get(str(normalized.get("species_key") or ""), 4))
     normalized["ai_type"] = str(normalized.get("ai_type") or "assault")
     normalized["weapon_type"] = profile["weapon_type"]
     normalized["weapon_label"] = profile["weapon_label"]
@@ -292,6 +308,10 @@ def is_wall(map_payload, x, y):
             if int(tile.get("x") or 0) == int(x) and int(tile.get("y") or 0) == int(y):
                 return str(tile.get("terrain") or "floor") == "wall"
     return False
+
+
+def in_bounds(map_payload, x, y):
+    return 0 <= int(x) < int(map_payload.get("width") or BOARD_SIZE) and 0 <= int(y) < int(map_payload.get("height") or BOARD_SIZE)
 
 
 def _tile_is_wall(map_payload, x, y):
@@ -455,25 +475,92 @@ def get_adjacent_enemy(unit, units):
 
 
 def find_targets_in_range(unit, units, map_payload=None):
-    attack_range = int(unit.get("attack_range") or unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
     targets = [
         enemy
         for enemy in living_enemies(unit, units)
-        if manhattan(unit, enemy) <= attack_range
+        if can_attack(unit, enemy, map_payload)
     ]
     return sorted(targets, key=lambda enemy: (manhattan(unit, enemy), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
 
 
-def can_attack(attacker, target):
+def has_line_of_sight(attacker, target, map_payload, weapon_type=None):
+    weapon = str(weapon_type or attacker.get("weapon_type") or "melee")
+    if weapon == "missile":
+        return True
+    if weapon == "melee":
+        return manhattan(attacker, target) == 1
+    if weapon != "laser":
+        return True
+    ax = int(attacker["x"])
+    ay = int(attacker["y"])
+    tx = int(target["x"])
+    ty = int(target["y"])
+    if ax != tx and ay != ty:
+        return False
+    step_x = 0 if ax == tx else (1 if tx > ax else -1)
+    step_y = 0 if ay == ty else (1 if ty > ay else -1)
+    x = ax + step_x
+    y = ay + step_y
+    while (x, y) != (tx, ty):
+        if is_wall(map_payload, x, y):
+            return False
+        x += step_x
+        y += step_y
+    return True
+
+
+def can_attack(attacker, target, map_payload=None):
     if not target or target.get("defeated"):
         return False
-    return manhattan(attacker, target) <= int(
-        attacker.get("attack_range") or attacker.get("range") or resolve_weapon_range(attacker.get("weapon_type"))
-    )
+    weapon_type = str(attacker.get("weapon_type") or "melee")
+    attack_range = int(attacker.get("attack_range") or attacker.get("range") or resolve_weapon_range(weapon_type))
+    distance = manhattan(attacker, target)
+    if distance > attack_range:
+        return False
+    if weapon_type == "laser" and int(attacker["x"]) != int(target["x"]) and int(attacker["y"]) != int(target["y"]):
+        return False
+    if weapon_type == "melee" and distance != 1:
+        return False
+    return has_line_of_sight(attacker, target, map_payload or build_initial_map(), weapon_type)
 
 
-def choose_attack_target(unit, units, ai_type=None):
-    targets = find_targets_in_range(unit, units)
+def attackable_cells(unit, map_payload):
+    weapon_type = str(unit.get("weapon_type") or "melee")
+    attack_range = int(unit.get("attack_range") or unit.get("range") or resolve_weapon_range(weapon_type))
+    origin_x = int(unit["x"])
+    origin_y = int(unit["y"])
+    cells = []
+    if weapon_type == "laser":
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for distance in range(1, attack_range + 1):
+                x = origin_x + dx * distance
+                y = origin_y + dy * distance
+                if not in_bounds(map_payload, x, y):
+                    break
+                if is_wall(map_payload, x, y):
+                    break
+                cells.append({"x": x, "y": y})
+        return cells
+    for y in range(origin_y - attack_range, origin_y + attack_range + 1):
+        for x in range(origin_x - attack_range, origin_x + attack_range + 1):
+            if x == origin_x and y == origin_y:
+                continue
+            if not in_bounds(map_payload, x, y):
+                continue
+            if manhattan(unit, {"x": x, "y": y}) > attack_range:
+                continue
+            if weapon_type == "melee" and is_wall(map_payload, x, y):
+                continue
+            cells.append({"x": x, "y": y})
+    return cells
+
+
+def targetable_unit_ids(unit, units, map_payload):
+    return [str(target.get("unit_id") or "") for target in find_targets_in_range(unit, units, map_payload)]
+
+
+def choose_attack_target(unit, units, ai_type=None, map_payload=None):
+    targets = find_targets_in_range(unit, units, map_payload)
     if not targets:
         return None
     if str(ai_type or unit.get("ai_type") or "assault") == "guardian":
@@ -491,7 +578,7 @@ def choose_attack_target(unit, units, ai_type=None):
 
 
 def get_attack_target(unit, units, map_payload=None):
-    return choose_attack_target(unit, units, unit.get("ai_type"))
+    return choose_attack_target(unit, units, unit.get("ai_type"), map_payload)
 
 
 def _enemy_pressure_score(enemy, allies):
@@ -500,8 +587,8 @@ def _enemy_pressure_score(enemy, allies):
     return min(manhattan(enemy, ally) for ally in allies)
 
 
-def get_guardian_adjacent_enemy(unit, units):
-    return choose_attack_target(unit, units, "guardian")
+def get_guardian_adjacent_enemy(unit, units, map_payload=None):
+    return choose_attack_target(unit, units, "guardian", map_payload)
 
 
 def find_guardian_enemy(unit, units):
@@ -515,10 +602,24 @@ def find_guardian_enemy(unit, units):
     )
 
 
+def blocked_laser_target(unit, units, map_payload):
+    if str(unit.get("weapon_type") or "") != "laser":
+        return None
+    attack_range = int(unit.get("attack_range") or unit.get("range") or 2)
+    for enemy in living_enemies(unit, units):
+        same_line = int(unit["x"]) == int(enemy["x"]) or int(unit["y"]) == int(enemy["y"])
+        if same_line and manhattan(unit, enemy) <= attack_range and not has_line_of_sight(unit, enemy, map_payload, "laser"):
+            return enemy
+    return None
+
+
 def choose_assault_move(unit, units, map_payload, rng):
     target = get_attack_target(unit, units, map_payload)
     if target:
         return _action_attack(unit, target)
+    blocked = blocked_laser_target(unit, units, map_payload)
+    if blocked:
+        return _action_wait(unit, f"{unit['name']}は壁に遮られて狙えない")
     target = find_nearest_enemy(unit, units)
     step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
     if step:
@@ -544,6 +645,9 @@ def choose_cautious_move(unit, units, map_payload, rng):
     adjacent = get_attack_target(unit, units, map_payload)
     if adjacent:
         return _action_attack(unit, adjacent)
+    blocked = blocked_laser_target(unit, units, map_payload)
+    if blocked:
+        return _action_wait(unit, f"{unit['name']}は壁に遮られて狙えない")
     step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
     if step:
         return _action_move(unit, step[0], step[1], f"{unit['name']}が慎重に前進")
@@ -551,11 +655,14 @@ def choose_cautious_move(unit, units, map_payload, rng):
 
 
 def choose_guardian_move(unit, units, map_payload, rng):
-    adjacent = get_guardian_adjacent_enemy(unit, units)
+    adjacent = get_guardian_adjacent_enemy(unit, units, map_payload)
     if adjacent:
         if str(unit.get("weapon_type") or "") == "missile":
             return _action_attack(unit, adjacent, f"{unit['name']}が味方を守る位置からミサイル支援")
         return _action_attack(unit, adjacent)
+    blocked = blocked_laser_target(unit, units, map_payload)
+    if blocked:
+        return _action_wait(unit, f"{unit['name']}は壁に遮られて狙えない")
     nearest_ally = find_nearest_ally(unit, units)
     if nearest_ally and manhattan(unit, nearest_ally) > 1:
         step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), nearest_ally, rng, prefer="near")
@@ -610,6 +717,26 @@ def serialize_frames(frames):
     return json.dumps(frames, ensure_ascii=False, separators=(",", ":"))
 
 
+def build_turn_order(units, seed, turn):
+    living = [unit for unit in units if not unit.get("defeated")]
+    decorated = []
+    for unit in living:
+        tie = random.Random(f"{int(seed)}:{int(turn)}:{unit.get('unit_id')}:order").random()
+        decorated.append((-int(unit.get("spd") or 0), tie, str(unit.get("unit_id") or ""), unit))
+    decorated.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[3] for item in decorated]
+
+
+def _frame_actor_payload(actor, units, map_payload):
+    if not actor:
+        return None, [], []
+    return (
+        str(actor.get("unit_id") or ""),
+        attackable_cells(actor, map_payload),
+        targetable_unit_ids(actor, units, map_payload),
+    )
+
+
 def simulate_mini_tactics_battle(seed, map_payload, units_payload):
     units = [normalize_unit(unit) for unit in units_payload]
     frames = []
@@ -617,7 +744,19 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
     for turn in range(1, MAX_TURNS + 1):
         logs = []
         events = []
-        for unit in sorted(units, key=lambda item: str(item.get("unit_id") or "")):
+        acting_units = build_turn_order(units, seed, turn)
+        acting_order = [
+            {
+                "unit_id": str(unit.get("unit_id") or ""),
+                "name": str(unit.get("name") or ""),
+                "side": str(unit.get("side") or ""),
+                "spd": int(unit.get("spd") or 0),
+            }
+            for unit in acting_units
+        ]
+        order_text = "行動順: " + " → ".join(item["name"] for item in acting_order)
+        logs.append(order_text)
+        for unit in acting_units:
             if unit.get("defeated"):
                 continue
 
@@ -676,12 +815,18 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
             result_text = _result_log(result)
             logs.append(result_text)
             events.append(build_result_event(result, result_text))
+        current_actor = next((unit for unit in acting_units if not unit.get("defeated")), None)
+        current_actor_unit_id, attackable, targetable = _frame_actor_payload(current_actor, units, map_payload)
         frames.append(
             {
                 "turn": turn,
                 "units": [dict(unit) for unit in units],
                 "logs": logs,
                 "events": events,
+                "acting_order": acting_order,
+                "current_actor_unit_id": current_actor_unit_id,
+                "attackable_cells": attackable,
+                "targetable_unit_ids": targetable,
                 "result": result,
             }
         )

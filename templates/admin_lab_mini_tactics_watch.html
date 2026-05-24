@@ -39,6 +39,10 @@
     <aside class="mini-tactics-info-panel">
       <section class="mini-tactics-roster-panel">
         <h2>ユニット情報</h2>
+        <div class="mini-tactics-order-panel">
+          <h3>行動順</h3>
+          <ol id="miniTacticsOrder"></ol>
+        </div>
         <div class="mini-tactics-roster" id="miniTacticsRoster">
           <div>
             <h3>味方チーム</h3>
@@ -70,6 +74,7 @@
   var rosterEl = document.getElementById("miniTacticsRoster");
   var rosterAllyEl = document.getElementById("miniTacticsRosterAlly");
   var rosterEnemyEl = document.getElementById("miniTacticsRosterEnemy");
+  var orderEl = document.getElementById("miniTacticsOrder");
   var replayBtn = document.getElementById("miniTacticsReplay");
   var toggleBtn = document.getElementById("miniTacticsToggle");
   var prevBtn = document.getElementById("miniTacticsPrev");
@@ -153,7 +158,7 @@
       name.textContent = String(unit.name || "");
       var hpText = document.createElement("div");
       hpText.className = "mini-tactics-roster-hp";
-      hpText.textContent = String(unit.ai_type || "assault") + " / " + String(unit.weapon_label || unit.weapon_type || "格闘") + " / 射程" + String(unit.attack_range || unit.range || 1) + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0)) + (unit.defeated ? " / 撃破" : "");
+      hpText.textContent = String(unit.ai_type || "assault") + " / " + String(unit.weapon_label || unit.weapon_type || "格闘") + " / 射程" + String(unit.attack_range || unit.range || 1) + " / SPD " + String(unit.spd || 0) + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0)) + (unit.defeated ? " / 撃破" : "");
       row.appendChild(name);
       row.appendChild(hpText);
       row.appendChild(hpBar(unit));
@@ -162,6 +167,17 @@
       } else if (rosterAllyEl) {
         rosterAllyEl.appendChild(row);
       }
+    });
+  }
+
+  function renderOrder(frame) {
+    if (!orderEl) return;
+    orderEl.innerHTML = "";
+    (frame.acting_order || []).forEach(function (item) {
+      var li = document.createElement("li");
+      li.textContent = String(item.name || item.unit_id || "") + " / SPD " + String(item.spd || 0);
+      if (String(item.unit_id || "") === String(frame.current_actor_unit_id || "")) li.className = "is-current";
+      orderEl.appendChild(li);
     });
   }
 
@@ -210,15 +226,25 @@
 
   function renderFrame(frame) {
     var unitsByCell = {};
+    var attackableByCell = {};
+    var targetableIds = {};
     (frame.units || []).forEach(function (unit) {
       unitsByCell[String(Number(unit.x)) + "," + String(Number(unit.y))] = unit;
+    });
+    (frame.attackable_cells || []).forEach(function (cell) {
+      attackableByCell[String(Number(cell.x)) + "," + String(Number(cell.y))] = true;
+    });
+    (frame.targetable_unit_ids || []).forEach(function (unitId) {
+      targetableIds[String(unitId)] = true;
     });
     board.innerHTML = "";
     for (var y = 0; y < height; y += 1) {
       for (var x = 0; x < width; x += 1) {
         var cell = document.createElement("div");
         cell.className = "mini-tactics-cell terrain-" + tileTerrain(x, y);
+        if (attackableByCell[String(x) + "," + String(y)]) cell.className += " is-attackable";
         var unit = unitsByCell[String(x) + "," + String(y)];
+        if (unit && targetableIds[String(unit.unit_id || "")]) cell.className += " is-targetable";
         if (unit) {
           cell.appendChild(unitToken(unit));
           applyMoveAnimation(unit, cell);
@@ -229,6 +255,7 @@
     turnEl.textContent = "turn " + String(frame.turn || 0) + " / " + String(frames.length);
     if (resultEl) resultEl.textContent = resultLabel(frame.result || "");
     renderRoster(frame);
+    renderOrder(frame);
     logEl.innerHTML = "";
     (frame.logs || []).forEach(function (line) {
       var li = document.createElement("li");

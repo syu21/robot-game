@@ -34356,9 +34356,9 @@ def _mini_robot_catalog_rows(db, user_id):
 
 
 MINI_TACTICS_SPECIES_STATS = {
-    "cerberus": {"hp": 18, "atk": 5, "def": 2, "ai_type": "assault", "weapon_type": "melee", "range": 1},
-    "phoenix": {"hp": 14, "atk": 4, "def": 1, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
-    "hydra": {"hp": 20, "atk": 3, "def": 3, "ai_type": "guardian", "weapon_type": "missile", "range": 2},
+    "cerberus": {"hp": 18, "atk": 5, "def": 2, "spd": 4, "ai_type": "assault", "weapon_type": "melee", "range": 1},
+    "phoenix": {"hp": 14, "atk": 4, "def": 1, "spd": 6, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
+    "hydra": {"hp": 20, "atk": 3, "def": 3, "spd": 3, "ai_type": "guardian", "weapon_type": "missile", "range": 2},
 }
 
 
@@ -34399,6 +34399,7 @@ def _mini_tactics_unit_from_robot(robot_row, slot_index):
         "max_hp": hp,
         "atk": int(stats["atk"]) + growth_bonus,
         "def": int(stats["def"]),
+        "spd": int(stats["spd"]),
         "defeated": False,
         "ai_type": _mini_tactics_ai_for_robot(robot_row),
         "weapon_type": str(stats["weapon_type"]),
@@ -34490,6 +34491,7 @@ def _mini_tactics_team_view(db, user_id):
             "hp": unit["hp"],
             "atk": unit["atk"],
             "def": unit["def"],
+            "spd": int(unit.get("spd") or 0),
             "source": unit.get("source") or "owned",
             "mini_robot_id": unit.get("mini_robot_id"),
             "image_url": url_for("static", filename=unit["image_path"]) if unit.get("image_path") else None,

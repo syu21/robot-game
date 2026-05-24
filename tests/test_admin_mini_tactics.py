@@ -7,8 +7,11 @@ import unittest
 import app as game_app
 import init_db
 from services.mini_tactics import (
+    attackable_cells,
     build_initial_map,
     build_initial_units,
+    build_turn_order,
+    can_attack,
     manhattan,
     simulate_mini_tactics_battle,
 )
@@ -249,15 +252,22 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertTrue(all("weapon_type" in u and "weapon_label" in u and "attack_range" in u for u in units_payload))
             terrains = [tile["terrain"] for row in map_payload["tiles"] for tile in row]
             self.assertIn("wall", terrains)
+            wall_positions = {(tile["x"], tile["y"]) for row in map_payload["tiles"] for tile in row if tile["terrain"] == "wall"}
+            start_positions = {(unit["x"], unit["y"]) for unit in units_payload}
+            self.assertFalse(wall_positions & start_positions)
             ai_by_species = {u["species_key"]: u["ai_type"] for u in units_payload if u["side"] == "ally"}
             self.assertEqual(ai_by_species["cerberus"], "assault")
             self.assertEqual(ai_by_species["phoenix"], "cautious")
             self.assertEqual(ai_by_species["hydra"], "guardian")
             self.assertTrue(all("ai_type" in u for frame in frames_payload for u in frame["units"]))
+            self.assertTrue(all("spd" in u for u in units_payload))
             self.assertTrue(
                 all("weapon_type" in u and "weapon_label" in u and "attack_range" in u for frame in frames_payload for u in frame["units"])
             )
             self.assertTrue(all("events" in frame for frame in frames_payload))
+            self.assertTrue(all("acting_order" in frame for frame in frames_payload))
+            self.assertTrue(all("attackable_cells" in frame for frame in frames_payload))
+            self.assertTrue(all("targetable_unit_ids" in frame for frame in frames_payload))
 
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
@@ -265,6 +275,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("miniTacticsBoard", html)
         self.assertIn("miniTacticsRoster", html)
         self.assertIn("ai_type", html)
+        self.assertIn("miniTacticsOrder", html)
         self.assertIn("最初から再生", html)
 
     def test_simulation_bounds_collision_and_assault(self):
@@ -297,6 +308,63 @@ class AdminMiniTacticsTests(unittest.TestCase):
             after_distance = min(manhattan(unit, enemy) for enemy in after_enemies)
             self.assertLessEqual(after_distance, before_distance)
 
+    def test_spd_controls_turn_order_and_seed_reproduces_ties(self):
+        units = [
+            {"unit_id": "slow", "name": "slow", "side": "ally", "x": 0, "y": 0, "hp": 10, "spd": 1},
+            {"unit_id": "fast", "name": "fast", "side": "ally", "x": 0, "y": 1, "hp": 10, "spd": 9},
+            {"unit_id": "tie_a", "name": "tie_a", "side": "ally", "x": 0, "y": 2, "hp": 10, "spd": 4},
+            {"unit_id": "tie_b", "name": "tie_b", "side": "ally", "x": 0, "y": 3, "hp": 10, "spd": 4},
+            {"unit_id": "defeated", "name": "defeated", "side": "ally", "x": 0, "y": 4, "hp": 0, "spd": 99, "defeated": True},
+        ]
+        first = [u["unit_id"] for u in build_turn_order(units, 123, 1)]
+        second = [u["unit_id"] for u in build_turn_order(units, 123, 1)]
+        self.assertEqual(first, second)
+        self.assertEqual(first[0], "fast")
+        self.assertNotIn("defeated", first)
+
+    def test_spd_order_is_saved_in_frame(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "slow_ally",
+                "side": "ally",
+                "name": "ケルベロス",
+                "species_key": "cerberus",
+                "x": 0,
+                "y": 0,
+                "hp": 18,
+                "max_hp": 18,
+                "atk": 5,
+                "def": 2,
+                "spd": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "weapon_type": "melee",
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "fast_enemy",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 4,
+                "y": 0,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "spd": 9,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(44, map_payload, units_payload)[0]
+        self.assertEqual(frame["acting_order"][0]["unit_id"], "fast_enemy")
+        self.assertEqual(frame["current_actor_unit_id"], "fast_enemy")
+
     def test_adjacent_units_attack_and_reduce_hp(self):
         map_payload = build_initial_map()
         units_payload = [
@@ -311,6 +379,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 18,
                 "atk": 5,
                 "def": 2,
+                "spd": 9,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -327,6 +396,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 12,
                 "atk": 3,
                 "def": 1,
+                "spd": 1,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -387,6 +457,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(attack_event["weapon_type"], "laser")
         self.assertEqual(attack_event["damage"], 3)
         self.assertIn("レーザー", attack_event["text"])
+        self.assertIn("enemy_target", frame["targetable_unit_ids"])
 
     def test_melee_does_not_attack_at_range_two(self):
         map_payload = build_initial_map()
@@ -402,6 +473,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 18,
                 "atk": 5,
                 "def": 2,
+                "spd": 9,
                 "defeated": False,
                 "ai_type": "assault",
                 "weapon_type": "melee",
@@ -420,6 +492,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 12,
                 "atk": 3,
                 "def": 1,
+                "spd": 1,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -475,6 +548,82 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(enemy["hp"], 10)
         self.assertTrue(any("ヒュドラがミサイルでダミーAを攻撃、2ダメージ" in line for line in frame["logs"]))
 
+    def test_attackable_cells_respect_weapon_and_walls(self):
+        map_payload = build_initial_map()
+        melee = {"x": 1, "y": 1, "weapon_type": "melee", "attack_range": 1}
+        laser = {"x": 1, "y": 1, "weapon_type": "laser", "attack_range": 2}
+        missile = {"x": 1, "y": 1, "weapon_type": "missile", "attack_range": 2}
+
+        melee_cells = {(cell["x"], cell["y"]) for cell in attackable_cells(melee, map_payload)}
+        self.assertEqual(melee_cells, {(0, 1), (1, 0), (1, 2)})
+
+        laser_cells = {(cell["x"], cell["y"]) for cell in attackable_cells(laser, map_payload)}
+        self.assertIn((0, 1), laser_cells)
+        self.assertNotIn((2, 1), laser_cells)
+        self.assertNotIn((3, 1), laser_cells)
+
+        missile_cells = {(cell["x"], cell["y"]) for cell in attackable_cells(missile, map_payload)}
+        self.assertIn((2, 1), missile_cells)
+        self.assertIn((3, 1), missile_cells)
+
+    def test_laser_wall_blocks_but_missile_hits_through_wall(self):
+        map_payload = build_initial_map()
+        laser = {
+            "unit_id": "ally_laser",
+            "side": "ally",
+            "name": "フェニックス",
+            "species_key": "phoenix",
+            "x": 1,
+            "y": 1,
+            "hp": 14,
+            "max_hp": 14,
+            "atk": 4,
+            "def": 1,
+            "defeated": False,
+            "ai_type": "assault",
+            "weapon_type": "laser",
+            "attack_range": 2,
+            "image_path": "",
+            "direction": "right",
+        }
+        missile = dict(laser)
+        missile.update({"unit_id": "ally_missile", "name": "ヒュドラ", "species_key": "hydra", "weapon_type": "missile", "atk": 3})
+        target = {
+            "unit_id": "enemy_target",
+            "side": "enemy",
+            "name": "ダミーA",
+            "species_key": "dummy_a",
+            "x": 3,
+            "y": 1,
+            "hp": 12,
+            "max_hp": 12,
+            "atk": 3,
+            "def": 1,
+            "defeated": False,
+            "ai_type": "assault",
+            "image_path": "",
+            "direction": "left",
+        }
+        self.assertFalse(can_attack(laser, target, map_payload))
+        self.assertTrue(can_attack(missile, target, map_payload))
+
+        laser_frame = simulate_mini_tactics_battle(55, map_payload, [laser, dict(target)])[0]
+        laser_enemy = next(u for u in laser_frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(laser_enemy["hp"], 12)
+        self.assertTrue(any("壁に遮られて狙えない" in line for line in laser_frame["logs"]))
+
+        missile_frame = simulate_mini_tactics_battle(55, map_payload, [missile, dict(target)])[0]
+        missile_enemy = next(u for u in missile_frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(missile_enemy["hp"], 10)
+
+    def test_laser_attacks_straight_line_only(self):
+        map_payload = build_initial_map()
+        attacker = {"x": 0, "y": 0, "weapon_type": "laser", "attack_range": 2, "defeated": False}
+        straight = {"x": 0, "y": 2, "defeated": False}
+        diagonal = {"x": 1, "y": 1, "defeated": False}
+        self.assertTrue(can_attack(attacker, straight, map_payload))
+        self.assertFalse(can_attack(attacker, diagonal, map_payload))
+
     def test_out_of_range_unit_moves(self):
         map_payload = build_initial_map()
         units_payload = [
@@ -489,6 +638,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 18,
                 "atk": 5,
                 "def": 2,
+                "spd": 9,
                 "defeated": False,
                 "ai_type": "assault",
                 "weapon_type": "melee",
@@ -507,6 +657,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 12,
                 "atk": 3,
                 "def": 1,
+                "spd": 1,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -757,6 +908,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 18,
                 "atk": 5,
                 "def": 2,
+                "spd": 9,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -789,6 +941,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 12,
                 "atk": 3,
                 "def": 1,
+                "spd": 1,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -821,6 +974,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 18,
                 "atk": 5,
                 "def": 2,
+                "spd": 9,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
@@ -837,6 +991,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 "max_hp": 12,
                 "atk": 3,
                 "def": 1,
+                "spd": 1,
                 "defeated": False,
                 "ai_type": "assault",
                 "image_path": "",
