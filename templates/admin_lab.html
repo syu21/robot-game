@@ -28,3 +28,9 @@
   {% for row in latest_races %}
   <div class="robot-part">#{{ row['id'] }} / {{ row['course_key'] }} / {{ row['status'] }}</div>
   {% else %}
+  <div class="robot-part">まだレースはありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

@@ -25,4 +25,9 @@
     <a href="{{ url_for('admin_lab_mini_tactics_watch', battle_id=row['id']) }}">観戦</a>
   </div>
   {% else %}
-  <div class="ro
+  <div class="robot-part">まだ試験はありません。</div>
+  {% endfor %}
+</section>
+
+<p class="link"><a href="{{ url_for('admin_lab') }}">実験室管理へ戻る</a></p>
+{% endblock %}

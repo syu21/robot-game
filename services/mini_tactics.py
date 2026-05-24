@@ -231,4 +231,293 @@ def find_nearest_enemy(unit, units):
     return min(enemies, key=lambda enemy: (manhattan(unit, enemy), str(enemy.get("unit_id") or "")))
 
 
-def f
+def find_nearest_ally(unit, units):
+    allies = living_allies(unit, units)
+    if not allies:
+        return None
+    return min(allies, key=lambda ally: (manhattan(unit, ally), str(ally.get("unit_id") or "")))
+
+
+def get_valid_moves(unit, units, map_payload):
+    occupied = {
+        (int(other["x"]), int(other["y"]))
+        for other in units
+        if str(other.get("unit_id") or "") != str(unit.get("unit_id") or "")
+    }
+    width = int(map_payload.get("width") or BOARD_SIZE)
+    height = int(map_payload.get("height") or BOARD_SIZE)
+    moves = []
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        nx = int(unit["x"]) + dx
+        ny = int(unit["y"]) + dy
+        if nx < 0 or ny < 0 or nx >= width or ny >= height:
+            continue
+        if (nx, ny) in occupied or _tile_is_wall(map_payload, nx, ny):
+            continue
+        moves.append((nx, ny))
+    return moves
+
+
+def _choose_by_distance(unit, moves, target, rng, *, prefer="near"):
+    if not target or not moves:
+        return None
+    current_distance = manhattan(unit, target)
+    scored = []
+    for nx, ny in moves:
+        next_distance = abs(int(nx) - int(target["x"])) + abs(int(ny) - int(target["y"]))
+        if prefer == "near" and next_distance < current_distance:
+            scored.append((next_distance, nx, ny))
+        elif prefer == "far" and next_distance > current_distance:
+            scored.append((next_distance, nx, ny))
+    if not scored:
+        return None
+    best_distance = min(item[0] for item in scored) if prefer == "near" else max(item[0] for item in scored)
+    best = [(nx, ny) for dist, nx, ny in scored if dist == best_distance]
+    return rng.choice(best)
+
+
+def _action_move(unit, nx, ny, message):
+    return {"type": "move", "x": int(nx), "y": int(ny), "message": message}
+
+
+def _action_attack(unit, target, message=None):
+    return {
+        "type": "attack",
+        "target_id": str(target.get("unit_id") or ""),
+        "message": message or f"{unit['name']}が{target['name']}を攻撃",
+    }
+
+
+def _action_wait(unit, message=None):
+    return {"type": "wait", "message": message or f"{unit['name']}が待機"}
+
+
+def get_adjacent_enemy(unit, units):
+    enemies = [
+        u
+        for u in units
+        if u.get("side") != unit.get("side") and not u.get("defeated") and manhattan(unit, u) == 1
+    ]
+    if not enemies:
+        return None
+    return min(enemies, key=lambda enemy: (int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
+
+
+def _enemy_pressure_score(enemy, allies):
+    if not allies:
+        return 999
+    return min(manhattan(enemy, ally) for ally in allies)
+
+
+def get_guardian_adjacent_enemy(unit, units):
+    enemies = [
+        u
+        for u in units
+        if u.get("side") != unit.get("side") and not u.get("defeated") and manhattan(unit, u) == 1
+    ]
+    if not enemies:
+        return None
+    allies = living_allies(unit, units)
+    return min(
+        enemies,
+        key=lambda enemy: (_enemy_pressure_score(enemy, allies), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")),
+    )
+
+
+def find_guardian_enemy(unit, units):
+    enemies = living_enemies(unit, units)
+    if not enemies:
+        return None
+    allies = living_allies(unit, units)
+    return min(
+        enemies,
+        key=lambda enemy: (_enemy_pressure_score(enemy, allies), manhattan(unit, enemy), str(enemy.get("unit_id") or "")),
+    )
+
+
+def choose_assault_move(unit, units, map_payload, rng):
+    target = get_adjacent_enemy(unit, units)
+    if target:
+        return _action_attack(unit, target)
+    target = find_nearest_enemy(unit, units)
+    step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
+    if step:
+        return _action_move(unit, step[0], step[1], f"{unit['name']}が突撃")
+    return _action_wait(unit)
+
+
+def choose_cautious_move(unit, units, map_payload, rng):
+    target = find_nearest_enemy(unit, units)
+    hp = int(unit.get("hp") or 0)
+    max_hp = max(1, int(unit.get("max_hp") or hp or 1))
+    is_low_hp = hp * 2 <= max_hp
+    if is_low_hp:
+        step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="far")
+        if step:
+            return _action_move(unit, step[0], step[1], f"{unit['name']}が距離を取った")
+        adjacent = get_adjacent_enemy(unit, units)
+        if adjacent:
+            return _action_attack(unit, adjacent, f"{unit['name']}は退路がなく反撃")
+        return _action_wait(unit, f"{unit['name']}が慎重に様子を見た")
+    adjacent = get_adjacent_enemy(unit, units)
+    if adjacent:
+        return _action_attack(unit, adjacent)
+    step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
+    if step:
+        return _action_move(unit, step[0], step[1], f"{unit['name']}が慎重に前進")
+    return _action_wait(unit)
+
+
+def choose_guardian_move(unit, units, map_payload, rng):
+    adjacent = get_guardian_adjacent_enemy(unit, units)
+    if adjacent:
+        return _action_attack(unit, adjacent)
+    nearest_ally = find_nearest_ally(unit, units)
+    if nearest_ally and manhattan(unit, nearest_ally) > 1:
+        step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), nearest_ally, rng, prefer="near")
+        if step:
+            return _action_move(unit, step[0], step[1], f"{unit['name']}が味方を守る位置へ移動")
+    target = find_guardian_enemy(unit, units)
+    step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
+    if step:
+        return _action_move(unit, step[0], step[1], f"{unit['name']}が味方を守る位置へ移動")
+    return _action_wait(unit, f"{unit['name']}が守りを固めた")
+
+
+def choose_action_for_unit(unit, units, map_payload, rng):
+    ai_type = str(unit.get("ai_type") or "assault")
+    if ai_type == "cautious":
+        return choose_cautious_move(unit, units, map_payload, rng)
+    if ai_type == "guardian":
+        return choose_guardian_move(unit, units, map_payload, rng)
+    return choose_assault_move(unit, units, map_payload, rng)
+
+
+def get_next_step_toward_enemy(unit, units, map_payload, rng):
+    action = choose_assault_move(unit, units, map_payload, rng)
+    if action["type"] == "move":
+        return int(action["x"]), int(action["y"]), "move"
+    if action["type"] == "attack":
+        return int(unit["x"]), int(unit["y"]), "contact"
+    return int(unit["x"]), int(unit["y"]), "wait"
+
+
+def _battle_result(units):
+    ally_alive = any(u.get("side") == "ally" and not u.get("defeated") for u in units)
+    enemy_alive = any(u.get("side") == "enemy" and not u.get("defeated") for u in units)
+    if ally_alive and not enemy_alive:
+        return "ally_win"
+    if enemy_alive and not ally_alive:
+        return "enemy_win"
+    if not ally_alive and not enemy_alive:
+        return "draw"
+    return None
+
+
+def _result_log(result):
+    if result == "ally_win":
+        return "味方側の勝利"
+    if result == "enemy_win":
+        return "敵側の勝利"
+    return "10ターン経過で引き分け"
+
+
+def serialize_frames(frames):
+    return json.dumps(frames, ensure_ascii=False, separators=(",", ":"))
+
+
+def simulate_mini_tactics_battle(seed, map_payload, units_payload):
+    units = [dict(unit) for unit in units_payload]
+    for unit in units:
+        unit["max_hp"] = int(unit.get("max_hp") or unit.get("hp") or 10)
+        unit["hp"] = int(unit.get("hp") or unit["max_hp"])
+        unit["atk"] = int(unit.get("atk") or 1)
+        unit["def"] = int(unit.get("def") or 0)
+        unit["ai_type"] = str(unit.get("ai_type") or "assault")
+        unit["defeated"] = bool(unit.get("defeated")) or int(unit["hp"]) <= 0
+    frames = []
+    result = None
+    for turn in range(1, MAX_TURNS + 1):
+        logs = []
+        for unit in sorted(units, key=lambda item: str(item.get("unit_id") or "")):
+            if unit.get("defeated"):
+                continue
+
+            rng = random.Random(f"{int(seed)}:{turn}:{unit.get('unit_id')}")
+            action = choose_action_for_unit(unit, units, map_payload, rng)
+
+            if action["type"] == "attack":
+                target = next(
+                    (
+                        other
+                        for other in units
+                        if str(other.get("unit_id") or "") == str(action.get("target_id") or "")
+                        and not other.get("defeated")
+                    ),
+                    None,
+                )
+                if target is None:
+                    logs.append(f"{unit['name']}が待機")
+                    continue
+                damage = max(1, int(unit.get("atk") or 1) - int(target.get("def") or 0))
+                target["hp"] = max(0, int(target.get("hp") or 0) - int(damage))
+                logs.append(f"{action['message']}、{damage}ダメージ")
+                if int(target["hp"]) <= 0 and not target.get("defeated"):
+                    target["defeated"] = True
+                    logs.append(f"{target['name']}を撃破")
+                result = _battle_result(units)
+                if result:
+                    logs.append(_result_log(result))
+                    break
+                continue
+
+            before_x = int(unit["x"])
+            before_y = int(unit["y"])
+            if action["type"] == "move":
+                nx = int(action["x"])
+                ny = int(action["y"])
+                unit["x"] = int(nx)
+                unit["y"] = int(ny)
+                unit["direction"] = _direction_from_delta(nx - before_x, ny - before_y, unit.get("direction"))
+                logs.append(action["message"])
+            else:
+                logs.append(action["message"])
+        if not result and turn >= MAX_TURNS:
+            result = _battle_result(units) or "draw"
+            logs.append(_result_log(result))
+        frames.append(
+            {
+                "turn": turn,
+                "units": [dict(unit) for unit in units],
+                "logs": logs,
+                "result": result,
+            }
+        )
+        if result:
+            break
+    return frames
+
+
+def create_mini_tactics_battle(db, admin_user_id, seed=None, ally_units=None):
+    battle_seed = int(seed if seed is not None else random.randint(100000, 999999999))
+    map_payload = build_initial_map()
+    units_payload = build_units_with_allies(ally_units) if ally_units is not None else build_initial_units()
+    frames = simulate_mini_tactics_battle(battle_seed, map_payload, units_payload)
+    now = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO mini_tactics_battles
+        (seed, status, map_json, units_json, frames_json, created_at, created_by_user_id)
+        VALUES (?, 'finished', ?, ?, ?, ?, ?)
+        """,
+        (
+            int(battle_seed),
+            json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(units_payload, ensure_ascii=False, separators=(",", ":")),
+            serialize_frames(frames),
+            int(now),
+            int(admin_user_id),
+        ),
+    )
+    db.commit()
+    return int(cur.lastrowid)
