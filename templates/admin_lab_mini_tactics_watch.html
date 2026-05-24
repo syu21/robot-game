@@ -77,6 +77,10 @@
       core.textContent = String(unit.name || "?").slice(0, 3);
     }
     el.appendChild(core);
+    var weapon = document.createElement("div");
+    weapon.className = "mini-tactics-weapon";
+    weapon.textContent = String(unit.weapon_type || "melee") + " R" + String(unit.range || 1);
+    el.appendChild(weapon);
     el.appendChild(hpBar(unit));
     return el;
   }
@@ -111,7 +115,7 @@
       name.textContent = String(unit.name || "");
       var hpText = document.createElement("div");
       hpText.className = "mini-tactics-roster-hp";
-      hpText.textContent = String(unit.ai_type || "assault") + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
+      hpText.textContent = String(unit.ai_type || "assault") + " / " + String(unit.weapon_type || "melee") + " / 射程" + String(unit.range || 1) + " / HP " + String(Math.max(0, Number(unit.hp || 0))) + "/" + String(Number(unit.max_hp || 0));
       row.appendChild(name);
       row.appendChild(hpText);
       row.appendChild(hpBar(unit));

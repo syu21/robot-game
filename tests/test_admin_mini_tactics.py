@@ -108,6 +108,66 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("フェニックス幼体", html)
         self.assertIn("育成個体", html)
         self.assertIn("レンタル", html)
+        self.assertIn("laser", html)
+
+    def test_team_page_saves_three_slots_and_rental_fill(self):
+        client = self._client(admin=True)
+        client.post("/lab/mini/select", data={"species_key": "hydra"}, follow_redirects=True)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            owned = db.execute(
+                "SELECT id FROM user_mini_robots WHERE user_id = ? ORDER BY id LIMIT 1",
+                (self.admin_id,),
+            ).fetchone()
+            mini_robot_id = int(owned["id"])
+
+        resp = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_mini_robot_id": "",
+                "slot_2_mini_robot_id": str(mini_robot_id),
+                "slot_3_mini_robot_id": "",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            team = db.execute("SELECT * FROM mini_tactics_teams WHERE user_id = ?", (self.admin_id,)).fetchone()
+            self.assertIsNone(team["slot_1_mini_robot_id"])
+            self.assertEqual(int(team["slot_2_mini_robot_id"]), mini_robot_id)
+            self.assertIsNone(team["slot_3_mini_robot_id"])
+            units = game_app._mini_tactics_team_units_for_user(db, self.admin_id)
+            self.assertEqual(units[0]["source"], "rental")
+            self.assertEqual(units[1]["source"], "owned")
+            self.assertEqual(units[1]["species_key"], "hydra")
+            self.assertEqual(units[2]["source"], "rental")
+
+    def test_team_page_rejects_duplicate_owned_robot(self):
+        client = self._client(admin=True)
+        client.post("/lab/mini/select", data={"species_key": "cerberus"}, follow_redirects=True)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            owned = db.execute(
+                "SELECT id FROM user_mini_robots WHERE user_id = ? ORDER BY id LIMIT 1",
+                (self.admin_id,),
+            ).fetchone()
+            mini_robot_id = int(owned["id"])
+
+        resp = client.post(
+            "/admin/lab/mini-tactics/team",
+            data={
+                "slot_1_mini_robot_id": str(mini_robot_id),
+                "slot_2_mini_robot_id": str(mini_robot_id),
+                "slot_3_mini_robot_id": "",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("同じ所持ミニロボ", resp.get_data(as_text=True))
 
     def test_start_uses_existing_mini_robot_with_rental_fill(self):
         client = self._client(admin=True)
@@ -186,11 +246,15 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(len([u for u in units_payload if u["side"] == "ally"]), 3)
             self.assertEqual(len([u for u in units_payload if u["side"] == "enemy"]), 3)
             self.assertTrue(all("max_hp" in u and "atk" in u and "def" in u for u in units_payload))
+            self.assertTrue(all("weapon_type" in u and "range" in u for u in units_payload))
+            terrains = [tile["terrain"] for row in map_payload["tiles"] for tile in row]
+            self.assertIn("wall", terrains)
             ai_by_species = {u["species_key"]: u["ai_type"] for u in units_payload if u["side"] == "ally"}
             self.assertEqual(ai_by_species["cerberus"], "assault")
             self.assertEqual(ai_by_species["phoenix"], "cautious")
             self.assertEqual(ai_by_species["hydra"], "guardian")
             self.assertTrue(all("ai_type" in u for frame in frames_payload for u in frame["units"]))
+            self.assertTrue(all("weapon_type" in u and "range" in u for frame in frames_payload for u in frame["units"]))
 
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
@@ -218,6 +282,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
                 self.assertLess(pos[0], width)
                 self.assertLess(pos[1], height)
                 self.assertNotIn(pos, occupied)
+                self.assertNotEqual(map_payload["tiles"][pos[1]][pos[0]]["terrain"], "wall")
                 occupied.add(pos)
 
         first_frame = frames[0]
@@ -269,7 +334,138 @@ class AdminMiniTacticsTests(unittest.TestCase):
         enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
         self.assertEqual(enemy["hp"], 8)
         self.assertFalse(enemy["defeated"])
-        self.assertTrue(any("ケルベロスがダミーAを攻撃、4ダメージ" in line for line in frame["logs"]))
+        self.assertTrue(any("ケルベロスが格闘でダミーAを攻撃、4ダメージ" in line for line in frame["logs"]))
+
+    def test_laser_attacks_at_range_two(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_laser",
+                "side": "ally",
+                "name": "フェニックス",
+                "species_key": "phoenix",
+                "x": 0,
+                "y": 0,
+                "hp": 14,
+                "max_hp": 14,
+                "atk": 4,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "weapon_type": "laser",
+                "range": 2,
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーB",
+                "species_key": "dummy_b",
+                "x": 2,
+                "y": 0,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(11, map_payload, units_payload)[0]
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 9)
+        self.assertTrue(any("フェニックスがレーザーでダミーBを攻撃、3ダメージ" in line for line in frame["logs"]))
+
+    def test_missile_attacks_at_range_two(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_missile",
+                "side": "ally",
+                "name": "ヒュドラ",
+                "species_key": "hydra",
+                "x": 0,
+                "y": 0,
+                "hp": 20,
+                "max_hp": 20,
+                "atk": 3,
+                "def": 3,
+                "defeated": False,
+                "ai_type": "assault",
+                "weapon_type": "missile",
+                "range": 2,
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 1,
+                "y": 1,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(12, map_payload, units_payload)[0]
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 10)
+        self.assertTrue(any("ヒュドラがミサイルでダミーAを攻撃、2ダメージ" in line for line in frame["logs"]))
+
+    def test_out_of_range_unit_moves(self):
+        map_payload = build_initial_map()
+        units_payload = [
+            {
+                "unit_id": "ally_attacker",
+                "side": "ally",
+                "name": "ケルベロス",
+                "species_key": "cerberus",
+                "x": 0,
+                "y": 0,
+                "hp": 18,
+                "max_hp": 18,
+                "atk": 5,
+                "def": 2,
+                "defeated": False,
+                "ai_type": "assault",
+                "weapon_type": "melee",
+                "range": 1,
+                "image_path": "",
+                "direction": "right",
+            },
+            {
+                "unit_id": "enemy_target",
+                "side": "enemy",
+                "name": "ダミーA",
+                "species_key": "dummy_a",
+                "x": 4,
+                "y": 0,
+                "hp": 12,
+                "max_hp": 12,
+                "atk": 3,
+                "def": 1,
+                "defeated": False,
+                "ai_type": "assault",
+                "image_path": "",
+                "direction": "left",
+            },
+        ]
+        frame = simulate_mini_tactics_battle(13, map_payload, units_payload)[0]
+        attacker = next(u for u in frame["units"] if u["unit_id"] == "ally_attacker")
+        enemy = next(u for u in frame["units"] if u["unit_id"] == "enemy_target")
+        self.assertEqual(enemy["hp"], 12)
+        self.assertLess(manhattan(attacker, enemy), 4)
+        self.assertTrue(any("ケルベロスが突撃" in line for line in frame["logs"]))
 
     def test_cautious_retreats_when_low_hp(self):
         map_payload = build_initial_map()
@@ -487,6 +683,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_defeated_enemy_is_not_targeted(self):
         map_payload = build_initial_map()
+        map_payload["tiles"][1][2]["terrain"] = "floor"
         units_payload = [
             {
                 "unit_id": "ally_attacker",

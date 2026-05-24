@@ -6,10 +6,16 @@ import time
 BOARD_SIZE = 5
 MAX_TURNS = 10
 ALLY_START_POSITIONS = ((0, 1), (0, 2), (0, 3))
+MINI_TACTICS_WALLS = ((2, 1), (2, 3))
+WEAPON_SPECS = {
+    "melee": {"range": 1, "label": "格闘"},
+    "laser": {"range": 2, "label": "レーザー"},
+    "missile": {"range": 2, "label": "ミサイル"},
+}
 RENTAL_ALLY_SPECS = (
-    ("rental_cerberus", "ケルベロス", "cerberus", "assault", 18, 5, 2, "mini_robots/cerberus/normal.png"),
-    ("rental_phoenix", "フェニックス", "phoenix", "cautious", 14, 4, 1, "mini_robots/phoenix/normal.png"),
-    ("rental_hydra", "ヒュドラ", "hydra", "guardian", 20, 3, 3, "mini_robots/hydra/normal.png"),
+    ("rental_cerberus", "ケルベロス", "cerberus", "assault", "melee", 18, 5, 2, "mini_robots/cerberus/normal.png"),
+    ("rental_phoenix", "フェニックス", "phoenix", "cautious", "laser", 14, 4, 1, "mini_robots/phoenix/normal.png"),
+    ("rental_hydra", "ヒュドラ", "hydra", "guardian", "missile", 20, 3, 3, "mini_robots/hydra/normal.png"),
 )
 
 
@@ -18,7 +24,14 @@ def build_initial_map():
         "width": BOARD_SIZE,
         "height": BOARD_SIZE,
         "tiles": [
-            [{"x": x, "y": y, "terrain": "floor"} for x in range(BOARD_SIZE)]
+            [
+                {
+                    "x": x,
+                    "y": y,
+                    "terrain": "wall" if (x, y) in MINI_TACTICS_WALLS else "floor",
+                }
+                for x in range(BOARD_SIZE)
+            ]
             for y in range(BOARD_SIZE)
         ],
     }
@@ -39,6 +52,8 @@ def build_initial_units():
             "def": 2,
             "defeated": False,
             "ai_type": "assault",
+            "weapon_type": "melee",
+            "range": 1,
             "image_path": "mini_robots/cerberus/normal.png",
             "direction": "right",
         },
@@ -55,6 +70,8 @@ def build_initial_units():
             "def": 1,
             "defeated": False,
             "ai_type": "cautious",
+            "weapon_type": "laser",
+            "range": 2,
             "image_path": "mini_robots/phoenix/normal.png",
             "direction": "right",
         },
@@ -71,6 +88,8 @@ def build_initial_units():
             "def": 3,
             "defeated": False,
             "ai_type": "guardian",
+            "weapon_type": "missile",
+            "range": 2,
             "image_path": "mini_robots/hydra/normal.png",
             "direction": "right",
         },
@@ -87,6 +106,8 @@ def build_initial_units():
             "def": 1,
             "defeated": False,
             "ai_type": "assault",
+            "weapon_type": "melee",
+            "range": 1,
             "image_path": "",
             "direction": "left",
         },
@@ -103,6 +124,8 @@ def build_initial_units():
             "def": 1,
             "defeated": False,
             "ai_type": "assault",
+            "weapon_type": "melee",
+            "range": 1,
             "image_path": "",
             "direction": "left",
         },
@@ -119,6 +142,8 @@ def build_initial_units():
             "def": 1,
             "defeated": False,
             "ai_type": "assault",
+            "weapon_type": "melee",
+            "range": 1,
             "image_path": "",
             "direction": "left",
         },
@@ -127,7 +152,7 @@ def build_initial_units():
 
 def build_rental_ally_units():
     units = []
-    for index, (unit_id, name, species_key, ai_type, hp, atk, defense, image_path) in enumerate(RENTAL_ALLY_SPECS):
+    for index, (unit_id, name, species_key, ai_type, weapon_type, hp, atk, defense, image_path) in enumerate(RENTAL_ALLY_SPECS):
         x, y = ALLY_START_POSITIONS[index]
         units.append(
             {
@@ -143,6 +168,8 @@ def build_rental_ally_units():
                 "def": defense,
                 "defeated": False,
                 "ai_type": ai_type,
+                "weapon_type": weapon_type,
+                "range": resolve_weapon_range(weapon_type),
                 "image_path": image_path,
                 "direction": "right",
                 "source": "rental",
@@ -186,15 +213,40 @@ def build_units_with_allies(ally_units=None):
     return allies[:3] + enemies
 
 
+def build_admin_tactics_team(ally_units=None):
+    return build_units_with_allies(ally_units)
+
+
 def manhattan(a, b):
     return abs(int(a["x"]) - int(b["x"])) + abs(int(a["y"]) - int(b["y"]))
 
 
-def _tile_is_wall(map_payload, x, y):
+def resolve_weapon_range(weapon_type):
+    return int(WEAPON_SPECS.get(str(weapon_type or "melee"), WEAPON_SPECS["melee"])["range"])
+
+
+def weapon_label(weapon_type):
+    return str(WEAPON_SPECS.get(str(weapon_type or "melee"), WEAPON_SPECS["melee"])["label"])
+
+
+def is_wall(map_payload, x, y):
     for row in map_payload.get("tiles") or []:
         for tile in row:
             if int(tile.get("x") or 0) == int(x) and int(tile.get("y") or 0) == int(y):
                 return str(tile.get("terrain") or "floor") == "wall"
+    return False
+
+
+def _tile_is_wall(map_payload, x, y):
+    return is_wall(map_payload, x, y)
+
+
+def is_occupied(units, x, y, *, except_unit_id=None):
+    for unit in units:
+        if except_unit_id is not None and str(unit.get("unit_id") or "") == str(except_unit_id):
+            continue
+        if int(unit.get("x") or 0) == int(x) and int(unit.get("y") or 0) == int(y):
+            return True
     return False
 
 
@@ -239,11 +291,6 @@ def find_nearest_ally(unit, units):
 
 
 def get_valid_moves(unit, units, map_payload):
-    occupied = {
-        (int(other["x"]), int(other["y"]))
-        for other in units
-        if str(other.get("unit_id") or "") != str(unit.get("unit_id") or "")
-    }
     width = int(map_payload.get("width") or BOARD_SIZE)
     height = int(map_payload.get("height") or BOARD_SIZE)
     moves = []
@@ -252,7 +299,7 @@ def get_valid_moves(unit, units, map_payload):
         ny = int(unit["y"]) + dy
         if nx < 0 or ny < 0 or nx >= width or ny >= height:
             continue
-        if (nx, ny) in occupied or _tile_is_wall(map_payload, nx, ny):
+        if is_occupied(units, nx, ny, except_unit_id=unit.get("unit_id")) or is_wall(map_payload, nx, ny):
             continue
         moves.append((nx, ny))
     return moves
@@ -281,10 +328,11 @@ def _action_move(unit, nx, ny, message):
 
 
 def _action_attack(unit, target, message=None):
+    weapon_type = str(unit.get("weapon_type") or "melee")
     return {
         "type": "attack",
         "target_id": str(target.get("unit_id") or ""),
-        "message": message or f"{unit['name']}が{target['name']}を攻撃",
+        "message": message or f"{unit['name']}が{weapon_label(weapon_type)}で{target['name']}を攻撃",
     }
 
 
@@ -303,6 +351,21 @@ def get_adjacent_enemy(unit, units):
     return min(enemies, key=lambda enemy: (int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
 
 
+def find_targets_in_range(unit, units, map_payload=None):
+    attack_range = int(unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
+    targets = [
+        enemy
+        for enemy in living_enemies(unit, units)
+        if manhattan(unit, enemy) <= attack_range
+    ]
+    return sorted(targets, key=lambda enemy: (manhattan(unit, enemy), int(enemy.get("hp") or 0), str(enemy.get("unit_id") or "")))
+
+
+def get_attack_target(unit, units, map_payload=None):
+    targets = find_targets_in_range(unit, units, map_payload)
+    return targets[0] if targets else None
+
+
 def _enemy_pressure_score(enemy, allies):
     if not allies:
         return 999
@@ -310,11 +373,7 @@ def _enemy_pressure_score(enemy, allies):
 
 
 def get_guardian_adjacent_enemy(unit, units):
-    enemies = [
-        u
-        for u in units
-        if u.get("side") != unit.get("side") and not u.get("defeated") and manhattan(unit, u) == 1
-    ]
+    enemies = find_targets_in_range(unit, units)
     if not enemies:
         return None
     allies = living_allies(unit, units)
@@ -336,7 +395,7 @@ def find_guardian_enemy(unit, units):
 
 
 def choose_assault_move(unit, units, map_payload, rng):
-    target = get_adjacent_enemy(unit, units)
+    target = get_attack_target(unit, units, map_payload)
     if target:
         return _action_attack(unit, target)
     target = find_nearest_enemy(unit, units)
@@ -355,11 +414,11 @@ def choose_cautious_move(unit, units, map_payload, rng):
         step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="far")
         if step:
             return _action_move(unit, step[0], step[1], f"{unit['name']}が距離を取った")
-        adjacent = get_adjacent_enemy(unit, units)
+        adjacent = get_attack_target(unit, units, map_payload)
         if adjacent:
             return _action_attack(unit, adjacent, f"{unit['name']}は退路がなく反撃")
         return _action_wait(unit, f"{unit['name']}が慎重に様子を見た")
-    adjacent = get_adjacent_enemy(unit, units)
+    adjacent = get_attack_target(unit, units, map_payload)
     if adjacent:
         return _action_attack(unit, adjacent)
     step = _choose_by_distance(unit, get_valid_moves(unit, units, map_payload), target, rng, prefer="near")
@@ -434,6 +493,8 @@ def simulate_mini_tactics_battle(seed, map_payload, units_payload):
         unit["atk"] = int(unit.get("atk") or 1)
         unit["def"] = int(unit.get("def") or 0)
         unit["ai_type"] = str(unit.get("ai_type") or "assault")
+        unit["weapon_type"] = str(unit.get("weapon_type") or "melee")
+        unit["range"] = int(unit.get("range") or resolve_weapon_range(unit.get("weapon_type")))
         unit["defeated"] = bool(unit.get("defeated")) or int(unit["hp"]) <= 0
     frames = []
     result = None

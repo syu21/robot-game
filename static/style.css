@@ -7036,6 +7036,28 @@ body.home-page .locked-layer-card {
   font-size: 0.78rem;
   font-weight: 900;
 }
+.mini-tactics-team-select {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 10px;
+  color: var(--text-sub);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+.mini-tactics-team-select select {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+  color: var(--text-main);
+}
+.mini-tactics-team-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
 .mini-tactics-layout {
   display: grid;
   grid-template-columns: minmax(280px, 520px) minmax(240px, 1fr);
@@ -7081,7 +7103,7 @@ body.home-page .locked-layer-card {
 }
 .mini-tactics-unit {
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr auto auto;
   place-items: center;
   gap: 3px;
   width: 78%;
@@ -7121,6 +7143,15 @@ body.home-page .locked-layer-card {
   border-color: rgba(248, 113, 113, 0.72);
   color: #fee2e2;
   box-shadow: 0 0 18px rgba(248, 113, 113, 0.22);
+}
+.mini-tactics-weapon {
+  max-width: 100%;
+  overflow: hidden;
+  color: #cffafe;
+  font-size: 9px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mini-tactics-log {
   min-height: 260px;

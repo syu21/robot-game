@@ -34356,9 +34356,9 @@ def _mini_robot_catalog_rows(db, user_id):
 
 
 MINI_TACTICS_SPECIES_STATS = {
-    "cerberus": {"hp": 18, "atk": 5, "def": 2, "ai_type": "assault"},
-    "phoenix": {"hp": 14, "atk": 4, "def": 1, "ai_type": "cautious"},
-    "hydra": {"hp": 20, "atk": 3, "def": 3, "ai_type": "guardian"},
+    "cerberus": {"hp": 18, "atk": 5, "def": 2, "ai_type": "assault", "weapon_type": "melee", "range": 1},
+    "phoenix": {"hp": 14, "atk": 4, "def": 1, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
+    "hydra": {"hp": 20, "atk": 3, "def": 3, "ai_type": "guardian", "weapon_type": "missile", "range": 2},
 }
 
 
@@ -34401,6 +34401,8 @@ def _mini_tactics_unit_from_robot(robot_row, slot_index):
         "def": int(stats["def"]),
         "defeated": False,
         "ai_type": _mini_tactics_ai_for_robot(robot_row),
+        "weapon_type": str(stats["weapon_type"]),
+        "range": int(stats["range"]),
         "image_path": _mini_robot_image_rel(species_key, state_key),
         "direction": "right",
         "source": "owned",
@@ -34408,13 +34410,7 @@ def _mini_tactics_unit_from_robot(robot_row, slot_index):
     }
 
 
-def _mini_tactics_team_rows(db, user_id):
-    owned_rows = _mini_tactics_owned_rows(db, user_id)
-    by_id = {int(row["id"]): row for row in owned_rows}
-    profile = db.execute(
-        "SELECT active_mini_robot_id FROM user_mini_robot_profiles WHERE user_id = ?",
-        (int(user_id),),
-    ).fetchone()
+def _mini_tactics_saved_slot_ids(db, user_id):
     team = db.execute(
         """
         SELECT slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id
@@ -34423,15 +34419,27 @@ def _mini_tactics_team_rows(db, user_id):
         """,
         (int(user_id),),
     ).fetchone()
-    ordered_ids = []
     if team:
-        for key in ("slot_1_mini_robot_id", "slot_2_mini_robot_id", "slot_3_mini_robot_id"):
-            if team[key] is not None and int(team[key]) in by_id and int(team[key]) not in ordered_ids:
-                ordered_ids.append(int(team[key]))
-    if not ordered_ids and profile and profile["active_mini_robot_id"] is not None:
-        active_id = int(profile["active_mini_robot_id"])
-        if active_id in by_id:
-            ordered_ids.append(active_id)
+        return [
+            int(team[key]) if team[key] is not None else None
+            for key in ("slot_1_mini_robot_id", "slot_2_mini_robot_id", "slot_3_mini_robot_id")
+        ]
+
+    profile = db.execute(
+        "SELECT active_mini_robot_id FROM user_mini_robot_profiles WHERE user_id = ?",
+        (int(user_id),),
+    ).fetchone()
+    active_id = int(profile["active_mini_robot_id"]) if profile and profile["active_mini_robot_id"] is not None else None
+    return [active_id, None, None]
+
+
+def _mini_tactics_team_rows(db, user_id):
+    owned_rows = _mini_tactics_owned_rows(db, user_id)
+    by_id = {int(row["id"]): row for row in owned_rows}
+    ordered_ids = []
+    for row_id in _mini_tactics_saved_slot_ids(db, user_id):
+        if row_id is not None and int(row_id) in by_id and int(row_id) not in ordered_ids:
+            ordered_ids.append(int(row_id))
     for row in owned_rows:
         row_id = int(row["id"])
         if len(ordered_ids) >= 3:
@@ -34442,27 +34450,27 @@ def _mini_tactics_team_rows(db, user_id):
 
 
 def _mini_tactics_team_units_for_user(db, user_id):
-    owned_units = [
-        _mini_tactics_unit_from_robot(row, index)
-        for index, row in enumerate(_mini_tactics_team_rows(db, user_id))
-    ]
+    owned_rows = _mini_tactics_owned_rows(db, user_id)
+    by_id = {int(row["id"]): row for row in owned_rows}
     rental_units = build_rental_ally_units()
-    owned_species = {unit["species_key"] for unit in owned_units}
-    team_units = list(owned_units)
-    for rental in rental_units:
-        if len(team_units) >= 3:
-            break
-        if rental["species_key"] in owned_species and len(rental_units) - len(owned_species) >= 3 - len(team_units):
-            continue
-        copied = dict(rental)
-        copied["name"] = f"レンタル{copied['name']}"
-        team_units.append(copied)
-        owned_species.add(copied["species_key"])
+    team_units = []
+    used_ids = set()
+    for index, row_id in enumerate(_mini_tactics_saved_slot_ids(db, user_id)[:3]):
+        unit = None
+        if row_id is not None and int(row_id) in by_id and int(row_id) not in used_ids:
+            unit = _mini_tactics_unit_from_robot(by_id[int(row_id)], index)
+            used_ids.add(int(row_id))
+        if unit is None:
+            unit = dict(rental_units[index % len(rental_units)])
+            unit["name"] = f"レンタル{unit['name']}"
+        team_units.append(unit)
+
     while len(team_units) < 3:
-        rental = dict(rental_units[len(team_units) % len(rental_units)])
-        rental["unit_id"] = f"{rental['unit_id']}_fill_{len(team_units) + 1}"
-        rental["name"] = f"レンタル{rental['name']}"
-        team_units.append(rental)
+        index = len(team_units)
+        unit = dict(rental_units[index % len(rental_units)])
+        unit["name"] = f"レンタル{unit['name']}"
+        team_units.append(unit)
+
     for index, unit in enumerate(team_units[:3]):
         unit["x"] = 0
         unit["y"] = index + 1
@@ -34477,6 +34485,8 @@ def _mini_tactics_team_view(db, user_id):
             "name": unit["name"],
             "species_key": unit["species_key"],
             "ai_type": unit["ai_type"],
+            "weapon_type": unit.get("weapon_type") or "melee",
+            "range": int(unit.get("range") or 1),
             "hp": unit["hp"],
             "atk": unit["atk"],
             "def": unit["def"],
@@ -35852,7 +35862,7 @@ def admin_lab_mini_tactics():
     return render_template("admin_lab_mini_tactics.html", latest_battles=latest_battles)
 
 
-@app.route("/admin/lab/mini-tactics/team")
+@app.route("/admin/lab/mini-tactics/team", methods=["GET", "POST"])
 @login_required
 def admin_lab_mini_tactics_team():
     db = get_db()
@@ -35860,6 +35870,52 @@ def admin_lab_mini_tactics_team():
         return abort(404)
     user_id = int(session["user_id"])
     owned_rows = _mini_tactics_owned_rows(db, user_id)
+    if request.method == "POST":
+        owned_ids = {int(row["id"]) for row in owned_rows}
+        selected_ids = []
+        seen_ids = set()
+        duplicate = False
+        invalid = False
+        for key in ("slot_1_mini_robot_id", "slot_2_mini_robot_id", "slot_3_mini_robot_id"):
+            raw = (request.form.get(key) or "").strip()
+            if not raw:
+                selected_ids.append(None)
+                continue
+            if not raw.isdigit() or int(raw) not in owned_ids:
+                invalid = True
+                selected_ids.append(None)
+                continue
+            robot_id = int(raw)
+            if robot_id in seen_ids:
+                duplicate = True
+            seen_ids.add(robot_id)
+            selected_ids.append(robot_id)
+
+        if invalid:
+            flash("選べないミニロボが含まれています。", "error")
+            return redirect(url_for("admin_lab_mini_tactics_team"))
+        if duplicate:
+            flash("同じ所持ミニロボは複数枠に設定できません。", "error")
+            return redirect(url_for("admin_lab_mini_tactics_team"))
+
+        now_ts = int(time.time())
+        db.execute(
+            """
+            INSERT INTO mini_tactics_teams
+            (user_id, slot_1_mini_robot_id, slot_2_mini_robot_id, slot_3_mini_robot_id, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                slot_1_mini_robot_id = excluded.slot_1_mini_robot_id,
+                slot_2_mini_robot_id = excluded.slot_2_mini_robot_id,
+                slot_3_mini_robot_id = excluded.slot_3_mini_robot_id,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, selected_ids[0], selected_ids[1], selected_ids[2], now_ts),
+        )
+        db.commit()
+        flash("戦術チームを保存しました。", "notice")
+        return redirect(url_for("admin_lab_mini_tactics_team"))
+
     team_slots = _mini_tactics_team_view(db, user_id)
     return render_template(
         "admin_lab_mini_tactics_team.html",

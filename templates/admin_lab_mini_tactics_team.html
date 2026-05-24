@@ -16,22 +16,38 @@
 
 <section class="card">
   <h2>編成スロット</h2>
-  <div class="mini-tactics-team-grid">
+  <form method="post" action="{{ url_for('admin_lab_mini_tactics_team') }}">
+    <div class="mini-tactics-team-grid">
     {% for slot in team_slots %}
     <div class="mini-tactics-team-card is-{{ slot.source }}">
       <div class="mini-tactics-team-slot">slot {{ slot.slot }} / {{ '育成個体' if slot.source == 'owned' else 'レンタル機' }}</div>
+      <label class="mini-tactics-team-select">
+        Slot {{ slot.slot }}
+        <select name="slot_{{ slot.slot }}_mini_robot_id">
+          <option value="">レンタル補完</option>
+          {% for row in owned_rows %}
+          <option value="{{ row['id'] }}" {% if slot.mini_robot_id == row['id'] %}selected{% endif %}>
+            #{{ row['id'] }} {{ row['nickname'] or row['name_ja'] }} / {{ row['species_key'] }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
       {% if slot.image_url %}
       <img src="{{ slot.image_url }}" alt="{{ slot.name }}" loading="lazy" />
       {% endif %}
       <h3>{{ slot.name }}</h3>
-      <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_type }}</div>
+      <div class="robot-part">{{ slot.species_key }} / {{ slot.ai_type }} / {{ slot.weapon_type }} / 射程{{ slot.range }}</div>
       <div class="robot-time">HP {{ slot.hp }} / ATK {{ slot.atk }} / DEF {{ slot.def }}</div>
       {% if slot.mini_robot_id %}
       <div class="robot-time">mini_robot_id {{ slot.mini_robot_id }}</div>
       {% endif %}
     </div>
     {% endfor %}
-  </div>
+    </div>
+    <div class="mini-tactics-team-actions">
+      <button type="submit">編成を保存</button>
+    </div>
+  </form>
 </section>
 
 <section class="card">
@@ -39,7 +55,7 @@
   {% for row in owned_rows %}
   <div class="mini-tactics-history-row">
     <span>#{{ row['id'] }} {{ row['nickname'] }} / {{ row['species_key'] }} / {{ row['current_state'] }}</span>
-    <span class="robot-time">現在は自動で先頭枠へ反映</span>
+    <span class="robot-time">上の3枠から選択</span>
   </div>
   {% else %}
   <div class="robot-part">所持ミニロボなし。レンタル3体で試験します。</div>
