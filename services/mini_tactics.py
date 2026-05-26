@@ -1036,6 +1036,9 @@ def build_manual_initial_board_v1(seed=None, ally_units=None):
         "current_turn_side": "ally",
         "units": allies + enemies,
         "result": None,
+        "previous_board_state": None,
+        "current_board_state": None,
+        "last_action_sequence": [],
     }
     return refresh_manual_board_v1_state(state)
 
@@ -1141,6 +1144,21 @@ def refresh_manual_board_v1_state(state):
             unit["guarded"] = False
     state["enemy_threat_cells"] = get_enemy_threat_cells("ally", state)
     return state
+
+
+def _manual_v1_snapshot(state):
+    snapshot = {
+        key: value
+        for key, value in state.items()
+        if key not in {"previous_board_state", "current_board_state", "last_action_sequence"}
+    }
+    return json.loads(json.dumps(snapshot, ensure_ascii=False))
+
+
+def _manual_v1_tag_phase(logs, phase):
+    for log in logs:
+        log["phase"] = phase
+    return logs
 
 
 def get_legal_moves(unit, board_state):
@@ -1265,11 +1283,14 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
         logs,
         f"{attacker['name']}が{attacker['weapon_label']}で{target['name']}を撃破",
         "attack",
+        phase="ally",
         actor_unit_id=attacker.get("unit_id"),
         target_unit_id=target.get("unit_id"),
+        weapon_type=attacker.get("weapon_type"),
+        weapon_label=attacker.get("weapon_label"),
     )
     suffix = "、味方勝利" if target.get("side") == "enemy" and target.get("is_leader") else ""
-    _manual_v1_log(logs, f"{target['name']}を撃破{suffix}", "defeated", actor_unit_id=target.get("unit_id"))
+    _manual_v1_log(logs, f"{target['name']}を撃破{suffix}", "defeated", phase="ally", actor_unit_id=target.get("unit_id"))
     return True, None
 
 
@@ -1286,6 +1307,7 @@ def _manual_v1_apply_move(state, unit, move_to, logs):
         logs,
         f"{unit['name']}が前進",
         "move",
+        phase="ally",
         actor_unit_id=unit.get("unit_id"),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": dest[0], "y": dest[1]}},
     )
@@ -1338,8 +1360,13 @@ def run_enemy_manual_turn(board_state, rng=None):
 def apply_manual_action(board_state, action_payload):
     state = dict(board_state)
     state["units"] = [dict(unit) for unit in board_state.get("units") or []]
+    state.pop("previous_board_state", None)
+    state.pop("current_board_state", None)
+    state.pop("last_action_sequence", None)
     refresh_manual_board_v1_state(state)
+    previous_snapshot = _manual_v1_snapshot(state)
     logs = []
+    sequence = []
     if state.get("result"):
         return state, logs, "すでに決着しています。"
     if str(state.get("current_turn_side") or "ally") != "ally":
@@ -1351,32 +1378,44 @@ def apply_manual_action(board_state, action_payload):
     target_id = action_payload.get("target_unit_id")
     moved = False
     if move_to:
+        start_index = len(logs)
         ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
         if not ok:
             return state, logs, error
+        sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
         moved = True
     if target_id:
         target = _manual_v1_unit_by_id(state, target_id)
         if not target:
             return state, logs, "攻撃対象が見つかりません。"
+        start_index = len(logs)
         ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
         if not ok:
             return state, logs, error
+        sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
     if not move_to and not target_id:
         return state, logs, "行動内容がありません。"
     result = check_manual_result(state)
     if not result:
         state["current_turn_side"] = "enemy"
-        logs.extend(run_enemy_manual_turn(state, random.Random(int(state.get("seed") or 0) + int(state.get("turn_number") or 1))))
+        enemy_logs = run_enemy_manual_turn(state, random.Random(int(state.get("seed") or 0) + int(state.get("turn_number") or 1)))
+        sequence.extend(_manual_v1_tag_phase(enemy_logs, "enemy"))
+        logs.extend(enemy_logs)
         result = check_manual_result(state)
     state["result"] = result
     if result:
         state["current_turn_side"] = "finished"
-        _manual_v1_log(logs, "味方側の勝利" if result == "ally_win" else "敵側の勝利", "result", result=result)
+        result_log = _manual_v1_log(logs, "味方側の勝利" if result == "ally_win" else "敵側の勝利", "result", phase="result", result=result)
+        sequence.append(result_log)
     else:
         state["current_turn_side"] = "ally"
         state["turn_number"] = int(state.get("turn_number") or 1) + 1
-    return refresh_manual_board_v1_state(state), logs, None
+    refresh_manual_board_v1_state(state)
+    current_snapshot = _manual_v1_snapshot(state)
+    state["previous_board_state"] = previous_snapshot
+    state["current_board_state"] = current_snapshot
+    state["last_action_sequence"] = sequence
+    return state, logs, None
 
 
 def get_manual_board_state(db, battle_id):

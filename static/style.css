@@ -7311,6 +7311,110 @@ body.home-page .locked-layer-card {
   border-color: rgba(248, 113, 113, 0.78);
   background: rgba(127, 29, 29, 0.24);
 }
+.mini-tactics-phase-banner,
+.mini-tactics-action-caption {
+  margin: 0 auto 8px;
+  max-width: 680px;
+  text-align: center;
+}
+.mini-tactics-phase-banner {
+  color: #67e8f9;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.mini-tactics-phase-banner[data-phase="enemy"] {
+  color: #fb7185;
+}
+.mini-tactics-phase-banner[data-phase="result"] {
+  color: #facc15;
+}
+.mini-tactics-action-caption {
+  min-height: 28px;
+  color: #e5f6ff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.mini-tactics-replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.mini-tactics-unit {
+  transition: transform 0.28s ease, opacity 0.28s ease, filter 0.22s ease;
+}
+.mini-tactics-unit.is-animating-move {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 14px rgba(103, 232, 249, 0.72));
+}
+.mini-tactics-unit.is-attacking {
+  transform: scale(1.12) translateY(-2px);
+  filter: drop-shadow(0 0 16px rgba(250, 204, 21, 0.8));
+}
+.mini-tactics-unit.is-weapon-laser {
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.9));
+}
+.mini-tactics-unit.is-weapon-missile {
+  filter: drop-shadow(0 0 18px rgba(251, 146, 60, 0.9));
+}
+.mini-tactics-unit.is-hit {
+  animation: miniTacticsHit 0.34s ease;
+}
+.mini-tactics-unit.is-defeating {
+  opacity: 0.35;
+  transform: scale(0.86);
+}
+.mini-tactics-unit.is-waiting,
+.mini-tactics-unit.is-blocked {
+  animation: miniTacticsPulse 0.42s ease;
+}
+.mini-tactics-cell.is-impact-melee,
+.mini-tactics-cell.is-impact-laser,
+.mini-tactics-cell.is-impact-missile,
+.mini-tactics-cell.is-blocked-cell,
+.mini-tactics-cell.is-attack-origin {
+  position: relative;
+}
+.mini-tactics-cell.is-impact-melee::after,
+.mini-tactics-cell.is-impact-laser::after,
+.mini-tactics-cell.is-impact-missile::after,
+.mini-tactics-cell.is-blocked-cell::after,
+.mini-tactics-cell.is-attack-origin::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 999px;
+  pointer-events: none;
+  animation: miniTacticsImpact 0.36s ease forwards;
+}
+.mini-tactics-cell.is-impact-melee::after {
+  border: 2px solid rgba(250, 204, 21, 0.72);
+}
+.mini-tactics-cell.is-impact-laser::after {
+  border: 2px solid rgba(34, 211, 238, 0.82);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.5);
+}
+.mini-tactics-cell.is-impact-missile::after {
+  border: 2px solid rgba(251, 146, 60, 0.82);
+  box-shadow: 0 0 20px rgba(251, 146, 60, 0.52);
+}
+.mini-tactics-cell.is-blocked-cell::after {
+  border: 2px solid rgba(248, 113, 113, 0.88);
+}
+@keyframes miniTacticsHit {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+@keyframes miniTacticsPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.7); }
+}
+@keyframes miniTacticsImpact {
+  0% { opacity: 0.95; transform: scale(0.65); }
+  100% { opacity: 0; transform: scale(1.45); }
+}
 .mini-tactics-manual-board .mini-tactics-cell.is-selected-move {
   border-color: rgba(167, 243, 208, 0.92);
   box-shadow: inset 0 0 22px rgba(45, 212, 191, 0.28), 0 0 16px rgba(45, 212, 191, 0.22);

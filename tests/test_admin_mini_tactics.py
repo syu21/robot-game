@@ -743,6 +743,59 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(next_state["turn_number"], 2)
         self.assertGreaterEqual(len([log for log in logs if log["actor_unit_id"].startswith("enemy_")]), 1)
 
+    def test_mini_shogi_4x4_action_sequence_and_snapshots_are_saved(self):
+        state = build_manual_initial_board_v1(1)
+        next_state, logs, error = apply_manual_action(
+            state,
+            {"actor_unit_id": "ally_hydra", "move_to": {"x": 1, "y": 2}},
+        )
+        self.assertIsNone(error)
+        sequence = next_state["last_action_sequence"]
+        self.assertTrue(sequence)
+        self.assertEqual(next_state["previous_board_state"]["units"][2]["x"], 1)
+        self.assertEqual(next_state["previous_board_state"]["units"][2]["y"], 3)
+        self.assertEqual(next_state["current_board_state"]["units"], next_state["units"])
+        self.assertTrue(any(event["phase"] == "ally" and event["type"] == "move" and "from" in event and "to" in event for event in sequence))
+        self.assertTrue(any(event["phase"] == "enemy" for event in sequence))
+        if any(event["type"] == "attack" for event in sequence):
+            attack = next(event for event in sequence if event["type"] == "attack")
+            self.assertIn("actor_unit_id", attack)
+            self.assertIn("target_unit_id", attack)
+        self.assertEqual([log["text"] for log in logs], [event["text"] for event in sequence if event["type"] != "result"][:len(logs)])
+
+    def test_mini_shogi_4x4_result_event_enters_sequence(self):
+        state = build_manual_initial_board_v1(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        leader = next(u for u in state["units"] if u["side"] == "enemy" and u["is_leader"])
+        for unit in state["units"]:
+            if unit["side"] == "enemy" and not unit["is_leader"]:
+                unit["defeated"] = True
+        ally.update({"x": 2, "y": 1})
+        next_state, _, error = apply_manual_action(
+            state,
+            {"actor_unit_id": ally["unit_id"], "target_unit_id": leader["unit_id"]},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+        self.assertTrue(any(event["phase"] == "result" and event["type"] == "result" for event in next_state["last_action_sequence"]))
+
+    def test_mini_shogi_4x4_manual_page_exposes_replay_data(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/new?seed=903", follow_redirects=False)
+        battle_url = resp.headers["Location"]
+        action = client.post(
+            f"{battle_url}/action",
+            data={"actor_unit_id": "ally_hydra", "move_x": "1", "move_y": "2"},
+            follow_redirects=True,
+        )
+        self.assertEqual(action.status_code, 200)
+        html = action.get_data(as_text=True)
+        self.assertIn("data-action-sequence", html)
+        self.assertIn("data-previous-board-state", html)
+        self.assertIn("data-current-board-state", html)
+        self.assertIn("もう一度再生", html)
+        self.assertIn("演出スキップ", html)
+
     def test_mini_shogi_4x4_action_options_include_after_move_targets(self):
         state = build_manual_initial_board_v1(1)
         ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")

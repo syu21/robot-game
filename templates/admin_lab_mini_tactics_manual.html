@@ -1,6 +1,12 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="mini-tactics-manual" id="miniTacticsManual">
+<section
+  class="mini-tactics-manual"
+  id="miniTacticsManual"
+  data-action-sequence="{{ board_state.get('last_action_sequence', [])|tojson|forceescape }}"
+  data-previous-board-state="{{ board_state.get('previous_board_state')|tojson|forceescape }}"
+  data-current-board-state="{{ board_state.get('current_board_state')|tojson|forceescape }}"
+>
   <div class="mini-tactics-watch-head">
     <div>
       <h1>手動戦術試験 #{{ battle['id'] }}</h1>
@@ -20,6 +26,8 @@
 
   <div class="mini-tactics-manual-layout">
     <div class="mini-tactics-board-wrap">
+      <div class="mini-tactics-phase-banner" id="miniTacticsPhaseBanner">READY</div>
+      <div class="mini-tactics-action-caption" id="miniTacticsActionCaption">盤面を選択してください</div>
       <div
         class="mini-tactics-board mini-tactics-manual-board"
         id="miniTacticsManualBoard"
@@ -76,6 +84,10 @@
           <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
         </form>
+        <div class="mini-tactics-replay-controls">
+          <button type="button" id="manualReplayButton">もう一度再生</button>
+          <button type="button" id="manualSkipReplayButton">演出スキップ</button>
+        </div>
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
@@ -125,21 +137,31 @@
 <script>
 (function () {
   var boardState = {{ board_state|tojson }};
+  var previousBoardState = {{ board_state.get('previous_board_state')|tojson }};
+  var currentBoardState = {{ board_state.get('current_board_state')|tojson }};
+  var actionSequence = {{ board_state.get('last_action_sequence', [])|tojson }};
   var optionsByUnit = {{ options_by_unit|tojson }};
   var zocCells = {{ zoc_cells|tojson }};
   var threatCells = {{ threat_cells|tojson }};
+  var unitAssets = {{ unit_assets|tojson }};
   var board = document.getElementById("miniTacticsManualBoard");
+  var bannerEl = document.getElementById("miniTacticsPhaseBanner");
+  var captionEl = document.getElementById("miniTacticsActionCaption");
   var selectedEl = document.getElementById("miniTacticsManualSelected");
   var hintEl = document.getElementById("miniTacticsManualHint");
+  var replayButton = document.getElementById("manualReplayButton");
+  var skipReplayButton = document.getElementById("manualSkipReplayButton");
   var actorInput = document.getElementById("manualActorUnitId");
   var moveXInput = document.getElementById("manualMoveX");
   var moveYInput = document.getElementById("manualMoveY");
   var targetInput = document.getElementById("manualTargetUnitId");
   var submit = document.getElementById("manualSubmit");
-  if (!board || boardState.result) return;
+  if (!board) return;
 
   var selectedUnitId = "";
   var selectedMove = null;
+  var replaying = false;
+  var replayToken = 0;
 
   function unitById(unitId) {
     return (boardState.units || []).find(function (unit) { return String(unit.unit_id) === String(unitId); });
@@ -156,6 +178,150 @@
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unit) {
       unit.classList.remove("is-selected");
     });
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) { window.setTimeout(resolve, ms); });
+  }
+
+  function setActionEnabled(enabled) {
+    if (submit) submit.disabled = !enabled || !actorInput.value;
+    if (replaying && submit) submit.disabled = true;
+  }
+
+  function unitLabel(unit) {
+    return String((unit && unit.name) || "?").slice(0, 3);
+  }
+
+  function renderBoard(state) {
+    board.querySelectorAll(".mini-tactics-unit").forEach(function (unitEl) { unitEl.remove(); });
+    board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
+      cell.classList.remove("is-zoc", "is-threat", "is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move");
+    });
+    (state.units || []).forEach(function (unit) {
+      if (unit.defeated) return;
+      var cell = board.querySelector('[data-x="' + unit.x + '"][data-y="' + unit.y + '"]');
+      if (!cell) return;
+      var unitEl = document.createElement("span");
+      unitEl.className = "mini-tactics-unit is-" + unit.side + (unit.unit_type === "core" ? " is-core" : "");
+      if (unit.is_leader) unitEl.dataset.leader = "1";
+      unitEl.dataset.unitId = unit.unit_id;
+      unitEl.dataset.side = unit.side;
+      unitEl.title = unit.name || "";
+      var core = document.createElement("span");
+      core.className = "mini-tactics-unit-core";
+      if (unitAssets[String(unit.unit_id || "")]) {
+        var img = document.createElement("img");
+        img.src = unitAssets[String(unit.unit_id || "")];
+        img.alt = unit.name || "";
+        img.loading = "lazy";
+        core.appendChild(img);
+      } else {
+        core.textContent = unitLabel(unit);
+      }
+      unitEl.appendChild(core);
+      if (unit.guarded) {
+        var badge = document.createElement("span");
+        badge.className = "mini-tactics-guard-badge";
+        badge.textContent = "GUARD";
+        unitEl.appendChild(badge);
+      }
+      cell.appendChild(unitEl);
+    });
+    markZoc();
+    markThreats();
+  }
+
+  function setCaption(text, phase) {
+    if (captionEl) captionEl.textContent = text || "";
+    if (bannerEl) {
+      bannerEl.textContent = phase === "enemy" ? "ENEMY TURN" : (phase === "result" ? "RESULT" : "YOUR ACTION");
+      bannerEl.dataset.phase = phase || "ally";
+    }
+  }
+
+  function eventUnit(state, unitId) {
+    return (state.units || []).find(function (unit) { return String(unit.unit_id) === String(unitId); });
+  }
+
+  function flashUnit(unitId, className) {
+    var el = board.querySelector('[data-unit-id="' + unitId + '"]');
+    if (!el) return;
+    el.classList.add(className);
+    window.setTimeout(function () { el.classList.remove(className); }, 420);
+  }
+
+  function flashCell(point, className) {
+    if (!point) return;
+    var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
+    if (!cell) return;
+    cell.classList.add(className);
+    window.setTimeout(function () { cell.classList.remove(className); }, 420);
+  }
+
+  async function playSequence() {
+    if (!actionSequence || !actionSequence.length || !previousBoardState || !currentBoardState) {
+      setCaption("盤面を選択してください", "ally");
+      return;
+    }
+    var token = ++replayToken;
+    replaying = true;
+    if (submit) submit.disabled = true;
+    var displayState = JSON.parse(JSON.stringify(previousBoardState));
+    renderBoard(displayState);
+    await sleep(260);
+    for (var i = 0; i < actionSequence.length; i += 1) {
+      if (token !== replayToken) return;
+      var action = actionSequence[i];
+      setCaption(action.text, action.phase || action.type);
+      if (action.type === "move") {
+        var movingUnit = eventUnit(displayState, action.actor_unit_id);
+        flashUnit(action.actor_unit_id, "is-animating-move");
+        await sleep(180);
+        if (movingUnit && action.to) {
+          movingUnit.x = action.to.x;
+          movingUnit.y = action.to.y;
+          renderBoard(displayState);
+          flashUnit(action.actor_unit_id, "is-animating-move");
+        }
+      } else if (action.type === "attack") {
+        var actor = eventUnit(displayState, action.actor_unit_id);
+        var target = eventUnit(displayState, action.target_unit_id);
+        flashUnit(action.actor_unit_id, "is-attacking is-weapon-" + (action.weapon_type || "melee"));
+        flashUnit(action.target_unit_id, "is-hit");
+        if (target) flashCell({x: target.x, y: target.y}, "is-impact-" + (action.weapon_type || "melee"));
+        if (actor) flashCell({x: actor.x, y: actor.y}, "is-attack-origin");
+      } else if (action.type === "defeated") {
+        var defeated = eventUnit(displayState, action.actor_unit_id);
+        flashUnit(action.actor_unit_id, "is-defeating");
+        await sleep(180);
+        if (defeated) defeated.defeated = true;
+        renderBoard(displayState);
+      } else if (action.type === "blocked") {
+        flashUnit(action.actor_unit_id, "is-blocked");
+        flashCell(action.to || action.at, "is-blocked-cell");
+      } else if (action.type === "wait") {
+        flashUnit(action.actor_unit_id, "is-waiting");
+      }
+      await sleep(action.phase === "enemy" ? 560 : 460);
+    }
+    if (token !== replayToken) return;
+    boardState = JSON.parse(JSON.stringify(currentBoardState));
+    renderBoard(boardState);
+    replaying = false;
+    setCaption(boardState.result ? "決着" : "味方ターン", boardState.result ? "result" : "ally");
+    if (boardState.result && submit) submit.disabled = true;
+  }
+
+  function skipReplay() {
+    replayToken += 1;
+    replaying = false;
+    if (currentBoardState) {
+      boardState = JSON.parse(JSON.stringify(currentBoardState));
+      renderBoard(boardState);
+    }
+    setCaption(boardState.result ? "決着" : "味方ターン", boardState.result ? "result" : "ally");
+    setActionEnabled(false);
   }
 
   function markZoc() {
@@ -189,6 +355,7 @@
     var options = optionsByUnit[unitId] || {};
     if (selectedEl && unit) selectedEl.textContent = unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
     if (hintEl) hintEl.textContent = "";
+    if (replaying || boardState.result) return;
     var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
     if (unitEl) unitEl.classList.add("is-selected");
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
@@ -241,6 +408,7 @@
   board.addEventListener("click", function (event) {
     var unitEl = event.target.closest("[data-unit-id]");
     if (unitEl && unitEl.dataset.side === "ally" && !unitEl.classList.contains("is-core")) {
+      if (replaying || boardState.result) return;
       markForUnit(unitEl.dataset.unitId);
       return;
     }
@@ -264,6 +432,9 @@
   });
   markZoc();
   markThreats();
+  if (replayButton) replayButton.addEventListener("click", playSequence);
+  if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
+  playSequence();
 })();
 </script>
 {% endblock %}
