@@ -41675,4 +41675,12 @@ def admin_parts_purge_quick(part_id):
     except Exception as exc:
         db.rollback()
         session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_part
+    return redirect(url_for("admin_parts", show_inactive=1))
+
+
+if __name__ == "__main__":
+    app.run(
+        host="127.0.0.1",
+        port=int(os.environ.get("PORT", "5050")),
+        debug=True,
+    )
