@@ -115,6 +115,7 @@ from services.mini_tactics import (
     create_manual_mini_tactics_battle,
     create_mini_tactics_battle,
     mini_shogi_4x4_action_options,
+    mini_shogi_4x4_threat_cells,
     mini_shogi_4x4_zoc_cells,
     manual_action_options,
     is_wall,
@@ -36344,12 +36345,14 @@ def _render_mini_tactics_manual(row):
             for unit in ally_units
         }
         zoc_cells = mini_shogi_4x4_zoc_cells(board_state, "ally")
+        threat_cells = mini_shogi_4x4_threat_cells("ally", board_state)
     else:
         options_by_unit = {
             str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
             for unit in ally_units
         }
         zoc_cells = []
+        threat_cells = []
     return render_template(
         "admin_lab_mini_tactics_manual.html",
         battle=row,
@@ -36361,6 +36364,7 @@ def _render_mini_tactics_manual(row):
         ally_units=ally_units,
         options_by_unit=options_by_unit,
         zoc_cells=zoc_cells,
+        threat_cells=threat_cells,
         manual_mode=mode,
     )
 
@@ -41671,12 +41675,4 @@ def admin_parts_purge_quick(part_id):
     except Exception as exc:
         db.rollback()
         session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+    return redirect(url_for("admin_part

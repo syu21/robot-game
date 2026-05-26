@@ -53,6 +53,9 @@
                 {% if unit.get('max_hp') %}
                 <span class="mini-tactics-hp"><span style="width: {{ (100 * (unit.get('hp', 0) / unit.get('max_hp', 1)))|round|int }}%"></span></span>
                 {% endif %}
+                {% if unit.get('guarded') %}
+                <span class="mini-tactics-guard-badge">GUARD</span>
+                {% endif %}
               </span>
               {% endif %}
             {% endfor %}
@@ -73,8 +76,9 @@
           <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
         </form>
+        <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
-          1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / リーダー撃破で勝利
+          1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
         </div>
       </section>
 
@@ -123,8 +127,10 @@
   var boardState = {{ board_state|tojson }};
   var optionsByUnit = {{ options_by_unit|tojson }};
   var zocCells = {{ zoc_cells|tojson }};
+  var threatCells = {{ threat_cells|tojson }};
   var board = document.getElementById("miniTacticsManualBoard");
   var selectedEl = document.getElementById("miniTacticsManualSelected");
+  var hintEl = document.getElementById("miniTacticsManualHint");
   var actorInput = document.getElementById("manualActorUnitId");
   var moveXInput = document.getElementById("manualMoveX");
   var moveYInput = document.getElementById("manualMoveY");
@@ -145,7 +151,7 @@
 
   function clearMarks() {
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
-      cell.classList.remove("is-move-option", "is-attack-option", "is-target-option", "is-selected-move");
+      cell.classList.remove("is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move");
     });
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unit) {
       unit.classList.remove("is-selected");
@@ -156,6 +162,17 @@
     (zocCells || []).forEach(function (point) {
       var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
       if (cell) cell.classList.add("is-zoc");
+    });
+  }
+
+  function isThreatCell(point) {
+    return (threatCells || []).some(function (threat) { return sameCell(threat, point); });
+  }
+
+  function markThreats() {
+    (threatCells || []).forEach(function (point) {
+      var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
+      if (cell) cell.classList.add("is-threat");
     });
   }
 
@@ -171,12 +188,14 @@
     var unit = unitById(unitId);
     var options = optionsByUnit[unitId] || {};
     if (selectedEl && unit) selectedEl.textContent = unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
+    if (hintEl) hintEl.textContent = "";
     var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
     if (unitEl) unitEl.classList.add("is-selected");
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
       var point = {x: Number(cell.dataset.x), y: Number(cell.dataset.y)};
       if ((options.move_cells || []).some(function (move) { return sameCell(move, point); })) {
         cell.classList.add("is-move-option");
+        if (isThreatCell(point)) cell.classList.add("is-danger-move");
       }
       if ((options.attackable_cells || []).some(function (attack) { return sameCell(attack, point); })) {
         cell.classList.add("is-attack-option");
@@ -199,13 +218,14 @@
     targetInput.value = "";
     submit.disabled = false;
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
-      cell.classList.remove("is-selected-move", "is-target-option");
+      cell.classList.remove("is-selected-move", "is-target-option", "is-attack-option");
       if (Number(cell.dataset.x) === Number(x) && Number(cell.dataset.y) === Number(y)) {
         cell.classList.add("is-selected-move");
       }
     });
     var options = optionsByUnit[selectedUnitId] || {};
     var afterMove = (options.after_move || {})[String(x) + "," + String(y)] || {};
+    if (hintEl) hintEl.textContent = afterMove.move_notice || "";
     (afterMove.attackable_cells || []).forEach(function (attack) {
       var attackCell = board.querySelector('[data-x="' + attack.x + '"][data-y="' + attack.y + '"]');
       if (attackCell) attackCell.classList.add("is-attack-option");
@@ -232,11 +252,18 @@
       return;
     }
     if (unitEl && unitEl.dataset.side === "enemy") {
+      var enemyUnit = unitById(unitEl.dataset.unitId);
+      var targetCell = unitEl.closest(".mini-tactics-cell");
+      if (!targetCell || !targetCell.classList.contains("is-target-option")) {
+        if (hintEl) hintEl.textContent = enemyUnit && enemyUnit.guarded ? "リーダーは護衛されているため狙えません。" : "攻撃できない対象です。";
+        return;
+      }
       targetInput.value = unitEl.dataset.unitId;
       submit.disabled = false;
     }
   });
   markZoc();
+  markThreats();
 })();
 </script>
 {% endblock %}
