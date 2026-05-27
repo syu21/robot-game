@@ -1327,11 +1327,11 @@ def _manual_v1_ai_choose_unit(state):
     for enemy in enemies:
         for move in get_legal_moves(enemy, state):
             score = abs(move["x"] - int(ally_leader["x"])) + abs(move["y"] - int(ally_leader["y"]))
-            candidate = (score, str(enemy.get("unit_id") or ""), enemy, move)
+            candidate = (score, str(enemy.get("unit_id") or ""), int(move["x"]), int(move["y"]), enemy, move)
             if best is None or candidate < best:
                 best = candidate
     if best:
-        _, _, enemy, move = best
+        _, _, _, _, enemy, move = best
         return enemy, move, None
     return (enemies[0], None, None) if enemies else (None, None, None)
 

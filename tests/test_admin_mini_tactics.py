@@ -590,7 +590,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
         self.assertIn("mini_shogi_4x4", page.get_data(as_text=True))
-        self.assertIn("護衛中リーダー", page.get_data(as_text=True))
+        self.assertIn("クリックすると即行動", page.get_data(as_text=True))
 
     def test_mini_shogi_4x4_movement_rules(self):
         state = build_manual_initial_board_v1(1)
@@ -785,7 +785,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         battle_url = resp.headers["Location"]
         action = client.post(
             f"{battle_url}/action",
-            data={"actor_unit_id": "ally_hydra", "move_x": "1", "move_y": "2"},
+            data={"actor_unit_id": "ally_hydra", "action_type": "move", "to_x": "1", "to_y": "2"},
             follow_redirects=True,
         )
         self.assertEqual(action.status_code, 200)
@@ -795,6 +795,75 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("data-current-board-state", html)
         self.assertIn("もう一度再生", html)
         self.assertIn("演出スキップ", html)
+        self.assertNotIn("行動確定", html)
+
+    def test_mini_shogi_4x4_move_action_post_resolves_enemy_turn(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/new?seed=904", follow_redirects=False)
+        battle_url = resp.headers["Location"]
+        action = client.post(
+            f"{battle_url}/action",
+            data={"actor_unit_id": "ally_hydra", "action_type": "move", "to_x": "1", "to_y": "2"},
+            follow_redirects=False,
+        )
+        self.assertEqual(action.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            state = json.loads(row["board_state_json"])
+            sequence = state["last_action_sequence"]
+            self.assertEqual(state["current_turn_side"], "ally")
+            self.assertTrue(any(event["phase"] == "ally" and event["type"] == "move" for event in sequence))
+            self.assertTrue(any(event["phase"] == "enemy" for event in sequence))
+
+    def test_mini_shogi_4x4_attack_action_post_resolves_enemy_turn(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/new?seed=905", follow_redirects=False)
+        battle_url = resp.headers["Location"]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            state = json.loads(row["board_state_json"])
+            ally = next(unit for unit in state["units"] if unit["unit_id"] == "ally_cerberus")
+            target = next(unit for unit in state["units"] if unit["unit_id"] == "enemy_dummy_b")
+            guard = next(unit for unit in state["units"] if unit["unit_id"] == "ally_phoenix")
+            ally.update({"x": 2, "y": 2})
+            guard.update({"x": 2, "y": 3})
+            target.update({"x": 3, "y": 2})
+            db.execute(
+                "UPDATE mini_tactics_battles SET board_state_json = ? WHERE id = ?",
+                (json.dumps(state, ensure_ascii=False, separators=(",", ":")), row["id"]),
+            )
+            db.commit()
+        action = client.post(
+            f"{battle_url}/action",
+            data={"actor_unit_id": "ally_cerberus", "action_type": "attack", "target_unit_id": "enemy_dummy_b"},
+            follow_redirects=False,
+        )
+        self.assertEqual(action.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles ORDER BY id DESC LIMIT 1").fetchone()
+            state = json.loads(row["board_state_json"])
+            self.assertEqual(state["current_turn_side"], "ally")
+            self.assertTrue(any(event["phase"] == "ally" and event["type"] == "attack" for event in state["last_action_sequence"]))
+
+    def test_mini_shogi_4x4_invalid_immediate_actions_are_rejected(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/new?seed=906", follow_redirects=False)
+        battle_url = resp.headers["Location"]
+        bad_move = client.post(
+            f"{battle_url}/action",
+            data={"actor_unit_id": "ally_cerberus", "action_type": "move", "to_x": "9", "to_y": "9"},
+            follow_redirects=True,
+        )
+        self.assertIn("移動できない", bad_move.get_data(as_text=True))
+        bad_attack = client.post(
+            f"{battle_url}/action",
+            data={"actor_unit_id": "ally_cerberus", "action_type": "attack", "target_unit_id": "enemy_dummy_a"},
+            follow_redirects=True,
+        )
+        self.assertIn("狙えません", bad_attack.get_data(as_text=True))
 
     def test_mini_shogi_4x4_action_options_include_after_move_targets(self):
         state = build_manual_initial_board_v1(1)

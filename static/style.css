@@ -7286,6 +7286,24 @@ body.home-page .locked-layer-card {
   position: relative;
   cursor: pointer;
 }
+.mini-tactics-manual-board.is-locked {
+  pointer-events: none;
+}
+.mini-tactics-manual-board.is-enemy-turn::before {
+  content: "ENEMY TURN";
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 237, 213, 0.92);
+  font-weight: 900;
+  font-size: clamp(1.4rem, 4vw, 2.8rem);
+  letter-spacing: 0.08em;
+  background: rgba(127, 29, 29, 0.18);
+  pointer-events: none;
+  text-shadow: 0 0 18px rgba(248, 113, 113, 0.8);
+}
 .mini-tactics-manual-board .mini-tactics-cell.is-move-option {
   border-color: rgba(34, 211, 238, 0.72);
   background: rgba(8, 145, 178, 0.2);

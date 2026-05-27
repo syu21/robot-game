@@ -79,10 +79,15 @@
         <div id="miniTacticsManualSelected" class="robot-part">味方ユニットを選択</div>
         <form method="post" action="{{ url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
           <input type="hidden" name="actor_unit_id" id="manualActorUnitId" />
+          <input type="hidden" name="action_type" id="manualActionType" />
+          <input type="hidden" name="to_x" id="manualToX" />
+          <input type="hidden" name="to_y" id="manualToY" />
           <input type="hidden" name="move_x" id="manualMoveX" />
           <input type="hidden" name="move_y" id="manualMoveY" />
           <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
+          {% if manual_mode != 'mini_shogi_4x4' %}
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
+          {% endif %}
         </form>
         <div class="mini-tactics-replay-controls">
           <button type="button" id="manualReplayButton">もう一度再生</button>
@@ -90,7 +95,11 @@
         </div>
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
+          {% if manual_mode == 'mini_shogi_4x4' %}
+          駒を選び、青い移動先または赤枠の攻撃対象をクリックすると即行動します。敵ターンは自動再生されます。
+          {% else %}
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
+          {% endif %}
         </div>
       </section>
 
@@ -137,6 +146,8 @@
 <script>
 (function () {
   var boardState = {{ board_state|tojson }};
+  var manualMode = {{ manual_mode|tojson }};
+  var isMiniShogi = manualMode === "mini_shogi_4x4";
   var previousBoardState = {{ board_state.get('previous_board_state')|tojson }};
   var currentBoardState = {{ board_state.get('current_board_state')|tojson }};
   var actionSequence = {{ board_state.get('last_action_sequence', [])|tojson }};
@@ -152,6 +163,9 @@
   var replayButton = document.getElementById("manualReplayButton");
   var skipReplayButton = document.getElementById("manualSkipReplayButton");
   var actorInput = document.getElementById("manualActorUnitId");
+  var actionTypeInput = document.getElementById("manualActionType");
+  var toXInput = document.getElementById("manualToX");
+  var toYInput = document.getElementById("manualToY");
   var moveXInput = document.getElementById("manualMoveX");
   var moveYInput = document.getElementById("manualMoveY");
   var targetInput = document.getElementById("manualTargetUnitId");
@@ -187,6 +201,25 @@
   function setActionEnabled(enabled) {
     if (submit) submit.disabled = !enabled || !actorInput.value;
     if (replaying && submit) submit.disabled = true;
+  }
+
+  function setControlsLocked(locked) {
+    if (board) board.classList.toggle("is-locked", !!locked);
+    if (replayButton) replayButton.disabled = !!locked;
+  }
+
+  function postImmediateAction(actionType, payload) {
+    if (!isMiniShogi || replaying || boardState.result || !selectedUnitId) return;
+    actorInput.value = selectedUnitId;
+    actionTypeInput.value = actionType;
+    targetInput.value = payload.target_unit_id || "";
+    toXInput.value = payload.to_x != null ? String(payload.to_x) : "";
+    toYInput.value = payload.to_y != null ? String(payload.to_y) : "";
+    moveXInput.value = payload.to_x != null ? String(payload.to_x) : "";
+    moveYInput.value = payload.to_y != null ? String(payload.to_y) : "";
+    setCaption("行動を送信中", "ally");
+    setControlsLocked(true);
+    document.getElementById("miniTacticsManualAction").submit();
   }
 
   function unitLabel(unit) {
@@ -261,11 +294,12 @@
 
   async function playSequence() {
     if (!actionSequence || !actionSequence.length || !previousBoardState || !currentBoardState) {
-      setCaption("盤面を選択してください", "ally");
+      setCaption("味方ターン：動かすミニロボを選択", "ally");
       return;
     }
     var token = ++replayToken;
     replaying = true;
+    setControlsLocked(true);
     if (submit) submit.disabled = true;
     var displayState = JSON.parse(JSON.stringify(previousBoardState));
     renderBoard(displayState);
@@ -274,6 +308,8 @@
       if (token !== replayToken) return;
       var action = actionSequence[i];
       setCaption(action.text, action.phase || action.type);
+      if (action.phase === "enemy") board.classList.add("is-enemy-turn");
+      else board.classList.remove("is-enemy-turn");
       if (action.type === "move") {
         var movingUnit = eventUnit(displayState, action.actor_unit_id);
         flashUnit(action.actor_unit_id, "is-animating-move");
@@ -309,7 +345,9 @@
     boardState = JSON.parse(JSON.stringify(currentBoardState));
     renderBoard(boardState);
     replaying = false;
-    setCaption(boardState.result ? "決着" : "味方ターン", boardState.result ? "result" : "ally");
+    board.classList.remove("is-enemy-turn");
+    setControlsLocked(false);
+    setCaption(boardState.result ? "決着" : "味方ターン：次の1手を選択", boardState.result ? "result" : "ally");
     if (boardState.result && submit) submit.disabled = true;
   }
 
@@ -320,7 +358,9 @@
       boardState = JSON.parse(JSON.stringify(currentBoardState));
       renderBoard(boardState);
     }
-    setCaption(boardState.result ? "決着" : "味方ターン", boardState.result ? "result" : "ally");
+    board.classList.remove("is-enemy-turn");
+    setControlsLocked(false);
+    setCaption(boardState.result ? "決着" : "味方ターン：次の1手を選択", boardState.result ? "result" : "ally");
     setActionEnabled(false);
   }
 
@@ -347,13 +387,16 @@
     selectedUnitId = unitId;
     selectedMove = null;
     actorInput.value = unitId;
+    actionTypeInput.value = "";
+    toXInput.value = "";
+    toYInput.value = "";
     moveXInput.value = "";
     moveYInput.value = "";
     targetInput.value = "";
-    submit.disabled = true;
+    if (submit) submit.disabled = true;
     var unit = unitById(unitId);
     var options = optionsByUnit[unitId] || {};
-    if (selectedEl && unit) selectedEl.textContent = unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
+    if (selectedEl && unit) selectedEl.textContent = isMiniShogi ? "移動先または攻撃対象を選択: " + unit.name : unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
     if (hintEl) hintEl.textContent = "";
     if (replaying || boardState.result) return;
     var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
@@ -374,6 +417,7 @@
       var targetCell = board.querySelector('[data-x="' + target.x + '"][data-y="' + target.y + '"]');
       if (targetCell) targetCell.classList.add("is-target-option");
     });
+    markThreats();
   }
 
   function markAfterMove(x, y) {
@@ -382,8 +426,14 @@
     selectedMove = {x: Number(x), y: Number(y)};
     moveXInput.value = String(x);
     moveYInput.value = String(y);
+    toXInput.value = String(x);
+    toYInput.value = String(y);
     targetInput.value = "";
-    submit.disabled = false;
+    if (isMiniShogi) {
+      postImmediateAction("move", {to_x: x, to_y: y});
+      return;
+    }
+    if (submit) submit.disabled = false;
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
       cell.classList.remove("is-selected-move", "is-target-option", "is-attack-option");
       if (Number(cell.dataset.x) === Number(x) && Number(cell.dataset.y) === Number(y)) {
@@ -427,7 +477,11 @@
         return;
       }
       targetInput.value = unitEl.dataset.unitId;
-      submit.disabled = false;
+      if (isMiniShogi) {
+        postImmediateAction("attack", {target_unit_id: unitEl.dataset.unitId});
+      } else if (submit) {
+        submit.disabled = false;
+      }
     }
   });
   markZoc();

@@ -36260,15 +36260,29 @@ def admin_lab_mini_tactics_manual_action(battle_id):
     except json.JSONDecodeError:
         return abort(500)
     actor_unit_id = (request.form.get("actor_unit_id") or "").strip()
+    action_type = (request.form.get("action_type") or "").strip()
     target_unit_id = (request.form.get("target_unit_id") or "").strip() or None
     move_to = None
-    move_x = (request.form.get("move_x") or "").strip()
-    move_y = (request.form.get("move_y") or "").strip()
+    move_x = (request.form.get("to_x") or request.form.get("move_x") or "").strip()
+    move_y = (request.form.get("to_y") or request.form.get("move_y") or "").strip()
     if move_x and move_y:
         try:
             move_to = {"x": int(move_x), "y": int(move_y)}
         except ValueError:
             flash("移動先が不正です。", "error")
+            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+    if mode == "mini_shogi_4x4":
+        if action_type == "move":
+            target_unit_id = None
+        elif action_type == "attack":
+            move_to = None
+        elif not action_type:
+            action_type = "attack" if target_unit_id else "move"
+        if action_type == "move" and not move_to:
+            flash("移動先が不正です。", "error")
+            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+        if action_type == "attack" and not target_unit_id:
+            flash("攻撃対象が不正です。", "error")
             return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
     if mode == "mini_shogi_4x4":
         next_state, logs, error = apply_manual_action(
