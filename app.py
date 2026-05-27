@@ -13684,6 +13684,48 @@ def _equip_part_instances_on_robot(db, robot_instance_id, part_instance_ids):
         db.execute("UPDATE part_instances SET status = 'equipped' WHERE id = ?", (pi_id,))
 
 
+def _clone_part_instance_for_user(db, source_part_instance_id, user_id, *, status="inventory"):
+    source = db.execute(
+        """
+        SELECT *
+        FROM part_instances
+        WHERE id = ? AND user_id = ?
+        """,
+        (int(source_part_instance_id), int(user_id)),
+    ).fetchone()
+    if not source:
+        return None
+    status_key = str(status or "inventory").strip().lower()
+    if status_key not in {"inventory", "equipped", "overflow", "sold"}:
+        status_key = "inventory"
+    cur = db.execute(
+        """
+        INSERT INTO part_instances
+        (part_id, user_id, part_type, rarity, element, series, plus,
+         w_hp, w_atk, w_def, w_spd, w_acc, w_cri, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (
+            source["part_id"],
+            int(user_id),
+            _norm_part_type(source["part_type"]),
+            source["rarity"],
+            source["element"],
+            source["series"],
+            int(source["plus"] or 0),
+            source["w_hp"],
+            source["w_atk"],
+            source["w_def"],
+            source["w_spd"],
+            source["w_acc"],
+            source["w_cri"],
+            status_key,
+            int(time.time()),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
 def _ensure_robot_instance_part_instances(db, robot_instance_id):
     row = db.execute(
         """
@@ -32980,11 +33022,49 @@ def build():
     series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
     active_robot = _get_active_robot(db, user_id)
-    if not requested_frame_type and active_robot:
-        selected_frame_type = _normalize_frame_type(active_robot.get("frame_type"), default=selected_frame_type)
+    saved_robot_rows = db.execute(
+        """
+        SELECT id, name, frame_type, composed_image_path, icon_32_path, updated_at
+        FROM robot_instances
+        WHERE user_id = ? AND status != 'decomposed'
+        ORDER BY
+            CASE WHEN id = (SELECT active_robot_id FROM users WHERE id = ?) THEN 0 ELSE 1 END,
+            updated_at DESC,
+            id DESC
+        """,
+        (int(user_id), int(user_id)),
+    ).fetchall()
+    requested_build_mode = (request.args.get("mode") or request.form.get("mode") or "").strip().lower()
+    if requested_build_mode not in {"new", "modify"}:
+        requested_build_mode = "modify" if active_robot else "new"
+    build_mode = requested_build_mode
+    base_robot_id_raw = (request.args.get("base_robot_id") or request.form.get("base_robot_id") or "").strip()
+    base_robot_id = int(base_robot_id_raw) if base_robot_id_raw.isdigit() else None
+    if build_mode == "modify" and not base_robot_id and active_robot:
+        base_robot_id = int(active_robot["id"])
+    base_robot = None
+    if build_mode == "modify" and base_robot_id:
+        base_robot = db.execute(
+            """
+            SELECT *
+            FROM robot_instances
+            WHERE id = ? AND user_id = ? AND status != 'decomposed'
+            """,
+            (int(base_robot_id), int(user_id)),
+        ).fetchone()
+    if build_mode == "modify" and not base_robot:
+        if active_robot:
+            base_robot = active_robot
+            base_robot_id = int(active_robot["id"])
+        else:
+            build_mode = "new"
+            base_robot_id = None
+    compare_robot = base_robot if build_mode == "modify" and base_robot else active_robot
+    if not requested_frame_type and compare_robot:
+        selected_frame_type = _normalize_frame_type(dict(compare_robot).get("frame_type"), default=selected_frame_type)
     current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
-    if active_robot:
-        active_mapping = _ensure_robot_instance_part_instances(db, int(active_robot["id"])) or {}
+    if compare_robot:
+        active_mapping = _ensure_robot_instance_part_instances(db, int(compare_robot["id"])) or {}
         current_rows = _part_instance_display_rows(
             db,
             [
@@ -33074,25 +33154,26 @@ def build():
         picked_raw = (request.values.get(param) or "").strip()
         picked_id = int(picked_raw) if picked_raw.isdigit() else None
         option = next((o for o in options if int(o["instance_id"]) == picked_id), None) if picked_id is not None else None
-        if option is None and options:
+        if option is None and options and build_mode == "new":
             option = options[0]
         selected_slot_values[param] = int(option["instance_id"]) if option else None
-        selected_parts[part_type] = option
-        if option:
+        display_option = option or (current_part_items.get(part_type) if build_mode == "modify" else None)
+        selected_parts[part_type] = display_option
+        if display_option:
             selected_payloads.append(
                 {
-                    "part_type": option.get("part_type"),
-                    "key": option.get("key"),
-                    "series": (option.get("instance_series") or option.get("series")),
-                    "rarity": (option.get("instance_rarity") or option.get("rarity") or "N"),
-                    "element": (option.get("instance_element") or option.get("element") or "NORMAL"),
-                    "plus": int(option.get("plus") or 0),
-                    "w_hp": option.get("w_hp"),
-                    "w_atk": option.get("w_atk"),
-                    "w_def": option.get("w_def"),
-                    "w_spd": option.get("w_spd"),
-                    "w_acc": option.get("w_acc"),
-                    "w_cri": option.get("w_cri"),
+                    "part_type": display_option.get("part_type"),
+                    "key": display_option.get("key"),
+                    "series": (display_option.get("instance_series") or display_option.get("series")),
+                    "rarity": (display_option.get("instance_rarity") or display_option.get("rarity") or "N"),
+                    "element": (display_option.get("instance_element") or display_option.get("element") or "NORMAL"),
+                    "plus": int(display_option.get("plus") or 0),
+                    "w_hp": display_option.get("w_hp"),
+                    "w_atk": display_option.get("w_atk"),
+                    "w_def": display_option.get("w_def"),
+                    "w_spd": display_option.get("w_spd"),
+                    "w_acc": display_option.get("w_acc"),
+                    "w_cri": display_option.get("w_cri"),
                 }
             )
 
@@ -33136,7 +33217,7 @@ def build():
         "legacy_build_type": "STABLE",
     }
     candidate_style_state = _style_view_from_stats(estimate["stats"]) if estimate else None
-    current_robot_stats_obj = _compute_robot_stats_for_instance(db, active_robot["id"]) if active_robot else None
+    current_robot_stats_obj = _compute_robot_stats_for_instance(db, compare_robot["id"]) if compare_robot else None
     current_robot_stats = {
         "hp": int(current_robot_stats_obj["stats"]["hp"]) if current_robot_stats_obj else 0,
         "atk": int(current_robot_stats_obj["stats"]["atk"]) if current_robot_stats_obj else 0,
@@ -33169,8 +33250,8 @@ def build():
         }
     )
     current_style_state = (
-        _robot_style_state_for_view(db, int(active_robot["id"]), stat_obj=current_robot_stats_obj)
-        if active_robot and current_robot_stats_obj
+        _robot_style_state_for_view(db, int(compare_robot["id"]), stat_obj=current_robot_stats_obj)
+        if compare_robot and current_robot_stats_obj
         else None
     )
     candidate_set_bonus_view = _set_bonus_view_for_loadout(
@@ -33228,6 +33309,10 @@ def build():
         selected_slot_values=selected_slot_values,
         selected_parts=selected_parts,
         current_part_items=current_part_items,
+        saved_robot_rows=saved_robot_rows,
+        build_mode=build_mode,
+        base_robot=base_robot,
+        base_robot_id=base_robot_id,
         estimate=estimate,
         decor_assets=decor_assets,
         selected_decor_id=selected_decor_id,
@@ -33266,6 +33351,11 @@ def build_confirm():
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
     selected_frame_type = _normalize_frame_type(request.form.get("frame_type"))
+    build_mode = (request.form.get("mode") or "new").strip().lower()
+    if build_mode not in {"new", "modify"}:
+        build_mode = "new"
+    base_robot_id_raw = (request.form.get("base_robot_id") or "").strip()
+    base_robot_id = int(base_robot_id_raw) if base_robot_id_raw.isdigit() else None
     head_choice = (request.form.get("head_key") or "").strip()
     r_arm_choice = (request.form.get("r_arm_key") or "").strip()
     l_arm_choice = (request.form.get("l_arm_key") or "").strip()
@@ -33273,9 +33363,37 @@ def build_confirm():
     decor_asset_id_raw = (request.form.get("decor_asset_id") or "").strip()
     decor_asset_id = int(decor_asset_id_raw) if decor_asset_id_raw.isdigit() else None
     combat_mode = _normalize_combat_mode(request.form.get("combat_mode"))
-    if not all([head_choice, r_arm_choice, l_arm_choice, legs_choice]):
+
+    def _build_redirect():
+        if build_mode == "modify":
+            return redirect(url_for("build", mode="modify", base_robot_id=base_robot_id or "", frame_type=selected_frame_type))
+        return redirect(url_for("build", mode="new", frame_type=selected_frame_type))
+
+    base_robot = None
+    base_mapping = {}
+    if build_mode == "modify":
+        if not base_robot_id:
+            session["message"] = "改造する保存中ロボを選んでください。"
+            return _build_redirect()
+        base_robot = db.execute(
+            """
+            SELECT *
+            FROM robot_instances
+            WHERE id = ? AND user_id = ? AND status != 'decomposed'
+            """,
+            (int(base_robot_id), int(user["id"])),
+        ).fetchone()
+        if not base_robot:
+            session["message"] = "改造する保存中ロボが見つかりません。"
+            return _build_redirect()
+        base_mapping = _ensure_robot_instance_part_instances(db, int(base_robot["id"])) or {}
+        if not all(base_mapping.get(slot) for slot in ("head", "r_arm", "l_arm", "legs")):
+            session["message"] = "改造元ロボのパーツ情報が不足しています。"
+            return _build_redirect()
+
+    if build_mode == "new" and not all([head_choice, r_arm_choice, l_arm_choice, legs_choice]):
         session["message"] = "全カテゴリから1つずつ選択してください。"
-        return redirect(url_for("build", frame_type=selected_frame_type))
+        return _build_redirect()
     slot_defs = {
         "head": {"expected_type": "HEAD", "choice": head_choice},
         "r_arm": {"expected_type": "RIGHT_ARM", "choice": r_arm_choice},
@@ -33354,17 +33472,37 @@ def build_confirm():
     resolved_slots = {}
     for slot_name, cfg in slot_defs.items():
         resolved = _resolve_selected_part_instance(cfg["choice"], cfg["expected_type"])
+        if not resolved and build_mode == "modify":
+            base_slot_id = base_mapping.get(slot_name)
+            if base_slot_id:
+                base_row = db.execute(
+                    """
+                    SELECT pi.id, pi.status, rp.key, rp.part_type, COALESCE(rp.frame_type, 'normal') AS frame_type
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.id = ? AND pi.user_id = ? AND rp.is_active = 1
+                    """,
+                    (int(base_slot_id), int(user["id"])),
+                ).fetchone()
+                if base_row and _norm_part_type(base_row["part_type"]) == cfg["expected_type"]:
+                    resolved = {
+                        "id": int(base_row["id"]),
+                        "key": base_row["key"],
+                        "part_type": _norm_part_type(base_row["part_type"]),
+                        "frame_type": _normalize_frame_type(base_row["frame_type"]),
+                        "clone_from_base": True,
+                    }
         if not resolved:
             session["message"] = "無効化されたパーツは組み立てに使用できません。"
-            return redirect(url_for("build", frame_type=selected_frame_type))
+            return _build_redirect()
         resolved_slots[slot_name] = resolved
     if len({resolved_slots["head"]["id"], resolved_slots["r_arm"]["id"], resolved_slots["l_arm"]["id"], resolved_slots["legs"]["id"]}) != 4:
         session["message"] = "同じ個体を複数部位へは設定できません。"
-        return redirect(url_for("build", frame_type=selected_frame_type))
+        return _build_redirect()
     selected_frame_types = {resolved_slots[key]["frame_type"] for key in ("head", "r_arm", "l_arm", "legs")}
     if len(selected_frame_types) != 1 or selected_frame_type not in selected_frame_types:
         session["message"] = "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで組み立てできます。"
-        return redirect(url_for("build", frame_type=selected_frame_type))
+        return _build_redirect()
 
     head_key = resolved_slots["head"]["key"]
     r_arm_key = resolved_slots["r_arm"]["key"]
@@ -33372,7 +33510,7 @@ def build_confirm():
     legs_key = resolved_slots["legs"]["key"]
     if combat_mode == "berserk" and not _has_any_active_boss_alert(db, user["id"]):
         session["message"] = "背水モードはボス警報中のみ選択可能"
-        return redirect(url_for("build", frame_type=selected_frame_type))
+        return _build_redirect()
     if decor_asset_id is not None:
         decor = db.execute(
             """
@@ -33385,7 +33523,7 @@ def build_confirm():
         ).fetchone()
         if not decor:
             session["message"] = "装飾が無効です。選び直してください。"
-            return redirect(url_for("build", frame_type=selected_frame_type))
+            return _build_redirect()
     if not robot_name:
         next_id_row = db.execute(
             "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM robot_instances"
@@ -33398,10 +33536,10 @@ def build_confirm():
     ).fetchone()["c"]
     if active_count >= limits["robot_slots"]:
         flash(
-            f"ロボ格納庫がいっぱいです（{int(active_count)}/{int(limits['robot_slots'])}）。新しく保存する場合は、既存ロボを整理してください。",
+            f"保存枠がいっぱいです。不要なロボを整理してください（{int(active_count)}/{int(limits['robot_slots'])}）。",
             "error",
         )
-        return redirect(url_for("build", frame_type=selected_frame_type))
+        return _build_redirect()
     try:
         db.execute("BEGIN IMMEDIATE")
         selected = {
@@ -33410,6 +33548,13 @@ def build_confirm():
             "l_arm": int(resolved_slots["l_arm"]["id"]),
             "legs": int(resolved_slots["legs"]["id"]),
         }
+        if build_mode == "modify":
+            for slot_name in ("head", "r_arm", "l_arm", "legs"):
+                if resolved_slots[slot_name].get("clone_from_base"):
+                    cloned_id = _clone_part_instance_for_user(db, int(resolved_slots[slot_name]["id"]), int(user["id"]))
+                    if not cloned_id:
+                        raise ValueError("改造元パーツの複製に失敗しました。")
+                    selected[slot_name] = int(cloned_id)
         if not all(selected.values()):
             missing = [k for k, v in selected.items() if not v]
             raise ValueError(f"在庫不足: {', '.join(missing)}")
@@ -33528,8 +33673,8 @@ def build_confirm():
     except Exception as exc:
         db.rollback()
         session["message"] = str(exc)
-        return redirect(url_for("build"))
-    session["message"] = "完成ロボを登録し、出撃機体に設定しました。"
+        return _build_redirect()
+    session["message"] = "機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。"
     return redirect(url_for("robots"))
 
 

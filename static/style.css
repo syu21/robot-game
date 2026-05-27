@@ -7455,6 +7455,33 @@ body.home-page .locked-layer-card {
   color: #facc15;
   font-size: 0.88rem;
 }
+.build-mode-tabs,
+.build-base-robots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.build-base-robot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.54);
+  color: #dff7ff;
+  text-decoration: none;
+}
+.build-base-robot.is-active {
+  border-color: rgba(34, 211, 238, 0.78);
+  background: rgba(8, 145, 178, 0.22);
+}
+.build-base-robot img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
 .mini-tactics-manual-side {
   display: grid;
   gap: 12px;

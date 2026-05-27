@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from '_style_gauge.html' import render_style_gauge %}
 {% from '_style_rank.html' import render_style_rank %}
-{% macro render_picker_option(input_name, preview_target, p, selected_value) -%}
+{% macro render_picker_option(input_name, preview_target, p, selected_value, require_choice=True) -%}
   {% set input_id = input_name ~ '_' ~ p['instance_id'] %}
   <article class="picker-item part-picker-card">
     <input
@@ -23,7 +23,7 @@
       data-stat-spd="{{ p['estimate_stats']['spd'] }}"
       data-stat-acc="{{ p['estimate_stats']['acc'] }}"
       data-stat-cri="{{ p['estimate_stats']['cri'] }}"
-      required
+      {% if require_choice %}required{% endif %}
       {% if p['instance_id'] == selected_value %}checked{% endif %}
     />
     <label class="part-picker-main" for="{{ input_id }}">
@@ -118,7 +118,34 @@
 </div>
 {% endif %}
 <section class="card">
-  <h2>ここでは新しいロボを組み立てられます</h2>
+  <h2>ロボの作り方を選んでください</h2>
+  <div class="build-mode-tabs">
+    <a class="fuse-mode-tab {% if build_mode == 'new' %}is-active{% endif %}" href="{{ url_for('build', mode='new', frame_type=selected_frame_type) }}">
+      新しく組み立てる
+    </a>
+    <a class="fuse-mode-tab {% if build_mode == 'modify' %}is-active{% endif %}" href="{{ url_for('build', mode='modify', base_robot_id=base_robot_id, frame_type=selected_frame_type) }}">
+      保存中ロボを改造する
+    </a>
+  </div>
+  {% if build_mode == 'modify' %}
+  <h3>保存中ロボを改造する</h3>
+  <div class="upgrade-cost">今あるロボをベースに、変えたいパーツだけ入れ替えます。未変更の部位は、選んだロボの現在パーツをそのまま使います。</div>
+  {% if saved_robot_rows %}
+  <div class="build-base-robots">
+    {% for robot in saved_robot_rows %}
+    <a class="build-base-robot {% if base_robot_id and robot['id'] == base_robot_id %}is-active{% endif %}" href="{{ url_for('build', mode='modify', base_robot_id=robot['id'], frame_type=robot['frame_type'] or selected_frame_type) }}">
+      {% if robot['icon_32_path'] %}
+      <img src="{{ url_for('static', filename=robot['icon_32_path'], v=app_version) }}" alt="" loading="lazy" />
+      {% endif %}
+      <span>{{ robot['name'] }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% else %}
+  <h3>新しくロボを組み立てる</h3>
+  <div class="upgrade-cost">4部位を選んで、別のロボを作ります。</div>
+  {% endif %}
   <div class="upgrade-cost">
     ・今使っているロボは消えません<br>
     ・ロボは複数作れます<br>
@@ -158,6 +185,8 @@
   {% endfor %}
 </div>
 <form method="post" action="{{ url_for('build_confirm') }}" id="build-form" data-submit-lock="1" data-loading-text="登録中...">
+  <input type="hidden" name="mode" value="{{ build_mode }}" />
+  <input type="hidden" name="base_robot_id" value="{{ base_robot_id or '' }}" />
   <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
   <div class="build-grid">
     <section class="card build-preview build-preview-primary">
@@ -304,7 +333,13 @@
 
     <section class="card build-picker">
       <h2>所持パーツから選択</h2>
-      <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
+      <div class="robot-time">
+        {% if build_mode == 'modify' %}
+        変えたいパーツだけ選び替え。未選択の部位は現在のパーツをそのまま使います。現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。
+        {% else %}
+        現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。
+        {% endif %}
+      </div>
 
       <details class="picker-section" data-picker-section="head" open>
         <summary><b>HEAD（頭）</b></summary>
@@ -312,7 +347,7 @@
         {% if part_groups['HEAD'] %}
           <div class="picker-list">
           {% for p in part_groups['HEAD'] %}
-            {{ render_picker_option('head_key', 'head', p, selected_slot_values['head_key']) }}
+            {{ render_picker_option('head_key', 'head', p, selected_slot_values['head_key'], build_mode == 'new') }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
@@ -324,7 +359,7 @@
         {% if part_groups['RIGHT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['RIGHT_ARM'] %}
-            {{ render_picker_option('r_arm_key', 'rarm', p, selected_slot_values['r_arm_key']) }}
+            {{ render_picker_option('r_arm_key', 'rarm', p, selected_slot_values['r_arm_key'], build_mode == 'new') }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
@@ -336,7 +371,7 @@
         {% if part_groups['LEFT_ARM'] %}
           <div class="picker-list">
           {% for p in part_groups['LEFT_ARM'] %}
-            {{ render_picker_option('l_arm_key', 'larm', p, selected_slot_values['l_arm_key']) }}
+            {{ render_picker_option('l_arm_key', 'larm', p, selected_slot_values['l_arm_key'], build_mode == 'new') }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
@@ -348,7 +383,7 @@
         {% if part_groups['LEGS'] %}
           <div class="picker-list">
           {% for p in part_groups['LEGS'] %}
-            {{ render_picker_option('legs_key', 'legs', p, selected_slot_values['legs_key']) }}
+            {{ render_picker_option('legs_key', 'legs', p, selected_slot_values['legs_key'], build_mode == 'new') }}
           {% endfor %}
           </div>
         {% else %}<p>未所持</p>{% endif %}
@@ -375,7 +410,7 @@
       <div class="card build-submit-card">
         <label>ロボ名（空欄なら自動命名）</label>
         <input type="text" name="robot_name" maxlength="40" />
-        <button type="submit">組み立てたロボを保存する</button>
+        <button type="submit">{% if build_mode == 'modify' %}この構成で機体を改造する{% else %}この構成でロボを組み立てる{% endif %}</button>
       </div>
     </section>
   </div>
