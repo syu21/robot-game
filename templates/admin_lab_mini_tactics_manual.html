@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <section
-  class="mini-tactics-manual"
+  class="mini-tactics-manual {% if manual_mode == 'mini_shogi_3x4' %}is-mini-shogi-3x4{% endif %}"
   id="miniTacticsManual"
   data-action-sequence="{{ board_state.get('last_action_sequence', [])|tojson|forceescape }}"
   data-previous-board-state="{{ board_state.get('previous_board_state')|tojson|forceescape }}"
@@ -18,7 +18,7 @@
         {% if board_state.get('result') == 'ally_win' %}味方側の勝利{% elif board_state.get('result') == 'enemy_win' %}敵側の勝利{% else %}交戦中{% endif %}
       </div>
     </div>
-    <div class="mini-tactics-controls">
+    <div class="mini-tactics-controls mini-tactics-board-actions">
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">編成へ</a>
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
     </div>
@@ -131,7 +131,7 @@
         {% endfor %}
       </section>
 
-      <details class="mini-tactics-log" {% if action_log|length <= 3 %}open{% endif %}>
+      <details class="mini-tactics-log" {% if manual_mode != 'mini_shogi_3x4' and action_log|length <= 3 %}open{% endif %}>
         <summary><b>操作ログ</b></summary>
         <ul>
           {% for log in action_log[-12:]|reverse %}
@@ -200,6 +200,20 @@
 
   function sleep(ms) {
     return new Promise(function (resolve) { window.setTimeout(resolve, ms); });
+  }
+
+  function addClasses(el, classes) {
+    if (!el) return;
+    String(classes || "").split(/\s+/).filter(Boolean).forEach(function (className) {
+      el.classList.add(className);
+    });
+  }
+
+  function removeClasses(el, classes) {
+    if (!el) return;
+    String(classes || "").split(/\s+/).filter(Boolean).forEach(function (className) {
+      el.classList.remove(className);
+    });
   }
 
   function setActionEnabled(enabled) {
@@ -334,16 +348,16 @@
   function flashUnit(unitId, className) {
     var el = board.querySelector('[data-unit-id="' + unitId + '"]');
     if (!el) return;
-    el.classList.add(className);
-    window.setTimeout(function () { el.classList.remove(className); }, 420);
+    addClasses(el, className);
+    window.setTimeout(function () { removeClasses(el, className); }, 420);
   }
 
   function flashCell(point, className) {
     if (!point) return;
     var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
     if (!cell) return;
-    cell.classList.add(className);
-    window.setTimeout(function () { cell.classList.remove(className); }, 420);
+    addClasses(cell, className);
+    window.setTimeout(function () { removeClasses(cell, className); }, 420);
   }
 
   async function playSequence() {

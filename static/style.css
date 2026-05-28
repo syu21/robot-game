@@ -7522,6 +7522,41 @@ body.home-page .locked-layer-card {
   color: #0b1724;
   background: #e9f7ff;
 }
+.mini-tactics-controls .fuse-secondary-link,
+.mini-tactics-controls button,
+.mini-tactics-controls a,
+.mini-tactics-board-actions button,
+.mini-tactics-board-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid rgba(103, 232, 249, 0.55);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #123044, #1f6f8b);
+  color: #eaffff !important;
+  font-weight: 800;
+  line-height: 1.1;
+  text-decoration: none;
+  text-shadow: none;
+}
+.mini-tactics-controls .fuse-secondary-link:hover,
+.mini-tactics-controls .fuse-secondary-link:focus-visible,
+.mini-tactics-controls button:hover,
+.mini-tactics-controls button:focus-visible,
+.mini-tactics-board-actions button:hover,
+.mini-tactics-board-actions button:focus-visible {
+  color: #ffffff !important;
+  border-color: rgba(186, 230, 253, 0.88);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.18);
+}
+.mini-tactics-controls button:disabled,
+.mini-tactics-board-actions button:disabled {
+  background: #334155;
+  color: #cbd5e1 !important;
+  opacity: 0.65;
+}
 .mini-tactics button:not(.mini-tactics-cell):disabled,
 .mini-tactics-manual button:disabled {
   color: #94a3b8;
@@ -7553,6 +7588,71 @@ body.home-page .locked-layer-card {
 }
 #miniTacticsManualAction button:disabled {
   opacity: 0.45;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-watch-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-watch-head h1 {
+  margin: 0 0 2px;
+  font-size: clamp(1.15rem, 2.3vw, 1.45rem);
+  line-height: 1.15;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .robot-part {
+  font-size: 0.78rem;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-status-panel {
+  min-width: 128px;
+  padding: 7px 10px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-manual-layout {
+  grid-template-columns: minmax(0, 390px) minmax(220px, 320px);
+  justify-content: center;
+  align-items: start;
+  gap: 12px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-board-wrap {
+  width: min(86vw, 360px);
+  margin: 0 auto;
+  padding: 9px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-board {
+  width: 100%;
+  gap: 8px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-phase-banner,
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-action-caption {
+  margin-bottom: 5px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-action-caption {
+  min-height: 20px;
+  font-size: 0.88rem;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-manual-side {
+  gap: 8px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-manual-panel,
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-log {
+  padding: 9px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-manual-panel h2 {
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-roster-row {
+  padding: 6px;
+}
+.mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-unit {
+  width: 78%;
+  height: 78%;
 }
 .mini-tactics-unit {
   display: grid;
@@ -7794,6 +7894,25 @@ button.secondary {
     width: min(100%, 340px);
     margin: 0 auto;
     padding: 10px;
+  }
+  .mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-watch-head {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-controls {
+    display: flex;
+    gap: 6px;
+  }
+  .mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-manual-layout {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-board-wrap {
+    width: min(92vw, 330px);
+    padding: 8px;
+  }
+  .mini-tactics-manual.is-mini-shogi-3x4 .mini-tactics-board {
+    gap: 6px;
   }
   .mini-tactics-watch-head {
     gap: 8px;
