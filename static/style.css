@@ -7246,11 +7246,12 @@ body.home-page .locked-layer-card {
   font-weight: 900;
 }
 .mini-tactics-board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(var(--mini-tactics-width), minmax(0, 1fr));
   grid-template-rows: repeat(var(--mini-tactics-height), minmax(0, 1fr));
   gap: clamp(7px, 1.2vw, 12px);
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--mini-tactics-width) / var(--mini-tactics-height);
 }
 .mini-tactics-cell {
   display: grid;
@@ -7495,6 +7496,27 @@ body.home-page .locked-layer-card {
 .mini-tactics-manual-panel h2 {
   margin: 0 0 10px;
   font-size: 1rem;
+}
+.mini-tactics-manual button,
+.mini-tactics-manual input,
+.mini-tactics-manual select {
+  color: #e5f6ff;
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(103, 232, 249, 0.34);
+}
+.mini-tactics-manual button {
+  min-height: 38px;
+}
+.mini-tactics-manual button:disabled {
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.82);
+  opacity: 0.75;
+}
+.mini-tactics-manual .mini-tactics-replay-controls button {
+  color: #082f49;
+  background: linear-gradient(135deg, #67e8f9, #bae6fd);
+  border-color: rgba(186, 230, 253, 0.72);
+  font-weight: 800;
 }
 .mini-tactics-unit.is-core {
   border-style: double;
@@ -7750,9 +7772,31 @@ button.secondary {
   }
   .mini-tactics-manual-layout {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
   .mini-tactics-board-wrap {
-    width: 100%;
+    width: min(100%, 340px);
+    margin: 0 auto;
+    padding: 10px;
+  }
+  .mini-tactics-watch-head {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .mini-tactics-watch-head h1 {
+    font-size: 1.2rem;
+    margin-bottom: 2px;
+  }
+  .mini-tactics-action-caption {
+    min-height: 22px;
+    font-size: 0.92rem;
+  }
+  .mini-tactics-manual-side {
+    gap: 8px;
+  }
+  .mini-tactics-manual-panel,
+  .mini-tactics-log {
+    padding: 10px;
   }
   .mini-tactics-unit {
     width: 84%;

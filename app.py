@@ -36381,7 +36381,7 @@ def admin_lab_mini_tactics_manual(battle_id):
     if not _is_admin_user(session["user_id"]):
         return abort(404)
     row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
-    if not row or str(row["mode"] if "mode" in row.keys() else "") not in {"manual_board", "mini_shogi_4x4"}:
+    if not row or str(row["mode"] if "mode" in row.keys() else "") not in {"manual_board", "mini_shogi_4x4", "mini_shogi_3x4"}:
         return abort(404)
     return _render_mini_tactics_manual(row)
 
@@ -36396,7 +36396,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
     if not row:
         return abort(404)
     mode = str(row["mode"] if "mode" in row.keys() else "")
-    if mode not in {"manual_board", "mini_shogi_4x4"}:
+    if mode not in {"manual_board", "mini_shogi_4x4", "mini_shogi_3x4"}:
         return abort(404)
     try:
         board_state = json.loads(row["board_state_json"] or "{}")
@@ -36416,7 +36416,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         except ValueError:
             flash("移動先が不正です。", "error")
             return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
-    if mode == "mini_shogi_4x4":
+    if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         if action_type == "move":
             target_unit_id = None
         elif action_type == "attack":
@@ -36429,7 +36429,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         if action_type == "attack" and not target_unit_id:
             flash("攻撃対象が不正です。", "error")
             return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
-    if mode == "mini_shogi_4x4":
+    if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         next_state, logs, error = apply_manual_action(
             board_state,
             {
@@ -36498,7 +36498,7 @@ def _render_mini_tactics_manual(row):
         if unit.get("side") == "ally" and not unit.get("defeated") and unit.get("unit_type") != "core"
     ]
     mode = str(row["mode"] if "mode" in row.keys() else "")
-    if mode == "mini_shogi_4x4":
+    if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         options_by_unit = {
             str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(board_state, unit.get("unit_id"))
             for unit in ally_units
@@ -36544,7 +36544,7 @@ def admin_lab_mini_tactics_watch(battle_id):
     ).fetchone()
     if not row:
         return abort(404)
-    if str(row["mode"] if "mode" in row.keys() else "") in {"manual_board", "mini_shogi_4x4"}:
+    if str(row["mode"] if "mode" in row.keys() else "") in {"manual_board", "mini_shogi_4x4", "mini_shogi_3x4"}:
         return _render_mini_tactics_manual(row)
     try:
         map_payload = json.loads(row["map_json"] or "{}")

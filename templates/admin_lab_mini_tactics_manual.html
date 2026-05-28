@@ -9,7 +9,7 @@
 >
   <div class="mini-tactics-watch-head">
     <div>
-      <h1>手動戦術試験 #{{ battle['id'] }}</h1>
+      <h1>{% if manual_mode == 'mini_shogi_3x4' %}ミニロボどうぶつしょうぎ{% else %}手動戦術試験{% endif %} #{{ battle['id'] }}</h1>
       <div class="robot-part">seed {{ battle['seed'] }} / {{ manual_mode }} / turn {{ board_state.get('turn_number', 1) }} / {{ board_state.get('current_turn_side', 'ally') }}</div>
     </div>
     <div class="mini-tactics-status-panel">
@@ -85,7 +85,7 @@
           <input type="hidden" name="move_x" id="manualMoveX" />
           <input type="hidden" name="move_y" id="manualMoveY" />
           <input type="hidden" name="target_unit_id" id="manualTargetUnitId" />
-          {% if manual_mode != 'mini_shogi_4x4' %}
+          {% if manual_mode not in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
           {% endif %}
         </form>
@@ -95,8 +95,8 @@
         </div>
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
-          {% if manual_mode == 'mini_shogi_4x4' %}
-          駒を選び、青い移動先または赤枠の攻撃対象をクリックすると即行動します。敵ターンは自動再生されます。
+          {% if manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
+          駒を選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと一撃撃破。敵ターンは自動再生されます。
           {% else %}
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
           {% endif %}
@@ -129,8 +129,8 @@
         {% endfor %}
       </section>
 
-      <section class="mini-tactics-log">
-        <h2>操作ログ</h2>
+      <details class="mini-tactics-log" {% if action_log|length <= 3 %}open{% endif %}>
+        <summary><b>操作ログ</b></summary>
         <ul>
           {% for log in action_log[-12:]|reverse %}
           <li>{{ log.get('text') }}</li>
@@ -138,7 +138,7 @@
           <li>まだ行動はありません。</li>
           {% endfor %}
         </ul>
-      </section>
+      </details>
     </aside>
   </div>
 </section>
@@ -147,7 +147,7 @@
 (function () {
   var boardState = {{ board_state|tojson }};
   var manualMode = {{ manual_mode|tojson }};
-  var isMiniShogi = manualMode === "mini_shogi_4x4";
+  var isMiniShogi = manualMode === "mini_shogi_4x4" || manualMode === "mini_shogi_3x4";
   var previousBoardState = {{ board_state.get('previous_board_state')|tojson }};
   var currentBoardState = {{ board_state.get('current_board_state')|tojson }};
   var actionSequence = {{ board_state.get('last_action_sequence', [])|tojson }};
