@@ -36392,6 +36392,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
     db = get_db()
     if not _is_admin_user(session["user_id"]):
         return abort(404)
+    wants_json = bool(request.is_json or request.headers.get("X-Requested-With") == "fetch")
     row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
     if not row:
         return abort(404)
@@ -36404,18 +36405,30 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         action_log = json.loads(row["action_log_json"] or "[]")
     except json.JSONDecodeError:
         return abort(500)
-    actor_unit_id = (request.form.get("actor_unit_id") or "").strip()
-    action_type = (request.form.get("action_type") or "").strip()
-    target_unit_id = (request.form.get("target_unit_id") or "").strip() or None
+    payload = request.get_json(silent=True) if request.is_json else None
+    form_payload = payload if isinstance(payload, dict) else request.form
+
+    def _payload_value(key):
+        value = form_payload.get(key) if hasattr(form_payload, "get") else None
+        return "" if value is None else str(value)
+
+    def _action_error(message):
+        if wants_json:
+            return jsonify({"ok": False, "error": str(message), "board_state": board_state}), 400
+        flash(str(message), "error")
+        return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+
+    actor_unit_id = (_payload_value("actor_unit_id") or "").strip()
+    action_type = (_payload_value("action_type") or "").strip()
+    target_unit_id = (_payload_value("target_unit_id") or "").strip() or None
     move_to = None
-    move_x = (request.form.get("to_x") or request.form.get("move_x") or "").strip()
-    move_y = (request.form.get("to_y") or request.form.get("move_y") or "").strip()
+    move_x = (_payload_value("to_x") or _payload_value("move_x") or "").strip()
+    move_y = (_payload_value("to_y") or _payload_value("move_y") or "").strip()
     if move_x and move_y:
         try:
             move_to = {"x": int(move_x), "y": int(move_y)}
         except ValueError:
-            flash("移動先が不正です。", "error")
-            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+            return _action_error("移動先が不正です。")
     if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         if action_type == "move":
             target_unit_id = None
@@ -36424,11 +36437,9 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         elif not action_type:
             action_type = "attack" if target_unit_id else "move"
         if action_type == "move" and not move_to:
-            flash("移動先が不正です。", "error")
-            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+            return _action_error("移動先が不正です。")
         if action_type == "attack" and not target_unit_id:
-            flash("攻撃対象が不正です。", "error")
-            return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+            return _action_error("攻撃対象が不正です。")
     if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         next_state, logs, error = apply_manual_action(
             board_state,
@@ -36444,12 +36455,11 @@ def admin_lab_mini_tactics_manual_action(battle_id):
             actor_unit_id,
             move_to=move_to,
             target_unit_id=target_unit_id,
-            attack_first=(request.form.get("attack_first") or "") == "1",
+            attack_first=(_payload_value("attack_first") or "") == "1",
             map_payload=map_payload,
         )
     if error:
-        flash(error, "error")
-        return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
+        return _action_error(error)
     action_log.extend(logs)
     result = next_state.get("result")
     db.execute(
@@ -36476,6 +36486,40 @@ def admin_lab_mini_tactics_manual_action(battle_id):
         ),
     )
     db.commit()
+    if wants_json:
+        refreshed_units = next_state.get("units") or []
+        ally_units = [
+            unit
+            for unit in refreshed_units
+            if unit.get("side") == "ally" and not unit.get("defeated") and unit.get("unit_type") != "core"
+        ]
+        if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
+            options_by_unit = {
+                str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(next_state, unit.get("unit_id"))
+                for unit in ally_units
+            }
+            zoc_cells = mini_shogi_4x4_zoc_cells(next_state, "ally")
+            threat_cells = mini_shogi_4x4_threat_cells("ally", next_state)
+        else:
+            options_by_unit = {
+                str(unit.get("unit_id") or ""): manual_action_options(next_state, unit.get("unit_id"), map_payload)
+                for unit in ally_units
+            }
+            zoc_cells = []
+            threat_cells = []
+        return jsonify(
+            {
+                "ok": True,
+                "board_state": next_state,
+                "action_sequence": next_state.get("last_action_sequence") or [],
+                "message": logs[-1].get("text") if logs else "",
+                "result": result,
+                "action_log": action_log,
+                "options_by_unit": options_by_unit,
+                "zoc_cells": zoc_cells,
+                "threat_cells": threat_cells,
+            }
+        )
     return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
 
 

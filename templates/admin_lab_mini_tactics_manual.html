@@ -89,10 +89,12 @@
           <button type="submit" id="manualSubmit" disabled>行動確定</button>
           {% endif %}
         </form>
+        {% if manual_mode != 'mini_shogi_3x4' %}
         <div class="mini-tactics-replay-controls">
           <button type="button" id="manualReplayButton">もう一度再生</button>
           <button type="button" id="manualSkipReplayButton">演出スキップ</button>
         </div>
+        {% endif %}
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
           {% if manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
@@ -148,6 +150,7 @@
   var boardState = {{ board_state|tojson }};
   var manualMode = {{ manual_mode|tojson }};
   var isMiniShogi = manualMode === "mini_shogi_4x4" || manualMode === "mini_shogi_3x4";
+  var isMiniAnimalShogi = manualMode === "mini_shogi_3x4";
   var previousBoardState = {{ board_state.get('previous_board_state')|tojson }};
   var currentBoardState = {{ board_state.get('current_board_state')|tojson }};
   var actionSequence = {{ board_state.get('last_action_sequence', [])|tojson }};
@@ -175,6 +178,7 @@
   var selectedUnitId = "";
   var selectedMove = null;
   var replaying = false;
+  var actionPending = false;
   var replayToken = 0;
 
   function unitById(unitId) {
@@ -208,8 +212,8 @@
     if (replayButton) replayButton.disabled = !!locked;
   }
 
-  function postImmediateAction(actionType, payload) {
-    if (!isMiniShogi || replaying || boardState.result || !selectedUnitId) return;
+  async function postImmediateAction(actionType, payload) {
+    if (!isMiniShogi || replaying || actionPending || boardState.result || !selectedUnitId) return;
     actorInput.value = selectedUnitId;
     actionTypeInput.value = actionType;
     targetInput.value = payload.target_unit_id || "";
@@ -219,7 +223,57 @@
     moveYInput.value = payload.to_y != null ? String(payload.to_y) : "";
     setCaption("行動を送信中", "ally");
     setControlsLocked(true);
-    document.getElementById("miniTacticsManualAction").submit();
+    if (!isMiniAnimalShogi) {
+      document.getElementById("miniTacticsManualAction").submit();
+      return;
+    }
+    actionPending = true;
+    try {
+      var response = await fetch(document.getElementById("miniTacticsManualAction").action, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-Requested-With": "fetch"
+        },
+        body: JSON.stringify({
+          actor_unit_id: selectedUnitId,
+          action_type: actionType,
+          to_x: payload.to_x,
+          to_y: payload.to_y,
+          target_unit_id: payload.target_unit_id || ""
+        })
+      });
+      var data = await response.json().catch(function () { return null; });
+      if (!response.ok || !data || !data.ok) {
+        throw new Error((data && data.error) || "行動できませんでした。");
+      }
+      previousBoardState = data.board_state ? data.board_state.previous_board_state : null;
+      currentBoardState = data.board_state ? data.board_state.current_board_state : null;
+      actionSequence = data.action_sequence || [];
+      optionsByUnit = data.options_by_unit || {};
+      zocCells = data.zoc_cells || [];
+      threatCells = data.threat_cells || [];
+      selectedUnitId = "";
+      selectedMove = null;
+      clearMarks();
+      if (actionSequence.length && previousBoardState && currentBoardState) {
+        await playSequence();
+      } else if (data.board_state) {
+        boardState = data.board_state;
+        renderBoard(boardState);
+        setCaption(boardState.result ? "決着" : "味方ターン：動かすミニロボを選択", boardState.result ? "result" : "ally");
+      }
+      if (selectedEl) selectedEl.textContent = "味方ユニットを選択";
+      if (hintEl) hintEl.textContent = data.message || "";
+    } catch (error) {
+      if (hintEl) hintEl.textContent = error && error.message ? error.message : "通信エラーが発生しました。";
+      setCaption("味方ターン：動かすミニロボを選択", "ally");
+      setControlsLocked(false);
+    } finally {
+      actionPending = false;
+      if (!replaying) setControlsLocked(false);
+    }
   }
 
   function unitLabel(unit) {
@@ -488,7 +542,11 @@
   markThreats();
   if (replayButton) replayButton.addEventListener("click", playSequence);
   if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
-  playSequence();
+  if (isMiniAnimalShogi) {
+    setCaption(boardState.result ? "決着" : "味方ターン：動かすミニロボを選択", boardState.result ? "result" : "ally");
+  } else {
+    playSequence();
+  }
 })();
 </script>
 {% endblock %}

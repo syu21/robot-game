@@ -7504,12 +7504,28 @@ body.home-page .locked-layer-card {
   background: rgba(15, 23, 42, 0.92);
   border-color: rgba(103, 232, 249, 0.34);
 }
+.mini-tactics button:not(.mini-tactics-cell),
 .mini-tactics-manual button {
+  color: #eafcff;
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.96), rgba(15, 23, 42, 0.96));
+  border-color: rgba(103, 232, 249, 0.42);
   min-height: 38px;
 }
+.mini-tactics button:not(.mini-tactics-cell):hover,
+.mini-tactics button:not(.mini-tactics-cell):focus-visible {
+  color: #ffffff;
+  border-color: rgba(186, 230, 253, 0.8);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.18);
+}
+.mini-tactics button.secondary:not(.mini-tactics-cell),
+.mini-tactics .fuse-secondary-link {
+  color: #0b1724;
+  background: #e9f7ff;
+}
+.mini-tactics button:not(.mini-tactics-cell):disabled,
 .mini-tactics-manual button:disabled {
   color: #94a3b8;
-  background: rgba(30, 41, 59, 0.82);
+  background: #334155;
   opacity: 0.75;
 }
 .mini-tactics-manual .mini-tactics-replay-controls button {

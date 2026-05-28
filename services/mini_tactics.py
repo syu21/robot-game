@@ -71,16 +71,19 @@ MANUAL_V1_TRAIT_LABELS = {
     "guard_dog": "番犬",
     "retreat_shot": "退き撃ち",
     "fortress": "要塞",
+    "scout": "偵察",
 }
 MANUAL_V1_ALLY_SPECS = (
     ("ally_cerberus", "ケルベロス", "cerberus", True, 1, 3, "leader", "leader", "capture", "guard_dog", "up"),
     ("ally_phoenix", "フェニックス", "phoenix", False, 0, 3, "flyer", "flyer", "capture", "retreat_shot", "up"),
     ("ally_hydra", "ヒュドラ", "hydra", False, 2, 3, "guardian", "guardian", "capture", "fortress", "up"),
+    ("ally_scout", "ミニスカウト", "scout", False, 1, 2, "striker", "striker", "capture", "scout", "up"),
 )
 MANUAL_V1_ENEMY_SPECS = (
     ("enemy_dummy_a", "ダミーA", "dummy_a", True, 1, 0, "leader", "leader", "capture", "guard_dog", "down"),
     ("enemy_dummy_b", "ダミーB", "dummy_b", False, 0, 0, "flyer", "flyer", "capture", "retreat_shot", "down"),
     ("enemy_dummy_c", "ダミーC", "dummy_c", False, 2, 0, "guardian", "guardian", "capture", "fortress", "down"),
+    ("enemy_dummy_d", "ダミーD", "dummy_d", False, 1, 1, "striker", "striker", "capture", "scout", "down"),
 )
 SPECIES_WEAPONS = {
     "cerberus": "melee",
@@ -1327,12 +1330,8 @@ def run_enemy_manual_turn(board_state, rng=None):
     moved = False
     if move:
         ok, error = _manual_v1_apply_move(board_state, enemy, move, logs)
-        moved = bool(ok)
         if error:
             return logs
-        targets = get_legal_targets(enemy, board_state, moved=moved)
-        if targets:
-            target = min(targets, key=lambda t: (not bool(t.get("is_leader")), str(t.get("unit_id") or "")))
     if target:
         _manual_v1_apply_attack(board_state, enemy, target, logs, moved=moved)
     elif not move:
