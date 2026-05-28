@@ -76,7 +76,7 @@
     <aside class="mini-tactics-manual-side">
       <section class="mini-tactics-manual-panel">
         <h2>選択中ユニット</h2>
-        <div id="miniTacticsManualSelected" class="robot-part">味方ユニットを選択</div>
+        <div id="miniTacticsManualSelected" class="robot-part">選択中：なし</div>
         <form method="post" action="{{ url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
           <input type="hidden" name="actor_unit_id" id="manualActorUnitId" />
           <input type="hidden" name="action_type" id="manualActionType" />
@@ -105,6 +105,34 @@
         </div>
       </section>
 
+      {% if manual_mode == 'mini_shogi_3x4' %}
+      <section class="mini-tactics-manual-panel mini-shogi-move-guide">
+        <h2>駒の動き</h2>
+        <p class="mini-shogi-guide-note">味方の前は上。敵は上下反転。</p>
+        {% set move_guides = [
+          ('leader', 'リーダー', '全方向に1マス', '中央の主役。取られると敗北。', ['↖','↑','↗','←','●','→','↙','↓','↘']),
+          ('flyer', 'フェニックス', '斜め前と後ろ', '斜めに差し込み、後ろへ戻れる。', ['↖','','↗','','●','','','↓','']),
+          ('guardian', 'ヒュドラ', '前・横・斜め後ろ', '横を固めつつ退き道も持つ。', ['','↑','','←','●','→','↙','','↘']),
+          ('striker', 'ミニスカウト', '前・横', '前線を押し上げる基本駒。', ['','↑','','←','●','→','','',''])
+        ] %}
+        <div class="mini-shogi-move-guide-grid">
+          {% for key, name, movement, note, cells in move_guides %}
+          <article class="mini-shogi-move-card" data-move-type="{{ key }}">
+            <div>
+              <b>{{ name }}</b>
+              <span>{{ movement }}</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="{{ name }}の動き">
+              {% for mark in cells %}
+              <span class="{% if mark == '●' %}is-self{% elif mark %}is-move{% endif %}">{{ mark }}</span>
+              {% endfor %}
+            </div>
+            <p>{{ note }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      {% else %}
       <section class="mini-tactics-manual-panel">
         <h2>味方</h2>
         {% for unit in units_payload if unit.get('side') == 'ally' %}
@@ -130,6 +158,7 @@
         </div>
         {% endfor %}
       </section>
+      {% endif %}
 
       <details class="mini-tactics-log" {% if manual_mode != 'mini_shogi_3x4' and action_log|length <= 3 %}open{% endif %}>
         <summary><b>操作ログ</b></summary>
@@ -450,6 +479,12 @@
     });
   }
 
+  function highlightMoveGuide(moveType) {
+    document.querySelectorAll(".mini-shogi-move-card").forEach(function (card) {
+      card.classList.toggle("is-active", card.dataset.moveType === String(moveType || ""));
+    });
+  }
+
   function markForUnit(unitId) {
     clearMarks();
     selectedUnitId = unitId;
@@ -464,7 +499,12 @@
     if (submit) submit.disabled = true;
     var unit = unitById(unitId);
     var options = optionsByUnit[unitId] || {};
-    if (selectedEl && unit) selectedEl.textContent = isMiniShogi ? "移動先または攻撃対象を選択: " + unit.name : unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label;
+    if (selectedEl && unit) {
+      selectedEl.textContent = isMiniAnimalShogi
+        ? "選択中：" + unit.name + " / 動き：" + (unit.move_type_label || unit.move_type) + " / 敵マスで撃破"
+        : (isMiniShogi ? "移動先または攻撃対象を選択: " + unit.name : unit.name + " / " + unit.move_type_label + " / " + unit.weapon_label);
+    }
+    highlightMoveGuide(unit && unit.move_type);
     if (hintEl) hintEl.textContent = "";
     if (replaying || boardState.result) return;
     var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
