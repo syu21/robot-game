@@ -58,15 +58,15 @@ MANUAL_V1_WEAPON_LABELS = {
 }
 MANUAL_V1_MOVE_LABELS = {
     "leader": "リーダー",
-    "flyer": "飛行",
-    "guardian": "守護",
-    "sphinx": "スフィンクス",
+    "chick": "前進",
+    "bishop_like": "斜め",
+    "rook_like": "直線",
 }
 MANUAL_V1_ROLE_LABELS = {
     "leader": "リーダー",
-    "flyer": "飛行",
-    "guardian": "守護",
-    "sphinx": "知略型",
+    "chick": "前進",
+    "bishop_like": "斜め",
+    "rook_like": "直線",
 }
 MANUAL_V1_TRAIT_LABELS = {
     "guard_dog": "番犬",
@@ -76,15 +76,15 @@ MANUAL_V1_TRAIT_LABELS = {
 }
 MANUAL_V1_ALLY_SPECS = (
     ("ally_cerberus", "ケルベロス", "cerberus", True, 1, 3, "leader", "leader", "capture", "guard_dog", "up"),
-    ("ally_phoenix", "フェニックス", "phoenix", False, 0, 3, "flyer", "flyer", "capture", "retreat_shot", "up"),
-    ("ally_hydra", "ヒュドラ", "hydra", False, 2, 3, "guardian", "guardian", "capture", "fortress", "up"),
-    ("ally_sphinx", "スフィンクス", "sphinx", False, 1, 2, "sphinx", "sphinx", "capture", "sphinx", "up"),
+    ("ally_phoenix", "フェニックス", "phoenix", False, 1, 2, "chick", "chick", "capture", "retreat_shot", "up"),
+    ("ally_hydra", "ヒュドラ", "hydra", False, 0, 3, "bishop_like", "bishop_like", "capture", "fortress", "up"),
+    ("ally_sphinx", "スフィンクス", "sphinx", False, 2, 3, "rook_like", "rook_like", "capture", "sphinx", "up"),
 )
 MANUAL_V1_ENEMY_SPECS = (
     ("enemy_cerberus", "敵ケルベロス", "cerberus", True, 1, 0, "leader", "leader", "capture", "guard_dog", "down"),
-    ("enemy_phoenix", "敵フェニックス", "phoenix", False, 0, 0, "flyer", "flyer", "capture", "retreat_shot", "down"),
-    ("enemy_hydra", "敵ヒュドラ", "hydra", False, 2, 0, "guardian", "guardian", "capture", "fortress", "down"),
-    ("enemy_sphinx", "敵スフィンクス", "sphinx", False, 1, 1, "sphinx", "sphinx", "capture", "sphinx", "down"),
+    ("enemy_phoenix", "敵フェニックス", "phoenix", False, 1, 1, "chick", "chick", "capture", "retreat_shot", "down"),
+    ("enemy_hydra", "敵ヒュドラ", "hydra", False, 0, 0, "bishop_like", "bishop_like", "capture", "fortress", "down"),
+    ("enemy_sphinx", "敵スフィンクス", "sphinx", False, 2, 0, "rook_like", "rook_like", "capture", "sphinx", "down"),
 )
 SPECIES_WEAPONS = {
     "cerberus": "melee",
@@ -1181,17 +1181,17 @@ def get_legal_moves(unit, board_state):
     x = int(unit.get("x") or 0)
     y = int(unit.get("y") or 0)
     forward = -1 if side == "ally" else 1
-    move_type = str(unit.get("move_type") or "sphinx")
+    move_type = str(unit.get("move_type") or "rook_like")
     if move_type == "leader":
         deltas = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
-    elif move_type == "flyer":
-        deltas = ((-1, forward), (1, forward), (0, -forward))
-    elif move_type == "guardian":
-        deltas = ((0, forward), (-1, 0), (1, 0), (-1, -forward), (1, -forward))
-    elif move_type == "sphinx":
-        deltas = ((-1, forward), (1, forward), (-1, 0), (1, 0), (0, -forward))
+    elif move_type == "chick":
+        deltas = ((0, forward),)
+    elif move_type == "bishop_like":
+        deltas = ((-1, -1), (1, -1), (-1, 1), (1, 1))
+    elif move_type == "rook_like":
+        deltas = ((0, -1), (-1, 0), (1, 0), (0, 1))
     else:
-        deltas = ((0, forward), (-1, 0), (1, 0))
+        deltas = ((0, forward),)
     moves = []
     for dx, dy in deltas:
         nx = x + dx
@@ -1244,9 +1244,9 @@ def get_threatened_cells(board_state, side):
 def get_piece_value(piece_type):
     values = {
         "leader": 1000,
-        "guardian": 4,
-        "flyer": 3,
-        "sphinx": 2,
+        "bishop_like": 4,
+        "rook_like": 4,
+        "chick": 2,
     }
     return int(values.get(str(piece_type or ""), 1))
 
