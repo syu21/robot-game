@@ -108,7 +108,7 @@
       {% if manual_mode == 'mini_shogi_3x4' %}
       <section class="mini-tactics-manual-panel mini-shogi-move-guide">
         <h2>駒の動き</h2>
-        <p class="mini-shogi-guide-note">味方の前は上。敵は上下反転。</p>
+        <p class="mini-shogi-guide-note">敵も同じ駒で戦います。味方の前は上、敵は上下反転。</p>
         {% set move_guides = [
           ('leader', 'リーダー', '全方向に1マス', '中央の主役。取られると敗北。', ['↖','↑','↗','←','●','→','↙','↓','↘']),
           ('flyer', 'フェニックス', '斜め前と後ろ', '斜めに差し込み、後ろへ戻れる。', ['↖','','↗','','●','','','↓','']),
@@ -407,15 +407,20 @@
       setCaption(action.text, action.phase || action.type);
       if (action.phase === "enemy") board.classList.add("is-enemy-turn");
       else board.classList.remove("is-enemy-turn");
-      if (action.type === "move") {
+      if (action.type === "move" || action.type === "move_capture") {
         var movingUnit = eventUnit(displayState, action.actor_unit_id);
         flashUnit(action.actor_unit_id, "is-animating-move");
         await sleep(180);
         if (movingUnit && action.to) {
+          if (action.type === "move_capture") {
+            var capturedUnit = eventUnit(displayState, action.target_unit_id);
+            if (capturedUnit) capturedUnit.defeated = true;
+          }
           movingUnit.x = action.to.x;
           movingUnit.y = action.to.y;
           renderBoard(displayState);
           flashUnit(action.actor_unit_id, "is-animating-move");
+          if (action.type === "move_capture") flashCell(action.to, "is-impact-capture");
         }
       } else if (action.type === "attack") {
         var actor = eventUnit(displayState, action.actor_unit_id);

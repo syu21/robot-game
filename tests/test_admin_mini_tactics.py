@@ -16,17 +16,22 @@ from services.mini_tactics import (
     build_manual_board_state,
     build_turn_order,
     can_attack_manual,
+    choose_manual_cpu_action,
     check_manual_result,
     can_attack,
+    enumerate_manual_legal_actions,
     get_enemy_threat_cells,
     get_legal_moves,
     get_legal_targets,
+    get_piece_value,
+    get_threatened_cells,
     get_zoc_cells,
     is_leader_guarded,
     is_move_blocked_by_zoc,
     manhattan,
     mini_shogi_4x4_action_options,
     manual_action_options,
+    score_manual_cpu_action,
     simulate_mini_tactics_battle,
 )
 
@@ -577,6 +582,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual((next(u for u in enemies if u["move_type"] == "striker")["x"], next(u for u in enemies if u["move_type"] == "striker")["y"]), (1, 1))
         self.assertEqual({u["move_type"] for u in allies}, {"leader", "flyer", "guardian", "striker"})
         self.assertEqual({u["move_type"] for u in enemies}, {"leader", "flyer", "guardian", "striker"})
+        self.assertEqual({u["name"] for u in enemies}, {"敵ケルベロス", "敵フェニックス", "敵ヒュドラ", "敵ミニスカウト"})
+        self.assertFalse(any("ダミー" in u["name"] for u in enemies))
         self.assertTrue(all("trait_key" in u for u in state["units"]))
         self.assertTrue(all("hp" not in u and "atk" not in u and "def" not in u and "spd" not in u for u in state["units"]))
 
@@ -625,9 +632,9 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_mini_shogi_3x4_enemy_forward_direction_is_reversed(self):
         state = build_manual_initial_board_v1(1)
-        next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_a")["defeated"] = True
-        enemy_flyer = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_b")
-        enemy_guardian = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_c")
+        next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")["defeated"] = True
+        enemy_flyer = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
+        enemy_guardian = next(u for u in state["units"] if u["unit_id"] == "enemy_hydra")
         enemy_flyer.update({"x": 1, "y": 1})
         enemy_guardian.update({"x": 1, "y": 1})
         self.assertEqual({(m["x"], m["y"]) for m in get_legal_moves(enemy_flyer, state)}, {(0, 2), (2, 2), (1, 0)})
@@ -637,12 +644,12 @@ class AdminMiniTacticsTests(unittest.TestCase):
         state = build_manual_initial_board_v1(1)
         self.assertEqual(get_zoc_cells("ally", state), [])
         self.assertFalse(is_move_blocked_by_zoc(next(u for u in state["units"] if u["unit_id"] == "ally_cerberus"), 1, 2, state))
-        self.assertFalse(is_leader_guarded(next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_a"), state))
+        self.assertFalse(is_leader_guarded(next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus"), state))
 
     def test_mini_shogi_3x4_move_to_enemy_cell_captures(self):
         state = build_manual_initial_board_v1(1)
         ally = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
-        target = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_d")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
         next_state, logs, error = apply_manual_action(
             state,
             {"actor_unit_id": ally["unit_id"], "move_to": {"x": 1, "y": 1}},
@@ -652,7 +659,12 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertTrue(updated["defeated"])
         moved = next(u for u in next_state["units"] if u["unit_id"] == ally["unit_id"])
         self.assertEqual((moved["x"], moved["y"]), (1, 1))
-        self.assertTrue(any(log["type"] == "attack" for log in logs))
+        self.assertTrue(any(log["type"] == "move_capture" for log in logs))
+        sequence = next_state["last_action_sequence"]
+        self.assertEqual(sequence[0]["phase"], "ally")
+        self.assertEqual(sequence[0]["type"], "move_capture")
+        self.assertEqual(sequence[0]["target_unit_id"], target["unit_id"])
+        self.assertTrue(any(event["phase"] == "enemy" for event in sequence[1:]))
 
     def test_mini_shogi_3x4_leader_defeat_result(self):
         state = build_manual_initial_board_v1(1)
@@ -670,7 +682,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(next_state["result"], "ally_win")
         self.assertEqual(check_manual_result(next_state), "ally_win")
-        self.assertTrue(any("味方勝利" in log["text"] for log in logs))
+        self.assertTrue(any("味方側の勝利" in log["text"] for log in logs))
 
     def test_mini_shogi_3x4_enemy_cpu_acts_once_and_turn_returns(self):
         state = build_manual_initial_board_v1(1)
@@ -695,10 +707,10 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(next_state["previous_board_state"]["units"][2]["x"], 2)
         self.assertEqual(next_state["previous_board_state"]["units"][2]["y"], 3)
         self.assertEqual(next_state["current_board_state"]["units"], next_state["units"])
-        self.assertTrue(any(event["phase"] == "ally" and event["type"] == "move" and "from" in event and "to" in event for event in sequence))
+        self.assertTrue(any(event["phase"] == "ally" and event["type"] in {"move", "move_capture"} and "from" in event and "to" in event for event in sequence))
         self.assertTrue(any(event["phase"] == "enemy" for event in sequence))
-        if any(event["type"] == "attack" for event in sequence):
-            attack = next(event for event in sequence if event["type"] == "attack")
+        if any(event["type"] == "move_capture" for event in sequence):
+            attack = next(event for event in sequence if event["type"] == "move_capture")
             self.assertIn("actor_unit_id", attack)
             self.assertIn("target_unit_id", attack)
         self.assertEqual([log["text"] for log in logs], [event["text"] for event in sequence if event["type"] != "result"][:len(logs)])
@@ -745,6 +757,10 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertNotIn("<h2>敵</h2>", html)
         self.assertNotIn("移動撃破 /", html)
         self.assertIn("選択中：なし", html)
+        self.assertIn("敵も同じ駒で戦います", html)
+        self.assertIn("敵ケルベロス", html)
+        self.assertIn("敵フェニックス", html)
+        self.assertNotIn("ダミーA", html)
         self.assertIn('class="mini-tactics-log"', html)
         self.assertNotIn('class="mini-tactics-log" open', html)
         self.assertIn("function addClasses", html)
@@ -791,7 +807,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         payload = action.get_json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["board_state"]["current_turn_side"], "ally")
-        self.assertTrue(any(event["phase"] == "ally" and event["type"] == "attack" for event in payload["action_sequence"]))
+        self.assertTrue(any(event["phase"] == "ally" and event["type"] == "move_capture" for event in payload["action_sequence"]))
 
     def test_mini_shogi_3x4_invalid_immediate_actions_are_rejected(self):
         client = self._client(admin=True)
@@ -807,7 +823,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("移動できない", bad_move.get_json()["error"])
         bad_attack = client.post(
             f"{battle_url}/action",
-            json={"actor_unit_id": "ally_cerberus", "action_type": "attack", "target_unit_id": "enemy_dummy_a"},
+            json={"actor_unit_id": "ally_cerberus", "action_type": "attack", "target_unit_id": "enemy_cerberus"},
             headers={"X-Requested-With": "fetch"},
         )
         self.assertEqual(bad_attack.status_code, 400)
@@ -817,7 +833,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
     def test_mini_shogi_3x4_action_options_include_capture_cells(self):
         state = build_manual_initial_board_v1(1)
         ally = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
-        target = next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_d")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
         options = mini_shogi_4x4_action_options(state, ally["unit_id"])
         self.assertTrue(any(move["x"] == 1 and move["y"] == 1 and move.get("capture") for move in options["move_cells"]))
         self.assertIn(target["unit_id"], options["targetable_unit_ids"])
@@ -825,12 +841,60 @@ class AdminMiniTacticsTests(unittest.TestCase):
     def test_mini_shogi_3x4_enemy_threat_cells_ignore_defeated_units(self):
         state = build_manual_initial_board_v1(1)
         for unit in state["units"]:
-            if unit["side"] == "enemy" and unit["unit_id"] != "enemy_dummy_c":
+            if unit["side"] == "enemy" and unit["unit_id"] != "enemy_hydra":
                 unit["defeated"] = True
         threats = get_enemy_threat_cells("ally", state)
         self.assertIn({"x": 2, "y": 1}, threats)
-        next(u for u in state["units"] if u["unit_id"] == "enemy_dummy_c")["defeated"] = True
+        next(u for u in state["units"] if u["unit_id"] == "enemy_hydra")["defeated"] = True
         self.assertEqual(get_enemy_threat_cells("ally", state), [])
+
+    def test_mini_shogi_3x4_cpu_prioritizes_leader_capture(self):
+        state = build_manual_initial_board_v1(7)
+        ally_leader = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        enemy_scout = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
+        ally_leader.update({"x": 1, "y": 2})
+        enemy_scout.update({"x": 1, "y": 1})
+        action = choose_manual_cpu_action(state)
+        self.assertEqual(action["actor_unit_id"], "enemy_scout")
+        self.assertEqual(action["target_unit_id"], "ally_cerberus")
+
+    def test_mini_shogi_3x4_cpu_scores_piece_capture(self):
+        state = build_manual_initial_board_v1(8)
+        ally_phoenix = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
+        enemy_scout = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
+        ally_phoenix.update({"x": 1, "y": 2})
+        enemy_scout.update({"x": 1, "y": 1})
+        capture_action = {
+            "actor_unit_id": "enemy_scout",
+            "move_to": {"x": 1, "y": 2},
+            "target_unit_id": "ally_phoenix",
+            "is_capture": True,
+        }
+        quiet_action = {
+            "actor_unit_id": "enemy_scout",
+            "move_to": {"x": 0, "y": 1},
+            "target_unit_id": None,
+            "is_capture": False,
+        }
+        self.assertGreater(score_manual_cpu_action(state, capture_action), score_manual_cpu_action(state, quiet_action))
+        self.assertEqual(get_piece_value("leader"), 1000)
+        self.assertEqual(get_piece_value("guardian"), 4)
+
+    def test_mini_shogi_3x4_cpu_avoids_leader_danger(self):
+        state = build_manual_initial_board_v1(9)
+        next(u for u in state["units"] if u["unit_id"] == "enemy_scout")["defeated"] = True
+        ally_scout = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
+        ally_scout.update({"x": 0, "y": 2})
+        dangerous = {"actor_unit_id": "enemy_cerberus", "move_to": {"x": 0, "y": 1}, "target_unit_id": None, "is_capture": False}
+        safer = {"actor_unit_id": "enemy_cerberus", "move_to": {"x": 2, "y": 1}, "target_unit_id": None, "is_capture": False}
+        self.assertIn({"x": 0, "y": 1}, get_threatened_cells(state, "ally"))
+        self.assertGreater(score_manual_cpu_action(state, safer), score_manual_cpu_action(state, dangerous))
+
+    def test_mini_shogi_3x4_cpu_choice_is_seed_reproducible(self):
+        state = build_manual_initial_board_v1(12)
+        actions = enumerate_manual_legal_actions(state, "enemy")
+        self.assertTrue(actions)
+        self.assertEqual(choose_manual_cpu_action(state), choose_manual_cpu_action(build_manual_initial_board_v1(12)))
 
     def test_existing_mini_tactics_battle_without_source_still_watches(self):
         with game_app.app.app_context():

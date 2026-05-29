@@ -7388,6 +7388,7 @@ body.home-page .locked-layer-card {
   animation: miniTacticsPulse 0.42s ease;
 }
 .mini-tactics-cell.is-impact-melee,
+.mini-tactics-cell.is-impact-capture,
 .mini-tactics-cell.is-impact-laser,
 .mini-tactics-cell.is-impact-missile,
 .mini-tactics-cell.is-blocked-cell,
@@ -7395,6 +7396,7 @@ body.home-page .locked-layer-card {
   position: relative;
 }
 .mini-tactics-cell.is-impact-melee::after,
+.mini-tactics-cell.is-impact-capture::after,
 .mini-tactics-cell.is-impact-laser::after,
 .mini-tactics-cell.is-impact-missile::after,
 .mini-tactics-cell.is-blocked-cell::after,
@@ -7408,6 +7410,10 @@ body.home-page .locked-layer-card {
 }
 .mini-tactics-cell.is-impact-melee::after {
   border: 2px solid rgba(250, 204, 21, 0.72);
+}
+.mini-tactics-cell.is-impact-capture::after {
+  border: 2px solid rgba(250, 204, 21, 0.82);
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.4);
 }
 .mini-tactics-cell.is-impact-laser::after {
   border: 2px solid rgba(34, 211, 238, 0.82);

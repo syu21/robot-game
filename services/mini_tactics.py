@@ -80,10 +80,10 @@ MANUAL_V1_ALLY_SPECS = (
     ("ally_scout", "ミニスカウト", "scout", False, 1, 2, "striker", "striker", "capture", "scout", "up"),
 )
 MANUAL_V1_ENEMY_SPECS = (
-    ("enemy_dummy_a", "ダミーA", "dummy_a", True, 1, 0, "leader", "leader", "capture", "guard_dog", "down"),
-    ("enemy_dummy_b", "ダミーB", "dummy_b", False, 0, 0, "flyer", "flyer", "capture", "retreat_shot", "down"),
-    ("enemy_dummy_c", "ダミーC", "dummy_c", False, 2, 0, "guardian", "guardian", "capture", "fortress", "down"),
-    ("enemy_dummy_d", "ダミーD", "dummy_d", False, 1, 1, "striker", "striker", "capture", "scout", "down"),
+    ("enemy_cerberus", "敵ケルベロス", "cerberus", True, 1, 0, "leader", "leader", "capture", "guard_dog", "down"),
+    ("enemy_phoenix", "敵フェニックス", "phoenix", False, 0, 0, "flyer", "flyer", "capture", "retreat_shot", "down"),
+    ("enemy_hydra", "敵ヒュドラ", "hydra", False, 2, 0, "guardian", "guardian", "capture", "fortress", "down"),
+    ("enemy_scout", "敵ミニスカウト", "scout", False, 1, 1, "striker", "striker", "capture", "scout", "down"),
 )
 SPECIES_WEAPONS = {
     "cerberus": "melee",
@@ -1228,6 +1228,24 @@ def get_enemy_threat_cells(side, board_state):
     return [{"x": x, "y": y} for x, y in sorted(cells, key=lambda p: (p[1], p[0]))]
 
 
+def get_threatened_cells(board_state, side):
+    cells = set()
+    for unit in _manual_v1_units(board_state, side):
+        for cell in _manual_v1_attack_cells_from(unit):
+            cells.add((int(cell["x"]), int(cell["y"])))
+    return [{"x": x, "y": y} for x, y in sorted(cells, key=lambda p: (p[1], p[0]))]
+
+
+def get_piece_value(piece_type):
+    values = {
+        "leader": 1000,
+        "guardian": 4,
+        "flyer": 3,
+        "striker": 2,
+    }
+    return int(values.get(str(piece_type or ""), 1))
+
+
 def calculate_manual_damage(attacker, target):
     return 1
 
@@ -1252,6 +1270,10 @@ def _manual_v1_log(logs, text, event_type="log", **payload):
     return item
 
 
+def _manual_v1_clone_state(state):
+    return json.loads(json.dumps(state, ensure_ascii=False))
+
+
 def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
     if not can_attack_manual(attacker, target, state, moved=moved):
         return False, "攻撃できない対象です。"
@@ -1263,8 +1285,8 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
     attacker["facing"] = _direction_from_delta(attacker["x"] - from_x, attacker["y"] - from_y, attacker.get("facing"))
     _manual_v1_log(
         logs,
-        f"{attacker['name']}が{target['name']}を撃破",
-        "attack",
+        f"{attacker['name']}が{target['name']}を取った",
+        "move_capture",
         phase="ally",
         actor_unit_id=attacker.get("unit_id"),
         target_unit_id=target.get("unit_id"),
@@ -1272,8 +1294,6 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
         weapon_label=attacker.get("weapon_label"),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": attacker["x"], "y": attacker["y"]}},
     )
-    suffix = "、味方勝利" if target.get("side") == "enemy" and target.get("is_leader") else ""
-    _manual_v1_log(logs, f"{target['name']}を撃破{suffix}", "defeated", phase="ally", actor_unit_id=target.get("unit_id"))
     return True, None
 
 
@@ -1300,41 +1320,113 @@ def _manual_v1_apply_move(state, unit, move_to, logs):
     return True, None
 
 
-def _manual_v1_ai_choose_unit(state):
-    enemies = sorted(_manual_v1_units(state, "enemy"), key=lambda u: (not bool(u.get("is_leader")), str(u.get("unit_id") or "")))
-    ally_leader = next((u for u in _manual_v1_units(state, "ally") if u.get("is_leader")), None)
-    for enemy in enemies:
-        targets = get_legal_targets(enemy, state, moved=False)
-        if targets:
-            return enemy, None, min(targets, key=lambda t: (not bool(t.get("is_leader")), str(t.get("unit_id") or "")))
-    if not ally_leader:
-        return (enemies[0], None, None) if enemies else (None, None, None)
-    best = None
-    for enemy in enemies:
-        for move in get_legal_moves(enemy, state):
-            score = abs(move["x"] - int(ally_leader["x"])) + abs(move["y"] - int(ally_leader["y"]))
-            candidate = (score, str(enemy.get("unit_id") or ""), int(move["x"]), int(move["y"]), enemy, move)
-            if best is None or candidate < best:
-                best = candidate
-    if best:
-        _, _, _, _, enemy, move = best
-        return enemy, move, None
-    return (enemies[0], None, None) if enemies else (None, None, None)
+def enumerate_manual_legal_actions(board_state, side):
+    actions = []
+    for unit in sorted(_manual_v1_units(board_state, side), key=lambda u: str(u.get("unit_id") or "")):
+        for move in get_legal_moves(unit, board_state):
+            target = _manual_v1_unit_at(board_state, move["x"], move["y"], except_unit_id=unit.get("unit_id"))
+            actions.append(
+                {
+                    "actor_unit_id": unit.get("unit_id"),
+                    "move_to": {"x": int(move["x"]), "y": int(move["y"])},
+                    "target_unit_id": target.get("unit_id") if target and target.get("side") != side else None,
+                    "is_capture": bool(target and target.get("side") != side),
+                }
+            )
+    return actions
+
+
+def _manual_v1_apply_action_to_state(state, action):
+    actor = _manual_v1_unit_by_id(state, action.get("actor_unit_id"))
+    if not actor:
+        return False
+    logs = []
+    ok, _ = _manual_v1_apply_move(state, actor, action.get("move_to"), logs)
+    return bool(ok)
+
+
+def _manual_v1_leader(state, side):
+    return next((u for u in _manual_v1_units(state, side) if u.get("is_leader")), None)
+
+
+def _manual_v1_cell_in(cells, x, y):
+    return any(int(cell.get("x") or 0) == int(x) and int(cell.get("y") or 0) == int(y) for cell in cells)
+
+
+def _manual_v1_cpu_style(state):
+    styles = ("balanced", "aggressive", "defensive")
+    return styles[int(state.get("seed") or 0) % len(styles)]
+
+
+def score_manual_cpu_action(board_state, action, rng=None):
+    side = "enemy"
+    opponent = "ally"
+    actor = _manual_v1_unit_by_id(board_state, action.get("actor_unit_id"))
+    target = _manual_v1_unit_by_id(board_state, action.get("target_unit_id"))
+    if not actor:
+        return -10000
+    style = _manual_v1_cpu_style(board_state)
+    score = 0
+    if target:
+        if target.get("is_leader"):
+            score += 1000
+        else:
+            capture_score = 100 + get_piece_value(target.get("move_type") or target.get("piece_type"))
+            if style == "aggressive":
+                capture_score += 20
+            score += capture_score
+    before_leader = _manual_v1_leader(board_state, side)
+    before_threats = get_threatened_cells(board_state, opponent)
+    before_leader_threatened = bool(before_leader and _manual_v1_cell_in(before_threats, before_leader.get("x"), before_leader.get("y")))
+
+    next_state = _manual_v1_clone_state(board_state)
+    if not _manual_v1_apply_action_to_state(next_state, action):
+        return -10000
+    next_leader = _manual_v1_leader(next_state, side)
+    next_threats = get_threatened_cells(next_state, opponent)
+    next_leader_threatened = bool(next_leader and _manual_v1_cell_in(next_threats, next_leader.get("x"), next_leader.get("y")))
+    if before_leader_threatened and not next_leader_threatened:
+        score += 80
+    if next_leader_threatened:
+        score -= 200 if actor.get("is_leader") else 80
+        if style == "defensive":
+            score -= 40
+
+    acted = _manual_v1_unit_by_id(next_state, action.get("actor_unit_id"))
+    if acted and _manual_v1_cell_in(next_threats, acted.get("x"), acted.get("y")):
+        score -= 60
+
+    ally_leader = _manual_v1_leader(next_state, opponent)
+    if ally_leader and acted:
+        distance = abs(int(acted.get("x") or 0) - int(ally_leader.get("x") or 0)) + abs(int(acted.get("y") or 0) - int(ally_leader.get("y") or 0))
+        score += max(0, 6 - distance) * 20
+    return score
+
+
+def choose_manual_cpu_action(board_state, rng=None):
+    rng = rng or random.Random(int(board_state.get("seed") or 0))
+    actions = enumerate_manual_legal_actions(board_state, "enemy")
+    if not actions:
+        return None
+    scored = [(score_manual_cpu_action(board_state, action, rng), action) for action in actions]
+    best_score = max(score for score, _ in scored)
+    best_actions = [action for score, action in scored if score == best_score]
+    return rng.choice(best_actions)
 
 
 def run_enemy_manual_turn(board_state, rng=None):
     logs = []
-    enemy, move, target = _manual_v1_ai_choose_unit(board_state)
+    action = choose_manual_cpu_action(board_state, rng)
+    if not action:
+        enemy = next(iter(_manual_v1_units(board_state, "enemy")), None)
+        if enemy:
+            _manual_v1_log(logs, f"{enemy['name']}が待機", "wait", actor_unit_id=enemy.get("unit_id"))
+        return logs
+    enemy = _manual_v1_unit_by_id(board_state, action.get("actor_unit_id"))
     if not enemy:
         return logs
-    moved = False
-    if move:
-        ok, error = _manual_v1_apply_move(board_state, enemy, move, logs)
-        if error:
-            return logs
-    if target:
-        _manual_v1_apply_attack(board_state, enemy, target, logs, moved=moved)
-    elif not move:
+    ok, error = _manual_v1_apply_move(board_state, enemy, action.get("move_to"), logs)
+    if error:
         _manual_v1_log(logs, f"{enemy['name']}が待機", "wait", actor_unit_id=enemy.get("unit_id"))
     return logs
 
