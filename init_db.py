@@ -2797,18 +2797,4 @@ def main():
         items = []
         for i in range(1, 11):
             items.append((f"HEAD-{i}", "HEAD", f"parts/head/{i}.png", 2, 1, 1, 3))
-            items.append((f"R-ARM-{i}", "RIGHT_ARM", f"parts/right_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"L-ARM-{i}", "LEFT_ARM", f"parts/left_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"LEGS-{i}", "LEGS", f"parts/legs/{i}.png", 1, 2, 2, 3))
-        cur.executemany(
-            "INSERT INTO parts (name, type, sprite_path, attack, defense, speed, hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            items,
-        )
-
-    conn.commit()
-    conn.close()
-    print("DB initialized at", DB_PATH)
-
-
-if __name__ == "__main__":
-    main()
+            items.append((f"R-ARM-{i}",
