@@ -578,12 +578,15 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(len([u for u in enemies if u["is_leader"]]), 1)
         self.assertEqual((next(u for u in allies if u["is_leader"])["x"], next(u for u in allies if u["is_leader"])["y"]), (1, 3))
         self.assertEqual((next(u for u in enemies if u["is_leader"])["x"], next(u for u in enemies if u["is_leader"])["y"]), (1, 0))
-        self.assertEqual((next(u for u in allies if u["move_type"] == "striker")["x"], next(u for u in allies if u["move_type"] == "striker")["y"]), (1, 2))
-        self.assertEqual((next(u for u in enemies if u["move_type"] == "striker")["x"], next(u for u in enemies if u["move_type"] == "striker")["y"]), (1, 1))
-        self.assertEqual({u["move_type"] for u in allies}, {"leader", "flyer", "guardian", "striker"})
-        self.assertEqual({u["move_type"] for u in enemies}, {"leader", "flyer", "guardian", "striker"})
-        self.assertEqual({u["name"] for u in enemies}, {"敵ケルベロス", "敵フェニックス", "敵ヒュドラ", "敵ミニスカウト"})
+        self.assertEqual((next(u for u in allies if u["move_type"] == "sphinx")["x"], next(u for u in allies if u["move_type"] == "sphinx")["y"]), (1, 2))
+        self.assertEqual((next(u for u in enemies if u["move_type"] == "sphinx")["x"], next(u for u in enemies if u["move_type"] == "sphinx")["y"]), (1, 1))
+        self.assertEqual({u["move_type"] for u in allies}, {"leader", "flyer", "guardian", "sphinx"})
+        self.assertEqual({u["move_type"] for u in enemies}, {"leader", "flyer", "guardian", "sphinx"})
+        self.assertEqual({u["name"] for u in enemies}, {"敵ケルベロス", "敵フェニックス", "敵ヒュドラ", "敵スフィンクス"})
         self.assertFalse(any("ダミー" in u["name"] for u in enemies))
+        self.assertFalse(any("ミニスカウト" in u["name"] for u in state["units"]))
+        self.assertEqual(next(u for u in allies if u["move_type"] == "sphinx")["image_path"], "mini_robots/sphinx/normal.png")
+        self.assertEqual(next(u for u in enemies if u["move_type"] == "sphinx")["image_path"], "mini_robots/sphinx/normal.png")
         self.assertTrue(all("trait_key" in u for u in state["units"]))
         self.assertTrue(all("hp" not in u and "atk" not in u and "def" not in u and "spd" not in u for u in state["units"]))
 
@@ -613,32 +616,35 @@ class AdminMiniTacticsTests(unittest.TestCase):
         leader = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
         flyer = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
         guardian = next(u for u in state["units"] if u["unit_id"] == "ally_hydra")
-        striker = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
+        sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
         for unit in state["units"]:
-            if unit["unit_id"] not in {leader["unit_id"], flyer["unit_id"], guardian["unit_id"], striker["unit_id"]}:
+            if unit["unit_id"] not in {leader["unit_id"], flyer["unit_id"], guardian["unit_id"], sphinx["unit_id"]}:
                 unit["defeated"] = True
         leader.update({"x": 1, "y": 2})
         flyer.update({"x": 1, "y": 2})
         guardian.update({"x": 1, "y": 2})
-        striker.update({"x": 1, "y": 2})
+        sphinx.update({"x": 1, "y": 2})
         leader_moves = get_legal_moves(leader, state)
         flyer_moves = get_legal_moves(flyer, state)
         guardian_moves = get_legal_moves(guardian, state)
-        striker_moves = get_legal_moves(striker, state)
+        sphinx_moves = get_legal_moves(sphinx, state)
         self.assertTrue({(m["x"], m["y"]) for m in leader_moves}.issuperset({(0, 1), (1, 1), (2, 1), (0, 2), (2, 2), (0, 3), (1, 3), (2, 3)}))
         self.assertEqual({(m["x"], m["y"]) for m in flyer_moves}, {(0, 1), (2, 1), (1, 3)})
         self.assertEqual({(m["x"], m["y"]) for m in guardian_moves}, {(1, 1), (0, 2), (2, 2), (0, 3), (2, 3)})
-        self.assertEqual({(m["x"], m["y"]) for m in striker_moves}, {(1, 1), (0, 2), (2, 2)})
+        self.assertEqual({(m["x"], m["y"]) for m in sphinx_moves}, {(0, 1), (2, 1), (0, 2), (2, 2), (1, 3)})
 
     def test_mini_shogi_3x4_enemy_forward_direction_is_reversed(self):
         state = build_manual_initial_board_v1(1)
         next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")["defeated"] = True
         enemy_flyer = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
         enemy_guardian = next(u for u in state["units"] if u["unit_id"] == "enemy_hydra")
+        enemy_sphinx = next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")
         enemy_flyer.update({"x": 1, "y": 1})
         enemy_guardian.update({"x": 1, "y": 1})
+        enemy_sphinx.update({"x": 1, "y": 1})
         self.assertEqual({(m["x"], m["y"]) for m in get_legal_moves(enemy_flyer, state)}, {(0, 2), (2, 2), (1, 0)})
         self.assertEqual({(m["x"], m["y"]) for m in get_legal_moves(enemy_guardian, state)}, {(1, 2), (0, 1), (2, 1), (0, 0), (2, 0)})
+        self.assertEqual({(m["x"], m["y"]) for m in get_legal_moves(enemy_sphinx, state)}, {(0, 2), (2, 2), (0, 1), (2, 1), (1, 0)})
 
     def test_mini_shogi_3x4_has_no_zoc_or_guard_rule(self):
         state = build_manual_initial_board_v1(1)
@@ -648,17 +654,18 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_mini_shogi_3x4_move_to_enemy_cell_captures(self):
         state = build_manual_initial_board_v1(1)
-        ally = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
-        target = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")
+        target.update({"x": 0, "y": 1})
         next_state, logs, error = apply_manual_action(
             state,
-            {"actor_unit_id": ally["unit_id"], "move_to": {"x": 1, "y": 1}},
+            {"actor_unit_id": ally["unit_id"], "move_to": {"x": 0, "y": 1}},
         )
         self.assertIsNone(error)
         updated = next(u for u in next_state["units"] if u["unit_id"] == target["unit_id"])
         self.assertTrue(updated["defeated"])
         moved = next(u for u in next_state["units"] if u["unit_id"] == ally["unit_id"])
-        self.assertEqual((moved["x"], moved["y"]), (1, 1))
+        self.assertEqual((moved["x"], moved["y"]), (0, 1))
         self.assertTrue(any(log["type"] == "move_capture" for log in logs))
         sequence = next_state["last_action_sequence"]
         self.assertEqual(sequence[0]["phase"], "ally")
@@ -748,11 +755,14 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("全方向に1マス", html)
         self.assertIn("斜め前と後ろ", html)
         self.assertIn("前・横・斜め後ろ", html)
-        self.assertIn("前線を押し上げる基本駒", html)
+        self.assertIn("読み合いで盤面を支える知略型", html)
+        self.assertIn("スフィンクス", html)
+        self.assertIn("mini_robots/sphinx/normal.png", html)
         self.assertIn("data-move-type=\"leader\"", html)
         self.assertIn("data-move-type=\"flyer\"", html)
         self.assertIn("data-move-type=\"guardian\"", html)
-        self.assertIn("data-move-type=\"striker\"", html)
+        self.assertIn("data-move-type=\"sphinx\"", html)
+        self.assertNotIn("ミニスカウト", html)
         self.assertNotIn("<h2>味方</h2>", html)
         self.assertNotIn("<h2>敵</h2>", html)
         self.assertNotIn("移動撃破 /", html)
@@ -797,9 +807,24 @@ class AdminMiniTacticsTests(unittest.TestCase):
         client = self._client(admin=True)
         resp = client.get("/admin/lab/mini-tactics/manual/new?seed=905", follow_redirects=False)
         battle_url = resp.headers["Location"]
+        battle_id = int(battle_url.rstrip("/").rsplit("/", 1)[-1])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            state = json.loads(row["board_state_json"])
+            next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx").update({"x": 0, "y": 1})
+            db.execute(
+                "UPDATE mini_tactics_battles SET board_state_json = ?, units_json = ? WHERE id = ?",
+                (
+                    json.dumps(state, ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(state["units"], ensure_ascii=False, separators=(",", ":")),
+                    battle_id,
+                ),
+            )
+            db.commit()
         action = client.post(
             f"{battle_url}/action",
-            json={"actor_unit_id": "ally_scout", "action_type": "move", "to_x": "1", "to_y": "1"},
+            json={"actor_unit_id": "ally_sphinx", "action_type": "move", "to_x": "0", "to_y": "1"},
             headers={"X-Requested-With": "fetch"},
             follow_redirects=False,
         )
@@ -832,10 +857,11 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_mini_shogi_3x4_action_options_include_capture_cells(self):
         state = build_manual_initial_board_v1(1)
-        ally = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
-        target = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")
+        target.update({"x": 0, "y": 1})
         options = mini_shogi_4x4_action_options(state, ally["unit_id"])
-        self.assertTrue(any(move["x"] == 1 and move["y"] == 1 and move.get("capture") for move in options["move_cells"]))
+        self.assertTrue(any(move["x"] == 0 and move["y"] == 1 and move.get("capture") for move in options["move_cells"]))
         self.assertIn(target["unit_id"], options["targetable_unit_ids"])
 
     def test_mini_shogi_3x4_enemy_threat_cells_ignore_defeated_units(self):
@@ -851,27 +877,27 @@ class AdminMiniTacticsTests(unittest.TestCase):
     def test_mini_shogi_3x4_cpu_prioritizes_leader_capture(self):
         state = build_manual_initial_board_v1(7)
         ally_leader = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
-        enemy_scout = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
-        ally_leader.update({"x": 1, "y": 2})
-        enemy_scout.update({"x": 1, "y": 1})
+        enemy_sphinx = next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")
+        ally_leader.update({"x": 0, "y": 2})
+        enemy_sphinx.update({"x": 1, "y": 1})
         action = choose_manual_cpu_action(state)
-        self.assertEqual(action["actor_unit_id"], "enemy_scout")
+        self.assertEqual(action["actor_unit_id"], "enemy_sphinx")
         self.assertEqual(action["target_unit_id"], "ally_cerberus")
 
     def test_mini_shogi_3x4_cpu_scores_piece_capture(self):
         state = build_manual_initial_board_v1(8)
         ally_phoenix = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
-        enemy_scout = next(u for u in state["units"] if u["unit_id"] == "enemy_scout")
-        ally_phoenix.update({"x": 1, "y": 2})
-        enemy_scout.update({"x": 1, "y": 1})
+        enemy_sphinx = next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")
+        ally_phoenix.update({"x": 0, "y": 2})
+        enemy_sphinx.update({"x": 1, "y": 1})
         capture_action = {
-            "actor_unit_id": "enemy_scout",
-            "move_to": {"x": 1, "y": 2},
+            "actor_unit_id": "enemy_sphinx",
+            "move_to": {"x": 0, "y": 2},
             "target_unit_id": "ally_phoenix",
             "is_capture": True,
         }
         quiet_action = {
-            "actor_unit_id": "enemy_scout",
+            "actor_unit_id": "enemy_sphinx",
             "move_to": {"x": 0, "y": 1},
             "target_unit_id": None,
             "is_capture": False,
@@ -882,11 +908,11 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_mini_shogi_3x4_cpu_avoids_leader_danger(self):
         state = build_manual_initial_board_v1(9)
-        next(u for u in state["units"] if u["unit_id"] == "enemy_scout")["defeated"] = True
-        ally_scout = next(u for u in state["units"] if u["unit_id"] == "ally_scout")
-        ally_scout.update({"x": 0, "y": 2})
+        next(u for u in state["units"] if u["unit_id"] == "enemy_sphinx")["defeated"] = True
+        ally_sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        ally_sphinx.update({"x": 1, "y": 2})
         dangerous = {"actor_unit_id": "enemy_cerberus", "move_to": {"x": 0, "y": 1}, "target_unit_id": None, "is_capture": False}
-        safer = {"actor_unit_id": "enemy_cerberus", "move_to": {"x": 2, "y": 1}, "target_unit_id": None, "is_capture": False}
+        safer = {"actor_unit_id": "enemy_cerberus", "move_to": {"x": 1, "y": 1}, "target_unit_id": None, "is_capture": False}
         self.assertIn({"x": 0, "y": 1}, get_threatened_cells(state, "ally"))
         self.assertGreater(score_manual_cpu_action(state, safer), score_manual_cpu_action(state, dangerous))
 

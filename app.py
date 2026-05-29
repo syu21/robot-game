@@ -864,6 +864,7 @@ MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
     "phoenix": ("phoenix_flare", "phoenix_ember", "phoenix_aura"),
     "hydra": ("hydra_many", "hydra_mist", "hydra_orbit"),
+    "sphinx": ("sphinx_riddle", "sphinx_guard", "sphinx_oracle"),
 }
 MINI_ROBOT_SPECIES_META = {
     "cerberus": {
@@ -886,6 +887,13 @@ MINI_ROBOT_SPECIES_META = {
         "description": "複数の頭がそれぞれ違う反応をする、不思議なミニロボ。",
         "personality": "少し変わっていて、観察しがいがあるタイプ。",
         "asset_dir": "hydra",
+    },
+    "sphinx": {
+        "name": "スフィンクス",
+        "short_name": "スフィンクス",
+        "description": "静かに盤面を読む、知略型の神話ミニロボ。",
+        "personality": "落ち着いていて、考えてから動くタイプ。",
+        "asset_dir": "sphinx",
     },
 }
 MINI_ROBOT_OBSERVE_LINES = {
@@ -951,6 +959,24 @@ MINI_ROBOT_SPECIES_OBSERVE_LINES = {
             "ヒュドラはポッドの中で静かに休んでいる。",
         ),
     },
+    "sphinx": {
+        "morning": (
+            "スフィンクスが、静かに目を開いた。",
+            "スフィンクスは朝の光をじっと見ている。",
+        ),
+        "day": (
+            "スフィンクスが、装置の表示を読んでいるように見える。",
+            "スフィンクスは落ち着いてポッドの中に座っている。",
+        ),
+        "evening": (
+            "スフィンクスが、今日の記録を見つめている。",
+            "スフィンクスは少し考え込んでいるようだ。",
+        ),
+        "night": (
+            "スフィンクスは静かに休んでいる。",
+            "スフィンクスの目の光が、ゆっくり弱くなっている。",
+        ),
+    },
 }
 MINI_ROBOT_CARE_ACTIONS = {
     "energy": {
@@ -1006,6 +1032,13 @@ MINI_ROBOT_CARE_LINES = {
         "ヒュドラは不思議そうにこちらを見ている。",
         "ヒュドラの頭たちが、なにか相談しているように見える。",
     ),
+    "sphinx": (
+        "スフィンクスが静かにこちらを見ている。",
+        "スフィンクスは何かを考えているようだ。",
+        "スフィンクスの目がゆっくり瞬いた。",
+        "スフィンクスが盤面を読むように首を傾けた。",
+        "スフィンクスは落ち着いて待っている。",
+    ),
 }
 COMMON_MINI_ROBOT_CARE_LINES = (
     "{name}が少し反応した。",
@@ -1046,6 +1079,17 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "image_blink": "mini_robots/hydra/blink.png",
         "image_happy": "mini_robots/hydra/happy.png",
         "image_sleep": "mini_robots/hydra/sleep.png",
+        "is_active": 1,
+    },
+    {
+        "species_key": "sphinx",
+        "name_ja": "スフィンクス",
+        "description": "静かに盤面を読む、知略型の神話ミニロボ。",
+        "type_key": "wisdom",
+        "image_normal": "mini_robots/sphinx/normal.png",
+        "image_blink": "mini_robots/sphinx/blink.png",
+        "image_happy": "mini_robots/sphinx/happy.png",
+        "image_sleep": "mini_robots/sphinx/sleep.png",
         "is_active": 1,
     },
 )
@@ -34194,7 +34238,7 @@ def _mini_robot_species_choices(db):
         SELECT *
         FROM mini_robot_species
         WHERE is_active = 1
-        ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 ELSE 9 END
+        ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 WHEN 'sphinx' THEN 4 ELSE 9 END
         """
     ).fetchall()
     choices = []
@@ -34542,7 +34586,7 @@ def _mini_robot_catalog_rows(db, user_id):
         """
         SELECT *
         FROM mini_robot_species
-        ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 ELSE 9 END
+        ORDER BY CASE species_key WHEN 'cerberus' THEN 1 WHEN 'phoenix' THEN 2 WHEN 'hydra' THEN 3 WHEN 'sphinx' THEN 4 ELSE 9 END
         """
     ).fetchall():
         is_owned = species["species_key"] in owned
@@ -34565,6 +34609,7 @@ MINI_TACTICS_SPECIES_STATS = {
     "cerberus": {"hp": 18, "atk": 5, "def": 2, "spd": 4, "ai_type": "assault", "weapon_type": "melee", "range": 1},
     "phoenix": {"hp": 14, "atk": 4, "def": 1, "spd": 6, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
     "hydra": {"hp": 20, "atk": 3, "def": 3, "spd": 3, "ai_type": "guardian", "weapon_type": "missile", "range": 2},
+    "sphinx": {"hp": 16, "atk": 4, "def": 2, "spd": 5, "ai_type": "cautious", "weapon_type": "laser", "range": 2},
 }
 MINI_TACTICS_AI_LABELS = {
     "assault": "突撃",

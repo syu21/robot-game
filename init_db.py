@@ -31,6 +31,7 @@ MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
     "phoenix": ("phoenix_flare", "phoenix_ember", "phoenix_aura"),
     "hydra": ("hydra_many", "hydra_mist", "hydra_orbit"),
+    "sphinx": ("sphinx_riddle", "sphinx_guard", "sphinx_oracle"),
 }
 MINI_ROBOT_SPECIES_SEEDS = (
     {
@@ -64,6 +65,17 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "image_blink": "mini_robots/hydra/blink.png",
         "image_happy": "mini_robots/hydra/happy.png",
         "image_sleep": "mini_robots/hydra/sleep.png",
+        "is_active": 1,
+    },
+    {
+        "species_key": "sphinx",
+        "name_ja": "スフィンクス",
+        "description": "静かに盤面を読む、知略型の神話ミニロボ。",
+        "type_key": "wisdom",
+        "image_normal": "mini_robots/sphinx/normal.png",
+        "image_blink": "mini_robots/sphinx/blink.png",
+        "image_happy": "mini_robots/sphinx/happy.png",
+        "image_sleep": "mini_robots/sphinx/sleep.png",
         "is_active": 1,
     },
 )

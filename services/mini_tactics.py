@@ -22,6 +22,7 @@ SPECIES_MOVE_TYPES = {
     "cerberus": "walk",
     "phoenix": "flight",
     "hydra": "multi_leg",
+    "sphinx": "walk",
     "dummy_a": "walk",
     "dummy_b": "walk",
     "dummy_c": "walk",
@@ -57,38 +58,39 @@ MANUAL_V1_WEAPON_LABELS = {
 }
 MANUAL_V1_MOVE_LABELS = {
     "leader": "リーダー",
-    "striker": "前衛",
     "flyer": "飛行",
     "guardian": "守護",
+    "sphinx": "スフィンクス",
 }
 MANUAL_V1_ROLE_LABELS = {
     "leader": "リーダー",
-    "striker": "前衛",
     "flyer": "飛行",
     "guardian": "守護",
+    "sphinx": "知略型",
 }
 MANUAL_V1_TRAIT_LABELS = {
     "guard_dog": "番犬",
     "retreat_shot": "退き撃ち",
     "fortress": "要塞",
-    "scout": "偵察",
+    "sphinx": "謎かけ",
 }
 MANUAL_V1_ALLY_SPECS = (
     ("ally_cerberus", "ケルベロス", "cerberus", True, 1, 3, "leader", "leader", "capture", "guard_dog", "up"),
     ("ally_phoenix", "フェニックス", "phoenix", False, 0, 3, "flyer", "flyer", "capture", "retreat_shot", "up"),
     ("ally_hydra", "ヒュドラ", "hydra", False, 2, 3, "guardian", "guardian", "capture", "fortress", "up"),
-    ("ally_scout", "ミニスカウト", "scout", False, 1, 2, "striker", "striker", "capture", "scout", "up"),
+    ("ally_sphinx", "スフィンクス", "sphinx", False, 1, 2, "sphinx", "sphinx", "capture", "sphinx", "up"),
 )
 MANUAL_V1_ENEMY_SPECS = (
     ("enemy_cerberus", "敵ケルベロス", "cerberus", True, 1, 0, "leader", "leader", "capture", "guard_dog", "down"),
     ("enemy_phoenix", "敵フェニックス", "phoenix", False, 0, 0, "flyer", "flyer", "capture", "retreat_shot", "down"),
     ("enemy_hydra", "敵ヒュドラ", "hydra", False, 2, 0, "guardian", "guardian", "capture", "fortress", "down"),
-    ("enemy_scout", "敵ミニスカウト", "scout", False, 1, 1, "striker", "striker", "capture", "scout", "down"),
+    ("enemy_sphinx", "敵スフィンクス", "sphinx", False, 1, 1, "sphinx", "sphinx", "capture", "sphinx", "down"),
 )
 SPECIES_WEAPONS = {
     "cerberus": "melee",
     "phoenix": "laser",
     "hydra": "missile",
+    "sphinx": "laser",
     "dummy_a": "melee",
     "dummy_b": "melee",
     "dummy_c": "melee",
@@ -97,6 +99,7 @@ SPECIES_SPD = {
     "cerberus": 4,
     "phoenix": 6,
     "hydra": 3,
+    "sphinx": 5,
     "dummy_a": 4,
     "dummy_b": 4,
     "dummy_c": 4,
@@ -994,10 +997,10 @@ def _manual_v1_unit(spec, side, ally_unit=None):
         facing,
     ) = spec
     source = None
-    image_path = ""
+    image_path = f"mini_robots/{species_key}/normal.png"
     if ally_unit:
         name = str(ally_unit.get("name") or name)
-        image_path = str(ally_unit.get("image_path") or "")
+        image_path = str(ally_unit.get("image_path") or image_path)
         source = ally_unit.get("source")
     return {
         "unit_id": unit_id,
@@ -1178,13 +1181,15 @@ def get_legal_moves(unit, board_state):
     x = int(unit.get("x") or 0)
     y = int(unit.get("y") or 0)
     forward = -1 if side == "ally" else 1
-    move_type = str(unit.get("move_type") or "striker")
+    move_type = str(unit.get("move_type") or "sphinx")
     if move_type == "leader":
         deltas = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
     elif move_type == "flyer":
         deltas = ((-1, forward), (1, forward), (0, -forward))
     elif move_type == "guardian":
         deltas = ((0, forward), (-1, 0), (1, 0), (-1, -forward), (1, -forward))
+    elif move_type == "sphinx":
+        deltas = ((-1, forward), (1, forward), (-1, 0), (1, 0), (0, -forward))
     else:
         deltas = ((0, forward), (-1, 0), (1, 0))
     moves = []
@@ -1241,7 +1246,7 @@ def get_piece_value(piece_type):
         "leader": 1000,
         "guardian": 4,
         "flyer": 3,
-        "striker": 2,
+        "sphinx": 2,
     }
     return int(values.get(str(piece_type or ""), 1))
 
