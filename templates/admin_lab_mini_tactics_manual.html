@@ -64,6 +64,12 @@
                 {% if unit.get('guarded') %}
                 <span class="mini-tactics-guard-badge">GUARD</span>
                 {% endif %}
+                {% if unit.get('promoted') %}
+                <span class="mini-tactics-guard-badge">不死鳥</span>
+                {% endif %}
+                {% if board_state.get('try_pending', {}).get('unit_id') == unit.get('unit_id') %}
+                <span class="mini-tactics-guard-badge">TRY</span>
+                {% endif %}
               </span>
               {% endif %}
             {% endfor %}
@@ -111,9 +117,10 @@
         <p class="mini-shogi-guide-note">敵も同じ駒で戦います。味方の前は上、敵は上下反転。</p>
         {% set move_guides = [
           ('leader', 'ケルベロス', 'リーダー: 全方向に1マス', '中央の主役。取られると敗北。', ['↖','↑','↗','←','●','→','↙','↓','↘']),
-          ('chick', 'フェニックス', '前進: 前に1マス', '本家のひよこ枠。成りはまだなし。', ['','↑','','','●','','','','']),
+          ('chick', 'フェニックス', '前進: 前に1マス', '敵陣奥で不死鳥に成長。', ['','↑','','','●','','','','']),
           ('bishop_like', 'ヒュドラ', '斜め: 斜めに1マス', '本家のぞう枠。斜めから差し込む。', ['↖','','↗','','●','','↙','','↘']),
-          ('rook_like', 'スフィンクス', '直線: 上下左右に1マス', '本家のきりん枠。縦横を押さえる。', ['','↑','','←','●','→','','↓',''])
+          ('rook_like', 'スフィンクス', '直線: 上下左右に1マス', '本家のきりん枠。縦横を押さえる。', ['','↑','','←','●','→','','↓','']),
+          ('promoted_phoenix', '不死鳥', '成り: 全方向に1マス', 'リーダーではないので取られても敗北しない。', ['↖','↑','↗','←','●','→','↙','↓','↘'])
         ] %}
         <div class="mini-shogi-move-guide-grid">
           {% for key, name, movement, note, cells in move_guides %}

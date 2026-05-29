@@ -1182,7 +1182,7 @@ def get_legal_moves(unit, board_state):
     y = int(unit.get("y") or 0)
     forward = -1 if side == "ally" else 1
     move_type = str(unit.get("move_type") or "rook_like")
-    if move_type == "leader":
+    if move_type in {"leader", "promoted_phoenix"}:
         deltas = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
     elif move_type == "chick":
         deltas = ((0, forward),)
@@ -1244,6 +1244,7 @@ def get_threatened_cells(board_state, side):
 def get_piece_value(piece_type):
     values = {
         "leader": 1000,
+        "promoted_phoenix": 5,
         "bishop_like": 4,
         "rook_like": 4,
         "chick": 2,
@@ -1266,6 +1267,19 @@ def check_manual_result(board_state):
         return "enemy_win"
     if not _manual_v1_units(board_state, "enemy"):
         return "ally_win"
+    pending = board_state.get("try_pending") or {}
+    pending_side = str(pending.get("side") or "")
+    pending_unit_id = str(pending.get("unit_id") or "")
+    if pending_side and pending_unit_id:
+        if board_state.pop("_try_pending_fresh", None):
+            return None
+        leader = _manual_v1_unit_by_id(board_state, pending_unit_id)
+        if leader and leader.get("is_leader") and not leader.get("defeated"):
+            if pending_side == "ally" and int(leader.get("y") or 0) == 0:
+                return "ally_win"
+            if pending_side == "enemy" and int(leader.get("y") or 0) == BOARD_V1_HEIGHT - 1:
+                return "enemy_win"
+        board_state.pop("try_pending", None)
     return None
 
 
@@ -1277,6 +1291,63 @@ def _manual_v1_log(logs, text, event_type="log", **payload):
 
 def _manual_v1_clone_state(state):
     return json.loads(json.dumps(state, ensure_ascii=False))
+
+
+def _manual_v1_promotion_rank(side):
+    return 0 if side == "ally" else BOARD_V1_HEIGHT - 1
+
+
+def _manual_v1_promote_if_needed(state, unit, logs):
+    if not unit or unit.get("defeated") or unit.get("promoted"):
+        return
+    if str(unit.get("species_key") or "") != "phoenix":
+        return
+    if int(unit.get("y") or 0) != _manual_v1_promotion_rank(unit.get("side")):
+        return
+    old_name = str(unit.get("name") or "フェニックス")
+    unit["promoted"] = True
+    unit["piece_type"] = "promoted_phoenix"
+    unit["move_type"] = "promoted_phoenix"
+    unit["move_pattern"] = "promoted_phoenix"
+    unit["attack_pattern"] = "promoted_phoenix"
+    unit["move_type_label"] = "不死鳥"
+    unit["role_label"] = "不死鳥"
+    unit["name"] = "敵不死鳥" if unit.get("side") == "enemy" else "不死鳥"
+    _manual_v1_log(
+        logs,
+        f"{old_name}が敵陣に到達し、{unit['name']}に成長した",
+        "promote",
+        phase=unit.get("side"),
+        actor_unit_id=unit.get("unit_id"),
+    )
+
+
+def _manual_v1_mark_try_if_needed(state, unit, logs):
+    if not unit or unit.get("defeated") or not unit.get("is_leader"):
+        return
+    if state.get("try_pending"):
+        return
+    side = str(unit.get("side") or "")
+    target_y = _manual_v1_promotion_rank(side)
+    if int(unit.get("y") or 0) != target_y:
+        return
+    pending = state.get("try_pending") or {}
+    if pending.get("unit_id") == unit.get("unit_id"):
+        return
+    state["try_pending"] = {"side": side, "unit_id": unit.get("unit_id")}
+    state["_try_pending_fresh"] = True
+    _manual_v1_log(
+        logs,
+        f"{unit['name']}が敵陣奥へ到達。次に取られなければ勝利",
+        "try",
+        phase=side,
+        actor_unit_id=unit.get("unit_id"),
+    )
+
+
+def _manual_v1_apply_post_move_rewards(state, unit, logs):
+    _manual_v1_promote_if_needed(state, unit, logs)
+    _manual_v1_mark_try_if_needed(state, unit, logs)
 
 
 def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
@@ -1299,6 +1370,7 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
         weapon_label=attacker.get("weapon_label"),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": attacker["x"], "y": attacker["y"]}},
     )
+    _manual_v1_apply_post_move_rewards(state, attacker, logs)
     return True, None
 
 
@@ -1322,6 +1394,7 @@ def _manual_v1_apply_move(state, unit, move_to, logs):
         actor_unit_id=unit.get("unit_id"),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": dest[0], "y": dest[1]}},
     )
+    _manual_v1_apply_post_move_rewards(state, unit, logs)
     return True, None
 
 
@@ -1377,9 +1450,14 @@ def score_manual_cpu_action(board_state, action, rng=None):
             score += 1000
         else:
             capture_score = 100 + get_piece_value(target.get("move_type") or target.get("piece_type"))
+            if target.get("promoted"):
+                capture_score += 150
             if style == "aggressive":
                 capture_score += 20
             score += capture_score
+        pending = board_state.get("try_pending") or {}
+        if pending.get("side") == opponent and pending.get("unit_id") == target.get("unit_id"):
+            score += 1000
     before_leader = _manual_v1_leader(board_state, side)
     before_threats = get_threatened_cells(board_state, opponent)
     before_leader_threatened = bool(before_leader and _manual_v1_cell_in(before_threats, before_leader.get("x"), before_leader.get("y")))
@@ -1387,6 +1465,17 @@ def score_manual_cpu_action(board_state, action, rng=None):
     next_state = _manual_v1_clone_state(board_state)
     if not _manual_v1_apply_action_to_state(next_state, action):
         return -10000
+    acted = _manual_v1_unit_by_id(next_state, action.get("actor_unit_id"))
+    if acted:
+        if acted.get("is_leader") and int(acted.get("y") or 0) == BOARD_V1_HEIGHT - 1:
+            score += 900
+        if acted.get("promoted") and str(actor.get("move_type") or "") == "chick":
+            score += 120
+    pending = board_state.get("try_pending") or {}
+    if pending.get("side") == opponent:
+        pending_leader = _manual_v1_unit_by_id(next_state, pending.get("unit_id"))
+        if pending_leader and not pending_leader.get("defeated"):
+            score -= 500
     next_leader = _manual_v1_leader(next_state, side)
     next_threats = get_threatened_cells(next_state, opponent)
     next_leader_threatened = bool(next_leader and _manual_v1_cell_in(next_threats, next_leader.get("x"), next_leader.get("y")))
@@ -1397,7 +1486,6 @@ def score_manual_cpu_action(board_state, action, rng=None):
         if style == "defensive":
             score -= 40
 
-    acted = _manual_v1_unit_by_id(next_state, action.get("actor_unit_id"))
     if acted and _manual_v1_cell_in(next_threats, acted.get("x"), acted.get("y")):
         score -= 60
 

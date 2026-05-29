@@ -7,6 +7,7 @@ import unittest
 import app as game_app
 import init_db
 from services.mini_tactics import (
+    _manual_v1_apply_move,
     apply_manual_turn_action,
     apply_manual_action,
     attackable_cells,
@@ -925,6 +926,97 @@ class AdminMiniTacticsTests(unittest.TestCase):
         actions = enumerate_manual_legal_actions(state, "enemy")
         self.assertTrue(actions)
         self.assertEqual(choose_manual_cpu_action(state), choose_manual_cpu_action(build_manual_initial_board_v1(12)))
+
+    def test_mini_shogi_3x4_ally_phoenix_promotes_on_back_rank(self):
+        state = build_manual_initial_board_v1(21)
+        phoenix = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
+        for unit in state["units"]:
+            if unit["side"] == "enemy":
+                unit["defeated"] = True
+        phoenix.update({"x": 1, "y": 1})
+        next_state, logs, error = apply_manual_action(state, {"actor_unit_id": "ally_phoenix", "move_to": {"x": 1, "y": 0}})
+        self.assertIsNone(error)
+        promoted = next(u for u in next_state["units"] if u["unit_id"] == "ally_phoenix")
+        self.assertTrue(promoted["promoted"])
+        self.assertEqual(promoted["name"], "不死鳥")
+        self.assertEqual(promoted["move_type"], "promoted_phoenix")
+        self.assertFalse(promoted["is_leader"])
+        self.assertTrue(any("不死鳥に成長" in log["text"] for log in logs))
+        self.assertTrue({(m["x"], m["y"]) for m in get_legal_moves(promoted, next_state)}.issuperset({(0, 0), (2, 0), (0, 1), (1, 1), (2, 1)}))
+
+    def test_mini_shogi_3x4_enemy_phoenix_promotes_on_back_rank(self):
+        state = build_manual_initial_board_v1(22)
+        enemy = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
+        enemy.update({"x": 1, "y": 2})
+        logs = []
+        ok, error = _manual_v1_apply_move(state, enemy, {"x": 1, "y": 3}, logs)
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertTrue(enemy["promoted"])
+        self.assertEqual(enemy["name"], "敵不死鳥")
+        self.assertEqual(enemy["move_type"], "promoted_phoenix")
+        self.assertFalse(enemy["is_leader"])
+
+    def test_mini_shogi_3x4_phoenix_promotes_after_capture_on_back_rank(self):
+        state = build_manual_initial_board_v1(23)
+        phoenix = next(u for u in state["units"] if u["unit_id"] == "ally_phoenix")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_hydra")
+        for unit in state["units"]:
+            if unit["side"] == "enemy" and unit["unit_id"] != target["unit_id"]:
+                unit["defeated"] = True
+        phoenix.update({"x": 0, "y": 1})
+        target.update({"x": 0, "y": 0, "defeated": False})
+        next_state, _, error = apply_manual_action(state, {"actor_unit_id": "ally_phoenix", "move_to": {"x": 0, "y": 0}})
+        self.assertIsNone(error)
+        promoted = next(u for u in next_state["units"] if u["unit_id"] == "ally_phoenix")
+        self.assertTrue(promoted["promoted"])
+        self.assertTrue(next(u for u in next_state["units"] if u["unit_id"] == "enemy_hydra")["defeated"])
+
+    def test_mini_shogi_3x4_ally_try_wins_if_survives_enemy_turn(self):
+        state = build_manual_initial_board_v1(24)
+        ally_leader = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
+        ally_leader.update({"x": 1, "y": 1})
+        enemy_leader.update({"x": 0, "y": 3})
+        for unit in state["units"]:
+            if unit["side"] == "enemy" and not unit["is_leader"]:
+                unit["defeated"] = True
+        next_state, logs, error = apply_manual_action(state, {"actor_unit_id": "ally_cerberus", "move_to": {"x": 1, "y": 0}})
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+        self.assertTrue(any(event["type"] == "try" for event in next_state["last_action_sequence"]))
+        self.assertTrue(any("味方側の勝利" in log["text"] for log in logs))
+
+    def test_mini_shogi_3x4_enemy_try_wins_if_not_captured_next_ally_action(self):
+        state = build_manual_initial_board_v1(25)
+        enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
+        ally_sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        enemy_leader.update({"x": 2, "y": 3})
+        ally_sphinx["defeated"] = True
+        state["try_pending"] = {"side": "enemy", "unit_id": "enemy_cerberus"}
+        next_state, _, error = apply_manual_action(state, {"actor_unit_id": "ally_phoenix", "move_to": {"x": 1, "y": 1}})
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "enemy_win")
+
+    def test_mini_shogi_3x4_try_capture_prevents_try_win(self):
+        state = build_manual_initial_board_v1(26)
+        enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
+        ally_sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        enemy_leader.update({"x": 2, "y": 2})
+        ally_sphinx.update({"x": 2, "y": 3})
+        state["try_pending"] = {"side": "enemy", "unit_id": "enemy_cerberus"}
+        next_state, _, error = apply_manual_action(state, {"actor_unit_id": "ally_sphinx", "move_to": {"x": 2, "y": 2}})
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+
+    def test_mini_shogi_3x4_cpu_scores_promotion_and_try(self):
+        state = build_manual_initial_board_v1(27)
+        enemy_phoenix = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
+        enemy_phoenix.update({"x": 1, "y": 2})
+        promote_action = {"actor_unit_id": "enemy_phoenix", "move_to": {"x": 1, "y": 3}, "target_unit_id": None, "is_capture": False}
+        quiet_action = {"actor_unit_id": "enemy_phoenix", "move_to": {"x": 1, "y": 2}, "target_unit_id": None, "is_capture": False}
+        self.assertGreater(score_manual_cpu_action(state, promote_action), score_manual_cpu_action(state, quiet_action))
+
 
     def test_existing_mini_tactics_battle_without_source_still_watches(self):
         with game_app.app.app_context():
