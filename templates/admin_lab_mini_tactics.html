@@ -11,7 +11,10 @@
   <article class="card mini-tactics-mode-card">
     <h2>ロボらぼミニしょうぎ</h2>
     <div class="robot-part">ミニロボを1体ずつ動かして戦う、3×4の小さな盤面バトルです。</div>
-    <p class="link"><a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">ミニしょうぎを始める</a></p>
+    <div class="mini-tactics-controls">
+      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi') }}">公開用ミニしょうぎ確認</a>
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">管理者試験を始める</a>
+    </div>
   </article>
   <article class="card mini-tactics-mode-card">
     <h2>ミニロボ戦術演習</h2>

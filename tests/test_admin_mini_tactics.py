@@ -95,6 +95,26 @@ class AdminMiniTacticsTests(unittest.TestCase):
                     session["username"] = "mini_user"
         return client
 
+    def _client_for_user(self, user_id, username="guest"):
+        client = game_app.app.test_client()
+        with client.session_transaction() as session:
+            session["user_id"] = int(user_id)
+            session["username"] = username
+        return client
+
+    def _create_user(self, username):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                "INSERT INTO users (username, password_hash, created_at, is_admin) VALUES (?, ?, ?, 0)",
+                (username, "x", now),
+            )
+            user_id = int(db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"])
+            game_app.initialize_new_user(db, user_id)
+            db.commit()
+            return user_id
+
     def test_admin_only_access(self):
         anon = self._client(login=False).get("/admin/lab/mini-tactics")
         self.assertIn(anon.status_code, (302, 401))
@@ -107,7 +127,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         html = admin.get_data(as_text=True)
         self.assertIn("ミニロボ戦術試験", html)
         self.assertIn("ロボらぼミニしょうぎ", html)
-        self.assertIn("ミニしょうぎを始める", html)
+        self.assertIn("公開用ミニしょうぎ確認", html)
         self.assertIn("ミニロボ戦術演習", html)
 
     def test_team_page_is_admin_only(self):
@@ -1852,6 +1872,158 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("ロボらぼミニしょうぎ", html)
         self.assertIn("ミニロボ戦術演習", html)
         self.assertIn("/admin/lab/mini-tactics", html)
+
+    def test_public_mini_shogi_lobby_shows_cpu_and_online(self):
+        resp = self._client().get("/lab/mini-shogi")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("CPU対戦", html)
+        self.assertIn("オンライン対戦", html)
+        self.assertIn("招待URLを作って対戦", html)
+
+    def test_public_cpu_mini_shogi_creation(self):
+        client = self._client()
+        resp = client.post("/lab/mini-shogi/cpu/new", data={"cpu_level": "normal"}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        battle_id = int(resp.headers["Location"].rstrip("/").split("/")[-1])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(row["battle_type"], "cpu")
+            self.assertEqual(int(row["host_user_id"]), self.user_id)
+            self.assertEqual(int(row["current_turn_user_id"]), self.user_id)
+        page = client.get(resp.headers["Location"])
+        self.assertIn("ロボらぼミニしょうぎ", page.get_data(as_text=True))
+        self.assertNotIn("seed ", page.get_data(as_text=True))
+
+    def test_online_invite_create_and_join(self):
+        host = self._client()
+        guest_id = self._create_user("mini_guest")
+        guest = self._client_for_user(guest_id, "mini_guest")
+        resp = host.post("/lab/mini-shogi/online/new", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        battle_id = int(resp.headers["Location"].rstrip("/").split("/")[-2])
+        invite_page = host.get(resp.headers["Location"])
+        self.assertIn("招待URL", invite_page.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(row["battle_type"], "online_invite")
+            self.assertEqual(row["online_status"], "waiting")
+            self.assertTrue(len(row["invite_token"]) >= 32)
+            self.assertIsNone(row["guest_user_id"])
+            token = row["invite_token"]
+
+        host_join = host.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+        self.assertIn(f"/lab/mini-shogi/{battle_id}", host_join.headers["Location"])
+        join = guest.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+        self.assertIn(f"/lab/mini-shogi/{battle_id}", join.headers["Location"])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(int(row["guest_user_id"]), guest_id)
+            self.assertEqual(row["online_status"], "active")
+
+    def test_online_invite_rejects_third_guest_and_spectator_action(self):
+        host = self._client()
+        guest_id = self._create_user("mini_guest2")
+        other_id = self._create_user("mini_other")
+        guest = self._client_for_user(guest_id, "mini_guest2")
+        other = self._client_for_user(other_id, "mini_other")
+        resp = host.post("/lab/mini-shogi/online/new", follow_redirects=False)
+        battle_id = int(resp.headers["Location"].rstrip("/").split("/")[-2])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            token = db.execute("SELECT invite_token FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()["invite_token"]
+        guest.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+        blocked = other.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+        self.assertEqual(blocked.status_code, 302)
+        action = other.post(
+            f"/lab/mini-shogi/{battle_id}/action",
+            json={"actor_unit_id": "ally_phoenix", "action_type": "move", "to_x": 1, "to_y": 1},
+        )
+        self.assertEqual(action.status_code, 403)
+        self.assertFalse(action.get_json()["ok"])
+
+    def test_online_invite_turn_permissions_and_progress(self):
+        host = self._client()
+        guest_id = self._create_user("mini_guest3")
+        guest = self._client_for_user(guest_id, "mini_guest3")
+        resp = host.post("/lab/mini-shogi/online/new", follow_redirects=False)
+        battle_id = int(resp.headers["Location"].rstrip("/").split("/")[-2])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            token = db.execute("SELECT invite_token FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()["invite_token"]
+        guest.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+
+        denied = guest.post(
+            f"/lab/mini-shogi/{battle_id}/action",
+            json={"actor_unit_id": "enemy_phoenix", "action_type": "move", "to_x": 1, "to_y": 2},
+        )
+        self.assertEqual(denied.status_code, 403)
+        moved = host.post(
+            f"/lab/mini-shogi/{battle_id}/action",
+            json={"actor_unit_id": "ally_sphinx", "action_type": "move", "to_x": 2, "to_y": 2},
+        )
+        self.assertEqual(moved.status_code, 200)
+        payload = moved.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["can_act"])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(int(row["current_turn_user_id"]), guest_id)
+            state = json.loads(row["board_state_json"])
+            self.assertEqual(state["current_turn_side"], "enemy")
+
+        guest_state = guest.get(f"/lab/mini-shogi/{battle_id}/state").get_json()
+        self.assertTrue(guest_state["ok"])
+        self.assertTrue(guest_state["can_act"])
+        self.assertEqual(guest_state["current_turn_user_id"], guest_id)
+        guest_move = guest.post(
+            f"/lab/mini-shogi/{battle_id}/action",
+            json={"actor_unit_id": "enemy_phoenix", "action_type": "move", "to_x": 1, "to_y": 2},
+        )
+        self.assertEqual(guest_move.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(int(row["current_turn_user_id"]), self.user_id)
+
+    def test_online_invite_finishes_on_leader_capture_without_cpu(self):
+        host = self._client()
+        guest_id = self._create_user("mini_guest4")
+        guest = self._client_for_user(guest_id, "mini_guest4")
+        resp = host.post("/lab/mini-shogi/online/new", follow_redirects=False)
+        battle_id = int(resp.headers["Location"].rstrip("/").split("/")[-2])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            token = row["invite_token"]
+            state = json.loads(row["board_state_json"])
+            for unit in state["units"]:
+                if unit["unit_id"] == "ally_cerberus":
+                    unit.update({"x": 1, "y": 1})
+                if unit["unit_id"] == "enemy_cerberus":
+                    unit.update({"x": 1, "y": 0})
+            db.execute(
+                "UPDATE mini_tactics_battles SET board_state_json = ?, units_json = ? WHERE id = ?",
+                (json.dumps(state, ensure_ascii=False), json.dumps(state["units"], ensure_ascii=False), battle_id),
+            )
+            db.commit()
+        guest.get(f"/lab/mini-shogi/join/{token}", follow_redirects=False)
+        capture = host.post(
+            f"/lab/mini-shogi/{battle_id}/action",
+            json={"actor_unit_id": "ally_cerberus", "action_type": "move", "to_x": 1, "to_y": 0},
+        )
+        self.assertEqual(capture.status_code, 200)
+        self.assertEqual(capture.get_json()["result"], "ally_win")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            self.assertEqual(row["online_status"], "finished")
+            self.assertIsNone(row["current_turn_user_id"])
 
 
 if __name__ == "__main__":

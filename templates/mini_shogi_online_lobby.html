@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-shogi-lobby">
+  <div class="card">
+    <h1>ロボらぼミニしょうぎ</h1>
+    <div class="robot-part">ミニロボを1体ずつ動かして戦う、3×4の小さな盤面バトルです。</div>
+  </div>
+
+  <div class="mini-tactics-mode-grid">
+    <article class="card mini-tactics-mode-card">
+      <h2>CPU対戦</h2>
+      <div class="robot-part">ひとりで練習します。相手はCPUが1手ずつ動かします。</div>
+      <form method="post" action="{{ url_for('lab_mini_shogi_cpu_new') }}" class="post-form mini-shogi-start-form">
+        <label>
+          CPUレベル
+          <select name="cpu_level">
+            <option value="easy">よわい</option>
+            <option value="normal" selected>ふつう</option>
+            <option value="hard">つよい</option>
+          </select>
+        </label>
+        <button type="submit">CPU対戦を始める</button>
+      </form>
+    </article>
+
+    <article class="card mini-tactics-mode-card">
+      <h2>オンライン対戦</h2>
+      <div class="robot-part">招待URLを共有して、別端末・別ユーザーと交互に対戦します。</div>
+      <form method="post" action="{{ url_for('lab_mini_shogi_online_new') }}" class="post-form mini-shogi-start-form">
+        <button type="submit">招待URLを作って対戦</button>
+      </form>
+    </article>
+  </div>
+
+  <p class="link"><a href="{{ url_for('lab_home') }}">実験室へ戻る</a></p>
+</section>
+{% endblock %}

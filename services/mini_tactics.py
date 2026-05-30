@@ -1363,7 +1363,7 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
         logs,
         f"{attacker['name']}が{target['name']}を取った",
         "move_capture",
-        phase="ally",
+        phase=attacker.get("side"),
         actor_unit_id=attacker.get("unit_id"),
         target_unit_id=target.get("unit_id"),
         weapon_type=attacker.get("weapon_type"),
@@ -1390,7 +1390,7 @@ def _manual_v1_apply_move(state, unit, move_to, logs):
         logs,
         f"{unit['name']}が前進",
         "move",
-        phase="ally",
+        phase=unit.get("side"),
         actor_unit_id=unit.get("unit_id"),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": dest[0], "y": dest[1]}},
     )
@@ -1576,6 +1576,62 @@ def apply_manual_action(board_state, action_payload):
         sequence.append(result_log)
     else:
         state["current_turn_side"] = "ally"
+        state["turn_number"] = int(state.get("turn_number") or 1) + 1
+    refresh_manual_board_v1_state(state)
+    current_snapshot = _manual_v1_snapshot(state)
+    state["previous_board_state"] = previous_snapshot
+    state["current_board_state"] = current_snapshot
+    state["last_action_sequence"] = sequence
+    return state, logs, None
+
+
+def apply_manual_player_action(board_state, action_payload, side):
+    side = "enemy" if str(side or "") == "enemy" else "ally"
+    state = dict(board_state)
+    state["units"] = [dict(unit) for unit in board_state.get("units") or []]
+    state.pop("previous_board_state", None)
+    state.pop("current_board_state", None)
+    state.pop("last_action_sequence", None)
+    refresh_manual_board_v1_state(state)
+    previous_snapshot = _manual_v1_snapshot(state)
+    logs = []
+    sequence = []
+    if state.get("result"):
+        return state, logs, "すでに決着しています。"
+    if str(state.get("current_turn_side") or "ally") != side:
+        return state, logs, "現在はあなたの番ではありません。"
+    actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
+    if not actor or actor.get("side") != side or actor.get("defeated"):
+        return state, logs, "行動できないミニロボです。"
+    move_to = action_payload.get("move_to")
+    target_id = action_payload.get("target_unit_id")
+    moved = False
+    if move_to:
+        start_index = len(logs)
+        ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+        if not ok:
+            return state, logs, error
+        sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
+        moved = True
+    if target_id:
+        target = _manual_v1_unit_by_id(state, target_id)
+        if not target:
+            return state, logs, "攻撃対象が見つかりません。"
+        start_index = len(logs)
+        ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
+        if not ok:
+            return state, logs, error
+        sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
+    if not move_to and not target_id:
+        return state, logs, "行動内容がありません。"
+    result = check_manual_result(state)
+    state["result"] = result
+    if result:
+        state["current_turn_side"] = "finished"
+        result_log = _manual_v1_log(logs, "味方側の勝利" if result == "ally_win" else "敵側の勝利", "result", phase="result", result=result)
+        sequence.append(result_log)
+    else:
+        state["current_turn_side"] = _manual_v1_opponent_side(side)
         state["turn_number"] = int(state.get("turn_number") or 1) + 1
     refresh_manual_board_v1_state(state)
     current_snapshot = _manual_v1_snapshot(state)

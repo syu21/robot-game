@@ -109,6 +109,7 @@ from services.lab import LAB_RACE_COURSES, LAB_RACE_ENTRY_TARGET, fill_npc_entri
 from services.mini_tactics import (
     apply_manual_turn_action,
     apply_manual_action,
+    apply_manual_player_action,
     build_initial_map,
     build_rental_ally_units,
     create_manual_board_battle,
@@ -11022,6 +11023,16 @@ def ensure_schema(db):
             current_turn_side TEXT,
             turn_number INTEGER NOT NULL DEFAULT 1,
             result TEXT,
+            battle_type TEXT NOT NULL DEFAULT 'cpu',
+            invite_token TEXT,
+            host_user_id INTEGER,
+            guest_user_id INTEGER,
+            host_side TEXT,
+            guest_side TEXT,
+            current_turn_user_id INTEGER,
+            online_status TEXT,
+            last_action_at INTEGER,
+            updated_at INTEGER,
             created_at INTEGER NOT NULL,
             created_by_user_id INTEGER NOT NULL,
             FOREIGN KEY (created_by_user_id) REFERENCES users(id)
@@ -11750,6 +11761,16 @@ def ensure_schema(db):
         "current_turn_side": "current_turn_side TEXT",
         "turn_number": "turn_number INTEGER NOT NULL DEFAULT 1",
         "result": "result TEXT",
+        "battle_type": "battle_type TEXT NOT NULL DEFAULT 'cpu'",
+        "invite_token": "invite_token TEXT",
+        "host_user_id": "host_user_id INTEGER",
+        "guest_user_id": "guest_user_id INTEGER",
+        "host_side": "host_side TEXT",
+        "guest_side": "guest_side TEXT",
+        "current_turn_user_id": "current_turn_user_id INTEGER",
+        "online_status": "online_status TEXT",
+        "last_action_at": "last_action_at INTEGER",
+        "updated_at": "updated_at INTEGER",
     }
     for column_name, column_sql in mini_tactics_battle_column_defs.items():
         if column_name not in mini_tactics_battle_cols:
@@ -24321,6 +24342,8 @@ def enforce_release_gates():
         return None
     if not request.path.startswith("/lab"):
         return None
+    if request.path.startswith("/lab/mini-shogi"):
+        return None
     user_id = session.get("user_id")
     if not user_id:
         return None
@@ -36208,6 +36231,332 @@ def lab_submission_report(submission_id):
     return redirect(url_for("lab_submission_detail", submission_id=int(submission_id)))
 
 
+def _mini_shogi_public_row(db, battle_id):
+    return db.execute(
+        """
+        SELECT *
+        FROM mini_tactics_battles
+        WHERE id = ? AND mode = 'mini_shogi_3x4'
+        LIMIT 1
+        """,
+        (int(battle_id),),
+    ).fetchone()
+
+
+def _mini_shogi_public_side(row, user_id):
+    if row and row["host_user_id"] and int(row["host_user_id"]) == int(user_id):
+        return "ally"
+    if row and row["guest_user_id"] and int(row["guest_user_id"]) == int(user_id):
+        return "enemy"
+    return None
+
+
+def _mini_shogi_turn_message(row, board_state, user_id):
+    result = board_state.get("result")
+    side = _mini_shogi_public_side(row, user_id)
+    if result:
+        if (result == "ally_win" and side == "ally") or (result == "enemy_win" and side == "enemy"):
+            return "勝利"
+        return "敗北"
+    if str(row["battle_type"] or "cpu") == "online_invite" and str(row["online_status"] or "") == "waiting":
+        return "相手の参加待ち"
+    if row["current_turn_user_id"] and int(row["current_turn_user_id"]) == int(user_id):
+        return "あなたの番です"
+    return "相手の番です"
+
+
+def _mini_shogi_public_payload(row, board_state, user_id):
+    side = _mini_shogi_public_side(row, user_id) or "ally"
+    can_act = bool(
+        not board_state.get("result")
+        and row["current_turn_user_id"]
+        and int(row["current_turn_user_id"]) == int(user_id)
+        and (str(row["online_status"] or "active") == "active" or str(row["battle_type"] or "cpu") == "cpu")
+    )
+    active_units = [
+        unit for unit in board_state.get("units") or []
+        if unit.get("side") == side and not unit.get("defeated") and unit.get("unit_type") != "core"
+    ]
+    return {
+        "side": side,
+        "can_act": can_act,
+        "turn_message": _mini_shogi_turn_message(row, board_state, user_id),
+        "options_by_unit": {
+            str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(board_state, unit.get("unit_id"))
+            for unit in active_units
+        },
+        "zoc_cells": mini_shogi_4x4_zoc_cells(board_state, side),
+        "threat_cells": mini_shogi_4x4_threat_cells(side, board_state),
+    }
+
+
+@app.route("/lab/mini-shogi")
+@login_required
+def lab_mini_shogi():
+    return render_template("mini_shogi_online_lobby.html")
+
+
+@app.route("/lab/mini-shogi/cpu/new", methods=["POST"])
+@login_required
+def lab_mini_shogi_cpu_new():
+    db = get_db()
+    user_id = int(session["user_id"])
+    battle_id = create_manual_board_battle(db, user_id, seed=None)
+    now = int(time.time())
+    db.execute(
+        """
+        UPDATE mini_tactics_battles
+        SET battle_type = 'cpu',
+            host_user_id = ?,
+            host_side = 'ally',
+            current_turn_user_id = ?,
+            online_status = 'active',
+            updated_at = ?,
+            last_action_at = ?
+        WHERE id = ?
+        """,
+        (user_id, user_id, now, now, int(battle_id)),
+    )
+    db.commit()
+    return redirect(url_for("lab_mini_shogi_battle", battle_id=int(battle_id)))
+
+
+@app.route("/lab/mini-shogi/online/new", methods=["POST"])
+@login_required
+def lab_mini_shogi_online_new():
+    db = get_db()
+    user_id = int(session["user_id"])
+    battle_id = create_manual_board_battle(db, user_id, seed=None)
+    token = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"
+    now = int(time.time())
+    db.execute(
+        """
+        UPDATE mini_tactics_battles
+        SET battle_type = 'online_invite',
+            invite_token = ?,
+            host_user_id = ?,
+            guest_user_id = NULL,
+            host_side = 'ally',
+            guest_side = 'enemy',
+            current_turn_user_id = ?,
+            online_status = 'waiting',
+            updated_at = ?,
+            last_action_at = ?
+        WHERE id = ?
+        """,
+        (token, user_id, user_id, now, now, int(battle_id)),
+    )
+    db.commit()
+    return redirect(url_for("lab_mini_shogi_invite", battle_id=int(battle_id)))
+
+
+@app.route("/lab/mini-shogi/online/<int:battle_id>/invite")
+@login_required
+def lab_mini_shogi_invite(battle_id):
+    db = get_db()
+    row = _mini_shogi_public_row(db, battle_id)
+    if not row or not row["host_user_id"] or int(row["host_user_id"]) != int(session["user_id"]):
+        return abort(404)
+    invite_url = url_for("lab_mini_shogi_join", invite_token=row["invite_token"], _external=True)
+    return render_template("mini_shogi_online_invite.html", battle=row, invite_url=invite_url)
+
+
+@app.route("/lab/mini-shogi/join/<invite_token>")
+@login_required
+def lab_mini_shogi_join(invite_token):
+    db = get_db()
+    token = str(invite_token or "").strip()
+    row = db.execute(
+        "SELECT * FROM mini_tactics_battles WHERE invite_token = ? AND mode = 'mini_shogi_3x4' LIMIT 1",
+        (token,),
+    ).fetchone()
+    if not row:
+        return abort(404)
+    user_id = int(session["user_id"])
+    if int(row["host_user_id"] or 0) == user_id:
+        return redirect(url_for("lab_mini_shogi_battle", battle_id=int(row["id"])))
+    if row["guest_user_id"] and int(row["guest_user_id"]) != user_id:
+        flash("この対局にはすでに相手が参加しています。", "error")
+        return redirect(url_for("lab_mini_shogi"))
+    if not row["guest_user_id"]:
+        now = int(time.time())
+        db.execute(
+            """
+            UPDATE mini_tactics_battles
+            SET guest_user_id = ?,
+                guest_side = 'enemy',
+                online_status = 'active',
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (user_id, now, int(row["id"])),
+        )
+        db.commit()
+    return redirect(url_for("lab_mini_shogi_battle", battle_id=int(row["id"])))
+
+
+@app.route("/lab/mini-shogi/<int:battle_id>")
+@login_required
+def lab_mini_shogi_battle(battle_id):
+    db = get_db()
+    row = _mini_shogi_public_row(db, battle_id)
+    if not row:
+        return abort(404)
+    user_id = int(session["user_id"])
+    side = _mini_shogi_public_side(row, user_id)
+    if not side:
+        return abort(404)
+    board_state = json.loads(row["board_state_json"] or "{}")
+    payload = _mini_shogi_public_payload(row, board_state, user_id)
+    invite_url = None
+    if str(row["battle_type"] or "") == "online_invite" and row["host_user_id"] and int(row["host_user_id"]) == user_id:
+        invite_url = url_for("lab_mini_shogi_invite", battle_id=int(row["id"]))
+    return _render_mini_tactics_manual(
+        row,
+        mini_shogi_public=True,
+        playable_side=payload["side"],
+        can_act=payload["can_act"],
+        action_url=url_for("lab_mini_shogi_action", battle_id=int(row["id"])),
+        state_url=url_for("lab_mini_shogi_state", battle_id=int(row["id"])),
+        invite_url=invite_url,
+        is_online_battle=str(row["battle_type"] or "") == "online_invite",
+        turn_message=payload["turn_message"],
+        updated_at=int(row["updated_at"] or row["created_at"] or 0),
+    )
+
+
+@app.route("/lab/mini-shogi/<int:battle_id>/state")
+@login_required
+def lab_mini_shogi_state(battle_id):
+    db = get_db()
+    row = _mini_shogi_public_row(db, battle_id)
+    if not row:
+        return abort(404)
+    user_id = int(session["user_id"])
+    if not _mini_shogi_public_side(row, user_id):
+        return abort(404)
+    board_state = json.loads(row["board_state_json"] or "{}")
+    payload = _mini_shogi_public_payload(row, board_state, user_id)
+    return jsonify({
+        "ok": True,
+        "board_state": board_state,
+        "current_turn_user_id": int(row["current_turn_user_id"] or 0),
+        "result": board_state.get("result"),
+        "updated_at": int(row["updated_at"] or row["created_at"] or 0),
+        "online_status": row["online_status"],
+        "host_user_id": int(row["host_user_id"] or 0),
+        "guest_user_id": int(row["guest_user_id"] or 0),
+        "action_log": json.loads(row["action_log_json"] or "[]"),
+        **payload,
+    })
+
+
+@app.route("/lab/mini-shogi/<int:battle_id>/action", methods=["POST"])
+@login_required
+def lab_mini_shogi_action(battle_id):
+    db = get_db()
+    row = _mini_shogi_public_row(db, battle_id)
+    if not row:
+        return abort(404)
+    user_id = int(session["user_id"])
+    side = _mini_shogi_public_side(row, user_id)
+    if not side:
+        return jsonify({"ok": False, "error": "参加者だけ操作できます。"}), 403
+    board_state = json.loads(row["board_state_json"] or "{}")
+    if board_state.get("result") or str(row["online_status"] or "active") == "finished":
+        return jsonify({"ok": False, "error": "対局は終了しています。", "board_state": board_state}), 400
+    if str(row["battle_type"] or "cpu") == "online_invite":
+        if str(row["online_status"] or "") != "active":
+            return jsonify({"ok": False, "error": "相手の参加待ちです。", "board_state": board_state}), 400
+        if not row["current_turn_user_id"] or int(row["current_turn_user_id"]) != user_id:
+            return jsonify({"ok": False, "error": "現在はあなたの番ではありません。", "board_state": board_state}), 403
+    elif side != "ally":
+        return jsonify({"ok": False, "error": "CPU対戦では青側だけ操作できます。", "board_state": board_state}), 403
+    payload = request.get_json(silent=True) if request.is_json else request.form
+
+    def _payload_value(key):
+        value = payload.get(key) if hasattr(payload, "get") else None
+        return "" if value is None else str(value)
+
+    actor_unit_id = (_payload_value("actor_unit_id") or "").strip()
+    target_unit_id = (_payload_value("target_unit_id") or "").strip() or None
+    move_to = None
+    move_x = (_payload_value("to_x") or _payload_value("move_x") or "").strip()
+    move_y = (_payload_value("to_y") or _payload_value("move_y") or "").strip()
+    if move_x and move_y:
+        try:
+            move_to = {"x": int(move_x), "y": int(move_y)}
+        except ValueError:
+            return jsonify({"ok": False, "error": "移動先が不正です。", "board_state": board_state}), 400
+    if str(row["battle_type"] or "cpu") == "online_invite":
+        next_state, logs, error = apply_manual_player_action(
+            board_state,
+            {"actor_unit_id": actor_unit_id, "move_to": move_to, "target_unit_id": target_unit_id},
+            side,
+        )
+    else:
+        next_state, logs, error = apply_manual_action(
+            board_state,
+            {"actor_unit_id": actor_unit_id, "move_to": move_to, "target_unit_id": target_unit_id},
+        )
+    if error:
+        return jsonify({"ok": False, "error": error, "board_state": board_state}), 400
+    action_log = json.loads(row["action_log_json"] or "[]")
+    action_log.extend(logs)
+    result = next_state.get("result")
+    next_user_id = None
+    if not result:
+        if str(row["battle_type"] or "cpu") == "online_invite":
+            next_user_id = int(row["guest_user_id"] if next_state.get("current_turn_side") == "enemy" else row["host_user_id"])
+        else:
+            next_user_id = int(row["host_user_id"] or user_id)
+    now = int(time.time())
+    db.execute(
+        """
+        UPDATE mini_tactics_battles
+        SET status = ?,
+            board_state_json = ?,
+            action_log_json = ?,
+            units_json = ?,
+            current_turn_side = ?,
+            turn_number = ?,
+            result = ?,
+            current_turn_user_id = ?,
+            online_status = ?,
+            last_action_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            "finished" if result else "manual_active",
+            json.dumps(next_state, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(action_log, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(next_state.get("units") or [], ensure_ascii=False, separators=(",", ":")),
+            str(next_state.get("current_turn_side") or "ally"),
+            int(next_state.get("turn_number") or 1),
+            result,
+            next_user_id,
+            "finished" if result else (row["online_status"] or "active"),
+            now,
+            now,
+            int(battle_id),
+        ),
+    )
+    db.commit()
+    refreshed = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (int(battle_id),)).fetchone()
+    public_payload = _mini_shogi_public_payload(refreshed, next_state, user_id)
+    return jsonify({
+        "ok": True,
+        "board_state": next_state,
+        "action_sequence": next_state.get("last_action_sequence") or [],
+        "message": logs[-1].get("text") if logs else "",
+        "result": result,
+        "action_log": action_log,
+        "updated_at": now,
+        **public_payload,
+    })
+
+
 @app.route("/admin/lab")
 @login_required
 def admin_lab():
@@ -36568,7 +36917,19 @@ def admin_lab_mini_tactics_manual_action(battle_id):
     return redirect(url_for("admin_lab_mini_tactics_manual", battle_id=int(battle_id)))
 
 
-def _render_mini_tactics_manual(row):
+def _render_mini_tactics_manual(
+    row,
+    *,
+    mini_shogi_public=False,
+    playable_side="ally",
+    can_act=True,
+    action_url=None,
+    state_url=None,
+    invite_url=None,
+    is_online_battle=False,
+    turn_message=None,
+    updated_at=None,
+):
     try:
         map_payload = json.loads(row["map_json"] or "{}")
         board_state = json.loads(row["board_state_json"] or "{}")
@@ -36586,18 +36947,23 @@ def _render_mini_tactics_manual(row):
         for unit in units_payload
         if unit.get("side") == "ally" and not unit.get("defeated") and unit.get("unit_type") != "core"
     ]
+    playable_units = [
+        unit
+        for unit in units_payload
+        if unit.get("side") == playable_side and not unit.get("defeated") and unit.get("unit_type") != "core"
+    ]
     mode = str(row["mode"] if "mode" in row.keys() else "")
     if mode in {"mini_shogi_4x4", "mini_shogi_3x4"}:
         options_by_unit = {
             str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(board_state, unit.get("unit_id"))
-            for unit in ally_units
+            for unit in playable_units
         }
-        zoc_cells = mini_shogi_4x4_zoc_cells(board_state, "ally")
-        threat_cells = mini_shogi_4x4_threat_cells("ally", board_state)
+        zoc_cells = mini_shogi_4x4_zoc_cells(board_state, playable_side)
+        threat_cells = mini_shogi_4x4_threat_cells(playable_side, board_state)
     else:
         options_by_unit = {
             str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
-            for unit in ally_units
+            for unit in playable_units
         }
         zoc_cells = []
         threat_cells = []
@@ -36625,6 +36991,15 @@ def _render_mini_tactics_manual(row):
         action_log=action_log,
         unit_assets=unit_assets,
         ally_units=ally_units,
+        playable_side=playable_side,
+        mini_shogi_public=mini_shogi_public,
+        can_act=can_act,
+        action_url=action_url,
+        state_url=state_url,
+        invite_url=invite_url,
+        is_online_battle=is_online_battle,
+        turn_message=turn_message,
+        updated_at=updated_at or (row["updated_at"] if "updated_at" in row.keys() else 0),
         options_by_unit=options_by_unit,
         zoc_cells=zoc_cells,
         threat_cells=threat_cells,

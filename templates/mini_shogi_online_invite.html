@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="mini-shogi-invite">
+  <div class="card">
+    <h1>オンライン対戦を作成しました</h1>
+    <div class="robot-part">
+      {% if battle['guest_user_id'] %}
+      相手が参加しました。対局を開始できます。
+      {% else %}
+      招待URLを相手に共有してください。
+      {% endif %}
+    </div>
+    <label class="mini-shogi-invite-url">
+      招待URL
+      <input id="miniShogiInviteUrl" type="text" readonly value="{{ invite_url }}" />
+    </label>
+    <div class="mini-tactics-controls">
+      <button type="button" id="miniShogiCopyInvite">コピーする</button>
+      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi_battle', battle_id=battle['id']) }}">対局画面へ</a>
+      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi') }}">入口へ</a>
+    </div>
+    <div id="miniShogiInviteMessage" class="robot-time">参加待ち</div>
+  </div>
+</section>
+<script>
+(function () {
+  var input = document.getElementById("miniShogiInviteUrl");
+  var button = document.getElementById("miniShogiCopyInvite");
+  var message = document.getElementById("miniShogiInviteMessage");
+  if (!input || !button) return;
+  button.addEventListener("click", async function () {
+    try {
+      await navigator.clipboard.writeText(input.value);
+      if (message) message.textContent = "コピーしました。";
+    } catch (error) {
+      input.focus();
+      input.select();
+      if (message) message.textContent = "URLを選択しました。コピーしてください。";
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1761,6 +1761,16 @@ def main():
             current_turn_side TEXT,
             turn_number INTEGER NOT NULL DEFAULT 1,
             result TEXT,
+            battle_type TEXT NOT NULL DEFAULT 'cpu',
+            invite_token TEXT,
+            host_user_id INTEGER,
+            guest_user_id INTEGER,
+            host_side TEXT,
+            guest_side TEXT,
+            current_turn_user_id INTEGER,
+            online_status TEXT,
+            last_action_at INTEGER,
+            updated_at INTEGER,
             created_at INTEGER NOT NULL,
             created_by_user_id INTEGER NOT NULL
         )
@@ -2454,6 +2464,16 @@ def main():
         "current_turn_side": "current_turn_side TEXT",
         "turn_number": "turn_number INTEGER NOT NULL DEFAULT 1",
         "result": "result TEXT",
+        "battle_type": "battle_type TEXT NOT NULL DEFAULT 'cpu'",
+        "invite_token": "invite_token TEXT",
+        "host_user_id": "host_user_id INTEGER",
+        "guest_user_id": "guest_user_id INTEGER",
+        "host_side": "host_side TEXT",
+        "guest_side": "guest_side TEXT",
+        "current_turn_user_id": "current_turn_user_id INTEGER",
+        "online_status": "online_status TEXT",
+        "last_action_at": "last_action_at INTEGER",
+        "updated_at": "updated_at INTEGER",
     }
     for column_name, column_sql in mini_tactics_battle_column_defs.items():
         if column_name not in mini_tactics_battle_cols:

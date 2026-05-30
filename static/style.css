@@ -7044,6 +7044,40 @@ body.home-page .locked-layer-card {
   cursor: pointer;
   font-weight: 800;
 }
+.mini-shogi-lobby,
+.mini-shogi-invite {
+  display: grid;
+  gap: 14px;
+}
+.mini-shogi-start-form {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.mini-shogi-start-form label,
+.mini-shogi-invite-url {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 520px);
+  color: var(--text-sub);
+  font-weight: 800;
+}
+.mini-shogi-start-form select,
+.mini-shogi-invite-url input {
+  min-height: 40px;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.72);
+  color: var(--text-main);
+}
+.mini-shogi-lobby button,
+.mini-shogi-invite button {
+  border: 1px solid rgba(103, 232, 249, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #123044, #1f6f8b);
+  color: #eaffff;
+  font-weight: 900;
+}
 .mini-tactics-team-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

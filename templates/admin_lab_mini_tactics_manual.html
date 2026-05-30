@@ -29,8 +29,15 @@
       </div>
     </div>
     <div class="mini-tactics-controls mini-tactics-board-actions">
+      {% if mini_shogi_public %}
+      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi') }}">入口へ</a>
+      {% if invite_url %}
+      <a class="fuse-secondary-link" href="{{ invite_url }}">招待URL</a>
+      {% endif %}
+      {% else %}
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">編成へ</a>
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics') }}">試験一覧</a>
+      {% endif %}
     </div>
   </div>
 
@@ -93,7 +100,7 @@
       <section class="mini-tactics-manual-panel">
         <h2>選択中ユニット</h2>
         <div id="miniTacticsManualSelected" class="robot-part">選択中：なし</div>
-        <form method="post" action="{{ url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
+        <form method="post" action="{{ action_url or url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
           <input type="hidden" name="actor_unit_id" id="manualActorUnitId" />
           <input type="hidden" name="action_type" id="manualActionType" />
           <input type="hidden" name="to_x" id="manualToX" />
@@ -114,7 +121,7 @@
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
           {% if manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
-          ミニロボを選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと撃破します。
+          {% if turn_message %}{{ turn_message }}{% else %}ミニロボを選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと撃破します。{% endif %}
           {% else %}
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
           {% endif %}
@@ -203,6 +210,12 @@
   var zocCells = {{ zoc_cells|tojson }};
   var threatCells = {{ threat_cells|tojson }};
   var unitAssets = {{ unit_assets|tojson }};
+  var playableSide = {{ (playable_side or 'ally')|tojson }};
+  var canAct = {{ can_act|default(True)|tojson }};
+  var isOnlineBattle = {{ is_online_battle|default(False)|tojson }};
+  var stateUrl = {{ (state_url or '')|tojson }};
+  var turnMessage = {{ (turn_message or '')|tojson }};
+  var lastKnownUpdatedAt = {{ (updated_at or 0)|tojson }};
   var board = document.getElementById("miniTacticsManualBoard");
   var bannerEl = document.getElementById("miniTacticsPhaseBanner");
   var captionEl = document.getElementById("miniTacticsActionCaption");
@@ -313,6 +326,9 @@
       optionsByUnit = data.options_by_unit || {};
       zocCells = data.zoc_cells || [];
       threatCells = data.threat_cells || [];
+      if (data.turn_message) turnMessage = data.turn_message;
+      if (typeof data.can_act !== "undefined") canAct = !!data.can_act;
+      if (typeof data.updated_at !== "undefined") lastKnownUpdatedAt = data.updated_at || lastKnownUpdatedAt;
       selectedUnitId = "";
       selectedMove = null;
       clearMarks();
@@ -321,10 +337,11 @@
       } else if (data.board_state) {
         boardState = data.board_state;
         renderBoard(boardState);
-        setCaption(boardState.result ? "決着" : "味方ターン：動かすミニロボを選択", boardState.result ? "result" : "ally");
+        setCaption(boardState.result ? "決着" : (turnMessage || "味方ターン：動かすミニロボを選択"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
       }
       if (selectedEl) selectedEl.textContent = "味方ユニットを選択";
       if (hintEl) hintEl.textContent = data.message || "";
+      maybeStartPolling();
     } catch (error) {
       if (hintEl) hintEl.textContent = error && error.message ? error.message : "通信エラーが発生しました。";
       setCaption("味方ターン：動かすミニロボを選択", "ally");
@@ -371,6 +388,18 @@
         badge.className = "mini-tactics-guard-badge";
         badge.textContent = "GUARD";
         unitEl.appendChild(badge);
+      }
+      if (unit.promoted) {
+        var promotedBadge = document.createElement("span");
+        promotedBadge.className = "mini-tactics-guard-badge";
+        promotedBadge.textContent = "不死鳥";
+        unitEl.appendChild(promotedBadge);
+      }
+      if (state.try_pending && state.try_pending.unit_id === unit.unit_id) {
+        var tryBadge = document.createElement("span");
+        tryBadge.className = "mini-tactics-guard-badge";
+        tryBadge.textContent = "TRY";
+        unitEl.appendChild(tryBadge);
       }
       cell.appendChild(unitEl);
     });
@@ -527,7 +556,7 @@
     }
     highlightMoveGuide(unit && unit.move_type);
     if (hintEl) hintEl.textContent = "";
-    if (replaying || boardState.result) return;
+    if (replaying || boardState.result || !canAct) return;
     var unitEl = board.querySelector('[data-unit-id="' + unitId + '"]');
     if (unitEl) unitEl.classList.add("is-selected");
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
@@ -586,8 +615,12 @@
 
   board.addEventListener("click", function (event) {
     var unitEl = event.target.closest("[data-unit-id]");
-    if (unitEl && unitEl.dataset.side === "ally" && !unitEl.classList.contains("is-core")) {
+    if (unitEl && unitEl.dataset.side === playableSide && !unitEl.classList.contains("is-core")) {
       if (replaying || boardState.result) return;
+      if (!canAct) {
+        if (hintEl) hintEl.textContent = turnMessage || "相手の手を待っています。";
+        return;
+      }
       markForUnit(unitEl.dataset.unitId);
       return;
     }
@@ -598,7 +631,7 @@
       markAfterMove(cell.dataset.x, cell.dataset.y);
       return;
     }
-    if (unitEl && unitEl.dataset.side === "enemy") {
+    if (unitEl && unitEl.dataset.side !== playableSide) {
       var enemyUnit = unitById(unitEl.dataset.unitId);
       var targetCell = unitEl.closest(".mini-tactics-cell");
       if (!targetCell || !targetCell.classList.contains("is-target-option")) {
@@ -617,8 +650,40 @@
   markThreats();
   if (replayButton) replayButton.addEventListener("click", playSequence);
   if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
+  async function pollStateOnce() {
+    if (!isOnlineBattle || !stateUrl || canAct || boardState.result || replaying || actionPending) return;
+    try {
+      var response = await fetch(stateUrl, {headers: {"Accept": "application/json"}});
+      var data = await response.json().catch(function () { return null; });
+      if (!response.ok || !data || !data.ok) throw new Error("通信確認中");
+      if (data.updated_at && data.updated_at !== lastKnownUpdatedAt) {
+        boardState = data.board_state || boardState;
+        optionsByUnit = data.options_by_unit || {};
+        zocCells = data.zoc_cells || [];
+        threatCells = data.threat_cells || [];
+        canAct = !!data.can_act;
+        turnMessage = data.turn_message || "";
+        lastKnownUpdatedAt = data.updated_at;
+        renderBoard(boardState);
+        clearMarks();
+      } else {
+        canAct = !!data.can_act;
+        turnMessage = data.turn_message || turnMessage;
+      }
+      setCaption(boardState.result ? "決着" : (turnMessage || "相手の手を待っています"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
+      if (hintEl && !canAct && !boardState.result) hintEl.textContent = "相手の手を待っています。";
+    } catch (error) {
+      if (hintEl) hintEl.textContent = "通信確認中";
+    }
+  }
+
+  function maybeStartPolling() {
+    if (!isOnlineBattle || window.__miniShogiPollTimer) return;
+    window.__miniShogiPollTimer = window.setInterval(pollStateOnce, 3000);
+  }
   if (isMiniAnimalShogi) {
-    setCaption(boardState.result ? "決着" : "味方ターン：動かすミニロボを選択", boardState.result ? "result" : "ally");
+    setCaption(boardState.result ? "決着" : (turnMessage || "味方ターン：動かすミニロボを選択"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
+    maybeStartPolling();
   } else {
     playSequence();
   }
