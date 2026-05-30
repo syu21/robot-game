@@ -37,29 +37,4 @@
 </section>
 
 <section class="card">
-  <h2>最近の試験</h2>
-  {% for row in latest_battles %}
-  <div class="mini-tactics-history-row">
-    <span>
-      {% if row['mode'] == 'mini_shogi_3x4' %}
-      ロボらぼミニしょうぎ
-      {% elif row['mode'] == 'manual_board' or row['mode'] == 'mini_shogi_4x4' %}
-      手動戦術演習
-      {% else %}
-      ステータスあり戦術演習
-      {% endif %}
-      / {{ row['created_at'] }}
-    </span>
-    {% if row['mode'] == 'manual_board' or row['mode'] == 'mini_shogi_4x4' or row['mode'] == 'mini_shogi_3x4' %}
-    <a href="{{ url_for('admin_lab_mini_tactics_manual', battle_id=row['id']) }}">手動盤面</a>
-    {% else %}
-    <a href="{{ url_for('admin_lab_mini_tactics_watch', battle_id=row['id']) }}">観戦</a>
-    {% endif %}
-  </div>
-  {% else %}
-  <div class="robot-part">まだ試験はありません。</div>
-  {% endfor %}
-</section>
-
-<p class="link"><a href="{{ url_for('admin_lab') }}">実験室管理へ戻る</a></p>
-{% endblock %}
+  <h2>�

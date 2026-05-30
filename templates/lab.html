@@ -54,14 +54,16 @@
 </div>
 
 <div class="lab-card-grid lab-top-action-grid">
+  {% if not is_admin %}
   <a class="action-card home-nav-card" href="{{ url_for('lab_mini_shogi') }}">
     <div class="action-title">ロボらぼミニしょうぎ</div>
     <div class="action-desc">CPU対戦や招待URL式オンライン対戦で、3×4の小さな盤面バトルを遊ぶ</div>
   </a>
+  {% endif %}
   {% if is_admin %}
-  <a class="action-card home-nav-card" href="{{ url_for('admin_lab_mini_tactics') }}">
+  <a class="action-card home-nav-card" href="{{ url_for('lab_mini_shogi') }}">
     <div class="action-title">ロボらぼミニしょうぎ <span class="weekly-fit-badge">管理人限定</span></div>
-    <div class="action-desc">3×4の小さな盤面で、ミニロボを1体ずつ動かして戦う試験モードです。</div>
+    <div class="action-desc">CPU対戦や招待URL式オンライン対戦で、3×4の小さな盤面バトルを遊ぶ</div>
   </a>
   <a class="action-card home-nav-card" href="{{ url_for('admin_lab_mini_tactics') }}">
     <div class="action-title">ミニロボ戦術演習 <span class="weekly-fit-badge">管理人限定</span></div>

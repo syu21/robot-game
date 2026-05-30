@@ -2798,37 +2798,4 @@ def main():
             VALUES (?, ?, ?, ?, ?, ?, ?, 1)
             """,
             [
-                ("wins_3", "wins", 3, "head_1", "r_arm_1", "l_arm_1", "legs_1"),
-                ("wins_10", "wins", 10, "head_2", "r_arm_2", "l_arm_2", "legs_2"),
-            ],
-        )
-    bb_count = cur.execute("SELECT COUNT(*) FROM base_bodies").fetchone()[0]
-    if bb_count == 0:
-        cur.executemany(
-            "INSERT INTO base_bodies (name, sprite_path) VALUES (?, ?)",
-            [
-                ("normal", "base_bodies/normal.png"),
-                ("angel", "base_bodies/angel.png"),
-                ("devil", "base_bodies/devil.png"),
-            ],
-        )
-    part_count = cur.execute("SELECT COUNT(*) FROM parts").fetchone()[0]
-    if part_count == 0:
-        items = []
-        for i in range(1, 11):
-            items.append((f"HEAD-{i}", "HEAD", f"parts/head/{i}.png", 2, 1, 1, 3))
-            items.append((f"R-ARM-{i}", "RIGHT_ARM", f"parts/right_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"L-ARM-{i}", "LEFT_ARM", f"parts/left_arm/{i}.png", 2, 1, 1, 2))
-            items.append((f"LEGS-{i}", "LEGS", f"parts/legs/{i}.png", 1, 2, 2, 3))
-        cur.executemany(
-            "INSERT INTO parts (name, type, sprite_path, attack, defense, speed, hp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            items,
-        )
-
-    conn.commit()
-    conn.close()
-    print("DB initialized at", DB_PATH)
-
-
-if __name__ == "__main__":
-    main()
+    
