@@ -7695,6 +7695,9 @@ body.home-page .locked-layer-card {
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
   width: 100%;
   max-width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  aspect-ratio: 3 / 4;
   gap: 8px;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-phase-banner,
@@ -8063,6 +8066,9 @@ button.secondary {
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
     width: 100%;
     max-width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    aspect-ratio: 3 / 4;
     gap: 6px;
   }
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-manual-side {
