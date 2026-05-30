@@ -36601,11 +36601,26 @@ def _render_mini_tactics_manual(row):
         }
         zoc_cells = []
         threat_cells = []
+    client_board_state = board_state
+    if mode == "mini_shogi_3x4":
+        def _public_board_payload(value):
+            if isinstance(value, dict):
+                return {
+                    str(key): _public_board_payload(item)
+                    for key, item in value.items()
+                    if key not in {"mode"}
+                }
+            if isinstance(value, list):
+                return [_public_board_payload(item) for item in value]
+            return value
+
+        client_board_state = _public_board_payload(board_state)
     return render_template(
         "admin_lab_mini_tactics_manual.html",
         battle=row,
         map_payload=map_payload,
         board_state=board_state,
+        client_board_state=client_board_state,
         units_payload=units_payload,
         action_log=action_log,
         unit_assets=unit_assets,

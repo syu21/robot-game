@@ -3,27 +3,50 @@
 <section class="mini-tactics-admin-hero">
   <div>
     <h1>ミニロボ戦術試験</h1>
-    <div class="robot-part">管理人限定プロトタイプ。育成ミニロボ + レンタル機の3体編成を確認します。</div>
+    <div class="robot-part">公開準備中のミニロボ対局と、管理者向け戦術演習を分けて確認します。</div>
   </div>
-  <div class="mini-tactics-controls">
-    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">戦術チーム確認</a>
-    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">3x4ミニロボどうぶつしょうぎを開始</a>
-    <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_start') }}">ステータスあり戦術演習</a>
-    <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
-      <label>
-        seed 任意
-        <input type="number" name="seed" min="1" placeholder="空ならランダム" />
-      </label>
-      <button type="submit">自動watch試験開始</button>
-    </form>
-  </div>
+</section>
+
+<section class="mini-tactics-mode-grid">
+  <article class="card mini-tactics-mode-card">
+    <h2>ロボらぼミニしょうぎ</h2>
+    <div class="robot-part">ミニロボを1体ずつ動かして戦う、3×4の小さな盤面バトルです。</div>
+    <p class="link"><a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">ミニしょうぎを始める</a></p>
+  </article>
+  <article class="card mini-tactics-mode-card">
+    <h2>ミニロボ戦術演習</h2>
+    <div class="robot-part">ステータス、武器、配置を使う大きめの戦術試験です。</div>
+    <div class="mini-tactics-controls">
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_team') }}">戦術チーム確認</a>
+      <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_start') }}">手動戦術演習へ</a>
+    </div>
+    <details class="mini-tactics-dev-tools">
+      <summary>管理者用の自動観戦試験</summary>
+      <form method="post" action="{{ url_for('admin_lab_mini_tactics_start') }}" class="post-form mini-tactics-start-form">
+        <label>
+          seed 任意
+          <input type="number" name="seed" min="1" placeholder="空ならランダム" />
+        </label>
+        <button type="submit">自動watch試験開始</button>
+      </form>
+    </details>
+  </article>
 </section>
 
 <section class="card">
   <h2>最近の試験</h2>
   {% for row in latest_battles %}
   <div class="mini-tactics-history-row">
-    <span>#{{ row['id'] }} / seed {{ row['seed'] }} / {{ row['mode'] or 'auto' }} / {{ row['status'] }}</span>
+    <span>
+      {% if row['mode'] == 'mini_shogi_3x4' %}
+      ロボらぼミニしょうぎ
+      {% elif row['mode'] == 'manual_board' or row['mode'] == 'mini_shogi_4x4' %}
+      手動戦術演習
+      {% else %}
+      ステータスあり戦術演習
+      {% endif %}
+      / {{ row['created_at'] }}
+    </span>
     {% if row['mode'] == 'manual_board' or row['mode'] == 'mini_shogi_4x4' or row['mode'] == 'mini_shogi_3x4' %}
     <a href="{{ url_for('admin_lab_mini_tactics_manual', battle_id=row['id']) }}">手動盤面</a>
     {% else %}

@@ -104,8 +104,11 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
         admin = self._client(admin=True).get("/admin/lab/mini-tactics")
         self.assertEqual(admin.status_code, 200)
-        self.assertIn("ミニロボ戦術試験", admin.get_data(as_text=True))
-        self.assertIn("試験開始", admin.get_data(as_text=True))
+        html = admin.get_data(as_text=True)
+        self.assertIn("ミニロボ戦術試験", html)
+        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("ミニしょうぎを始める", html)
+        self.assertIn("ミニロボ戦術演習", html)
 
     def test_team_page_is_admin_only(self):
         anon = self._client(login=False).get("/admin/lab/mini-tactics/team")
@@ -613,8 +616,13 @@ class AdminMiniTacticsTests(unittest.TestCase):
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
-        self.assertIn("ミニロボどうぶつしょうぎ", html)
+        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("3×4の小さな盤面バトル", html)
         self.assertIn("クリックすると即行動", html)
+        self.assertNotIn("ミニロボどうぶつしょうぎ", html)
+        self.assertNotIn("seed ", html)
+        self.assertNotIn("mini_shogi_3x4", html)
+        self.assertNotIn("ロボらぼミニしょうぎ #", html)
 
     def test_mini_shogi_3x4_piece_movement_rules(self):
         state = build_manual_initial_board_v1(1)
@@ -754,7 +762,9 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("data-previous-board-state", html)
         self.assertIn("data-current-board-state", html)
         self.assertIn("fetch(", html)
-        self.assertIn("is-mini-shogi-3x4", html)
+        self.assertIn("is-mini-shogi-public", html)
+        self.assertIn("mini-tactics-manual-layout", html)
+        self.assertIn("mini-tactics-board-wrap", html)
         self.assertIn("mini-tactics-board-actions", html)
         self.assertIn("駒の動き", html)
         self.assertIn("全方向に1マス", html)
@@ -778,6 +788,13 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertNotIn("ダミーA", html)
         self.assertIn('class="mini-tactics-log"', html)
         self.assertNotIn('class="mini-tactics-log" open', html)
+        self.assertNotIn("自動watch試験開始", html)
+        css_path = os.path.join(os.path.dirname(__file__), "..", "static", "style.css")
+        with open(css_path, encoding="utf-8") as handle:
+            css = handle.read()
+        self.assertIn(".mini-tactics-manual.is-mini-shogi-public .mini-tactics-board-wrap", css)
+        self.assertIn("width: min(92vw, 330px)", css)
+        self.assertIn(".mini-tactics-mode-grid", css)
         self.assertIn("function addClasses", html)
         self.assertNotIn('classList.add("is-attacking is-weapon-', html)
         self.assertNotIn("もう一度再生", html)
@@ -1832,7 +1849,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_admin_lab_shows_mini_tactics_link(self):
         html = self._client(admin=True).get("/lab").get_data(as_text=True)
-        self.assertIn("ミニロボ戦術試験", html)
+        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("ミニロボ戦術演習", html)
         self.assertIn("/admin/lab/mini-tactics", html)
 
 

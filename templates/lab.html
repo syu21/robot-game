@@ -56,8 +56,12 @@
 <div class="lab-card-grid lab-top-action-grid">
   {% if is_admin %}
   <a class="action-card home-nav-card" href="{{ url_for('admin_lab_mini_tactics') }}">
-    <div class="action-title">ミニロボ戦術試験 <span class="weekly-fit-badge">管理人限定</span></div>
-    <div class="action-desc">5x5盤面でミニロボの自動移動を確認する</div>
+    <div class="action-title">ロボらぼミニしょうぎ <span class="weekly-fit-badge">管理人限定</span></div>
+    <div class="action-desc">3×4の小さな盤面で、ミニロボを1体ずつ動かして戦う試験モードです。</div>
+  </a>
+  <a class="action-card home-nav-card" href="{{ url_for('admin_lab_mini_tactics') }}">
+    <div class="action-title">ミニロボ戦術演習 <span class="weekly-fit-badge">管理人限定</span></div>
+    <div class="action-desc">ステータス、武器、配置を使う大きめの戦術試験です。</div>
   </a>
   {% endif %}
   <a class="action-card home-nav-card" href="{{ url_for('lab_race') }}">

@@ -1,21 +1,31 @@
 {% extends 'base.html' %}
 {% block content %}
 <section
-  class="mini-tactics-manual {% if manual_mode == 'mini_shogi_3x4' %}is-mini-shogi-3x4{% endif %}"
+  class="mini-tactics-manual {% if manual_mode == 'mini_shogi_3x4' %}is-mini-shogi-public{% endif %}"
   id="miniTacticsManual"
-  data-action-sequence="{{ board_state.get('last_action_sequence', [])|tojson|forceescape }}"
-  data-previous-board-state="{{ board_state.get('previous_board_state')|tojson|forceescape }}"
-  data-current-board-state="{{ board_state.get('current_board_state')|tojson|forceescape }}"
+  data-action-sequence="{{ client_board_state.get('last_action_sequence', [])|tojson|forceescape }}"
+  data-previous-board-state="{{ client_board_state.get('previous_board_state')|tojson|forceescape }}"
+  data-current-board-state="{{ client_board_state.get('current_board_state')|tojson|forceescape }}"
 >
   <div class="mini-tactics-watch-head">
     <div>
-      <h1>{% if manual_mode == 'mini_shogi_3x4' %}ミニロボどうぶつしょうぎ{% else %}手動戦術試験{% endif %} #{{ battle['id'] }}</h1>
+      <h1>{% if manual_mode == 'mini_shogi_3x4' %}ロボらぼミニしょうぎ{% else %}手動戦術試験 #{{ battle['id'] }}{% endif %}</h1>
+      {% if manual_mode == 'mini_shogi_3x4' %}
+      <div class="robot-part">ミニロボを1体ずつ動かして戦う、3×4の小さな盤面バトルです。</div>
+      {% else %}
       <div class="robot-part">seed {{ battle['seed'] }} / {{ manual_mode }} / turn {{ board_state.get('turn_number', 1) }} / {{ board_state.get('current_turn_side', 'ally') }}</div>
+      {% endif %}
     </div>
     <div class="mini-tactics-status-panel">
-      <div class="mini-tactics-turn">味方ターン: 1体だけ行動</div>
+      <div class="mini-tactics-turn">
+        {% if manual_mode == 'mini_shogi_3x4' %}
+          {% if board_state.get('result') %}対局終了{% elif board_state.get('current_turn_side') == 'enemy' %}相手ターン{% else %}味方ターン{% endif %}
+        {% else %}
+          味方ターン: 1体だけ行動
+        {% endif %}
+      </div>
       <div class="mini-tactics-result">
-        {% if board_state.get('result') == 'ally_win' %}味方側の勝利{% elif board_state.get('result') == 'enemy_win' %}敵側の勝利{% else %}交戦中{% endif %}
+        {% if board_state.get('result') == 'ally_win' %}勝利{% elif board_state.get('result') == 'enemy_win' %}敗北{% else %}対局中{% endif %}
       </div>
     </div>
     <div class="mini-tactics-controls mini-tactics-board-actions">
@@ -104,7 +114,7 @@
         <div id="miniTacticsManualHint" class="mini-tactics-manual-hint"></div>
         <div class="robot-time">
           {% if manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
-          駒を選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと一撃撃破。敵ターンは自動再生されます。
+          ミニロボを選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと撃破します。
           {% else %}
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
           {% endif %}
@@ -183,13 +193,12 @@
 
 <script>
 (function () {
-  var boardState = {{ board_state|tojson }};
-  var manualMode = {{ manual_mode|tojson }};
-  var isMiniShogi = manualMode === "mini_shogi_4x4" || manualMode === "mini_shogi_3x4";
-  var isMiniAnimalShogi = manualMode === "mini_shogi_3x4";
-  var previousBoardState = {{ board_state.get('previous_board_state')|tojson }};
-  var currentBoardState = {{ board_state.get('current_board_state')|tojson }};
-  var actionSequence = {{ board_state.get('last_action_sequence', [])|tojson }};
+  var boardState = {{ client_board_state|tojson }};
+  var isMiniAnimalShogi = {{ (manual_mode == 'mini_shogi_3x4')|tojson }};
+  var isMiniShogi = {{ (manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'])|tojson }};
+  var previousBoardState = {{ client_board_state.get('previous_board_state')|tojson }};
+  var currentBoardState = {{ client_board_state.get('current_board_state')|tojson }};
+  var actionSequence = {{ client_board_state.get('last_action_sequence', [])|tojson }};
   var optionsByUnit = {{ options_by_unit|tojson }};
   var zocCells = {{ zoc_cells|tojson }};
   var threatCells = {{ threat_cells|tojson }};
