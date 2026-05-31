@@ -7400,12 +7400,26 @@ body.home-page .locked-layer-card {
   font-weight: 900;
 }
 .mini-tactics-board {
+  --mini-tactics-width: 5;
+  --mini-tactics-height: 5;
   position: relative;
   display: grid;
   grid-template-columns: repeat(var(--mini-tactics-width), minmax(0, 1fr));
   grid-template-rows: repeat(var(--mini-tactics-height), minmax(0, 1fr));
   gap: clamp(7px, 1.2vw, 12px);
   aspect-ratio: var(--mini-tactics-width) / var(--mini-tactics-height);
+}
+.mini-tactics-board.is-board-3x4 {
+  --mini-tactics-width: 3;
+  --mini-tactics-height: 4;
+}
+.mini-tactics-board.is-board-4x4 {
+  --mini-tactics-width: 4;
+  --mini-tactics-height: 4;
+}
+.mini-tactics-board.is-board-5x5 {
+  --mini-tactics-width: 5;
+  --mini-tactics-height: 5;
 }
 .mini-tactics-cell {
   display: grid;
@@ -7989,6 +8003,9 @@ body.home-page .locked-layer-card {
   white-space: nowrap;
 }
 .mini-tactics-hp {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 1px;
   width: 80%;
   height: 5px;
   overflow: hidden;
@@ -8000,6 +8017,15 @@ body.home-page .locked-layer-card {
   display: block;
   height: 100%;
   border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #a3e635);
+}
+.mini-tactics-hp i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+}
+.mini-tactics-hp i.is-filled {
   background: linear-gradient(90deg, #22c55e, #a3e635);
 }
 .mini-tactics-roster {
