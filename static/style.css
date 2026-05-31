@@ -2382,6 +2382,10 @@ body.lightbox-open .lightbox-overlay {
   line-height: 1.35;
   white-space: nowrap;
 }
+.home-layer4-race-primary {
+  color: #a5f3fc;
+  font-weight: 900;
+}
 .home-research-highlight-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

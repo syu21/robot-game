@@ -666,7 +666,7 @@
         <div class="home-research-card-head">
           <div>
             <div><b>第四層攻略レース</b></div>
-            <div class="upgrade-cost">最前線の研究員たちが、第4層試験の突破を目指しています。</div>
+            <div class="upgrade-cost">最前線の研究員たちが、第4層で調整を続けています。</div>
           </div>
           <span class="weekly-fit-badge">第4層</span>
         </div>
@@ -681,7 +681,11 @@
               </div>
             </div>
             <div class="home-layer4-race-meta">
-              <span>第4層試験 {{ row['boss_clear_line'] }}</span>
+              <span class="home-layer4-race-primary">第4層探索 {{ row['layer4_week_explore_count'] }}回</span>
+              {% if row['layer4_week_core_count'] > 0 %}
+              <span>コア獲得 {{ row['layer4_week_core_count'] }}個</span>
+              {% endif %}
+              <span>試験ボス {{ row['boss_clear_line'] }}</span>
               <span>最終活動: {{ row['latest_activity_label'] }}</span>
             </div>
           </div>

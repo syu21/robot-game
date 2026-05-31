@@ -19478,6 +19478,48 @@ def _home_layer4_boss_clear_count(db, user_id):
     return sum(1 for area_key in LAYER4_SUBAREA_KEYS if _has_fixed_boss_defeat_in_area(db, int(user_id), area_key))
 
 
+def _home_layer4_week_metrics(db, user_id):
+    week_key = _world_week_key()
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    area_keys = tuple(LAYER4_SUBAREA_KEYS)
+    explore_count = db.execute(
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ?
+          AND created_at < ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') IN ({",".join("?" for _ in area_keys)})
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts, *area_keys),
+    ).fetchone()
+    core_count = db.execute(
+        f"""
+        SELECT SUM(
+            COALESCE(
+              CAST(json_extract(payload_json, '$.quantity') AS INTEGER),
+              CAST(delta_count AS INTEGER),
+              0
+            )
+        ) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ?
+          AND created_at < ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') IN ({",".join("?" for _ in area_keys)})
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["CORE_DROP"], start_ts, end_ts, *area_keys),
+    ).fetchone()
+    return {
+        "layer4_week_explore_count": int((explore_count["c"] if explore_count else 0) or 0),
+        "layer4_week_core_count": int((core_count["c"] if core_count else 0) or 0),
+    }
+
+
 def get_layer4_frontier_users(limit=5, db=None):
     """
     第4層到達者を表示用に取得する。管理者は除外する。
@@ -19555,6 +19597,7 @@ def get_layer4_frontier_users(limit=5, db=None):
         user_row = entry["user"]
         visuals = _user_visuals(db, uid, visuals_cache)
         clear_count = _home_layer4_boss_clear_count(db, uid)
+        week_metrics = _home_layer4_week_metrics(db, uid)
         latest_activity_at = max(int(entry.get("latest_activity_at") or 0), int(user_row["last_seen_at"] or 0))
         area_key = str(entry.get("area_key") or user_row["last_explore_area_key"] or "layer_4_forge")
         rows.append(
@@ -19567,6 +19610,8 @@ def get_layer4_frontier_users(limit=5, db=None):
                 "area_label": _home_layer4_area_label(area_key),
                 "boss_clear_count": int(clear_count),
                 "boss_clear_line": f"{int(clear_count)}/{len(LAYER4_SUBAREA_KEYS)}",
+                "layer4_week_explore_count": int(week_metrics["layer4_week_explore_count"]),
+                "layer4_week_core_count": int(week_metrics["layer4_week_core_count"]),
                 "latest_activity_at": latest_activity_at,
                 "latest_activity_label": _home_activity_label(latest_activity_at),
                 "avatar_path": visuals["avatar"],

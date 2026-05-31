@@ -206,7 +206,7 @@ class HomeNextActionTests(unittest.TestCase):
 
         html = self._new_client().get("/home").get_data(as_text=True)
         self.assertIn("第四層攻略レース", html)
-        self.assertIn("第4層試験", html)
+        self.assertIn("第4層探索", html)
         self.assertNotIn("frontier_admin", html)
 
     def test_home_layer4_frontier_empty_state_and_optional_cards_hidden(self):
@@ -229,6 +229,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("frontier_no_robot", html)
+        self.assertIn("第4層探索", html)
 
     def test_home_weekly_featured_robot_and_research_highlights_render(self):
         uid = self._create_user("weekly_researcher", max_layer=4, active_robot=True)
@@ -244,11 +245,19 @@ class HomeNextActionTests(unittest.TestCase):
             game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
             {"area_key": "layer_4_burst", "boss_kind": "fixed"},
         )
+        self._insert_world_event(
+            uid,
+            game_app.AUDIT_EVENT_TYPES["CORE_DROP"],
+            {"area_key": "layer_4_burst", "quantity": 2, "core_key": game_app.EVOLUTION_CORE_KEY},
+        )
 
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertIn("今週の研究機体", html)
         self.assertIn("weekly_researcher機", html)
+        self.assertIn("第4層探索 3回", html)
+        self.assertIn("コア獲得 2個", html)
+        self.assertIn("試験ボス 1/3", html)
         self.assertIn("今週の研究成果", html)
         self.assertIn("最多出撃", html)
         self.assertIn("最多強化", html)
