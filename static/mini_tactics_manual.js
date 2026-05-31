@@ -295,6 +295,19 @@
       } else if (action.type === "blocked") {
         flashUnit(action.actor_unit_id, "is-blocked");
         flashCell(action.to || action.at, "is-blocked-cell");
+      } else if (action.type === "promote") {
+        var promotedUnit = eventUnit(displayState, action.actor_unit_id);
+        if (promotedUnit) {
+          promotedUnit.promoted = true;
+          promotedUnit.piece_type = "promoted_phoenix";
+          promotedUnit.move_type = "promoted_phoenix";
+          promotedUnit.name = promotedUnit.side === "enemy" ? "敵不死鳥" : "不死鳥";
+          renderBoard(displayState);
+        }
+        flashUnit(action.actor_unit_id, "is-attacking");
+      } else if (action.type === "reach_goal") {
+        flashUnit(action.actor_unit_id, "is-attacking");
+        if (action.result) displayState.result = action.result;
       } else if (action.type === "wait") {
         flashUnit(action.actor_unit_id, "is-waiting");
       }

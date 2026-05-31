@@ -790,8 +790,12 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("駒の動き", html)
         self.assertIn("全方向に1マス", html)
         self.assertIn("前進: 前に1マス", html)
+        self.assertIn("一番奥まで進むと勝利", html)
+        self.assertIn("一番奥まで進むと不死鳥に成長", html)
+        self.assertIn("相手のケルベロスを取るか", html)
         self.assertIn("斜め: 斜めに1マス", html)
         self.assertIn("直線: 上下左右に1マス", html)
+        self.assertIn("不死鳥", html)
         self.assertIn("スフィンクス", html)
         self.assertIn("mini_robots/sphinx/normal.png", html)
         self.assertIn("data-move-type=\"leader\"", html)
@@ -1016,7 +1020,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertTrue(promoted["promoted"])
         self.assertTrue(next(u for u in next_state["units"] if u["unit_id"] == "enemy_hydra")["defeated"])
 
-    def test_mini_shogi_3x4_ally_try_wins_if_survives_enemy_turn(self):
+    def test_mini_shogi_3x4_ally_leader_reaches_back_rank_for_immediate_win(self):
         state = build_manual_initial_board_v1(24)
         ally_leader = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
         enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
@@ -1028,30 +1032,20 @@ class AdminMiniTacticsTests(unittest.TestCase):
         next_state, logs, error = apply_manual_action(state, {"actor_unit_id": "ally_cerberus", "move_to": {"x": 1, "y": 0}})
         self.assertIsNone(error)
         self.assertEqual(next_state["result"], "ally_win")
-        self.assertTrue(any(event["type"] == "try" for event in next_state["last_action_sequence"]))
+        self.assertTrue(any(event["type"] == "reach_goal" and event["result"] == "ally_win" for event in next_state["last_action_sequence"]))
+        self.assertFalse(any(event.get("phase") == "enemy" for event in next_state["last_action_sequence"]))
         self.assertTrue(any("味方側の勝利" in log["text"] for log in logs))
 
-    def test_mini_shogi_3x4_enemy_try_wins_if_not_captured_next_ally_action(self):
+    def test_mini_shogi_3x4_enemy_leader_reaches_back_rank_for_immediate_win(self):
         state = build_manual_initial_board_v1(25)
         enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
-        ally_sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
-        enemy_leader.update({"x": 2, "y": 3})
-        ally_sphinx["defeated"] = True
-        state["try_pending"] = {"side": "enemy", "unit_id": "enemy_cerberus"}
-        next_state, _, error = apply_manual_action(state, {"actor_unit_id": "ally_phoenix", "move_to": {"x": 1, "y": 1}})
-        self.assertIsNone(error)
-        self.assertEqual(next_state["result"], "enemy_win")
-
-    def test_mini_shogi_3x4_try_capture_prevents_try_win(self):
-        state = build_manual_initial_board_v1(26)
-        enemy_leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
-        ally_sphinx = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
         enemy_leader.update({"x": 2, "y": 2})
-        ally_sphinx.update({"x": 2, "y": 3})
-        state["try_pending"] = {"side": "enemy", "unit_id": "enemy_cerberus"}
-        next_state, _, error = apply_manual_action(state, {"actor_unit_id": "ally_sphinx", "move_to": {"x": 2, "y": 2}})
+        logs = []
+        ok, error = _manual_v1_apply_move(state, enemy_leader, {"x": 2, "y": 3}, logs)
+        self.assertTrue(ok)
         self.assertIsNone(error)
-        self.assertEqual(next_state["result"], "ally_win")
+        self.assertEqual(state["result"], "enemy_win")
+        self.assertTrue(any(event["type"] == "reach_goal" and event["result"] == "enemy_win" for event in logs))
 
     def test_mini_shogi_3x4_cpu_scores_promotion_and_try(self):
         state = build_manual_initial_board_v1(27)
