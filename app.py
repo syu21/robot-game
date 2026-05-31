@@ -26401,6 +26401,8 @@ def register():
                 if user_row:
                     _login_user_session(db, user_row)
                     session["just_registered"] = 1
+                if next_path:
+                    return redirect(next_path)
                 return redirect(url_for("home"))
             except sqlite3.IntegrityError:
                 error = "そのユーザー名は既に使われています。"
@@ -26466,6 +26468,28 @@ def login():
         login_error=error,
         login_message=message,
     )
+
+
+@app.route("/collab")
+def collab():
+    if "user_id" not in session:
+        return redirect(url_for("register", mode="login", next="/collab"))
+    db = get_db()
+    user = db.execute("SELECT id FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("register", mode="login", next="/collab", reason="expired"))
+    collabs = [
+        {
+            "title": "チビクエBless × ロボらぼ コラボ",
+            "lead": "チビクエBlessで使えるコラボ合言葉を公開中です。",
+            "secret_word": "ロボらぼケルベロス",
+            "description": "この合言葉をチビクエBless内で入力すると、コラボロボを受け取れます。受け取りはチビクエBless側で行います。",
+            "external_url": "https://b.chibiquest.net/",
+            "external_label": "チビクエBlessで入力する",
+        }
+    ]
+    return render_template("collab.html", collabs=collabs)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])

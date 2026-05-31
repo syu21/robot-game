@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel collab-page">
+  <div class="collab-page-head">
+    <div>
+      <div class="home-explore-kicker">COLLAB</div>
+      <h1>コラボ</h1>
+    </div>
+  </div>
+
+  <div class="collab-card-list">
+    {% for collab in collabs %}
+    <article class="card collab-card">
+      <div class="collab-card-main">
+        <div>
+          <h2>{{ collab.title }}</h2>
+          <p class="upgrade-cost">{{ collab.lead }}</p>
+        </div>
+
+        <div class="collab-secret-block" aria-label="コラボ合言葉">
+          <div class="collab-secret-label">合言葉</div>
+          <div class="collab-secret-word" data-collab-secret>{{ collab.secret_word }}</div>
+          <button type="button" class="btn-secondary collab-copy-button" data-collab-copy>コピー</button>
+          <div class="collab-copy-status robot-time" data-collab-copy-status></div>
+        </div>
+
+        <div class="collab-warning-card">
+          絶対に他人と共有しないでください。
+        </div>
+
+        <p>{{ collab.description }}</p>
+        <p class="robot-time">※合言葉の入力・受け取りはチビクエBless側の機能です。</p>
+        <p class="robot-time">※コラボ内容は予告なく変更・終了する場合があります。</p>
+
+        <div class="home-inline-actions">
+          <a
+            class="battle-home-link collab-external-link"
+            href="{{ collab.external_url }}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ collab.external_label }}</a>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='collab.js') }}?v={{ app_version }}"></script>
+{% endblock %}
