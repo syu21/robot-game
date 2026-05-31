@@ -19446,6 +19446,298 @@ def _weekly_mvp_snapshot(db, week_key):
     }
 
 
+def _home_layer4_area_label(area_key):
+    label = AREA_BOSS_LABELS.get(str(area_key or ""), str(area_key or "第四層"))
+    return label.replace("第四層: ", "").replace("第四層", "第四層")
+
+
+def _home_activity_label(ts):
+    try:
+        value = int(ts or 0)
+    except (TypeError, ValueError):
+        value = 0
+    if value <= 0:
+        return "最近"
+    now = int(time.time())
+    if value >= now - 24 * 60 * 60:
+        return "今日"
+    if value >= now - 2 * 24 * 60 * 60:
+        return "昨日"
+    days = max(1, int((now - value) // (24 * 60 * 60)))
+    return f"{days}日前"
+
+
+def _home_event_payload(row):
+    try:
+        return json.loads((row["payload_json"] if row else "") or "{}")
+    except (TypeError, json.JSONDecodeError, KeyError):
+        return {}
+
+
+def _home_layer4_boss_clear_count(db, user_id):
+    return sum(1 for area_key in LAYER4_SUBAREA_KEYS if _has_fixed_boss_defeat_in_area(db, int(user_id), area_key))
+
+
+def get_layer4_frontier_users(limit=5, db=None):
+    """
+    第4層到達者を表示用に取得する。管理者は除外する。
+    """
+    db = db or get_db()
+    limit = max(1, int(limit or 5))
+    candidate_ids = {}
+    user_rows = db.execute(
+        """
+        SELECT id, username, display_name, max_unlocked_layer, last_explore_area_key, last_seen_at
+        FROM users
+        WHERE COALESCE(is_admin, 0) = 0
+          AND (
+            COALESCE(max_unlocked_layer, 1) >= 4
+            OR last_explore_area_key IN (?, ?, ?, ?)
+          )
+        """,
+        (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY),
+    ).fetchall()
+    for row in user_rows:
+        candidate_ids[int(row["id"])] = {
+            "user": row,
+            "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY) else "layer_4_forge",
+            "latest_activity_at": int(row["last_seen_at"] or 0),
+        }
+    event_rows = db.execute(
+        """
+        SELECT wel.user_id, wel.created_at, wel.payload_json
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.user_id IS NOT NULL
+          AND COALESCE(u.is_admin, 0) = 0
+          AND wel.event_type IN (?, ?, ?)
+          AND wel.payload_json LIKE '%layer_4%'
+        ORDER BY wel.created_at DESC, wel.id DESC
+        LIMIT 300
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+        ),
+    ).fetchall()
+    for row in event_rows:
+        payload = _home_event_payload(row)
+        area_key = str(
+            payload.get("area_key")
+            or payload.get("boss_area_key")
+            or payload.get("explore_area_key")
+            or ""
+        )
+        if area_key not in (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY):
+            continue
+        uid = int(row["user_id"])
+        entry = candidate_ids.get(uid)
+        if not entry:
+            user_row = db.execute(
+                """
+                SELECT id, username, display_name, max_unlocked_layer, last_explore_area_key, last_seen_at
+                FROM users
+                WHERE id = ? AND COALESCE(is_admin, 0) = 0
+                """,
+                (uid,),
+            ).fetchone()
+            if not user_row:
+                continue
+            entry = {"user": user_row, "area_key": area_key, "latest_activity_at": 0}
+            candidate_ids[uid] = entry
+        if int(row["created_at"] or 0) >= int(entry.get("latest_activity_at") or 0):
+            entry["area_key"] = area_key
+            entry["latest_activity_at"] = int(row["created_at"] or 0)
+    visuals_cache = {}
+    rows = []
+    for uid, entry in candidate_ids.items():
+        user_row = entry["user"]
+        visuals = _user_visuals(db, uid, visuals_cache)
+        clear_count = _home_layer4_boss_clear_count(db, uid)
+        latest_activity_at = max(int(entry.get("latest_activity_at") or 0), int(user_row["last_seen_at"] or 0))
+        area_key = str(entry.get("area_key") or user_row["last_explore_area_key"] or "layer_4_forge")
+        rows.append(
+            {
+                "id": uid,
+                "user_id": uid,
+                "username": visuals.get("display_username") or user_row["username"],
+                "display_username": visuals.get("display_username") or user_row["username"],
+                "area_key": area_key,
+                "area_label": _home_layer4_area_label(area_key),
+                "boss_clear_count": int(clear_count),
+                "boss_clear_line": f"{int(clear_count)}/{len(LAYER4_SUBAREA_KEYS)}",
+                "latest_activity_at": latest_activity_at,
+                "latest_activity_label": _home_activity_label(latest_activity_at),
+                "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+                "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
+                "presence_state": visuals["presence_state"],
+                "presence_label": visuals["presence_label"],
+                "presence_title": visuals["presence_title"],
+            }
+        )
+    rows.sort(key=lambda item: (-int(item["latest_activity_at"] or 0), int(item["id"] or 0)))
+    return rows[:limit]
+
+
+def _weekly_featured_robot_comment(profile, max_layer):
+    text = " ".join(
+        str(profile.get(key) or "")
+        for key in ("focus_line", "focus_label_line", "battle_style_line", "signature_label", "style_label")
+    )
+    if "ATK" in text or "攻撃" in text or "火力" in text:
+        return "火力で突破を狙う研究機体です。"
+    if "DEF" in text or "HP" in text or "耐久" in text:
+        return "粘り強く試験突破を狙う研究機体です。"
+    if "ACC" in text or "命中" in text:
+        return "安定した命中で攻略を進める研究機体です。"
+    if int(max_layer or 0) >= 4:
+        return "第四層攻略中の研究機体。今週も最前線で調整が続いています。"
+    return "総合力で試験突破を狙う研究機体です。"
+
+
+def get_weekly_featured_robot(db=None):
+    """
+    今週の活動量が多い研究員の active robot を1体返す。
+    """
+    db = db or get_db()
+    week_key = _world_week_key()
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    rows = db.execute(
+        """
+        SELECT u.id AS user_id,
+               u.username,
+               u.display_name,
+               u.active_robot_id,
+               COALESCE(u.max_unlocked_layer, 1) AS max_unlocked_layer,
+               COUNT(wel.id) AS explore_count,
+               MAX(wel.created_at) AS latest_activity_at
+        FROM users u
+        JOIN world_events_log wel ON wel.user_id = u.id
+        WHERE COALESCE(u.is_admin, 0) = 0
+          AND u.active_robot_id IS NOT NULL
+          AND wel.event_type = ?
+          AND wel.created_at >= ?
+          AND wel.created_at < ?
+        GROUP BY u.id
+        ORDER BY CASE WHEN COALESCE(u.max_unlocked_layer, 1) >= 4 THEN 0 ELSE 1 END ASC,
+                 explore_count DESC,
+                 latest_activity_at DESC,
+                 u.id ASC
+        LIMIT 10
+        """,
+        (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
+    ).fetchall()
+    for row in rows:
+        robot = db.execute(
+            """
+            SELECT id, user_id, name, composed_image_path, updated_at, style_key, style_current_key
+            FROM robot_instances
+            WHERE id = ? AND user_id = ? AND status = 'active'
+            """,
+            (int(row["active_robot_id"]), int(row["user_id"])),
+        ).fetchone()
+        if not robot:
+            continue
+        stats = _compute_robot_stats_for_instance(db, int(robot["id"]))
+        profile = _robot_profile_view(stats) if stats else {}
+        visuals = _user_visuals(db, int(row["user_id"]), {})
+        image_url = _composed_image_url(robot["composed_image_path"], robot["updated_at"]) if robot["composed_image_path"] else None
+        return {
+            "user_id": int(row["user_id"]),
+            "username": visuals.get("display_username") or row["username"],
+            "display_username": visuals.get("display_username") or row["username"],
+            "robot_id": int(robot["id"]),
+            "robot_name": str(robot["name"] or "無名ロボ"),
+            "robot_image_url": image_url,
+            "signature_label": str(profile.get("signature_label") or profile.get("style_label") or "研究機体"),
+            "focus_line": str(profile.get("focus_line") or profile.get("focus_label_line") or ""),
+            "comment": _weekly_featured_robot_comment(profile, int(row["max_unlocked_layer"] or 1)),
+            "explore_count": int(row["explore_count"] or 0),
+            "avatar_path": visuals["avatar"],
+            "avatar_url": visuals.get("avatar_url"),
+            "avatar_kind": visuals.get("avatar_kind", "seed"),
+            "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+            "badge_path": visuals["badge"],
+            "trophy_keys": list(visuals.get("trophy_keys") or []),
+            "trophy_badges": list(visuals.get("trophy_badges") or []),
+            "presence_state": visuals["presence_state"],
+            "presence_label": visuals["presence_label"],
+            "presence_title": visuals["presence_title"],
+        }
+    return None
+
+
+def _weekly_research_top_row(db, event_type, start_ts, end_ts):
+    return db.execute(
+        """
+        SELECT u.id AS user_id, u.username, u.display_name, COUNT(wel.id) AS metric_value
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+          AND wel.user_id IS NOT NULL
+          AND wel.created_at >= ?
+          AND wel.created_at < ?
+          AND COALESCE(u.is_admin, 0) = 0
+        GROUP BY u.id
+        ORDER BY metric_value DESC, u.id ASC
+        LIMIT 1
+        """,
+        (event_type, int(start_ts), int(end_ts)),
+    ).fetchone()
+
+
+def get_weekly_research_highlights(db=None):
+    """
+    今週の研究成果を最大3件返す。
+    """
+    db = db or get_db()
+    week_key = _world_week_key()
+    start_dt, end_dt = _world_week_bounds(week_key)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    specs = [
+        ("最多出撃", AUDIT_EVENT_TYPES["EXPLORE_END"], "回"),
+        ("最多強化", AUDIT_EVENT_TYPES["FUSE"], "回"),
+        ("最多ボス撃破", AUDIT_EVENT_TYPES["BOSS_DEFEAT"], "回"),
+    ]
+    highlights = []
+    visuals_cache = {}
+    for label, event_type, suffix in specs:
+        row = _weekly_research_top_row(db, event_type, start_ts, end_ts)
+        if not row or int(row["metric_value"] or 0) <= 0:
+            continue
+        visuals = _user_visuals(db, int(row["user_id"]), visuals_cache)
+        highlights.append(
+            {
+                "label": label,
+                "user_id": int(row["user_id"]),
+                "username": visuals.get("display_username") or row["username"],
+                "display_username": visuals.get("display_username") or row["username"],
+                "metric_value": int(row["metric_value"] or 0),
+                "suffix": suffix,
+                "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+                "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
+                "presence_state": visuals["presence_state"],
+                "presence_label": visuals["presence_label"],
+                "presence_title": visuals["presence_title"],
+            }
+        )
+    return highlights[:3]
+
+
 WEEKLY_CHAMPION_REASON_LABELS = {
     "weekly_boss": "今週ボス撃破が最多",
     "weekly_explore": "今週探索数が最多",
@@ -26597,6 +26889,9 @@ def home():
             weekly_champion_snapshot,
             viewer_user_id=int(user["id"]),
         )
+    layer4_frontier_users = get_layer4_frontier_users(db=db, limit=5)
+    weekly_featured_robot = get_weekly_featured_robot(db=db)
+    weekly_research_highlights = get_weekly_research_highlights(db=db)
     faction_status = {
         "is_joined": bool(user_faction),
         "faction": user_faction,
@@ -27069,6 +27364,9 @@ def home():
             weekly_mvp=weekly_mvp,
             weekly_champion=weekly_champion,
             show_weekly_champion=show_weekly_champion,
+            layer4_frontier_users=layer4_frontier_users,
+            weekly_featured_robot=weekly_featured_robot,
+            weekly_research_highlights=weekly_research_highlights,
             research_summary=research_summary,
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,

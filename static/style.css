@@ -2312,6 +2312,100 @@ body.lightbox-open .lightbox-overlay {
 .home-ranking-row.is-podium + .home-ranking-row {
   border-top-color: transparent;
 }
+.daily-research-home-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.daily-research-home-details > summary::-webkit-details-marker {
+  display: none;
+}
+.daily-research-home-details > summary::after {
+  content: "たたむ";
+  align-self: center;
+  color: #a5f3fc;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.daily-research-home-details:not([open]) > summary::after {
+  content: "開く";
+}
+.daily-research-home-body {
+  margin-top: 10px;
+}
+.home-research-spotlight-card,
+.home-layer4-race-card,
+.home-research-highlights-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(94, 234, 212, 0.20);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10), rgba(88, 28, 135, 0.08));
+}
+.home-research-card-head,
+.home-featured-robot-row,
+.home-layer4-race-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.home-featured-robot-row {
+  justify-content: flex-start;
+  align-items: center;
+  margin-top: 8px;
+}
+.home-featured-robot-thumb {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+}
+.home-layer4-race-list,
+.home-research-highlight-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.home-layer4-race-row,
+.home-research-highlight-item {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px solid rgba(103, 232, 249, 0.12);
+}
+.home-layer4-race-meta {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.home-research-highlight-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.home-research-highlight-item .presence-user-line {
+  margin-top: 4px;
+}
+@media (max-width: 640px) {
+  .home-research-card-head,
+  .home-layer4-race-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .home-featured-robot-thumb {
+    width: 72px;
+    height: 72px;
+  }
+  .home-layer4-race-meta {
+    justify-items: start;
+    white-space: normal;
+  }
+  .home-research-highlight-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .record-ranking-item {
   align-items: flex-start;
   padding: 8px 10px;

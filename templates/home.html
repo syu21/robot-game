@@ -186,29 +186,37 @@
 {% if daily_research_card %}
 <div class="panel daily-research-home-panel">
   <div class="card daily-research-home-card">
-    <div class="home-explore-card-head">
-      <div>
-        <div class="home-explore-kicker">今日の研究テーマ</div>
-        <div><b>{{ daily_research_card['title'] }}</b></div>
-      </div>
-      <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
-    </div>
-    {% if not daily_research_card['is_done'] %}
-    <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
-    {% endif %}
-    <div class="home-inline-actions">
-      {% if daily_research_card['cta']['is_post'] %}
-      <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
-        <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+    <details class="daily-research-home-details" open>
+      <summary class="home-explore-card-head">
+        <div>
+          <div class="home-explore-kicker">今日の研究テーマ</div>
+          <div><b>{{ daily_research_card['title'] }}</b></div>
+        </div>
+        <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
+      </summary>
+      <div class="daily-research-home-body">
+        {% if not daily_research_card['is_done'] %}
+        <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
         {% endif %}
-        <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
-      </form>
-      {% else %}
-      <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
-      {% endif %}
-    </div>
+        <div class="home-inline-actions">
+          {% if daily_research_card['cta']['is_post'] %}
+          <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
+            <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
+            {% if explore_submission_id %}
+            <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+            {% endif %}
+            <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
+          </form>
+          {% else %}
+          <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
+          {% endif %}
+          <form method="post" action="{{ url_for('home_daily_research_collapse') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ url_for('home') }}#home-visibility-controls" />
+            <button type="submit" class="btn-secondary">ホームから隠す</button>
+          </form>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
 {% endif %}
@@ -538,6 +546,37 @@
     <section class="panel home-mvp-panel home-spotlight-panel">
       <div class="world-env-card mvp-hero-card">
         <div><b>注目ロボ</b></div>
+        {% if weekly_featured_robot %}
+        <div class="home-research-spotlight-card">
+          <div class="home-research-card-head">
+            <div>
+              <div><b>今週の研究機体</b></div>
+              <div class="upgrade-cost">今週、特に動きがあった研究機体です。</div>
+            </div>
+            <span class="weekly-fit-badge">研究機体</span>
+          </div>
+          <div class="presence-user-line user-signal user-signal-hero">
+            {{ render_user_chip(weekly_featured_robot, 'featured', weekly_featured_robot.get('display_username', weekly_featured_robot['username']) ~ ' robot', 'lazy', true) }}
+            <div class="user-signal-meta">
+              <div class="user-signal-name-line">{{ render_user_name_badged_html(weekly_featured_robot, weekly_featured_robot.get('display_username') or weekly_featured_robot['username']) }}</div>
+              <div class="presence-mini-label">{{ weekly_featured_robot.get('presence_label', '探索待機中') }}</div>
+            </div>
+          </div>
+          <div class="home-featured-robot-row">
+            {% if weekly_featured_robot.get('robot_image_url') %}
+            <img class="robot-thumb home-featured-robot-thumb robo-anim robo-anim-focus" src="{{ weekly_featured_robot['robot_image_url'] }}" alt="{{ weekly_featured_robot['robot_name'] }}" loading="lazy" decoding="async" />
+            {% endif %}
+            <div>
+              <div><b>{{ weekly_featured_robot['robot_name'] }}</b></div>
+              <div class="upgrade-cost">思想: {{ weekly_featured_robot.get('signature_label', '研究機体') }}</div>
+              {% if weekly_featured_robot.get('focus_line') %}
+              <div class="upgrade-cost">注目能力: {{ weekly_featured_robot['focus_line'] }}</div>
+              {% endif %}
+              <div class="robot-time">{{ weekly_featured_robot['comment'] }}</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
         <details class="home-spotlight-tab" open>
           <summary>今週のMVP</summary>
         {% if weekly_mvp %}
@@ -618,6 +657,38 @@
         {% endif %}
         </details>
         {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if not trial_mode %}
+    <section class="panel home-layer4-panel">
+      <div class="world-env-card home-layer4-race-card">
+        <div class="home-research-card-head">
+          <div>
+            <div><b>第四層攻略レース</b></div>
+            <div class="upgrade-cost">最前線の研究員たちが、第4層試験の突破を目指しています。</div>
+          </div>
+          <span class="weekly-fit-badge">第4層</span>
+        </div>
+        <div class="home-layer4-race-list">
+          {% for row in layer4_frontier_users %}
+          <div class="home-layer4-race-row">
+            <div class="presence-user-line user-signal">
+              {{ render_user_chip(row, 'frontier', (row.get('display_username') or row['username']) ~ ' robot') }}
+              <div class="user-signal-meta">
+                <div class="user-signal-name-line">{{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}</div>
+                <div class="user-signal-sub">{{ row['area_label'] }}</div>
+              </div>
+            </div>
+            <div class="home-layer4-race-meta">
+              <span>第4層試験 {{ row['boss_clear_line'] }}</span>
+              <span>最終活動: {{ row['latest_activity_label'] }}</span>
+            </div>
+          </div>
+          {% else %}
+          <div class="robot-part">まだ第4層に到達した研究員はいません。最初の到達者を目指しましょう。</div>
+          {% endfor %}
+        </div>
       </div>
     </section>
     {% endif %}
@@ -1099,6 +1170,26 @@
     {% if not trial_mode %}
     <section class="panel home-ranking-panel">
       <div class="world-env-card">
+        {% if weekly_research_highlights %}
+        <div class="home-research-highlights-card">
+          <div><b>今週の研究成果</b></div>
+          <div class="upgrade-cost">今週よく動いた研究員を記録しています。</div>
+          <div class="home-research-highlight-grid">
+            {% for item in weekly_research_highlights %}
+            <div class="home-research-highlight-item">
+              <div class="upgrade-cost">{{ item['label'] }}</div>
+              <div class="presence-user-line user-signal">
+                {{ render_user_chip(item, 'research', (item.get('display_username') or item['username']) ~ ' robot') }}
+                <div class="user-signal-meta">
+                  <div class="user-signal-name-line">{{ render_user_name_badged_html(item, item.get('display_username') or item['username']) }}</div>
+                  <div class="user-signal-sub">{{ item['metric_value'] }}{{ item['suffix'] }}</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
         <div><b>今週のランキング</b></div>
         <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
         {% for row in home_ranking_rows %}
@@ -1120,7 +1211,7 @@
     </section>
     {% endif %}
     {% if not trial_mode %}
-    <section class="panel home-visibility-panel">
+    <section id="home-visibility-controls" class="panel home-visibility-panel">
       <div class="world-env-card">
         <div><b>表示調整</b></div>
         {% if show_home_visibility_controls %}
@@ -1141,6 +1232,12 @@
           <form method="post" action="{{ url_for('home_next_action_expand') }}" class="inline-form inline-form-top">
             <input type="hidden" name="next" value="{{ request.path }}" />
             <button type="submit" class="btn-secondary">Next Action を開く</button>
+          </form>
+          {% endif %}
+          {% if home_daily_research_collapsed %}
+          <form method="post" action="{{ url_for('home_daily_research_expand') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}" />
+            <button type="submit" class="btn-secondary">今日の研究テーマを表示</button>
           </form>
           {% endif %}
           {% if daily_research_available %}

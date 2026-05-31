@@ -50,7 +50,8 @@ class HomeNextActionTests(unittest.TestCase):
                 session["home_new_layer_badge"] = int(new_layer_badge)
         return client
 
-    def _create_active_robot(self):
+    def _create_active_robot(self, user_id=None, name="GuideBot"):
+        user_id = int(user_id or self.user_id)
         with game_app.app.app_context():
             db = game_app.get_db()
             now = int(time.time())
@@ -59,11 +60,11 @@ class HomeNextActionTests(unittest.TestCase):
                 INSERT INTO robot_instances (user_id, name, status, created_at, updated_at)
                 VALUES (?, ?, 'active', ?, ?)
                 """,
-                (self.user_id, "GuideBot", now, now),
+                (user_id, name, now, now),
             )
             robot_id = db.execute(
                 "SELECT id FROM robot_instances WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-                (self.user_id,),
+                (user_id,),
             ).fetchone()["id"]
 
             def pick_key(part_type):
@@ -87,7 +88,45 @@ class HomeNextActionTests(unittest.TestCase):
                     pick_key("LEGS"),
                 ),
             )
-            db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (robot_id, self.user_id))
+            db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (robot_id, user_id))
+            db.commit()
+            return robot_id
+
+    def _create_user(self, username, *, is_admin=0, max_layer=1, active_robot=False):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer, last_seen_at)
+                VALUES (?, 'x', ?, ?, 0, ?, ?)
+                """,
+                (username, now, int(is_admin), int(max_layer), now),
+            )
+            user_id = db.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()["id"]
+            db.commit()
+        if active_robot:
+            self._create_active_robot(user_id=user_id, name=f"{username}機")
+        return int(user_id)
+
+    def _insert_world_event(self, user_id, event_type, payload=None, created_at=None):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    int(created_at or time.time()),
+                    event_type,
+                    json.dumps(payload or {}, ensure_ascii=False),
+                    int(user_id),
+                ),
+            )
             db.commit()
 
     def _set_boss_alert(self, area_key="layer_2", attempts=2):
@@ -141,6 +180,80 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("ボスに挑戦（残り●●）", html)
         self.assertNotIn("NEW 第3層へ行く", html)
 
+    def test_home_layer4_frontier_excludes_admin_and_limits_rows(self):
+        admin_id = self._create_user("frontier_admin", is_admin=1, max_layer=4)
+        self._insert_world_event(
+            admin_id,
+            game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+            {"area_key": "layer_4_forge"},
+        )
+        created_ids = []
+        for i in range(6):
+            uid = self._create_user(f"frontier_{i}", max_layer=4)
+            created_ids.append(uid)
+            self._insert_world_event(
+                uid,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                {"area_key": "layer_4_forge"},
+                created_at=int(time.time()) + i,
+            )
+
+        with game_app.app.app_context():
+            rows = game_app.get_layer4_frontier_users(db=game_app.get_db(), limit=5)
+
+        self.assertEqual(len(rows), 5)
+        self.assertNotIn("frontier_admin", [row["username"] for row in rows])
+
+        html = self._new_client().get("/home").get_data(as_text=True)
+        self.assertIn("第四層攻略レース", html)
+        self.assertIn("第4層試験", html)
+        self.assertNotIn("frontier_admin", html)
+
+    def test_home_layer4_frontier_empty_state_and_optional_cards_hidden(self):
+        html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertIn("第四層攻略レース", html)
+        self.assertIn("まだ第4層に到達した研究員はいません。", html)
+        self.assertNotIn("今週の研究機体", html)
+        self.assertNotIn("今週の研究成果", html)
+
+    def test_home_layer4_user_without_active_robot_does_not_break(self):
+        uid = self._create_user("frontier_no_robot", max_layer=4, active_robot=False)
+        self._insert_world_event(
+            uid,
+            game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+            {"area_key": "layer_4_haze"},
+        )
+
+        resp = self._new_client().get("/home")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("frontier_no_robot", html)
+
+    def test_home_weekly_featured_robot_and_research_highlights_render(self):
+        uid = self._create_user("weekly_researcher", max_layer=4, active_robot=True)
+        for _ in range(3):
+            self._insert_world_event(
+                uid,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                {"area_key": "layer_4_burst"},
+            )
+        self._insert_world_event(uid, game_app.AUDIT_EVENT_TYPES["FUSE"], {"mode": "single"})
+        self._insert_world_event(
+            uid,
+            game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            {"area_key": "layer_4_burst", "boss_kind": "fixed"},
+        )
+
+        html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertIn("今週の研究機体", html)
+        self.assertIn("weekly_researcher機", html)
+        self.assertIn("今週の研究成果", html)
+        self.assertIn("最多出撃", html)
+        self.assertIn("最多強化", html)
+        self.assertIn("最多ボス撃破", html)
+
     def test_home_shows_short_boss_unlock_goal(self):
         self._create_active_robot()
         client = self._new_client()
@@ -186,10 +299,45 @@ class HomeNextActionTests(unittest.TestCase):
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertEqual(html.count("daily-research-home-card"), 1)
+        self.assertIn("daily-research-home-details", html)
         self.assertIn("今日の研究テーマ", html)
+        self.assertIn("ホームから隠す", html)
         self.assertNotIn("達成報酬：", html)
         self.assertNotIn("研究課題報酬を受け取る", html)
         self.assertNotIn("デイリー研究レポート", html)
+
+    def test_home_daily_research_card_can_be_collapsed_to_visibility_controls(self):
+        self._create_active_robot()
+        client = self._new_client()
+
+        resp = client.post(
+            "/home/daily-research/collapse",
+            data={"next": "/home#home-visibility-controls"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers.get("Location"), "/home#home-visibility-controls")
+
+        html = client.get("/home").get_data(as_text=True)
+        self.assertNotIn("daily-research-home-card", html)
+        self.assertIn('id="home-visibility-controls"', html)
+        self.assertIn("表示調整", html)
+        self.assertIn("今日の研究テーマを表示", html)
+
+    def test_home_daily_research_card_can_be_restored_from_visibility_controls(self):
+        self._create_active_robot()
+        client = self._new_client()
+        client.post("/home/daily-research/collapse", data={"next": "/home"})
+
+        hidden_html = client.get("/home").get_data(as_text=True)
+        self.assertNotIn("daily-research-home-card", hidden_html)
+
+        resp = client.post("/home/daily-research/expand", data={"next": "/home"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers.get("Location"), "/home")
+
+        shown_html = client.get("/home").get_data(as_text=True)
+        self.assertEqual(shown_html.count("daily-research-home-card"), 1)
+        self.assertNotIn("今日の研究テーマを表示", shown_html)
 
     def test_research_daily_page_renders(self):
         self._create_active_robot()
