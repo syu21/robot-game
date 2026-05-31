@@ -17,6 +17,7 @@
           <p class="upgrade-cost">{{ collab.lead }}</p>
         </div>
 
+        {% if collab_progress.unlocked %}
         <div class="collab-secret-block" aria-label="コラボ合言葉">
           <div class="collab-secret-label">合言葉</div>
           <div class="collab-secret-word" data-collab-secret>{{ collab.secret_word }}</div>
@@ -31,6 +32,7 @@
         <p>{{ collab.description }}</p>
         <p class="robot-time">※合言葉の入力・受け取りはチビクエBless側の機能です。</p>
         <p class="robot-time">※コラボ内容は予告なく変更・終了する場合があります。</p>
+        <p class="robot-time">※合言葉は条件を満たしたログインユーザーだけが確認できます。</p>
 
         <div class="home-inline-actions">
           <a
@@ -40,6 +42,22 @@
             rel="noopener noreferrer"
           >{{ collab.external_label }}</a>
         </div>
+        {% else %}
+        <div class="collab-locked-block">
+          <p>コラボ合言葉は、ロボらぼで出撃を{{ collab_progress.required_count }}回完了すると確認できます。</p>
+          <p>まずはロボを出撃させて、ロボらぼの世界を少し遊んでみてください。</p>
+          <div class="collab-progress-line">あと {{ collab_progress.remaining_count }} 回出撃すると合言葉が解放されます。</div>
+          <div class="robot-time">出撃完了数: 現在 {{ collab_progress.explore_end_count }} / {{ collab_progress.required_count }}</div>
+        </div>
+
+        <div class="home-inline-actions">
+          <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
+          <form method="post" action="{{ url_for('explore') }}" class="collab-explore-form">
+            <input type="hidden" name="area_key" value="layer_1">
+            <button type="submit" class="battle-home-link collab-external-link">第1層へ出撃する</button>
+          </form>
+        </div>
+        {% endif %}
       </div>
     </article>
     {% endfor %}

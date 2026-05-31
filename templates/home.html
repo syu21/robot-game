@@ -1168,7 +1168,16 @@
         {% endif %}
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
-        <a class="action-card home-nav-card" href="{{ url_for('collab') }}"><div class="action-title">コラボ</div><div class="action-desc">合言葉を見る</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('collab') }}">
+          <div class="action-title">コラボ</div>
+          <div class="action-desc">
+            {% if collab_unlock_progress and collab_unlock_progress.unlocked %}
+              合言葉を見る
+            {% else %}
+              あと{{ collab_unlock_progress.remaining_count if collab_unlock_progress else 10 }}回出撃で合言葉
+            {% endif %}
+          </div>
+        </a>
       </div>
     </section>
     {% endif %}

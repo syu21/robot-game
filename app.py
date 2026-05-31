@@ -26470,6 +26470,31 @@ def login():
     )
 
 
+COLLAB_UNLOCK_EXPLORE_END_COUNT = 10
+COLLAB_CHIBIQUE_SECRET_WORD = "ロボらぼケルベロス"
+
+
+def get_collab_unlock_progress(db, user_id):
+    explore_end_count = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+        ).fetchone()["c"]
+        or 0
+    )
+    required_count = int(COLLAB_UNLOCK_EXPLORE_END_COUNT)
+    return {
+        "explore_end_count": explore_end_count,
+        "required_count": required_count,
+        "remaining_count": max(0, required_count - explore_end_count),
+        "unlocked": explore_end_count >= required_count,
+    }
+
+
+def is_collab_unlocked(db, user_id):
+    return bool(get_collab_unlock_progress(db, user_id).get("unlocked"))
+
+
 @app.route("/collab")
 def collab():
     if "user_id" not in session:
@@ -26479,17 +26504,22 @@ def collab():
     if not user:
         session.clear()
         return redirect(url_for("register", mode="login", next="/collab", reason="expired"))
+    progress = get_collab_unlock_progress(db, int(user["id"]))
     collabs = [
         {
             "title": "チビクエBless × ロボらぼ コラボ",
-            "lead": "チビクエBlessで使えるコラボ合言葉を公開中です。",
-            "secret_word": "ロボらぼケルベロス",
+            "lead": (
+                "チビクエBlessで使えるコラボ合言葉を公開中です。"
+                if progress["unlocked"]
+                else "チビクエBlessで使えるコラボ合言葉を準備中です。"
+            ),
+            "secret_word": COLLAB_CHIBIQUE_SECRET_WORD if progress["unlocked"] else "",
             "description": "この合言葉をチビクエBless内で入力すると、コラボロボを受け取れます。受け取りはチビクエBless側で行います。",
             "external_url": "https://b.chibiquest.net/",
             "external_label": "チビクエBlessで入力する",
         }
     ]
-    return render_template("collab.html", collabs=collabs)
+    return render_template("collab.html", collabs=collabs, collab_progress=progress)
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -27166,6 +27196,7 @@ def home():
         ).fetchone()["c"]
         or 0
     )
+    collab_unlock_progress = get_collab_unlock_progress(db, int(user["id"]))
     next_action_card = _home_next_action_card(
         db,
         user,
@@ -27440,6 +27471,7 @@ def home():
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,
             total_explores=total_explores,
+            collab_unlock_progress=collab_unlock_progress,
             home_beginner_focus=home_beginner_focus,
             home_summary_line=home_summary_line,
             home_beginner_hint=home_beginner_hint,
