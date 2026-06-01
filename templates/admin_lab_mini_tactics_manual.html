@@ -208,5 +208,113 @@
       <section class="mini-tactics-manual-panel mini-shogi-move-guide">
         <h2>駒の動き</h2>
         <p class="mini-shogi-guide-note">敵も同じ駒で戦います。味方の前は上、敵は上下反転。ケルベロスは奥まで進むと勝利。</p>
-        {% set move_guides = [
-          ('leader', 'ケルベロス', 'リーダー: 全方向に1マス', '一番奥まで進むと勝利。取られると敗北。', ['↖'
+        <div class="mini-shogi-move-guide-grid">
+          <article class="mini-shogi-move-card" data-move-type="leader">
+            <div>
+              <b>ケルベロス</b>
+              <span>リーダー: 全方向に1マス</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="ケルベロスの動き">
+              <span class="is-move">↖</span><span class="is-move">↑</span><span class="is-move">↗</span>
+              <span class="is-move">←</span><span class="is-self">●</span><span class="is-move">→</span>
+              <span class="is-move">↙</span><span class="is-move">↓</span><span class="is-move">↘</span>
+            </div>
+            <p>一番奥まで進むと勝利。取られると敗北。</p>
+          </article>
+          <article class="mini-shogi-move-card" data-move-type="chick">
+            <div>
+              <b>フェニックス</b>
+              <span>前進: 前に1マス</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="フェニックスの動き">
+              <span></span><span class="is-move">↑</span><span></span>
+              <span></span><span class="is-self">●</span><span></span>
+              <span></span><span></span><span></span>
+            </div>
+            <p>一番奥まで進むと不死鳥に成長。</p>
+          </article>
+          <article class="mini-shogi-move-card" data-move-type="bishop_like">
+            <div>
+              <b>ヒュドラ</b>
+              <span>斜め: 斜めに1マス</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="ヒュドラの動き">
+              <span class="is-move">↖</span><span></span><span class="is-move">↗</span>
+              <span></span><span class="is-self">●</span><span></span>
+              <span class="is-move">↙</span><span></span><span class="is-move">↘</span>
+            </div>
+            <p>本家のぞう枠。斜めから差し込む。</p>
+          </article>
+          <article class="mini-shogi-move-card" data-move-type="rook_like">
+            <div>
+              <b>スフィンクス</b>
+              <span>直線: 上下左右に1マス</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="スフィンクスの動き">
+              <span></span><span class="is-move">↑</span><span></span>
+              <span class="is-move">←</span><span class="is-self">●</span><span class="is-move">→</span>
+              <span></span><span class="is-move">↓</span><span></span>
+            </div>
+            <p>本家のきりん枠。縦横を押さえる。</p>
+          </article>
+          <article class="mini-shogi-move-card" data-move-type="promoted_phoenix">
+            <div>
+              <b>不死鳥</b>
+              <span>成り: 全方向に1マス</span>
+            </div>
+            <div class="mini-shogi-move-diagram" aria-label="不死鳥の動き">
+              <span class="is-move">↖</span><span class="is-move">↑</span><span class="is-move">↗</span>
+              <span class="is-move">←</span><span class="is-self">●</span><span class="is-move">→</span>
+              <span class="is-move">↙</span><span class="is-move">↓</span><span class="is-move">↘</span>
+            </div>
+            <p>リーダーではないので取られても敗北しない。</p>
+          </article>
+        </div>
+      </section>
+      {% else %}
+      <section class="mini-tactics-manual-panel">
+        <h2>味方</h2>
+        {% for unit in units_payload if unit.get('side') == 'ally' %}
+        <div class="mini-tactics-roster-row is-ally {% if unit.get('defeated') %}is-defeated{% endif %}">
+          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">
+            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
+            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </section>
+
+      <section class="mini-tactics-manual-panel">
+        <h2>敵</h2>
+        {% for unit in units_payload if unit.get('side') == 'enemy' %}
+        <div class="mini-tactics-roster-row is-enemy {% if unit.get('defeated') %}is-defeated{% endif %}">
+          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
+          <div class="mini-tactics-roster-hp">
+            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
+            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <details class="mini-tactics-log" {% if manual_mode != 'mini_shogi_3x4' and action_log|length <= 3 %}open{% endif %}>
+        <summary><b>操作ログ</b></summary>
+        <ul>
+          {% for log in action_log[-12:]|reverse %}
+          <li>{{ log.get('text') }}</li>
+          {% else %}
+          <li>まだ行動はありません。</li>
+          {% endfor %}
+        </ul>
+      </details>
+    </aside>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='mini_tactics_manual.js') }}?v={{ app_version }}"></script>
+{% endblock %}
