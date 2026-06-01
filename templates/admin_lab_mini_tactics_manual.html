@@ -72,6 +72,30 @@
     <div class="mini-tactics-board-wrap">
       <div class="mini-tactics-phase-banner" id="miniTacticsPhaseBanner">READY</div>
       <div class="mini-tactics-action-caption" id="miniTacticsActionCaption">盤面を選択してください</div>
+      {% if manual_mode == 'mini_shogi_3x4' %}
+      {% set capsules = board_state.get('capsules', {}) %}
+      {% set own_capsules = capsules.get(playable_side or 'ally', {}) %}
+      {% set enemy_side = 'enemy' if (playable_side or 'ally') == 'ally' else 'ally' %}
+      {% set other_capsules = capsules.get(enemy_side, {}) %}
+      {% set capsule_rows = [
+        ('phoenix', 'フェニックス', 'mini_robots/phoenix/normal.png'),
+        ('hydra', 'ヒュドラ', 'mini_robots/hydra/normal.png'),
+        ('sphinx', 'スフィンクス', 'mini_robots/sphinx/normal.png')
+      ] %}
+      <div class="mini-shogi-capsule-note">再起動カプセル：取ったミニロボを自陣側に戻せます。</div>
+      <div class="mini-shogi-play-area">
+        <div class="capsule-rail capsule-rail--enemy" aria-label="相手の再起動カプセル">
+          <div class="capsule-rail-title">相手</div>
+          {% for key, label, image_path in capsule_rows %}
+          {% set count = other_capsules.get(key, 0) %}
+          <div class="capsule-piece capsule-piece--enemy {% if count > 0 %}is-available{% else %}is-empty{% endif %}" data-capsule-view="{{ key }}">
+            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ label }}" loading="lazy" />
+            <span class="capsule-piece-name">{{ label }}</span>
+            <span class="capsule-count-badge" data-opponent-capsule-count="{{ key }}">{{ count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
       <div
         class="mini-tactics-board mini-tactics-manual-board {% if map_payload.get('width', 5) == 3 and map_payload.get('height', 5) == 4 %}is-board-3x4{% elif map_payload.get('width', 5) == 4 and map_payload.get('height', 5) == 4 %}is-board-4x4{% elif map_payload.get('width', 5) == 5 and map_payload.get('height', 5) == 5 %}is-board-5x5{% endif %}"
         id="miniTacticsManualBoard"
@@ -122,6 +146,26 @@
           {% endfor %}
         {% endfor %}
       </div>
+      {% if manual_mode == 'mini_shogi_3x4' %}
+        <div class="capsule-rail capsule-rail--ally" aria-label="自分の再起動カプセル">
+          <div class="capsule-rail-title">自分</div>
+          {% for key, label, image_path in capsule_rows %}
+          {% set count = own_capsules.get(key, 0) %}
+          <button
+            type="button"
+            class="capsule-piece capsule-piece--ally {% if count > 0 %}is-available{% else %}is-empty{% endif %}"
+            data-capsule-piece="{{ key }}"
+            data-piece-type="{{ key }}"
+            {% if not can_act or board_state.get('result') or count <= 0 %}disabled{% endif %}
+          >
+            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ label }}" loading="lazy" />
+            <span class="capsule-piece-name">{{ label }}</span>
+            <span class="capsule-count-badge">×<span data-capsule-count="{{ key }}">{{ count }}</span></span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <aside class="mini-tactics-manual-side">
@@ -161,33 +205,6 @@
       </section>
 
       {% if manual_mode == 'mini_shogi_3x4' %}
-      <section class="mini-tactics-manual-panel mini-shogi-capsules">
-        {% set capsules = board_state.get('capsules', {}) %}
-        {% set own_capsules = capsules.get(playable_side or 'ally', {}) %}
-        {% set enemy_side = 'enemy' if (playable_side or 'ally') == 'ally' else 'ally' %}
-        {% set other_capsules = capsules.get(enemy_side, {}) %}
-        {% set capsule_rows = [('phoenix', 'フェニックス'), ('hydra', 'ヒュドラ'), ('sphinx', 'スフィンクス')] %}
-        <h2>再起動カプセル</h2>
-        <p class="mini-shogi-guide-note">取ったミニロボを、自分の手番で自陣側に戻せます。</p>
-        <div class="mini-shogi-capsule-row" aria-label="自分の再起動カプセル">
-          {% for key, label in capsule_rows %}
-          {% set count = own_capsules.get(key, 0) %}
-          <button
-            type="button"
-            class="mini-shogi-capsule-button"
-            data-capsule-piece="{{ key }}"
-            {% if not can_act or board_state.get('result') or count <= 0 %}disabled{% endif %}
-          >{{ label }} ×<span data-capsule-count="{{ key }}">{{ count }}</span></button>
-          {% endfor %}
-        </div>
-        <div class="mini-shogi-capsule-opponent">
-          相手:
-          {% for key, label in capsule_rows %}
-          <span>{{ label }} ×<span data-opponent-capsule-count="{{ key }}">{{ other_capsules.get(key, 0) }}</span></span>
-          {% endfor %}
-        </div>
-      </section>
-
       <section class="mini-tactics-manual-panel mini-shogi-move-guide">
         <h2>駒の動き</h2>
         <p class="mini-shogi-guide-note">敵も同じ駒で戦います。味方の前は上、敵は上下反転。ケルベロスは奥まで進むと勝利。</p>

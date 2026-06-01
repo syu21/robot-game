@@ -53,6 +53,7 @@
 
   var selectedUnitId = "";
   var selectedCapsulePiece = "";
+  var selectedActionMode = "none";
   var selectedMove = null;
   var replaying = false;
   var actionPending = false;
@@ -157,6 +158,7 @@
       if (typeof data.updated_at !== "undefined") lastKnownUpdatedAt = data.updated_at || lastKnownUpdatedAt;
       selectedUnitId = "";
       selectedCapsulePiece = "";
+      selectedActionMode = "none";
       selectedMove = null;
       clearMarks();
       if (actionSequence.length && previousBoardState && currentBoardState) {
@@ -186,7 +188,7 @@
   function renderBoard(state) {
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unitEl) { unitEl.remove(); });
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
-      cell.classList.remove("is-zoc", "is-threat", "is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move");
+      cell.classList.remove("is-zoc", "is-threat", "is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move", "is-deploy-option");
     });
     (state.units || []).forEach(function (unit) {
       if (unit.defeated) return;
@@ -241,15 +243,24 @@
     var otherSide = playableSide === "enemy" ? "ally" : "enemy";
     var other = capsules[otherSide] || {};
     document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
-      var piece = button.dataset.capsulePiece;
+      var piece = button.dataset.pieceType || button.dataset.capsulePiece;
       var count = Number((own && own[piece]) || 0);
       var countEl = button.querySelector("[data-capsule-count]");
       if (countEl) countEl.textContent = String(count);
       button.disabled = !canAct || !!(state && state.result) || count <= 0 || replaying || actionPending;
+      button.classList.toggle("is-empty", count <= 0);
+      button.classList.toggle("is-available", count > 0);
+      if (selectedCapsulePiece !== piece) button.classList.remove("is-selected");
     });
     document.querySelectorAll("[data-opponent-capsule-count]").forEach(function (el) {
       var piece = el.dataset.opponentCapsuleCount;
-      el.textContent = String(Number((other && other[piece]) || 0));
+      var count = Number((other && other[piece]) || 0);
+      el.textContent = String(count);
+      var pieceEl = el.closest(".capsule-piece");
+      if (pieceEl) {
+        pieceEl.classList.toggle("is-empty", count <= 0);
+        pieceEl.classList.toggle("is-available", count > 0);
+      }
     });
   }
 
@@ -411,6 +422,7 @@
     clearMarks();
     selectedUnitId = unitId;
     selectedCapsulePiece = "";
+    selectedActionMode = "move";
     selectedMove = null;
     actorInput.value = unitId;
     actionTypeInput.value = "";
@@ -455,12 +467,20 @@
     clearMarks();
     selectedUnitId = "";
     selectedCapsulePiece = pieceType;
+    selectedActionMode = "capsule";
     actorInput.value = "";
     actionTypeInput.value = "deploy_capsule";
     if (pieceTypeInput) pieceTypeInput.value = pieceType;
     var option = capsuleOptions[pieceType] || {};
-    if (selectedEl) selectedEl.textContent = "再起動：" + (option.label || pieceType);
-    if (hintEl) hintEl.textContent = "青いマスを選ぶと再起動します。";
+    if (!option.count || !option.deploy_cells || !option.deploy_cells.length) {
+      selectedCapsulePiece = "";
+      selectedActionMode = "none";
+      if (selectedEl) selectedEl.textContent = "選択中：なし";
+      if (hintEl) hintEl.textContent = "このカプセルは今は再起動できません。";
+      return;
+    }
+    if (selectedEl) selectedEl.textContent = (option.label || pieceType) + "を再起動：出す場所を選択";
+    if (hintEl) hintEl.textContent = "光ったマスに置けます。";
     document.querySelectorAll('[data-capsule-piece="' + pieceType + '"]').forEach(function (button) {
       button.classList.add("is-selected");
     });
@@ -518,7 +538,7 @@
     }
     var cell = event.target.closest(".mini-tactics-cell");
     if (!cell) return;
-    if (selectedCapsulePiece) {
+    if (selectedActionMode === "capsule" && selectedCapsulePiece) {
       if (!cell.classList.contains("is-deploy-option")) {
         if (hintEl) hintEl.textContent = "そこには再起動できません。";
         return;
@@ -554,7 +574,7 @@
   document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
     button.addEventListener("click", function () {
       if (button.disabled || replaying || actionPending || boardState.result || !canAct) return;
-      markForCapsule(button.dataset.capsulePiece);
+      markForCapsule(button.dataset.pieceType || button.dataset.capsulePiece);
     });
   });
 

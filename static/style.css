@@ -7802,12 +7802,19 @@ body.home-page .locked-layer-card {
   max-width: 100%;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board-wrap {
-  width: min(94vw, 360px);
+  width: min(96vw, 560px);
   max-width: 100%;
   margin: 0 auto;
   padding: 9px;
   justify-content: center;
   overflow: visible;
+}
+.mini-shogi-play-area {
+  display: grid;
+  grid-template-columns: minmax(54px, 74px) minmax(0, 360px) minmax(54px, 74px);
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
   width: 100%;
@@ -7816,6 +7823,87 @@ body.home-page .locked-layer-card {
   grid-template-rows: repeat(4, minmax(0, 1fr));
   aspect-ratio: 3 / 4;
   gap: 8px;
+}
+.mini-shogi-capsule-note {
+  margin: 0 0 7px;
+  color: #a5f3fc;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+.capsule-rail {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  align-content: center;
+  min-width: 0;
+}
+.capsule-rail-title {
+  color: #9cc8d7;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+.capsule-piece {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 58px;
+  min-height: 66px;
+  padding: 5px 4px;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #dff7ff !important;
+  line-height: 1.05;
+}
+button.capsule-piece {
+  cursor: pointer;
+}
+.capsule-piece img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.16));
+}
+.capsule-piece-name {
+  max-width: 100%;
+  color: #dff7ff;
+  font-size: 0.61rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.capsule-count-badge {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  min-width: 20px;
+  padding: 2px 5px;
+  border: 1px solid rgba(34, 211, 238, 0.44);
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.92);
+  color: #ecfeff;
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+.capsule-piece.is-available {
+  border-color: rgba(103, 232, 249, 0.64);
+  background: linear-gradient(180deg, rgba(8, 145, 178, 0.36), rgba(15, 23, 42, 0.76));
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.14);
+}
+.capsule-piece.is-empty {
+  opacity: 0.42;
+}
+.capsule-piece.is-selected {
+  border-color: rgba(250, 204, 21, 0.9);
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16), 0 0 18px rgba(34, 211, 238, 0.26);
+}
+button.capsule-piece:disabled {
+  cursor: not-allowed;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-phase-banner,
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-action-caption {
@@ -8271,12 +8359,44 @@ button.secondary {
     gap: 8px;
   }
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board-wrap {
-    width: min(92vw, 330px);
+    width: min(94vw, 350px);
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
     padding: 8px;
     overflow: hidden;
+  }
+  .mini-shogi-play-area {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .capsule-rail {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .capsule-rail--enemy {
+    order: 1;
+  }
+  .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
+    order: 2;
+  }
+  .capsule-rail--ally {
+    order: 3;
+  }
+  .capsule-rail-title {
+    align-self: center;
+    min-width: 2.6em;
+  }
+  .capsule-piece {
+    width: 54px;
+    min-height: 58px;
+    padding: 4px 3px;
+  }
+  .capsule-piece img {
+    width: 30px;
+    height: 30px;
   }
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
     width: 100%;
