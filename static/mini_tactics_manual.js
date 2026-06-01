@@ -107,6 +107,31 @@
     if (replayButton) replayButton.disabled = !!locked;
   }
 
+  function finalBoardStateFromResponse(data) {
+    if (!data || !data.board_state) return null;
+    return data.board_state.current_board_state || data.board_state;
+  }
+
+  function syncActionData(data) {
+    var finalState = finalBoardStateFromResponse(data);
+    previousBoardState = data && data.board_state ? data.board_state.previous_board_state || null : null;
+    currentBoardState = finalState;
+    actionSequence = (data && data.action_sequence) || [];
+    optionsByUnit = (data && data.options_by_unit) || {};
+    capsuleOptions = (data && (data.capsule_options || (finalState && finalState.capsule_options))) || {};
+    zocCells = (data && data.zoc_cells) || [];
+    threatCells = (data && data.threat_cells) || [];
+    if (data && data.turn_message) turnMessage = data.turn_message;
+    if (data && typeof data.can_act !== "undefined") canAct = !!data.can_act;
+    if (data && typeof data.updated_at !== "undefined") lastKnownUpdatedAt = data.updated_at || lastKnownUpdatedAt;
+    selectedUnitId = "";
+    selectedCapsulePiece = "";
+    selectedActionMode = "none";
+    selectedMove = null;
+    clearMarks();
+    return finalState;
+  }
+
   async function postImmediateAction(actionType, payload) {
     if (!isMiniShogi || replaying || actionPending || boardState.result) return;
     if (actionType !== "deploy_capsule" && !selectedUnitId) return;
@@ -146,25 +171,11 @@
       if (!response.ok || !data || !data.ok) {
         throw new Error((data && data.error) || "行動できませんでした。");
       }
-      previousBoardState = data.board_state ? data.board_state.previous_board_state : null;
-      currentBoardState = data.board_state ? data.board_state.current_board_state : null;
-      actionSequence = data.action_sequence || [];
-      optionsByUnit = data.options_by_unit || {};
-      capsuleOptions = data.capsule_options || {};
-      zocCells = data.zoc_cells || [];
-      threatCells = data.threat_cells || [];
-      if (data.turn_message) turnMessage = data.turn_message;
-      if (typeof data.can_act !== "undefined") canAct = !!data.can_act;
-      if (typeof data.updated_at !== "undefined") lastKnownUpdatedAt = data.updated_at || lastKnownUpdatedAt;
-      selectedUnitId = "";
-      selectedCapsulePiece = "";
-      selectedActionMode = "none";
-      selectedMove = null;
-      clearMarks();
+      var finalState = syncActionData(data);
       if (actionSequence.length && previousBoardState && currentBoardState) {
         await playSequence();
-      } else if (data.board_state) {
-        boardState = data.board_state;
+      } else if (finalState) {
+        boardState = finalState;
         renderBoard(boardState);
         setCaption(boardState.result ? "決着" : (turnMessage || "味方ターン：動かすミニロボを選択"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
       }
@@ -177,7 +188,10 @@
       setControlsLocked(false);
     } finally {
       actionPending = false;
-      if (!replaying) setControlsLocked(false);
+      if (!replaying) {
+        setControlsLocked(false);
+        renderCapsules(boardState);
+      }
     }
   }
 
@@ -416,6 +430,7 @@
     board.classList.remove("is-enemy-turn");
     setControlsLocked(false);
     setCaption(boardState.result ? "決着" : "味方ターン：次の1手を選択", boardState.result ? "result" : "ally");
+    renderCapsules(boardState);
     if (boardState.result && submit) submit.disabled = true;
   }
 
@@ -485,194 +500,4 @@
     if (unitEl) unitEl.classList.add("is-selected");
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
       var point = {x: Number(cell.dataset.x), y: Number(cell.dataset.y)};
-      if ((options.move_cells || []).some(function (move) { return sameCell(move, point); })) {
-        cell.classList.add("is-move-option");
-        if (isThreatCell(point)) cell.classList.add("is-danger-move");
-      }
-      if ((options.attackable_cells || []).some(function (attack) { return sameCell(attack, point); })) {
-        cell.classList.add("is-attack-option");
-      }
-    });
-    (options.targetable_unit_ids || []).forEach(function (targetId) {
-      var target = unitById(targetId);
-      if (!target) return;
-      var targetCell = board.querySelector('[data-x="' + target.x + '"][data-y="' + target.y + '"]');
-      if (targetCell) targetCell.classList.add("is-target-option");
-    });
-    markThreats();
-  }
-
-  function markForCapsule(pieceType) {
-    clearMarks();
-    selectedUnitId = "";
-    selectedCapsulePiece = pieceType;
-    selectedActionMode = "capsule";
-    actorInput.value = "";
-    actionTypeInput.value = "deploy_capsule";
-    if (pieceTypeInput) pieceTypeInput.value = pieceType;
-    var option = capsuleOptions[pieceType] || {};
-    if (!option.count || !option.deploy_cells || !option.deploy_cells.length) {
-      selectedCapsulePiece = "";
-      selectedActionMode = "none";
-      if (selectedEl) selectedEl.textContent = "選択中：なし";
-      if (hintEl) hintEl.textContent = "このカプセルは今は再起動できません。";
-      return;
-    }
-    if (selectedEl) selectedEl.textContent = (option.label || pieceType) + "を再起動：光ったマスに置けます";
-    if (hintEl) hintEl.textContent = "光ったマスに置けます。";
-    document.querySelectorAll('[data-capsule-piece="' + pieceType + '"]').forEach(function (button) {
-      button.classList.add("is-selected");
-    });
-    (option.deploy_cells || []).forEach(function (point) {
-      var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
-      if (cell) cell.classList.add("is-deploy-option");
-    });
-  }
-
-  function markAfterMove(x, y) {
-    var unit = unitById(selectedUnitId);
-    if (!unit) return;
-    selectedMove = {x: Number(x), y: Number(y)};
-    moveXInput.value = String(x);
-    moveYInput.value = String(y);
-    toXInput.value = String(x);
-    toYInput.value = String(y);
-    targetInput.value = "";
-    if (isMiniShogi) {
-      postImmediateAction("move", {to_x: x, to_y: y});
-      return;
-    }
-    if (submit) submit.disabled = false;
-    board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
-      cell.classList.remove("is-selected-move", "is-target-option", "is-attack-option");
-      if (Number(cell.dataset.x) === Number(x) && Number(cell.dataset.y) === Number(y)) {
-        cell.classList.add("is-selected-move");
-      }
-    });
-    var options = optionsByUnit[selectedUnitId] || {};
-    var afterMove = (options.after_move || {})[String(x) + "," + String(y)] || {};
-    if (hintEl) hintEl.textContent = afterMove.move_notice || "";
-    (afterMove.attackable_cells || []).forEach(function (attack) {
-      var attackCell = board.querySelector('[data-x="' + attack.x + '"][data-y="' + attack.y + '"]');
-      if (attackCell) attackCell.classList.add("is-attack-option");
-    });
-    (afterMove.targetable_unit_ids || []).forEach(function (targetId) {
-      var target = unitById(targetId);
-      if (!target) return;
-      var targetCell = board.querySelector('[data-x="' + target.x + '"][data-y="' + target.y + '"]');
-      if (targetCell) targetCell.classList.add("is-target-option");
-    });
-  }
-
-  board.addEventListener("click", function (event) {
-    var unitEl = event.target.closest("[data-unit-id]");
-    if (unitEl && unitEl.dataset.side === playableSide && !unitEl.classList.contains("is-core")) {
-      if (replaying || boardState.result) return;
-      if (!canAct) {
-        if (hintEl) hintEl.textContent = turnMessage || "相手の手を待っています。";
-        return;
-      }
-      markForUnit(unitEl.dataset.unitId);
-      return;
-    }
-    var cell = event.target.closest(".mini-tactics-cell");
-    if (!cell) return;
-    if (selectedActionMode === "capsule" && selectedCapsulePiece) {
-      if (!cell.classList.contains("is-deploy-option")) {
-        if (hintEl) hintEl.textContent = "そこには再起動できません。";
-        return;
-      }
-      postImmediateAction("deploy_capsule", {piece_type: selectedCapsulePiece, to_x: cell.dataset.x, to_y: cell.dataset.y});
-      return;
-    }
-    if (!selectedUnitId) return;
-    if (cell.classList.contains("is-move-option")) {
-      markAfterMove(cell.dataset.x, cell.dataset.y);
-      return;
-    }
-    if (unitEl && unitEl.dataset.side !== playableSide) {
-      var enemyUnit = unitById(unitEl.dataset.unitId);
-      var targetCell = unitEl.closest(".mini-tactics-cell");
-      if (!targetCell || !targetCell.classList.contains("is-target-option")) {
-        if (hintEl) hintEl.textContent = enemyUnit && enemyUnit.guarded ? "リーダーは護衛されているため狙えません。" : "攻撃できない対象です。";
-        return;
-      }
-      targetInput.value = unitEl.dataset.unitId;
-      if (isMiniShogi) {
-        postImmediateAction("attack", {target_unit_id: unitEl.dataset.unitId});
-      } else if (submit) {
-        submit.disabled = false;
-      }
-    }
-  });
-
-  markZoc();
-  markThreats();
-  if (replayButton) replayButton.addEventListener("click", playSequence);
-  if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
-  document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
-    button.addEventListener("click", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (button.disabled || replaying || actionPending || boardState.result || !canAct) return;
-      selectedUnitId = "";
-      selectedMove = null;
-      markForCapsule(button.dataset.pieceType || button.dataset.capsulePiece);
-    });
-  });
-
-  async function pollStateOnce() {
-    if (!isOnlineBattle || !stateUrl || canAct || boardState.result || replaying || actionPending) return;
-    try {
-      var response = await fetch(stateUrl, {headers: {"Accept": "application/json"}});
-      var data = await response.json().catch(function () { return null; });
-      if (!response.ok || !data || !data.ok) throw new Error("通信確認中");
-      if (data.updated_at && data.updated_at !== lastKnownUpdatedAt) {
-        boardState = data.board_state || boardState;
-        optionsByUnit = data.options_by_unit || {};
-        capsuleOptions = data.capsule_options || {};
-        zocCells = data.zoc_cells || [];
-        threatCells = data.threat_cells || [];
-        canAct = !!data.can_act;
-        turnMessage = data.turn_message || "";
-        lastKnownUpdatedAt = data.updated_at;
-        renderBoard(boardState);
-        clearMarks();
-      } else {
-        canAct = !!data.can_act;
-        turnMessage = data.turn_message || turnMessage;
-      }
-      setCaption(boardState.result ? "決着" : (turnMessage || "相手の手を待っています"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
-      if (hintEl && !canAct && !boardState.result) hintEl.textContent = "相手の手を待っています。";
-    } catch (error) {
-      if (hintEl) hintEl.textContent = "通信確認中";
-    }
-  }
-
-  function maybeStartPolling() {
-    if (!isOnlineBattle || window.__miniShogiPollTimer) return;
-    window.__miniShogiPollTimer = window.setInterval(pollStateOnce, 3000);
-  }
-
-  if (isMiniAnimalShogi) {
-    setCaption(boardState.result ? "決着" : (turnMessage || "味方ターン：動かすミニロボを選択"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
-    renderCapsules(boardState);
-    var openingKey = "mini-shogi-opening:" + String(battleId || "");
-    function closeOpening() {
-      if (openingEl) openingEl.hidden = true;
-      try { window.sessionStorage.setItem(openingKey, "1"); } catch (error) {}
-    }
-    var shouldShowOpening = !!openingEl && !!openingSequencePending;
-    try {
-      shouldShowOpening = shouldShowOpening && window.sessionStorage.getItem(openingKey) !== "1";
-    } catch (error) {}
-    if (shouldShowOpening) {
-      openingEl.hidden = false;
-      window.setTimeout(closeOpening, 1300);
-      if (openingSkip) openingSkip.addEventListener("click", closeOpening);
-    }
-    maybeStartPolling();
-  } else {
-    playSequence();
-  }
-})();
+      if ((options.move_cells || []).some(function (move) { return sameCell(move,

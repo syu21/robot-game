@@ -73,11 +73,6 @@
       <div class="mini-tactics-phase-banner" id="miniTacticsPhaseBanner">READY</div>
       <div class="mini-tactics-action-caption" id="miniTacticsActionCaption">盤面を選択してください</div>
       {% if manual_mode == 'mini_shogi_3x4' %}
-      <div class="mini-shogi-rule-note">
-        相手のケルベロスを取るか、自分のケルベロスを奥まで進めると勝利です。フェニックスは奥で不死鳥に成長します。取ったミニロボは再起動カプセルとして自陣側に戻せます。
-      </div>
-      {% endif %}
-      {% if manual_mode == 'mini_shogi_3x4' %}
       {% set capsules = board_state.get('capsules', {}) %}
       {% set own_capsules = capsules.get(playable_side or 'ally', {}) %}
       {% set enemy_side = 'enemy' if (playable_side or 'ally') == 'ally' else 'ally' %}
@@ -173,7 +168,7 @@
     </div>
 
     <aside class="mini-tactics-manual-side">
-      <section class="mini-tactics-manual-panel">
+      <section class="mini-tactics-manual-panel mini-shogi-selected-card">
         <h2>選択中ユニット</h2>
         <div id="miniTacticsManualSelected" class="robot-part">選択中：なし</div>
         <form method="post" action="{{ action_url or url_for('admin_lab_mini_tactics_manual_action', battle_id=battle['id']) }}" id="miniTacticsManualAction">
@@ -206,77 +201,12 @@
       </section>
 
       {% if manual_mode == 'mini_shogi_3x4' %}
+      <section class="mini-shogi-rule-note">
+        相手のケルベロスを取るか、自分のケルベロスを奥まで進めると勝利です。フェニックスは奥で不死鳥に成長します。取ったミニロボは再起動カプセルとして自陣側に戻せます。
+      </section>
+
       <section class="mini-tactics-manual-panel mini-shogi-move-guide">
         <h2>駒の動き</h2>
         <p class="mini-shogi-guide-note">敵も同じ駒で戦います。味方の前は上、敵は上下反転。ケルベロスは奥まで進むと勝利。</p>
         {% set move_guides = [
-          ('leader', 'ケルベロス', 'リーダー: 全方向に1マス', '一番奥まで進むと勝利。取られると敗北。', ['↖','↑','↗','←','●','→','↙','↓','↘']),
-          ('chick', 'フェニックス', '前進: 前に1マス', '一番奥まで進むと不死鳥に成長。', ['','↑','','','●','','','','']),
-          ('bishop_like', 'ヒュドラ', '斜め: 斜めに1マス', '本家のぞう枠。斜めから差し込む。', ['↖','','↗','','●','','↙','','↘']),
-          ('rook_like', 'スフィンクス', '直線: 上下左右に1マス', '本家のきりん枠。縦横を押さえる。', ['','↑','','←','●','→','','↓','']),
-          ('promoted_phoenix', '不死鳥', '成り: 全方向に1マス', 'リーダーではないので取られても敗北しない。', ['↖','↑','↗','←','●','→','↙','↓','↘'])
-        ] %}
-        <div class="mini-shogi-move-guide-grid">
-          {% for key, name, movement, note, cells in move_guides %}
-          <article class="mini-shogi-move-card" data-move-type="{{ key }}">
-            <div>
-              <b>{{ name }}</b>
-              <span>{{ movement }}</span>
-            </div>
-            <div class="mini-shogi-move-diagram" aria-label="{{ name }}の動き">
-              {% for mark in cells %}
-              <span class="{% if mark == '●' %}is-self{% elif mark %}is-move{% endif %}">{{ mark }}</span>
-              {% endfor %}
-            </div>
-            <p>{{ note }}</p>
-          </article>
-          {% endfor %}
-        </div>
-      </section>
-      {% else %}
-      <section class="mini-tactics-manual-panel">
-        <h2>味方</h2>
-        {% for unit in units_payload if unit.get('side') == 'ally' %}
-        <div class="mini-tactics-roster-row is-ally {% if unit.get('defeated') %}is-defeated{% endif %}">
-          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">
-            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
-            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
-          </div>
-        </div>
-        {% endfor %}
-      </section>
-
-      <section class="mini-tactics-manual-panel">
-        <h2>敵</h2>
-        {% for unit in units_payload if unit.get('side') == 'enemy' %}
-        <div class="mini-tactics-roster-row is-enemy {% if unit.get('defeated') %}is-defeated{% endif %}">
-          <div class="mini-tactics-roster-name">{% if unit.get('is_leader') %}Leader {% endif %}{{ unit.get('name') }}</div>
-          <div class="mini-tactics-roster-hp">
-            {{ unit.get('move_type_label') }} / {{ unit.get('role_label') }} / {{ unit.get('weapon_label') }} / {{ unit.get('trait_label') or unit.get('trait_key') }}
-            {% if unit.get('max_hp') %} / HP {{ unit.get('hp') }}/{{ unit.get('max_hp') }}{% else %} / 一撃撃破{% endif %}
-          </div>
-        </div>
-        {% endfor %}
-      </section>
-      {% endif %}
-
-      <details class="mini-tactics-log" {% if manual_mode != 'mini_shogi_3x4' and action_log|length <= 3 %}open{% endif %}>
-        <summary><b>操作ログ</b></summary>
-        <ul>
-          {% for log in action_log[-12:]|reverse %}
-          <li>{{ log.get('text') }}</li>
-          {% else %}
-          <li>まだ行動はありません。</li>
-          {% endfor %}
-        </ul>
-      </details>
-    </aside>
-  </div>
-</section>
-
-{% endblock %}
-{% block scripts %}
-{{ super() }}
-<script src="{{ url_for('static', filename='mini_tactics_manual.js') }}?v={{ app_version }}"></script>
-{% endblock %}
+          ('leader', 'ケルベロス', 'リーダー: 全方向に1マス', '一番奥まで進むと勝利。取られると敗北。', ['↖'
