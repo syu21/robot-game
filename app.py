@@ -116,6 +116,7 @@ from services.mini_tactics import (
     create_manual_mini_tactics_battle,
     create_mini_tactics_battle,
     mini_shogi_4x4_action_options,
+    mini_shogi_4x4_capsule_options,
     mini_shogi_4x4_threat_cells,
     mini_shogi_4x4_zoc_cells,
     manual_action_options,
@@ -36684,6 +36685,7 @@ def _mini_shogi_public_payload(row, board_state, user_id):
             str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(board_state, unit.get("unit_id"))
             for unit in active_units
         },
+        "capsule_options": mini_shogi_4x4_capsule_options(board_state, side),
         "zoc_cells": mini_shogi_4x4_zoc_cells(board_state, side),
         "threat_cells": mini_shogi_4x4_threat_cells(side, board_state),
     }
@@ -36700,7 +36702,7 @@ def lab_mini_shogi():
 def lab_mini_shogi_cpu_new():
     db = get_db()
     user_id = int(session["user_id"])
-    battle_id = create_manual_board_battle(db, user_id, seed=None)
+    battle_id = create_manual_board_battle(db, user_id, seed=None, first_side="ally")
     now = int(time.time())
     db.execute(
         """
@@ -36725,7 +36727,8 @@ def lab_mini_shogi_cpu_new():
 def lab_mini_shogi_online_new():
     db = get_db()
     user_id = int(session["user_id"])
-    battle_id = create_manual_board_battle(db, user_id, seed=None)
+    first_side = "ally" if app.config.get("TESTING") else random.choice(("ally", "enemy"))
+    battle_id = create_manual_board_battle(db, user_id, seed=None, first_side=first_side)
     token = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"
     now = int(time.time())
     db.execute(
@@ -36743,7 +36746,7 @@ def lab_mini_shogi_online_new():
             last_action_at = ?
         WHERE id = ?
         """,
-        (token, user_id, user_id, now, now, int(battle_id)),
+        (token, user_id, user_id if first_side == "ally" else None, now, now, int(battle_id)),
     )
     db.commit()
     return redirect(url_for("lab_mini_shogi_invite", battle_id=int(battle_id)))
@@ -36779,16 +36782,19 @@ def lab_mini_shogi_join(invite_token):
         return redirect(url_for("lab_mini_shogi"))
     if not row["guest_user_id"]:
         now = int(time.time())
+        board_state = json.loads(row["board_state_json"] or "{}")
+        current_turn_user_id = user_id if str(board_state.get("current_turn_side") or "ally") == "enemy" else row["current_turn_user_id"]
         db.execute(
             """
             UPDATE mini_tactics_battles
             SET guest_user_id = ?,
                 guest_side = 'enemy',
+                current_turn_user_id = ?,
                 online_status = 'active',
                 updated_at = ?
             WHERE id = ?
             """,
-            (user_id, now, int(row["id"])),
+            (user_id, current_turn_user_id, now, int(row["id"])),
         )
         db.commit()
     return redirect(url_for("lab_mini_shogi_battle", battle_id=int(row["id"])))
@@ -36878,6 +36884,8 @@ def lab_mini_shogi_action(battle_id):
         return "" if value is None else str(value)
 
     actor_unit_id = (_payload_value("actor_unit_id") or "").strip()
+    action_type = (_payload_value("action_type") or "").strip()
+    piece_type = (_payload_value("piece_type") or "").strip()
     target_unit_id = (_payload_value("target_unit_id") or "").strip() or None
     move_to = None
     move_x = (_payload_value("to_x") or _payload_value("move_x") or "").strip()
@@ -36890,13 +36898,25 @@ def lab_mini_shogi_action(battle_id):
     if str(row["battle_type"] or "cpu") == "online_invite":
         next_state, logs, error = apply_manual_player_action(
             board_state,
-            {"actor_unit_id": actor_unit_id, "move_to": move_to, "target_unit_id": target_unit_id},
+            {
+                "actor_unit_id": actor_unit_id,
+                "action_type": action_type,
+                "piece_type": piece_type,
+                "move_to": move_to,
+                "target_unit_id": target_unit_id,
+            },
             side,
         )
     else:
         next_state, logs, error = apply_manual_action(
             board_state,
-            {"actor_unit_id": actor_unit_id, "move_to": move_to, "target_unit_id": target_unit_id},
+            {
+                "actor_unit_id": actor_unit_id,
+                "action_type": action_type,
+                "piece_type": piece_type,
+                "move_to": move_to,
+                "target_unit_id": target_unit_id,
+            },
         )
     if error:
         return jsonify({"ok": False, "error": error, "board_state": board_state}), 400
@@ -37213,6 +37233,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
 
     actor_unit_id = (_payload_value("actor_unit_id") or "").strip()
     action_type = (_payload_value("action_type") or "").strip()
+    piece_type = (_payload_value("piece_type") or "").strip()
     target_unit_id = (_payload_value("target_unit_id") or "").strip() or None
     move_to = None
     move_x = (_payload_value("to_x") or _payload_value("move_x") or "").strip()
@@ -37227,9 +37248,11 @@ def admin_lab_mini_tactics_manual_action(battle_id):
             target_unit_id = None
         elif action_type == "attack":
             move_to = None
+        elif action_type == "deploy_capsule":
+            target_unit_id = None
         elif not action_type:
             action_type = "attack" if target_unit_id else "move"
-        if action_type == "move" and not move_to:
+        if action_type in {"move", "deploy_capsule"} and not move_to:
             return _action_error("移動先が不正です。")
         if action_type == "attack" and not target_unit_id:
             return _action_error("攻撃対象が不正です。")
@@ -37238,6 +37261,8 @@ def admin_lab_mini_tactics_manual_action(battle_id):
             board_state,
             {
                 "actor_unit_id": actor_unit_id,
+                "action_type": action_type,
+                "piece_type": piece_type,
                 "move_to": move_to,
                 "target_unit_id": target_unit_id,
             },
@@ -37291,6 +37316,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
                 str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(next_state, unit.get("unit_id"))
                 for unit in ally_units
             }
+            capsule_options = mini_shogi_4x4_capsule_options(next_state, "ally")
             zoc_cells = mini_shogi_4x4_zoc_cells(next_state, "ally")
             threat_cells = mini_shogi_4x4_threat_cells("ally", next_state)
         else:
@@ -37298,6 +37324,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
                 str(unit.get("unit_id") or ""): manual_action_options(next_state, unit.get("unit_id"), map_payload)
                 for unit in ally_units
             }
+            capsule_options = {}
             zoc_cells = []
             threat_cells = []
         return jsonify(
@@ -37309,6 +37336,7 @@ def admin_lab_mini_tactics_manual_action(battle_id):
                 "result": result,
                 "action_log": action_log,
                 "options_by_unit": options_by_unit,
+                "capsule_options": capsule_options,
                 "zoc_cells": zoc_cells,
                 "threat_cells": threat_cells,
             }
@@ -37357,6 +37385,7 @@ def _render_mini_tactics_manual(
             str(unit.get("unit_id") or ""): mini_shogi_4x4_action_options(board_state, unit.get("unit_id"))
             for unit in playable_units
         }
+        capsule_options = mini_shogi_4x4_capsule_options(board_state, playable_side)
         zoc_cells = mini_shogi_4x4_zoc_cells(board_state, playable_side)
         threat_cells = mini_shogi_4x4_threat_cells(playable_side, board_state)
     else:
@@ -37364,6 +37393,7 @@ def _render_mini_tactics_manual(
             str(unit.get("unit_id") or ""): manual_action_options(board_state, unit.get("unit_id"), map_payload)
             for unit in playable_units
         }
+        capsule_options = {}
         zoc_cells = []
         threat_cells = []
     client_board_state = board_state
@@ -37400,6 +37430,7 @@ def _render_mini_tactics_manual(
         turn_message=turn_message,
         updated_at=updated_at or (row["updated_at"] if "updated_at" in row.keys() else 0),
         options_by_unit=options_by_unit,
+        capsule_options=capsule_options,
         zoc_cells=zoc_cells,
         threat_cells=threat_cells,
         manual_mode=mode,

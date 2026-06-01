@@ -21,6 +21,7 @@ from services.mini_tactics import (
     check_manual_result,
     can_attack,
     enumerate_manual_legal_actions,
+    get_capsule_deploy_cells,
     get_enemy_threat_cells,
     get_legal_moves,
     get_legal_targets,
@@ -593,6 +594,9 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(state["board_width"], 3)
         self.assertEqual(state["board_height"], 4)
         self.assertEqual(state["current_turn_side"], "ally")
+        self.assertIn(state["first_side"], {"ally", "enemy"})
+        self.assertTrue(state["first_decided"])
+        self.assertEqual(state["capsules"]["ally"], {"phoenix": 0, "hydra": 0, "sphinx": 0})
         self.assertIsNone(state["result"])
         allies = [u for u in state["units"] if u["side"] == "ally"]
         enemies = [u for u in state["units"] if u["side"] == "enemy"]
@@ -706,6 +710,88 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(sequence[0]["target_unit_id"], target["unit_id"])
         self.assertTrue(any(event["phase"] == "enemy" for event in sequence[1:]))
 
+    def test_mini_shogi_3x4_capture_adds_restart_capsule(self):
+        state = build_manual_initial_board_v1(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
+        target.update({"x": 2, "y": 2})
+        next_state, logs, error = apply_manual_action(
+            state,
+            {"actor_unit_id": ally["unit_id"], "move_to": {"x": 2, "y": 2}},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["capsules"]["ally"]["phoenix"], 1)
+        self.assertTrue(any(log["type"] == "capsule_add" and log["piece_type"] == "phoenix" for log in logs))
+        self.assertTrue(any(event["type"] == "capsule_add" for event in next_state["last_action_sequence"]))
+
+    def test_mini_shogi_3x4_promoted_phoenix_returns_phoenix_capsule(self):
+        state = build_manual_initial_board_v1(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_sphinx")
+        target = next(u for u in state["units"] if u["unit_id"] == "enemy_phoenix")
+        target.update({"x": 2, "y": 2, "promoted": True, "piece_type": "promoted_phoenix", "move_type": "promoted_phoenix", "name": "敵不死鳥"})
+        next_state, _, error = apply_manual_action(
+            state,
+            {"actor_unit_id": ally["unit_id"], "move_to": {"x": 2, "y": 2}},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["capsules"]["ally"]["phoenix"], 1)
+
+    def test_mini_shogi_3x4_leader_capture_does_not_capsule(self):
+        state = build_manual_initial_board_v1(1)
+        ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
+        leader = next(u for u in state["units"] if u["unit_id"] == "enemy_cerberus")
+        for unit in state["units"]:
+            if unit["side"] == "enemy" and not unit["is_leader"]:
+                unit["defeated"] = True
+        ally.update({"x": 1, "y": 1})
+        leader.update({"x": 1, "y": 0})
+        next_state, logs, error = apply_manual_action(
+            state,
+            {"actor_unit_id": ally["unit_id"], "move_to": {"x": 1, "y": 0}},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["result"], "ally_win")
+        self.assertEqual(next_state["capsules"]["ally"], {"phoenix": 0, "hydra": 0, "sphinx": 0})
+        self.assertFalse(any(log["type"] == "capsule_add" for log in logs))
+
+    def test_mini_shogi_3x4_deploy_capsule_to_own_side(self):
+        state = build_manual_initial_board_v1(1)
+        state["capsules"]["ally"]["phoenix"] = 1
+        cells = get_capsule_deploy_cells(state, "ally", "phoenix")
+        self.assertIn((0, 2), {(cell["x"], cell["y"]) for cell in cells})
+        next_state, logs, error = apply_manual_action(
+            state,
+            {"action_type": "deploy_capsule", "piece_type": "phoenix", "move_to": {"x": 0, "y": 2}},
+        )
+        self.assertIsNone(error)
+        self.assertEqual(next_state["capsules"]["ally"]["phoenix"], 0)
+        deployed = next(u for u in next_state["units"] if u["unit_id"].startswith("ally_capsule_phoenix_"))
+        self.assertEqual((deployed["x"], deployed["y"]), (0, 2))
+        self.assertEqual(deployed["move_type"], "chick")
+        self.assertFalse(deployed.get("promoted", False))
+        self.assertTrue(any(log["type"] == "deploy_capsule" for log in logs))
+        self.assertTrue(any(event["type"] == "deploy_capsule" for event in next_state["last_action_sequence"]))
+
+    def test_mini_shogi_3x4_deploy_capsule_rejects_invalid_cells(self):
+        state = build_manual_initial_board_v1(1)
+        state["capsules"]["ally"]["hydra"] = 1
+        _, _, enemy_error = apply_manual_action(
+            state,
+            {"action_type": "deploy_capsule", "piece_type": "hydra", "move_to": {"x": 0, "y": 0}},
+        )
+        self.assertIsNotNone(enemy_error)
+        _, _, occupied_error = apply_manual_action(
+            state,
+            {"action_type": "deploy_capsule", "piece_type": "hydra", "move_to": {"x": 1, "y": 3}},
+        )
+        self.assertIsNotNone(occupied_error)
+        state["capsules"]["ally"]["hydra"] = 0
+        _, _, empty_error = apply_manual_action(
+            state,
+            {"action_type": "deploy_capsule", "piece_type": "hydra", "move_to": {"x": 0, "y": 2}},
+        )
+        self.assertIsNotNone(empty_error)
+
     def test_mini_shogi_3x4_leader_defeat_result(self):
         state = build_manual_initial_board_v1(1)
         ally = next(u for u in state["units"] if u["unit_id"] == "ally_cerberus")
@@ -782,6 +868,12 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("data-previous-board-state", html)
         self.assertIn("data-current-board-state", html)
         self.assertIn("data-board-state", html)
+        self.assertIn("data-capsule-options", html)
+        self.assertIn("data-first-side", html)
+        self.assertIn("先攻を決定中", html)
+        self.assertIn("再起動カプセル", html)
+        self.assertIn("data-capsule-piece=\"phoenix\"", html)
+        self.assertIn("取ったミニロボは再起動カプセル", html)
         self.assertIn("mini_tactics_manual.js", html)
         self.assertIn("is-mini-shogi-public", html)
         self.assertIn("mini-tactics-manual-layout", html)
@@ -886,6 +978,34 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["board_state"]["current_turn_side"], "ally")
         self.assertTrue(any(event["phase"] == "ally" and event["type"] == "move_capture" for event in payload["action_sequence"]))
+
+    def test_mini_shogi_3x4_deploy_capsule_action_post_returns_json(self):
+        client = self._client(admin=True)
+        resp = client.get("/admin/lab/mini-tactics/manual/new?seed=906", follow_redirects=False)
+        battle_url = resp.headers["Location"]
+        battle_id = int(battle_url.rstrip("/").rsplit("/", 1)[-1])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM mini_tactics_battles WHERE id = ?", (battle_id,)).fetchone()
+            state = json.loads(row["board_state_json"])
+            state["capsules"]["ally"]["sphinx"] = 1
+            db.execute(
+                "UPDATE mini_tactics_battles SET board_state_json = ? WHERE id = ?",
+                (json.dumps(state, ensure_ascii=False, separators=(",", ":")), battle_id),
+            )
+            db.commit()
+        action = client.post(
+            f"{battle_url}/action",
+            json={"action_type": "deploy_capsule", "piece_type": "sphinx", "to_x": "0", "to_y": "2"},
+            headers={"X-Requested-With": "fetch"},
+            follow_redirects=False,
+        )
+        self.assertEqual(action.status_code, 200)
+        payload = action.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("capsule_options", payload)
+        self.assertEqual(payload["board_state"]["capsules"]["ally"]["sphinx"], 0)
+        self.assertTrue(any(event["type"] == "deploy_capsule" for event in payload["action_sequence"]))
 
     def test_mini_shogi_3x4_invalid_immediate_actions_are_rejected(self):
         client = self._client(admin=True)
@@ -1983,6 +2103,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
         guest_state = guest.get(f"/lab/mini-shogi/{battle_id}/state").get_json()
         self.assertTrue(guest_state["ok"])
         self.assertTrue(guest_state["can_act"])
+        self.assertIn("capsules", guest_state["board_state"])
+        self.assertIn("capsule_options", guest_state)
         self.assertEqual(guest_state["current_turn_user_id"], guest_id)
         guest_move = guest.post(
             f"/lab/mini-shogi/{battle_id}/action",

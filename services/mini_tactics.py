@@ -74,6 +74,12 @@ MANUAL_V1_TRAIT_LABELS = {
     "fortress": "要塞",
     "sphinx": "謎かけ",
 }
+MANUAL_V1_CAPSULE_TYPES = ("phoenix", "hydra", "sphinx")
+MANUAL_V1_CAPSULE_LABELS = {
+    "phoenix": "フェニックス",
+    "hydra": "ヒュドラ",
+    "sphinx": "スフィンクス",
+}
 MANUAL_V1_ALLY_SPECS = (
     ("ally_cerberus", "ケルベロス", "cerberus", True, 1, 3, "leader", "leader", "capture", "guard_dog", "up"),
     ("ally_phoenix", "フェニックス", "phoenix", False, 1, 2, "chick", "chick", "capture", "retreat_shot", "up"),
@@ -1033,13 +1039,53 @@ def _manual_v1_unit(spec, side, ally_unit=None):
     }
 
 
-def build_manual_initial_board_v1(seed=None, ally_units=None):
+def _manual_v1_empty_capsules():
+    return {
+        "ally": {piece_type: 0 for piece_type in MANUAL_V1_CAPSULE_TYPES},
+        "enemy": {piece_type: 0 for piece_type in MANUAL_V1_CAPSULE_TYPES},
+    }
+
+
+def _manual_v1_ensure_capsules(state):
+    capsules = state.get("capsules")
+    if not isinstance(capsules, dict):
+        capsules = _manual_v1_empty_capsules()
+    for side in ("ally", "enemy"):
+        side_capsules = capsules.get(side)
+        if not isinstance(side_capsules, dict):
+            side_capsules = {}
+        capsules[side] = {
+            piece_type: max(0, int(side_capsules.get(piece_type) or 0))
+            for piece_type in MANUAL_V1_CAPSULE_TYPES
+        }
+    state["capsules"] = capsules
+    return capsules
+
+
+def _manual_v1_capsule_piece_for_unit(unit):
+    if not unit or unit.get("is_leader"):
+        return None
+    species_key = str(unit.get("species_key") or "")
+    piece_type = str(unit.get("piece_type") or "")
+    if species_key == "phoenix" or piece_type == "promoted_phoenix":
+        return "phoenix"
+    if species_key in {"hydra", "sphinx"}:
+        return species_key
+    return None
+
+
+def _manual_v1_capsule_label(piece_type):
+    return MANUAL_V1_CAPSULE_LABELS.get(str(piece_type or ""), str(piece_type or ""))
+
+
+def build_manual_initial_board_v1(seed=None, ally_units=None, first_side=None):
     ally_by_species = {str(unit.get("species_key") or ""): unit for unit in ally_units or []}
     allies = [
         _manual_v1_unit(spec, "ally", ally_by_species.get(spec[2]))
         for spec in MANUAL_V1_ALLY_SPECS
     ]
     enemies = [_manual_v1_unit(spec, "enemy") for spec in MANUAL_V1_ENEMY_SPECS]
+    first_side = "enemy" if str(first_side or "") == "enemy" else "ally"
     state = {
         "mode": "mini_shogi_3x4",
         "display_name": "ミニロボどうぶつしょうぎ",
@@ -1049,7 +1095,11 @@ def build_manual_initial_board_v1(seed=None, ally_units=None):
         "terrain": build_manual_board_v1_map()["tiles"],
         "seed": int(seed or 0),
         "turn_number": 1,
-        "current_turn_side": "ally",
+        "first_side": first_side,
+        "first_decided": True,
+        "opening_sequence_pending": True,
+        "current_turn_side": first_side,
+        "capsules": _manual_v1_empty_capsules(),
         "units": allies + enemies,
         "result": None,
         "previous_board_state": None,
@@ -1150,6 +1200,7 @@ def is_leader_guarded(leader, board_state):
 
 
 def refresh_manual_board_v1_state(state):
+    _manual_v1_ensure_capsules(state)
     for unit in state.get("units") or []:
         if unit.get("is_leader"):
             unit["guarded"] = is_leader_guarded(unit, state)
@@ -1346,6 +1397,22 @@ def _manual_v1_apply_post_move_rewards(state, unit, logs):
     _manual_v1_mark_goal_if_needed(state, unit, logs)
 
 
+def _manual_v1_add_capsule_for_capture(state, side, target, logs):
+    piece_type = _manual_v1_capsule_piece_for_unit(target)
+    if not piece_type:
+        return
+    capsules = _manual_v1_ensure_capsules(state)
+    capsules[side][piece_type] = int(capsules[side].get(piece_type) or 0) + 1
+    _manual_v1_log(
+        logs,
+        f"{_manual_v1_capsule_label(piece_type)}を再起動カプセルに回収",
+        "capsule_add",
+        phase=side,
+        actor_unit_id="",
+        piece_type=piece_type,
+    )
+
+
 def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
     if not can_attack_manual(attacker, target, state, moved=moved):
         return False, "攻撃できない対象です。"
@@ -1364,8 +1431,11 @@ def _manual_v1_apply_attack(state, attacker, target, logs, moved=False):
         target_unit_id=target.get("unit_id"),
         weapon_type=attacker.get("weapon_type"),
         weapon_label=attacker.get("weapon_label"),
+        captured_piece_type=_manual_v1_capsule_piece_for_unit(target),
         **{"from": {"x": from_x, "y": from_y}, "to": {"x": attacker["x"], "y": attacker["y"]}},
     )
+    if not target.get("is_leader"):
+        _manual_v1_add_capsule_for_capture(state, attacker.get("side"), target, logs)
     _manual_v1_apply_post_move_rewards(state, attacker, logs)
     return True, None
 
@@ -1394,6 +1464,76 @@ def _manual_v1_apply_move(state, unit, move_to, logs):
     return True, None
 
 
+def get_capsule_deploy_cells(board_state, side, piece_type=None):
+    side = "enemy" if str(side or "") == "enemy" else "ally"
+    y_values = (0, 1) if side == "enemy" else (BOARD_V1_HEIGHT - 2, BOARD_V1_HEIGHT - 1)
+    cells = []
+    for y in y_values:
+        for x in range(BOARD_V1_WIDTH):
+            if not _manual_v1_occupied(board_state, x, y):
+                cells.append({"x": x, "y": y})
+    return cells
+
+
+def _manual_v1_capsule_spec(side, piece_type, unit_id, x, y):
+    enemy = side == "enemy"
+    name_prefix = "敵" if enemy else ""
+    facing = "down" if enemy else "up"
+    specs = {
+        "phoenix": (unit_id, f"{name_prefix}フェニックス", "phoenix", False, x, y, "chick", "chick", "capture", "retreat_shot", facing),
+        "hydra": (unit_id, f"{name_prefix}ヒュドラ", "hydra", False, x, y, "bishop_like", "bishop_like", "capture", "fortress", facing),
+        "sphinx": (unit_id, f"{name_prefix}スフィンクス", "sphinx", False, x, y, "rook_like", "rook_like", "capture", "sphinx", facing),
+    }
+    return specs.get(piece_type)
+
+
+def _manual_v1_next_capsule_unit_id(state, side, piece_type):
+    prefix = f"{side}_capsule_{piece_type}_"
+    used = {str(unit.get("unit_id") or "") for unit in state.get("units") or []}
+    index = 1
+    while f"{prefix}{index}" in used:
+        index += 1
+    return f"{prefix}{index}"
+
+
+def _manual_v1_apply_deploy_capsule(state, side, piece_type, move_to, logs):
+    side = "enemy" if str(side or "") == "enemy" else "ally"
+    piece_type = str(piece_type or "")
+    if piece_type not in MANUAL_V1_CAPSULE_TYPES:
+        return False, "再起動できないカプセルです。"
+    capsules = _manual_v1_ensure_capsules(state)
+    if int(capsules[side].get(piece_type) or 0) <= 0:
+        return False, "そのカプセルを持っていません。"
+    if not move_to:
+        return False, "再投入先が不正です。"
+    try:
+        x = int(move_to.get("x"))
+        y = int(move_to.get("y"))
+    except (TypeError, ValueError):
+        return False, "再投入先が不正です。"
+    legal = {(cell["x"], cell["y"]) for cell in get_capsule_deploy_cells(state, side, piece_type)}
+    if (x, y) not in legal:
+        return False, "そのマスには再投入できません。"
+    unit_id = _manual_v1_next_capsule_unit_id(state, side, piece_type)
+    spec = _manual_v1_capsule_spec(side, piece_type, unit_id, x, y)
+    if not spec:
+        return False, "再起動できないカプセルです。"
+    unit = _manual_v1_unit(spec, side)
+    state.setdefault("units", []).append(unit)
+    capsules[side][piece_type] = int(capsules[side].get(piece_type) or 0) - 1
+    _manual_v1_log(
+        logs,
+        f"{_manual_v1_capsule_label(piece_type)}を再起動",
+        "deploy_capsule",
+        phase=side,
+        actor_unit_id=unit_id,
+        piece_type=piece_type,
+        unit_id=unit_id,
+        **{"to": {"x": x, "y": y}},
+    )
+    return True, None
+
+
 def enumerate_manual_legal_actions(board_state, side):
     actions = []
     for unit in sorted(_manual_v1_units(board_state, side), key=lambda u: str(u.get("unit_id") or "")):
@@ -1407,10 +1547,35 @@ def enumerate_manual_legal_actions(board_state, side):
                     "is_capture": bool(target and target.get("side") != side),
                 }
             )
+    capsules = _manual_v1_ensure_capsules(board_state)
+    for piece_type in MANUAL_V1_CAPSULE_TYPES:
+        if int(capsules[side].get(piece_type) or 0) <= 0:
+            continue
+        for cell in get_capsule_deploy_cells(board_state, side, piece_type):
+            actions.append(
+                {
+                    "action_type": "deploy_capsule",
+                    "side": side,
+                    "piece_type": piece_type,
+                    "move_to": {"x": int(cell["x"]), "y": int(cell["y"])},
+                    "is_deploy": True,
+                    "is_capture": False,
+                }
+            )
     return actions
 
 
 def _manual_v1_apply_action_to_state(state, action):
+    if str(action.get("action_type") or "") == "deploy_capsule":
+        logs = []
+        ok, _ = _manual_v1_apply_deploy_capsule(
+            state,
+            action.get("side") or "enemy",
+            action.get("piece_type"),
+            action.get("move_to"),
+            logs,
+        )
+        return bool(ok)
     actor = _manual_v1_unit_by_id(state, action.get("actor_unit_id"))
     if not actor:
         return False
@@ -1437,10 +1602,15 @@ def score_manual_cpu_action(board_state, action, rng=None):
     opponent = "ally"
     actor = _manual_v1_unit_by_id(board_state, action.get("actor_unit_id"))
     target = _manual_v1_unit_by_id(board_state, action.get("target_unit_id"))
-    if not actor:
+    is_deploy = str(action.get("action_type") or "") == "deploy_capsule"
+    if not actor and not is_deploy:
         return -10000
     style = _manual_v1_cpu_style(board_state)
     score = 0
+    if is_deploy:
+        score += 25
+        if style == "defensive":
+            score += 10
     if target:
         if target.get("is_leader"):
             score += 10000
@@ -1459,10 +1629,12 @@ def score_manual_cpu_action(board_state, action, rng=None):
     if not _manual_v1_apply_action_to_state(next_state, action):
         return -10000
     acted = _manual_v1_unit_by_id(next_state, action.get("actor_unit_id"))
+    if is_deploy:
+        acted = _manual_v1_unit_at(next_state, action.get("move_to", {}).get("x"), action.get("move_to", {}).get("y"))
     if acted:
         if acted.get("is_leader") and int(acted.get("y") or 0) == BOARD_V1_HEIGHT - 1:
             score += 9000
-        if acted.get("promoted") and str(actor.get("move_type") or "") == "chick":
+        if acted.get("promoted") and actor and str(actor.get("move_type") or "") == "chick":
             score += 300
     opponent_leader = _manual_v1_leader(board_state, opponent)
     if opponent_leader and int(opponent_leader.get("y") or 0) == BOARD_V1_HEIGHT - 2:
@@ -1493,6 +1665,13 @@ def score_manual_cpu_action(board_state, action, rng=None):
     if ally_leader and acted:
         distance = abs(int(acted.get("x") or 0) - int(ally_leader.get("x") or 0)) + abs(int(acted.get("y") or 0) - int(ally_leader.get("y") or 0))
         score += max(0, 6 - distance) * 20
+        if is_deploy and distance <= 2:
+            score += 80
+    own_leader = _manual_v1_leader(next_state, side)
+    if is_deploy and own_leader and acted:
+        guard_distance = abs(int(acted.get("x") or 0) - int(own_leader.get("x") or 0)) + abs(int(acted.get("y") or 0) - int(own_leader.get("y") or 0))
+        if guard_distance == 1:
+            score += 120
     return score
 
 
@@ -1515,6 +1694,13 @@ def run_enemy_manual_turn(board_state, rng=None):
         if enemy:
             _manual_v1_log(logs, f"{enemy['name']}が待機", "wait", actor_unit_id=enemy.get("unit_id"))
         return logs
+    if str(action.get("action_type") or "") == "deploy_capsule":
+        ok, error = _manual_v1_apply_deploy_capsule(board_state, "enemy", action.get("piece_type"), action.get("move_to"), logs)
+        if error:
+            enemy = next(iter(_manual_v1_units(board_state, "enemy")), None)
+            if enemy:
+                _manual_v1_log(logs, f"{enemy['name']}が待機", "wait", actor_unit_id=enemy.get("unit_id"))
+        return logs
     enemy = _manual_v1_unit_by_id(board_state, action.get("actor_unit_id"))
     if not enemy:
         return logs
@@ -1527,6 +1713,7 @@ def run_enemy_manual_turn(board_state, rng=None):
 def apply_manual_action(board_state, action_payload):
     state = dict(board_state)
     state["units"] = [dict(unit) for unit in board_state.get("units") or []]
+    state["capsules"] = json.loads(json.dumps(board_state.get("capsules") or _manual_v1_empty_capsules(), ensure_ascii=False))
     state.pop("previous_board_state", None)
     state.pop("current_board_state", None)
     state.pop("last_action_sequence", None)
@@ -1538,30 +1725,38 @@ def apply_manual_action(board_state, action_payload):
         return state, logs, "すでに決着しています。"
     if str(state.get("current_turn_side") or "ally") != "ally":
         return state, logs, "現在は味方ターンではありません。"
-    actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
-    if not actor or actor.get("side") != "ally" or actor.get("defeated"):
-        return state, logs, "行動できないユニットです。"
+    action_type = str(action_payload.get("action_type") or "")
     move_to = action_payload.get("move_to")
     target_id = action_payload.get("target_unit_id")
-    moved = False
-    if move_to:
+    if action_type == "deploy_capsule":
         start_index = len(logs)
-        ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+        ok, error = _manual_v1_apply_deploy_capsule(state, "ally", action_payload.get("piece_type"), move_to, logs)
         if not ok:
             return state, logs, error
         sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
-        moved = True
-    if target_id:
-        target = _manual_v1_unit_by_id(state, target_id)
-        if not target:
-            return state, logs, "攻撃対象が見つかりません。"
-        start_index = len(logs)
-        ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
-        if not ok:
-            return state, logs, error
-        sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
-    if not move_to and not target_id:
-        return state, logs, "行動内容がありません。"
+    else:
+        actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
+        if not actor or actor.get("side") != "ally" or actor.get("defeated"):
+            return state, logs, "行動できないユニットです。"
+        if not move_to and not target_id:
+            return state, logs, "行動内容がありません。"
+        moved = False
+        if move_to:
+            start_index = len(logs)
+            ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+            if not ok:
+                return state, logs, error
+            sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
+            moved = True
+        if target_id:
+            target = _manual_v1_unit_by_id(state, target_id)
+            if not target:
+                return state, logs, "攻撃対象が見つかりません。"
+            start_index = len(logs)
+            ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
+            if not ok:
+                return state, logs, error
+            sequence.extend(_manual_v1_tag_phase(logs[start_index:], "ally"))
     result = check_manual_result(state)
     if not result:
         state["current_turn_side"] = "enemy"
@@ -1589,6 +1784,7 @@ def apply_manual_player_action(board_state, action_payload, side):
     side = "enemy" if str(side or "") == "enemy" else "ally"
     state = dict(board_state)
     state["units"] = [dict(unit) for unit in board_state.get("units") or []]
+    state["capsules"] = json.loads(json.dumps(board_state.get("capsules") or _manual_v1_empty_capsules(), ensure_ascii=False))
     state.pop("previous_board_state", None)
     state.pop("current_board_state", None)
     state.pop("last_action_sequence", None)
@@ -1600,30 +1796,38 @@ def apply_manual_player_action(board_state, action_payload, side):
         return state, logs, "すでに決着しています。"
     if str(state.get("current_turn_side") or "ally") != side:
         return state, logs, "現在はあなたの番ではありません。"
-    actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
-    if not actor or actor.get("side") != side or actor.get("defeated"):
-        return state, logs, "行動できないミニロボです。"
+    action_type = str(action_payload.get("action_type") or "")
     move_to = action_payload.get("move_to")
     target_id = action_payload.get("target_unit_id")
-    moved = False
-    if move_to:
+    if action_type == "deploy_capsule":
         start_index = len(logs)
-        ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+        ok, error = _manual_v1_apply_deploy_capsule(state, side, action_payload.get("piece_type"), move_to, logs)
         if not ok:
             return state, logs, error
         sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
-        moved = True
-    if target_id:
-        target = _manual_v1_unit_by_id(state, target_id)
-        if not target:
-            return state, logs, "攻撃対象が見つかりません。"
-        start_index = len(logs)
-        ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
-        if not ok:
-            return state, logs, error
-        sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
-    if not move_to and not target_id:
-        return state, logs, "行動内容がありません。"
+    else:
+        actor = _manual_v1_unit_by_id(state, action_payload.get("actor_unit_id"))
+        if not actor or actor.get("side") != side or actor.get("defeated"):
+            return state, logs, "行動できないミニロボです。"
+        if not move_to and not target_id:
+            return state, logs, "行動内容がありません。"
+        moved = False
+        if move_to:
+            start_index = len(logs)
+            ok, error = _manual_v1_apply_move(state, actor, move_to, logs)
+            if not ok:
+                return state, logs, error
+            sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
+            moved = True
+        if target_id:
+            target = _manual_v1_unit_by_id(state, target_id)
+            if not target:
+                return state, logs, "攻撃対象が見つかりません。"
+            start_index = len(logs)
+            ok, error = _manual_v1_apply_attack(state, actor, target, logs, moved=moved)
+            if not ok:
+                return state, logs, error
+            sequence.extend(_manual_v1_tag_phase(logs[start_index:], side))
     result = check_manual_result(state)
     state["result"] = result
     if result:
@@ -1682,15 +1886,31 @@ def manual_board_v1_action_options(board_state, unit_id):
     return options
 
 
+def manual_board_v1_capsule_options(board_state, side):
+    side = "enemy" if str(side or "") == "enemy" else "ally"
+    capsules = _manual_v1_ensure_capsules(board_state)
+    return {
+        piece_type: {
+            "count": int(capsules[side].get(piece_type) or 0),
+            "label": _manual_v1_capsule_label(piece_type),
+            "deploy_cells": get_capsule_deploy_cells(board_state, side, piece_type)
+            if int(capsules[side].get(piece_type) or 0) > 0
+            else [],
+        }
+        for piece_type in MANUAL_V1_CAPSULE_TYPES
+    }
+
+
 mini_shogi_4x4_action_options = manual_board_v1_action_options
+mini_shogi_4x4_capsule_options = manual_board_v1_capsule_options
 mini_shogi_4x4_zoc_cells = manual_board_v1_zoc_cells
 mini_shogi_4x4_threat_cells = get_enemy_threat_cells
 
 
-def create_manual_board_battle(db, admin_user_id, ally_units=None, seed=None):
+def create_manual_board_battle(db, admin_user_id, ally_units=None, seed=None, first_side=None):
     battle_seed = int(seed if seed is not None else random.randint(100000, 999999999))
     map_payload = build_manual_board_v1_map()
-    board_state = build_manual_initial_board_v1(battle_seed, ally_units)
+    board_state = build_manual_initial_board_v1(battle_seed, ally_units, first_side=first_side)
     units_payload = board_state.get("units") or []
     now = int(time.time())
     cur = db.execute(
@@ -1701,13 +1921,14 @@ def create_manual_board_battle(db, admin_user_id, ally_units=None, seed=None):
             board_state_json, action_log_json, current_turn_side, turn_number, result,
             created_at, created_by_user_id
         )
-        VALUES (?, 'manual_active', 'mini_shogi_3x4', ?, ?, '[]', ?, '[]', 'ally', 1, NULL, ?, ?)
+        VALUES (?, 'manual_active', 'mini_shogi_3x4', ?, ?, '[]', ?, '[]', ?, 1, NULL, ?, ?)
         """,
         (
             int(battle_seed),
             json.dumps(map_payload, ensure_ascii=False, separators=(",", ":")),
             json.dumps(units_payload, ensure_ascii=False, separators=(",", ":")),
             serialize_manual_board_state(board_state),
+            str(board_state.get("current_turn_side") or "ally"),
             int(now),
             int(admin_user_id),
         ),

@@ -19,6 +19,7 @@
   var currentBoardState = readJsonData("currentBoardState", null);
   var actionSequence = readJsonData("actionSequence", []);
   var optionsByUnit = readJsonData("optionsByUnit", {});
+  var capsuleOptions = readJsonData("capsuleOptions", {});
   var zocCells = readJsonData("zocCells", []);
   var threatCells = readJsonData("threatCells", []);
   var unitAssets = readJsonData("unitAssets", {});
@@ -28,6 +29,8 @@
   var stateUrl = readJsonData("stateUrl", "");
   var turnMessage = readJsonData("turnMessage", "");
   var lastKnownUpdatedAt = readJsonData("updatedAt", 0);
+  var battleId = readJsonData("battleId", "");
+  var openingSequencePending = readJsonData("openingSequencePending", false);
   var board = document.getElementById("miniTacticsManualBoard");
   var bannerEl = document.getElementById("miniTacticsPhaseBanner");
   var captionEl = document.getElementById("miniTacticsActionCaption");
@@ -42,10 +45,14 @@
   var moveXInput = document.getElementById("manualMoveX");
   var moveYInput = document.getElementById("manualMoveY");
   var targetInput = document.getElementById("manualTargetUnitId");
+  var pieceTypeInput = document.getElementById("manualPieceType");
   var submit = document.getElementById("manualSubmit");
+  var openingEl = document.getElementById("miniShogiOpening");
+  var openingSkip = document.getElementById("miniShogiOpeningSkip");
   if (!board) return;
 
   var selectedUnitId = "";
+  var selectedCapsulePiece = "";
   var selectedMove = null;
   var replaying = false;
   var actionPending = false;
@@ -61,10 +68,13 @@
 
   function clearMarks() {
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
-      cell.classList.remove("is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move");
+      cell.classList.remove("is-move-option", "is-attack-option", "is-target-option", "is-selected-move", "is-danger-move", "is-deploy-option");
     });
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unit) {
       unit.classList.remove("is-selected");
+    });
+    document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
+      button.classList.remove("is-selected");
     });
   }
 
@@ -97,10 +107,12 @@
   }
 
   async function postImmediateAction(actionType, payload) {
-    if (!isMiniShogi || replaying || actionPending || boardState.result || !selectedUnitId) return;
-    actorInput.value = selectedUnitId;
+    if (!isMiniShogi || replaying || actionPending || boardState.result) return;
+    if (actionType !== "deploy_capsule" && !selectedUnitId) return;
+    actorInput.value = actionType === "deploy_capsule" ? "" : selectedUnitId;
     actionTypeInput.value = actionType;
     targetInput.value = payload.target_unit_id || "";
+    if (pieceTypeInput) pieceTypeInput.value = payload.piece_type || "";
     toXInput.value = payload.to_x != null ? String(payload.to_x) : "";
     toYInput.value = payload.to_y != null ? String(payload.to_y) : "";
     moveXInput.value = payload.to_x != null ? String(payload.to_x) : "";
@@ -121,8 +133,9 @@
           "X-Requested-With": "fetch"
         },
         body: JSON.stringify({
-          actor_unit_id: selectedUnitId,
+          actor_unit_id: actionType === "deploy_capsule" ? "" : selectedUnitId,
           action_type: actionType,
+          piece_type: payload.piece_type || "",
           to_x: payload.to_x,
           to_y: payload.to_y,
           target_unit_id: payload.target_unit_id || ""
@@ -136,12 +149,14 @@
       currentBoardState = data.board_state ? data.board_state.current_board_state : null;
       actionSequence = data.action_sequence || [];
       optionsByUnit = data.options_by_unit || {};
+      capsuleOptions = data.capsule_options || {};
       zocCells = data.zoc_cells || [];
       threatCells = data.threat_cells || [];
       if (data.turn_message) turnMessage = data.turn_message;
       if (typeof data.can_act !== "undefined") canAct = !!data.can_act;
       if (typeof data.updated_at !== "undefined") lastKnownUpdatedAt = data.updated_at || lastKnownUpdatedAt;
       selectedUnitId = "";
+      selectedCapsulePiece = "";
       selectedMove = null;
       clearMarks();
       if (actionSequence.length && previousBoardState && currentBoardState) {
@@ -217,6 +232,25 @@
     });
     markZoc();
     markThreats();
+    renderCapsules(state);
+  }
+
+  function renderCapsules(state) {
+    var capsules = (state && state.capsules) || {};
+    var own = capsules[playableSide] || {};
+    var otherSide = playableSide === "enemy" ? "ally" : "enemy";
+    var other = capsules[otherSide] || {};
+    document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
+      var piece = button.dataset.capsulePiece;
+      var count = Number((own && own[piece]) || 0);
+      var countEl = button.querySelector("[data-capsule-count]");
+      if (countEl) countEl.textContent = String(count);
+      button.disabled = !canAct || !!(state && state.result) || count <= 0 || replaying || actionPending;
+    });
+    document.querySelectorAll("[data-opponent-capsule-count]").forEach(function (el) {
+      var piece = el.dataset.opponentCapsuleCount;
+      el.textContent = String(Number((other && other[piece]) || 0));
+    });
   }
 
   function setCaption(text, phase) {
@@ -308,6 +342,19 @@
       } else if (action.type === "reach_goal") {
         flashUnit(action.actor_unit_id, "is-attacking");
         if (action.result) displayState.result = action.result;
+      } else if (action.type === "capsule_add") {
+        var capsuleSide = action.phase === "enemy" ? "enemy" : "ally";
+        displayState.capsules = displayState.capsules || {ally: {}, enemy: {}};
+        displayState.capsules[capsuleSide] = displayState.capsules[capsuleSide] || {};
+        displayState.capsules[capsuleSide][action.piece_type] = Number(displayState.capsules[capsuleSide][action.piece_type] || 0) + 1;
+        renderCapsules(displayState);
+      } else if (action.type === "deploy_capsule") {
+        var deploySide = action.phase === "enemy" ? "enemy" : "ally";
+        displayState.capsules = displayState.capsules || {ally: {}, enemy: {}};
+        displayState.capsules[deploySide] = displayState.capsules[deploySide] || {};
+        displayState.capsules[deploySide][action.piece_type] = Math.max(0, Number(displayState.capsules[deploySide][action.piece_type] || 0) - 1);
+        flashCell(action.to, "is-impact-capture");
+        renderCapsules(displayState);
       } else if (action.type === "wait") {
         flashUnit(action.actor_unit_id, "is-waiting");
       }
@@ -363,6 +410,7 @@
   function markForUnit(unitId) {
     clearMarks();
     selectedUnitId = unitId;
+    selectedCapsulePiece = "";
     selectedMove = null;
     actorInput.value = unitId;
     actionTypeInput.value = "";
@@ -401,6 +449,25 @@
       if (targetCell) targetCell.classList.add("is-target-option");
     });
     markThreats();
+  }
+
+  function markForCapsule(pieceType) {
+    clearMarks();
+    selectedUnitId = "";
+    selectedCapsulePiece = pieceType;
+    actorInput.value = "";
+    actionTypeInput.value = "deploy_capsule";
+    if (pieceTypeInput) pieceTypeInput.value = pieceType;
+    var option = capsuleOptions[pieceType] || {};
+    if (selectedEl) selectedEl.textContent = "再起動：" + (option.label || pieceType);
+    if (hintEl) hintEl.textContent = "青いマスを選ぶと再起動します。";
+    document.querySelectorAll('[data-capsule-piece="' + pieceType + '"]').forEach(function (button) {
+      button.classList.add("is-selected");
+    });
+    (option.deploy_cells || []).forEach(function (point) {
+      var cell = board.querySelector('[data-x="' + point.x + '"][data-y="' + point.y + '"]');
+      if (cell) cell.classList.add("is-deploy-option");
+    });
   }
 
   function markAfterMove(x, y) {
@@ -449,9 +516,17 @@
       markForUnit(unitEl.dataset.unitId);
       return;
     }
-    if (!selectedUnitId) return;
     var cell = event.target.closest(".mini-tactics-cell");
     if (!cell) return;
+    if (selectedCapsulePiece) {
+      if (!cell.classList.contains("is-deploy-option")) {
+        if (hintEl) hintEl.textContent = "そこには再起動できません。";
+        return;
+      }
+      postImmediateAction("deploy_capsule", {piece_type: selectedCapsulePiece, to_x: cell.dataset.x, to_y: cell.dataset.y});
+      return;
+    }
+    if (!selectedUnitId) return;
     if (cell.classList.contains("is-move-option")) {
       markAfterMove(cell.dataset.x, cell.dataset.y);
       return;
@@ -476,6 +551,12 @@
   markThreats();
   if (replayButton) replayButton.addEventListener("click", playSequence);
   if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
+  document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (button.disabled || replaying || actionPending || boardState.result || !canAct) return;
+      markForCapsule(button.dataset.capsulePiece);
+    });
+  });
 
   async function pollStateOnce() {
     if (!isOnlineBattle || !stateUrl || canAct || boardState.result || replaying || actionPending) return;
@@ -486,6 +567,7 @@
       if (data.updated_at && data.updated_at !== lastKnownUpdatedAt) {
         boardState = data.board_state || boardState;
         optionsByUnit = data.options_by_unit || {};
+        capsuleOptions = data.capsule_options || {};
         zocCells = data.zoc_cells || [];
         threatCells = data.threat_cells || [];
         canAct = !!data.can_act;
@@ -511,6 +593,21 @@
 
   if (isMiniAnimalShogi) {
     setCaption(boardState.result ? "決着" : (turnMessage || "味方ターン：動かすミニロボを選択"), boardState.result ? "result" : (canAct ? "ally" : "enemy"));
+    renderCapsules(boardState);
+    var openingKey = "mini-shogi-opening:" + String(battleId || "");
+    function closeOpening() {
+      if (openingEl) openingEl.hidden = true;
+      try { window.sessionStorage.setItem(openingKey, "1"); } catch (error) {}
+    }
+    var shouldShowOpening = !!openingEl && !!openingSequencePending;
+    try {
+      shouldShowOpening = shouldShowOpening && window.sessionStorage.getItem(openingKey) !== "1";
+    } catch (error) {}
+    if (shouldShowOpening) {
+      openingEl.hidden = false;
+      window.setTimeout(closeOpening, 1300);
+      if (openingSkip) openingSkip.addEventListener("click", closeOpening);
+    }
     maybeStartPolling();
   } else {
     playSequence();
