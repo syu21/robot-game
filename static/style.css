@@ -7773,6 +7773,7 @@ body.home-page .locked-layer-card {
   gap: 10px;
   align-content: start;
   max-width: 100%;
+  padding-bottom: 96px;
   overflow-x: hidden;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-watch-head {
@@ -7795,45 +7796,57 @@ body.home-page .locked-layer-card {
   padding: 7px 10px;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-manual-layout {
-  grid-template-columns: minmax(0, 760px) minmax(0, 320px);
+  grid-template-columns: minmax(0, 620px) minmax(0, 320px);
   justify-content: center;
   align-items: start;
   gap: 12px;
   max-width: 100%;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board-wrap {
-  width: min(96vw, 760px);
+  width: min(96vw, 620px);
   max-width: 100%;
   margin: 0 auto;
-  padding: 9px;
+  padding: 8px 8px 18px;
   justify-content: center;
   overflow: visible;
 }
-.mini-shogi-play-area {
+.mini-shogi-board-stage {
+  position: relative;
   display: grid;
-  grid-template-columns: 72px minmax(360px, 560px) 72px;
-  gap: 14px;
-  align-items: center;
-  justify-content: center;
+  place-items: center;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
 }
 .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
-  width: min(52vw, 560px);
-  max-width: 560px;
+  --mini-shogi-board-size: min(46vw, 440px, calc((100dvh - 260px) * 0.75));
+  width: var(--mini-shogi-board-size);
+  max-width: 440px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: repeat(4, minmax(0, 1fr));
   aspect-ratio: 3 / 4;
   gap: 8px;
 }
-.capsule-rail {
+.capsule-corner {
+  position: absolute;
+  z-index: 3;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   justify-items: center;
   align-content: center;
-  width: 72px;
+  width: 58px;
   min-width: 0;
 }
-.capsule-rail-title {
+.capsule-corner--enemy {
+  left: -66px;
+  top: 8px;
+}
+.capsule-corner--ally {
+  right: -66px;
+  bottom: 8px;
+}
+.capsule-corner-title {
   color: #9cc8d7;
   font-size: 0.68rem;
   font-weight: 900;
@@ -7844,11 +7857,11 @@ body.home-page .locked-layer-card {
   display: grid;
   justify-items: center;
   gap: 2px;
-  width: 64px;
-  min-height: 64px;
-  padding: 4px;
+  width: 54px;
+  min-height: 54px;
+  padding: 3px;
   border: 1px solid rgba(103, 232, 249, 0.22);
-  border-radius: 10px;
+  border-radius: 9px;
   background: rgba(15, 23, 42, 0.7);
   color: #dff7ff !important;
   line-height: 1.05;
@@ -7857,15 +7870,15 @@ button.capsule-piece {
   cursor: pointer;
 }
 .capsule-piece img {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
   filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.16));
 }
 .capsule-piece-name {
-  max-width: 100%;
+  max-width: 48px;
   color: #dff7ff;
-  font-size: 0.61rem;
+  font-size: 0.65rem;
   font-weight: 900;
   overflow: hidden;
   text-align: center;
@@ -7877,12 +7890,13 @@ button.capsule-piece {
   right: -5px;
   top: -5px;
   min-width: 20px;
+  min-height: 20px;
   padding: 2px 5px;
   border: 1px solid rgba(34, 211, 238, 0.44);
   border-radius: 999px;
   background: rgba(8, 145, 178, 0.92);
   color: #ecfeff;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 900;
 }
 .capsule-piece.is-available {
@@ -8321,46 +8335,53 @@ button.secondary {
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding: 8px;
+    padding: 8px 8px 18px;
     overflow: hidden;
   }
-  .mini-shogi-play-area {
+  .mini-shogi-board-stage {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    width: 100%;
+    max-width: 100%;
   }
-  .capsule-rail {
-    width: min(92vw, 360px);
+  .capsule-corner {
+    position: static;
+    width: min(92vw, 340px);
     flex-direction: row;
-    justify-content: center;
     gap: 6px;
   }
-  .capsule-rail--enemy {
+  .capsule-corner--enemy {
     order: 1;
+    justify-content: flex-start;
+    margin-bottom: 2px;
   }
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
     order: 2;
   }
-  .capsule-rail--ally {
+  .capsule-corner--ally {
     order: 3;
+    justify-content: flex-end;
+    margin-top: 2px;
   }
-  .capsule-rail-title {
+  .capsule-corner-title {
     align-self: center;
     min-width: 2.6em;
   }
   .capsule-piece {
-    width: 54px;
-    min-height: 58px;
-    padding: 4px 3px;
+    width: 50px;
+    min-height: 54px;
+    padding: 3px;
   }
   .capsule-piece img {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
   }
   .mini-tactics-manual.is-mini-shogi-public .mini-tactics-board {
-    width: min(92vw, 360px);
-    max-width: 360px;
+    --mini-shogi-board-size: min(92vw, 340px, calc((100dvh - 230px) * 0.75));
+    width: var(--mini-shogi-board-size);
+    max-width: 340px;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-rows: repeat(4, minmax(0, 1fr));
     aspect-ratio: 3 / 4;

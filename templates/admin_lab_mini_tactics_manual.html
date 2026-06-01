@@ -82,9 +82,9 @@
         ('hydra', 'ヒュドラ', 'mini_robots/hydra/normal.png'),
         ('sphinx', 'スフィンクス', 'mini_robots/sphinx/normal.png')
       ] %}
-      <div class="mini-shogi-play-area">
-        <div class="capsule-rail capsule-rail--enemy" aria-label="相手の再起動カプセル">
-          <div class="capsule-rail-title">相手</div>
+      <div class="mini-shogi-board-stage">
+        <div class="capsule-corner capsule-corner--enemy" aria-label="相手の再起動カプセル">
+          <div class="capsule-corner-title">相手</div>
           {% for key, label, image_path in capsule_rows %}
           {% set count = other_capsules.get(key, 0) %}
           <div class="capsule-piece capsule-piece--enemy {% if count > 0 %}is-available{% else %}is-empty{% endif %}" data-capsule-view="{{ key }}">
@@ -146,8 +146,8 @@
         {% endfor %}
       </div>
       {% if manual_mode == 'mini_shogi_3x4' %}
-        <div class="capsule-rail capsule-rail--ally" aria-label="自分の再起動カプセル">
-          <div class="capsule-rail-title">自分</div>
+        <div class="capsule-corner capsule-corner--ally" aria-label="自分の再起動カプセル">
+          <div class="capsule-corner-title">自分</div>
           {% for key, label, image_path in capsule_rows %}
           {% set count = own_capsules.get(key, 0) %}
           <button
