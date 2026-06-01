@@ -9,10 +9,10 @@
 
 <section class="mini-tactics-mode-grid">
   <article class="card mini-tactics-mode-card">
-    <h2>ロボらぼミニしょうぎ</h2>
+    <h2>ロボらぼ盤上戦</h2>
     <div class="robot-part">ミニロボを1体ずつ動かして戦う、3×4の小さな盤面バトルです。</div>
     <div class="mini-tactics-controls">
-      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi') }}">公開用ミニしょうぎ確認</a>
+      <a class="fuse-secondary-link" href="{{ url_for('lab_mini_shogi') }}">公開用盤上戦確認</a>
       <a class="fuse-secondary-link" href="{{ url_for('admin_lab_mini_tactics_manual_new') }}">管理者試験を始める</a>
     </div>
   </article>
@@ -42,7 +42,7 @@
   <div class="mini-tactics-history-row">
     <span>
       {% if row['mode'] == 'mini_shogi_3x4' %}
-      ロボらぼミニしょうぎ
+      ロボらぼ盤上戦
       {% elif row['mode'] == 'manual_board' or row['mode'] == 'mini_shogi_4x4' %}
       手動戦術演習
       {% else %}

@@ -50,6 +50,16 @@ class HomeNextActionTests(unittest.TestCase):
                 session["home_new_layer_badge"] = int(new_layer_badge)
         return client
 
+    def test_recent_robot_strip_css_keeps_badges_inside_cards(self):
+        with open(os.path.join(os.getcwd(), "static", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn(".recent-robot-carousel", css)
+        self.assertIn("display: flex", css)
+        self.assertIn("overflow-x: auto", css)
+        self.assertIn("flex: 0 0 132px", css)
+        self.assertIn(".recent-robot-badges", css)
+        self.assertIn("pointer-events: none", css)
+
     def _create_active_robot(self, user_id=None, name="GuideBot"):
         user_id = int(user_id or self.user_id)
         with game_app.app.app_context():

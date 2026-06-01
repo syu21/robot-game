@@ -127,8 +127,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertEqual(admin.status_code, 200)
         html = admin.get_data(as_text=True)
         self.assertIn("ミニロボ戦術試験", html)
-        self.assertIn("ロボらぼミニしょうぎ", html)
-        self.assertIn("公開用ミニしょうぎ確認", html)
+        self.assertIn("ロボらぼ盤上戦", html)
+        self.assertIn("公開用盤上戦確認", html)
         self.assertIn("ミニロボ戦術演習", html)
 
     def test_team_page_is_admin_only(self):
@@ -640,13 +640,13 @@ class AdminMiniTacticsTests(unittest.TestCase):
         page = client.get(resp.headers["Location"])
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
-        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("ロボらぼ盤上戦", html)
         self.assertIn("3×4の小さな盤面バトル", html)
         self.assertIn("クリックすると即行動", html)
         self.assertNotIn("ミニロボどうぶつしょうぎ", html)
         self.assertNotIn("seed ", html)
         self.assertNotIn("mini_shogi_3x4", html)
-        self.assertNotIn("ロボらぼミニしょうぎ #", html)
+        self.assertNotIn("ロボらぼ盤上戦 #", html)
 
     def test_mini_shogi_3x4_piece_movement_rules(self):
         state = build_manual_initial_board_v1(1)
@@ -2046,8 +2046,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
 
     def test_admin_lab_shows_mini_tactics_link(self):
         html = self._client(admin=True).get("/lab").get_data(as_text=True)
-        self.assertIn("ロボらぼミニしょうぎ", html)
-        self.assertEqual(html.count("ロボらぼミニしょうぎ"), 1)
+        self.assertIn("ロボらぼ盤上戦", html)
+        self.assertEqual(html.count("ロボらぼ盤上戦"), 1)
         self.assertIn("/lab/mini-shogi", html)
         self.assertIn("ミニロボ戦術演習", html)
         self.assertIn("/admin/lab/mini-tactics", html)
@@ -2056,7 +2056,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         resp = self._client().get("/lab/mini-shogi")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("ロボらぼミニしょうぎ", html)
+        self.assertIn("ロボらぼ盤上戦", html)
         self.assertIn("CPU対戦", html)
         self.assertIn("オンライン対戦", html)
         self.assertIn("招待URLを作って対戦", html)
@@ -2073,7 +2073,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
             self.assertEqual(int(row["host_user_id"]), self.user_id)
             self.assertEqual(int(row["current_turn_user_id"]), self.user_id)
         page = client.get(resp.headers["Location"])
-        self.assertIn("ロボらぼミニしょうぎ", page.get_data(as_text=True))
+        self.assertIn("ロボらぼ盤上戦", page.get_data(as_text=True))
         self.assertNotIn("seed ", page.get_data(as_text=True))
 
     def test_online_invite_create_and_join(self):
