@@ -768,9 +768,39 @@ class AdminMiniTacticsTests(unittest.TestCase):
         deployed = next(u for u in next_state["units"] if u["unit_id"].startswith("ally_capsule_phoenix_"))
         self.assertEqual((deployed["x"], deployed["y"]), (0, 2))
         self.assertEqual(deployed["move_type"], "chick")
+        self.assertEqual(deployed["species_key"], "phoenix")
+        self.assertEqual(deployed["piece_type"], "phoenix")
+        self.assertEqual(deployed["image_path"], "mini_robots/phoenix/normal.png")
         self.assertFalse(deployed.get("promoted", False))
         self.assertTrue(any(log["type"] == "deploy_capsule" for log in logs))
-        self.assertTrue(any(event["type"] == "deploy_capsule" for event in next_state["last_action_sequence"]))
+        deploy_event = next(event for event in next_state["last_action_sequence"] if event["type"] == "deploy_capsule")
+        self.assertEqual(deploy_event["species_key"], "phoenix")
+        self.assertEqual(deploy_event["image_path"], "mini_robots/phoenix/normal.png")
+        self.assertIn("piece_unit", deploy_event)
+
+    def test_mini_shogi_3x4_deploy_capsule_units_have_image_fields_for_all_types(self):
+        expected = {
+            "phoenix": ("chick", "mini_robots/phoenix/normal.png"),
+            "hydra": ("bishop_like", "mini_robots/hydra/normal.png"),
+            "sphinx": ("rook_like", "mini_robots/sphinx/normal.png"),
+        }
+        for piece_type, (move_type, image_path) in expected.items():
+            state = build_manual_initial_board_v1(1)
+            state["capsules"]["ally"][piece_type] = 1
+            next_state, logs, error = apply_manual_action(
+                state,
+                {"action_type": "deploy_capsule", "piece_type": piece_type, "move_to": {"x": 0, "y": 2}},
+            )
+            self.assertIsNone(error)
+            deployed = next(u for u in next_state["units"] if u["unit_id"].startswith(f"ally_capsule_{piece_type}_"))
+            self.assertEqual(deployed["species_key"], piece_type)
+            self.assertEqual(deployed["piece_type"], piece_type)
+            self.assertEqual(deployed["move_type"], move_type)
+            self.assertEqual(deployed["image_path"], image_path)
+            self.assertFalse(deployed.get("is_leader"))
+            event = next(item for item in next_state["last_action_sequence"] if item["type"] == "deploy_capsule")
+            self.assertEqual(event["piece_unit"]["image_path"], image_path)
+            self.assertTrue(any(log["type"] == "deploy_capsule" for log in logs))
 
     def test_mini_shogi_3x4_deploy_capsule_rejects_invalid_cells(self):
         state = build_manual_initial_board_v1(1)
@@ -877,6 +907,7 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("capsule-corner--enemy", html)
         self.assertIn("data-capsule-piece=\"phoenix\"", html)
         self.assertIn("data-piece-type=\"phoenix\"", html)
+        self.assertIn("mini-shogi-rule-note", html)
         self.assertNotIn("再起動カプセル：取ったミニロボを自陣側に戻せます。", html)
         self.assertNotIn("取ったミニロボは再起動カプセルになります。", html)
         self.assertNotIn("自分の手番で自陣側に再投入できます。", html)
@@ -895,6 +926,8 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn("一番奥まで進むと勝利", html)
         self.assertIn("一番奥まで進むと不死鳥に成長", html)
         self.assertIn("相手のケルベロスを取るか", html)
+        self.assertIn("フェニックスは奥で不死鳥に成長します", html)
+        self.assertIn("取ったミニロボは再起動カプセルとして自陣側に戻せます", html)
         self.assertIn("斜め: 斜めに1マス", html)
         self.assertIn("直線: 上下左右に1マス", html)
         self.assertIn("不死鳥", html)
@@ -918,6 +951,12 @@ class AdminMiniTacticsTests(unittest.TestCase):
         self.assertIn(".capsule-corner--ally", css)
         self.assertIn("100dvh", css)
         self.assertIn("--mini-shogi-board-size", css)
+        with open(os.path.join(os.getcwd(), "static", "mini_tactics_manual.js"), encoding="utf-8") as fh:
+            js = fh.read()
+        self.assertIn("selectedUnitId = \"\";", js)
+        self.assertIn("staticAssetUrl", js)
+        self.assertIn("imageUrlForUnit", js)
+        self.assertIn("event.stopPropagation()", js)
         self.assertIn("敵フェニックス", html)
         self.assertNotIn("ダミーA", html)
         self.assertIn('class="mini-tactics-log"', html)

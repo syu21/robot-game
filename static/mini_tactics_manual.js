@@ -185,6 +185,21 @@
     return String((unit && unit.name) || "?").slice(0, 3);
   }
 
+  function staticAssetUrl(path) {
+    var rel = String(path || "").replace(/^\/+/, "");
+    if (!rel) return "";
+    if (/^https?:\/\//.test(rel) || rel.indexOf("/static/") === 0) return rel;
+    return "/static/" + rel;
+  }
+
+  function imageUrlForUnit(unit) {
+    if (!unit) return "";
+    return unitAssets[String(unit.unit_id || "")]
+      || unit.image_url
+      || staticAssetUrl(unit.image_path)
+      || staticAssetUrl(unit.species_key ? "mini_robots/" + unit.species_key + "/normal.png" : "");
+  }
+
   function renderBoard(state) {
     board.querySelectorAll(".mini-tactics-unit").forEach(function (unitEl) { unitEl.remove(); });
     board.querySelectorAll(".mini-tactics-cell").forEach(function (cell) {
@@ -202,9 +217,10 @@
       unitEl.title = unit.name || "";
       var core = document.createElement("span");
       core.className = "mini-tactics-unit-core";
-      if (unitAssets[String(unit.unit_id || "")]) {
+      var unitImageUrl = imageUrlForUnit(unit);
+      if (unitImageUrl) {
         var img = document.createElement("img");
-        img.src = unitAssets[String(unit.unit_id || "")];
+        img.src = unitImageUrl;
         img.alt = unit.name || "";
         img.loading = "lazy";
         core.appendChild(img);
@@ -364,8 +380,30 @@
         displayState.capsules = displayState.capsules || {ally: {}, enemy: {}};
         displayState.capsules[deploySide] = displayState.capsules[deploySide] || {};
         displayState.capsules[deploySide][action.piece_type] = Math.max(0, Number(displayState.capsules[deploySide][action.piece_type] || 0) - 1);
+        if (action.piece_unit) {
+          displayState.units = displayState.units || [];
+          displayState.units.push(JSON.parse(JSON.stringify(action.piece_unit)));
+        } else if (action.to && action.unit_id) {
+          var deployName = action.name || (deploySide === "enemy" ? "敵" : "") + (action.piece_type === "phoenix" ? "フェニックス" : action.piece_type === "hydra" ? "ヒュドラ" : "スフィンクス");
+          displayState.units = displayState.units || [];
+          displayState.units.push({
+            unit_id: action.unit_id,
+            side: deploySide,
+            is_leader: false,
+            name: deployName,
+            species_key: action.species_key || action.piece_type,
+            x: action.to.x,
+            y: action.to.y,
+            piece_type: action.piece_type,
+            move_type: action.move_type || action.piece_type,
+            defeated: false,
+            promoted: false,
+            unit_type: "robot",
+            image_path: action.image_path || "mini_robots/" + (action.species_key || action.piece_type) + "/normal.png"
+          });
+        }
         flashCell(action.to, "is-impact-capture");
-        renderCapsules(displayState);
+        renderBoard(displayState);
       } else if (action.type === "wait") {
         flashUnit(action.actor_unit_id, "is-waiting");
       }
@@ -426,6 +464,7 @@
     selectedMove = null;
     actorInput.value = unitId;
     actionTypeInput.value = "";
+    if (pieceTypeInput) pieceTypeInput.value = "";
     toXInput.value = "";
     toYInput.value = "";
     moveXInput.value = "";
@@ -479,7 +518,7 @@
       if (hintEl) hintEl.textContent = "このカプセルは今は再起動できません。";
       return;
     }
-    if (selectedEl) selectedEl.textContent = (option.label || pieceType) + "を再起動：出す場所を選択";
+    if (selectedEl) selectedEl.textContent = (option.label || pieceType) + "を再起動：光ったマスに置けます";
     if (hintEl) hintEl.textContent = "光ったマスに置けます。";
     document.querySelectorAll('[data-capsule-piece="' + pieceType + '"]').forEach(function (button) {
       button.classList.add("is-selected");
@@ -572,8 +611,12 @@
   if (replayButton) replayButton.addEventListener("click", playSequence);
   if (skipReplayButton) skipReplayButton.addEventListener("click", skipReplay);
   document.querySelectorAll("[data-capsule-piece]").forEach(function (button) {
-    button.addEventListener("click", function () {
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
       if (button.disabled || replaying || actionPending || boardState.result || !canAct) return;
+      selectedUnitId = "";
+      selectedMove = null;
       markForCapsule(button.dataset.pieceType || button.dataset.capsulePiece);
     });
   });

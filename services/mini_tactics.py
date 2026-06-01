@@ -1523,12 +1523,18 @@ def _manual_v1_apply_deploy_capsule(state, side, piece_type, move_to, logs):
     capsules[side][piece_type] = int(capsules[side].get(piece_type) or 0) - 1
     _manual_v1_log(
         logs,
-        f"{_manual_v1_capsule_label(piece_type)}を再起動",
+        f"{_manual_v1_capsule_label(piece_type)}を再起動しました",
         "deploy_capsule",
         phase=side,
         actor_unit_id=unit_id,
         piece_type=piece_type,
         unit_id=unit_id,
+        species_key=unit.get("species_key"),
+        name=unit.get("name"),
+        display_name=unit.get("name"),
+        image_path=unit.get("image_path"),
+        move_type=unit.get("move_type"),
+        piece_unit=unit,
         **{"to": {"x": x, "y": y}},
     )
     return True, None

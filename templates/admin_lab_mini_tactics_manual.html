@@ -73,6 +73,11 @@
       <div class="mini-tactics-phase-banner" id="miniTacticsPhaseBanner">READY</div>
       <div class="mini-tactics-action-caption" id="miniTacticsActionCaption">盤面を選択してください</div>
       {% if manual_mode == 'mini_shogi_3x4' %}
+      <div class="mini-shogi-rule-note">
+        相手のケルベロスを取るか、自分のケルベロスを奥まで進めると勝利です。フェニックスは奥で不死鳥に成長します。取ったミニロボは再起動カプセルとして自陣側に戻せます。
+      </div>
+      {% endif %}
+      {% if manual_mode == 'mini_shogi_3x4' %}
       {% set capsules = board_state.get('capsules', {}) %}
       {% set own_capsules = capsules.get(playable_side or 'ally', {}) %}
       {% set enemy_side = 'enemy' if (playable_side or 'ally') == 'ally' else 'ally' %}
@@ -194,9 +199,6 @@
         <div class="robot-time">
           {% if manual_mode in ['mini_shogi_4x4', 'mini_shogi_3x4'] %}
           {% if turn_message %}{{ turn_message }}{% else %}ミニロボを選び、青い移動先をクリックすると即行動します。敵がいるマスへ進むと撃破します。{% endif %}
-          {% if manual_mode == 'mini_shogi_3x4' %}
-          <div class="mini-shogi-rule-summary">相手のケルベロスを取るか、自分のケルベロスを奥まで進めると勝利です。フェニックスは奥で不死鳥に成長します。</div>
-          {% endif %}
           {% else %}
           1ターンに1体だけ行動 / 一撃撃破 / 格闘は移動後攻撃可 / 射撃は移動後攻撃不可 / 護衛中リーダーは直接狙えません / 赤いマスは敵の攻撃範囲
           {% endif %}
