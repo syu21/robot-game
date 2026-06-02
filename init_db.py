@@ -1488,6 +1488,23 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS layer4_warning_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            area_key TEXT NOT NULL,
+            progress_count INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, area_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_layer4_warning_progress_user_area ON layer4_warning_progress(user_id, area_key)"
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_decor_inventory (
             user_id INTEGER NOT NULL,
             decor_asset_id INTEGER NOT NULL,

@@ -2366,6 +2366,39 @@ body.lightbox-open .lightbox-overlay {
   gap: 8px;
   margin-top: 10px;
 }
+.home-layer4-warning-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.home-layer4-warning-pill {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(103, 232, 249, 0.20);
+  background: rgba(15, 23, 42, 0.34);
+  color: rgba(226, 247, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.home-layer4-warning-pill strong {
+  color: #a5f3fc;
+}
+.home-layer4-warning-pill.is-strong,
+.home-layer4-warning-pill.is-critical {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(15, 23, 42, 0.36));
+}
+.home-layer4-warning-pill.is-critical strong {
+  color: #fde68a;
+}
+.home-layer4-warning-area,
+.home-layer4-warning-help {
+  color: var(--text-muted);
+}
 .home-layer4-race-row,
 .home-research-highlight-item {
   padding: 8px 10px;
@@ -2405,6 +2438,9 @@ body.lightbox-open .lightbox-overlay {
   .home-layer4-race-meta {
     justify-items: start;
     white-space: normal;
+  }
+  .home-layer4-warning-list {
+    display: grid;
   }
   .home-research-highlight-grid {
     grid-template-columns: 1fr;

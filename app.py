@@ -1517,6 +1517,13 @@ LAYER4_FINAL_AREA_KEY = "layer_4_final"
 LAYER5_SUBAREA_KEYS = ("layer_5_labyrinth", "layer_5_pinnacle")
 LAYER5_FINAL_AREA_KEY = "layer_5_final"
 SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
+LAYER4_WARNING_TARGET_AREAS = set(LAYER4_SUBAREA_KEYS)
+LAYER4_WARNING_MAX_COUNT = 75
+LAYER4_WARNING_BOSS_ADVICE = {
+    "layer_4_forge": "耐久・防御寄りのロボが安定しやすいようです",
+    "layer_4_haze": "命中・安定寄りのロボが戦いやすいようです",
+    "layer_4_burst": "攻撃・会心寄りが刺さりますが、事故にも注意が必要です",
+}
 NPC_BOSS_ALLOWED_AREAS = ("layer_2", "layer_3")
 NPC_BOSS_PICK_RATE = float(os.getenv("NPC_BOSS_PICK_RATE", "0.25"))
 NPC_BOSS_ALERT_ID_OFFSET = 1_000_000
@@ -4103,6 +4110,136 @@ def _layer4_trial_bosses_cleared(db, user_id):
     if uid <= 0:
         return False
     return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER4_SUBAREA_KEYS)
+
+
+def _is_layer4_warning_area(area_key):
+    return str(area_key or "").strip() in LAYER4_WARNING_TARGET_AREAS
+
+
+def _layer4_warning_phase(progress_count):
+    count = max(0, int(progress_count or 0))
+    if count >= 75:
+        return {"phase": "critical", "label": "臨界", "helper_text": "次回、試験ボス反応が最大です"}
+    if count >= 50:
+        return {"phase": "strong", "label": "強", "helper_text": "試験ボス反応が強まっています"}
+    if count >= 40:
+        return {"phase": "high", "label": "高まり", "helper_text": ""}
+    if count >= 30:
+        return {"phase": "rising", "label": "上昇中", "helper_text": ""}
+    return {"phase": "weak", "label": "微弱", "helper_text": ""}
+
+
+def _layer4_warning_spawn_profile(progress_count):
+    count = max(0, int(progress_count or 0))
+    if count >= 75:
+        return {"probability": 1.0, "guaranteed": True, "threshold": 75}
+    if count >= 50:
+        return {"probability": 0.10, "guaranteed": False, "threshold": 50}
+    if count >= 40:
+        return {"probability": 0.02, "guaranteed": False, "threshold": 40}
+    if count >= 30:
+        return {"probability": 0.01, "guaranteed": False, "threshold": 30}
+    return {"probability": 0.005, "guaranteed": False, "threshold": 0}
+
+
+def _get_layer4_warning_progress(db, user_id, area_key):
+    if not _is_layer4_warning_area(area_key):
+        return 0
+    row = db.execute(
+        """
+        SELECT progress_count
+        FROM layer4_warning_progress
+        WHERE user_id = ? AND area_key = ?
+        """,
+        (int(user_id), str(area_key)),
+    ).fetchone()
+    return max(0, int(row["progress_count"] or 0)) if row else 0
+
+
+def _set_layer4_warning_progress(db, user_id, area_key, progress_count, *, now_ts=None):
+    if not _is_layer4_warning_area(area_key):
+        return 0
+    now = int(now_ts or time.time())
+    count = max(0, int(progress_count or 0))
+    db.execute(
+        """
+        INSERT INTO layer4_warning_progress (user_id, area_key, progress_count, updated_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, area_key) DO UPDATE
+        SET progress_count = excluded.progress_count,
+            updated_at = excluded.updated_at
+        """,
+        (int(user_id), str(area_key), count, now, now),
+    )
+    return count
+
+
+def _advance_layer4_warning_progress(db, user_id, area_key, *, request_id=None, ip=None, now_ts=None):
+    if not _is_layer4_warning_area(area_key):
+        return None
+    if _layer4_trial_bosses_cleared(db, user_id):
+        return None
+    before = _get_layer4_warning_progress(db, user_id, area_key)
+    after = min(LAYER4_WARNING_MAX_COUNT, before + 1)
+    _set_layer4_warning_progress(db, user_id, area_key, after, now_ts=now_ts)
+    phase = _layer4_warning_phase(after)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAYER4_WARNING_PROGRESS"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="explore",
+        entity_type="explore_area",
+        entity_id=None,
+        delta_count=1,
+        payload={
+            "user_id": int(user_id),
+            "area_key": str(area_key),
+            "progress_before": int(before),
+            "progress_after": int(after),
+            "threshold": int(LAYER4_WARNING_MAX_COUNT),
+            "phase": phase["phase"],
+            "reason": "normal_win",
+        },
+        ip=ip,
+    )
+    return {"before": before, "after": after, **phase}
+
+
+def _reset_layer4_warning_progress(
+    db,
+    user_id,
+    area_key,
+    *,
+    request_id=None,
+    ip=None,
+    now_ts=None,
+    encounter_source="natural",
+):
+    if not _is_layer4_warning_area(area_key):
+        return None
+    before = _get_layer4_warning_progress(db, user_id, area_key)
+    _set_layer4_warning_progress(db, user_id, area_key, 0, now_ts=now_ts)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["LAYER4_WARNING_RESET"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="explore",
+        entity_type="explore_area",
+        entity_id=None,
+        payload={
+            "user_id": int(user_id),
+            "area_key": str(area_key),
+            "progress_before": int(before),
+            "progress_after": 0,
+            "threshold": int(LAYER4_WARNING_MAX_COUNT),
+            "reason": "boss_encounter",
+            "encounter_source": str(encounter_source or "natural"),
+        },
+        ip=ip,
+    )
+    return {"before": before, "after": 0}
 
 
 def _layer5_trial_bosses_cleared(db, user_id):
@@ -8481,7 +8618,7 @@ def _area_boss_spawn_profile(area_key, streak_before):
     }
 
 
-def _area_boss_spawn_check(db, user_id, area_key, rng=None):
+def _area_boss_spawn_check(db, user_id, area_key, rng=None, *, request_id=None, ip=None):
     if not _area_supports_boss_alert(area_key) or not _has_area_boss_candidates(db, area_key):
         return {"spawn": False, "probability": 0.0, "pity_forced": False, "streak_before": 0}
     roller = rng or random
@@ -8489,8 +8626,30 @@ def _area_boss_spawn_check(db, user_id, area_key, rng=None):
     spawn_profile = _area_boss_spawn_profile(area_key, streak_before)
     pity_misses = int(spawn_profile["pity_misses"])
     spawn_p = float(spawn_profile["probability"])
+    warning_progress = 0
+    warning_profile = None
+    warning_guaranteed = False
+    warning_source = "natural"
+    if _is_layer4_warning_area(area_key) and not _layer4_trial_bosses_cleared(db, user_id):
+        warning_progress = _get_layer4_warning_progress(db, user_id, area_key)
+        warning_profile = _layer4_warning_spawn_profile(warning_progress)
+        warning_p = float(warning_profile["probability"])
+        if warning_p > spawn_p:
+            spawn_p = warning_p
+        warning_guaranteed = bool(warning_profile["guaranteed"])
+        if warning_guaranteed:
+            warning_source = "guaranteed"
+        elif int(warning_profile["threshold"]) >= 30:
+            warning_source = "boosted"
     pity_forced = streak_before >= max(0, pity_misses - 1)
-    spawned = pity_forced or (roller.random() < spawn_p)
+    spawned = bool(pity_forced or warning_guaranteed or (roller.random() < spawn_p))
+    encounter_source = "natural"
+    if warning_guaranteed:
+        encounter_source = "guaranteed"
+    elif warning_source == "boosted" and spawned:
+        encounter_source = "boosted"
+    elif pity_forced:
+        encounter_source = "pity"
     # streakはボス遭遇で0、通常探索（非ボス）で+1。報酬付与は撃破時のみ別処理で行う。
     next_streak = 0 if spawned else (streak_before + 1)
     db.execute(
@@ -8503,11 +8662,45 @@ def _area_boss_spawn_check(db, user_id, area_key, rng=None):
         """,
         (user_id, area_key, int(next_streak), int(time.time())),
     )
+    warning_reset = None
+    if spawned and _is_layer4_warning_area(area_key) and not _layer4_trial_bosses_cleared(db, user_id):
+        if warning_guaranteed:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["LAYER4_WARNING_GUARANTEED"],
+                user_id=int(user_id),
+                request_id=request_id,
+                action_key="explore",
+                entity_type="explore_area",
+                entity_id=None,
+                payload={
+                    "user_id": int(user_id),
+                    "area_key": str(area_key),
+                    "progress_before": int(warning_progress),
+                    "threshold": int(LAYER4_WARNING_MAX_COUNT),
+                    "encounter_rate": float(spawn_p),
+                    "reason": "boss_encounter",
+                    "encounter_source": "guaranteed",
+                },
+                ip=ip,
+            )
+        warning_reset = _reset_layer4_warning_progress(
+            db,
+            user_id,
+            area_key,
+            request_id=request_id,
+            ip=ip,
+            encounter_source=encounter_source,
+        )
     return {
         "spawn": bool(spawned),
         "probability": float(spawn_p),
         "pity_forced": bool(pity_forced),
         "streak_before": int(streak_before),
+        "layer4_warning_progress": int(warning_progress),
+        "layer4_warning_guaranteed": bool(warning_guaranteed),
+        "layer4_warning_encounter_source": encounter_source,
+        "layer4_warning_reset": warning_reset,
     }
 
 
@@ -10684,6 +10877,23 @@ def ensure_schema(db):
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS layer4_warning_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            area_key TEXT NOT NULL,
+            progress_count INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, area_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_layer4_warning_progress_user_area ON layer4_warning_progress(user_id, area_key)"
     )
     db.execute(
         """
@@ -19542,6 +19752,36 @@ def _home_layer4_week_metrics(db, user_id):
     }
 
 
+def get_layer4_warning_status_for_user(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return []
+    user_row = db.execute(
+        "SELECT max_unlocked_layer FROM users WHERE id = ?",
+        (uid,),
+    ).fetchone()
+    if not user_row or int(user_row["max_unlocked_layer"] or 1) < 4:
+        return []
+    if _layer4_trial_bosses_cleared(db, uid):
+        return []
+    rows = []
+    for area_key in LAYER4_SUBAREA_KEYS:
+        progress = _get_layer4_warning_progress(db, uid, area_key)
+        phase = _layer4_warning_phase(progress)
+        rows.append(
+            {
+                "area_key": area_key,
+                "area_label": _home_layer4_area_label(area_key),
+                "progress_count": int(progress),
+                "max_count": int(LAYER4_WARNING_MAX_COUNT),
+                "phase": phase["phase"],
+                "label": phase["label"],
+                "helper_text": phase["helper_text"],
+            }
+        )
+    return rows
+
+
 def get_layer4_frontier_users(limit=5, db=None):
     """
     第4層到達者を表示用に取得する。管理者は除外する。
@@ -27011,6 +27251,7 @@ def home():
             viewer_user_id=int(user["id"]),
         )
     layer4_frontier_users = get_layer4_frontier_users(db=db, limit=5)
+    layer4_warning_status = get_layer4_warning_status_for_user(db, int(user["id"]))
     weekly_featured_robot = get_weekly_featured_robot(db=db)
     weekly_research_highlights = get_weekly_research_highlights(db=db)
     faction_status = {
@@ -27487,6 +27728,7 @@ def home():
             weekly_champion=weekly_champion,
             show_weekly_champion=show_weekly_champion,
             layer4_frontier_users=layer4_frontier_users,
+            layer4_warning_status=layer4_warning_status,
             weekly_featured_robot=weekly_featured_robot,
             weekly_research_highlights=weekly_research_highlights,
             research_summary=research_summary,
@@ -30587,7 +30829,14 @@ def explore():
         and _has_area_boss_candidates(db, area_key)
     ):
         if not active_alert:
-            boss_roll = _area_boss_spawn_check(db, user_id, area_key, rng=random)
+            boss_roll = _area_boss_spawn_check(
+                db,
+                user_id,
+                area_key,
+                rng=random,
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
             area_boss_spawn_p = float(boss_roll["probability"])
             area_boss_pity_forced = bool(boss_roll["pity_forced"])
             area_boss_streak_before = int(boss_roll["streak_before"])
@@ -30632,6 +30881,12 @@ def explore():
                             "spawn_probability": float(area_boss_spawn_p),
                             "pity_forced": bool(area_boss_pity_forced),
                             "streak_before": int(area_boss_streak_before),
+                            "layer4_warning": {
+                                "progress_before": int(boss_roll.get("layer4_warning_progress") or 0),
+                                "guaranteed": bool(boss_roll.get("layer4_warning_guaranteed")),
+                                "encounter_source": boss_roll.get("layer4_warning_encounter_source"),
+                                "reset": boss_roll.get("layer4_warning_reset"),
+                            },
                             "alert_attempts_left": int(alert_state["attempts_left"]),
                             "alert_expires_at": int(alert_state["expires_at"]),
                         },
@@ -31398,6 +31653,17 @@ def explore():
             got_robot = False
             earned_robot = None
             if not (area_boss_active and battle_no == 1):
+                warning_progress = _advance_layer4_warning_progress(
+                    db,
+                    user_id,
+                    area_key,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                    now_ts=now,
+                )
+                if warning_progress and int(warning_progress.get("after") or 0) >= 50:
+                    note = warning_progress.get("helper_text") or "試験ボス反応が強まっています"
+                    world_bonus_notes.append(f"第4層試験警報: {warning_progress['label']} {warning_progress['after']}/75 - {note}")
                 got_robot, earned_robot = _add_robot_if_lucky(db, user_id)
                 if got_robot and earned_robot is not None:
                     new_robot = {
@@ -31475,6 +31741,9 @@ def explore():
         if player_hp <= 0:
             final_outcome = "lose"
             break
+
+    if area_boss_active and final_outcome != "win" and area_key in LAYER4_WARNING_BOSS_ADVICE:
+        world_bonus_notes.append(f"第4層試験助言: {LAYER4_WARNING_BOSS_ADVICE[area_key]}")
 
     if weekly_mode == "活性" and final_outcome == "win":
         world_bonus_notes.append("世界状態ボーナス発動: 勝利コイン+1")

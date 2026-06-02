@@ -670,6 +670,19 @@
           </div>
           <span class="weekly-fit-badge">第4層</span>
         </div>
+        {% if layer4_warning_status %}
+        <div class="home-layer4-warning-list" aria-label="第4層試験警報">
+          {% for item in layer4_warning_status %}
+          <div class="home-layer4-warning-pill is-{{ item['phase'] }}">
+            <span class="home-layer4-warning-area">{{ item['area_label'] }}</span>
+            <strong>試験警報: {{ item['label'] }} {{ item['progress_count'] }}/{{ item['max_count'] }}</strong>
+            {% if item['helper_text'] %}
+            <span class="home-layer4-warning-help">{{ item['helper_text'] }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
         <div class="home-layer4-race-list">
           {% for row in layer4_frontier_users %}
           <div class="home-layer4-race-row">

@@ -54,6 +54,7 @@
   - `boss_4_haze_mirage`: 命中 / 安定向け
   - `boss_4_burst_volterio`: 背水 / 爆発向け
   - `boss_4_final_ark_zero`: 型理解を問う最終試験
+- 第4層3サブエリアの固定ボスは `試験警報値` の対象。通常戦勝利でエリア別に進み、30/40/50で出現率上昇、75以上で次回遭遇保証。遭遇時点で該当エリアのみ0に戻る
 - 第5層ボス:
   - `boss_5_labyrinth_nyx_array`: 命中 / 安定 / バランス向け
   - `boss_5_pinnacle_ignition_king`: 背水 / 爆発 / 速攻向け
