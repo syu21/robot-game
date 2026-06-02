@@ -24,6 +24,9 @@
   {% if summary and summary.get('battle_kind_label') %}
   <div class="notice boss-alert-line"><b>区分：</b>{{ summary.get('battle_kind_label') }}</div>
   {% endif %}
+  {% if summary and summary.get('turn_limit_label') %}
+  <div class="notice boss-alert-line"><b>戦闘条件：</b>{{ summary.get('turn_limit_label') }}</div>
+  {% endif %}
   {% if summary and summary.get('is_area_boss') %}
   <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>
   {% endif %}
@@ -35,6 +38,9 @@
 {% endif %}
 {% if summary and summary.get('battle_kind_label') %}
   <div class="notice boss-alert-line"><b>区分：</b>{{ summary.get('battle_kind_label') }}</div>
+{% endif %}
+{% if summary and summary.get('turn_limit_label') %}
+  <div class="notice boss-alert-line"><b>戦闘条件：</b>{{ summary.get('turn_limit_label') }}</div>
 {% endif %}
 {% if summary and summary.get('is_area_boss') %}
   <div class="notice boss-alert-line"><b>警報：</b>エリアボス反応！</div>

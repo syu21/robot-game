@@ -233,6 +233,7 @@ REQUIRE_ALPHA = os.getenv("REQUIRE_ALPHA", "1") == "1"
 HOME_OK_MODE = os.getenv("HOME_OK_MODE", "0") == "1"
 HOME_DEBUG_COMMENT = os.getenv("HOME_DEBUG_COMMENT", "1") == "1"
 EXPLORE_MAX_TURNS = 8
+BOSS_BATTLE_SAFETY_MAX_TURNS = 50
 BUILD_PART_OFFSET_MIN = -24
 BUILD_PART_OFFSET_MAX = 24
 MAX_PART_DROPS_NORMAL = 1
@@ -5249,6 +5250,26 @@ def _battle_timeout_judgement(*, player_hp, player_hp_max, enemy_hp, enemy_hp_ma
         "outcome": outcome,
         "display_outcome": display_outcome,
         "result_line": f"8ターン終了。残HP割合で{display_outcome}",
+    }
+
+
+def _battle_max_turns_for(*, is_boss):
+    return BOSS_BATTLE_SAFETY_MAX_TURNS if bool(is_boss) else EXPLORE_MAX_TURNS
+
+
+def _boss_battle_safety_judgement():
+    return {
+        "player_ratio": None,
+        "enemy_ratio": None,
+        "player_ratio_pct": None,
+        "enemy_ratio_pct": None,
+        "player_wins": False,
+        "outcome": "lose",
+        "display_outcome": "敗北",
+        "reason": "boss_safety_cap",
+        "turn_limit_removed": True,
+        "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS),
+        "result_line": "試験継続不能。機体反応が限界に達しました。",
     }
 
 
@@ -30170,7 +30191,6 @@ def explore():
     combat_mode = _normalize_combat_mode(active["combat_mode"] if active and "combat_mode" in active.keys() else "normal")
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
-    max_turns = EXPLORE_MAX_TURNS
     all_turn_logs = []
     reward_coin = 0
     reward_exp = 0
@@ -30783,9 +30803,11 @@ def explore():
         relief_miss_enabled = (not (area_boss_active and battle_no == 1)) and (enemy_tier == 1)
         battle_timeout = False
         battle_logs = []
+        is_boss_battle = bool(area_boss_active and battle_no == 1)
+        current_max_turns = _battle_max_turns_for(is_boss=is_boss_battle)
         player_miss_streak = 0
         berserk_triggered = False
-        for turn in range(1, max_turns + 1):
+        for turn in range(1, current_max_turns + 1):
             enemy_before = enemy_hp
             player_before = player_hp
             player_damage = 0
@@ -31008,14 +31030,17 @@ def explore():
             if enemy_hp == 0 or player_hp == 0:
                 break
         timeout_decision = None
-        if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= max_turns:
+        if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= current_max_turns:
             battle_timeout = True
-            timeout_decision = _battle_timeout_judgement(
-                player_hp=player_hp,
-                player_hp_max=player_max_hp,
-                enemy_hp=enemy_hp,
-                enemy_hp_max=enemy_max_hp,
-            )
+            if is_boss_battle:
+                timeout_decision = _boss_battle_safety_judgement()
+            else:
+                timeout_decision = _battle_timeout_judgement(
+                    player_hp=player_hp,
+                    player_hp_max=player_max_hp,
+                    enemy_hp=enemy_hp,
+                    enemy_hp_max=enemy_max_hp,
+                )
         timeout_any = timeout_any or battle_timeout
         all_turn_logs.extend(battle_logs)
         timeout_player_win = bool(timeout_decision and timeout_decision.get("player_wins"))
@@ -31246,6 +31271,8 @@ def explore():
                         "attempts_before": area_boss_attempt_before,
                         "attempts_after": area_boss_attempt_after,
                         "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
+                        "turn_limit_removed": True,
+                        "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS),
                         "tutorial_layer1_state_before": tutorial_layer1_state_before,
                         "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
                         "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
@@ -31394,6 +31421,8 @@ def explore():
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
                     "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
+                    "turn_limit_removed": bool(is_boss_battle),
+                    "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if is_boss_battle else None,
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -31429,6 +31458,8 @@ def explore():
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
                     "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
+                    "turn_limit_removed": bool(is_boss_battle),
+                    "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if is_boss_battle else None,
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -31815,6 +31846,10 @@ def explore():
                 "timeout": timeout_any,
                 "battle_count": total_fights,
                 "is_area_boss": bool(area_boss_active),
+                "boss_battle": bool(area_boss_active),
+                "turn_limit_removed": bool(area_boss_active),
+                "normal_turn_limit": int(EXPLORE_MAX_TURNS),
+                "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
                 "battle_id": battle_id,
                 "damage_taken_total": int(damage_taken_total),
             },
@@ -31872,6 +31907,9 @@ def explore():
                 "attempts_after": area_boss_attempt_after,
                 "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
                 "reward": area_boss_reward,
+                "boss_battle": bool(area_boss_active),
+                "turn_limit_removed": bool(area_boss_active),
+                "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
             },
             "tutorial_layer1": {
                 "eligible": bool(tutorial_layer1_subject),
@@ -32120,9 +32158,15 @@ def explore():
         "timeout": timeout_any,
         "timeout_decision": final_timeout_decision,
         "timeout_decision_line": (
-            f"8ターン終了: 残HP割合 {final_timeout_decision.get('player_ratio_pct', 0):g}% vs {final_timeout_decision.get('enemy_ratio_pct', 0):g}% で{outcome_display}"
-            if final_battle_timeout and final_timeout_decision
-            else None
+            str(final_timeout_decision.get("result_line") or "")
+            if final_battle_timeout
+            and final_timeout_decision
+            and str(final_timeout_decision.get("reason") or "") == "boss_safety_cap"
+            else (
+                f"8ターン終了: 残HP割合 {final_timeout_decision.get('player_ratio_pct', 0):g}% vs {final_timeout_decision.get('enemy_ratio_pct', 0):g}% で{outcome_display}"
+                if final_battle_timeout and final_timeout_decision
+                else None
+            )
         ),
         "archetype_line": archetype_note,
         "player_style": robot_style,
@@ -32150,6 +32194,12 @@ def explore():
         "unlock_banner_ms": (1700 + int(unlocked_layer) * 300) if unlocked_layer else None,
         "boss_reward": area_boss_reward,
         "is_area_boss": bool(area_boss_active),
+        "turn_limit_label": (
+            "ターン上限: なし（決着まで戦闘）"
+            if area_boss_active
+            else f"ターン上限: {int(EXPLORE_MAX_TURNS)}ターン"
+        ),
+        "boss_safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
         "boss_kind": area_boss_kind,
         "npc_boss_template_id": area_boss_template_id,
         "source_robot_instance_id": (last_enemy.get("_source_robot_instance_id") if last_enemy else None),
