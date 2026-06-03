@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>研究モジュール買取</h1>
+  <div class="card">
+    <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }}</div>
+    <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+    {% if module['is_locked'] %}
+    <div class="robot-time">保護中</div>
+    {% endif %}
+    {% if is_active_selected %}
+    <div class="robot-time">現在選択中</div>
+    {% endif %}
+    <div class="robot-time">効果: {{ module['stat_line'] or 'なし' }}</div>
+    <div class="upgrade-cost">買取価格: {{ module['npc_sell_price'] }}コイン</div>
+    <div class="robot-time">このモジュールは失われます</div>
+    {% if module['is_locked'] or is_active_selected or module['npc_sell_price'] <= 0 or module['trade_policy'] != 'tradable' %}
+    <div class="upgrade-cost">このモジュールは買取できません</div>
+    {% else %}
+    <form method="post" action="{{ url_for('modules_sell') }}">
+      <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+      <label class="robot-time">
+        <input type="checkbox" name="confirm_sell" value="1" required />
+        失われることを確認
+      </label>
+      <button type="submit" class="btn-secondary">買取する</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">研究モジュールへ戻る</a></p>
+</div>
+{% endblock %}

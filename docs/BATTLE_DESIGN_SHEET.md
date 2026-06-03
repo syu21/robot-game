@@ -91,6 +91,9 @@
   - 第2層以降の通常戦勝利で研究ゲージが前進
   - 100到達でprototype研究モジュールを保証付与
   - 同種prototype 3個でcomplete 1個へ合成
+  - モジュール図鑑で過去入手を保存し、消費/売却後も登録済み扱いにする
+  - 保護中または現在選択中のモジュールは合成素材にしない
+  - 余剰モジュールはNPC買取でコイン化できる
   - completeも戦闘中の固定値補正としてそのまま適用
 - 編成: 4部位 + DECORで役割調整
 - チャンプ初回撃破: そのチャンプ個体につき進化コア x1
@@ -104,6 +107,10 @@
   - `audit.module.pity.progress`
   - `audit.module.pity.grant`
   - `audit.module.combine`
+  - `audit.module.catalog.register`
+  - `audit.module.lock`
+  - `audit.module.unlock`
+  - `audit.module.sell`
 
 ## 8. 安定性要件
 - CT表示とサーバ判定は一致

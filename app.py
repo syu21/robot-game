@@ -221,6 +221,22 @@ RESEARCH_MODULE_COMBINE_MAP = {
     "berserk_prototype": "berserk_complete",
     "analysis_prototype": "analysis_complete",
 }
+RESEARCH_MODULE_SOURCE_LABELS = {
+    "sniper_prototype": "第2層 / 第2層Mist",
+    "heavy_prototype": "第3層",
+    "assault_prototype": "第2層Rush / 第3層",
+    "stable_prototype": "第2層 / 第2層Mist / 第3層",
+    "berserk_prototype": "第3層",
+    "analysis_prototype": "第2層 / 第2層Mist / 第2層Rush",
+}
+RESEARCH_MODULE_PROTOTYPE_NAME_BY_COMPLETE = {
+    "sniper_complete": "狙撃モジュール 試作型",
+    "heavy_complete": "重装モジュール 試作型",
+    "assault_complete": "強襲モジュール 試作型",
+    "stable_complete": "安定モジュール 試作型",
+    "berserk_complete": "暴走モジュール 試作型",
+    "analysis_complete": "解析モジュール 試作型",
+}
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -9982,6 +9998,11 @@ def ensure_schema(db):
             acc_bonus INTEGER NOT NULL DEFAULT 0,
             cri_bonus INTEGER NOT NULL DEFAULT 0,
             description TEXT,
+            tier INTEGER NOT NULL DEFAULT 1,
+            trade_policy TEXT NOT NULL DEFAULT 'tradable',
+            source_type TEXT NOT NULL DEFAULT 'normal_drop',
+            is_limited INTEGER NOT NULL DEFAULT 0,
+            npc_sell_price INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at INTEGER NOT NULL
         )
@@ -9994,8 +10015,24 @@ def ensure_schema(db):
             user_id INTEGER NOT NULL,
             module_key TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'inventory',
+            is_locked INTEGER NOT NULL DEFAULT 0,
+            sold_at TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_module_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_key TEXT NOT NULL,
+            first_obtained_at INTEGER NOT NULL,
+            first_instance_id INTEGER,
+            UNIQUE(user_id, module_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
         )
@@ -10129,6 +10166,8 @@ def ensure_schema(db):
     if "last_daily_research_modal_day" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
     research_module_cols = {row["name"] for row in db.execute("PRAGMA table_info(research_modules)").fetchall()}
+    research_module_trade_cols = {"tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"}
+    added_research_module_trade_cols = any(column not in research_module_cols for column in research_module_trade_cols)
     research_module_column_defs = {
         "module_key": "module_key TEXT",
         "name_ja": "name_ja TEXT",
@@ -10141,6 +10180,11 @@ def ensure_schema(db):
         "acc_bonus": "acc_bonus INTEGER NOT NULL DEFAULT 0",
         "cri_bonus": "cri_bonus INTEGER NOT NULL DEFAULT 0",
         "description": "description TEXT",
+        "tier": "tier INTEGER NOT NULL DEFAULT 1",
+        "trade_policy": "trade_policy TEXT NOT NULL DEFAULT 'tradable'",
+        "source_type": "source_type TEXT NOT NULL DEFAULT 'normal_drop'",
+        "is_limited": "is_limited INTEGER NOT NULL DEFAULT 0",
+        "npc_sell_price": "npc_sell_price INTEGER NOT NULL DEFAULT 0",
         "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -10152,6 +10196,8 @@ def ensure_schema(db):
         "user_id": "user_id INTEGER",
         "module_key": "module_key TEXT",
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
+        "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
+        "sold_at": "sold_at TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -10172,13 +10218,40 @@ def ensure_schema(db):
             (*seed, research_module_now),
         )
     db.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    has_seed_prices = db.execute("SELECT 1 FROM research_modules WHERE npc_sell_price > 0 LIMIT 1").fetchone()
+    if added_research_module_trade_cols or not has_seed_prices:
+        db.execute(
+            """
+            UPDATE research_modules
+            SET tier = CASE WHEN rarity = 'complete' THEN 2 ELSE 1 END,
+                trade_policy = 'tradable',
+                source_type = CASE WHEN rarity = 'complete' THEN 'combine' ELSE 'normal_drop' END,
+                is_limited = COALESCE(is_limited, 0),
+                npc_sell_price = CASE WHEN rarity = 'complete' THEN 1500 ELSE 300 END
+            WHERE rarity IN ('prototype', 'complete')
+            """
+        )
     db.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     db.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    db.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")
     db.execute(
         "UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
         (research_module_now,),
     )
     db.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_research_module_catalog (
+            user_id, module_key, first_obtained_at, first_instance_id
+        )
+        SELECT user_id, module_key, MIN(created_at), MIN(id)
+        FROM user_research_modules
+        WHERE user_id IS NOT NULL
+          AND module_key IS NOT NULL
+          AND TRIM(module_key) != ''
+        GROUP BY user_id, module_key
+        """
+    )
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -13313,7 +13386,21 @@ def _research_module_view(row):
         return None
     module = dict(row)
     module["stat_line"] = _research_module_stat_line(module)
+    module["source_label"] = _research_module_source_label(module)
     return module
+
+
+def _research_module_source_label(module):
+    if not module:
+        return ""
+    module_key = str(module.get("module_key") if isinstance(module, dict) else module["module_key"] or "")
+    rarity = str(module.get("rarity") if isinstance(module, dict) else module["rarity"] or "")
+    if rarity == "complete":
+        source_name = RESEARCH_MODULE_PROTOTYPE_NAME_BY_COMPLETE.get(module_key)
+        if source_name:
+            return f"{source_name} x3 合成"
+        return "試作型 x3 合成"
+    return RESEARCH_MODULE_SOURCE_LABELS.get(module_key, "通常戦ドロップ / 研究ゲージ保証")
 
 
 def _active_research_module_for_user(db, user_id, user_row=None):
@@ -13328,7 +13415,8 @@ def _active_research_module_for_user(db, user_id, user_row=None):
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
                rm.name_ja, rm.rarity, rm.family,
                rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
-               rm.description, rm.is_active
+               rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
+               rm.is_active, urm.is_locked, urm.sold_at
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -13348,7 +13436,8 @@ def _user_research_module_options(db, user_id):
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
                rm.name_ja, rm.rarity, rm.family,
                rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
-               rm.description, rm.is_active
+               rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
+               rm.is_active, urm.is_locked, urm.sold_at
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.user_id = ?
@@ -13378,7 +13467,40 @@ def _apply_research_module_to_stats(stats, module):
     return result
 
 
-def _grant_research_module_instance(db, user_id, module_key):
+def _register_research_module_catalog(db, user_id, module_key, module_instance_id, *, source="admin", request_id=None, ip=None):
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO user_research_module_catalog (
+            user_id, module_key, first_obtained_at, first_instance_id
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (int(user_id), str(module_key or "").strip(), now_ts, int(module_instance_id) if module_instance_id else None),
+    )
+    if int(cur.rowcount or 0) <= 0:
+        return False
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_CATALOG_REGISTER"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_catalog_register",
+        entity_type="research_module",
+        entity_id=int(module_instance_id) if module_instance_id else None,
+        delta_count=1,
+        payload={
+            "user_id": int(user_id),
+            "module_key": str(module_key or "").strip(),
+            "module_instance_id": int(module_instance_id) if module_instance_id else None,
+            "source": str(source or "admin"),
+        },
+        ip=ip,
+    )
+    return True
+
+
+def _grant_research_module_instance(db, user_id, module_key, *, source="admin", request_id=None, ip=None):
     module = db.execute(
         """
         SELECT *
@@ -13399,8 +13521,18 @@ def _grant_research_module_instance(db, user_id, module_key):
         """,
         (int(user_id), module["module_key"], now_ts, now_ts),
     )
+    instance_id = int(cur.lastrowid)
+    _register_research_module_catalog(
+        db,
+        user_id,
+        module["module_key"],
+        instance_id,
+        source=source,
+        request_id=request_id,
+        ip=ip,
+    )
     payload = _research_module_view(module)
-    payload["instance_id"] = int(cur.lastrowid)
+    payload["instance_id"] = instance_id
     return payload
 
 
@@ -13413,7 +13545,7 @@ def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
     if roller.random() >= float(rate):
         return None
     module_key = roller.choice(tuple(candidates))
-    return _grant_research_module_instance(db, user_id, module_key)
+    return _grant_research_module_instance(db, user_id, module_key, source="drop")
 
 
 def _advance_research_module_pity(db, user_id, area_key, *, rng=None, request_id=None, ip=None):
@@ -13430,7 +13562,7 @@ def _advance_research_module_pity(db, user_id, area_key, *, rng=None, request_id
     roller = rng or random
     if after >= int(RESEARCH_MODULE_PITY_TARGET):
         module_key = roller.choice(tuple(RESEARCH_MODULE_PITY_CANDIDATES))
-        grant = _grant_research_module_instance(db, user_id, module_key)
+        grant = _grant_research_module_instance(db, user_id, module_key, source="pity", request_id=request_id, ip=ip)
         if grant:
             after -= int(RESEARCH_MODULE_PITY_TARGET)
     db.execute(
@@ -13482,6 +13614,8 @@ def _advance_research_module_pity(db, user_id, area_key, *, rng=None, request_id
 
 
 def _research_module_combine_candidates(db, user_id):
+    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
     rows = db.execute(
         """
         SELECT urm.module_key, rm.name_ja, rm.family, COUNT(*) AS count
@@ -13489,13 +13623,15 @@ def _research_module_combine_candidates(db, user_id):
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.user_id = ?
           AND urm.status = 'inventory'
+          AND COALESCE(urm.is_locked, 0) = 0
+          AND (? = 0 OR urm.id != ?)
           AND rm.rarity = 'prototype'
           AND rm.is_active = 1
         GROUP BY urm.module_key, rm.name_ja, rm.family
         HAVING COUNT(*) >= 3
         ORDER BY rm.family ASC, urm.module_key ASC
         """,
-        (int(user_id),),
+        (int(user_id), active_id, active_id),
     ).fetchall()
     candidates = []
     for row in rows:
@@ -13519,6 +13655,57 @@ def _research_module_combine_candidates(db, user_id):
             }
         )
     return candidates
+
+
+def _research_module_catalog_summary(db, user_id):
+    total = int(
+        db.execute("SELECT COUNT(*) AS c FROM research_modules WHERE is_active = 1").fetchone()["c"] or 0
+    )
+    registered = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM user_research_module_catalog c
+            JOIN research_modules rm ON rm.module_key = c.module_key
+            WHERE c.user_id = ?
+              AND rm.is_active = 1
+            """,
+            (int(user_id),),
+        ).fetchone()["c"] or 0
+    )
+    percent = int((registered * 100) // total) if total > 0 else 0
+    return {"registered": registered, "total": total, "percent": percent}
+
+
+def _research_module_catalog_rows(db, user_id):
+    rows = db.execute(
+        """
+        SELECT rm.*,
+               c.first_obtained_at,
+               c.first_instance_id,
+               COUNT(CASE WHEN urm.status = 'inventory' THEN 1 END) AS owned_count
+        FROM research_modules rm
+        LEFT JOIN user_research_module_catalog c
+          ON c.module_key = rm.module_key
+         AND c.user_id = ?
+        LEFT JOIN user_research_modules urm
+          ON urm.module_key = rm.module_key
+         AND urm.user_id = ?
+         AND urm.status = 'inventory'
+        WHERE rm.is_active = 1
+        GROUP BY rm.module_key
+        ORDER BY rm.tier ASC, rm.family ASC, rm.rarity DESC, rm.module_key ASC
+        """,
+        (int(user_id), int(user_id)),
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = _research_module_view(row)
+        item["owned_count"] = int(row["owned_count"] or 0)
+        item["is_registered"] = row["first_obtained_at"] is not None
+        item["first_obtained_at"] = row["first_obtained_at"]
+        result.append(item)
+    return result
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -27560,6 +27747,8 @@ def modules_select():
 def modules_combine():
     db = get_db()
     user_id = int(session["user_id"])
+    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (user_id,)).fetchone()
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
     source_module_key = (request.form.get("source_module_key") or "").strip()
     result_module_key = RESEARCH_MODULE_COMBINE_MAP.get(source_module_key)
     if not result_module_key:
@@ -27597,13 +27786,37 @@ def modules_combine():
         WHERE user_id = ?
           AND module_key = ?
           AND status = 'inventory'
+          AND COALESCE(is_locked, 0) = 0
+          AND (? = 0 OR id != ?)
         ORDER BY id ASC
         LIMIT 3
         """,
-        (user_id, source_module_key),
+        (user_id, source_module_key, active_id, active_id),
     ).fetchall()
     if len(rows) < 3:
-        session["message"] = "同種の試作型が3個必要です"
+        blocked_locked = int(db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM user_research_modules
+            WHERE user_id = ? AND module_key = ? AND status = 'inventory' AND COALESCE(is_locked, 0) = 1
+            """,
+            (user_id, source_module_key),
+        ).fetchone()["c"] or 0)
+        blocked_active = 1 if active_id and db.execute(
+            """
+            SELECT 1
+            FROM user_research_modules
+            WHERE id = ? AND user_id = ? AND module_key = ? AND status = 'inventory'
+            LIMIT 1
+            """,
+            (active_id, user_id, source_module_key),
+        ).fetchone() else 0
+        if blocked_locked:
+            session["message"] = "保護中のモジュールは合成素材に使えません"
+        elif blocked_active:
+            session["message"] = "現在選択中のモジュールは合成素材に使えません"
+        else:
+            session["message"] = "同種の試作型が3個必要です"
         return redirect(url_for("modules"))
     consumed_ids = [int(row["id"]) for row in rows]
     now_ts = int(time.time())
@@ -27617,7 +27830,14 @@ def modules_combine():
         """,
         (now_ts, user_id, *consumed_ids),
     )
-    result_module = _grant_research_module_instance(db, user_id, result_module_key)
+    result_module = _grant_research_module_instance(
+        db,
+        user_id,
+        result_module_key,
+        source="combine",
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
     if not result_module:
         session["message"] = "完成型の付与に失敗しました"
         db.rollback()
@@ -27645,6 +27865,196 @@ def modules_combine():
     return redirect(url_for("modules"))
 
 
+@app.route("/modules/lock", methods=["POST"])
+@login_required
+def modules_lock():
+    return _set_research_module_lock(True)
+
+
+@app.route("/modules/unlock", methods=["POST"])
+@login_required
+def modules_unlock():
+    return _set_research_module_lock(False)
+
+
+def _set_research_module_lock(locked):
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_instance_id = int((request.form.get("module_instance_id") or "").strip())
+    except ValueError:
+        session["message"] = "研究モジュールの指定が不正です"
+        return redirect(url_for("modules"))
+    module = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.module_key, rm.name_ja
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id = ?
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+        LIMIT 1
+        """,
+        (module_instance_id, user_id),
+    ).fetchone()
+    if not module:
+        session["message"] = "操作できない研究モジュールです"
+        return redirect(url_for("modules"))
+    db.execute(
+        "UPDATE user_research_modules SET is_locked = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+        (1 if locked else 0, int(time.time()), module_instance_id, user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_LOCK" if locked else "MODULE_UNLOCK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_lock" if locked else "module_unlock",
+        entity_type="research_module",
+        entity_id=module_instance_id,
+        payload={
+            "user_id": user_id,
+            "module_instance_id": module_instance_id,
+            "module_key": module["module_key"],
+            "module_name": module["name_ja"],
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "保護しました" if locked else "保護を外しました"
+    return redirect(url_for("modules"))
+
+
+@app.route("/modules/sell/confirm/<int:module_instance_id>")
+@login_required
+def modules_sell_confirm(module_instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    module = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.is_locked,
+               rm.name_ja, rm.rarity, rm.family,
+               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
+               rm.is_active
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id = ?
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        LIMIT 1
+        """,
+        (int(module_instance_id), user_id),
+    ).fetchone()
+    if not module:
+        session["message"] = "売却できない研究モジュールです"
+        return redirect(url_for("modules"))
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    return render_template(
+        "module_sell_confirm.html",
+        user=user,
+        module=_research_module_view(module),
+        is_active_selected=(active_id == int(module_instance_id)),
+    )
+
+
+@app.route("/modules/sell", methods=["POST"])
+@login_required
+def modules_sell():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_instance_id = int((request.form.get("module_instance_id") or "").strip())
+    except ValueError:
+        session["message"] = "研究モジュールの指定が不正です"
+        return redirect(url_for("modules"))
+    if (request.form.get("confirm_sell") or "").strip() != "1":
+        session["message"] = "売却確認が必要です"
+        return redirect(url_for("modules_sell_confirm", module_instance_id=module_instance_id))
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    module = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.is_locked,
+               rm.name_ja, rm.rarity, rm.family, rm.trade_policy, rm.npc_sell_price
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id = ?
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        LIMIT 1
+        """,
+        (module_instance_id, user_id),
+    ).fetchone()
+    if not module:
+        session["message"] = "売却できない研究モジュールです"
+        return redirect(url_for("modules"))
+    if int(module["is_locked"] or 0) != 0:
+        session["message"] = "保護中のモジュールは買取できません"
+        return redirect(url_for("modules"))
+    if active_id == module_instance_id:
+        session["message"] = "現在選択中のモジュールは買取できません"
+        return redirect(url_for("modules"))
+    if str(module["trade_policy"] or "tradable") != "tradable":
+        session["message"] = "このモジュールは買取できません"
+        return redirect(url_for("modules"))
+    price = int(module["npc_sell_price"] or 0)
+    if price <= 0:
+        session["message"] = "買取価格がないモジュールです"
+        return redirect(url_for("modules"))
+    coins_before = int(user["coins"] or 0) if user and "coins" in user.keys() else 0
+    coins_after = coins_before + price
+    sold_at = datetime.now(timezone.utc).isoformat()
+    db.execute(
+        """
+        UPDATE user_research_modules
+        SET status = 'consumed', sold_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND status = 'inventory' AND COALESCE(is_locked, 0) = 0
+        """,
+        (sold_at, int(time.time()), module_instance_id, user_id),
+    )
+    db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (price, user_id))
+    payload = {
+        "user_id": user_id,
+        "module_instance_id": module_instance_id,
+        "module_key": module["module_key"],
+        "module_name": module["name_ja"],
+        "npc_sell_price": price,
+        "coins_before": coins_before,
+        "coins_after": coins_after,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_SELL"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_sell",
+        entity_type="research_module",
+        entity_id=module_instance_id,
+        delta_coins=price,
+        payload=payload,
+        ip=request.remote_addr,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COIN_DELTA"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_sell",
+        entity_type="research_module",
+        entity_id=module_instance_id,
+        delta_coins=price,
+        payload={**payload, "source": "module_sell", "gain": price},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"{module['name_ja']}を{price}コインで買取しました"
+    return redirect(url_for("modules"))
+
+
 @app.route("/modules")
 @login_required
 def modules():
@@ -27657,6 +28067,8 @@ def modules():
     module_options = _user_research_module_options(db, user_id)
     active_module = _active_research_module_for_user(db, user_id, user_row=user)
     combine_candidates = _research_module_combine_candidates(db, user_id)
+    catalog_summary = _research_module_catalog_summary(db, user_id)
+    catalog_rows = _research_module_catalog_rows(db, user_id)
     message = session.pop("message", None)
     return render_template(
         "modules.html",
@@ -27665,6 +28077,8 @@ def modules():
         active_research_module=active_module,
         research_module_options=module_options,
         combine_candidates=combine_candidates,
+        catalog_summary=catalog_summary,
+        catalog_rows=catalog_rows,
         research_module_pity=int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0,
         research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
     )

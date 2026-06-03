@@ -14,6 +14,8 @@
     <div class="upgrade-cost">未装備</div>
     {% endif %}
     <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
+    <div class="upgrade-cost">モジュール図鑑: {{ catalog_summary['registered'] }}/{{ catalog_summary['total'] }}</div>
+    <div class="upgrade-cost">図鑑率: {{ catalog_summary['percent'] }}%</div>
   </div>
 
   {% if combine_candidates %}
@@ -37,13 +39,46 @@
       <div class="stat-card">
         <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }}</div>
         <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+        {% if module['is_locked'] %}
+        <div class="robot-time">保護中</div>
+        {% endif %}
         <div class="robot-time">{{ module['stat_line'] }}</div>
+        <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
+        <form method="post" action="{{ url_for('modules_unlock' if module['is_locked'] else 'modules_lock') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+          <button type="submit" class="btn-secondary">{{ '保護を外す' if module['is_locked'] else '保護する' }}</button>
+        </form>
+        {% if not module['is_locked'] and active_research_module and active_research_module['instance_id'] == module['instance_id'] %}
+        <div class="robot-time">現在選択中は買取不可</div>
+        {% elif not module['is_locked'] and module['npc_sell_price'] > 0 %}
+        <p class="link"><a class="battle-home-link" href="{{ url_for('modules_sell_confirm', module_instance_id=module['instance_id']) }}">買取</a></p>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
     <div class="upgrade-cost">未所持</div>
     {% endif %}
+  </div>
+
+  <div class="card">
+    <div><b>モジュール図鑑</b></div>
+    <div class="stat-grid">
+      {% for module in catalog_rows %}
+      <div class="stat-card">
+        <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }} / tier{{ module['tier'] }}</div>
+        <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+        <div class="robot-time">{{ '所持: ' ~ module['owned_count'] ~ '個' if module['owned_count'] > 0 else '未所持' }}</div>
+        {% if module['first_obtained_at'] %}
+        <div class="robot-time">初入手: {{ module['first_obtained_at'] }}</div>
+        {% endif %}
+        <div class="robot-time">効果: {{ module['stat_line'] or 'なし' }}</div>
+        <div class="robot-time">入手: {{ module['source_label'] }}</div>
+        <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
+        <div class="robot-time">trade_policy: {{ module['trade_policy'] }}</div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
 
   <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>

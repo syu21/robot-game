@@ -924,6 +924,11 @@ def main():
             acc_bonus INTEGER NOT NULL DEFAULT 0,
             cri_bonus INTEGER NOT NULL DEFAULT 0,
             description TEXT,
+            tier INTEGER NOT NULL DEFAULT 1,
+            trade_policy TEXT NOT NULL DEFAULT 'tradable',
+            source_type TEXT NOT NULL DEFAULT 'normal_drop',
+            is_limited INTEGER NOT NULL DEFAULT 0,
+            npc_sell_price INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at INTEGER NOT NULL
         )
@@ -936,8 +941,24 @@ def main():
             user_id INTEGER NOT NULL,
             module_key TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'inventory',
+            is_locked INTEGER NOT NULL DEFAULT 0,
+            sold_at TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_module_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_key TEXT NOT NULL,
+            first_obtained_at INTEGER NOT NULL,
+            first_instance_id INTEGER,
+            UNIQUE(user_id, module_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
         )
@@ -2270,6 +2291,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
 
     research_module_cols = {row[1] for row in cur.execute("PRAGMA table_info(research_modules)").fetchall()}
+    research_module_trade_cols = {"tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"}
+    added_research_module_trade_cols = any(column not in research_module_cols for column in research_module_trade_cols)
     research_module_column_defs = {
         "module_key": "module_key TEXT",
         "name_ja": "name_ja TEXT",
@@ -2282,6 +2305,11 @@ def main():
         "acc_bonus": "acc_bonus INTEGER NOT NULL DEFAULT 0",
         "cri_bonus": "cri_bonus INTEGER NOT NULL DEFAULT 0",
         "description": "description TEXT",
+        "tier": "tier INTEGER NOT NULL DEFAULT 1",
+        "trade_policy": "trade_policy TEXT NOT NULL DEFAULT 'tradable'",
+        "source_type": "source_type TEXT NOT NULL DEFAULT 'normal_drop'",
+        "is_limited": "is_limited INTEGER NOT NULL DEFAULT 0",
+        "npc_sell_price": "npc_sell_price INTEGER NOT NULL DEFAULT 0",
         "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -2293,6 +2321,8 @@ def main():
         "user_id": "user_id INTEGER",
         "module_key": "module_key TEXT",
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
+        "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
+        "sold_at": "sold_at TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -2313,10 +2343,37 @@ def main():
             (*seed, now_ts),
         )
     cur.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    has_seed_prices = cur.execute("SELECT 1 FROM research_modules WHERE npc_sell_price > 0 LIMIT 1").fetchone()
+    if added_research_module_trade_cols or not has_seed_prices:
+        cur.execute(
+            """
+            UPDATE research_modules
+            SET tier = CASE WHEN rarity = 'complete' THEN 2 ELSE 1 END,
+                trade_policy = 'tradable',
+                source_type = CASE WHEN rarity = 'complete' THEN 'combine' ELSE 'normal_drop' END,
+                is_limited = COALESCE(is_limited, 0),
+                npc_sell_price = CASE WHEN rarity = 'complete' THEN 1500 ELSE 300 END
+            WHERE rarity IN ('prototype', 'complete')
+            """
+        )
     cur.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     cur.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    cur.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")
     cur.execute("UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0", (now_ts,))
     cur.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_research_module_catalog (
+            user_id, module_key, first_obtained_at, first_instance_id
+        )
+        SELECT user_id, module_key, MIN(created_at), MIN(id)
+        FROM user_research_modules
+        WHERE user_id IS NOT NULL
+          AND module_key IS NOT NULL
+          AND TRIM(module_key) != ''
+        GROUP BY user_id, module_key
+        """
+    )
     for release_key in RELEASE_FLAG_KEYS:
         cur.execute(
             """
