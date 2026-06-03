@@ -27,6 +27,86 @@ JST = timezone(timedelta(hours=9))
 MINI_ROBOT_PERSONALITY_KEYS = ("timid", "curious", "loyal", "sleepy", "wild", "playful")
 MINI_ROBOT_GROWTH_TYPES = ("stable", "burst", "adaptive", "guard", "chaos")
 MINI_ROBOT_TIME_BANDS = ("morning", "day", "evening", "night")
+RESEARCH_MODULE_SEEDS = (
+    (
+        "sniper_prototype",
+        "狙撃モジュール 試作型",
+        "prototype",
+        "sniper",
+        -3,
+        0,
+        0,
+        0,
+        8,
+        3,
+        "命中を高め、霧や回避型の敵に対応しやすくする試作モジュール。",
+    ),
+    (
+        "heavy_prototype",
+        "重装モジュール 試作型",
+        "prototype",
+        "heavy",
+        10,
+        0,
+        6,
+        -5,
+        0,
+        0,
+        "耐久と防御を高める代わりに、動きが重くなる試作モジュール。",
+    ),
+    (
+        "assault_prototype",
+        "強襲モジュール 試作型",
+        "prototype",
+        "assault",
+        0,
+        8,
+        -4,
+        4,
+        0,
+        0,
+        "攻撃と素早さを高め、短期決戦に寄せる試作モジュール。",
+    ),
+    (
+        "stable_prototype",
+        "安定モジュール 試作型",
+        "prototype",
+        "stable",
+        0,
+        0,
+        5,
+        0,
+        5,
+        -3,
+        "防御と命中を整え、事故を減らす試作モジュール。",
+    ),
+    (
+        "berserk_prototype",
+        "暴走モジュール 試作型",
+        "prototype",
+        "berserk",
+        0,
+        12,
+        0,
+        0,
+        -8,
+        6,
+        "攻撃と会心を大きく伸ばす代わりに命中が落ちる試作モジュール。",
+    ),
+    (
+        "analysis_prototype",
+        "解析モジュール 試作型",
+        "prototype",
+        "analysis",
+        0,
+        -3,
+        3,
+        0,
+        6,
+        0,
+        "命中と防御を補助し、堅実な観測戦に寄せる試作モジュール。",
+    ),
+)
 MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
     "phoenix": ("phoenix_flare", "phoenix_ember", "phoenix_aura"),
@@ -515,6 +595,7 @@ def main():
             part_inventory_limit INTEGER NOT NULL DEFAULT 60,
             avatar_path TEXT,
             active_robot_id INTEGER,
+            active_research_module_instance_id INTEGER,
             battle_log_mode TEXT NOT NULL DEFAULT 'collapsed',
             boss_meter_explore_l1 INTEGER NOT NULL DEFAULT 0,
             boss_meter_win_l1 INTEGER NOT NULL DEFAULT 0,
@@ -746,6 +827,40 @@ def main():
             source TEXT,
             robot_instance_id INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            module_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            family TEXT NOT NULL,
+            hp_bonus INTEGER NOT NULL DEFAULT 0,
+            atk_bonus INTEGER NOT NULL DEFAULT 0,
+            def_bonus INTEGER NOT NULL DEFAULT 0,
+            spd_bonus INTEGER NOT NULL DEFAULT 0,
+            acc_bonus INTEGER NOT NULL DEFAULT 0,
+            cri_bonus INTEGER NOT NULL DEFAULT 0,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'inventory',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
         )
         """
     )
@@ -1987,6 +2102,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
     if "active_robot_id" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN active_robot_id INTEGER")
+    if "active_research_module_instance_id" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN active_research_module_instance_id INTEGER")
     if "stable_no_damage_wins" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN stable_no_damage_wins INTEGER NOT NULL DEFAULT 0")
     if "burst_crit_finisher_kills" not in users_cols:
@@ -2070,6 +2187,54 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     if "last_daily_research_modal_day" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
+
+    research_module_cols = {row[1] for row in cur.execute("PRAGMA table_info(research_modules)").fetchall()}
+    research_module_column_defs = {
+        "module_key": "module_key TEXT",
+        "name_ja": "name_ja TEXT",
+        "rarity": "rarity TEXT NOT NULL DEFAULT 'prototype'",
+        "family": "family TEXT NOT NULL DEFAULT 'stable'",
+        "hp_bonus": "hp_bonus INTEGER NOT NULL DEFAULT 0",
+        "atk_bonus": "atk_bonus INTEGER NOT NULL DEFAULT 0",
+        "def_bonus": "def_bonus INTEGER NOT NULL DEFAULT 0",
+        "spd_bonus": "spd_bonus INTEGER NOT NULL DEFAULT 0",
+        "acc_bonus": "acc_bonus INTEGER NOT NULL DEFAULT 0",
+        "cri_bonus": "cri_bonus INTEGER NOT NULL DEFAULT 0",
+        "description": "description TEXT",
+        "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
+        "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_sql in research_module_column_defs.items():
+        if column_name not in research_module_cols:
+            cur.execute(f"ALTER TABLE research_modules ADD COLUMN {column_sql}")
+    user_research_module_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_research_modules)").fetchall()}
+    user_research_module_column_defs = {
+        "user_id": "user_id INTEGER",
+        "module_key": "module_key TEXT",
+        "status": "status TEXT NOT NULL DEFAULT 'inventory'",
+        "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+        "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_sql in user_research_module_column_defs.items():
+        if column_name not in user_research_module_cols:
+            cur.execute(f"ALTER TABLE user_research_modules ADD COLUMN {column_sql}")
+    now_ts = int(time.time())
+    for seed in RESEARCH_MODULE_SEEDS:
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO research_modules (
+                module_key, name_ja, rarity, family,
+                hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+                description, is_active, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (*seed, now_ts),
+        )
+    cur.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    cur.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    cur.execute("UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0", (now_ts,))
+    cur.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
     for release_key in RELEASE_FLAG_KEYS:
         cur.execute(
             """

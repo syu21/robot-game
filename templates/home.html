@@ -478,6 +478,21 @@
             <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
           </div>
+          <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top research-module-select-form">
+            <label for="research-module-select"><b>研究モジュール</b></label>
+            <select id="research-module-select" name="module_instance_id">
+              <option value="none">未装備</option>
+              {% for module in research_module_options %}
+              <option value="{{ module['instance_id'] }}" {% if active_research_module and active_research_module['instance_id'] == module['instance_id'] %}selected{% endif %}>
+                {{ module['name_ja'] }}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn-secondary">適用</button>
+          </form>
+          {% if active_research_module and active_research_module.get('stat_line') %}
+          <div class="upgrade-cost">{{ active_research_module['stat_line'] }}</div>
+          {% endif %}
           <details class="home-robot-details">
             <summary>詳細を見る</summary>
           <div class="main-robot-meta-grid">

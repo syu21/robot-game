@@ -165,6 +165,8 @@ AUDIT_EVENT_TYPES = {
     "COIN_DELTA": "audit.coin.delta",
     "STREAK_BONUS": "audit.streak.bonus",
     "DROP": "audit.drop",
+    "MODULE_DROP": "audit.module.drop",
+    "MODULE_SELECT": "audit.module.select",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",

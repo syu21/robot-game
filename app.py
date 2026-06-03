@@ -182,6 +182,21 @@ from services.stats import (
     generate_noisy_weights,
 )
 
+RESEARCH_MODULE_SEEDS = (
+    ("sniper_prototype", "狙撃モジュール 試作型", "prototype", "sniper", -3, 0, 0, 0, 8, 3, "命中を高め、霧や回避型の敵に対応しやすくする試作モジュール。"),
+    ("heavy_prototype", "重装モジュール 試作型", "prototype", "heavy", 10, 0, 6, -5, 0, 0, "耐久と防御を高める代わりに、動きが重くなる試作モジュール。"),
+    ("assault_prototype", "強襲モジュール 試作型", "prototype", "assault", 0, 8, -4, 4, 0, 0, "攻撃と素早さを高め、短期決戦に寄せる試作モジュール。"),
+    ("stable_prototype", "安定モジュール 試作型", "prototype", "stable", 0, 0, 5, 0, 5, -3, "防御と命中を整え、事故を減らす試作モジュール。"),
+    ("berserk_prototype", "暴走モジュール 試作型", "prototype", "berserk", 0, 12, 0, 0, -8, 6, "攻撃と会心を大きく伸ばす代わりに命中が落ちる試作モジュール。"),
+    ("analysis_prototype", "解析モジュール 試作型", "prototype", "analysis", 0, -3, 3, 0, 6, 0, "命中と防御を補助し、堅実な観測戦に寄せる試作モジュール。"),
+)
+RESEARCH_MODULE_DROP_CONFIG = {
+    "layer_2": (0.02, ("sniper_prototype", "stable_prototype", "analysis_prototype")),
+    "layer_2_mist": (0.025, ("sniper_prototype", "stable_prototype", "analysis_prototype")),
+    "layer_2_rush": (0.025, ("sniper_prototype", "assault_prototype", "analysis_prototype")),
+    "layer_3": (0.03, ("assault_prototype", "heavy_prototype", "berserk_prototype", "stable_prototype")),
+}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
 stripe = None
@@ -9261,6 +9276,10 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
     drop_counter = Counter()
     part_row_map = {}
     for item in (drop_items or []):
+        if item.get("kind") == "research_module":
+            name = (item.get("module_name") or item.get("module_key") or "研究モジュール").strip()
+            drops.append(f"研究モジュール獲得: {name}")
+            continue
         name = (item.get("part_display_name") or item.get("part_key") or "不明パーツ").strip()
         plus = int(item.get("plus") or 0)
         storage_suffix = ""
@@ -9912,6 +9931,40 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            module_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            family TEXT NOT NULL,
+            hp_bonus INTEGER NOT NULL DEFAULT 0,
+            atk_bonus INTEGER NOT NULL DEFAULT 0,
+            def_bonus INTEGER NOT NULL DEFAULT 0,
+            spd_bonus INTEGER NOT NULL DEFAULT 0,
+            acc_bonus INTEGER NOT NULL DEFAULT 0,
+            cri_bonus INTEGER NOT NULL DEFAULT 0,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'inventory',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_key) REFERENCES research_modules(module_key)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
@@ -9932,6 +9985,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
     if "active_robot_id" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN active_robot_id INTEGER")
+    if "active_research_module_instance_id" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN active_research_module_instance_id INTEGER")
     if "battle_log_mode" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN battle_log_mode TEXT NOT NULL DEFAULT 'collapsed'")
     if "boss_meter_explore_l1" not in cols:
@@ -10035,6 +10090,56 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     if "last_daily_research_modal_day" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
+    research_module_cols = {row["name"] for row in db.execute("PRAGMA table_info(research_modules)").fetchall()}
+    research_module_column_defs = {
+        "module_key": "module_key TEXT",
+        "name_ja": "name_ja TEXT",
+        "rarity": "rarity TEXT NOT NULL DEFAULT 'prototype'",
+        "family": "family TEXT NOT NULL DEFAULT 'stable'",
+        "hp_bonus": "hp_bonus INTEGER NOT NULL DEFAULT 0",
+        "atk_bonus": "atk_bonus INTEGER NOT NULL DEFAULT 0",
+        "def_bonus": "def_bonus INTEGER NOT NULL DEFAULT 0",
+        "spd_bonus": "spd_bonus INTEGER NOT NULL DEFAULT 0",
+        "acc_bonus": "acc_bonus INTEGER NOT NULL DEFAULT 0",
+        "cri_bonus": "cri_bonus INTEGER NOT NULL DEFAULT 0",
+        "description": "description TEXT",
+        "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
+        "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_sql in research_module_column_defs.items():
+        if column_name not in research_module_cols:
+            db.execute(f"ALTER TABLE research_modules ADD COLUMN {column_sql}")
+    user_research_module_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_research_modules)").fetchall()}
+    user_research_module_column_defs = {
+        "user_id": "user_id INTEGER",
+        "module_key": "module_key TEXT",
+        "status": "status TEXT NOT NULL DEFAULT 'inventory'",
+        "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+        "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
+    }
+    for column_name, column_sql in user_research_module_column_defs.items():
+        if column_name not in user_research_module_cols:
+            db.execute(f"ALTER TABLE user_research_modules ADD COLUMN {column_sql}")
+    research_module_now = int(time.time())
+    for seed in RESEARCH_MODULE_SEEDS:
+        db.execute(
+            """
+            INSERT OR IGNORE INTO research_modules (
+                module_key, name_ja, rarity, family,
+                hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+                description, is_active, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            """,
+            (*seed, research_module_now),
+        )
+    db.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    db.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
+    db.execute(
+        "UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
+        (research_module_now,),
+    )
+    db.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -13140,6 +13245,132 @@ def _drop_audit_payload(area_key, battle_no, dropped_part):
         "growth_tendency_key": row.get("growth_tendency_key"),
         "growth_tendency_label": row.get("growth_tendency_label"),
     }
+
+
+def _research_module_stat_line(module):
+    if not module:
+        return ""
+    labels = {
+        "hp_bonus": "耐久",
+        "atk_bonus": "攻撃",
+        "def_bonus": "防御",
+        "spd_bonus": "素早さ",
+        "acc_bonus": "命中",
+        "cri_bonus": "会心",
+    }
+    parts = []
+    for key, label in labels.items():
+        raw_value = module.get(key) if isinstance(module, dict) else module[key]
+        value = int(raw_value or 0)
+        if value == 0:
+            continue
+        sign = "+" if value > 0 else ""
+        parts.append(f"{label} {sign}{value}")
+    return " / ".join(parts)
+
+
+def _research_module_view(row):
+    if not row:
+        return None
+    module = dict(row)
+    module["stat_line"] = _research_module_stat_line(module)
+    return module
+
+
+def _active_research_module_for_user(db, user_id, user_row=None):
+    user = user_row or db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not user or "active_research_module_instance_id" not in user.keys():
+        return None
+    module_instance_id = user["active_research_module_instance_id"]
+    if not module_instance_id:
+        return None
+    row = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
+               rm.name_ja, rm.rarity, rm.family,
+               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               rm.description, rm.is_active
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id = ?
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        LIMIT 1
+        """,
+        (int(module_instance_id), int(user_id)),
+    ).fetchone()
+    return _research_module_view(row)
+
+
+def _user_research_module_options(db, user_id):
+    rows = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
+               rm.name_ja, rm.rarity, rm.family,
+               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               rm.description, rm.is_active
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        ORDER BY rm.rarity ASC, rm.family ASC, urm.id ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return [_research_module_view(row) for row in rows]
+
+
+def _apply_research_module_to_stats(stats, module):
+    if not module:
+        return dict(stats or {})
+    result = dict(stats or {})
+    bonus_keys = {
+        "hp": "hp_bonus",
+        "atk": "atk_bonus",
+        "def": "def_bonus",
+        "spd": "spd_bonus",
+        "acc": "acc_bonus",
+        "cri": "cri_bonus",
+    }
+    for stat_key, bonus_key in bonus_keys.items():
+        result[stat_key] = max(1, int(result.get(stat_key) or 0) + int(module.get(bonus_key) or 0))
+    return result
+
+
+def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
+    config = RESEARCH_MODULE_DROP_CONFIG.get(str(area_key or "").strip())
+    if not config:
+        return None
+    rate, candidates = config
+    roller = rng or random
+    if roller.random() >= float(rate):
+        return None
+    module_key = roller.choice(tuple(candidates))
+    module = db.execute(
+        """
+        SELECT *
+        FROM research_modules
+        WHERE module_key = ?
+          AND is_active = 1
+        LIMIT 1
+        """,
+        (module_key,),
+    ).fetchone()
+    if not module:
+        return None
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO user_research_modules (user_id, module_key, status, created_at, updated_at)
+        VALUES (?, ?, 'inventory', ?, ?)
+        """,
+        (int(user_id), module_key, now_ts, now_ts),
+    )
+    payload = _research_module_view(module)
+    payload["instance_id"] = int(cur.lastrowid)
+    return payload
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -27104,6 +27335,78 @@ def _daily_research_task_view(task):
     }
 
 
+@app.route("/modules/select", methods=["POST"])
+@login_required
+def modules_select():
+    db = get_db()
+    user_id = int(session["user_id"])
+    raw_id = (request.form.get("module_instance_id") or "").strip()
+    if raw_id == "" or raw_id.lower() == "none":
+        db.execute("UPDATE users SET active_research_module_instance_id = NULL WHERE id = ?", (user_id,))
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_SELECT"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="module_select",
+            entity_type="research_module",
+            payload={"user_id": user_id, "module_instance_id": None, "selected": False},
+            ip=request.remote_addr,
+        )
+        db.commit()
+        session["message"] = "研究モジュールを外しました"
+        return redirect(url_for("home"))
+    try:
+        module_instance_id = int(raw_id)
+    except ValueError:
+        session["message"] = "研究モジュールの指定が不正です"
+        return redirect(url_for("home"))
+    module = db.execute(
+        """
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
+               rm.name_ja, rm.rarity, rm.family, rm.is_active,
+               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id = ?
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        LIMIT 1
+        """,
+        (module_instance_id, user_id),
+    ).fetchone()
+    if not module:
+        session["message"] = "選択できない研究モジュールです"
+        return redirect(url_for("home"))
+    db.execute(
+        "UPDATE users SET active_research_module_instance_id = ? WHERE id = ?",
+        (module_instance_id, user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_SELECT"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_select",
+        entity_type="research_module",
+        entity_id=module_instance_id,
+        payload={
+            "user_id": user_id,
+            "module_instance_id": module_instance_id,
+            "module_key": module["module_key"],
+            "module_name": module["name_ja"],
+            "rarity": module["rarity"],
+            "family": module["family"],
+            "selected": True,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "研究モジュールを設定しました"
+    return redirect(url_for("home"))
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -27172,6 +27475,8 @@ def home():
         user["active_robot_id"],
     )
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
+    research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
+    active_research_module = _active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
     main_robot_profile = _robot_profile_view(main_robot_stats)
     main_robot_style_state = (
@@ -27670,6 +27975,8 @@ def home():
             showcase_rows=showcase_rows,
             main_robot=main_robot,
             main_robot_stats=main_robot_stats,
+            research_module_options=research_module_options,
+            active_research_module=active_research_module,
             main_robot_style=main_robot_style,
             main_robot_profile=main_robot_profile,
             main_robot_style_state=main_robot_style_state,
@@ -30403,7 +30710,8 @@ def explore():
     if not robot_stats:
         session["message"] = "アクティブロボの個体ステータスを取得できません。再編成後に探索してください。"
         return redirect(url_for("robots"))
-    base_stats = robot_stats["stats"]
+    active_research_module = _active_research_module_for_user(db, user_id, user_row=user)
+    base_stats = _apply_research_module_to_stats(robot_stats["stats"], active_research_module)
     player_atk_base = int(base_stats["atk"])
     player_def_base = int(base_stats["def"])
     player_spd = int(base_stats["spd"])
@@ -30441,6 +30749,7 @@ def explore():
     core_dropped_this_explore = False
     bonus_line = None
     drop_labels = []
+    research_module_drop_items = []
     new_robot = None
     timeout_any = False
     final_timeout_decision = None
@@ -31424,6 +31733,38 @@ def explore():
                         },
                         ip=request.remote_addr,
                     )
+            if not (area_boss_active and battle_no == 1):
+                module_drop = _roll_research_module_drop(db, user_id, area_key, rng=random)
+                if module_drop:
+                    module_item = {
+                        "kind": "research_module",
+                        "module_instance_id": module_drop.get("instance_id"),
+                        "module_key": module_drop.get("module_key"),
+                        "module_name": module_drop.get("name_ja"),
+                        "rarity": module_drop.get("rarity"),
+                        "family": module_drop.get("family"),
+                    }
+                    research_module_drop_items.append(module_item)
+                    world_bonus_notes.append(f"研究モジュール獲得: {module_drop.get('name_ja')}")
+                    audit_log(
+                        db,
+                        AUDIT_EVENT_TYPES["MODULE_DROP"],
+                        user_id=user_id,
+                        request_id=request_id,
+                        action_key="explore",
+                        entity_type="research_module",
+                        entity_id=module_drop.get("instance_id"),
+                        delta_count=1,
+                        payload={
+                            "user_id": user_id,
+                            "area_key": area_key,
+                            "module_key": module_drop.get("module_key"),
+                            "module_name": module_drop.get("name_ja"),
+                            "rarity": module_drop.get("rarity"),
+                            "family": module_drop.get("family"),
+                        },
+                        ip=request.remote_addr,
+                    )
             core_drop_rate = _evolution_core_drop_rate_for_area(area_key)
             if (
                 not (area_boss_active and battle_no == 1)
@@ -32272,6 +32613,7 @@ def explore():
                     "link": url_for("parts", tab="instances"),
                 }
             )
+    drop_items.extend(research_module_drop_items)
     outcome_display = "勝利" if final_outcome == "win" else "敗北"
     if final_battle_timeout and final_timeout_decision:
         outcome_display = str(final_timeout_decision.get("display_outcome") or outcome_display)
