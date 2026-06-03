@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>研究モジュール</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+  <div class="card">
+    <div><b>現在選択中</b></div>
+    {% if active_research_module %}
+    <div class="upgrade-cost">{{ active_research_module['name_ja'] }}</div>
+    <div class="robot-time">{{ active_research_module['stat_line'] }}</div>
+    {% else %}
+    <div class="upgrade-cost">未装備</div>
+    {% endif %}
+    <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
+  </div>
+
+  {% if combine_candidates %}
+  <div class="card">
+    <div><b>完成型へ合成</b></div>
+    {% for item in combine_candidates %}
+    <form method="post" action="{{ url_for('modules_combine') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="source_module_key" value="{{ item['source_module_key'] }}" />
+      <span class="upgrade-cost">{{ item['source_name'] }} x{{ item['count'] }} -> {{ item['result_name'] }}</span>
+      <button type="submit" class="btn-secondary">完成型へ合成</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div><b>所持モジュール</b></div>
+    {% if research_module_options %}
+    <div class="stat-grid">
+      {% for module in research_module_options %}
+      <div class="stat-card">
+        <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }}</div>
+        <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+        <div class="robot-time">{{ module['stat_line'] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="upgrade-cost">未所持</div>
+    {% endif %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% endblock %}

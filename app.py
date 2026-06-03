@@ -189,12 +189,37 @@ RESEARCH_MODULE_SEEDS = (
     ("stable_prototype", "安定モジュール 試作型", "prototype", "stable", 0, 0, 5, 0, 5, -3, "防御と命中を整え、事故を減らす試作モジュール。"),
     ("berserk_prototype", "暴走モジュール 試作型", "prototype", "berserk", 0, 12, 0, 0, -8, 6, "攻撃と会心を大きく伸ばす代わりに命中が落ちる試作モジュール。"),
     ("analysis_prototype", "解析モジュール 試作型", "prototype", "analysis", 0, -3, 3, 0, 6, 0, "命中と防御を補助し、堅実な観測戦に寄せる試作モジュール。"),
+    ("sniper_complete", "狙撃モジュール 完成型", "complete", "sniper", -5, 0, 0, 0, 12, 5, "命中と会心を高め、回避型や霧の敵へ強く出る完成型モジュール。"),
+    ("heavy_complete", "重装モジュール 完成型", "complete", "heavy", 15, 0, 9, -7, 0, 0, "耐久と防御を大きく高める完成型モジュール。"),
+    ("assault_complete", "強襲モジュール 完成型", "complete", "assault", 0, 12, -6, 6, 0, 0, "攻撃と素早さを大きく高める完成型モジュール。"),
+    ("stable_complete", "安定モジュール 完成型", "complete", "stable", 0, 0, 8, 0, 8, -5, "防御と命中を高め、事故を抑える完成型モジュール。"),
+    ("berserk_complete", "暴走モジュール 完成型", "complete", "berserk", 0, 18, 0, 0, -12, 9, "攻撃と会心を最大級に伸ばす完成型モジュール。"),
+    ("analysis_complete", "解析モジュール 完成型", "complete", "analysis", 0, -5, 5, 0, 10, 0, "命中と防御を補助し、観測戦を安定させる完成型モジュール。"),
 )
 RESEARCH_MODULE_DROP_CONFIG = {
     "layer_2": (0.02, ("sniper_prototype", "stable_prototype", "analysis_prototype")),
     "layer_2_mist": (0.025, ("sniper_prototype", "stable_prototype", "analysis_prototype")),
     "layer_2_rush": (0.025, ("sniper_prototype", "assault_prototype", "analysis_prototype")),
     "layer_3": (0.03, ("assault_prototype", "heavy_prototype", "berserk_prototype", "stable_prototype")),
+}
+RESEARCH_MODULE_PITY_GAIN_BY_AREA = {
+    "layer_2": 1,
+    "layer_2_mist": 1,
+    "layer_2_rush": 1,
+    "layer_3": 2,
+    "layer_4_forge": 3,
+    "layer_4_haze": 3,
+    "layer_4_burst": 3,
+}
+RESEARCH_MODULE_PITY_TARGET = 100
+RESEARCH_MODULE_PITY_CANDIDATES = tuple(key for key, *_rest in RESEARCH_MODULE_SEEDS if key.endswith("_prototype"))
+RESEARCH_MODULE_COMBINE_MAP = {
+    "sniper_prototype": "sniper_complete",
+    "heavy_prototype": "heavy_complete",
+    "assault_prototype": "assault_complete",
+    "stable_prototype": "stable_complete",
+    "berserk_prototype": "berserk_complete",
+    "analysis_prototype": "analysis_complete",
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -9269,6 +9294,7 @@ def _element_to_faction(element):
 
 def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, drop_items):
     drops = []
+    other_drops = []
     part_rows = []
     if int(reward_core or 0) > 0:
         core_name = (dropped_core_name or "進化コア").strip() or "進化コア"
@@ -9276,9 +9302,17 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
     drop_counter = Counter()
     part_row_map = {}
     for item in (drop_items or []):
+        if item.get("kind") == "research_note":
+            line = str(item.get("line") or "").strip()
+            if line:
+                other_drops.append(line)
+            continue
         if item.get("kind") == "research_module":
             name = (item.get("module_name") or item.get("module_key") or "研究モジュール").strip()
-            drops.append(f"研究モジュール獲得: {name}")
+            if item.get("source") == "pity":
+                other_drops.append(f"研究ゲージ達成: {name}を獲得")
+            else:
+                other_drops.append(f"研究モジュール獲得: {name}")
             continue
         name = (item.get("part_display_name") or item.get("part_key") or "不明パーツ").strip()
         plus = int(item.get("plus") or 0)
@@ -9312,11 +9346,13 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
             drops.append(label)
     for row in part_row_map.values():
         part_rows.append(row)
+    drops.extend(other_drops)
     if not drops:
         drops.append("戦利品なし")
     return {
         "coin": int(reward_coin or 0),
         "drops": drops,
+        "other_drops": other_drops,
         "part_rows": part_rows,
     }
 
@@ -10037,6 +10073,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN research_boost_charges INTEGER NOT NULL DEFAULT 0")
     if "research_boost_auto_use_enabled" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
+    if "research_module_pity" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -10134,6 +10172,7 @@ def ensure_schema(db):
             (*seed, research_module_now),
         )
     db.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    db.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     db.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     db.execute(
         "UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
@@ -13339,15 +13378,7 @@ def _apply_research_module_to_stats(stats, module):
     return result
 
 
-def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
-    config = RESEARCH_MODULE_DROP_CONFIG.get(str(area_key or "").strip())
-    if not config:
-        return None
-    rate, candidates = config
-    roller = rng or random
-    if roller.random() >= float(rate):
-        return None
-    module_key = roller.choice(tuple(candidates))
+def _grant_research_module_instance(db, user_id, module_key):
     module = db.execute(
         """
         SELECT *
@@ -13356,7 +13387,7 @@ def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
           AND is_active = 1
         LIMIT 1
         """,
-        (module_key,),
+        (str(module_key or "").strip(),),
     ).fetchone()
     if not module:
         return None
@@ -13366,11 +13397,128 @@ def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
         INSERT INTO user_research_modules (user_id, module_key, status, created_at, updated_at)
         VALUES (?, ?, 'inventory', ?, ?)
         """,
-        (int(user_id), module_key, now_ts, now_ts),
+        (int(user_id), module["module_key"], now_ts, now_ts),
     )
     payload = _research_module_view(module)
     payload["instance_id"] = int(cur.lastrowid)
     return payload
+
+
+def _roll_research_module_drop(db, user_id, area_key, *, rng=None):
+    config = RESEARCH_MODULE_DROP_CONFIG.get(str(area_key or "").strip())
+    if not config:
+        return None
+    rate, candidates = config
+    roller = rng or random
+    if roller.random() >= float(rate):
+        return None
+    module_key = roller.choice(tuple(candidates))
+    return _grant_research_module_instance(db, user_id, module_key)
+
+
+def _advance_research_module_pity(db, user_id, area_key, *, rng=None, request_id=None, ip=None):
+    gain = int(RESEARCH_MODULE_PITY_GAIN_BY_AREA.get(str(area_key or "").strip(), 0) or 0)
+    if gain <= 0:
+        return {"gain": 0, "before": None, "after": None, "grant": None}
+    row = db.execute(
+        "SELECT COALESCE(research_module_pity, 0) AS pity FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    before = int(row["pity"] or 0) if row else 0
+    after = before + gain
+    grant = None
+    roller = rng or random
+    if after >= int(RESEARCH_MODULE_PITY_TARGET):
+        module_key = roller.choice(tuple(RESEARCH_MODULE_PITY_CANDIDATES))
+        grant = _grant_research_module_instance(db, user_id, module_key)
+        if grant:
+            after -= int(RESEARCH_MODULE_PITY_TARGET)
+    db.execute(
+        "UPDATE users SET research_module_pity = ? WHERE id = ?",
+        (max(0, int(after)), int(user_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_PITY_PROGRESS"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="explore",
+        entity_type="research_module_pity",
+        delta_count=gain,
+        payload={
+            "user_id": int(user_id),
+            "area_key": area_key,
+            "gain": gain,
+            "before": before,
+            "after": max(0, int(after)),
+            "target": int(RESEARCH_MODULE_PITY_TARGET),
+        },
+        ip=ip,
+    )
+    if grant:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_PITY_GRANT"],
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="explore",
+            entity_type="research_module",
+            entity_id=grant.get("instance_id"),
+            delta_count=1,
+            payload={
+                "user_id": int(user_id),
+                "area_key": area_key,
+                "module_key": grant.get("module_key"),
+                "module_name": grant.get("name_ja"),
+                "rarity": grant.get("rarity"),
+                "family": grant.get("family"),
+                "pity_before": before,
+                "pity_after": max(0, int(after)),
+                "target": int(RESEARCH_MODULE_PITY_TARGET),
+            },
+            ip=ip,
+        )
+    return {"gain": gain, "before": before, "after": max(0, int(after)), "grant": grant}
+
+
+def _research_module_combine_candidates(db, user_id):
+    rows = db.execute(
+        """
+        SELECT urm.module_key, rm.name_ja, rm.family, COUNT(*) AS count
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.rarity = 'prototype'
+          AND rm.is_active = 1
+        GROUP BY urm.module_key, rm.name_ja, rm.family
+        HAVING COUNT(*) >= 3
+        ORDER BY rm.family ASC, urm.module_key ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    candidates = []
+    for row in rows:
+        source_key = str(row["module_key"] or "")
+        result_key = RESEARCH_MODULE_COMBINE_MAP.get(source_key)
+        if not result_key:
+            continue
+        result = db.execute(
+            "SELECT name_ja FROM research_modules WHERE module_key = ? AND rarity = 'complete' AND is_active = 1",
+            (result_key,),
+        ).fetchone()
+        if not result:
+            continue
+        candidates.append(
+            {
+                "source_module_key": source_key,
+                "source_name": row["name_ja"],
+                "result_module_key": result_key,
+                "result_name": result["name_ja"],
+                "count": int(row["count"] or 0),
+            }
+        )
+    return candidates
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -27407,6 +27555,121 @@ def modules_select():
     return redirect(url_for("home"))
 
 
+@app.route("/modules/combine", methods=["POST"])
+@login_required
+def modules_combine():
+    db = get_db()
+    user_id = int(session["user_id"])
+    source_module_key = (request.form.get("source_module_key") or "").strip()
+    result_module_key = RESEARCH_MODULE_COMBINE_MAP.get(source_module_key)
+    if not result_module_key:
+        session["message"] = "合成できない研究モジュールです"
+        return redirect(url_for("modules"))
+    source = db.execute(
+        """
+        SELECT module_key
+        FROM research_modules
+        WHERE module_key = ?
+          AND rarity = 'prototype'
+          AND is_active = 1
+        LIMIT 1
+        """,
+        (source_module_key,),
+    ).fetchone()
+    result = db.execute(
+        """
+        SELECT module_key
+        FROM research_modules
+        WHERE module_key = ?
+          AND rarity = 'complete'
+          AND is_active = 1
+        LIMIT 1
+        """,
+        (result_module_key,),
+    ).fetchone()
+    if not source or not result:
+        session["message"] = "合成先の研究モジュールが見つかりません"
+        return redirect(url_for("modules"))
+    rows = db.execute(
+        """
+        SELECT id
+        FROM user_research_modules
+        WHERE user_id = ?
+          AND module_key = ?
+          AND status = 'inventory'
+        ORDER BY id ASC
+        LIMIT 3
+        """,
+        (user_id, source_module_key),
+    ).fetchall()
+    if len(rows) < 3:
+        session["message"] = "同種の試作型が3個必要です"
+        return redirect(url_for("modules"))
+    consumed_ids = [int(row["id"]) for row in rows]
+    now_ts = int(time.time())
+    db.execute(
+        f"""
+        UPDATE user_research_modules
+        SET status = 'consumed', updated_at = ?
+        WHERE user_id = ?
+          AND id IN ({",".join(["?"] * len(consumed_ids))})
+          AND status = 'inventory'
+        """,
+        (now_ts, user_id, *consumed_ids),
+    )
+    result_module = _grant_research_module_instance(db, user_id, result_module_key)
+    if not result_module:
+        session["message"] = "完成型の付与に失敗しました"
+        db.rollback()
+        return redirect(url_for("modules"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_COMBINE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_combine",
+        entity_type="research_module",
+        entity_id=result_module.get("instance_id"),
+        delta_count=1,
+        payload={
+            "user_id": user_id,
+            "source_module_key": source_module_key,
+            "result_module_key": result_module_key,
+            "consumed_instance_ids": consumed_ids,
+            "result_instance_id": result_module.get("instance_id"),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"{result_module.get('name_ja')}を合成しました"
+    return redirect(url_for("modules"))
+
+
+@app.route("/modules")
+@login_required
+def modules():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    module_options = _user_research_module_options(db, user_id)
+    active_module = _active_research_module_for_user(db, user_id, user_row=user)
+    combine_candidates = _research_module_combine_candidates(db, user_id)
+    message = session.pop("message", None)
+    return render_template(
+        "modules.html",
+        user=user,
+        message=message,
+        active_research_module=active_module,
+        research_module_options=module_options,
+        combine_candidates=combine_candidates,
+        research_module_pity=int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0,
+        research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
+    )
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -27477,6 +27740,8 @@ def home():
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
     research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
     active_research_module = _active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None
+    research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
+    research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
     main_robot_profile = _robot_profile_view(main_robot_stats)
     main_robot_style_state = (
@@ -27977,6 +28242,9 @@ def home():
             main_robot_stats=main_robot_stats,
             research_module_options=research_module_options,
             active_research_module=active_research_module,
+            research_module_combine_candidates=research_module_combine_candidates,
+            research_module_pity=research_module_pity,
+            research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
             main_robot_style=main_robot_style,
             main_robot_profile=main_robot_profile,
             main_robot_style_state=main_robot_style_state,
@@ -31765,6 +32033,36 @@ def explore():
                         },
                         ip=request.remote_addr,
                     )
+                pity_result = _advance_research_module_pity(
+                    db,
+                    user_id,
+                    area_key,
+                    rng=random,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                )
+                if int(pity_result.get("gain") or 0) > 0:
+                    research_module_drop_items.append(
+                        {
+                            "kind": "research_note",
+                            "line": f"研究ゲージ +{int(pity_result['gain'])}",
+                        }
+                    )
+                    world_bonus_notes.append(f"研究ゲージ +{int(pity_result['gain'])}")
+                pity_grant = pity_result.get("grant")
+                if pity_grant:
+                    research_module_drop_items.append(
+                        {
+                            "kind": "research_module",
+                            "module_instance_id": pity_grant.get("instance_id"),
+                            "module_key": pity_grant.get("module_key"),
+                            "module_name": pity_grant.get("name_ja"),
+                            "rarity": pity_grant.get("rarity"),
+                            "family": pity_grant.get("family"),
+                            "source": "pity",
+                        }
+                    )
+                    world_bonus_notes.append(f"研究ゲージ達成: {pity_grant.get('name_ja')}を獲得")
             core_drop_rate = _evolution_core_drop_rate_for_area(area_key)
             if (
                 not (area_boss_active and battle_no == 1)

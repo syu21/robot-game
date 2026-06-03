@@ -155,9 +155,16 @@
       </div>
       {% endfor %}
     </div>
+    {% for line in reward_front.get('other_drops', []) %}
+    <div class="battle-summary-row">{{ line }}</div>
+    {% endfor %}
     {% if summary.get('storage_notice') %}
     <div class="battle-summary-row">{{ summary.get('storage_notice') }}</div>
     {% endif %}
+    {% elif reward_front.get('other_drops') %}
+    {% for line in reward_front.get('other_drops', []) %}
+    <div class="battle-summary-row">{{ line }}</div>
+    {% endfor %}
     {% elif summary.get('highlight_core_drop') %}
     <div class="battle-summary-row">{{ summary.get('core_reward_row_label', '獲得') }}: {{ summary.get('dropped_core_name', '進化コア') }} ×{{ summary.get('reward_core', 0) }}</div>
     {% else %}

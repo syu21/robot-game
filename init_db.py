@@ -106,6 +106,84 @@ RESEARCH_MODULE_SEEDS = (
         0,
         "命中と防御を補助し、堅実な観測戦に寄せる試作モジュール。",
     ),
+    (
+        "sniper_complete",
+        "狙撃モジュール 完成型",
+        "complete",
+        "sniper",
+        -5,
+        0,
+        0,
+        0,
+        12,
+        5,
+        "命中と会心を高め、回避型や霧の敵へ強く出る完成型モジュール。",
+    ),
+    (
+        "heavy_complete",
+        "重装モジュール 完成型",
+        "complete",
+        "heavy",
+        15,
+        0,
+        9,
+        -7,
+        0,
+        0,
+        "耐久と防御を大きく高める完成型モジュール。",
+    ),
+    (
+        "assault_complete",
+        "強襲モジュール 完成型",
+        "complete",
+        "assault",
+        0,
+        12,
+        -6,
+        6,
+        0,
+        0,
+        "攻撃と素早さを大きく高める完成型モジュール。",
+    ),
+    (
+        "stable_complete",
+        "安定モジュール 完成型",
+        "complete",
+        "stable",
+        0,
+        0,
+        8,
+        0,
+        8,
+        -5,
+        "防御と命中を高め、事故を抑える完成型モジュール。",
+    ),
+    (
+        "berserk_complete",
+        "暴走モジュール 完成型",
+        "complete",
+        "berserk",
+        0,
+        18,
+        0,
+        0,
+        -12,
+        9,
+        "攻撃と会心を最大級に伸ばす完成型モジュール。",
+    ),
+    (
+        "analysis_complete",
+        "解析モジュール 完成型",
+        "complete",
+        "analysis",
+        0,
+        -5,
+        5,
+        0,
+        10,
+        0,
+        "命中と防御を補助し、観測戦を安定させる完成型モジュール。",
+    ),
 )
 MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
@@ -619,6 +697,7 @@ def main():
             lab_small_boost_until INTEGER NOT NULL DEFAULT 0,
             research_boost_charges INTEGER NOT NULL DEFAULT 0,
             research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1,
+            research_module_pity INTEGER NOT NULL DEFAULT 0,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -2138,6 +2217,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN research_boost_charges INTEGER NOT NULL DEFAULT 0")
     if "research_boost_auto_use_enabled" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
+    if "research_module_pity" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -2232,6 +2313,7 @@ def main():
             (*seed, now_ts),
         )
     cur.execute("UPDATE research_modules SET is_active = 1 WHERE is_active IS NULL")
+    cur.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     cur.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     cur.execute("UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0", (now_ts,))
     cur.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")

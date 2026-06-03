@@ -94,6 +94,24 @@
   - ゲージ満了で保証付与
   - layer_2/3 の NPCボス撃破では追加報酬として `進化コア x1`
   - 監査: `audit.core.drop`
+- 研究モジュール:
+  - 通常戦勝利時のみ、ボス報酬とは別枠でドロップ/保証を処理する
+  - 低確率ドロップ対象:
+    - `layer_2`: 2%
+    - `layer_2_mist`: 2.5%
+    - `layer_2_rush`: 2.5%
+    - `layer_3`: 3%
+  - 研究ゲージ `users.research_module_pity`
+    - `layer_2` / `layer_2_mist` / `layer_2_rush`: +1
+    - `layer_3`: +2
+    - `layer_4_forge` / `layer_4_haze` / `layer_4_burst`: +3
+  - 100到達でランダムprototype研究モジュールを1個保証付与し、付与後 `-100`
+  - complete研究モジュールは同種prototype 3個合成で入手する
+  - 監査:
+    - `audit.module.drop`
+    - `audit.module.pity.progress`
+    - `audit.module.pity.grant`
+    - `audit.module.combine`
 - 第4層の育成傾向:
   - `layer_4_forge`: 耐久・防御寄り
   - `layer_4_haze`: 命中・安定寄り
@@ -117,6 +135,7 @@
   - 獲得コイン
   - ドロップ結果（なしなら `戦利品なし`）
 - `進化コア保証` や `ボス報酬` は短い結果行で区別して表示
+- 研究モジュールは `研究ゲージ +n` / `研究モジュール獲得: ...` / `研究ゲージ達成: ...を獲得` を短く表示
 - battle結果の followup は `結果 / 戦利品 / 次の行動` を先頭に寄せ、敵情報と詳細ログは折りたたみへ退避してスマホでも再出撃しやすくする
 - 下部の `次の行動` はカード表示にし、`もう一度出撃 / 入手したパーツを見る / 基地へ戻る` を押しやすく出す
 - パーツ獲得がある、または所持数が上限の80%以上の場合は、次の
