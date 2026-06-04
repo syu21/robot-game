@@ -105,6 +105,67 @@ class PartsFuseRouteTests(unittest.TestCase):
                 (int(limit),),
             ).fetchall()
 
+    def _active_part_seed_by_rarity(self, rarity):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT rp.id AS part_id, rp.part_type, rp.rarity, rp.element, rp.series
+                FROM robot_parts rp
+                WHERE rp.is_active = 1
+                  AND UPPER(COALESCE(rp.rarity, 'N')) = ?
+                ORDER BY rp.id ASC
+                LIMIT 1
+                """,
+                (str(rarity or "N").upper(),),
+            ).fetchone()
+            if row or str(rarity or "N").upper() != "R":
+                return row
+            source = db.execute(
+                """
+                SELECT rp.part_type, rp.key, rp.image_path, rp.element, rp.series
+                FROM robot_parts rp
+                WHERE rp.is_active = 1
+                  AND UPPER(COALESCE(rp.rarity, 'N')) = 'N'
+                ORDER BY rp.id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            self.assertIsNotNone(source)
+            key = f"{source['key']}_test_r"
+            db.execute(
+                """
+                INSERT INTO robot_parts
+                    (part_type, key, image_path, rarity, element, series, display_name_ja, offset_x, offset_y, is_active, is_unlocked, created_at)
+                VALUES (?, ?, ?, 'R', ?, ?, ?, 0, 0, 1, 1, ?)
+                ON CONFLICT(key) DO UPDATE SET is_active = 1, rarity = 'R'
+                """,
+                (
+                    source["part_type"],
+                    key,
+                    source["image_path"],
+                    source["element"],
+                    source["series"],
+                    "テストRパーツ",
+                    int(time.time()),
+                ),
+            )
+            db.commit()
+            return db.execute(
+                """
+                SELECT rp.id AS part_id, rp.part_type, rp.rarity, rp.element, rp.series
+                FROM robot_parts rp
+                WHERE rp.key = ?
+                """,
+                (key,),
+            ).fetchone()
+
+    def _set_max_unlocked_layer(self, layer):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = ? WHERE id = ?", (int(layer), self.user_id))
+            db.commit()
+
     def _seed_part_instances_for_seed(self, seed_row, plus_values, *, statuses=None, created_at_start=1000):
         statuses = statuses or ["inventory"] * len(plus_values)
         with game_app.app.app_context():
@@ -333,6 +394,94 @@ class PartsFuseRouteTests(unittest.TestCase):
                 (self.user_id,),
             ).fetchone()
             self.assertEqual(int(row["p"] or 0), int(game_app.MAX_PART_PLUS))
+
+    def test_n_plus_five_cannot_strengthen_even_after_layer4(self):
+        self._set_max_unlocked_layer(4)
+        ids = self._seed_same_part_instances([5, 0, 0])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertFalse(result["ok"])
+            self.assertIn("最大強化", result["message"])
+
+    def test_r_plus_five_cannot_strengthen_before_layer4(self):
+        self._set_max_unlocked_layer(3)
+        self._clear_part_instances()
+        seed = self._active_part_seed_by_rarity("R")
+        self.assertIsNotNone(seed)
+        ids = self._seed_part_instances_for_seed(seed, [5, 0, 0], created_at_start=9000)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertFalse(result["ok"])
+            self.assertIn("最大強化", result["message"])
+
+    def test_r_plus_five_strengthens_to_plus_six_after_layer4(self):
+        self._set_max_unlocked_layer(4)
+        self._clear_part_instances()
+        seed = self._active_part_seed_by_rarity("R")
+        self.assertIsNotNone(seed)
+        ids = self._seed_part_instances_for_seed(seed, [5, 0, 0], created_at_start=9100)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertTrue(result["ok"])
+            row = db.execute("SELECT plus FROM part_instances WHERE id = ?", (ids[0],)).fetchone()
+            self.assertEqual(int(row["plus"]), 6)
+
+    def test_r_plus_six_strengthens_to_plus_seven_after_layer4(self):
+        self._set_max_unlocked_layer(4)
+        self._clear_part_instances()
+        seed = self._active_part_seed_by_rarity("R")
+        self.assertIsNotNone(seed)
+        ids = self._seed_part_instances_for_seed(seed, [6, 0, 0], created_at_start=9200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertTrue(result["ok"])
+            row = db.execute("SELECT plus FROM part_instances WHERE id = ?", (ids[0],)).fetchone()
+            self.assertEqual(int(row["plus"]), 7)
+
+    def test_r_plus_seven_cannot_strengthen_after_layer4(self):
+        self._set_max_unlocked_layer(4)
+        self._clear_part_instances()
+        seed = self._active_part_seed_by_rarity("R")
+        self.assertIsNotNone(seed)
+        ids = self._seed_part_instances_for_seed(seed, [7, 0, 0], created_at_start=9300)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertFalse(result["ok"])
+            self.assertIn("最大強化", result["message"])
+
+    def test_r_strengthen_does_not_exceed_plus_seven(self):
+        self._set_max_unlocked_layer(4)
+        self._clear_part_instances()
+        seed = self._active_part_seed_by_rarity("R")
+        self.assertIsNotNone(seed)
+        ids = self._seed_part_instances_for_seed(seed, [6, 2, 2], created_at_start=9400)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 999 WHERE id = ?", (self.user_id,))
+            db.commit()
+            with game_app.app.test_request_context():
+                result = game_app._strengthen_parts_selected(db, self.user_id, ids[0])
+            self.assertTrue(result["ok"])
+            row = db.execute("SELECT plus FROM part_instances WHERE id = ?", (ids[0],)).fetchone()
+            self.assertEqual(int(row["plus"]), 7)
 
     def test_r_part_accepts_corresponding_n_assist_materials(self):
         with game_app.app.app_context():

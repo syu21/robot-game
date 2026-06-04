@@ -17,6 +17,7 @@
     <div class="robot-time">・素材にした2つは消えます</div>
     <div class="robot-time">・装備中のパーツは素材として消えません</div>
     <div class="robot-time">・保護中のパーツは素材に使われません。保護中でもベースには使えます</div>
+    <div class="robot-time">{{ strengthen_plus_cap_note }}</div>
     <div class="robot-time">現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。</div>
   </section>
 
@@ -31,6 +32,7 @@
   <section class="card">
     <h2>まだ強化できる組み合わせがありません</h2>
     <div class="upgrade-cost">同じ名前・同じレアリティのパーツが3個そろうと強化できます。</div>
+    <div class="robot-time">{{ strengthen_plus_cap_note }}</div>
     <div class="robot-time">今は出撃してパーツを集めましょう。</div>
     <div class="actions-grid">
       <form method="post" action="{{ url_for('explore') }}" class="action-card">

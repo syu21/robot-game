@@ -296,6 +296,8 @@ BUILD_PART_OFFSET_MAX = 24
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
+R_PART_PLUS_CAP_UNLOCK_LAYER = 4
+R_PART_PLUS_CAP_AFTER_LAYER4 = 7
 EVOLUTION_CORE_KEY = "evolution_core"
 EVOLUTION_CORE_DROP_RATE = 0.02
 EVOLUTION_CORE_PROGRESS_PER_WIN = max(1, int(os.getenv("EVOLUTION_CORE_PROGRESS_PER_WIN", "1")))
@@ -18405,24 +18407,71 @@ def _home_fuse_ready(db, user_id):
     return get_strengthen_candidate_count(db, user_id) > 0
 
 
+def get_max_part_plus_for_user(rarity: str, max_unlocked_layer: int) -> int:
+    rarity_key = str(rarity or "N").strip().upper()
+    try:
+        layer = int(max_unlocked_layer or 1)
+    except Exception:
+        layer = 1
+    if rarity_key == "R" and layer >= R_PART_PLUS_CAP_UNLOCK_LAYER:
+        return R_PART_PLUS_CAP_AFTER_LAYER4
+    return 5
+
+
+def _get_user_max_unlocked_layer(db, user_id):
+    row = db.execute("SELECT max_unlocked_layer FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not row:
+        return 1
+    try:
+        return int(row["max_unlocked_layer"] or 1)
+    except Exception:
+        return 1
+
+
+def _part_plus_cap_for_row(row, max_unlocked_layer):
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: row[key] if key in row.keys() else default
+    return get_max_part_plus_for_user(getter("rarity", "N"), max_unlocked_layer)
+
+
 def get_strengthen_candidate_count(db, user_id):
-    row = db.execute(
+    max_unlocked_layer = _get_user_max_unlocked_layer(db, user_id)
+    rows = db.execute(
         """
-        SELECT COUNT(*) AS c
-        FROM (
-            SELECT rp.key, UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) AS rarity
+        SELECT
+            rp.key,
+            UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) AS rarity,
+            COUNT(*) AS qty_total,
+            SUM(CASE WHEN pi.status = 'inventory' AND COALESCE(pi.locked, 0) = 0 THEN 1 ELSE 0 END) AS qty_inventory
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ?
+          AND pi.status IN ('inventory', 'equipped')
+        GROUP BY rp.key, UPPER(COALESCE(pi.rarity, rp.rarity, 'N'))
+        HAVING COUNT(*) >= 3
+           AND SUM(CASE WHEN pi.status = 'inventory' AND COALESCE(pi.locked, 0) = 0 THEN 1 ELSE 0 END) >= 2
+        """,
+        (int(user_id),),
+    ).fetchall()
+    count = 0
+    for row in rows:
+        cap = get_max_part_plus_for_user(row["rarity"], max_unlocked_layer)
+        under_cap = db.execute(
+            """
+            SELECT 1
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ?
               AND pi.status IN ('inventory', 'equipped')
-            GROUP BY rp.key, UPPER(COALESCE(pi.rarity, rp.rarity, 'N'))
-            HAVING COUNT(*) >= 3
-               AND SUM(CASE WHEN pi.status = 'inventory' AND COALESCE(pi.locked, 0) = 0 THEN 1 ELSE 0 END) >= 2
-        ) candidates
-        """,
-        (int(user_id),),
-    ).fetchone()
-    return int(row["c"] or 0) if row else 0
+              AND rp.key = ?
+              AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) = ?
+              AND COALESCE(pi.plus, 0) < ?
+            LIMIT 1
+            """,
+            (int(user_id), row["key"], row["rarity"], int(cap)),
+        ).fetchone()
+        if under_cap:
+            count += 1
+    return count
 
 
 def _home_build_ready(db, user_id):
@@ -40120,9 +40169,12 @@ def _strengthen_parts_selected(db, user_id, base_id, material_ids=None):
     ).fetchone()
     if not base_row:
         return _fail("ベース個体が見つかりません。")
-    if int(base_row["plus"] or 0) >= int(MAX_PART_PLUS):
+    user_row = db.execute("SELECT coins, max_unlocked_layer FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    max_unlocked_layer = int(user_row["max_unlocked_layer"] or 1) if user_row else 1
+    max_part_plus = get_max_part_plus_for_user(base_row["rarity"], max_unlocked_layer)
+    if int(base_row["plus"] or 0) >= int(max_part_plus):
         return _fail(
-            f"この個体はすでに最大強化（+{MAX_PART_PLUS}）です。",
+            f"この個体はすでに最大強化（+{max_part_plus}）です。",
             base_row=base_row,
         )
 
@@ -40259,11 +40311,10 @@ def _strengthen_parts_selected(db, user_id, base_id, material_ids=None):
         preview_plus = base_plus_preview + (1 if base_assist_preview + R_PART_N_ASSIST_GAIN >= R_PART_N_ASSIST_THRESHOLD else 0)
     else:
         preview_plus = base_plus_preview + _strengthen_same_part_gain(material_pluses_preview)
-    preview_row["plus"] = min(int(MAX_PART_PLUS), preview_plus)
+    preview_row["plus"] = min(int(max_part_plus), preview_plus)
     compare_payload = _part_card_payload(base_row, compare_row=preview_row)
 
     coin_cost = int(FUSE_COST_BY_PLUS.get(int(base_row["plus"] or 0), 20))
-    user_row = db.execute("SELECT coins FROM users WHERE id = ?", (int(user_id),)).fetchone()
     if not user_row or int(user_row["coins"] or 0) < coin_cost:
         return _fail(
             f"コイン不足です（必要: {coin_cost}）",
@@ -40288,7 +40339,7 @@ def _strengthen_parts_selected(db, user_id, base_id, material_ids=None):
         else:
             inc = _strengthen_same_part_gain(material_pluses)
             bonus = max(0, int(mat_plus_sum))
-        new_plus = min(int(MAX_PART_PLUS), base_plus + inc)
+        new_plus = min(int(max_part_plus), base_plus + inc)
         db.execute("BEGIN IMMEDIATE")
         db.execute("UPDATE users SET coins = coins - ? WHERE id = ?", (coin_cost, int(user_id)))
         placeholders = ",".join(["?"] * len(material_ids))
@@ -40390,10 +40441,10 @@ def _strengthen_material_sort_key(row):
     )
 
 
-def _strengthen_is_eligible_base(row, inventory_count):
+def _strengthen_is_eligible_base(row, inventory_count, max_unlocked_layer=1):
     status_key = str(row.get("status") or "").strip().lower()
     is_locked = bool(int(row.get("locked") or 0))
-    if int(row.get("plus") or 0) >= int(MAX_PART_PLUS):
+    if int(row.get("plus") or 0) >= _part_plus_cap_for_row(row, max_unlocked_layer):
         return False
     if status_key == "equipped":
         return int(inventory_count or 0) >= 2
@@ -40468,7 +40519,7 @@ def _strengthen_plan_signature(payload):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
+def _strengthen_group_plan_from_rows(group_rows, *, base_id=None, max_unlocked_layer=1):
     rows = [dict(row) for row in (group_rows or [])]
     sample_row = dict(rows[0]) if rows else {}
     inventory_rows = [
@@ -40490,14 +40541,16 @@ def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
                 base_row = dict(row)
                 break
     else:
-        eligible_base_rows = [row for row in rows if _strengthen_is_eligible_base(row, inventory_count)]
+        eligible_base_rows = [
+            row for row in rows if _strengthen_is_eligible_base(row, inventory_count, max_unlocked_layer)
+        ]
         if eligible_base_rows:
             base_row = dict(sorted(eligible_base_rows, key=_strengthen_base_sort_key)[0])
 
     anchor_row = dict(base_row or sample_row)
     base_status = str((base_row or {}).get("status") or "inventory")
     from_plus = int((base_row or {}).get("plus") or 0)
-    if not base_row or not _strengthen_is_eligible_base(base_row, inventory_count):
+    if not base_row or not _strengthen_is_eligible_base(base_row, inventory_count, max_unlocked_layer):
         return {
             "ok": False,
             "part_key": str(anchor_row.get("part_key") or ""),
@@ -40532,15 +40585,16 @@ def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
     material_rows.sort(key=_strengthen_material_sort_key)
 
     current_plus = int(base_row.get("plus") or 0)
+    max_part_plus = _part_plus_cap_for_row(base_row, max_unlocked_layer)
     runs = []
     consumed_rows = []
     cursor = 0
-    while current_plus < int(MAX_PART_PLUS) and len(material_rows) - cursor >= 2:
+    while current_plus < int(max_part_plus) and len(material_rows) - cursor >= 2:
         pair = [dict(material_rows[cursor]), dict(material_rows[cursor + 1])]
         cursor += 2
         material_pluses = [int(pair[0].get("plus") or 0), int(pair[1].get("plus") or 0)]
         inc = _strengthen_same_part_gain(material_pluses)
-        next_plus = min(int(MAX_PART_PLUS), current_plus + inc)
+        next_plus = min(int(max_part_plus), current_plus + inc)
         cost = int(FUSE_COST_BY_PLUS.get(int(current_plus), 20))
         runs.append(
             {
@@ -40588,6 +40642,7 @@ def _strengthen_group_plan_from_rows(group_rows, *, base_id=None):
 
 
 def _strengthen_warehouse_plan(db, user_id):
+    max_unlocked_layer = _get_user_max_unlocked_layer(db, user_id)
     rows = db.execute(
         """
         SELECT
@@ -40643,7 +40698,7 @@ def _strengthen_warehouse_plan(db, user_id):
         )
         if len(group_rows) < 3 or inventory_count < 2:
             continue
-        plan = _strengthen_group_plan_from_rows(group_rows)
+        plan = _strengthen_group_plan_from_rows(group_rows, max_unlocked_layer=max_unlocked_layer)
         if int(plan.get("batch_count") or 0) > 0:
             group_plans.append(plan)
 
@@ -40670,9 +40725,11 @@ def _strengthen_warehouse_plan(db, user_id):
 
 
 def _strengthen_parts_batch_plan(db, user_id, base_row):
+    max_unlocked_layer = _get_user_max_unlocked_layer(db, user_id)
     plan = _strengthen_group_plan_from_rows(
         _strengthen_group_rows(db, user_id, base_row["part_key"], base_row["rarity"]),
         base_id=base_row["id"],
+        max_unlocked_layer=max_unlocked_layer,
     )
     return {
         "base_id": int(plan.get("base_id") or 0),
@@ -40947,6 +41004,7 @@ def parts_strengthen():
         return _render_trial_strengthen(result=result)
     db = get_db()
     user_id = session["user_id"]
+    max_unlocked_layer = _get_user_max_unlocked_layer(db, user_id)
     request_id = None
     try:
         from flask import g as flask_g
@@ -41565,7 +41623,9 @@ def parts_strengthen():
             base_rows = [r for r in sample_rows if int(r["plus"] or 0) == int(filter_plus)]
         if not base_rows:
             continue
-        eligible_base_rows = [row for row in base_rows if _strengthen_is_eligible_base(dict(row), inventory_count)]
+        eligible_base_rows = [
+            row for row in base_rows if _strengthen_is_eligible_base(dict(row), inventory_count, max_unlocked_layer)
+        ]
         if not eligible_base_rows:
             continue
         group_display_name = _part_display_name_ja(sample_rows[0]) if sample_rows else (group_row["part_type"] or "-")
@@ -41592,7 +41652,8 @@ def parts_strengthen():
             next_row = dict(row_dict)
             material_pluses = [int(material.get("plus") or 0) for material in materials]
             material_gain = _strengthen_same_part_gain(material_pluses)
-            next_row["plus"] = min(int(MAX_PART_PLUS), int(next_row.get("plus") or 0) + material_gain)
+            max_part_plus = _part_plus_cap_for_row(row_dict, max_unlocked_layer)
+            next_row["plus"] = min(int(max_part_plus), int(next_row.get("plus") or 0) + material_gain)
             candidate_item = _part_card_payload(row_dict, compare_row=next_row)
             candidate_item["group_display_name"] = group_display_name
             candidate_item["part_key"] = group_row["part_key"]
@@ -41758,6 +41819,7 @@ def parts_strengthen():
         warehouse_preview=warehouse_preview,
         warehouse_result=warehouse_result,
         strengthen_candidate_count=get_strengthen_candidate_count(db, int(user_id)),
+        strengthen_plus_cap_note="Nパーツは+5まで / Rパーツは第4層到達後に+7まで強化できます",
         tutorial_layer1_strengthen_hint=tutorial_layer1_strengthen_hint,
     )
 

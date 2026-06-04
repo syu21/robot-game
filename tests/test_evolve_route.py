@@ -155,6 +155,7 @@ class EvolveRouteTests(unittest.TestCase):
     def test_evolve_plus_five_stays_plus_five_and_hits_strengthen_cap(self):
         with game_app.app.app_context():
             db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 3 WHERE id = ?", (self.user_id,))
             db.execute(
                 "UPDATE part_instances SET plus = 5, rarity = 'N' WHERE id = ? AND user_id = ?",
                 (self.part_instance_id, self.user_id),
@@ -197,6 +198,69 @@ class EvolveRouteTests(unittest.TestCase):
                 result = game_app._strengthen_parts_selected(db, self.user_id, int(evolved["id"]))
             self.assertFalse(result["ok"])
             self.assertIn("最大強化", result["message"])
+
+    def test_evolved_r_plus_five_is_strengthen_candidate_after_layer4(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 4, coins = 999 WHERE id = ?", (self.user_id,))
+            db.execute(
+                "UPDATE part_instances SET plus = 5, rarity = 'N' WHERE id = ? AND user_id = ?",
+                (self.part_instance_id, self.user_id),
+            )
+            core_asset_id = db.execute(
+                "SELECT id FROM core_assets WHERE core_key = ?",
+                (game_app.EVOLUTION_CORE_KEY,),
+            ).fetchone()["id"]
+            db.execute(
+                "INSERT OR REPLACE INTO user_core_inventory (user_id, core_asset_id, quantity, updated_at) VALUES (?, ?, 1, datetime('now'))",
+                (self.user_id, int(core_asset_id)),
+            )
+            db.commit()
+
+        client = self._client()
+        resp = client.post(
+            "/parts/evolve",
+            data={"part_instance_id": str(self.part_instance_id)},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            evolved = db.execute(
+                """
+                SELECT id, part_id, part_type, rarity, element, series, plus
+                FROM part_instances
+                WHERE user_id = ? AND status = 'inventory' AND UPPER(COALESCE(rarity, 'N')) = 'R'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(evolved)
+            for offset in (1, 2):
+                db.execute(
+                    """
+                    INSERT INTO part_instances
+                    (part_id, user_id, part_type, rarity, element, series, plus, w_hp, w_atk, w_def, w_spd, w_acc, w_cri, status, created_at, updated_at)
+                    VALUES (?, ?, ?, 'R', ?, ?, 0, 1, 1, 1, 1, 1, 1, 'inventory', ?, datetime('now'))
+                    """,
+                    (
+                        int(evolved["part_id"]),
+                        int(self.user_id),
+                        evolved["part_type"],
+                        evolved["element"],
+                        evolved["series"],
+                        int(time.time()) + offset,
+                    ),
+                )
+            db.commit()
+
+        page = client.get("/parts/strengthen?rarity=R&plus=5")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn(f'value="{int(evolved["id"])}"', html)
+        self.assertIn("+5 → +6", html)
 
     def test_evolve_requires_core(self):
         with game_app.app.app_context():
