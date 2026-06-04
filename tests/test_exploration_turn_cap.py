@@ -84,14 +84,14 @@ class ExplorationTurnCapTests(unittest.TestCase):
             ensure_ascii=False,
         )
 
-    def _install_layer2_test_boss(self, *, hp):
+    def _install_test_boss(self, *, area_key, hp):
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute(
                 """
                 INSERT INTO enemies
                 (key, name_ja, image_path, tier, element, hp, atk, def, spd, acc, cri, faction, is_boss, boss_area_key, is_active)
-                VALUES (?, ?, ?, 2, 'NORMAL', ?, 1, 1, 1, 1, 1, 'neutral', 1, 'layer_2', 1)
+                VALUES (?, ?, ?, 4, 'NORMAL', ?, 1, 1, 1, 1, 1, 'neutral', 1, ?, 1)
                 ON CONFLICT(key) DO UPDATE SET
                     name_ja = excluded.name_ja,
                     image_path = excluded.image_path,
@@ -102,28 +102,29 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     acc = excluded.acc,
                     cri = excluded.cri,
                     is_boss = 1,
-                    boss_area_key = 'layer_2',
+                    boss_area_key = excluded.boss_area_key,
                     is_active = 1
                 """,
-                ("turn_cap_layer2_boss", "ターン検証ボス", "assets/placeholder_enemy.png", int(hp)),
+                ("turn_cap_test_boss", "ターン検証ボス", "assets/placeholder_enemy.png", int(hp), area_key),
             )
             db.execute(
                 """
                 UPDATE enemies
                 SET is_active = 0
                 WHERE COALESCE(is_boss, 0) = 1
-                  AND boss_area_key = 'layer_2'
-                  AND key <> 'turn_cap_layer2_boss'
-                """
+                  AND boss_area_key = ?
+                  AND key <> 'turn_cap_test_boss'
+                """,
+                (area_key,),
             )
             enemy_id = db.execute(
                 "SELECT id FROM enemies WHERE key = ?",
-                ("turn_cap_layer2_boss",),
+                ("turn_cap_test_boss",),
             ).fetchone()["id"]
             game_app._activate_boss_alert(
                 db,
                 user_id=self.user_id,
-                area_key="layer_2",
+                area_key=area_key,
                 enemy_id=int(enemy_id),
                 now_ts=int(time.time()),
             )
@@ -173,15 +174,33 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     if payload["keys"]:
                         self.assertTrue(required_turn_log_keys.issubset(set(payload["keys"])))
 
-    def test_layer4_normal_enemy_keeps_eight_turn_cap(self):
+    def test_battle_turn_limit_helper_by_area(self):
+        for area_key in ("layer_1", "layer_2", "layer_2_mist", "layer_2_rush", "layer_3"):
+            self.assertEqual(game_app.get_battle_turn_limit(area_key), game_app.EXPLORE_MAX_TURNS)
+            self.assertEqual(game_app.get_battle_turn_limit(area_key, is_boss=True), game_app.EXPLORE_MAX_TURNS)
+
+        for area_key in (
+            "layer_4_forge",
+            "layer_4_haze",
+            "layer_4_burst",
+            "layer_4_final",
+            "layer_5_labyrinth",
+            "layer_5_pinnacle",
+            "layer_5_final",
+            "layer_6_future",
+        ):
+            self.assertIsNone(game_app.get_battle_turn_limit(area_key))
+            self.assertIsNone(game_app.get_battle_turn_limit(area_key, is_boss=True))
+
+    def test_layer4_normal_enemy_has_no_eight_turn_cap(self):
         def no_damage(*args, **kwargs):
-            return 0, False
+            return 0, False, {"miss": True, "base_damage": 0}
 
         with patch.object(game_app, "render_template", side_effect=self._mock_battle_render), patch.object(
             game_app, "_world_current_environment", return_value=self._stable_weekly_env()
         ), patch.object(
             game_app, "_area_boss_spawn_check", return_value={"spawn": False, "probability": 0.0, "pity_forced": False, "streak_before": 0}
-        ), patch.object(game_app, "resolve_attack", side_effect=no_damage):
+        ), patch.object(game_app, "HARD_BATTLE_TURN_CAP", 12), patch.object(game_app, "resolve_attack", side_effect=no_damage):
             with game_app.app.test_client() as client:
                 with client.session_transaction() as session:
                     session["user_id"] = self.user_id
@@ -191,14 +210,17 @@ class ExplorationTurnCapTests(unittest.TestCase):
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertFalse(payload["is_area_boss"])
-                self.assertEqual(payload["max_turn"], game_app.EXPLORE_MAX_TURNS)
-                self.assertIn("8ターン", payload["turn_limit_label"])
+                self.assertEqual(payload["max_turn"], 12)
+                self.assertIn("ターン上限: なし", payload["turn_limit_label"])
+                self.assertIn("試験継続不能", payload["timeout_decision_line"])
 
-    def test_boss_battle_continues_past_eight_turns(self):
-        self._install_layer2_test_boss(hp=10)
+    def test_layer4_boss_battle_continues_past_eight_turns(self):
+        self._install_test_boss(area_key="layer_4_forge", hp=10)
 
         def player_chip_damage(att_atk, *_args, **_kwargs):
-            return (1, False) if int(att_atk) >= 5 else (0, False)
+            if int(att_atk) >= 5:
+                return 1, False, {"miss": False, "base_damage": 1}
+            return 0, False, {"miss": True, "base_damage": 0}
 
         with patch.object(game_app, "render_template", side_effect=self._mock_battle_render), patch.object(
             game_app, "_world_current_environment", return_value=self._stable_weekly_env()
@@ -208,32 +230,32 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     session["user_id"] = self.user_id
                     session["username"] = "turn_cap_tester"
 
-                resp = client.post("/explore", data={"area_key": "layer_2", "boss_enter": "1"}, follow_redirects=True)
+                resp = client.post("/explore", data={"area_key": "layer_4_forge", "boss_enter": "1"}, follow_redirects=True)
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertTrue(payload["is_area_boss"])
                 self.assertGreater(payload["max_turn"], game_app.EXPLORE_MAX_TURNS)
                 self.assertIn("ターン上限: なし", payload["turn_limit_label"])
 
-    def test_boss_battle_safety_cap_ends_without_500(self):
-        self._install_layer2_test_boss(hp=9999)
+    def test_layer4_hard_cap_ends_without_500(self):
+        self._install_test_boss(area_key="layer_4_forge", hp=9999)
 
         def no_damage(*args, **kwargs):
-            return 0, False
+            return 0, False, {"miss": True, "base_damage": 0}
 
         with patch.object(game_app, "render_template", side_effect=self._mock_battle_render), patch.object(
             game_app, "_world_current_environment", return_value=self._stable_weekly_env()
-        ), patch.object(game_app, "resolve_attack", side_effect=no_damage):
+        ), patch.object(game_app, "HARD_BATTLE_TURN_CAP", 12), patch.object(game_app, "resolve_attack", side_effect=no_damage):
             with game_app.app.test_client() as client:
                 with client.session_transaction() as session:
                     session["user_id"] = self.user_id
                     session["username"] = "turn_cap_tester"
 
-                resp = client.post("/explore", data={"area_key": "layer_2", "boss_enter": "1"}, follow_redirects=True)
+                resp = client.post("/explore", data={"area_key": "layer_4_forge", "boss_enter": "1"}, follow_redirects=True)
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertTrue(payload["is_area_boss"])
-                self.assertEqual(payload["max_turn"], game_app.BOSS_BATTLE_SAFETY_MAX_TURNS)
+                self.assertEqual(payload["max_turn"], 12)
                 self.assertIn("試験継続不能", payload["timeout_decision_line"])
 
                 with game_app.app.app_context():
@@ -251,7 +273,7 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     self.assertIsNotNone(event)
                     event_payload = json.loads(event["payload_json"])
                     self.assertTrue(event_payload["result"]["turn_limit_removed"])
-                    self.assertEqual(event_payload["result"]["safety_turn_cap"], game_app.BOSS_BATTLE_SAFETY_MAX_TURNS)
+                    self.assertEqual(event_payload["result"]["safety_turn_cap"], 12)
 
 
 if __name__ == "__main__":

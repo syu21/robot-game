@@ -290,6 +290,7 @@ HOME_OK_MODE = os.getenv("HOME_OK_MODE", "0") == "1"
 HOME_DEBUG_COMMENT = os.getenv("HOME_DEBUG_COMMENT", "1") == "1"
 EXPLORE_MAX_TURNS = 8
 BOSS_BATTLE_SAFETY_MAX_TURNS = 50
+HARD_BATTLE_TURN_CAP = int(os.getenv("HARD_BATTLE_TURN_CAP", "100"))
 BUILD_PART_OFFSET_MIN = -24
 BUILD_PART_OFFSET_MAX = 24
 MAX_PART_DROPS_NORMAL = 1
@@ -2161,24 +2162,24 @@ EXPLORE_AREA_MAP_INFO = {
     },
     "layer_4_forge": {
         "desc": [
-            "重装機が多い。長く戦える機体向き。",
-            "推奨: 耐久・防御寄りの型で押し切る。",
+            "重装機が多い。耐久・防御型向け / 長期戦可。",
+            "推奨: ターン上限なしで押し切る。",
             "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "fortress",
     },
     "layer_4_haze": {
         "desc": [
-            "霧機が多い。命中と安定が重要。",
-            "推奨: ACC重視の安定構成で崩れを防ぐ。",
+            "霧機が多い。命中・安定型向け / 長期戦可。",
+            "推奨: ターン上限なしで崩れを防ぐ。",
             "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "sniper",
     },
     "layer_4_burst": {
         "desc": [
-            "暴走機が多い。速攻と爆発力が活きる。",
-            "推奨: 背水・爆発寄りで短期決着を狙う。",
+            "暴走機が多い。攻撃・会心型向け / 長期戦可。",
+            "推奨: ターン上限なしで爆発力を活かす。",
             "注意: 第4層は高難度の本番帯です。勝てない場合は第3層で強化・進化コア集めを進めても問題ありません。",
         ],
         "recommended_archetype": "swift",
@@ -2186,7 +2187,7 @@ EXPLORE_AREA_MAP_INFO = {
     "layer_4_final": {
         "desc": [
             "3領域の試験を越えた機体だけが挑める審判域。",
-            "推奨: 単一特化よりも、型理解のある構成。",
+            "推奨: 型理解を問う最終試験 / ターン上限なし。",
             "注意: 3ボス撃破後にのみ挑戦可能。",
         ],
         "recommended_archetype": "自由",
@@ -2194,15 +2195,15 @@ EXPLORE_AREA_MAP_INFO = {
     "layer_5_labyrinth": {
         "desc": [
             "観測と防衛が混ざる深部。事故らない機体が強い。",
-            "推奨: 耐久・命中・バランス型で安定勝利を狙う。",
-            "注意: MISSと長期戦の両方を咎められる。",
+            "推奨: 耐久・命中・バランス型 / ターン上限なし。",
+            "注意: 長期戦可。ただしMISS対策は必要。",
         ],
         "recommended_archetype": "sniper",
     },
     "layer_5_pinnacle": {
         "desc": [
             "記録を奪い合う競覇圏。速攻と爆発力が評価される。",
-            "推奨: 背水・爆発・速攻寄りで最速突破を狙う。",
+            "推奨: 背水・爆発・速攻寄り / ターン上限なし。",
             "注意: 上振れは強いが、崩れると一気に脆い。",
         ],
         "recommended_archetype": "swift",
@@ -2210,7 +2211,7 @@ EXPLORE_AREA_MAP_INFO = {
     "layer_5_final": {
         "desc": [
             "観測と競覇を越えた先の完成域。",
-            "推奨: 耐久も火力も命中も捨て切らない思想完成型。",
+            "推奨: 思想完成型 / ターン上限なし。",
             "注意: ニクスとイグニッション撃破後にのみ挑戦可能。",
         ],
         "recommended_archetype": "自由",
@@ -3907,7 +3908,13 @@ def _update_user_area_streak(db, user_id, area_key, won, updated_at):
 
 
 def _area_layer(area_key):
-    return int(EXPLORE_AREA_LAYER_BY_KEY.get(area_key, 1))
+    key = str(area_key or "").strip()
+    if key in EXPLORE_AREA_LAYER_BY_KEY:
+        return int(EXPLORE_AREA_LAYER_BY_KEY.get(key, 1))
+    match = re.match(r"^layer_(\d+)(?:_|$)", key)
+    if match:
+        return int(match.group(1))
+    return 1
 
 
 def _stat_mult_applied(base_value, multiplier):
@@ -5446,11 +5453,23 @@ def _battle_timeout_judgement(*, player_hp, player_hp_max, enemy_hp, enemy_hp_ma
     }
 
 
-def _battle_max_turns_for(*, is_boss):
-    return BOSS_BATTLE_SAFETY_MAX_TURNS if bool(is_boss) else EXPLORE_MAX_TURNS
+def should_disable_turn_limit(area_key):
+    return _area_layer(str(area_key or "").strip()) >= 4
 
 
-def _boss_battle_safety_judgement():
+def get_battle_turn_limit(area_key, is_boss=False):
+    del is_boss
+    if should_disable_turn_limit(area_key):
+        return None
+    return int(EXPLORE_MAX_TURNS)
+
+
+def _battle_max_turns_for(*, area_key, is_boss=False):
+    turn_limit = get_battle_turn_limit(area_key, is_boss=is_boss)
+    return int(HARD_BATTLE_TURN_CAP if turn_limit is None else turn_limit)
+
+
+def _hard_battle_turn_cap_judgement(*, area_key, is_boss=False):
     return {
         "player_ratio": None,
         "enemy_ratio": None,
@@ -5459,9 +5478,11 @@ def _boss_battle_safety_judgement():
         "player_wins": False,
         "outcome": "lose",
         "display_outcome": "敗北",
-        "reason": "boss_safety_cap",
+        "reason": "hard_turn_cap",
         "turn_limit_removed": True,
-        "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS),
+        "safety_turn_cap": int(HARD_BATTLE_TURN_CAP),
+        "area_key": str(area_key or ""),
+        "is_boss": bool(is_boss),
         "result_line": "試験継続不能。機体反応が限界に達しました。",
     }
 
@@ -32050,7 +32071,10 @@ def explore():
         battle_timeout = False
         battle_logs = []
         is_boss_battle = bool(area_boss_active and battle_no == 1)
-        current_max_turns = _battle_max_turns_for(is_boss=is_boss_battle)
+        battle_turn_limit = get_battle_turn_limit(area_key, is_boss=is_boss_battle)
+        battle_turn_limit_removed = battle_turn_limit is None
+        current_max_turns = _battle_max_turns_for(area_key=area_key, is_boss=is_boss_battle)
+        battle_safety_turn_cap = int(HARD_BATTLE_TURN_CAP) if battle_turn_limit_removed else None
         player_miss_streak = 0
         berserk_triggered = False
         for turn in range(1, current_max_turns + 1):
@@ -32278,8 +32302,8 @@ def explore():
         timeout_decision = None
         if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= current_max_turns:
             battle_timeout = True
-            if is_boss_battle:
-                timeout_decision = _boss_battle_safety_judgement()
+            if battle_turn_limit_removed:
+                timeout_decision = _hard_battle_turn_cap_judgement(area_key=area_key, is_boss=is_boss_battle)
             else:
                 timeout_decision = _battle_timeout_judgement(
                     player_hp=player_hp,
@@ -32579,8 +32603,9 @@ def explore():
                         "attempts_before": area_boss_attempt_before,
                         "attempts_after": area_boss_attempt_after,
                         "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
-                        "turn_limit_removed": True,
-                        "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS),
+                        "turn_limit_removed": bool(battle_turn_limit_removed),
+                        "turn_limit": battle_turn_limit,
+                        "safety_turn_cap": battle_safety_turn_cap,
                         "tutorial_layer1_state_before": tutorial_layer1_state_before,
                         "is_forced_layer1_boss": bool(tutorial_layer1_forced_boss),
                         "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
@@ -32740,8 +32765,9 @@ def explore():
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
                     "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
-                    "turn_limit_removed": bool(is_boss_battle),
-                    "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if is_boss_battle else None,
+                    "turn_limit_removed": bool(battle_turn_limit_removed),
+                    "turn_limit": battle_turn_limit,
+                    "safety_turn_cap": battle_safety_turn_cap,
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -32777,8 +32803,9 @@ def explore():
                     "turns": len(battle_logs),
                     "timeout": battle_timeout,
                     "timeout_decision": (dict(timeout_decision) if timeout_decision else None),
-                    "turn_limit_removed": bool(is_boss_battle),
-                    "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if is_boss_battle else None,
+                    "turn_limit_removed": bool(battle_turn_limit_removed),
+                    "turn_limit": battle_turn_limit,
+                    "safety_turn_cap": battle_safety_turn_cap,
                     "enemy": {
                         "key": enemy["key"] if "key" in enemy.keys() else None,
                         "name_ja": enemy_name,
@@ -33121,6 +33148,9 @@ def explore():
         _clear_explore_cooldown(db, user_id)
     else:
         _touch_explore_cooldown(db, user_id, now)
+    area_turn_limit = get_battle_turn_limit(area_key, is_boss=bool(area_boss_active))
+    area_turn_limit_removed = area_turn_limit is None
+    area_safety_turn_cap = int(HARD_BATTLE_TURN_CAP) if area_turn_limit_removed else None
     audit_log(
         db,
         AUDIT_EVENT_TYPES["EXPLORE_END"],
@@ -33169,9 +33199,10 @@ def explore():
                 "battle_count": total_fights,
                 "is_area_boss": bool(area_boss_active),
                 "boss_battle": bool(area_boss_active),
-                "turn_limit_removed": bool(area_boss_active),
+                "turn_limit_removed": bool(area_turn_limit_removed),
                 "normal_turn_limit": int(EXPLORE_MAX_TURNS),
-                "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
+                "turn_limit": area_turn_limit,
+                "safety_turn_cap": area_safety_turn_cap,
                 "battle_id": battle_id,
                 "damage_taken_total": int(damage_taken_total),
             },
@@ -33230,8 +33261,9 @@ def explore():
                 "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
                 "reward": area_boss_reward,
                 "boss_battle": bool(area_boss_active),
-                "turn_limit_removed": bool(area_boss_active),
-                "safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
+                "turn_limit_removed": bool(area_turn_limit_removed),
+                "turn_limit": area_turn_limit,
+                "safety_turn_cap": area_safety_turn_cap,
             },
             "tutorial_layer1": {
                 "eligible": bool(tutorial_layer1_subject),
@@ -33484,7 +33516,7 @@ def explore():
             str(final_timeout_decision.get("result_line") or "")
             if final_battle_timeout
             and final_timeout_decision
-            and str(final_timeout_decision.get("reason") or "") == "boss_safety_cap"
+            and str(final_timeout_decision.get("reason") or "") in {"boss_safety_cap", "hard_turn_cap"}
             else (
                 f"8ターン終了: 残HP割合 {final_timeout_decision.get('player_ratio_pct', 0):g}% vs {final_timeout_decision.get('enemy_ratio_pct', 0):g}% で{outcome_display}"
                 if final_battle_timeout and final_timeout_decision
@@ -33518,11 +33550,11 @@ def explore():
         "boss_reward": area_boss_reward,
         "is_area_boss": bool(area_boss_active),
         "turn_limit_label": (
-            "ターン上限: なし（決着まで戦闘）"
-            if area_boss_active
+            "ターン上限: なし（長期戦可）"
+            if area_turn_limit_removed
             else f"ターン上限: {int(EXPLORE_MAX_TURNS)}ターン"
         ),
-        "boss_safety_turn_cap": int(BOSS_BATTLE_SAFETY_MAX_TURNS) if area_boss_active else None,
+        "boss_safety_turn_cap": area_safety_turn_cap,
         "boss_kind": area_boss_kind,
         "npc_boss_template_id": area_boss_template_id,
         "source_robot_instance_id": (last_enemy.get("_source_robot_instance_id") if last_enemy else None),
