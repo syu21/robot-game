@@ -93,6 +93,13 @@ class MarketRouteTests(unittest.TestCase):
         self.assertIn("まとめて売る", html)
         self.assertIn("marketSellTotal", html)
         self.assertIn('id="marketSellSubmit">まとめて売る', html)
+        self.assertIn("market-part-stat-preview", html)
+        self.assertIn("総合", html)
+        self.assertIn("注目", html)
+        for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
+            self.assertIn(label, html)
+        for key in ("hp", "atk", "def", "spd", "acc", "cri"):
+            self.assertNotIn(f">{key}<", html)
         self.assertIn("static/market.js", html)
         self.assertNotIn("<script>\n(function ()", html)
         with game_app.app.app_context():
@@ -104,6 +111,24 @@ class MarketRouteTests(unittest.TestCase):
                 ).fetchone()["c"]
             )
             self.assertEqual(count, 6)
+
+    def test_market_stat_preview_handles_missing_stat_source(self):
+        client = self._client(admin=True)
+        self.assertEqual(client.get("/market").status_code, 200)
+        listing = self._first_listing()
+        self.assertIsNotNone(listing)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "UPDATE market_daily_listings SET part_type = ? WHERE id = ?",
+                ("UNKNOWN", int(listing["id"])),
+            )
+            db.commit()
+
+        resp = client.get("/market")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("性能未設定", html)
 
     def test_market_part_inventory_expand_60_to_70(self):
         client = self._client(admin=True)
@@ -330,6 +355,8 @@ class MarketRouteTests(unittest.TestCase):
         self.assertEqual(sold_page.status_code, 200)
         sold_html = sold_page.get_data(as_text=True)
         self.assertIn("market-buy-button is-sold", sold_html)
+        self.assertIn("market-listing-card is-sold", sold_html)
+        self.assertIn("market-part-stat-preview", sold_html)
         self.assertIn("disabled aria-disabled=\"true\"", sold_html)
         self.assertIn("購入済み", sold_html)
 

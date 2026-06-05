@@ -177,6 +177,8 @@ from services.lab_typing import (
 )
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.stats import (
+    STATS,
+    WEIGHT_TEMPLATES,
     compute_part_stats,
     compute_robot_stats,
     generate_noisy_weights,
@@ -14218,6 +14220,62 @@ def _market_part_helper_line(item):
     }.get(part_type, "足りない部位を補うための標準パーツ")
 
 
+def _market_listing_preview_weights(item):
+    part_type = _norm_part_type(str(item.get("part_type") or "").strip().upper())
+    template = WEIGHT_TEMPLATES.get(part_type)
+    if not template:
+        return None
+    bias = _series_weight_bias_for_part_row(item) or {}
+    base = dict(template)
+    min_floor = 0.01
+    for key, value in bias.items():
+        stat_key = str(key or "").strip().lower()
+        if stat_key in STATS:
+            base[stat_key] = max(min_floor, float(base.get(stat_key, min_floor)) + float(value or 0.0))
+    try:
+        seed = int(item.get("seed") or item.get("id") or 0)
+    except Exception:
+        seed = 0
+    rng = random.Random(seed)
+    raw = {}
+    for key in STATS:
+        raw[key] = max(min_floor, float(base.get(key, min_floor)) + rng.uniform(-0.08, 0.08))
+    total = sum(raw.values())
+    if total <= 0:
+        return None
+    return {f"w_{key}": raw[key] / total for key in STATS}
+
+
+def _market_listing_stat_preview(item):
+    try:
+        weights = _market_listing_preview_weights(item)
+        if not weights:
+            return None
+        payload = {
+            "part_type": _norm_part_type(item.get("part_type")),
+            "key": item.get("key") or item.get("part_key"),
+            "series": item.get("series"),
+            "rarity": str(item.get("rarity") or item.get("master_rarity") or "N").upper(),
+            "element": str(item.get("element") or "NORMAL").upper(),
+            "plus": int(item.get("plus") or 0),
+            **weights,
+        }
+        stats = compute_part_stats(payload)
+        focus_rows = _robot_focus_stat_rows(stats, limit=2)
+        return {
+            "part_type_label": _part_type_ui_label(item.get("part_type")),
+            "rarity_label": str(payload["rarity"] or "N").upper(),
+            "plus_label": f"+{int(payload['plus'])}",
+            "total_value": int(_part_total_value(stats)),
+            "focus_rows": focus_rows,
+            "focus_line": " / ".join(f"{row['label']} {int(row['value'])}" for row in focus_rows),
+            "stat_rows": _part_stat_rows(stats),
+        }
+    except Exception:
+        app.logger.exception("market.listing_stat_preview_failed listing_id=%s", item.get("id"))
+        return None
+
+
 def _market_generate_listings_for_user(db, user_id, day_key, *, replace=False):
     now_ts = int(time.time())
     if replace:
@@ -14411,6 +14469,7 @@ def _market_listing_rows(db, user_id, day_key):
         item["is_sold"] = bool(int(item.get("is_sold") or 0))
         item["stock_remaining"] = 0 if item["is_sold"] else 1
         item["helper_line"] = _market_part_helper_line(item)
+        item["stat_preview"] = _market_listing_stat_preview(item)
         item["is_featured"] = featured_id is not None and int(item.get("id") or 0) == int(featured_id)
         items.append(item)
     return items

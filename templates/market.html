@@ -83,6 +83,29 @@
           <div class="robot-part">{{ item['price'] }} コイン / 残り{{ item['stock_remaining'] }}</div>
         </div>
       </div>
+      {% if item.get('stat_preview') %}
+      {% set preview = item['stat_preview'] %}
+      <div class="market-part-stat-preview">
+        <div class="market-part-stat-summary">
+          <span>{{ preview['part_type_label'] }}</span>
+          <span>{{ preview['rarity_label'] }}</span>
+          <span>{{ preview['plus_label'] }}</span>
+          <span>総合 {{ preview['total_value'] }}</span>
+        </div>
+        {% if preview.get('focus_line') %}
+        <div class="market-part-focus">注目 {{ preview['focus_line'] }}</div>
+        {% endif %}
+        {% if preview.get('stat_rows') %}
+        <div class="market-part-stat-grid">
+          {% for stat in preview['stat_rows'] %}
+          <span><b>{{ stat['label'] }}</b> {{ stat['value'] }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="market-part-stat-preview is-empty">性能未設定</div>
+      {% endif %}
       <form method="post" action="{{ url_for('market_buy', listing_id=item['id']) }}" class="post-form market-buy-form">
         <button
           type="submit"
