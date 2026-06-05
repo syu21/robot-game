@@ -29231,7 +29231,6 @@ def market_part_inventory_expand():
     except Exception:
         expected_limit = 0
     try:
-        db.execute("BEGIN IMMEDIATE")
         row = db.execute(
             "SELECT id, coins, part_inventory_limit FROM users WHERE id = ?",
             (user_id,),
@@ -29261,9 +29260,11 @@ def market_part_inventory_expand():
             """
             UPDATE users
             SET coins = ?, part_inventory_limit = ?
-            WHERE id = ? AND COALESCE(part_inventory_limit, 60) = ?
+            WHERE id = ?
+              AND COALESCE(part_inventory_limit, 60) = ?
+              AND COALESCE(coins, 0) >= ?
             """,
-            (int(coins_after), int(after_limit), int(user_id), int(before_limit)),
+            (int(coins_after), int(after_limit), int(user_id), int(before_limit), int(price)),
         )
         if int(cur.rowcount or 0) <= 0:
             db.rollback()
@@ -29291,7 +29292,9 @@ def market_part_inventory_expand():
         db.commit()
     except Exception:
         db.rollback()
-        raise
+        app.logger.exception("market.part_inventory_expand_failed user_id=%s", user_id)
+        flash("所持枠拡張に失敗しました。もう一度試してください。", "error")
+        return redirect(url_for("market"))
     flash(f"パーツ所持枠を {after_limit} 枠に拡張しました。", "notice")
     return redirect(url_for("market"))
 
