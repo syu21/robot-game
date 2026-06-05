@@ -177,6 +177,7 @@ AUDIT_EVENT_TYPES = {
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",
+    "PART_INVENTORY_EXPAND": "audit.part_inventory.expand",
     "PART_LOCK": "audit.part.lock",
     "PART_UNLOCK": "audit.part.unlock",
     "FUSE": "audit.fuse",

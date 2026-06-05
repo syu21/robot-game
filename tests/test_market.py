@@ -87,6 +87,7 @@ class MarketRouteTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("今日の入荷", html)
+        self.assertIn("パーツ所持枠拡張", html)
         self.assertIn("所持パーツ：", html)
         self.assertIn("保管", html)
         self.assertIn("まとめて売る", html)
@@ -103,6 +104,164 @@ class MarketRouteTests(unittest.TestCase):
                 ).fetchone()["c"]
             )
             self.assertEqual(count, 6)
+
+    def test_market_part_inventory_expand_60_to_70(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 1000, part_inventory_limit = 60 WHERE id = ?", (self.admin_id,))
+            db.commit()
+
+        resp = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "60"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins, part_inventory_limit FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["part_inventory_limit"]), 70)
+            self.assertEqual(int(user["coins"]), 600)
+            event = db.execute(
+                """
+                SELECT payload_json, delta_coins
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.admin_id, game_app.AUDIT_EVENT_TYPES["PART_INVENTORY_EXPAND"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            self.assertEqual(int(event["delta_coins"]), -400)
+            self.assertIn('"before_limit": 60', event["payload_json"])
+            self.assertIn('"after_limit": 70', event["payload_json"])
+
+    def test_market_part_inventory_expand_uses_price_table(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 5000, part_inventory_limit = 90 WHERE id = ?", (self.admin_id,))
+            db.commit()
+
+        resp = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "90"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins, part_inventory_limit FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["part_inventory_limit"]), 100)
+            self.assertEqual(int(user["coins"]), 2800)
+
+    def test_market_part_inventory_expand_blocks_insufficient_coins(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 399, part_inventory_limit = 60 WHERE id = ?", (self.admin_id,))
+            db.commit()
+
+        resp = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "60"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins, part_inventory_limit FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["part_inventory_limit"]), 60)
+            self.assertEqual(int(user["coins"]), 399)
+            events = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.admin_id, game_app.AUDIT_EVENT_TYPES["PART_INVENTORY_EXPAND"]),
+            ).fetchone()
+            self.assertEqual(int(events["c"] or 0), 0)
+
+    def test_market_part_inventory_expand_blocks_at_120(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 99999, part_inventory_limit = 120 WHERE id = ?", (self.admin_id,))
+            db.commit()
+
+        page = client.get("/market")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("最大拡張済み", page.get_data(as_text=True))
+
+        resp = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "120"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins, part_inventory_limit FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["part_inventory_limit"]), 120)
+            self.assertEqual(int(user["coins"]), 99999)
+
+    def test_market_part_inventory_expand_rejects_stale_double_post(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 5000, part_inventory_limit = 60 WHERE id = ?", (self.admin_id,))
+            db.commit()
+
+        first = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "60"},
+            follow_redirects=False,
+        )
+        second = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "60"},
+            follow_redirects=False,
+        )
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT coins, part_inventory_limit FROM users WHERE id = ?", (self.admin_id,)).fetchone()
+            self.assertEqual(int(user["part_inventory_limit"]), 70)
+            self.assertEqual(int(user["coins"]), 4600)
+            events = db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.admin_id, game_app.AUDIT_EVENT_TYPES["PART_INVENTORY_EXPAND"]),
+            ).fetchone()
+            self.assertEqual(int(events["c"] or 0), 1)
+
+    def test_market_part_inventory_expand_updates_space_and_keeps_overflow_storage(self):
+        client = self._client(admin=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            part = db.execute(
+                "SELECT * FROM robot_parts WHERE is_active = 1 AND UPPER(COALESCE(rarity, 'N')) = 'N' ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            db.execute("DELETE FROM part_instances WHERE user_id = ?", (self.admin_id,))
+            db.execute("UPDATE users SET coins = 1000, part_inventory_limit = 60 WHERE id = ?", (self.admin_id,))
+            for _ in range(60):
+                game_app._create_part_instance_from_master(db, self.admin_id, part, plus=0, status="inventory")
+            overflow_id = game_app._create_part_instance_from_master(db, self.admin_id, part, plus=0, status="overflow")
+            db.commit()
+            self.assertEqual(game_app._inventory_space_remaining(db, self.admin_id), 0)
+
+        resp = client.post(
+            "/market/part-inventory/expand",
+            data={"current_limit": "60"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self.assertEqual(game_app._inventory_space_remaining(db, self.admin_id), 10)
+            overflow = db.execute("SELECT status FROM part_instances WHERE id = ?", (int(overflow_id),)).fetchone()
+            self.assertEqual(str(overflow["status"]), "overflow")
+            storage = game_app._part_storage_snapshot(db, self.admin_id)
+            self.assertEqual(int(storage["overflow_count"]), 1)
 
     def test_market_refresh_first_free_then_paid(self):
         client = self._client(admin=True)

@@ -1349,6 +1349,16 @@ MARKET_SELL_BASE_BY_RARITY = {
 }
 MARKET_SELL_PLUS_BONUS = 0
 MARKET_REFRESH_COSTS = (0, 100, 200, 400, 800)
+PART_INVENTORY_EXPANSION_UNIT = 10
+PART_INVENTORY_EXPANSION_MAX_LIMIT = 120
+PART_INVENTORY_EXPANSION_PRICES = {
+    60: 400,
+    70: 800,
+    80: 1400,
+    90: 2200,
+    100: 3400,
+    110: 5000,
+}
 R_PART_N_ASSIST_GAIN = 50
 R_PART_N_ASSIST_THRESHOLD = 100
 STYLE_ACHIEVEMENT_DEFS = (
@@ -13117,7 +13127,7 @@ def _inventory_space_remaining(db, user_id, user_row=None):
         ).fetchone()
     if not user_row:
         return 0
-    limit = int(user_row["part_inventory_limit"] or 0)
+    limit = _part_inventory_limit_value(user_row["part_inventory_limit"] if "part_inventory_limit" in user_row.keys() else 60)
     used = _count_part_inventory(db, user_id)
     return max(0, limit - used)
 
@@ -13158,7 +13168,7 @@ def _effective_limits(db, user):
     showcase_slots = ent["showcase_slots"] if ent else 1
     return {
         "robot_slots": user["robot_slot_limit"] + slot_bonus,
-        "part_inventory": user["part_inventory_limit"],
+        "part_inventory": _part_inventory_limit_value(user["part_inventory_limit"] if "part_inventory_limit" in user.keys() else 60),
         "showcase_slots": showcase_slots,
     }
 
@@ -14082,6 +14092,48 @@ def _market_refresh_cost(refresh_count_today):
     return int(MARKET_REFRESH_COSTS[-1])
 
 
+def _part_inventory_limit_value(raw_limit):
+    if raw_limit is None:
+        return 60
+    try:
+        limit = int(raw_limit)
+    except Exception:
+        return 60
+    if limit < 0:
+        return 60
+    return limit
+
+
+def _part_inventory_expand_price(current_limit):
+    limit = _part_inventory_limit_value(current_limit)
+    if limit >= int(PART_INVENTORY_EXPANSION_MAX_LIMIT):
+        return None
+    return PART_INVENTORY_EXPANSION_PRICES.get(limit)
+
+
+def _part_inventory_expansion_state(user_row):
+    raw_limit = 60
+    if user_row and "part_inventory_limit" in user_row.keys():
+        raw_limit = user_row["part_inventory_limit"]
+    current_limit = _part_inventory_limit_value(raw_limit)
+    price = _part_inventory_expand_price(current_limit)
+    next_limit = min(
+        int(PART_INVENTORY_EXPANSION_MAX_LIMIT),
+        current_limit + int(PART_INVENTORY_EXPANSION_UNIT),
+    )
+    can_expand = price is not None and current_limit < int(PART_INVENTORY_EXPANSION_MAX_LIMIT)
+    coins = int(user_row["coins"] or 0) if user_row and "coins" in user_row.keys() else 0
+    return {
+        "current_limit": int(current_limit),
+        "next_limit": int(next_limit),
+        "max_limit": int(PART_INVENTORY_EXPANSION_MAX_LIMIT),
+        "price": int(price or 0),
+        "can_expand": bool(can_expand),
+        "has_enough_coins": bool(can_expand and coins >= int(price or 0)),
+        "is_max": bool(current_limit >= int(PART_INVENTORY_EXPANSION_MAX_LIMIT)),
+    }
+
+
 def _market_part_type_aliases(part_type):
     norm = _norm_part_type(str(part_type or "").strip().upper())
     aliases = [norm]
@@ -14250,6 +14302,7 @@ def _market_user_state(db, user_id):
             username,
             is_admin,
             COALESCE(coins, 0) AS coins,
+            COALESCE(part_inventory_limit, 60) AS part_inventory_limit,
             COALESCE(market_refresh_count_today, 0) AS market_refresh_count_today,
             market_free_refresh_used_at,
             market_refresh_day_key
@@ -29156,10 +29209,91 @@ def market():
         locked_sell_excluded_count=_market_locked_inventory_part_count(db, user_id),
         refresh_cost=refresh_cost,
         part_inventory_status=part_inventory_status,
+        part_inventory_expansion=_part_inventory_expansion_state(state),
         market_inventory_note=market_inventory_note,
         next_refresh_number=int(state.get("market_refresh_count_today") or 0) + 1,
         next_update_label=_market_next_update_label(),
     )
+
+
+@app.route("/market/part-inventory/expand", methods=["POST"])
+@login_required
+def market_part_inventory_expand():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_admin FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    _market_require_access(db, user)
+    try:
+        expected_limit = int(request.form.get("current_limit") or 0)
+    except Exception:
+        expected_limit = 0
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT id, coins, part_inventory_limit FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            db.rollback()
+            session.clear()
+            return redirect(url_for("login", reason="expired"))
+        before_limit = _part_inventory_limit_value(row["part_inventory_limit"])
+        if expected_limit and expected_limit != before_limit:
+            db.rollback()
+            flash("所持枠の状態が変わりました。もう一度確認してください。", "error")
+            return redirect(url_for("market"))
+        price = _part_inventory_expand_price(before_limit)
+        if price is None or before_limit >= int(PART_INVENTORY_EXPANSION_MAX_LIMIT):
+            db.rollback()
+            flash("パーツ所持枠は最大拡張済みです。", "notice")
+            return redirect(url_for("market"))
+        coins_before = int(row["coins"] or 0)
+        if coins_before < int(price):
+            db.rollback()
+            flash("所持枠拡張に必要なコインが足りません。", "error")
+            return redirect(url_for("market"))
+        after_limit = min(int(PART_INVENTORY_EXPANSION_MAX_LIMIT), before_limit + int(PART_INVENTORY_EXPANSION_UNIT))
+        coins_after = coins_before - int(price)
+        cur = db.execute(
+            """
+            UPDATE users
+            SET coins = ?, part_inventory_limit = ?
+            WHERE id = ? AND COALESCE(part_inventory_limit, 60) = ?
+            """,
+            (int(coins_after), int(after_limit), int(user_id), int(before_limit)),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            db.rollback()
+            flash("所持枠の状態が変わりました。もう一度確認してください。", "error")
+            return redirect(url_for("market"))
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["PART_INVENTORY_EXPAND"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="part_inventory_expand",
+            entity_type="user",
+            entity_id=user_id,
+            delta_coins=-int(price),
+            payload={
+                "user_id": int(user_id),
+                "before_limit": int(before_limit),
+                "after_limit": int(after_limit),
+                "price": int(price),
+                "coins_before": int(coins_before),
+                "coins_after": int(coins_after),
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    flash(f"パーツ所持枠を {after_limit} 枠に拡張しました。", "notice")
+    return redirect(url_for("market"))
 
 
 @app.route("/market/sell", methods=["POST"])

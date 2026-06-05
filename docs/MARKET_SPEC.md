@@ -39,6 +39,19 @@
 - 売却・購入・再入荷は履歴テーブルと監査ログに残す。
 - 旧 `overflow` は `tools/cleanup_overflow_parts.py` で一括売却できる。
 
+## パーツ所持枠拡張
+- 初期上限は `users.part_inventory_limit = 60`。
+- 廃品市場で `coins` を消費し、+10単位で最大120まで拡張できる。
+- 価格:
+  - 60 -> 70: 400
+  - 70 -> 80: 800
+  - 80 -> 90: 1400
+  - 90 -> 100: 2200
+  - 100 -> 110: 3400
+  - 110 -> 120: 5000
+- 所持枠判定は `part_inventory_limit` を使う。
+- 旧 `overflow` 保管は維持し、拡張しても自動移動しない。
+
 ## 再入荷
 - 1回目: 0
 - 2回目: 100
@@ -64,3 +77,4 @@
 - `audit.market.buy`
 - `audit.market.sell`
 - `audit.market.refresh`
+- `audit.part_inventory.expand`

@@ -26,6 +26,31 @@
 </div>
 {% endif %}
 
+{% if part_inventory_expansion %}
+<section class="panel market-section">
+  <div class="market-section-heading">
+    <div>
+      <h2>パーツ所持枠拡張</h2>
+      {% if part_inventory_expansion['is_max'] %}
+      <p class="robot-time">最大拡張済み</p>
+      {% else %}
+      <p class="robot-time">現在 {{ part_inventory_expansion['current_limit'] }}枠 → {{ part_inventory_expansion['next_limit'] }}枠 / 必要 {{ part_inventory_expansion['price'] }}コイン</p>
+      {% endif %}
+    </div>
+    {% if part_inventory_expansion['is_max'] %}
+    <button type="button" disabled>最大拡張済み</button>
+    {% else %}
+    <form method="post" action="{{ url_for('market_part_inventory_expand') }}" class="post-form">
+      <input type="hidden" name="current_limit" value="{{ part_inventory_expansion['current_limit'] }}" />
+      <button type="submit" {% if not part_inventory_expansion['has_enough_coins'] %}disabled{% endif %}>
+        {{ part_inventory_expansion['price'] }} コインで拡張
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="panel market-section">
   <div class="market-section-heading">
     <div>
