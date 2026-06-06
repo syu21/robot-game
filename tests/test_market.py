@@ -74,6 +74,16 @@ class MarketRouteTests(unittest.TestCase):
                 (self.admin_id,),
             ).fetchone()
 
+    class _RarityRRng:
+        def randint(self, lo, hi):
+            return hi
+
+        def choice(self, seq):
+            return "HEAD"
+
+        def randrange(self, value):
+            return 0
+
     def test_market_is_admin_only_until_release(self):
         user_resp = self._client().get("/market")
         self.assertEqual(user_resp.status_code, 404)
@@ -111,6 +121,33 @@ class MarketRouteTests(unittest.TestCase):
                 ).fetchone()["c"]
             )
             self.assertEqual(count, 6)
+
+    def test_market_excludes_insect_r_but_allows_normal_r(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO robot_parts
+                    (part_type, key, image_path, rarity, element, series, frame_type, display_name_ja,
+                     offset_x, offset_y, is_active, is_unlocked, created_at)
+                VALUES ('HEAD', 'head_r_market_test', 'parts/head/head_r_fire.png', 'R', 'FIRE', 'S1', 'normal',
+                        '市場テストR', 0, 0, 1, 1, ?)
+                ON CONFLICT(key) DO UPDATE SET is_active = 1, is_unlocked = 1, rarity = 'R', frame_type = 'normal'
+                """,
+                (now,),
+            )
+            db.commit()
+
+            insect_row = db.execute("SELECT * FROM robot_parts WHERE key = 'head_r_kabuto'").fetchone()
+            normal_row = db.execute("SELECT * FROM robot_parts WHERE key = 'head_r_market_test'").fetchone()
+            self.assertTrue(game_app._market_excludes_part_row(insect_row))
+            self.assertFalse(game_app._market_excludes_part_row(normal_row))
+
+            picked, rarity_roll = game_app._market_pick_part_row(db, slot_key="free", rng=self._RarityRRng())
+            self.assertEqual(rarity_roll, "R")
+            self.assertIsNotNone(picked)
+            self.assertEqual(picked["key"], "head_r_market_test")
 
     def test_market_stat_preview_handles_missing_stat_source(self):
         client = self._client(admin=True)

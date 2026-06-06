@@ -88,6 +88,8 @@
 - [ ] `/parts/evolve` が `N + 進化コア1 -> R` で動作
   - N個体消費 / 進化コア1消費 / R個体生成
   - `plus`, `w_hp..w_cri` 引き継ぎ
+- [ ] 虫シリーズN -> 虫シリーズRの進化候補は `release_flags.insect_r_parts` が public の一般ユーザー、または管理者だけに出る
+- [ ] 虫Rは進化合成で入手でき、廃品市場には出ない
 - [ ] `/parts/evolve` で進化前後の比較が6ステで見える
 - [ ] 第2層固定ボス撃破前は基地や個体一覧に進化合成導線が表示されない
 - [ ] 第2層固定ボス撃破後は基地に進化合成カードが表示される
@@ -147,6 +149,7 @@
 - [ ] 体験中の `/parts`、`/parts/strengthen`、`/build` が session の一時パーツで動く
 - [ ] 体験中の出撃・強化・編成が `users`、`world_events_log`、ランキングへ永続保存されない
 - [ ] `/admin/release` で `廃品市場` が `admin_only` のままになっている
+- [ ] `/admin/release` で `虫シリーズRパーツ` が `admin_only` のままになっている
 - [ ] `/market` が非管理者404、管理者200
 - [ ] `/admin/market` で購入件数・売却件数・再入荷件数・平均価格が見える
 - [ ] 実験室交換所 `/lab/race/prizes` が非管理者に出ていない

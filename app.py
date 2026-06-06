@@ -31,6 +31,7 @@ from balance_config import (
 )
 from series_catalog import (
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
+    INSECT_R_PART_DEFINITIONS,
     LEGACY_GENERIC_SERIES_KEYS,
     PART_KEY_SERIES_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
@@ -1283,6 +1284,7 @@ LAB_CASINO_PRIZE_EXCHANGE_ENABLED = False
 LAB_CASINO_PRIZE_EXCHANGE_DISABLED_MESSAGE = "景品交換は準備中です。コインはそのまま保持されます。"
 MARKET_FEATURE_KEY = "market"
 SERIES_SYSTEM_FEATURE_KEY = "series_system"
+INSECT_R_PARTS_FEATURE_KEY = "insect_r_parts"
 
 
 def _float_env(name, default):
@@ -1553,6 +1555,11 @@ RELEASE_FLAG_DEFS = (
         "key": SERIES_SYSTEM_FEATURE_KEY,
         "label": "シリーズシステム",
         "summary": "シリーズ付きパーツの出現、シリーズ効果、編成UI表示を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": INSECT_R_PARTS_FEATURE_KEY,
+        "label": "虫シリーズRパーツ",
+        "summary": "虫シリーズNからRへの進化合成を一般公開します。管理者は非公開中でも確認できます。",
     },
     {
         "key": LAB_SMALL_BOOST_FEATURE_KEY,
@@ -3540,6 +3547,10 @@ def _pick_drop_part_master(db, *, rarity=None, area_key=None, user_id=None):
             WHERE rp.is_active = 1
               AND UPPER(COALESCE(rp.rarity, '')) = 'R'
               AND rp.is_unlocked = 1
+              AND NOT (
+                    COALESCE(rp.frame_type, 'normal') = 'insect'
+                    OR COALESCE(rp.series_key, rp.series, '') LIKE 'insect_%'
+              )
               AND (
                     COALESCE(TRIM(rp.series), '') = ''
                     OR rp.series IN ('S1', 'n1')
@@ -4053,6 +4064,16 @@ def _series_system_enabled_for_user(db, *, user_row=None, user_id=None, is_admin
     return _release_open_for_viewer(
         db,
         SERIES_SYSTEM_FEATURE_KEY,
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
+def _insect_r_parts_open_for_viewer(db, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        INSECT_R_PARTS_FEATURE_KEY,
         user_row=user_row,
         user_id=user_id,
         is_admin=is_admin,
@@ -12957,6 +12978,63 @@ def _sync_series_catalog(db):
                 now,
             ),
         )
+    for part in INSECT_R_PART_DEFINITIONS:
+        db.execute(
+            """
+            INSERT INTO robot_parts (
+                part_type,
+                key,
+                image_path,
+                rarity,
+                element,
+                series,
+                frame_type,
+                series_key,
+                series_label,
+                display_name_ja,
+                offset_x,
+                offset_y,
+                is_active,
+                is_unlocked,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                part_type = excluded.part_type,
+                image_path = excluded.image_path,
+                rarity = excluded.rarity,
+                element = excluded.element,
+                series = excluded.series,
+                frame_type = excluded.frame_type,
+                series_key = excluded.series_key,
+                series_label = excluded.series_label,
+                display_name_ja = excluded.display_name_ja,
+                is_active = 1,
+                is_unlocked = 1
+            """,
+            (
+                part["part_type"],
+                part["key"],
+                part["image_path"],
+                part["rarity"],
+                part["element"],
+                part["series"],
+                part.get("frame_type") or "insect",
+                part.get("series_key") or part.get("series"),
+                part.get("series_label"),
+                part["display_name_ja"],
+                now,
+            ),
+        )
+        db.execute(
+            """
+            UPDATE robot_parts
+            SET offset_x = COALESCE((SELECT src.offset_x FROM robot_parts src WHERE src.key = ? LIMIT 1), offset_x),
+                offset_y = COALESCE((SELECT src.offset_y FROM robot_parts src WHERE src.key = ? LIMIT 1), offset_y)
+            WHERE key = ?
+            """,
+            (part["source_key"], part["source_key"], part["key"]),
+        )
     for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
         db.execute(
             """
@@ -13988,6 +14066,12 @@ def _candidate_evolved_part_keys(base_part_key):
     if not key:
         return []
     candidates = []
+    insect_r_by_source = {
+        str(part.get("source_key") or "").strip().lower(): str(part.get("key") or "").strip().lower()
+        for part in INSECT_R_PART_DEFINITIONS
+    }
+    if key in insect_r_by_source:
+        candidates.append(insect_r_by_source[key])
     if "_n_" in key:
         candidates.append(key.replace("_n_", "_r_", 1))
     if key.endswith("_n"):
@@ -14159,6 +14243,17 @@ def _market_pick_weighted(items, rng):
     return items[-1][0]
 
 
+def _market_excludes_part_row(part_row):
+    row = dict(part_row or {})
+    rarity = str(row.get("rarity") or "N").strip().upper()
+    if rarity != "R":
+        return False
+    frame_type = _frame_type_for_row(row)
+    series_key = str(row.get("series_key") or row.get("series") or "").strip()
+    # 虫Rは当面、廃品市場ではなく進化合成だけで入手させる。
+    return frame_type == "insect" or _is_insect_series_key(series_key)
+
+
 def _market_pick_part_row(db, *, slot_key, rng):
     if slot_key in MARKET_FIXED_SLOT_PART_TYPES:
         rarity_roll = "N"
@@ -14176,6 +14271,13 @@ def _market_pick_part_row(db, *, slot_key, rng):
         WHERE is_active = 1
           AND COALESCE(is_unlocked, 1) = 1
           AND UPPER(COALESCE(rarity, 'N')) = ?
+          AND NOT (
+            UPPER(COALESCE(rarity, 'N')) = 'R'
+            AND (
+              COALESCE(frame_type, 'normal') = 'insect'
+              OR COALESCE(series_key, series, '') LIKE 'insect_%'
+            )
+          )
           AND UPPER(COALESCE(part_type, '')) IN ({marks})
         ORDER BY key ASC
         """,
@@ -39967,6 +40069,7 @@ def evolve_parts():
     if not _evolution_feature_unlocked(db, user=user, user_id=user_id):
         flash("進化合成は第2層ボス撃破後に解放されます。", "error")
         return redirect(url_for("home"))
+    insect_r_parts_open = _insect_r_parts_open_for_viewer(db, user_row=user, user_id=user_id)
     request_id = getattr(g, "request_id", None)
     selected_mode = (request.args.get("mode") or "select").strip().lower()
     if selected_mode not in {"select", "result"}:
@@ -40014,6 +40117,10 @@ def evolve_parts():
             if not target_part_key:
                 db.rollback()
                 flash("このパーツは進化できません。", "error")
+                return redirect(url_for("evolve_parts", **redirect_params))
+            if _is_insect_part_row(source_row) and not insect_r_parts_open:
+                db.rollback()
+                flash("虫シリーズRパーツはまだ公開準備中です。", "error")
                 return redirect(url_for("evolve_parts", **redirect_params))
             target_part = db.execute(
                 """
@@ -40249,6 +40356,8 @@ def evolve_parts():
     for row in rows:
         item = dict(row)
         if not _series_can_evolve_for_row(item, series_master_map=series_master_map):
+            continue
+        if _is_insect_part_row(item) and not insect_r_parts_open:
             continue
         target_key = resolve_evolved_part_key(item.get("part_key"))
         if not target_key:

@@ -207,7 +207,6 @@ class FrameTypeSystemTests(unittest.TestCase):
         self.assertIn("フレーム：虫型", html)
         self.assertIn("剛角ヘッド", html)
         self.assertIn("シリーズ：カブト", html)
-        self.assertIn("このシリーズは現在Nパーツのみです", html)
 
     def test_robot_maintenance_rejects_cross_frame_swap(self):
         insect_head_id = self._create_instance("head_kabuto")
@@ -238,7 +237,7 @@ class FrameTypeSystemTests(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertIn("対応N素材2個", result["message"])
 
-    def test_evolve_rejects_insect_series_with_friendly_error(self):
+    def test_evolve_rejects_cross_frame_insect_target_with_friendly_error(self):
         source_part = self._insert_custom_part(
             key="head_n_framebug",
             part_type="HEAD",
@@ -263,14 +262,14 @@ class FrameTypeSystemTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("このシリーズは現在Nパーツのみです。進化合成には対応していません。", resp.get_data(as_text=True))
+        self.assertIn("進化先のフレームタイプが一致しません。", resp.get_data(as_text=True))
 
-    def test_evolve_candidates_hide_insect_series(self):
+    def test_evolve_candidates_show_insect_series_for_admin(self):
         insect_id = self._create_instance("head_kabuto")
         self._grant_evolution_core()
         html = self._client().get("/parts/evolve").get_data(as_text=True)
-        self.assertNotIn(f'value="{insect_id}"', html)
-        self.assertNotIn("カブトヘッド", html)
+        self.assertIn(f'value="{insect_id}"', html)
+        self.assertIn("Rカブトヘッド", html)
 
 
 if __name__ == "__main__":

@@ -63,8 +63,78 @@ class SeriesSystemTests(unittest.TestCase):
             self.assertEqual(row["series"], "insect_kabuto")
             self.assertEqual(row["image_path"], "parts/head/head_kabuto.png")
             self.assertEqual(row["frame_type"], "insect")
-            self.assertEqual(row["max_rarity"], "N")
-            self.assertEqual(int(row["can_evolve"]), 0)
+            self.assertEqual(row["max_rarity"], "R")
+            self.assertEqual(int(row["can_evolve"]), 1)
+
+    def test_insect_r_parts_seeded_once_with_existing_assets(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                """
+                SELECT key, part_type, image_path, rarity, series, frame_type, series_key, display_name_ja
+                FROM robot_parts
+                WHERE UPPER(COALESCE(rarity, 'N')) = 'R'
+                  AND COALESCE(frame_type, 'normal') = 'insect'
+                ORDER BY key ASC
+                """
+            ).fetchall()
+            self.assertEqual(len(rows), 28)
+            keys = {row["key"] for row in rows}
+            for part in game_app.INSECT_R_PART_DEFINITIONS:
+                self.assertIn(part["key"], keys)
+            for row in rows:
+                self.assertTrue(str(row["series"]).startswith("insect_"))
+                self.assertEqual(row["series"], row["series_key"])
+                self.assertEqual(row["rarity"], "R")
+                self.assertEqual(row["frame_type"], "insect")
+                self.assertTrue(str(row["display_name_ja"]).startswith("R"))
+                full_path = os.path.join(game_app.ASSET_ROOT, row["image_path"])
+                self.assertTrue(os.path.exists(full_path), row["image_path"])
+
+            game_app._sync_series_catalog(db)
+            db.commit()
+            count_after = int(
+                db.execute(
+                    """
+                    SELECT COUNT(*) AS c
+                    FROM robot_parts
+                    WHERE UPPER(COALESCE(rarity, 'N')) = 'R'
+                      AND COALESCE(frame_type, 'normal') = 'insect'
+                    """
+                ).fetchone()["c"]
+            )
+            self.assertEqual(count_after, 28)
+
+    def test_insect_n_to_r_mapping_exists_for_all_series_slots(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for part in game_app.INSECT_R_PART_DEFINITIONS:
+                source = db.execute("SELECT key FROM robot_parts WHERE key = ?", (part["source_key"],)).fetchone()
+                target = db.execute("SELECT key, rarity, frame_type FROM robot_parts WHERE key = ?", (part["key"],)).fetchone()
+                self.assertIsNotNone(source, part["source_key"])
+                self.assertIsNotNone(target, part["key"])
+                self.assertEqual(game_app.resolve_evolved_part_key(part["source_key"]), part["key"])
+                self.assertEqual(str(target["rarity"]).upper(), "R")
+                self.assertEqual(str(target["frame_type"]), "insect")
+
+    def test_insect_r_release_flag_defaults_to_admin_only(self):
+        old_bypass = game_app.app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True)
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        try:
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                row = db.execute(
+                    "SELECT is_public FROM release_flags WHERE key = ?",
+                    (game_app.INSECT_R_PARTS_FEATURE_KEY,),
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(int(row["is_public"] or 0), 0)
+                self.assertFalse(game_app._insect_r_parts_open_for_viewer(db, user_id=self.user_id))
+                db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (self.user_id,))
+                db.commit()
+                self.assertTrue(game_app._insect_r_parts_open_for_viewer(db, user_id=self.user_id))
+        finally:
+            game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = old_bypass
 
     def test_insect_part_display_names_match_robot_motifs(self):
         expected = {

@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from balance_config import ENEMY_SEED_STATS
 from series_catalog import (
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
+    INSECT_R_PART_DEFINITIONS,
     PART_KEY_SERIES_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
     SERIES_DEFINITIONS,
@@ -237,7 +238,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "is_active": 1,
     },
 )
-RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "market", "series_system", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "market", "series_system", "insect_r_parts", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -446,6 +447,63 @@ def _apply_series_part_assignments(cur):
                 part["display_name_ja"],
                 now,
             ),
+        )
+    for part in INSECT_R_PART_DEFINITIONS:
+        cur.execute(
+            """
+            INSERT INTO robot_parts (
+                part_type,
+                key,
+                image_path,
+                rarity,
+                element,
+                series,
+                frame_type,
+                series_key,
+                series_label,
+                display_name_ja,
+                offset_x,
+                offset_y,
+                is_active,
+                is_unlocked,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                part_type = excluded.part_type,
+                image_path = excluded.image_path,
+                rarity = excluded.rarity,
+                element = excluded.element,
+                series = excluded.series,
+                frame_type = excluded.frame_type,
+                series_key = excluded.series_key,
+                series_label = excluded.series_label,
+                display_name_ja = excluded.display_name_ja,
+                is_active = 1,
+                is_unlocked = 1
+            """,
+            (
+                part["part_type"],
+                part["key"],
+                part["image_path"],
+                part["rarity"],
+                part["element"],
+                part["series"],
+                part.get("frame_type") or "insect",
+                part.get("series_key") or part.get("series"),
+                part.get("series_label"),
+                part["display_name_ja"],
+                now,
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE robot_parts
+            SET offset_x = COALESCE((SELECT src.offset_x FROM robot_parts src WHERE src.key = ? LIMIT 1), offset_x),
+                offset_y = COALESCE((SELECT src.offset_y FROM robot_parts src WHERE src.key = ? LIMIT 1), offset_y)
+            WHERE key = ?
+            """,
+            (part["source_key"], part["source_key"], part["key"]),
         )
     for part_key, series_key in PART_KEY_SERIES_ASSIGNMENTS.items():
         cur.execute(

@@ -73,6 +73,39 @@ class EvolveRouteTests(unittest.TestCase):
             sess["username"] = "evolve_tester"
         return client
 
+    def _client_for(self, user_id, username):
+        client = game_app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = int(user_id)
+            sess["username"] = username
+        return client
+
+    def _grant_evolution_core(self, user_id, qty=1):
+        db = game_app.get_db()
+        core_asset_id = db.execute(
+            "SELECT id FROM core_assets WHERE core_key = ?",
+            (game_app.EVOLUTION_CORE_KEY,),
+        ).fetchone()["id"]
+        db.execute(
+            """
+            INSERT OR REPLACE INTO user_core_inventory (user_id, core_asset_id, quantity, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            """,
+            (int(user_id), int(core_asset_id), int(qty)),
+        )
+
+    def _create_insect_part_instance(self, user_id, part_key="head_kabuto", plus=0):
+        db = game_app.get_db()
+        part = game_app._get_part_by_key(db, part_key)
+        self.assertIsNotNone(part)
+        return game_app._create_part_instance_from_master(
+            db,
+            int(user_id),
+            part,
+            plus=int(plus),
+            status="inventory",
+        )
+
     def test_evolve_success_preserves_plus(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -151,6 +184,111 @@ class EvolveRouteTests(unittest.TestCase):
                 (self.user_id, game_app.AUDIT_EVENT_TYPES["PART_EVOLVE"]),
             ).fetchone()
             self.assertIsNotNone(event)
+
+    def test_insect_r_evolve_candidates_follow_release_flag(self):
+        old_bypass = game_app.app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True)
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        try:
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                db.execute("UPDATE users SET max_unlocked_layer = 3 WHERE id = ?", (self.user_id,))
+                self._create_insect_part_instance(self.user_id, "head_kabuto")
+                db.commit()
+
+            admin_html = self._client().get("/parts/evolve").get_data(as_text=True)
+            self.assertIn("Rカブトヘッド", admin_html)
+
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                now = int(time.time())
+                db.execute(
+                    """
+                    INSERT INTO users (username, password_hash, created_at, is_admin, max_unlocked_layer)
+                    VALUES (?, ?, ?, 0, 3)
+                    """,
+                    ("insect_evolve_user", "x", now),
+                )
+                public_user_id = int(
+                    db.execute("SELECT id FROM users WHERE username = ?", ("insect_evolve_user",)).fetchone()["id"]
+                )
+                game_app.initialize_new_user(db, public_user_id)
+                self._create_insect_part_instance(public_user_id, "head_kabuto")
+                db.commit()
+
+            user_client = self._client_for(public_user_id, "insect_evolve_user")
+            private_html = user_client.get("/parts/evolve").get_data(as_text=True)
+            self.assertNotIn("Rカブトヘッド", private_html)
+
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                db.execute(
+                    "UPDATE release_flags SET is_public = 1 WHERE key = ?",
+                    (game_app.INSECT_R_PARTS_FEATURE_KEY,),
+                )
+                db.commit()
+            public_html = user_client.get("/parts/evolve").get_data(as_text=True)
+            self.assertIn("Rカブトヘッド", public_html)
+        finally:
+            game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = old_bypass
+
+    def test_insect_r_evolve_preserves_plus_weights_and_consumes_core(self):
+        old_bypass = game_app.app.config.get("BYPASS_RELEASE_GATES_IN_TESTS", True)
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        try:
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                insect_instance_id = self._create_insect_part_instance(self.user_id, "head_kabuto", plus=4)
+                db.execute(
+                    """
+                    UPDATE part_instances
+                    SET w_hp = 0.11, w_atk = 0.12, w_def = 0.13, w_spd = 0.14, w_acc = 0.15, w_cri = 0.16
+                    WHERE id = ?
+                    """,
+                    (int(insect_instance_id),),
+                )
+                self._grant_evolution_core(self.user_id, qty=1)
+                db.commit()
+
+            resp = self._client().post(
+                "/parts/evolve",
+                data={"part_instance_id": str(insect_instance_id)},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("進化成功", resp.get_data(as_text=True))
+
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                row = db.execute(
+                    """
+                    SELECT pi.rarity, pi.plus, pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+                           rp.key, rp.frame_type, rp.series
+                    FROM part_instances pi
+                    JOIN robot_parts rp ON rp.id = pi.part_id
+                    WHERE pi.user_id = ? AND UPPER(COALESCE(pi.rarity, 'N')) = 'R'
+                      AND rp.key = 'head_r_kabuto'
+                    LIMIT 1
+                    """,
+                    (self.user_id,),
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(str(row["rarity"]).upper(), "R")
+                self.assertEqual(int(row["plus"]), 4)
+                self.assertEqual(str(row["frame_type"]), "insect")
+                self.assertEqual(str(row["series"]), "insect_kabuto")
+                for key, expected in {
+                    "w_hp": 0.11,
+                    "w_atk": 0.12,
+                    "w_def": 0.13,
+                    "w_spd": 0.14,
+                    "w_acc": 0.15,
+                    "w_cri": 0.16,
+                }.items():
+                    self.assertAlmostEqual(float(row[key]), expected)
+                core_qty = game_app._get_player_core_qty(db, self.user_id, game_app.EVOLUTION_CORE_KEY)
+                self.assertEqual(core_qty, 0)
+        finally:
+            game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = old_bypass
 
     def test_evolve_plus_five_stays_plus_five_and_hits_strengthen_cap(self):
         with game_app.app.app_context():

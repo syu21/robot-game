@@ -7,8 +7,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "安定",
         "description": "守りを固めて押し切る昆虫研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -19,8 +19,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "爆発",
         "description": "一撃の伸びを狙う高火力の昆虫研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -31,8 +31,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "速攻",
         "description": "先手と命中で差を作る昆虫研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -43,8 +43,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "不安定",
         "description": "会心と火力に振れ幅を持たせた危険な研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -55,8 +55,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "精密速攻",
         "description": "命中と速度で差を作る精密な昆虫研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -67,8 +67,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "バランス",
         "description": "無理なく底上げする量産研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
     {
@@ -79,8 +79,8 @@ SERIES_DEFINITIONS = [
         "frame_type": "insect",
         "role_label": "特殊",
         "description": "命中と回転で差を作る特殊研究系。",
-        "max_rarity": "N",
-        "can_evolve": 0,
+        "max_rarity": "R",
+        "can_evolve": 1,
         "default_active": 1,
     },
 ]
@@ -184,7 +184,15 @@ SERIES_WEIGHT_BIASES = {
 }
 
 SERIES_PART_DEFINITIONS = []
+INSECT_R_PART_DEFINITIONS = []
 PART_KEY_SERIES_ASSIGNMENTS = {}
+INSECT_R_ASSET_PATH_OVERRIDES = {}
+INSECT_R_DISPLAY_SLOT_LABELS = {
+    "HEAD": "ヘッド",
+    "RIGHT_ARM": "右腕",
+    "LEFT_ARM": "左腕",
+    "LEGS": "脚",
+}
 for variant in SERIES_VARIANTS:
     for slot in SERIES_PART_SLOT_DEFS:
         key = f"{slot['key_prefix']}_{variant['asset_suffix']}"
@@ -213,6 +221,34 @@ for variant in SERIES_VARIANTS:
             }
         )
         PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
+        r_key = f"{slot['key_prefix']}_r_{variant['asset_suffix']}"
+        r_image_path = INSECT_R_ASSET_PATH_OVERRIDES.get(
+            r_key,
+            f"parts/{slot['image_dir']}/{r_key}.png",
+        )
+        INSECT_R_PART_DEFINITIONS.append(
+            {
+                "key": r_key,
+                "source_key": key,
+                "part_type": slot["part_type"],
+                "image_path": r_image_path,
+                "rarity": "R",
+                "element": "NORMAL",
+                "series": variant["series_key"],
+                "series_key": variant["series_key"],
+                "series_label": next(
+                    (
+                        item["display_name"]
+                        for item in SERIES_DEFINITIONS
+                        if item["series_key"] == variant["series_key"]
+                    ),
+                    variant["name_ja"],
+                ),
+                "frame_type": "insect",
+                "display_name_ja": f"R{variant['name_ja']}{INSECT_R_DISPLAY_SLOT_LABELS[slot['part_type']]}",
+            }
+        )
+        PART_KEY_SERIES_ASSIGNMENTS[r_key] = variant["series_key"]
 
 LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
 
