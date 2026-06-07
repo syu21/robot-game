@@ -214,4 +214,69 @@ INSECT_R_PART_DISPLAY_NAME_OVERRIDES = {
     "legs_r_ant": "重六脚フレーム",
     "head_r_butterfly": "幻彩ヘッド",
     "right_arm_r_butterfly": "幻彩ブレード",
-    "left_arm_r_butterfly": "幻�
+    "left_arm_r_butterfly": "幻彩シールド",
+    "legs_r_butterfly": "幻舞レッグ",
+}
+for variant in SERIES_VARIANTS:
+    for slot in SERIES_PART_SLOT_DEFS:
+        key = f"{slot['key_prefix']}_{variant['asset_suffix']}"
+        SERIES_PART_DEFINITIONS.append(
+            {
+                "key": key,
+                "part_type": slot["part_type"],
+                "image_path": f"parts/{slot['image_dir']}/{key}.png",
+                "rarity": "N",
+                "element": "NORMAL",
+                "series": variant["series_key"],
+                "series_key": variant["series_key"],
+                "series_label": next(
+                    (
+                        item["display_name"]
+                        for item in SERIES_DEFINITIONS
+                        if item["series_key"] == variant["series_key"]
+                    ),
+                    variant["name_ja"],
+                ),
+                "frame_type": "insect",
+                "display_name_ja": INSECT_PART_DISPLAY_NAME_OVERRIDES.get(
+                    key,
+                    f"{variant['name_ja']}{slot['label_ja']}",
+                ),
+            }
+        )
+        PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
+        r_key = f"{slot['key_prefix']}_r_{variant['asset_suffix']}"
+        r_image_path = INSECT_R_ASSET_PATH_OVERRIDES.get(
+            r_key,
+            f"parts/{slot['image_dir']}/{r_key}.png",
+        )
+        INSECT_R_PART_DEFINITIONS.append(
+            {
+                "key": r_key,
+                "source_key": key,
+                "part_type": slot["part_type"],
+                "image_path": r_image_path,
+                "rarity": "R",
+                "element": "NORMAL",
+                "series": variant["series_key"],
+                "series_key": variant["series_key"],
+                "series_label": next(
+                    (
+                        item["display_name"]
+                        for item in SERIES_DEFINITIONS
+                        if item["series_key"] == variant["series_key"]
+                    ),
+                    variant["name_ja"],
+                ),
+                "frame_type": "insect",
+                "display_name_ja": INSECT_R_PART_DISPLAY_NAME_OVERRIDES[r_key],
+            }
+        )
+        PART_KEY_SERIES_ASSIGNMENTS[r_key] = variant["series_key"]
+
+LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
+
+SERIES_METADATA_BY_KEY = {
+    str(item["series_key"]): dict(item)
+    for item in SERIES_DEFINITIONS
+}
