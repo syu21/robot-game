@@ -158,6 +158,90 @@ class SeriesSystemTests(unittest.TestCase):
                 self.assertIn(row["part_type"], {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"})
                 self.assertTrue(os.path.exists(os.path.join(game_app.ASSET_ROOT, row["image_path"])))
 
+    def test_insect_r_image_urls_render_with_robot_assets_static_prefix(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (self.user_id,))
+            db.execute("DELETE FROM part_instances WHERE user_id = ?", (self.user_id,))
+            for key in (
+                "head_r_butterfly",
+                "right_arm_r_butterfly",
+                "left_arm_r_butterfly",
+                "legs_r_butterfly",
+            ):
+                part = game_app._get_part_by_key(db, key)
+                self.assertIsNotNone(part, key)
+                rel = game_app._part_image_rel(part)
+                self.assertEqual(rel, f"robot_assets/{part['image_path']}")
+                self.assertTrue(os.path.exists(os.path.join(game_app.STATIC_ROOT, rel)), rel)
+                game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    part,
+                    plus=0,
+                    status="inventory",
+                )
+            for _ in range(2):
+                game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    game_app._get_part_by_key(db, "head_r_butterfly"),
+                    plus=0,
+                    status="inventory",
+                )
+            n_part = game_app._get_part_by_key(db, "head_butterfly")
+            game_app._create_part_instance_from_master(
+                db,
+                self.user_id,
+                n_part,
+                plus=0,
+                status="inventory",
+            )
+            db.commit()
+
+        client = self._client()
+        expected_src = "/static/robot_assets/parts/head/head_r_butterfly.png"
+        bad_relative_src = 'src="parts/'
+        bad_static_src = "/static/parts/head/head_r_butterfly.png"
+
+        admin_resp = client.get("/admin/parts")
+        self.assertEqual(admin_resp.status_code, 200)
+        admin_html = admin_resp.get_data(as_text=True)
+        self.assertIn(expected_src, admin_html)
+        self.assertNotIn(bad_relative_src, admin_html)
+        self.assertNotIn(bad_static_src, admin_html)
+
+        parts_resp = client.get("/parts")
+        self.assertEqual(parts_resp.status_code, 200)
+        parts_html = parts_resp.get_data(as_text=True)
+        self.assertIn(expected_src, parts_html)
+        self.assertNotIn(bad_relative_src, parts_html)
+        self.assertNotIn(bad_static_src, parts_html)
+
+        evolve_resp = client.get("/parts/evolve?mode=select&part_type=HEAD")
+        self.assertEqual(evolve_resp.status_code, 200)
+        evolve_html = evolve_resp.get_data(as_text=True)
+        self.assertIn(expected_src, evolve_html)
+        self.assertNotIn(bad_relative_src, evolve_html)
+        self.assertNotIn(bad_static_src, evolve_html)
+
+        build_resp = client.get("/build?mode=new&frame_type=insect")
+        self.assertEqual(build_resp.status_code, 200)
+        build_html = build_resp.get_data(as_text=True)
+        self.assertIn(expected_src, build_html)
+        self.assertIn("/static/robot_assets/parts/right_arm/right_arm_r_butterfly.png", build_html)
+        self.assertIn("/static/robot_assets/parts/left_arm/left_arm_r_butterfly.png", build_html)
+        self.assertIn("/static/robot_assets/parts/legs/legs_r_butterfly.png", build_html)
+        self.assertNotIn(bad_relative_src, build_html)
+        self.assertNotIn(bad_static_src, build_html)
+
+        strengthen_resp = client.get("/parts/strengthen?mode=select&part_type=HEAD&rarity=R")
+        self.assertEqual(strengthen_resp.status_code, 200)
+        strengthen_html = strengthen_resp.get_data(as_text=True)
+        self.assertIn(expected_src, strengthen_html)
+        self.assertNotIn(bad_relative_src, strengthen_html)
+        self.assertNotIn(bad_static_src, strengthen_html)
+
     def test_insect_r_names_do_not_match_same_series_n_names(self):
         with game_app.app.app_context():
             db = game_app.get_db()

@@ -89,9 +89,9 @@
             <td>{{ element_labels.get((r['element'] or '').upper(), r['element'] or '-') }}</td>
             <td>{{ r['series'] or '-' }}</td>
             <td>
-              {% if r['image_path'] %}
-                <a href="{{ url_for('static', filename='robot_assets/' ~ r['image_path']) }}" target="_blank" rel="noopener noreferrer">
-                  <img class="part-thumb admin-thumb" src="{{ url_for('static', filename='robot_assets/' ~ r['image_path']) }}" alt="{{ r['key'] }}" loading="lazy" />
+              {% if r['image_url'] %}
+                <a href="{{ r['image_url'] }}" target="_blank" rel="noopener noreferrer">
+                  <img class="part-thumb admin-thumb" src="{{ r['image_url'] }}" alt="{{ r['key'] }}" loading="lazy" />
                 </a>
               {% else %}
                 <span>no image</span>

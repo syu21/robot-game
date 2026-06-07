@@ -44121,6 +44121,8 @@ def admin_parts():
             **dict(r),
             "display_name_resolved": _part_display_name_ja(r),
             "display_name_is_fallback": (not bool((r["display_name_ja"] or "").strip())) if "display_name_ja" in r.keys() else True,
+            "display_image_path": _part_image_rel(r),
+            "image_url": url_for("static", filename=_part_image_rel(r), v=APP_VERSION),
         }
         for r in rows
     ]
