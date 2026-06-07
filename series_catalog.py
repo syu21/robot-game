@@ -187,72 +187,31 @@ SERIES_PART_DEFINITIONS = []
 INSECT_R_PART_DEFINITIONS = []
 PART_KEY_SERIES_ASSIGNMENTS = {}
 INSECT_R_ASSET_PATH_OVERRIDES = {}
-INSECT_R_DISPLAY_SLOT_LABELS = {
-    "HEAD": "ヘッド",
-    "RIGHT_ARM": "右腕",
-    "LEFT_ARM": "左腕",
-    "LEGS": "脚",
-}
-for variant in SERIES_VARIANTS:
-    for slot in SERIES_PART_SLOT_DEFS:
-        key = f"{slot['key_prefix']}_{variant['asset_suffix']}"
-        SERIES_PART_DEFINITIONS.append(
-            {
-                "key": key,
-                "part_type": slot["part_type"],
-                "image_path": f"parts/{slot['image_dir']}/{key}.png",
-                "rarity": "N",
-                "element": "NORMAL",
-                "series": variant["series_key"],
-                "series_key": variant["series_key"],
-                "series_label": next(
-                    (
-                        item["display_name"]
-                        for item in SERIES_DEFINITIONS
-                        if item["series_key"] == variant["series_key"]
-                    ),
-                    variant["name_ja"],
-                ),
-                "frame_type": "insect",
-                "display_name_ja": INSECT_PART_DISPLAY_NAME_OVERRIDES.get(
-                    key,
-                    f"{variant['name_ja']}{slot['label_ja']}",
-                ),
-            }
-        )
-        PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
-        r_key = f"{slot['key_prefix']}_r_{variant['asset_suffix']}"
-        r_image_path = INSECT_R_ASSET_PATH_OVERRIDES.get(
-            r_key,
-            f"parts/{slot['image_dir']}/{r_key}.png",
-        )
-        INSECT_R_PART_DEFINITIONS.append(
-            {
-                "key": r_key,
-                "source_key": key,
-                "part_type": slot["part_type"],
-                "image_path": r_image_path,
-                "rarity": "R",
-                "element": "NORMAL",
-                "series": variant["series_key"],
-                "series_key": variant["series_key"],
-                "series_label": next(
-                    (
-                        item["display_name"]
-                        for item in SERIES_DEFINITIONS
-                        if item["series_key"] == variant["series_key"]
-                    ),
-                    variant["name_ja"],
-                ),
-                "frame_type": "insect",
-                "display_name_ja": f"R{variant['name_ja']}{INSECT_R_DISPLAY_SLOT_LABELS[slot['part_type']]}",
-            }
-        )
-        PART_KEY_SERIES_ASSIGNMENTS[r_key] = variant["series_key"]
-
-LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
-
-SERIES_METADATA_BY_KEY = {
-    str(item["series_key"]): dict(item)
-    for item in SERIES_DEFINITIONS
-}
+INSECT_R_PART_DISPLAY_NAME_OVERRIDES = {
+    "head_r_kabuto": "豪角ヘッド",
+    "right_arm_r_kabuto": "重甲キャノン",
+    "left_arm_r_kabuto": "鋼殻シールド",
+    "legs_r_kabuto": "剛脚レッグ",
+    "head_r_kuwagata": "双牙ヘッド",
+    "right_arm_r_kuwagata": "紅牙ブレード",
+    "left_arm_r_kuwagata": "顎砕クラッシャー",
+    "legs_r_kuwagata": "剛斬脚フレーム",
+    "head_r_batta": "飛躍ヘッド",
+    "right_arm_r_batta": "跳撃ランサー",
+    "left_arm_r_batta": "翡翠ガード",
+    "legs_r_batta": "疾跳フレーム",
+    "head_r_scorpion": "鋭蠍ヘッド",
+    "right_arm_r_scorpion": "猛毒クロー",
+    "left_arm_r_scorpion": "蠍甲ガード",
+    "legs_r_scorpion": "蠍尾レッグ",
+    "head_r_bee": "雷蜂ヘッド",
+    "right_arm_r_bee": "雷針ランス",
+    "left_arm_r_bee": "蜂紋ガード",
+    "legs_r_bee": "空襲レッグ",
+    "head_r_ant": "重工兵ヘッド",
+    "right_arm_r_ant": "重機バスター",
+    "left_arm_r_ant": "重工シールド",
+    "legs_r_ant": "重六脚フレーム",
+    "head_r_butterfly": "幻彩ヘッド",
+    "right_arm_r_butterfly": "幻彩ブレード",
+    "left_arm_r_butterfly": "幻�
