@@ -177,6 +177,20 @@ from services.lab_typing import (
     validate_typing_result,
 )
 from services.simulate_balance import resolve_attack, simulate_battle
+from services.tower import (
+    TOWER_ENVIRONMENT_BY_KEY,
+    TOWER_RUN_MAX_FLOOR,
+    can_access_tower,
+    create_tower_run,
+    ensure_tower_schema,
+    get_current_tower_environment,
+    get_tower_cooling,
+    get_tower_rankings,
+    get_tower_run,
+    get_tower_run_battles,
+    get_user_tower_record,
+    run_tower_battle,
+)
 from services.stats import (
     STATS,
     WEIGHT_TEMPLATES,
@@ -12586,6 +12600,7 @@ def get_db():
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
         ensure_schema(g.db)
+        ensure_tower_schema(g.db)
         _ensure_dirs()
         _ensure_default_images()
         _check_static_health()
@@ -28365,6 +28380,289 @@ def modules():
         catalog_rows=catalog_rows,
         research_module_pity=int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0,
         research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
+    )
+
+
+TOWER_STAT_LABELS = {
+    "hp": "耐久",
+    "atk": "攻撃",
+    "def": "防御",
+    "spd": "素早さ",
+    "acc": "命中",
+    "cri": "会心",
+}
+
+
+def _tower_user_or_redirect(db):
+    if not session.get("user_id"):
+        flash("観測塔はログイン後に利用できます。", "notice")
+        return None, redirect(url_for("login", next=request.path, reason="expired"))
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return None, redirect(url_for("login", next=request.path, reason="expired"))
+    if int(user["is_admin"] or 0) != 1:
+        flash("観測塔は現在、管理者確認中です。", "notice")
+        return user, redirect(url_for("home"))
+    if not can_access_tower(user):
+        flash("観測塔は第4層到達後に解放されます。", "notice")
+        return user, redirect(url_for("home"))
+    return user, None
+
+
+def _tower_robot_view(db, row, cooling_by_robot=None):
+    robot = _refresh_robot_instance_render_assets(db, row, log_label="tower_robot")
+    if not robot:
+        return None
+    stat_obj = _compute_robot_stats_for_instance(db, int(robot["id"]))
+    if not stat_obj:
+        return None
+    stats = stat_obj["stats"]
+    top_stats = sorted(TOWER_STAT_LABELS.keys(), key=lambda key: int(stats.get(key) or 0), reverse=True)[:2]
+    cooling = cooling_by_robot.get(int(robot["id"])) if cooling_by_robot else None
+    return {
+        "id": int(robot["id"]),
+        "name": robot["name"],
+        "image_url": _composed_image_url(robot["composed_image_path"], robot["updated_at"]) if robot["composed_image_path"] else url_for("static", filename="assets/placeholder_player.png"),
+        "icon_url": url_for("static", filename=_safe_static_rel(robot["icon_32_path"]) if robot["icon_32_path"] else DEFAULT_BADGE_REL),
+        "power": stat_obj["power"],
+        "stats": stats,
+        "top_stats": [{"key": key, "label": TOWER_STAT_LABELS[key], "value": int(stats.get(key) or 0)} for key in top_stats],
+        "archetype": stat_obj.get("archetype") or {},
+        "style": stat_obj.get("robot_style") or {},
+        "cooling": bool(cooling and int(cooling["used_in_current_cycle"] or 0) == 1),
+    }
+
+
+def _tower_robot_choices(db, user_id, cooling_rows=None):
+    cooling_by_robot = {int(row["robot_instance_id"]): row for row in (cooling_rows or [])}
+    rows = db.execute(
+        """
+        SELECT id, name, composed_image_path, icon_32_path, updated_at, style_key
+        FROM robot_instances
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY updated_at DESC, id DESC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    out = []
+    for row in rows:
+        item = _tower_robot_view(db, row, cooling_by_robot)
+        if item:
+            out.append(item)
+    return out
+
+
+def _tower_run_view(db, run):
+    if not run:
+        return None
+    cooling_rows = get_tower_cooling(db, int(run["id"]))
+    robots = {}
+    for rid in (int(run["squad_robot_1_id"]), int(run["squad_robot_2_id"]), int(run["squad_robot_3_id"])):
+        row = db.execute(
+            "SELECT id, name, composed_image_path, icon_32_path, updated_at, style_key FROM robot_instances WHERE id = ?",
+            (rid,),
+        ).fetchone()
+        if row:
+            item = _tower_robot_view(db, row, {int(c["robot_instance_id"]): c for c in cooling_rows})
+            if item:
+                robots[rid] = item
+    env = TOWER_ENVIRONMENT_BY_KEY.get(str(run["environment_key"] or ""), get_current_tower_environment())
+    return {
+        "id": int(run["id"]),
+        "status": run["status"],
+        "current_floor": int(run["current_floor"] or 1),
+        "reached_floor": int(run["reached_floor"] or 0),
+        "max_floor_in_run": int(run["max_floor_in_run"] or TOWER_RUN_MAX_FLOOR),
+        "environment": env,
+        "robots": [robots.get(rid) for rid in (int(run["squad_robot_1_id"]), int(run["squad_robot_2_id"]), int(run["squad_robot_3_id"])) if robots.get(rid)],
+    }
+
+
+@app.route("/tower")
+@login_required
+def tower():
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    record = get_user_tower_record(db, int(user["id"]))
+    env = get_current_tower_environment()
+    active_run = db.execute(
+        """
+        SELECT *
+        FROM tower_runs
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user["id"]),),
+    ).fetchone()
+    active_view = _tower_run_view(db, active_run) if active_run else None
+    robots = _tower_robot_choices(db, int(user["id"]), get_tower_cooling(db, int(active_run["id"])) if active_run else None)
+    return render_template(
+        "tower.html",
+        user=user,
+        message=session.pop("message", None),
+        environment=env,
+        record=record,
+        robots=robots,
+        active_run=active_view,
+        stat_labels=TOWER_STAT_LABELS,
+    )
+
+
+@app.route("/tower/start", methods=["POST"])
+@login_required
+def tower_start():
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    robot_ids = [request.form.get("robot_1"), request.form.get("robot_2"), request.form.get("robot_3")]
+    try:
+        clean_ids = [int(x) for x in robot_ids if str(x or "").strip()]
+    except (TypeError, ValueError):
+        clean_ids = []
+    if len(clean_ids) != 3:
+        flash("観測塔は3機小隊を選択してください。", "error")
+        return redirect(url_for("tower"))
+    active_run = db.execute(
+        """
+        SELECT id
+        FROM tower_runs
+        WHERE user_id = ? AND status = 'active'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user["id"]),),
+    ).fetchone()
+    if active_run:
+        flash("挑戦中の観測塔runがあります。", "notice")
+        return redirect(url_for("tower_result", run_id=int(active_run["id"])))
+    result = create_tower_run(db, int(user["id"]), clean_ids, environment_key=get_current_tower_environment()["key"])
+    if not result.get("ok"):
+        reason = result.get("reason")
+        if reason == "duplicate_robots":
+            flash("同じ機体は重複選択できません。", "error")
+        elif reason == "robots_not_found":
+            flash("選択した機体を確認できませんでした。", "error")
+        else:
+            flash("観測塔の挑戦を開始できませんでした。", "error")
+        db.rollback()
+        return redirect(url_for("tower"))
+    db.commit()
+    return redirect(url_for("tower_result", run_id=int(result["run_id"])))
+
+
+@app.route("/tower/battle", methods=["POST"])
+@login_required
+def tower_battle():
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    try:
+        run_id = int(request.form.get("run_id") or 0)
+        robot_id = int(request.form.get("robot_instance_id") or 0)
+    except (TypeError, ValueError):
+        run_id = 0
+        robot_id = 0
+    run = get_tower_run(db, run_id, int(user["id"])) if run_id > 0 else None
+    if not run:
+        flash("観測塔の挑戦が見つかりません。", "error")
+        return redirect(url_for("tower"))
+    result = run_tower_battle(db, int(run["id"]), robot_id, _compute_robot_stats_for_instance)
+    if not result.get("ok"):
+        reason = result.get("reason")
+        if reason == "robot_cooling":
+            flash("その機体は冷却中です。別の機体を選んでください。", "error")
+        elif reason == "robot_not_in_squad":
+            flash("小隊外の機体は出撃できません。", "error")
+        elif reason == "run_not_active":
+            flash("この挑戦は終了しています。", "notice")
+        else:
+            flash("観測塔の戦闘を開始できませんでした。", "error")
+        db.rollback()
+        return redirect(url_for("tower_result", run_id=int(run["id"])))
+    db.commit()
+    if result.get("status") == "completed":
+        flash("10階突破。観測塔runを完了しました。", "notice")
+    elif result.get("status") == "failed":
+        flash("観測塔から撤退しました。記録を確認してください。", "notice")
+    return redirect(url_for("tower_result", run_id=int(run["id"])))
+
+
+@app.route("/tower/result/<int:run_id>")
+@login_required
+def tower_result(run_id):
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    run = get_tower_run(db, int(run_id), int(user["id"]))
+    if not run:
+        flash("観測塔の挑戦が見つかりません。", "error")
+        return redirect(url_for("tower"))
+    battles = get_tower_run_battles(db, int(run["id"]))
+    return render_template(
+        "tower_result.html",
+        user=user,
+        message=session.pop("message", None),
+        run=_tower_run_view(db, run),
+        raw_run=run,
+        battles=battles,
+        stat_labels=TOWER_STAT_LABELS,
+    )
+
+
+@app.route("/tower/ranking")
+@login_required
+def tower_ranking():
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    rankings = get_tower_rankings(db, limit=20)
+    return render_template(
+        "tower_ranking.html",
+        user=user,
+        environment=get_current_tower_environment(),
+        rankings=rankings,
+    )
+
+
+@app.route("/admin/tower")
+@login_required
+def admin_tower():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user or int(user["is_admin"] or 0) != 1:
+        abort(403)
+    runs = db.execute(
+        """
+        SELECT tr.*, u.username, u.display_name
+        FROM tower_runs tr
+        JOIN users u ON u.id = tr.user_id
+        ORDER BY tr.id DESC
+        LIMIT 100
+        """
+    ).fetchall()
+    records = db.execute(
+        """
+        SELECT r.*, u.username, u.display_name
+        FROM user_tower_records r
+        JOIN users u ON u.id = r.user_id
+        ORDER BY r.best_floor DESC, r.updated_at DESC
+        LIMIT 100
+        """
+    ).fetchall()
+    return render_template(
+        "admin_tower.html",
+        user=user,
+        environment=get_current_tower_environment(),
+        runs=runs,
+        records=records,
     )
 
 

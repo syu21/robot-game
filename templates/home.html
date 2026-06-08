@@ -220,6 +220,21 @@
   </div>
 </div>
 {% endif %}
+{% if is_admin %}
+<div class="panel home-tower-panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
+        <div><b>3機小隊で深層記録に挑む</b></div>
+      </div>
+      <div class="home-explore-status">管理者確認中</div>
+    </div>
+    <div class="upgrade-cost">第4層の型理解を試す小隊試験です。本編進行には必須ではありません。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ</a></p>
+  </div>
+</div>
+{% endif %}
 {% if show_beginner_mission %}
 <div class="panel beginner-mission-panel">
   <div class="card">
