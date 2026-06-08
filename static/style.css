@@ -14916,3 +14916,60 @@ button.robo-fixed-nav-item {
   text-decoration: none;
   background: linear-gradient(135deg, rgba(8, 145, 178, 0.72), rgba(30, 64, 175, 0.62));
 }
+/* Tower */
+.tower-robot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.tower-robot-card {
+  display: grid;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.42);
+}
+.tower-robot-card input {
+  justify-self: start;
+}
+.tower-robot-card img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  justify-self: center;
+}
+.tower-robot-card.is-disabled {
+  opacity: 0.58;
+}
+.tower-robot-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.tower-stat-line {
+  font-size: 0.82rem;
+  color: var(--muted, #94a3b8);
+}
+.tower-battle-list,
+.tower-ranking-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tower-battle-row {
+  display: grid;
+  grid-template-columns: minmax(44px, auto) 1fr minmax(52px, auto) minmax(36px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 0.9rem;
+}
+@media (max-width: 560px) {
+  .tower-battle-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}

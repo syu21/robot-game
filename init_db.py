@@ -13,6 +13,7 @@ from series_catalog import (
     SERIES_PART_DEFINITIONS,
 )
 from services.robot_titles import ensure_robot_title_system
+from services.tower import ensure_tower_schema
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -1409,6 +1410,7 @@ def main():
         )
         """
     )
+    ensure_tower_schema(conn)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS battle_result_cache (

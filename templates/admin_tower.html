@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="home-explore-kicker">Admin</div>
+  <h1>観測塔</h1>
+  <p class="upgrade-cost">{{ environment['weekly_key'] }} / {{ environment['display_name'] }}</p>
+</section>
+
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">Runs</div>
+        <div><b>最新100件</b></div>
+      </div>
+    </div>
+    <div class="tower-battle-list">
+      {% for run in runs %}
+      <div class="tower-battle-row">
+        <span>#{{ run['id'] }}</span>
+        <b>{{ run['display_name'] or run['username'] }}</b>
+        <span>{{ run['status'] }}</span>
+        <span>{{ run['reached_floor'] }}階</span>
+      </div>
+      {% else %}
+      <p class="upgrade-cost">run はまだありません。</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">Records</div>
+        <div><b>最高到達階</b></div>
+      </div>
+    </div>
+    <div class="tower-battle-list">
+      {% for row in records %}
+      <div class="tower-battle-row">
+        <b>{{ row['display_name'] or row['username'] }}</b>
+        <span>歴代 {{ row['best_floor'] }}階</span>
+        <span>今週 {{ row['weekly_best_floor'] }}階</span>
+      </div>
+      {% else %}
+      <p class="upgrade-cost">記録はまだありません。</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

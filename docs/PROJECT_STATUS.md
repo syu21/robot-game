@@ -475,6 +475,16 @@
 - 日本時間1日1回のチャンプ撃破で追加 `+100コイン`。
 - 初回撃破、日次撃破、不利相性撃破は世界ログへ強調イベントとして残す。
 
+## 観測塔 -ASTRAL SPIRE-
+- 第4層到達者向けの3機小隊記録コンテンツ。
+- 解放条件は `users.max_unlocked_layer >= 4`。第4層クリア後限定ではない。
+- `/tower` で3機を選び、1run最大10階に挑戦する。
+- 使用した機体は冷却中になり、3機すべて使用後に冷却解除。
+- 本編 `/explore` のCT、ドロップ、ボス抽選、層進行は変更しない。
+- 記録は `tower_runs` / `tower_run_battles` / `user_tower_records` に保存。
+- 監査ログは `audit.tower.*`、世界ログは `TOWER_BEST_FLOOR` / `TOWER_MILESTONE`。
+- 正本仕様は `docs/TOWER_SPEC.md`。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

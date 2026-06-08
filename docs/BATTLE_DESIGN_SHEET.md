@@ -136,3 +136,11 @@
   - `python3 tools/run_balance_simulation.py --pair tank burst --n 5000`
   - `python3 tools/run_balance_simulation.py --mode all --pair tank burst --n 5000`
   - `python3 tools/run_balance_simulation.py --export csv --output tmp/balance_matrix.csv`
+## 観測塔戦闘
+
+- 観測塔 -ASTRAL SPIRE- は本編 `/explore` と別の記録型戦闘。
+- 第4層到達者が3機小隊で1run最大10階に挑戦する。
+- 戦闘は既存の1対1シミュレーションを再利用する。
+- 観測塔では通常ドロップ、ボス警報、層解放、本編CTを進めない。
+- 使用した機体は冷却中になり、3機すべて使用後に冷却解除される。
+- 敵は既存マスタを観測塔専用に軽くスケールする。

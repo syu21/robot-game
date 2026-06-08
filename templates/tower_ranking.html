@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
+  <h1>ランキング</h1>
+  <p class="upgrade-cost">{{ environment['display_name'] }} / {{ environment['description'] }}</p>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a></p>
+</section>
+
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">今週最高到達階</div>
+        <div><b>{{ rankings['weekly_key'] }}</b></div>
+      </div>
+    </div>
+    <div class="tower-ranking-list">
+      {% for row in rankings['weekly'] %}
+      <div class="tower-battle-row">
+        <span>{{ loop.index }}位</span>
+        <b>{{ row['display_name'] or row['username'] }}</b>
+        <span>{{ row['weekly_best_floor'] }}階</span>
+      </div>
+      {% else %}
+      <p class="upgrade-cost">今週の記録はまだありません。</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">歴代最高到達階</div>
+        <div><b>All Time</b></div>
+      </div>
+    </div>
+    <div class="tower-ranking-list">
+      {% for row in rankings['all_time'] %}
+      <div class="tower-battle-row">
+        <span>{{ loop.index }}位</span>
+        <b>{{ row['display_name'] or row['username'] }}</b>
+        <span>{{ row['best_floor'] }}階</span>
+      </div>
+      {% else %}
+      <p class="upgrade-cost">歴代記録はまだありません。</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}
