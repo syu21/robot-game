@@ -287,6 +287,10 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("合計 4 ダメージ", html)
         self.assertIn("次の階へ進む", html)
         self.assertIn("戦闘表示", html)
+        self.assertIn("data-tower-battle-replay", html)
+        self.assertIn("data-tower-log-line", html)
+        self.assertIn("data-tower-replay-actions", html)
+        self.assertIn("static/tower.js", html)
         self.assertIn("ターン制限なし", html)
         self.assertTrue(("robot_composed/instance_" in html) or ("assets/placeholder_player.png" in html))
         with game_app.app.app_context():
@@ -325,6 +329,9 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("観測敵", html)
         self.assertIn("合計 12 ダメージ", html)
         self.assertIn("次の階へ進む", html)
+        self.assertIn("交戦準備", html)
+        self.assertIn("data-tower-replay-status", html)
+        self.assertIn("data-tower-replay-projectile", html)
         self.assertNotIn("global_error_guard", html)
         self.assertNotIn("base_cleanup", html)
 

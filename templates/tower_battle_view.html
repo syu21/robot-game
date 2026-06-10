@@ -16,36 +16,38 @@
 {% endif %}
 
 <section class="panel">
-  <div class="tower-combat-card">
+  <div class="tower-combat-card is-replay-pending" data-tower-battle-replay>
     <div class="home-explore-card-head">
       <div>
         <div class="home-explore-kicker">戦闘表示</div>
         <div><b>{{ battle['floor'] }}階 戦闘結果</b></div>
       </div>
-      <div class="home-explore-status">{{ battle['result_label'] }} / {{ battle['turn_count'] }}T</div>
+      <div class="home-explore-status" data-tower-replay-status data-final-status="{{ battle['result_label'] }} / {{ battle['turn_count'] }}T">交戦準備</div>
     </div>
     <div class="tower-combatants">
-      <div class="tower-combatant is-player">
+      <div class="tower-combatant is-player" data-tower-replay-unit="player">
         <img src="{{ battle['robot_image_url'] }}" alt="{{ battle['robot_name'] }}" loading="lazy" />
         <div class="home-explore-kicker">使用ロボ</div>
         <b>{{ battle['robot_name'] }}</b>
       </div>
       <div class="tower-versus">VS</div>
-      <div class="tower-combatant is-enemy">
+      <div class="tower-combatant is-enemy" data-tower-replay-unit="enemy">
         <img src="{{ battle['enemy_image_url'] }}" alt="{{ battle['enemy_name'] }}" loading="lazy" />
         <div class="home-explore-kicker">観測敵</div>
         <b>{{ battle['enemy_name'] }}</b>
       </div>
     </div>
-    <div class="tower-result-banner {% if battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}">
+    <div class="tower-replay-projectile" data-tower-replay-projectile></div>
+    <div class="tower-replay-caption" data-tower-replay-caption>交戦開始</div>
+    <div class="tower-result-banner {% if battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}" data-tower-result-banner>
       {{ battle['result_label'] }}
     </div>
     <div class="tower-log-box">
       {% for line in battle['log_lines'] %}
-      <div>{{ line }}</div>
+      <div data-tower-log-line>{{ line }}</div>
       {% endfor %}
     </div>
-    <div class="home-inline-actions">
+    <div class="home-inline-actions" data-tower-replay-actions>
       {% if run['status'] == 'active' and battle['result'] == 'win' %}
       <a class="battle-home-link battle-next-cta" href="{{ url_for('tower') }}">次の階へ進む</a>
       <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">記録を確認</a>
@@ -66,4 +68,8 @@
     </div>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tower.js') }}?v={{ app_version }}"></script>
 {% endblock %}

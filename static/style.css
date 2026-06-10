@@ -15035,6 +15035,8 @@ button.robo-fixed-nav-item {
   font-size: 0.8rem;
 }
 .tower-combat-card {
+  position: relative;
+  overflow: hidden;
   padding: 16px;
   border: 1px solid rgba(56, 189, 248, 0.34);
   border-radius: 8px;
@@ -15052,15 +15054,54 @@ button.robo-fixed-nav-item {
   gap: 6px;
   justify-items: center;
   text-align: center;
+  transition: transform 180ms ease, filter 180ms ease;
 }
 .tower-combatant img {
   width: min(180px, 42vw);
   height: 150px;
   object-fit: contain;
+  transition: transform 180ms ease, filter 180ms ease;
+}
+.tower-combatant.is-attacking img {
+  transform: translateX(18px) scale(1.04);
+  filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.52));
+}
+.tower-combatant.is-enemy.is-attacking img {
+  transform: translateX(-18px) scale(1.04);
+}
+.tower-combatant.is-hit img {
+  animation: towerCombatHit 240ms ease-out;
 }
 .tower-versus {
   font-weight: 900;
   color: #f8fafc;
+}
+.tower-replay-projectile {
+  position: absolute;
+  top: 47%;
+  left: 50%;
+  width: 18px;
+  height: 5px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.1), rgba(34, 211, 238, 0.95));
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.9);
+}
+.tower-replay-projectile.is-active.is-player-shot {
+  animation: towerProjectilePlayer 320ms ease-out;
+}
+.tower-replay-projectile.is-active.is-enemy-shot {
+  animation: towerProjectileEnemy 320ms ease-out;
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.95), rgba(248, 113, 113, 0.1));
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.9);
+}
+.tower-replay-caption {
+  min-height: 1.45em;
+  margin: 8px 0;
+  color: #67e8f9;
+  font-weight: 900;
+  text-align: center;
 }
 .tower-result-banner {
   display: inline-flex;
@@ -15086,6 +15127,30 @@ button.robo-fixed-nav-item {
   color: #e2e8f0;
   background: rgba(2, 6, 23, 0.32);
 }
+.tower-combat-card.is-replaying .tower-result-banner,
+.tower-combat-card.is-replaying [data-tower-replay-actions],
+.tower-combat-card.is-replay-pending .tower-result-banner,
+.tower-combat-card.is-replay-pending [data-tower-replay-actions] {
+  opacity: 0;
+  pointer-events: none;
+}
+.tower-combat-card.is-replaying [data-tower-log-line],
+.tower-combat-card.is-replay-pending [data-tower-log-line] {
+  display: none;
+}
+.tower-combat-card.is-replaying [data-tower-log-line].is-visible,
+.tower-combat-card.is-replay-complete [data-tower-log-line] {
+  display: block;
+  animation: towerLogReveal 180ms ease-out;
+}
+.tower-combat-card.is-replay-complete .tower-result-banner,
+.tower-combat-card.is-replay-complete [data-tower-replay-actions],
+.tower-result-banner.is-visible,
+[data-tower-replay-actions].is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 180ms ease;
+}
 .tower-battle-list,
 .tower-ranking-list {
   display: grid;
@@ -15106,6 +15171,35 @@ button.robo-fixed-nav-item {
   gap: 8px;
   align-items: center;
   margin-top: 10px;
+}
+@keyframes towerCombatHit {
+  0% { transform: translateX(0); filter: brightness(1); }
+  28% { transform: translateX(-10px); filter: brightness(1.8) drop-shadow(0 0 16px rgba(248, 113, 113, 0.75)); }
+  58% { transform: translateX(7px); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+@keyframes towerProjectilePlayer {
+  0% { opacity: 0; transform: translate(-220px, -8px) scaleX(0.65); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(220px, -8px) scaleX(1.2); }
+}
+@keyframes towerProjectileEnemy {
+  0% { opacity: 0; transform: translate(220px, 8px) scaleX(0.65); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-220px, 8px) scaleX(1.2); }
+}
+@keyframes towerLogReveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tower-combatant,
+  .tower-combatant img,
+  .tower-replay-projectile,
+  .tower-combat-card [data-tower-log-line] {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 @media (max-width: 560px) {
   .tower-combatants {
