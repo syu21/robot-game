@@ -14917,23 +14917,60 @@ button.robo-fixed-nav-item {
   background: linear-gradient(135deg, rgba(8, 145, 178, 0.72), rgba(30, 64, 175, 0.62));
 }
 /* Tower */
+.tower-hero {
+  margin-bottom: 10px;
+}
+.tower-hero-meta {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  color: var(--muted, #94a3b8);
+  font-size: 0.92rem;
+}
+.tower-next-enemy {
+  display: inline-grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.34);
+}
+.tower-next-enemy img {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+}
 .tower-robot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
 .tower-robot-card {
+  position: relative;
   display: grid;
   gap: 6px;
   align-items: center;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.42);
 }
+.tower-robot-card.is-ready {
+  border-color: rgba(56, 189, 248, 0.56);
+  background: rgba(14, 116, 144, 0.16);
+}
+.tower-robot-card.is-selected {
+  border-color: rgba(34, 197, 94, 0.78);
+  background: rgba(22, 101, 52, 0.24);
+}
 .tower-robot-card input {
-  justify-self: start;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 .tower-robot-card img {
   width: 72px;
@@ -14944,6 +14981,19 @@ button.robo-fixed-nav-item {
 .tower-robot-card.is-disabled {
   opacity: 0.58;
 }
+.tower-card-status {
+  justify-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #e0f2fe;
+  background: rgba(14, 165, 233, 0.22);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+.tower-robot-card.is-disabled .tower-card-status {
+  color: #cbd5e1;
+  background: rgba(100, 116, 139, 0.24);
+}
 .tower-robot-name {
   font-weight: 700;
   font-size: 0.95rem;
@@ -14952,6 +15002,89 @@ button.robo-fixed-nav-item {
 .tower-stat-line {
   font-size: 0.82rem;
   color: var(--muted, #94a3b8);
+}
+.tower-sortie-button,
+.tower-select-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.58);
+  border-radius: 8px;
+  color: #ecfeff;
+  background: rgba(8, 145, 178, 0.72);
+  font-weight: 900;
+  text-align: center;
+  cursor: pointer;
+}
+.tower-sortie-button:disabled {
+  cursor: not-allowed;
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(71, 85, 105, 0.42);
+}
+.tower-start-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+  filter: grayscale(0.35);
+}
+.tower-card-note {
+  color: var(--muted, #94a3b8);
+  font-size: 0.8rem;
+}
+.tower-combat-card {
+  padding: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+}
+.tower-combatants {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin: 14px 0;
+}
+.tower-combatant {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+.tower-combatant img {
+  width: min(180px, 42vw);
+  height: 150px;
+  object-fit: contain;
+}
+.tower-versus {
+  font-weight: 900;
+  color: #f8fafc;
+}
+.tower-result-banner {
+  display: inline-flex;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-weight: 900;
+}
+.tower-result-banner.is-win {
+  color: #dcfce7;
+  background: rgba(22, 163, 74, 0.24);
+}
+.tower-result-banner.is-lose {
+  color: #fee2e2;
+  background: rgba(185, 28, 28, 0.26);
+}
+.tower-log-box {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  color: #e2e8f0;
+  background: rgba(2, 6, 23, 0.32);
 }
 .tower-battle-list,
 .tower-ranking-list {
@@ -14968,7 +15101,16 @@ button.robo-fixed-nav-item {
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   font-size: 0.9rem;
 }
+.tower-record-robot-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
 @media (max-width: 560px) {
+  .tower-combatants {
+    grid-template-columns: 1fr;
+  }
   .tower-battle-row {
     grid-template-columns: 1fr 1fr;
   }

@@ -178,13 +178,17 @@ from services.lab_typing import (
 )
 from services.simulate_balance import resolve_attack, simulate_battle
 from services.tower import (
+    TOWER_BATTLE_MAX_TURNS,
     TOWER_ENVIRONMENT_BY_KEY,
     TOWER_RUN_MAX_FLOOR,
+    abandon_tower_run,
     can_access_tower,
+    can_see_tower_entry,
     create_tower_run,
     ensure_tower_schema,
     get_current_tower_environment,
     get_tower_cooling,
+    get_tower_enemy_for_floor,
     get_tower_rankings,
     get_tower_run,
     get_tower_run_battles,
@@ -1559,6 +1563,11 @@ RELEASE_FLAG_DEFS = (
         "key": "weekly_champion",
         "label": "今週のチャンプ機体",
         "summary": "ホームのチャンプカードと /champion の非同期挑戦を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": "tower",
+        "label": "観測塔 -ASTRAL SPIRE-",
+        "summary": "3機小隊で深層記録に挑む、第4層到達者向けの記録試験です。",
     },
     {
         "key": MARKET_FEATURE_KEY,
@@ -4134,6 +4143,8 @@ def _visible_user_max_unlocked_layer(user_row, db=None):
 
 def _event_release_feature(event_type, payload):
     text = str(event_type or "").strip()
+    if text.startswith("TOWER_") or text.startswith("audit.tower."):
+        return "tower"
     if text.startswith("audit.lab.") or text.startswith("LAB_RACE_") or text.startswith("LAB_SUBMISSION_"):
         return "lab"
     if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET"} or text.startswith("audit.champion.") or text.startswith("audit.champ."):
@@ -22408,9 +22419,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", "TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", "TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -22425,6 +22436,10 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "CHAMP_DEFEAT_UPSET",
     "STYLE_RANK_UP",
     "STYLE_MASTER",
+    "TOWER_BEST_FLOOR",
+    "TOWER_MILESTONE",
+    "TOWER_WEEKLY_LEADER",
+    "TOWER_ALL_TIME_LEADER",
     AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"],
     *LAB_WORLD_EVENT_TYPES,
 }
@@ -22602,6 +22617,27 @@ def _feed_card_from_event(db, row):
         card["text"] = f"{actor_label}研究室が Lv.{level} に到達。{rank_label}として記録庫に登録されました。"
         card["meta_lines"] = [f"らぼLv.{level}", f"研究員ランク: {rank_label}"]
         card["link_url"] = url_for("world_view")
+    elif event_type in {"TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER"}:
+        actor_label = card["user_label"]
+        floor = int(payload.get("reached_floor") or 0)
+        previous = int(payload.get("previous_best_floor") or 0)
+        env_name = str(payload.get("environment_display_name") or "").strip()
+        card["headline"] = "ASTRAL SPIRE"
+        card["accent"] = "weekly"
+        if event_type == "TOWER_MILESTONE":
+            card["text"] = f"{actor_label}の小隊が観測塔 -ASTRAL SPIRE- {floor}階へ到達"
+        elif event_type == "TOWER_WEEKLY_LEADER":
+            card["text"] = f"{actor_label}の小隊が今週の観測塔最高記録を更新"
+        elif event_type == "TOWER_ALL_TIME_LEADER":
+            card["text"] = f"{actor_label}の小隊が観測塔の歴代最高記録を更新"
+        else:
+            card["text"] = f"{actor_label}の小隊が観測塔の自己最高記録を {floor}階 に更新"
+        card["meta_lines"] = [f"到達: {floor}階"]
+        if previous > 0 and event_type == "TOWER_BEST_FLOOR":
+            card["meta_lines"].append(f"前回自己最高: {previous}階")
+        if env_name:
+            card["meta_lines"].append(f"環境: {env_name}")
+        card["link_url"] = url_for("tower_ranking")
     elif event_type == AUDIT_EVENT_TYPES["LAB_MINI_CREATE"]:
         actor_label = card["user_label"]
         species_key = str(payload.get("species_key") or "cerberus")
@@ -28401,10 +28437,10 @@ def _tower_user_or_redirect(db):
     if not user:
         session.clear()
         return None, redirect(url_for("login", next=request.path, reason="expired"))
-    if int(user["is_admin"] or 0) != 1:
-        flash("観測塔は現在、管理者確認中です。", "notice")
-        return user, redirect(url_for("home"))
-    if not can_access_tower(user):
+    if not can_access_tower(user, is_public=_release_flag_is_public(db, "tower")):
+        if not _release_flag_is_public(db, "tower") and int(user["is_admin"] or 0) != 1:
+            flash("観測塔は現在、管理者確認中です。", "notice")
+            return user, redirect(url_for("home"))
         flash("観測塔は第4層到達後に解放されます。", "notice")
         return user, redirect(url_for("home"))
     return user, None
@@ -28426,12 +28462,105 @@ def _tower_robot_view(db, row, cooling_by_robot=None):
         "image_url": _composed_image_url(robot["composed_image_path"], robot["updated_at"]) if robot["composed_image_path"] else url_for("static", filename="assets/placeholder_player.png"),
         "icon_url": url_for("static", filename=_safe_static_rel(robot["icon_32_path"]) if robot["icon_32_path"] else DEFAULT_BADGE_REL),
         "power": stat_obj["power"],
+        "plus_total": sum(int(part.get("plus") or 0) for part in (stat_obj.get("parts") or [])),
         "stats": stats,
         "top_stats": [{"key": key, "label": TOWER_STAT_LABELS[key], "value": int(stats.get(key) or 0)} for key in top_stats],
         "archetype": stat_obj.get("archetype") or {},
         "style": stat_obj.get("robot_style") or {},
         "cooling": bool(cooling and int(cooling["used_in_current_cycle"] or 0) == 1),
     }
+
+
+def _tower_robot_image_url(row):
+    if not row:
+        return url_for("static", filename="assets/placeholder_player.png")
+    if row["composed_image_path"]:
+        return _composed_image_url(row["composed_image_path"], row["updated_at"])
+    if row["icon_32_path"]:
+        return url_for("static", filename=_safe_static_rel(row["icon_32_path"]))
+    return url_for("static", filename="assets/placeholder_player.png")
+
+
+def _tower_battle_log_lines(battle, robot_name):
+    try:
+        raw_logs = json.loads(battle["turn_logs_json"] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raw_logs = []
+    if not raw_logs:
+        return ["戦闘ログを取得できませんでした。"]
+    source = raw_logs[0] if isinstance(raw_logs[0], dict) else {}
+    turns = max(1, int(source.get("turns") or battle["turn_count"] or 1))
+    dealt = int(source.get("player_damage_total") or 0)
+    taken = int(source.get("enemy_damage_total") or 0)
+    enemy_name = str(source.get("enemy_name") or battle["enemy_name"] or "観測敵")
+    result = str(source.get("result") or battle["battle_result"] or "")
+    lines = [
+        f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。",
+    ]
+    if taken > 0:
+        lines.append(f"{enemy_name} の反撃。{robot_name} に合計 {taken} ダメージ。")
+    else:
+        lines.append(f"{enemy_name} の反撃を受けずに押し切った。")
+    if turns > 1:
+        lines.append(f"{turns}T: 戦闘決着。")
+    lines.append("撃破成功。" if result == "win" else "撤退判断。")
+    return lines
+
+
+def _tower_battle_detail_view(db, battle):
+    if not battle:
+        return None
+    robot = db.execute(
+        "SELECT id, name, composed_image_path, icon_32_path, updated_at FROM robot_instances WHERE id = ?",
+        (int(battle["robot_instance_id"] or 0),),
+    ).fetchone()
+    enemy = None
+    if battle["enemy_id"]:
+        enemy = db.execute("SELECT id, key, name_ja, image_path FROM enemies WHERE id = ?", (int(battle["enemy_id"]),)).fetchone()
+    if not enemy and battle["enemy_key"]:
+        enemy = db.execute("SELECT id, key, name_ja, image_path FROM enemies WHERE key = ? LIMIT 1", (str(battle["enemy_key"]),)).fetchone()
+    robot_name = robot["name"] if robot else "使用ロボ"
+    enemy_name = (enemy["name_ja"] if enemy and enemy["name_ja"] else battle["enemy_name"]) or "観測敵"
+    return {
+        "id": int(battle["id"]),
+        "floor": int(battle["floor"] or 1),
+        "result": battle["battle_result"],
+        "result_label": "勝利" if battle["battle_result"] == "win" else "敗北",
+        "turn_count": int(battle["turn_count"] or 0),
+        "robot_name": robot_name,
+        "robot_image_url": _tower_robot_image_url(robot),
+        "enemy_name": enemy_name,
+        "enemy_image_url": _enemy_static_url(
+            enemy["image_path"] if enemy else None,
+            fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+        ),
+        "log_lines": _tower_battle_log_lines(battle, robot_name),
+    }
+
+
+def _tower_result_selected_battle(db, *, run_id, user_id, battle_id=0):
+    if int(battle_id or 0) > 0:
+        battle = db.execute(
+            """
+            SELECT *
+            FROM tower_run_battles
+            WHERE id = ? AND run_id = ? AND user_id = ?
+            LIMIT 1
+            """,
+            (int(battle_id), int(run_id), int(user_id)),
+        ).fetchone()
+        if battle:
+            return battle
+    return db.execute(
+        """
+        SELECT *
+        FROM tower_run_battles
+        WHERE run_id = ? AND user_id = ?
+        ORDER BY floor DESC, id DESC
+        LIMIT 1
+        """,
+        (int(run_id), int(user_id)),
+    ).fetchone()
 
 
 def _tower_robot_choices(db, user_id, cooling_rows=None):
@@ -28467,7 +28596,7 @@ def _tower_run_view(db, run):
             item = _tower_robot_view(db, row, {int(c["robot_instance_id"]): c for c in cooling_rows})
             if item:
                 robots[rid] = item
-    env = TOWER_ENVIRONMENT_BY_KEY.get(str(run["environment_key"] or ""), get_current_tower_environment())
+    env = TOWER_ENVIRONMENT_BY_KEY.get(str(run["environment_key"] or ""), get_current_tower_environment(db))
     return {
         "id": int(run["id"]),
         "status": run["status"],
@@ -28479,6 +28608,21 @@ def _tower_run_view(db, run):
     }
 
 
+def _tower_next_enemy_view(db, run):
+    if not run:
+        return None
+    enemy = get_tower_enemy_for_floor(db, int(run["current_floor"] or 1), run["environment_key"], run["seed"])
+    if not enemy:
+        return None
+    return {
+        "name": enemy.get("name_ja") or enemy.get("key") or "観測敵",
+        "image_url": _enemy_static_url(
+            enemy.get("image_path"),
+            fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
+        ),
+    }
+
+
 @app.route("/tower")
 @login_required
 def tower():
@@ -28487,7 +28631,7 @@ def tower():
     if blocked:
         return blocked
     record = get_user_tower_record(db, int(user["id"]))
-    env = get_current_tower_environment()
+    env = get_current_tower_environment(db)
     active_run = db.execute(
         """
         SELECT *
@@ -28508,6 +28652,7 @@ def tower():
         record=record,
         robots=robots,
         active_run=active_view,
+        next_enemy=_tower_next_enemy_view(db, active_run) if active_run else None,
         stat_labels=TOWER_STAT_LABELS,
     )
 
@@ -28540,7 +28685,7 @@ def tower_start():
     if active_run:
         flash("挑戦中の観測塔runがあります。", "notice")
         return redirect(url_for("tower_result", run_id=int(active_run["id"])))
-    result = create_tower_run(db, int(user["id"]), clean_ids, environment_key=get_current_tower_environment()["key"])
+    result = create_tower_run(db, int(user["id"]), clean_ids, environment_key=get_current_tower_environment(db)["key"])
     if not result.get("ok"):
         reason = result.get("reason")
         if reason == "duplicate_robots":
@@ -28590,7 +28735,66 @@ def tower_battle():
         flash("10階突破。観測塔runを完了しました。", "notice")
     elif result.get("status") == "failed":
         flash("観測塔から撤退しました。記録を確認してください。", "notice")
+    battle_id = int(result.get("battle_id") or 0)
+    if battle_id > 0:
+        return redirect(url_for("tower_battle_view", battle_id=battle_id))
     return redirect(url_for("tower_result", run_id=int(run["id"])))
+
+
+@app.route("/tower/battle/view/<int:battle_id>")
+@login_required
+def tower_battle_view(battle_id):
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    battle = db.execute(
+        """
+        SELECT *
+        FROM tower_run_battles
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+        """,
+        (int(battle_id), int(user["id"])),
+    ).fetchone()
+    if not battle:
+        flash("観測塔の戦闘記録が見つかりません。", "error")
+        return redirect(url_for("tower"))
+    run = get_tower_run(db, int(battle["run_id"]), int(user["id"]))
+    if not run:
+        flash("観測塔の挑戦が見つかりません。", "error")
+        return redirect(url_for("tower"))
+    battle_view = _tower_battle_detail_view(db, battle)
+    return render_template(
+        "tower_battle_view.html",
+        user=user,
+        message=session.pop("message", None),
+        run=_tower_run_view(db, run),
+        raw_run=run,
+        battle=battle_view,
+        safety_turn_cap=TOWER_BATTLE_MAX_TURNS,
+    )
+
+
+@app.route("/tower/abandon", methods=["POST"])
+@login_required
+def tower_abandon():
+    db = get_db()
+    user, blocked = _tower_user_or_redirect(db)
+    if blocked:
+        return blocked
+    try:
+        run_id = int(request.form.get("run_id") or 0)
+    except (TypeError, ValueError):
+        run_id = 0
+    result = abandon_tower_run(db, run_id, int(user["id"]))
+    if not result.get("ok"):
+        db.rollback()
+        flash("観測塔から撤退できませんでした。", "error")
+        return redirect(url_for("tower"))
+    db.commit()
+    flash("観測塔から撤退しました。戦闘記録を確認できます。", "notice")
+    return redirect(url_for("tower_result", run_id=int(run_id)))
 
 
 @app.route("/tower/result/<int:run_id>")
@@ -28605,6 +28809,9 @@ def tower_result(run_id):
         flash("観測塔の挑戦が見つかりません。", "error")
         return redirect(url_for("tower"))
     battles = get_tower_run_battles(db, int(run["id"]))
+    battle_id = int(request.args.get("battle_id") or 0)
+    selected_battle = _tower_result_selected_battle(db, run_id=int(run["id"]), user_id=int(user["id"]), battle_id=battle_id)
+    selected_battle_view = _tower_battle_detail_view(db, selected_battle)
     return render_template(
         "tower_result.html",
         user=user,
@@ -28612,6 +28819,8 @@ def tower_result(run_id):
         run=_tower_run_view(db, run),
         raw_run=run,
         battles=battles,
+        latest_battle=selected_battle_view,
+        selected_battle=selected_battle_view,
         stat_labels=TOWER_STAT_LABELS,
     )
 
@@ -28627,7 +28836,7 @@ def tower_ranking():
     return render_template(
         "tower_ranking.html",
         user=user,
-        environment=get_current_tower_environment(),
+        environment=get_current_tower_environment(db),
         rankings=rankings,
     )
 
@@ -28660,7 +28869,7 @@ def admin_tower():
     return render_template(
         "admin_tower.html",
         user=user,
-        environment=get_current_tower_environment(),
+        environment=get_current_tower_environment(db),
         runs=runs,
         records=records,
     )
@@ -29298,6 +29507,8 @@ def home():
             weekly_mvp=weekly_mvp,
             weekly_champion=weekly_champion,
             show_weekly_champion=show_weekly_champion,
+            show_tower_entry=can_see_tower_entry(user, is_public=_release_flag_is_public(db, "tower")),
+            tower_is_public=_release_flag_is_public(db, "tower"),
             layer4_frontier_users=layer4_frontier_users,
             layer4_warning_status=layer4_warning_status,
             weekly_featured_robot=weekly_featured_robot,
@@ -30818,6 +31029,83 @@ def world_view():
     )
 
 
+def _format_tower_recorded_text(value):
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    try:
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(JST).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return text[:16]
+
+
+def _tower_record_robot_chips(db, row):
+    ids = [
+        int(row["best_squad_robot_1_id"] or 0) if "best_squad_robot_1_id" in row.keys() else int(row["squad_robot_1_id"] or 0),
+        int(row["best_squad_robot_2_id"] or 0) if "best_squad_robot_2_id" in row.keys() else int(row["squad_robot_2_id"] or 0),
+        int(row["best_squad_robot_3_id"] or 0) if "best_squad_robot_3_id" in row.keys() else int(row["squad_robot_3_id"] or 0),
+    ]
+    chips = []
+    for robot_id in [rid for rid in ids if rid > 0]:
+        robot = db.execute(
+            "SELECT id, name, composed_image_path, icon_32_path, updated_at FROM robot_instances WHERE id = ?",
+            (int(robot_id),),
+        ).fetchone()
+        if not robot:
+            chips.append({"id": robot_id, "name": f"Robot#{robot_id}", "image_url": url_for("static", filename=DEFAULT_BADGE_REL)})
+            continue
+        chips.append(
+            {
+                "id": int(robot["id"]),
+                "name": robot["name"],
+                "image_url": (
+                    _composed_image_url(robot["composed_image_path"], robot["updated_at"])
+                    if robot["composed_image_path"]
+                    else url_for("static", filename=DEFAULT_BADGE_REL)
+                ),
+            }
+        )
+    return chips
+
+
+def _tower_record_row_view(db, row, *, floor_key, recorded_at_key):
+    if not row:
+        return None
+    return {
+        "username": row["display_name"] or row["username"],
+        "floor": int(row[floor_key] or 0),
+        "robots": _tower_record_robot_chips(db, row),
+        "recorded_text": _format_tower_recorded_text(row[recorded_at_key]),
+    }
+
+
+def _tower_records_snapshot(db, user_id):
+    rankings = get_tower_rankings(db, limit=1)
+    weekly = _tower_record_row_view(db, rankings["weekly"][0], floor_key="weekly_best_floor", recorded_at_key="weekly_best_recorded_at") if rankings["weekly"] else None
+    all_time = _tower_record_row_view(db, rankings["all_time"][0], floor_key="best_floor", recorded_at_key="best_recorded_at") if rankings["all_time"] else None
+    own = get_user_tower_record(db, int(user_id))
+    milestones = db.execute(
+        """
+        SELECT wel.*
+        FROM world_events_log wel
+        WHERE wel.event_type = 'TOWER_MILESTONE'
+        ORDER BY wel.created_at DESC, wel.id DESC
+        LIMIT 3
+        """
+    ).fetchall()
+    return {
+        "environment": get_current_tower_environment(db),
+        "weekly": weekly,
+        "all_time": all_time,
+        "own_best_floor": int(own["best_floor"] or 0),
+        "own_weekly_best_floor": int(own["weekly_best_floor"] or 0),
+        "milestones": [_feed_card_from_event(db, row) for row in milestones],
+    }
+
+
 @app.route("/records")
 @login_required
 def records_view():
@@ -30849,6 +31137,7 @@ def records_view():
         first_boss_records=_first_boss_record_rows(db, user_row=user),
         first_evolve_records=_first_evolve_record_rows(db),
         weekly_record_groups=weekly_record_groups,
+        tower_records=_tower_records_snapshot(db, int(user["id"])),
         showcase_highlights=_record_showcase_highlights(db, user["id"]),
         boss_medal_summary=_boss_medal_summary(
             db,
@@ -42705,7 +42994,12 @@ def admin_release():
             entity_id=None,
             payload={
                 "feature_key": feature_key,
+                "flag_key": feature_key,
                 "state": state,
+                "old_status": "public" if bool(before_rows.get(feature_key)) else "private",
+                "new_status": state,
+                "actor_admin_id": int(user["id"]),
+                "updated_at": now_ts,
                 "applied": applied_keys,
                 "before": before_rows,
                 "weekly_champion_reset": champion_reset,

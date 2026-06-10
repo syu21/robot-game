@@ -28,6 +28,7 @@
 {% set no_header_scroll = request.args.get('no_header_scroll') == '1' %}
 {% set no_js = request.args.get('no_js') == '1' %}
 {% set is_home = request.endpoint == 'home' %}
+{% set is_tower = request.endpoint in ['tower', 'tower_battle_view', 'tower_result', 'tower_ranking'] %}
 {% set home_restore_global_error_guard = request.args.get('restore_global_error_guard') == '1' %}
 {% set home_restore_base_cleanup = request.args.get('restore_base_cleanup') == '1' %}
 {% set home_restore_home_page = request.args.get('restore_home_page_js') == '1' %}
@@ -141,11 +142,11 @@
   </form>
   {% endif %}
   {% if not no_js %}
-    {% set load_global_error_guard = (not is_home) or home_restore_global_error_guard %}
-    {% set load_base_cleanup = (not no_layout_js) and ((not is_home) or home_restore_base_cleanup) and (not no_base_cleanup) %}
-    {% set load_header_scroll = (not no_layout_js) and (not no_header_scroll) %}
+    {% set load_global_error_guard = ((not is_home) or home_restore_global_error_guard) and (not is_tower) %}
+    {% set load_base_cleanup = (not no_layout_js) and ((not is_home) or home_restore_base_cleanup) and (not no_base_cleanup) and (not is_tower) %}
+    {% set load_header_scroll = (not no_layout_js) and (not no_header_scroll) and (not is_tower) %}
     {% set load_page_scripts = true %}
-    {% if not safe_mode and request.endpoint != 'robots' and not is_home %}
+    {% if not safe_mode and request.endpoint != 'robots' and not is_home and not is_tower %}
     <script src="{{ url_for('static', filename='ui_probe.js') }}?v={{ app_version }}"></script>
     {% endif %}
     {% if load_global_error_guard %}

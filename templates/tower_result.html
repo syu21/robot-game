@@ -5,10 +5,15 @@
   <h1>{{ run['reached_floor'] }}階到達</h1>
   <p class="upgrade-cost">
     状態:
-    {% if run['status'] == 'active' %}挑戦中{% elif run['status'] == 'completed' %}10階突破{% elif run['status'] == 'failed' %}撤退{% else %}{{ run['status'] }}{% endif %}
+    {% if run['status'] == 'active' %}挑戦中{% elif run['status'] == 'completed' %}10階区画突破{% elif run['status'] == 'failed' %}敗北{% elif run['status'] == 'abandoned' %}撤退{% else %}{{ run['status'] }}{% endif %}
   </p>
+  {% if latest_battle %}
+  <p class="upgrade-cost">
+    {{ latest_battle['floor'] }}階で {{ latest_battle['enemy_name'] }} に{% if latest_battle['result'] == 'win' %}勝利しました{% else %}敗北しました{% endif %}。
+  </p>
+  {% endif %}
   <div class="home-inline-actions">
-    <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔</a>
+    <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
     <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>
   </div>
 </section>
@@ -17,8 +22,67 @@
 <div class="card"><p>{{ message }}</p></div>
 {% endif %}
 
-{% if run['status'] == 'active' %}
+{% if latest_battle %}
 <section class="panel">
+  <div class="tower-combat-card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">{% if run['status'] == 'abandoned' %}最後の戦闘{% else %}直近戦闘{% endif %}</div>
+        <div><b>{{ latest_battle['floor'] }}階 戦闘結果</b></div>
+      </div>
+      <div class="home-explore-status">{{ latest_battle['result_label'] }} / {{ latest_battle['turn_count'] }}T</div>
+    </div>
+    <div class="tower-combatants">
+      <div class="tower-combatant is-player">
+        <img src="{{ latest_battle['robot_image_url'] }}" alt="{{ latest_battle['robot_name'] }}" loading="lazy" />
+        <div class="home-explore-kicker">使用ロボ</div>
+        <b>{{ latest_battle['robot_name'] }}</b>
+      </div>
+      <div class="tower-versus">VS</div>
+      <div class="tower-combatant is-enemy">
+        <img src="{{ latest_battle['enemy_image_url'] }}" alt="{{ latest_battle['enemy_name'] }}" loading="lazy" />
+        <div class="home-explore-kicker">観測敵</div>
+        <b>{{ latest_battle['enemy_name'] }}</b>
+      </div>
+    </div>
+    <div class="tower-result-banner {% if latest_battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}">
+      {{ latest_battle['result_label'] }}
+    </div>
+    <div class="tower-log-box">
+      {% for line in latest_battle['log_lines'] %}
+      <div>{{ line }}</div>
+      {% endfor %}
+    </div>
+    <div class="home-inline-actions">
+      {% if run['status'] == 'active' and latest_battle['result'] == 'win' %}
+      <a class="battle-home-link battle-next-cta" href="#tower-next-sortie">次の階へ進む</a>
+      <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
+      <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
+      {% elif run['status'] == 'completed' %}
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('records_view') }}">記録を確認</a>
+      <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
+      {% elif run['status'] == 'failed' %}
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('tower') }}">もう一度挑戦</a>
+      <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
+      {% else %}
+      <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
+      <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-kicker">観測記録</div>
+    <h2>{% if run['status'] == 'abandoned' %}観測塔から撤退しました{% else %}戦闘記録{% endif %}</h2>
+    <p class="upgrade-cost">まだ戦闘記録がありません。使用した小隊はこのrunに保存されています。</p>
+  </div>
+</section>
+{% endif %}
+
+{% if run['status'] == 'active' %}
+<section class="panel" id="tower-next-sortie">
   <div class="card">
     <div class="home-explore-card-head">
       <div>
@@ -29,17 +93,25 @@
     </div>
     <div class="tower-robot-grid">
       {% for robot in run['robots'] %}
-      <div class="tower-robot-card {% if robot['cooling'] %}is-disabled{% endif %}">
+      <div class="tower-robot-card{% if robot['cooling'] %} is-disabled{% else %} is-ready{% endif %}">
+        <div class="tower-card-status">{% if robot['cooling'] %}冷却中{% else %}出撃可能{% endif %}</div>
         <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
         <span class="tower-robot-name">{{ robot['name'] }}</span>
-        <span class="home-explore-status">{% if robot['cooling'] %}冷却中{% else %}出撃可能{% endif %}</span>
-        <span class="tower-stat-line">総合 {{ robot['power'] }}</span>
+        <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
+        <span class="tower-stat-line">
+          {% for item in robot['top_stats'] %}
+          {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
+          {% endfor %}
+        </span>
         {% if not robot['cooling'] %}
         <form method="post" action="{{ url_for('tower_battle') }}" class="inline-form">
           <input type="hidden" name="run_id" value="{{ run['id'] }}" />
           <input type="hidden" name="robot_instance_id" value="{{ robot['id'] }}" />
-          <button type="submit" class="btn-secondary">出撃</button>
+          <button type="submit" class="tower-sortie-button">この機体で出撃</button>
         </form>
+        {% else %}
+        <button type="button" class="tower-sortie-button" disabled>冷却中</button>
+        <div class="tower-card-note">次の冷却解除まで待機</div>
         {% endif %}
       </div>
       {% endfor %}
