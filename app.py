@@ -29025,6 +29025,8 @@ def home():
             weekly_champion_snapshot,
             viewer_user_id=int(user["id"]),
         )
+    tower_is_public = _release_flag_is_public(db, "tower")
+    show_tower_entry = can_see_tower_entry(user, is_public=tower_is_public)
     layer4_frontier_users = get_layer4_frontier_users(db=db, limit=5)
     layer4_warning_status = get_layer4_warning_status_for_user(db, int(user["id"]))
     weekly_featured_robot = get_weekly_featured_robot(db=db)
@@ -29507,8 +29509,8 @@ def home():
             weekly_mvp=weekly_mvp,
             weekly_champion=weekly_champion,
             show_weekly_champion=show_weekly_champion,
-            show_tower_entry=can_see_tower_entry(user, is_public=_release_flag_is_public(db, "tower")),
-            tower_is_public=_release_flag_is_public(db, "tower"),
+            show_tower_entry=show_tower_entry,
+            tower_is_public=tower_is_public,
             layer4_frontier_users=layer4_frontier_users,
             layer4_warning_status=layer4_warning_status,
             weekly_featured_robot=weekly_featured_robot,
