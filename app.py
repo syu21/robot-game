@@ -180,11 +180,13 @@ from services.simulate_balance import resolve_attack, simulate_battle
 from services.tower import (
     TOWER_BATTLE_MAX_TURNS,
     TOWER_ENVIRONMENT_BY_KEY,
+    TOWER_ACCESS_LAYER,
     TOWER_RUN_MAX_FLOOR,
     abandon_tower_run,
     can_access_tower,
     can_see_tower_entry,
     create_tower_run,
+    current_week_key,
     ensure_tower_schema,
     get_current_tower_environment,
     get_tower_cooling,
@@ -28623,6 +28625,25 @@ def _tower_next_enemy_view(db, run):
     }
 
 
+def _home_tower_entry_visible(user, *, is_public):
+    if can_see_tower_entry(user, is_public=is_public):
+        return True
+    if not user:
+        return False
+    try:
+        if int(user["is_admin"] if hasattr(user, "keys") else user.get("is_admin") or 0) == 1:
+            return True
+    except Exception:
+        return False
+    if not is_public:
+        return False
+    try:
+        max_layer = int(user["max_unlocked_layer"] if hasattr(user, "keys") else user.get("max_unlocked_layer") or 1)
+    except Exception:
+        max_layer = 1
+    return max_layer >= int(TOWER_ACCESS_LAYER)
+
+
 @app.route("/tower")
 @login_required
 def tower():
@@ -28832,12 +28853,11 @@ def tower_ranking():
     user, blocked = _tower_user_or_redirect(db)
     if blocked:
         return blocked
-    rankings = get_tower_rankings(db, limit=20)
     return render_template(
         "tower_ranking.html",
         user=user,
         environment=get_current_tower_environment(db),
-        rankings=rankings,
+        rankings=_tower_rankings_view(db, limit=20),
     )
 
 
@@ -29026,7 +29046,7 @@ def home():
             viewer_user_id=int(user["id"]),
         )
     tower_is_public = _release_flag_is_public(db, "tower")
-    show_tower_entry = can_see_tower_entry(user, is_public=tower_is_public)
+    show_tower_entry = _home_tower_entry_visible(user, is_public=tower_is_public)
     layer4_frontier_users = get_layer4_frontier_users(db=db, limit=5)
     layer4_warning_status = get_layer4_warning_status_for_user(db, int(user["id"]))
     weekly_featured_robot = get_weekly_featured_robot(db=db)
@@ -31085,7 +31105,7 @@ def _tower_record_row_view(db, row, *, floor_key, recorded_at_key):
 
 
 def _tower_records_snapshot(db, user_id):
-    rankings = get_tower_rankings(db, limit=1)
+    rankings = _tower_rankings_view(db, limit=1)
     weekly = _tower_record_row_view(db, rankings["weekly"][0], floor_key="weekly_best_floor", recorded_at_key="weekly_best_recorded_at") if rankings["weekly"] else None
     all_time = _tower_record_row_view(db, rankings["all_time"][0], floor_key="best_floor", recorded_at_key="best_recorded_at") if rankings["all_time"] else None
     own = get_user_tower_record(db, int(user_id))
@@ -31106,6 +31126,16 @@ def _tower_records_snapshot(db, user_id):
         "own_weekly_best_floor": int(own["weekly_best_floor"] or 0),
         "milestones": [_feed_card_from_event(db, row) for row in milestones],
     }
+
+
+def _tower_rankings_view(db, *, limit=20):
+    rankings = dict(get_tower_rankings(db, limit=limit) or {})
+    rankings.setdefault("weekly_key", current_week_key())
+    rankings.setdefault("weekly", [])
+    rankings.setdefault("all_time", [])
+    rankings.setdefault("low_plus", [])
+    rankings.setdefault("low_plus_limit", 0)
+    return rankings
 
 
 @app.route("/records")

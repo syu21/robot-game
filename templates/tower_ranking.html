@@ -50,4 +50,26 @@
     </div>
   </div>
 </section>
+
+<section class="panel">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">低+値小隊 最高到達階</div>
+        <div><b>+合計 {{ rankings['low_plus_limit'] }} 以下</b></div>
+      </div>
+    </div>
+    <div class="tower-ranking-list">
+      {% for row in rankings['low_plus'] %}
+      <div class="tower-battle-row">
+        <span>{{ loop.index }}位</span>
+        <b>{{ row['display_name'] or row['username'] }}</b>
+        <span>{{ row['reached_floor'] }}階 / +{{ row['squad_plus_total'] }}</span>
+      </div>
+      {% else %}
+      <p class="upgrade-cost">まだ記録がありません。</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
 {% endblock %}
