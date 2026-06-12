@@ -44,6 +44,14 @@
       var projectile = root.querySelector("[data-tower-replay-projectile]");
       var player = root.querySelector('[data-tower-replay-unit="player"]');
       var enemy = root.querySelector('[data-tower-replay-unit="enemy"]');
+      var hpMeters = {
+        player: root.querySelector('[data-tower-hp-meter="player"]'),
+        enemy: root.querySelector('[data-tower-hp-meter="enemy"]')
+      };
+      var hpTexts = {
+        player: root.querySelector('[data-tower-hp-text="player"]'),
+        enemy: root.querySelector('[data-tower-hp-text="enemy"]')
+      };
       var timers = [];
       var finished = false;
 
@@ -68,10 +76,28 @@
         });
       }
 
+      function setHp(side, value) {
+        var meter = hpMeters[side];
+        var text = hpTexts[side];
+        if (!meter) return;
+        var max = Math.max(1, Number(meter.max || 1));
+        var next = Math.max(0, Math.min(max, Number(value || 0)));
+        meter.value = next;
+        if (text) text.textContent = String(Math.round(next));
+      }
+
+      function setFinalHp(side) {
+        var meter = hpMeters[side];
+        if (!meter) return;
+        setHp(side, Number(meter.dataset.finalValue || 0));
+      }
+
       function revealAll() {
         finished = true;
         timers.forEach(window.clearTimeout);
         clearMotionClasses();
+        setFinalHp("player");
+        setFinalHp("enemy");
         root.classList.remove("is-replay-pending", "is-replaying");
         root.classList.add("is-replay-complete");
         logs.forEach(function (line) {
@@ -103,6 +129,7 @@
         }
         schedule(180, function () {
           if (defender) defender.classList.add("is-hit");
+          setFinalHp(enemyTurn ? "player" : "enemy");
         });
         schedule(260, function () {
           if (line) line.classList.add("is-visible");

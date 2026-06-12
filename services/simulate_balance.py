@@ -187,4 +187,6 @@ def simulate_battle(
         "timeout": timeout,
         "player_damage_total": player_damage_total,
         "enemy_damage_total": enemy_damage_total,
+        "player_final_hp": player_hp,
+        "enemy_final_hp": enemy_hp,
     }

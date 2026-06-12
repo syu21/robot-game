@@ -332,6 +332,8 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("交戦準備", html)
         self.assertIn("data-tower-replay-status", html)
         self.assertIn("data-tower-replay-projectile", html)
+        self.assertIn("data-tower-hp-meter=\"player\"", html)
+        self.assertIn("data-tower-hp-meter=\"enemy\"", html)
         self.assertNotIn("global_error_guard", html)
         self.assertNotIn("base_cleanup", html)
 
@@ -371,6 +373,7 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("合計 12 ダメージ", html)
         self.assertIn("戦闘記録", html)
         self.assertIn("2戦", html)
+        self.assertIn("tower-hp-meter", html)
 
     def test_result_battle_id_displays_requested_battle(self):
         run_id = self._start_run()

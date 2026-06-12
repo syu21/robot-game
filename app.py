@@ -28509,6 +28509,39 @@ def _tower_battle_log_lines(battle, robot_name):
     return lines
 
 
+def _tower_battle_hp_state(battle, robot_stats):
+    try:
+        raw_logs = json.loads(battle["turn_logs_json"] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raw_logs = []
+    source = raw_logs[0] if raw_logs and isinstance(raw_logs[0], dict) else {}
+    try:
+        enemy_stats = json.loads(battle["enemy_scaled_stats_json"] or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        enemy_stats = {}
+
+    player_max = max(1, int(source.get("player_hp_max") or (robot_stats or {}).get("hp") or 1))
+    enemy_max = max(1, int(source.get("enemy_hp_max") or enemy_stats.get("hp") or 1))
+    dealt = int(source.get("player_damage_total") or 0)
+    taken = int(source.get("enemy_damage_total") or 0)
+    player_final = source.get("player_final_hp")
+    enemy_final = source.get("enemy_final_hp")
+    if player_final is None:
+        player_final = max(0, player_max - taken)
+    if enemy_final is None:
+        enemy_final = max(0, enemy_max - dealt)
+    if battle["battle_result"] == "win":
+        enemy_final = 0
+    elif battle["battle_result"] == "lose" and int(player_final or 0) <= 0:
+        player_final = 0
+    return {
+        "player_max": player_max,
+        "player_final": max(0, min(player_max, int(player_final or 0))),
+        "enemy_max": enemy_max,
+        "enemy_final": max(0, min(enemy_max, int(enemy_final or 0))),
+    }
+
+
 def _tower_battle_detail_view(db, battle):
     if not battle:
         return None
@@ -28523,6 +28556,8 @@ def _tower_battle_detail_view(db, battle):
         enemy = db.execute("SELECT id, key, name_ja, image_path FROM enemies WHERE key = ? LIMIT 1", (str(battle["enemy_key"]),)).fetchone()
     robot_name = robot["name"] if robot else "使用ロボ"
     enemy_name = (enemy["name_ja"] if enemy and enemy["name_ja"] else battle["enemy_name"]) or "観測敵"
+    robot_stats_obj = _compute_robot_stats_for_instance(db, int(robot["id"])) if robot else None
+    hp_state = _tower_battle_hp_state(battle, (robot_stats_obj or {}).get("stats") or {})
     return {
         "id": int(battle["id"]),
         "floor": int(battle["floor"] or 1),
@@ -28537,6 +28572,7 @@ def _tower_battle_detail_view(db, battle):
             fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
         ),
         "log_lines": _tower_battle_log_lines(battle, robot_name),
+        "hp": hp_state,
     }
 
 

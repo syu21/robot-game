@@ -530,6 +530,18 @@ def run_tower_battle(db, run_id, robot_instance_id, robot_stats_provider, *, now
             "enemy_name": scaled_enemy.get("name_ja"),
             "result": result,
             "turns": int(battle.get("turns") or 0),
+            "player_hp_max": int(stat_obj["stats"].get("hp") or 1),
+            "player_final_hp": int(
+                battle.get("player_final_hp")
+                if battle.get("player_final_hp") is not None
+                else max(0, int(stat_obj["stats"].get("hp") or 1) - int(battle.get("enemy_damage_total") or 0))
+            ),
+            "enemy_hp_max": int(scaled_enemy.get("hp") or 1),
+            "enemy_final_hp": int(
+                battle.get("enemy_final_hp")
+                if battle.get("enemy_final_hp") is not None
+                else max(0, int(scaled_enemy.get("hp") or 1) - int(battle.get("player_damage_total") or 0))
+            ),
             "player_damage_total": int(battle.get("player_damage_total") or 0),
             "enemy_damage_total": int(battle.get("enemy_damage_total") or 0),
         }

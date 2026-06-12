@@ -29,12 +29,20 @@
         <img src="{{ battle['robot_image_url'] }}" alt="{{ battle['robot_name'] }}" loading="lazy" />
         <div class="home-explore-kicker">使用ロボ</div>
         <b>{{ battle['robot_name'] }}</b>
+        <div class="tower-hp-panel">
+          <div class="tower-hp-text">HP <span data-tower-hp-text="player">{{ battle['hp']['player_max'] }}</span> / {{ battle['hp']['player_max'] }}</div>
+          <progress class="tower-hp-meter" max="{{ battle['hp']['player_max'] }}" value="{{ battle['hp']['player_max'] }}" data-tower-hp-meter="player" data-final-value="{{ battle['hp']['player_final'] }}"></progress>
+        </div>
       </div>
       <div class="tower-versus">VS</div>
       <div class="tower-combatant is-enemy" data-tower-replay-unit="enemy">
         <img src="{{ battle['enemy_image_url'] }}" alt="{{ battle['enemy_name'] }}" loading="lazy" />
         <div class="home-explore-kicker">観測敵</div>
         <b>{{ battle['enemy_name'] }}</b>
+        <div class="tower-hp-panel">
+          <div class="tower-hp-text">HP <span data-tower-hp-text="enemy">{{ battle['hp']['enemy_max'] }}</span> / {{ battle['hp']['enemy_max'] }}</div>
+          <progress class="tower-hp-meter" max="{{ battle['hp']['enemy_max'] }}" value="{{ battle['hp']['enemy_max'] }}" data-tower-hp-meter="enemy" data-final-value="{{ battle['hp']['enemy_final'] }}"></progress>
+        </div>
       </div>
     </div>
     <div class="tower-replay-projectile" data-tower-replay-projectile></div>
