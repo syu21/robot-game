@@ -28542,6 +28542,76 @@ def _tower_battle_hp_state(battle, robot_stats):
     }
 
 
+def _tower_zone_label(floor):
+    floor_value = max(1, int(floor or 1))
+    if floor_value <= 10:
+        return "下層観測区"
+    if floor_value <= 20:
+        return "霧界昇降区"
+    if floor_value <= 30:
+        return "重装隔壁区"
+    if floor_value <= 40:
+        return "暴走導管区"
+    if floor_value <= 50:
+        return "星層中枢区"
+    return "深層未定義区"
+
+
+def _tower_floor_rail(run_view, current_floor):
+    current = max(1, int(current_floor or 1))
+    max_floor = max(1, int((run_view or {}).get("max_floor_in_run") or TOWER_RUN_MAX_FLOOR))
+    start_floor = ((current - 1) // 10) * 10 + 1
+    end_floor = min(start_floor + 9, max_floor)
+    reached = max(0, int((run_view or {}).get("reached_floor") or 0))
+    nodes = []
+    for floor in range(start_floor, end_floor + 1):
+        state = "locked"
+        if floor <= reached:
+            state = "cleared"
+        if floor == current:
+            state = "current"
+        nodes.append(
+            {
+                "floor": floor,
+                "label": f"{floor}F",
+                "state": state,
+                "is_gate": floor == end_floor,
+            }
+        )
+    return nodes
+
+
+def _tower_squad_strip(run_view, active_robot_id=None):
+    active_id = int(active_robot_id or 0)
+    chips = []
+    for robot in (run_view or {}).get("robots") or []:
+        robot_id = int(robot.get("id") or 0)
+        if active_id and robot_id == active_id:
+            state = "active"
+            label = "出撃中"
+        elif robot.get("cooling"):
+            state = "cooling"
+            label = "冷却中"
+        else:
+            state = "ready"
+            label = "待機"
+        chips.append({"name": robot.get("name") or "小隊機", "state": state, "label": label})
+    return chips
+
+
+def _tower_next_floor_preview(run_view, next_enemy=None):
+    if not run_view or run_view.get("status") != "active":
+        return None
+    cooling_names = [robot.get("name") for robot in run_view.get("robots") or [] if robot.get("cooling")]
+    return {
+        "floor": int(run_view.get("current_floor") or 1),
+        "zone_label": _tower_zone_label(run_view.get("current_floor") or 1),
+        "environment_label": ((run_view.get("environment") or {}).get("display_name") or "観測環境"),
+        "cooling_names": [name for name in cooling_names if name],
+        "enemy_name": (next_enemy or {}).get("name"),
+    }
+
+
 def _tower_battle_detail_view(db, battle):
     if not battle:
         return None
@@ -28561,10 +28631,14 @@ def _tower_battle_detail_view(db, battle):
     return {
         "id": int(battle["id"]),
         "floor": int(battle["floor"] or 1),
+        "floor_label": f"{int(battle['floor'] or 1)}F",
+        "zone_label": _tower_zone_label(battle["floor"] or 1),
         "result": battle["battle_result"],
         "result_label": "勝利" if battle["battle_result"] == "win" else "敗北",
+        "tower_result_label": f"{int(battle['floor'] or 1)}F {'踏破' if battle['battle_result'] == 'win' else '撤退'}",
         "turn_count": int(battle["turn_count"] or 0),
         "robot_name": robot_name,
+        "robot_id": int(robot["id"]) if robot else int(battle["robot_instance_id"] or 0),
         "robot_image_url": _tower_robot_image_url(robot),
         "enemy_name": enemy_name,
         "enemy_image_url": _enemy_static_url(
@@ -28822,13 +28896,18 @@ def tower_battle_view(battle_id):
         flash("観測塔の挑戦が見つかりません。", "error")
         return redirect(url_for("tower"))
     battle_view = _tower_battle_detail_view(db, battle)
+    run_view = _tower_run_view(db, run)
+    next_enemy = _tower_next_enemy_view(db, run) if run_view and run_view.get("status") == "active" else None
     return render_template(
         "tower_battle_view.html",
         user=user,
         message=session.pop("message", None),
-        run=_tower_run_view(db, run),
+        run=run_view,
         raw_run=run,
         battle=battle_view,
+        floor_rail=_tower_floor_rail(run_view, battle_view["floor"] if battle_view else 1),
+        squad_strip=_tower_squad_strip(run_view, (battle_view or {}).get("robot_id")),
+        next_preview=_tower_next_floor_preview(run_view, next_enemy) if battle_view and battle_view["result"] == "win" else None,
         safety_turn_cap=TOWER_BATTLE_MAX_TURNS,
     )
 
@@ -28869,15 +28948,21 @@ def tower_result(run_id):
     battle_id = int(request.args.get("battle_id") or 0)
     selected_battle = _tower_result_selected_battle(db, run_id=int(run["id"]), user_id=int(user["id"]), battle_id=battle_id)
     selected_battle_view = _tower_battle_detail_view(db, selected_battle)
+    run_view = _tower_run_view(db, run)
+    current_floor = (selected_battle_view or {}).get("floor") or run_view.get("current_floor") or 1
+    next_enemy = _tower_next_enemy_view(db, run) if run_view and run_view.get("status") == "active" else None
     return render_template(
         "tower_result.html",
         user=user,
         message=session.pop("message", None),
-        run=_tower_run_view(db, run),
+        run=run_view,
         raw_run=run,
         battles=battles,
         latest_battle=selected_battle_view,
         selected_battle=selected_battle_view,
+        floor_rail=_tower_floor_rail(run_view, current_floor),
+        squad_strip=_tower_squad_strip(run_view, (selected_battle_view or {}).get("robot_id")),
+        next_preview=_tower_next_floor_preview(run_view, next_enemy) if selected_battle_view and selected_battle_view["result"] == "win" else None,
         stat_labels=TOWER_STAT_LABELS,
     )
 

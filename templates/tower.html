@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card tower-hero">
+<section class="card tower-hero tower-spire-card">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
   <h1>3機小隊で深層記録に挑む</h1>
   <p class="upgrade-cost">第4層到達者向けの小隊記録試験です。本編進行には必須ではありません。</p>
@@ -20,13 +20,21 @@
 
 {% if active_run %}
 <section class="panel">
-  <div class="card">
+  <div class="card tower-spire-card">
     <div class="home-explore-card-head">
       <div>
         <div class="home-explore-kicker">挑戦中</div>
         <div><b>{{ active_run['current_floor'] }}階</b></div>
       </div>
       <div class="home-explore-status">到達 {{ active_run['reached_floor'] }}階 / ターン制限なし</div>
+    </div>
+    <div class="tower-zone-line">下層観測区 / {{ active_run['current_floor'] }}F へ進行中</div>
+    <div class="tower-squad-strip" aria-label="小隊状態">
+      {% for robot in active_run['robots'] %}
+      <div class="tower-squad-chip {% if robot['cooling'] %}is-cooling{% else %}is-ready{% endif %}">
+        <b>{{ robot['name'] }}</b><span>{% if robot['cooling'] %}冷却中{% else %}待機{% endif %}</span>
+      </div>
+      {% endfor %}
     </div>
     {% if next_enemy %}
     <div class="tower-next-enemy">

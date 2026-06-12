@@ -1,15 +1,19 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card">
+<section class="card tower-spire-card tower-result-hero">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>{{ run['reached_floor'] }}階到達</h1>
+  <h1>{% if latest_battle and latest_battle['result'] == 'lose' %}{{ latest_battle['floor_label'] }} 撤退{% elif latest_battle %}{{ run['reached_floor'] }}F 踏破{% else %}{{ run['reached_floor'] }}F 到達{% endif %}</h1>
   <p class="upgrade-cost">
     状態:
     {% if run['status'] == 'active' %}挑戦中{% elif run['status'] == 'completed' %}10階区画突破{% elif run['status'] == 'failed' %}敗北{% elif run['status'] == 'abandoned' %}撤退{% else %}{{ run['status'] }}{% endif %}
   </p>
   {% if latest_battle %}
   <p class="upgrade-cost">
-    {{ latest_battle['floor'] }}階で {{ latest_battle['enemy_name'] }} に{% if latest_battle['result'] == 'win' %}勝利しました{% else %}敗北しました{% endif %}。
+    {% if latest_battle['result'] == 'win' %}
+    小隊は{{ latest_battle['zone_label'] }}を進行中。最後の記録: {{ latest_battle['floor_label'] }} 踏破。
+    {% else %}
+    小隊は{{ latest_battle['enemy_name'] }}に阻止されました。到達記録: {{ run['reached_floor'] }}F。
+    {% endif %}
   </p>
   {% endif %}
   <div class="home-inline-actions">
@@ -24,13 +28,28 @@
 
 {% if latest_battle %}
 <section class="panel">
-  <div class="tower-combat-card">
+  <div class="tower-combat-card tower-spire-card tower-battle-card">
     <div class="home-explore-card-head">
       <div>
         <div class="home-explore-kicker">{% if run['status'] == 'abandoned' %}最後の戦闘{% else %}直近戦闘{% endif %}</div>
-        <div><b>{{ latest_battle['floor'] }}階 戦闘結果</b></div>
+        <div><b>{{ latest_battle['tower_result_label'] }}</b></div>
       </div>
       <div class="home-explore-status">{{ latest_battle['result_label'] }} / {{ latest_battle['turn_count'] }}T</div>
+    </div>
+    <div class="tower-zone-line">{{ latest_battle['zone_label'] }} / 小隊交戦記録</div>
+    <div class="tower-floor-rail" aria-label="観測塔 階層進行">
+      {% for node in floor_rail %}
+      <div class="tower-floor-node is-{{ node['state'] }}{% if node['is_gate'] %} is-gate{% endif %}">
+        <span>{{ node['label'] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="tower-squad-strip" aria-label="小隊状態">
+      {% for chip in squad_strip %}
+      <div class="tower-squad-chip is-{{ chip['state'] }}">
+        <b>{{ chip['name'] }}</b><span>{{ chip['label'] }}</span>
+      </div>
+      {% endfor %}
     </div>
     <div class="tower-combatants">
       <div class="tower-combatant is-player">
@@ -54,8 +73,25 @@
       </div>
     </div>
     <div class="tower-result-banner {% if latest_battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}">
-      {{ latest_battle['result_label'] }}
+      {{ latest_battle['tower_result_label'] }}
     </div>
+    {% if next_preview %}
+    <div class="tower-next-preview">
+      <div class="home-explore-kicker">次階予告</div>
+      <b>次階 {{ next_preview['floor'] }}F</b>
+      <span>{{ next_preview['zone_label'] }} / 出撃可能な機体を選んで進行</span>
+      {% if next_preview['cooling_names'] %}
+      <span>冷却中: {{ next_preview['cooling_names']|join(' / ') }}</span>
+      {% endif %}
+      <span>
+        {% if next_preview['enemy_name'] %}
+        次の敵: {{ next_preview['enemy_name'] }}
+        {% else %}
+        次の敵傾向: {{ next_preview['environment_label'] }}
+        {% endif %}
+      </span>
+    </div>
+    {% endif %}
     <div class="tower-log-box">
       {% for line in latest_battle['log_lines'] %}
       <div>{{ line }}</div>
@@ -83,8 +119,8 @@
 <section class="panel">
   <div class="card">
     <div class="home-explore-kicker">観測記録</div>
-    <h2>{% if run['status'] == 'abandoned' %}観測塔から撤退しました{% else %}戦闘記録{% endif %}</h2>
-    <p class="upgrade-cost">まだ戦闘記録がありません。使用した小隊はこのrunに保存されています。</p>
+    <h2>{% if run['status'] == 'abandoned' %}観測塔から撤退しました{% else %}観測ログ{% endif %}</h2>
+    <p class="upgrade-cost">まだ観測ログがありません。使用した小隊はこのrunに保存されています。</p>
   </div>
 </section>
 {% endif %}
@@ -132,7 +168,7 @@
   <div class="card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">戦闘記録</div>
+        <div class="home-explore-kicker">観測ログ</div>
         <div><b>{{ battles|length }}戦</b></div>
       </div>
     </div>
@@ -140,7 +176,7 @@
     <div class="tower-battle-list">
       {% for battle in battles %}
       <div class="tower-battle-row">
-        <span>{{ battle['floor'] }}階</span>
+        <span>{{ battle['floor'] }}F</span>
         <b>{% if battle['battle_result'] == 'win' %}勝利{% else %}敗北{% endif %}</b>
         <span>{{ battle['enemy_name'] }}</span>
         <span>{{ battle['turn_count'] }}T</span>
@@ -148,7 +184,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="upgrade-cost">まだ戦闘記録はありません。</p>
+    <p class="upgrade-cost">まだ観測ログはありません。</p>
     {% endif %}
   </div>
 </section>

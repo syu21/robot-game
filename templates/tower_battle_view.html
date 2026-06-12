@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card">
+<section class="card tower-spire-card tower-result-hero">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>{{ battle['floor'] }}階 戦闘結果</h1>
-  <p class="upgrade-cost">ターン制限なし / 安全上限 {{ safety_turn_cap }}T</p>
+  <h1>{{ battle['zone_label'] }} {{ battle['floor_label'] }}</h1>
+  <p class="upgrade-cost">小隊交戦記録 / ターン制限なし / 安全上限 {{ safety_turn_cap }}T</p>
   <div class="home-inline-actions">
-    <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">戦闘記録を見る</a>
+    <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">観測ログを見る</a>
     <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
     <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>
   </div>
@@ -16,13 +16,28 @@
 {% endif %}
 
 <section class="panel">
-  <div class="tower-combat-card is-replay-pending" data-tower-battle-replay>
+  <div class="tower-combat-card tower-spire-card tower-battle-card is-replay-pending" data-tower-battle-replay>
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">戦闘表示</div>
-        <div><b>{{ battle['floor'] }}階 戦闘結果</b></div>
+        <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
+        <div><b>{{ battle['tower_result_label'] }}</b></div>
       </div>
       <div class="home-explore-status" data-tower-replay-status data-final-status="{{ battle['result_label'] }} / {{ battle['turn_count'] }}T">交戦準備</div>
+    </div>
+    <div class="tower-zone-line">{{ battle['zone_label'] }} / 小隊交戦記録</div>
+    <div class="tower-floor-rail" aria-label="観測塔 階層進行">
+      {% for node in floor_rail %}
+      <div class="tower-floor-node is-{{ node['state'] }}{% if node['is_gate'] %} is-gate{% endif %}">
+        <span>{{ node['label'] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="tower-squad-strip" aria-label="小隊状態">
+      {% for chip in squad_strip %}
+      <div class="tower-squad-chip is-{{ chip['state'] }}">
+        <b>{{ chip['name'] }}</b><span>{{ chip['label'] }}</span>
+      </div>
+      {% endfor %}
     </div>
     <div class="tower-combatants">
       <div class="tower-combatant is-player" data-tower-replay-unit="player">
@@ -45,6 +60,23 @@
         </div>
       </div>
     </div>
+    {% if next_preview %}
+    <div class="tower-next-preview">
+      <div class="home-explore-kicker">次階予告</div>
+      <b>次階 {{ next_preview['floor'] }}F</b>
+      <span>{{ next_preview['zone_label'] }} / 出撃可能な機体を選んで進行</span>
+      {% if next_preview['cooling_names'] %}
+      <span>冷却中: {{ next_preview['cooling_names']|join(' / ') }}</span>
+      {% endif %}
+      <span>
+        {% if next_preview['enemy_name'] %}
+        次の敵: {{ next_preview['enemy_name'] }}
+        {% else %}
+        次の敵傾向: {{ next_preview['environment_label'] }}
+        {% endif %}
+      </span>
+    </div>
+    {% endif %}
     <div class="tower-replay-projectile" data-tower-replay-projectile></div>
     <div class="tower-replay-caption" data-tower-replay-caption>交戦開始</div>
     <div class="tower-result-banner {% if battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}" data-tower-result-banner>
@@ -63,15 +95,15 @@
       {% elif run['status'] == 'completed' %}
       <a class="battle-home-link battle-next-cta" href="{{ url_for('records_view') }}">記録を確認</a>
       <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
-      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">戦闘記録を見る</a>
+      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">観測ログを見る</a>
       {% elif run['status'] == 'failed' %}
       <a class="battle-home-link battle-next-cta" href="{{ url_for('tower') }}">もう一度挑戦</a>
       <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
-      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">戦闘記録を見る</a>
+      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">観測ログを見る</a>
       {% else %}
       <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
       <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキングを見る</a>
-      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">戦闘記録を見る</a>
+      <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">観測ログを見る</a>
       {% endif %}
     </div>
   </div>
