@@ -28522,23 +28522,25 @@ def _tower_battle_hp_state(battle, robot_stats):
 
     player_max = max(1, int(source.get("player_hp_max") or (robot_stats or {}).get("hp") or 1))
     enemy_max = max(1, int(source.get("enemy_hp_max") or enemy_stats.get("hp") or 1))
+    player_start = max(1, int(source.get("player_hp_start") or player_max))
+    enemy_start = max(1, int(source.get("enemy_hp_start") or enemy_max))
     dealt = int(source.get("player_damage_total") or 0)
     taken = int(source.get("enemy_damage_total") or 0)
     player_final = source.get("player_final_hp")
     enemy_final = source.get("enemy_final_hp")
     if player_final is None:
-        player_final = max(0, player_max - taken)
+        player_final = max(0, player_start - taken)
     if enemy_final is None:
-        enemy_final = max(0, enemy_max - dealt)
-    if battle["battle_result"] == "win":
-        enemy_final = 0
-    elif battle["battle_result"] == "lose" and int(player_final or 0) <= 0:
-        player_final = 0
+        enemy_final = max(0, enemy_start - dealt)
+    player_final = max(0, min(player_max, int(player_final or 0)))
+    enemy_final = max(0, min(enemy_max, int(enemy_final or 0)))
     return {
+        "player_start": player_start,
         "player_max": player_max,
-        "player_final": max(0, min(player_max, int(player_final or 0))),
+        "player_final": player_final,
+        "enemy_start": enemy_start,
         "enemy_max": enemy_max,
-        "enemy_final": max(0, min(enemy_max, int(enemy_final or 0))),
+        "enemy_final": enemy_final,
     }
 
 
@@ -28647,6 +28649,12 @@ def _tower_battle_detail_view(db, battle):
         ),
         "log_lines": _tower_battle_log_lines(battle, robot_name),
         "hp": hp_state,
+        "robot_hp_start": hp_state["player_start"],
+        "robot_hp_end": hp_state["player_final"],
+        "robot_hp_max": hp_state["player_max"],
+        "enemy_hp_start": hp_state["enemy_start"],
+        "enemy_hp_end": hp_state["enemy_final"],
+        "enemy_hp_max": hp_state["enemy_max"],
     }
 
 

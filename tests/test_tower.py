@@ -228,7 +228,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_cooling_rotation_blocks_reuse_and_resets_after_three_robots(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 10, "enemy_damage_total": 1}
+        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 10, "enemy_damage_total": 1, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             client = self._client()
             client.post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
@@ -260,7 +260,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_tower_battle_uses_safety_turn_cap_not_explore_cap(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 9, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 9, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win) as mocked:
             self._client().post(
                 "/tower/battle",
@@ -272,7 +272,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_battle_result_displays_combatants_logs_and_next_action(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             resp = self._client().post(
                 "/tower/battle",
@@ -308,7 +308,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_tower_battle_redirects_to_battle_view(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             resp = self._client().post(
                 "/tower/battle",
@@ -320,7 +320,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_tower_battle_view_direct_displays_requested_battle(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             self._client().post(
                 "/tower/battle",
@@ -351,6 +351,72 @@ class TowerRouteTests(unittest.TestCase):
         self.assertNotIn("global_error_guard", html)
         self.assertNotIn("base_cleanup", html)
 
+    def test_tower_overkill_sets_enemy_hp_zero_without_same_turn_counter(self):
+        run_id = self._start_run()
+        enemy = {"id": None, "key": "tower_hp_28", "name_ja": "HP検証敵", "hp": 28, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 1}
+        battle = {"win": True, "turns": 1, "timeout": False, "player_damage_total": 34, "enemy_damage_total": 9}
+        with patch("services.tower.get_tower_enemy_for_floor", return_value=enemy), patch(
+            "services.tower.scale_tower_enemy", return_value=enemy
+        ), patch("services.tower.simulate_battle", return_value=battle):
+            self._client().post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT id, battle_result, turn_logs_json FROM tower_run_battles WHERE run_id = ?", (run_id,)).fetchone()
+            payload = json.loads(row["turn_logs_json"])[0]
+            self.assertEqual(row["battle_result"], "win")
+            self.assertEqual(payload["enemy_hp_max"], 28)
+            self.assertEqual(payload["enemy_final_hp"], 0)
+            self.assertEqual(payload["player_damage_total"], 34)
+            self.assertEqual(payload["enemy_damage_total"], 0)
+            battle_id = int(row["id"])
+        html = self._client().get(f"/tower/battle/view/{battle_id}").get_data(as_text=True)
+        self.assertIn("HP <span data-tower-hp-text=\"enemy\">28</span> / 28", html)
+        self.assertIn("data-final-value=\"0\"", html)
+        self.assertIn("合計 34 ダメージ", html)
+        self.assertNotIn("HP検証敵 の反撃。", html)
+        self.assertIn("撃破成功", html)
+
+    def test_tower_partial_damage_does_not_become_win(self):
+        run_id = self._start_run()
+        enemy = {"id": None, "key": "tower_hp_28", "name_ja": "HP検証敵", "hp": 28, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 1}
+        battle = {"win": True, "turns": 1, "timeout": False, "player_damage_total": 24, "enemy_damage_total": 0}
+        with patch("services.tower.get_tower_enemy_for_floor", return_value=enemy), patch(
+            "services.tower.scale_tower_enemy", return_value=enemy
+        ), patch("services.tower.simulate_battle", return_value=battle):
+            self._client().post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT id, battle_result, turn_logs_json FROM tower_run_battles WHERE run_id = ?", (run_id,)).fetchone()
+            run = db.execute("SELECT status, reached_floor FROM tower_runs WHERE id = ?", (run_id,)).fetchone()
+            payload = json.loads(row["turn_logs_json"])[0]
+            self.assertEqual(row["battle_result"], "lose")
+            self.assertEqual(run["status"], "failed")
+            self.assertEqual(int(run["reached_floor"]), 0)
+            self.assertEqual(payload["enemy_hp_max"], 28)
+            self.assertEqual(payload["enemy_final_hp"], 4)
+            battle_id = int(row["id"])
+        html = self._client().get(f"/tower/battle/view/{battle_id}").get_data(as_text=True)
+        self.assertIn("data-final-value=\"4\"", html)
+        self.assertIn("合計 24 ダメージ", html)
+        self.assertIn("撤退判断", html)
+        self.assertNotIn("撃破成功", html)
+
+    def test_tower_zero_damage_never_defeats_enemy(self):
+        run_id = self._start_run()
+        enemy = {"id": None, "key": "tower_hp_28", "name_ja": "HP検証敵", "hp": 28, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 1}
+        battle = {"win": True, "turns": 1, "timeout": False, "player_damage_total": 0, "enemy_damage_total": 0}
+        with patch("services.tower.get_tower_enemy_for_floor", return_value=enemy), patch(
+            "services.tower.scale_tower_enemy", return_value=enemy
+        ), patch("services.tower.simulate_battle", return_value=battle):
+            self._client().post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT battle_result, turn_logs_json FROM tower_run_battles WHERE run_id = ?", (run_id,)).fetchone()
+            payload = json.loads(row["turn_logs_json"])[0]
+            self.assertEqual(row["battle_result"], "lose")
+            self.assertEqual(payload["enemy_final_hp"], 28)
+            self.assertEqual(payload["player_damage_total"], 0)
+
     def test_battle_result_uses_enemy_placeholder_when_image_missing(self):
         run_id = self._start_run()
         lose = {"win": False, "turns": 2, "timeout": False, "player_damage_total": 1, "enemy_damage_total": 30}
@@ -375,7 +441,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_result_without_battle_id_displays_latest_battle(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             client = self._client()
             client.post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
@@ -391,7 +457,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_result_battle_id_displays_requested_battle(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             client = self._client()
             client.post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
@@ -411,7 +477,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_completed_run_updates_record_and_world_logs(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 10, "enemy_damage_total": 1}
+        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 10, "enemy_damage_total": 1, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             client = self._client()
             for index in range(10):
@@ -480,7 +546,7 @@ class TowerRouteTests(unittest.TestCase):
 
     def test_abandoned_run_displays_latest_battle_card_without_battle_id(self):
         run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4}
+        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
         with patch("services.tower.simulate_battle", return_value=win):
             self._client().post(
                 "/tower/battle",

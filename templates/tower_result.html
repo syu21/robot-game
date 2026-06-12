@@ -57,8 +57,8 @@
         <div class="home-explore-kicker">使用ロボ</div>
         <b>{{ latest_battle['robot_name'] }}</b>
         <div class="tower-hp-panel">
-          <div class="tower-hp-text">HP {{ latest_battle['hp']['player_final'] }} / {{ latest_battle['hp']['player_max'] }}</div>
-          <progress class="tower-hp-meter" max="{{ latest_battle['hp']['player_max'] }}" value="{{ latest_battle['hp']['player_final'] }}"></progress>
+          <div class="tower-hp-text">HP {{ latest_battle['robot_hp_end'] }} / {{ latest_battle['robot_hp_max'] }}</div>
+          <progress class="tower-hp-meter" max="{{ latest_battle['robot_hp_max'] }}" value="{{ latest_battle['robot_hp_end'] }}"></progress>
         </div>
       </div>
       <div class="tower-versus">VS</div>
@@ -67,8 +67,8 @@
         <div class="home-explore-kicker">観測敵</div>
         <b>{{ latest_battle['enemy_name'] }}</b>
         <div class="tower-hp-panel">
-          <div class="tower-hp-text">HP {{ latest_battle['hp']['enemy_final'] }} / {{ latest_battle['hp']['enemy_max'] }}</div>
-          <progress class="tower-hp-meter" max="{{ latest_battle['hp']['enemy_max'] }}" value="{{ latest_battle['hp']['enemy_final'] }}"></progress>
+          <div class="tower-hp-text">HP {{ latest_battle['enemy_hp_end'] }} / {{ latest_battle['enemy_hp_max'] }}</div>
+          <progress class="tower-hp-meter" max="{{ latest_battle['enemy_hp_max'] }}" value="{{ latest_battle['enemy_hp_end'] }}"></progress>
         </div>
       </div>
     </div>

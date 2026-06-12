@@ -519,7 +519,28 @@ def run_tower_battle(db, run_id, robot_instance_id, robot_stats_provider, *, now
         seed=int(run["seed"] or 1) + floor * 1009 + robot_id,
         max_turns=TOWER_BATTLE_MAX_TURNS,
     )
-    win = bool(battle.get("win"))
+    player_hp_max = max(1, int(stat_obj["stats"].get("hp") or 1))
+    enemy_hp_max = max(1, int(scaled_enemy.get("hp") or 1))
+    player_damage_total = max(0, int(battle.get("player_damage_total") or 0))
+    enemy_damage_total = max(0, int(battle.get("enemy_damage_total") or 0))
+    player_final_hp = int(
+        battle.get("player_final_hp")
+        if battle.get("player_final_hp") is not None
+        else max(0, player_hp_max - enemy_damage_total)
+    )
+    enemy_final_hp = int(
+        battle.get("enemy_final_hp")
+        if battle.get("enemy_final_hp") is not None
+        else max(0, enemy_hp_max - player_damage_total)
+    )
+    player_final_hp = max(0, min(player_hp_max, player_final_hp))
+    enemy_final_hp = max(0, min(enemy_hp_max, enemy_final_hp))
+    if player_damage_total <= 0 and enemy_final_hp <= 0:
+        enemy_final_hp = enemy_hp_max
+    win = enemy_final_hp <= 0 and player_damage_total > 0
+    if win and int(battle.get("turns") or 0) <= 1:
+        enemy_damage_total = 0
+        player_final_hp = player_hp_max
     now = now_text or datetime.now(timezone.utc).isoformat()
     result = "win" if win else "lose"
     turn_logs = [
@@ -530,20 +551,14 @@ def run_tower_battle(db, run_id, robot_instance_id, robot_stats_provider, *, now
             "enemy_name": scaled_enemy.get("name_ja"),
             "result": result,
             "turns": int(battle.get("turns") or 0),
-            "player_hp_max": int(stat_obj["stats"].get("hp") or 1),
-            "player_final_hp": int(
-                battle.get("player_final_hp")
-                if battle.get("player_final_hp") is not None
-                else max(0, int(stat_obj["stats"].get("hp") or 1) - int(battle.get("enemy_damage_total") or 0))
-            ),
-            "enemy_hp_max": int(scaled_enemy.get("hp") or 1),
-            "enemy_final_hp": int(
-                battle.get("enemy_final_hp")
-                if battle.get("enemy_final_hp") is not None
-                else max(0, int(scaled_enemy.get("hp") or 1) - int(battle.get("player_damage_total") or 0))
-            ),
-            "player_damage_total": int(battle.get("player_damage_total") or 0),
-            "enemy_damage_total": int(battle.get("enemy_damage_total") or 0),
+            "player_hp_start": player_hp_max,
+            "player_hp_max": player_hp_max,
+            "player_final_hp": player_final_hp,
+            "enemy_hp_start": enemy_hp_max,
+            "enemy_hp_max": enemy_hp_max,
+            "enemy_final_hp": enemy_final_hp,
+            "player_damage_total": player_damage_total,
+            "enemy_damage_total": enemy_damage_total,
         }
     ]
     battle_cur = db.execute(
