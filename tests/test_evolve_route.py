@@ -196,7 +196,8 @@ class EvolveRouteTests(unittest.TestCase):
                 db.commit()
 
             admin_html = self._client().get("/parts/evolve").get_data(as_text=True)
-            self.assertIn("Rカブトヘッド", admin_html)
+            self.assertIn("豪角ヘッド", admin_html)
+            self.assertNotIn("Rカブトヘッド", admin_html)
 
             with game_app.app.app_context():
                 db = game_app.get_db()
@@ -217,7 +218,7 @@ class EvolveRouteTests(unittest.TestCase):
 
             user_client = self._client_for(public_user_id, "insect_evolve_user")
             private_html = user_client.get("/parts/evolve").get_data(as_text=True)
-            self.assertNotIn("Rカブトヘッド", private_html)
+            self.assertNotIn("豪角ヘッド", private_html)
 
             with game_app.app.app_context():
                 db = game_app.get_db()
@@ -227,7 +228,8 @@ class EvolveRouteTests(unittest.TestCase):
                 )
                 db.commit()
             public_html = user_client.get("/parts/evolve").get_data(as_text=True)
-            self.assertIn("Rカブトヘッド", public_html)
+            self.assertIn("豪角ヘッド", public_html)
+            self.assertNotIn("Rカブトヘッド", public_html)
         finally:
             game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = old_bypass
 
@@ -256,6 +258,7 @@ class EvolveRouteTests(unittest.TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             self.assertIn("進化成功", resp.get_data(as_text=True))
+            self.assertIn("豪角ヘッド", resp.get_data(as_text=True))
 
             with game_app.app.app_context():
                 db = game_app.get_db()

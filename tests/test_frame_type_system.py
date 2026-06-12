@@ -269,7 +269,8 @@ class FrameTypeSystemTests(unittest.TestCase):
         self._grant_evolution_core()
         html = self._client().get("/parts/evolve").get_data(as_text=True)
         self.assertIn(f'value="{insect_id}"', html)
-        self.assertIn("Rカブトヘッド", html)
+        self.assertIn("豪角ヘッド", html)
+        self.assertNotIn("Rカブトヘッド", html)
 
 
 if __name__ == "__main__":
