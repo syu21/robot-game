@@ -1,23 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card tower-spire-card tower-result-hero">
-  <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>{{ battle['zone_label'] }} {{ battle['floor_label'] }}</h1>
-  <p class="upgrade-cost">小隊交戦記録 / ターン制限なし / 安全上限 {{ safety_turn_cap }}T</p>
-  <div class="home-inline-actions">
-    <a class="battle-home-link" href="{{ url_for('tower_result', run_id=run['id'], battle_id=battle['id']) }}">観測ログを見る</a>
-    <a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a>
-    <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>
+<div class="tower-battle-page">
+<section class="card tower-spire-card tower-battle-topbar">
+  <div>
+    <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE- / {{ battle['zone_label'] }} {{ battle['floor_label'] }}</div>
+    <h1>小隊交戦記録</h1>
   </div>
+  <p class="upgrade-cost">ターン制限なし / 安全上限 {{ safety_turn_cap }}T</p>
 </section>
 
 {% if message %}
 <div class="card"><p>{{ message }}</p></div>
 {% endif %}
 
-<section class="panel">
+<section class="panel tower-battle-panel">
   <div class="tower-combat-card tower-spire-card tower-battle-card is-replay-pending" data-tower-battle-replay>
-    <div class="home-explore-card-head">
+    <div class="home-explore-card-head tower-battle-card-head">
       <div>
         <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
         <div><b>{{ battle['tower_result_label'] }}</b></div>
@@ -60,6 +58,9 @@
         </div>
       </div>
     </div>
+    <div class="tower-result-banner {% if battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}" data-tower-result-banner>
+      {{ battle['result_label'] }}
+    </div>
     {% if next_preview %}
     <div class="tower-next-preview">
       <div class="home-explore-kicker">次階予告</div>
@@ -79,9 +80,6 @@
     {% endif %}
     <div class="tower-replay-projectile" data-tower-replay-projectile></div>
     <div class="tower-replay-caption" data-tower-replay-caption>交戦開始</div>
-    <div class="tower-result-banner {% if battle['result'] == 'win' %}is-win{% else %}is-lose{% endif %}" data-tower-result-banner>
-      {{ battle['result_label'] }}
-    </div>
     <div class="tower-log-box">
       {% for line in battle['log_lines'] %}
       <div data-tower-log-line>{{ line }}</div>
@@ -108,6 +106,7 @@
     </div>
   </div>
 </section>
+</div>
 {% endblock %}
 
 {% block scripts %}

@@ -292,12 +292,16 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("tower-floor-node is-locked is-gate", html)
         self.assertIn("下層観測区", html)
         self.assertIn("tower-squad-strip", html)
+        self.assertIn("tower-combatants", html)
         self.assertIn("次階 2F", html)
         self.assertIn("data-tower-battle-replay", html)
         self.assertIn("data-tower-log-line", html)
         self.assertIn("data-tower-replay-actions", html)
         self.assertIn("static/tower.js", html)
         self.assertIn("ターン制限なし", html)
+        self.assertLess(html.index("tower-floor-rail"), html.index("tower-combatants"))
+        self.assertLess(html.index("tower-combatants"), html.index("tower-log-box"))
+        self.assertLess(html.index("tower-combatants"), html.index("次階予告"))
         self.assertTrue(("robot_composed/instance_" in html) or ("assets/placeholder_player.png" in html))
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -342,14 +346,21 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("tower-floor-node is-current", html)
         self.assertIn("tower-floor-node is-locked is-gate", html)
         self.assertIn("tower-squad-strip", html)
+        self.assertIn("tower-combatants", html)
         self.assertIn("is-active", html)
         self.assertIn("交戦準備", html)
         self.assertIn("data-tower-replay-status", html)
         self.assertIn("data-tower-replay-projectile", html)
         self.assertIn("data-tower-hp-meter=\"player\"", html)
         self.assertIn("data-tower-hp-meter=\"enemy\"", html)
+        self.assertLess(html.index("tower-floor-rail"), html.index("tower-combatants"))
+        self.assertLess(html.index("tower-combatants"), html.index("tower-log-box"))
+        self.assertLess(html.index("tower-combatants"), html.index("次階予告"))
         self.assertNotIn("global_error_guard", html)
         self.assertNotIn("base_cleanup", html)
+        self.assertNotIn("onclick=", html)
+        self.assertNotIn("onchange=", html)
+        self.assertNotIn("onsubmit=", html)
 
     def test_tower_overkill_sets_enemy_hp_zero_without_same_turn_counter(self):
         run_id = self._start_run()
@@ -601,6 +612,7 @@ class TowerRouteTests(unittest.TestCase):
         with open(template_path, encoding="utf-8") as fh:
             source = fh.read()
         self.assertNotIn("tower-spire-card", source)
+        self.assertNotIn("tower-combatants", source)
 
 
 if __name__ == "__main__":
