@@ -468,6 +468,9 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("観測ログ", html)
         self.assertIn("2戦", html)
         self.assertIn("tower-hp-meter", html)
+        self.assertIn("この機体で出撃", html)
+        self.assertLess(html.index("次の階"), html.index("観測塔 -ASTRAL SPIRE-"))
+        self.assertLess(html.index("この機体で出撃"), html.index("観測ログ"))
 
     def test_result_battle_id_displays_requested_battle(self):
         run_id = self._start_run()

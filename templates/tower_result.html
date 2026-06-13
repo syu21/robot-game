@@ -1,5 +1,44 @@
 {% extends 'base.html' %}
 {% block content %}
+{% if run['status'] == 'active' %}
+<section class="panel" id="tower-next-sortie">
+  <div class="card">
+    <div class="home-explore-card-head">
+      <div>
+        <div class="home-explore-kicker">次の階</div>
+        <div><b>{{ run['current_floor'] }}階</b></div>
+      </div>
+      <div class="home-explore-status">{{ run['environment']['display_name'] }}</div>
+    </div>
+    <div class="tower-robot-grid">
+      {% for robot in run['robots'] %}
+      <div class="tower-robot-card{% if robot['cooling'] %} is-disabled{% else %} is-ready{% endif %}">
+        <div class="tower-card-status">{% if robot['cooling'] %}冷却中{% else %}出撃可能{% endif %}</div>
+        <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
+        <span class="tower-robot-name">{{ robot['name'] }}</span>
+        <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
+        <span class="tower-stat-line">
+          {% for item in robot['top_stats'] %}
+          {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
+          {% endfor %}
+        </span>
+        {% if not robot['cooling'] %}
+        <form method="post" action="{{ url_for('tower_battle') }}" class="inline-form">
+          <input type="hidden" name="run_id" value="{{ run['id'] }}" />
+          <input type="hidden" name="robot_instance_id" value="{{ robot['id'] }}" />
+          <button type="submit" class="tower-sortie-button">この機体で出撃</button>
+        </form>
+        {% else %}
+        <button type="button" class="tower-sortie-button" disabled>冷却中</button>
+        <div class="tower-card-note">次の冷却解除まで待機</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <section class="card tower-spire-card tower-result-hero">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
   <h1>{% if latest_battle and latest_battle['result'] == 'lose' %}{{ latest_battle['floor_label'] }} 撤退{% elif latest_battle %}{{ run['reached_floor'] }}F 踏破{% else %}{{ run['reached_floor'] }}F 到達{% endif %}</h1>
@@ -121,45 +160,6 @@
     <div class="home-explore-kicker">観測記録</div>
     <h2>{% if run['status'] == 'abandoned' %}観測塔から撤退しました{% else %}観測ログ{% endif %}</h2>
     <p class="upgrade-cost">まだ観測ログがありません。使用した小隊はこのrunに保存されています。</p>
-  </div>
-</section>
-{% endif %}
-
-{% if run['status'] == 'active' %}
-<section class="panel" id="tower-next-sortie">
-  <div class="card">
-    <div class="home-explore-card-head">
-      <div>
-        <div class="home-explore-kicker">次の階</div>
-        <div><b>{{ run['current_floor'] }}階</b></div>
-      </div>
-      <div class="home-explore-status">{{ run['environment']['display_name'] }}</div>
-    </div>
-    <div class="tower-robot-grid">
-      {% for robot in run['robots'] %}
-      <div class="tower-robot-card{% if robot['cooling'] %} is-disabled{% else %} is-ready{% endif %}">
-        <div class="tower-card-status">{% if robot['cooling'] %}冷却中{% else %}出撃可能{% endif %}</div>
-        <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
-        <span class="tower-robot-name">{{ robot['name'] }}</span>
-        <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
-        <span class="tower-stat-line">
-          {% for item in robot['top_stats'] %}
-          {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
-          {% endfor %}
-        </span>
-        {% if not robot['cooling'] %}
-        <form method="post" action="{{ url_for('tower_battle') }}" class="inline-form">
-          <input type="hidden" name="run_id" value="{{ run['id'] }}" />
-          <input type="hidden" name="robot_instance_id" value="{{ robot['id'] }}" />
-          <button type="submit" class="tower-sortie-button">この機体で出撃</button>
-        </form>
-        {% else %}
-        <button type="button" class="tower-sortie-button" disabled>冷却中</button>
-        <div class="tower-card-note">次の冷却解除まで待機</div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
   </div>
 </section>
 {% endif %}
