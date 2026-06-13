@@ -76,6 +76,21 @@
         });
       }
 
+      function unitName(unit) {
+        if (!unit) return "";
+        var nameNode = unit.querySelector("b");
+        return nameNode ? (nameNode.textContent || "").trim() : "";
+      }
+
+      function isEnemyAttack(text) {
+        var enemyName = unitName(enemy);
+        var playerName = unitName(player);
+        if (enemyName && text.indexOf(enemyName + " の攻撃") !== -1) return true;
+        if (text.indexOf("反撃") !== -1 || text.indexOf("ロボに") !== -1) return true;
+        if (playerName && text.indexOf(playerName + " の攻撃") !== -1) return false;
+        return false;
+      }
+
       function setHp(side, value) {
         var meter = hpMeters[side];
         var text = hpTexts[side];
@@ -117,7 +132,7 @@
         if (finished) return;
         clearMotionClasses();
         var text = line ? line.textContent || "" : "";
-        var enemyTurn = text.indexOf("反撃") !== -1 || text.indexOf("ロボに") !== -1;
+        var enemyTurn = isEnemyAttack(text);
         var attacker = enemyTurn ? enemy : player;
         var defender = enemyTurn ? player : enemy;
         var shotClass = enemyTurn ? "is-enemy-shot" : "is-player-shot";

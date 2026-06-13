@@ -621,6 +621,15 @@ class TowerRouteTests(unittest.TestCase):
         self.assertNotIn("tower-spire-card", source)
         self.assertNotIn("tower-combatants", source)
 
+    def test_tower_replay_uses_unit_names_for_attack_direction(self):
+        script_path = os.path.join(os.path.dirname(game_app.__file__), "static", "tower.js")
+        with open(script_path, encoding="utf-8") as fh:
+            source = fh.read()
+        self.assertIn('enemyName + " の攻撃"', source)
+        self.assertIn('playerName + " の攻撃"', source)
+        self.assertIn("is-enemy-shot", source)
+        self.assertIn("is-player-shot", source)
+
     def test_tower_turn_log_does_not_show_counter_after_killing_hit(self):
         payload = {
             "enemy_name": "アイアンポーン",
