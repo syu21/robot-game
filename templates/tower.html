@@ -9,16 +9,16 @@
   <div class="card tower-spire-card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">挑戦中</div>
-        <div><b>{{ active_run['current_floor'] }}階</b></div>
+        <div class="home-explore-kicker">進行中の挑戦</div>
+        <div><b>{{ active_run['current_floor'] }}F</b></div>
       </div>
-      <div class="home-explore-status">到達 {{ active_run['reached_floor'] }}階 / ターン制限なし</div>
+      <div class="home-explore-status">最高到達 {{ active_run['reached_floor'] }}F / 長期戦あり</div>
     </div>
-    <div class="tower-zone-line">下層観測区 / {{ active_run['current_floor'] }}F へ進行中</div>
-    <div class="tower-squad-strip" aria-label="小隊状態">
+    <div class="tower-zone-line">下層観測区 {{ active_run['current_floor'] }}F に挑戦中</div>
+    <div class="tower-squad-strip" aria-label="3機の状態">
       {% for robot in active_run['robots'] %}
       <div class="tower-squad-chip {% if robot['cooling'] %}is-cooling{% else %}is-ready{% endif %}">
-        <b>{{ robot['name'] }}</b><span>{% if robot['cooling'] %}冷却中{% else %}待機{% endif %}</span>
+        <b>{{ robot['name'] }}</b><span>{% if robot['cooling'] %}休憩中{% else %}待機{% endif %}</span>
       </div>
       {% endfor %}
     </div>
@@ -34,7 +34,7 @@
     <div class="tower-robot-grid">
       {% for robot in active_run['robots'] %}
       <div class="tower-robot-card{% if robot['cooling'] %} is-disabled{% else %} is-ready{% endif %}">
-        <div class="tower-card-status">{% if robot['cooling'] %}冷却中{% else %}出撃可能{% endif %}</div>
+        <div class="tower-card-status">{% if robot['cooling'] %}休憩中{% else %}出撃できます{% endif %}</div>
         <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
         <span class="tower-robot-name">{{ robot['name'] }}</span>
         <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
@@ -44,11 +44,11 @@
           {% endfor %}
         </span>
         {% if robot['cooling'] %}
-        <button type="button" class="tower-sortie-button" disabled>冷却中</button>
-        <div class="tower-card-note">次の冷却解除まで待機</div>
+        <button type="button" class="tower-sortie-button" disabled>休憩中</button>
+        <div class="tower-card-note">このロボは次の順番まで休憩中です</div>
         {% else %}
         <form method="post" action="{{ url_for('tower_battle') }}">
-          <input type="hidden" name="run_id" value="{{ active_run['id'] }}" />
+          <input type="hidden" name="challenge_id" value="{{ active_run['id'] }}" />
           <input type="hidden" name="robot_instance_id" value="{{ robot['id'] }}" />
           <button type="submit" class="tower-sortie-button">この機体で出撃</button>
         </form>
@@ -57,10 +57,10 @@
       {% endfor %}
     </div>
     <div class="home-inline-actions">
-      <a class="battle-home-link battle-next-cta" href="{{ url_for('tower_result', run_id=active_run['id']) }}">挑戦を続ける</a>
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('tower_result', run_id=active_run['id']) }}">次の階へ進む</a>
       <form method="post" action="{{ url_for('tower_abandon') }}" class="inline-form inline-form-top">
-        <input type="hidden" name="run_id" value="{{ active_run['id'] }}" />
-        <button type="submit" class="btn-secondary">撤退する</button>
+        <input type="hidden" name="challenge_id" value="{{ active_run['id'] }}" />
+        <button type="submit" class="btn-secondary">ここで終了する</button>
       </form>
     </div>
   </div>
@@ -72,19 +72,19 @@
   <div class="card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">小隊選択</div>
+        <div class="home-explore-kicker">挑戦する3機を選ぶ</div>
         <div><b>3機を選んで開始</b></div>
       </div>
       <div class="home-explore-status">{{ robots|length }}機</div>
     </div>
     {% if robots|length < 3 %}
-    <p class="upgrade-cost">観測塔には active 状態のロボが3機必要です。</p>
+    <p class="upgrade-cost">出撃できるロボが3機必要です。</p>
     {% else %}
     <form method="post" action="{{ url_for('tower_start') }}" class="tower-squad-form" data-tower-squad-form>
       <div class="tower-robot-grid">
         {% for robot in robots %}
         <label class="tower-robot-card is-ready">
-          <div class="tower-card-status" data-tower-select-status>出撃可能</div>
+          <div class="tower-card-status" data-tower-select-status>出撃できます</div>
           <input type="checkbox" name="robot_{{ loop.index }}" value="{{ robot['id'] }}" data-tower-robot-checkbox />
           <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
           <span class="tower-robot-name">{{ robot['name'] }}</span>
@@ -94,12 +94,12 @@
             {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
             {% endfor %}
           </span>
-          <span class="tower-select-button" data-tower-select-label>小隊に選ぶ</span>
+          <span class="tower-select-button" data-tower-select-label>このロボを選ぶ</span>
         </label>
         {% endfor %}
       </div>
-      <p class="upgrade-cost"><span data-tower-selected-count>0</span>/3機選択。3機選ぶと挑戦できます。</p>
-      <button type="submit" class="battle-next-cta tower-start-button" data-tower-start-button disabled>観測塔に挑戦</button>
+      <p class="upgrade-cost"><span data-tower-selected-count>0</span>/3機選択中。3機選ぶと挑戦できます。</p>
+      <button type="submit" class="battle-next-cta tower-start-button" data-tower-start-button disabled>この3機で挑戦する</button>
     </form>
     {% endif %}
   </div>
@@ -107,12 +107,12 @@
 {% endif %}
 <section class="card tower-hero tower-spire-card tower-info-card">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>3機小隊で深層記録に挑む</h1>
-  <p class="upgrade-cost">第4層到達者向けの小隊記録試験です。本編進行には必須ではありません。</p>
+  <h1>3機のロボで、どこまで登れるか挑戦</h1>
+  <p class="upgrade-cost">第4層に到達した人向けの記録チャレンジです。本編の進行には必須ではありません。</p>
   <div class="tower-hero-meta">
-    <div><b>今週の観測環境:</b> {{ environment['display_name'] }}</div>
+    <div><b>今週の塔環境:</b> {{ environment['display_name'] }}</div>
     <div>{{ environment['description'] }}</div>
-    <div><b>自分の記録:</b> 歴代 {{ record['best_floor'] or 0 }}階 / 今週 {{ record['weekly_best_floor'] or 0 }}階</div>
+    <div><b>自分の最高記録:</b> 歴代 {{ record['best_floor'] or 0 }}F / 今週 {{ record['weekly_best_floor'] or 0 }}F</div>
   </div>
   <div class="home-inline-actions">
     <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>

@@ -7,10 +7,10 @@
 </div>
 
 <section class="panel">
-  <h2>観測塔記録</h2>
+  <h2>観測塔の記録</h2>
   <div class="world-competition-grid">
     <div class="card">
-      <div><b>今週最高到達小隊</b></div>
+      <div><b>今週いちばん登った記録</b></div>
       {% if tower_records['weekly'] %}
       <div class="tower-battle-row">
         <span>{{ tower_records['weekly']['username'] }}</span>
@@ -28,7 +28,7 @@
       {% endif %}
     </div>
     <div class="card">
-      <div><b>歴代最高到達小隊</b></div>
+      <div><b>歴代最高記録</b></div>
       {% if tower_records['all_time'] %}
       <div class="tower-battle-row">
         <span>{{ tower_records['all_time']['username'] }}</span>
@@ -45,13 +45,13 @@
       {% endif %}
     </div>
     <div class="card">
-      <div><b>自分の最高到達階</b></div>
+      <div><b>自分の最高到達</b></div>
       <div class="tower-battle-row">
         <span>歴代</span>
         <b>{{ tower_records['own_best_floor'] }}階</b>
         <span>今週 {{ tower_records['own_weekly_best_floor'] }}階</span>
       </div>
-      <div class="robot-part">挑戦条件を満たす場合のみ観測塔へ移動できます。</div>
+      <div class="robot-part">第4層に到達すると、観測塔に挑戦できます。</div>
     </div>
     <div class="card">
       <div><b>直近の節目到達</b></div>

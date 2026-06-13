@@ -1569,7 +1569,7 @@ RELEASE_FLAG_DEFS = (
     {
         "key": "tower",
         "label": "観測塔 -ASTRAL SPIRE-",
-        "summary": "3機小隊で深層記録に挑む、第4層到達者向けの記録試験です。",
+        "summary": "3機のロボでどこまで登れるか挑戦する、第4層到達者向けの記録チャレンジです。",
     },
     {
         "key": MARKET_FEATURE_KEY,
@@ -22627,16 +22627,16 @@ def _feed_card_from_event(db, row):
         card["headline"] = "ASTRAL SPIRE"
         card["accent"] = "weekly"
         if event_type == "TOWER_MILESTONE":
-            card["text"] = f"{actor_label}の小隊が観測塔 -ASTRAL SPIRE- {floor}階へ到達"
+            card["text"] = f"{actor_label}の3機が観測塔 -ASTRAL SPIRE- {floor}Fに到達"
         elif event_type == "TOWER_WEEKLY_LEADER":
-            card["text"] = f"{actor_label}の小隊が今週の観測塔最高記録を更新"
+            card["text"] = f"{actor_label}が今週の観測塔記録を更新"
         elif event_type == "TOWER_ALL_TIME_LEADER":
-            card["text"] = f"{actor_label}の小隊が観測塔の歴代最高記録を更新"
+            card["text"] = f"{actor_label}が観測塔の歴代最高記録を更新"
         else:
-            card["text"] = f"{actor_label}の小隊が観測塔の自己最高記録を {floor}階 に更新"
-        card["meta_lines"] = [f"到達: {floor}階"]
+            card["text"] = f"{actor_label}が自己最高を {floor}F に更新"
+        card["meta_lines"] = [f"最高到達: {floor}F"]
         if previous > 0 and event_type == "TOWER_BEST_FLOOR":
-            card["meta_lines"].append(f"前回自己最高: {previous}階")
+            card["meta_lines"].append(f"前回の自己最高: {previous}F")
         if env_name:
             card["meta_lines"].append(f"環境: {env_name}")
         card["link_url"] = url_for("tower_ranking")
@@ -28433,7 +28433,7 @@ TOWER_STAT_LABELS = {
 
 def _tower_user_or_redirect(db):
     if not session.get("user_id"):
-        flash("観測塔はログイン後に利用できます。", "notice")
+        flash("ログインすると観測塔に挑戦できます。", "notice")
         return None, redirect(url_for("login", next=request.path, reason="expired"))
     user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
     if not user:
@@ -28441,9 +28441,9 @@ def _tower_user_or_redirect(db):
         return None, redirect(url_for("login", next=request.path, reason="expired"))
     if not can_access_tower(user, is_public=_release_flag_is_public(db, "tower")):
         if not _release_flag_is_public(db, "tower") and int(user["is_admin"] or 0) != 1:
-            flash("観測塔は現在、管理者確認中です。", "notice")
+            flash("観測塔は現在、公開準備中です。", "notice")
             return user, redirect(url_for("home"))
-        flash("観測塔は第4層到達後に解放されます。", "notice")
+        flash("観測塔は第4層に到達すると解放されます。", "notice")
         return user, redirect(url_for("home"))
     return user, None
 
@@ -28494,7 +28494,7 @@ def _tower_battle_log_items(battle, robot_name):
     turns = max(1, int(source.get("turns") or battle["turn_count"] or 1))
     dealt = int(source.get("player_damage_total") or 0)
     taken = int(source.get("enemy_damage_total") or 0)
-    enemy_name = str(source.get("enemy_name") or battle["enemy_name"] or "観測敵")
+    enemy_name = str(source.get("enemy_name") or battle["enemy_name"] or "敵")
     result = str(source.get("result") or battle["battle_result"] or "")
     turn_events = [item for item in (source.get("battle_turn_logs") or []) if isinstance(item, dict)]
     if turn_events:
@@ -28507,9 +28507,9 @@ def _tower_battle_log_items(battle, robot_name):
             else:
                 items.append({"actor": "player", "text": f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage} ダメージ。"})
                 if int(item.get("target_hp_after") or 0) <= 0:
-                    items.append({"actor": "system", "text": "撃破成功。"})
+                    items.append({"actor": "system", "text": "敵を撃破！"})
                     return items
-        items.append({"actor": "system", "text": "撃破成功。" if result == "win" else "撤退判断。"})
+        items.append({"actor": "system", "text": "敵を撃破！" if result == "win" else "挑戦終了。"})
         return items
     items = [{"actor": "player", "text": f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。"}]
     if taken > 0:
@@ -28517,8 +28517,8 @@ def _tower_battle_log_items(battle, robot_name):
     else:
         items.append({"actor": "system", "text": f"{enemy_name} の反撃を受けずに押し切った。"})
     if turns > 1:
-        items.append({"actor": "system", "text": f"{turns}T: 戦闘決着。"})
-    items.append({"actor": "system", "text": "撃破成功。" if result == "win" else "撤退判断。"})
+        items.append({"actor": "system", "text": f"{turns}T: 戦闘終了。"})
+    items.append({"actor": "system", "text": "敵を撃破！" if result == "win" else "挑戦終了。"})
     return items
 
 
@@ -28610,11 +28610,11 @@ def _tower_squad_strip(run_view, active_robot_id=None):
             label = "出撃中"
         elif robot.get("cooling"):
             state = "cooling"
-            label = "冷却中"
+            label = "休憩中"
         else:
             state = "ready"
             label = "待機"
-        chips.append({"name": robot.get("name") or "小隊機", "state": state, "label": label})
+        chips.append({"name": robot.get("name") or "ロボ", "state": state, "label": label})
     return chips
 
 
@@ -28644,7 +28644,7 @@ def _tower_battle_detail_view(db, battle):
     if not enemy and battle["enemy_key"]:
         enemy = db.execute("SELECT id, key, name_ja, image_path FROM enemies WHERE key = ? LIMIT 1", (str(battle["enemy_key"]),)).fetchone()
     robot_name = robot["name"] if robot else "使用ロボ"
-    enemy_name = (enemy["name_ja"] if enemy and enemy["name_ja"] else battle["enemy_name"]) or "観測敵"
+    enemy_name = (enemy["name_ja"] if enemy and enemy["name_ja"] else battle["enemy_name"]) or "敵"
     robot_stats_obj = _compute_robot_stats_for_instance(db, int(robot["id"])) if robot else None
     hp_state = _tower_battle_hp_state(battle, (robot_stats_obj or {}).get("stats") or {})
     return {
@@ -28753,7 +28753,7 @@ def _tower_next_enemy_view(db, run):
     if not enemy:
         return None
     return {
-        "name": enemy.get("name_ja") or enemy.get("key") or "観測敵",
+        "name": enemy.get("name_ja") or enemy.get("key") or "敵",
         "image_url": _enemy_static_url(
             enemy.get("image_path"),
             fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
@@ -28827,7 +28827,7 @@ def tower_start():
     except (TypeError, ValueError):
         clean_ids = []
     if len(clean_ids) != 3:
-        flash("観測塔は3機小隊を選択してください。", "error")
+        flash("挑戦するロボを3機選んでください。", "error")
         return redirect(url_for("tower"))
     active_run = db.execute(
         """
@@ -28840,7 +28840,7 @@ def tower_start():
         (int(user["id"]),),
     ).fetchone()
     if active_run:
-        flash("挑戦中の観測塔runがあります。", "notice")
+        flash("進行中の挑戦があります。先に続きを進めるか、終了してください。", "notice")
         return redirect(url_for("tower_result", run_id=int(active_run["id"])))
     result = create_tower_run(db, int(user["id"]), clean_ids, environment_key=get_current_tower_environment(db)["key"])
     if not result.get("ok"):
@@ -28850,7 +28850,7 @@ def tower_start():
         elif reason == "robots_not_found":
             flash("選択した機体を確認できませんでした。", "error")
         else:
-            flash("観測塔の挑戦を開始できませんでした。", "error")
+            flash("挑戦を開始できませんでした。少し待ってからもう一度お試しください。", "error")
         db.rollback()
         return redirect(url_for("tower"))
     db.commit()
@@ -28865,33 +28865,33 @@ def tower_battle():
     if blocked:
         return blocked
     try:
-        run_id = int(request.form.get("run_id") or 0)
+        run_id = int(request.form.get("challenge_id") or request.form.get("run_id") or 0)
         robot_id = int(request.form.get("robot_instance_id") or 0)
     except (TypeError, ValueError):
         run_id = 0
         robot_id = 0
     run = get_tower_run(db, run_id, int(user["id"])) if run_id > 0 else None
     if not run:
-        flash("観測塔の挑戦が見つかりません。", "error")
+        flash("挑戦データが見つかりません。", "error")
         return redirect(url_for("tower"))
     result = run_tower_battle(db, int(run["id"]), robot_id, _compute_robot_stats_for_instance)
     if not result.get("ok"):
         reason = result.get("reason")
         if reason == "robot_cooling":
-            flash("その機体は冷却中です。別の機体を選んでください。", "error")
+            flash("そのロボは休憩中です。別のロボを選んでください。", "error")
         elif reason == "robot_not_in_squad":
-            flash("小隊外の機体は出撃できません。", "error")
+            flash("選んだ3機以外のロボは出撃できません。", "error")
         elif reason == "run_not_active":
             flash("この挑戦は終了しています。", "notice")
         else:
-            flash("観測塔の戦闘を開始できませんでした。", "error")
+            flash("戦闘を開始できませんでした。少し待ってからもう一度お試しください。", "error")
         db.rollback()
         return redirect(url_for("tower_result", run_id=int(run["id"])))
     db.commit()
     if result.get("status") == "completed":
-        flash("10階突破。観測塔runを完了しました。", "notice")
+        flash("10F踏破！今回の挑戦を完了しました。", "notice")
     elif result.get("status") == "failed":
-        flash("観測塔から撤退しました。記録を確認してください。", "notice")
+        flash("挑戦を終了しました。ここまでの記録を確認できます。", "notice")
     battle_id = int(result.get("battle_id") or 0)
     if battle_id > 0:
         return redirect(url_for("tower_battle_view", battle_id=battle_id))
@@ -28915,11 +28915,11 @@ def tower_battle_view(battle_id):
         (int(battle_id), int(user["id"])),
     ).fetchone()
     if not battle:
-        flash("観測塔の戦闘記録が見つかりません。", "error")
+        flash("戦闘データが見つかりません。", "error")
         return redirect(url_for("tower"))
     run = get_tower_run(db, int(battle["run_id"]), int(user["id"]))
     if not run:
-        flash("観測塔の挑戦が見つかりません。", "error")
+        flash("挑戦データが見つかりません。", "error")
         return redirect(url_for("tower"))
     battle_view = _tower_battle_detail_view(db, battle)
     run_view = _tower_run_view(db, run)
@@ -28946,16 +28946,16 @@ def tower_abandon():
     if blocked:
         return blocked
     try:
-        run_id = int(request.form.get("run_id") or 0)
+        run_id = int(request.form.get("challenge_id") or request.form.get("run_id") or 0)
     except (TypeError, ValueError):
         run_id = 0
     result = abandon_tower_run(db, run_id, int(user["id"]))
     if not result.get("ok"):
         db.rollback()
-        flash("観測塔から撤退できませんでした。", "error")
+        flash("挑戦を終了できませんでした。少し待ってからもう一度お試しください。", "error")
         return redirect(url_for("tower"))
     db.commit()
-    flash("観測塔から撤退しました。戦闘記録を確認できます。", "notice")
+    flash("挑戦を終了しました。戦闘ログを確認できます。", "notice")
     return redirect(url_for("tower_result", run_id=int(run_id)))
 
 
@@ -28968,7 +28968,7 @@ def tower_result(run_id):
         return blocked
     run = get_tower_run(db, int(run_id), int(user["id"]))
     if not run:
-        flash("観測塔の挑戦が見つかりません。", "error")
+        flash("挑戦データが見つかりません。", "error")
         return redirect(url_for("tower"))
     battles = get_tower_run_battles(db, int(run["id"]))
     battle_id = int(request.args.get("battle_id") or 0)

@@ -10,8 +10,8 @@
       var label = card ? card.querySelector("[data-tower-select-label]") : null;
       var status = card ? card.querySelector("[data-tower-select-status]") : null;
       if (card) card.classList.toggle("is-selected", box.checked);
-      if (label) label.textContent = box.checked ? "選択済み" : "小隊に選ぶ";
-      if (status) status.textContent = box.checked ? "選択中" : "出撃可能";
+      if (label) label.textContent = box.checked ? "選択中" : "このロボを選ぶ";
+      if (status) status.textContent = box.checked ? "選択中" : "出撃できます";
     });
     checked.forEach(function (box, index) {
       box.name = "robot_" + (index + 1);

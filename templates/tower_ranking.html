@@ -2,16 +2,16 @@
 {% block content %}
 <section class="card tower-spire-card tower-result-hero">
   <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>観測塔ランキング</h1>
+  <h1>観測塔 記録ランキング</h1>
   <p class="upgrade-cost">{{ environment['display_name'] }} / {{ environment['description'] }}</p>
-  <p class="link"><a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ戻る</a></p>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('tower') }}">観測塔に戻る</a></p>
 </section>
 
 <section class="panel">
   <div class="card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">今週の最高到達小隊</div>
+        <div class="home-explore-kicker">今週いちばん登った記録</div>
         <div><b>{{ rankings['weekly_key'] }}</b></div>
       </div>
     </div>
@@ -33,7 +33,7 @@
   <div class="card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">歴代最高到達小隊</div>
+        <div class="home-explore-kicker">歴代最高記録</div>
         <div><b>All Time</b></div>
       </div>
     </div>
@@ -55,7 +55,7 @@
   <div class="card">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">低+値小隊記録</div>
+        <div class="home-explore-kicker">低+値チャレンジ</div>
         <div><b>+合計 {{ rankings['low_plus_limit'] }} 以下</b></div>
       </div>
     </div>
