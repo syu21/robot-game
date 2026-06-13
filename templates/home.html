@@ -233,7 +233,7 @@
       {% endif %}
     </div>
     <div class="upgrade-cost">第4層の型理解を試す小隊試験です。本編進行には必須ではありません。</div>
-    <p class="link"><a class="battle-home-link" href="{{ url_for('tower') }}">観測塔へ</a></p>
+    <p class="link"><a class="battle-home-link home-tower-cta" href="{{ url_for('tower') }}">観測塔へ</a></p>
   </div>
 </div>
 {% endif %}
@@ -1324,4 +1324,3 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
 <script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
-{% endblock %}

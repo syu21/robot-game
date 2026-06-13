@@ -4465,7 +4465,9 @@ body.battle-page .layer-boss-victory-sub {
   margin: 0;
 }
 
-.home-primary-explore-cta {
+.home-primary-explore-cta,
+.home-tower-cta,
+.tower-start-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4482,7 +4484,8 @@ body.battle-page .layer-boss-victory-sub {
   box-shadow: 0 10px 22px rgba(3, 7, 18, 0.24);
 }
 
-button.home-primary-explore-cta:disabled {
+button.home-primary-explore-cta:disabled,
+.tower-start-button:disabled {
   opacity: 0.82;
   cursor: not-allowed;
 }
@@ -6865,7 +6868,9 @@ body.home-page .locked-layer-card {
     gap: 8px;
   }
 
-  .home-primary-explore-cta {
+  .home-primary-explore-cta,
+  .home-tower-cta,
+  .tower-start-button {
     min-height: 52px;
     border-radius: 14px;
     font-size: 16px;
@@ -15238,171 +15243,4 @@ button.robo-fixed-nav-item {
   transform: translateX(18px) scale(1.04);
   filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.52));
 }
-.tower-combatant.is-enemy.is-attacking img {
-  transform: translateX(-18px) scale(1.04);
-}
-.tower-combatant.is-hit img {
-  animation: towerCombatHit 240ms ease-out;
-}
-.tower-versus {
-  font-weight: 900;
-  color: #f8fafc;
-}
-.tower-replay-projectile {
-  position: absolute;
-  top: 47%;
-  left: 50%;
-  width: 18px;
-  height: 5px;
-  border-radius: 999px;
-  opacity: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.1), rgba(34, 211, 238, 0.95));
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.9);
-}
-.tower-replay-projectile.is-active.is-player-shot {
-  animation: towerProjectilePlayer 320ms ease-out;
-}
-.tower-replay-projectile.is-active.is-enemy-shot {
-  animation: towerProjectileEnemy 320ms ease-out;
-  background: linear-gradient(90deg, rgba(248, 113, 113, 0.95), rgba(248, 113, 113, 0.1));
-  box-shadow: 0 0 18px rgba(248, 113, 113, 0.9);
-}
-.tower-replay-caption {
-  min-height: 1.45em;
-  margin: 4px 0;
-  color: #67e8f9;
-  font-weight: 900;
-  text-align: center;
-}
-.tower-result-banner {
-  display: inline-flex;
-  margin: 2px 0 4px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-weight: 900;
-}
-.tower-result-banner.is-win {
-  color: #dcfce7;
-  background: rgba(22, 163, 74, 0.24);
-}
-.tower-result-banner.is-lose {
-  color: #fee2e2;
-  background: rgba(185, 28, 28, 0.26);
-}
-.tower-log-box {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0;
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  color: #e2e8f0;
-  background: rgba(2, 6, 23, 0.32);
-}
-.tower-combat-card.is-replaying .tower-result-banner,
-.tower-combat-card.is-replaying [data-tower-replay-actions],
-.tower-combat-card.is-replay-pending .tower-result-banner,
-.tower-combat-card.is-replay-pending [data-tower-replay-actions] {
-  opacity: 0;
-  pointer-events: none;
-}
-.tower-combat-card.is-replaying [data-tower-log-line],
-.tower-combat-card.is-replay-pending [data-tower-log-line] {
-  display: none;
-}
-.tower-combat-card.is-replaying [data-tower-log-line].is-visible,
-.tower-combat-card.is-replay-complete [data-tower-log-line] {
-  display: block;
-  animation: towerLogReveal 180ms ease-out;
-}
-.tower-combat-card.is-replay-complete .tower-result-banner,
-.tower-combat-card.is-replay-complete [data-tower-replay-actions],
-.tower-result-banner.is-visible,
-[data-tower-replay-actions].is-visible {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 180ms ease;
-}
-.tower-battle-list,
-.tower-ranking-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-.tower-battle-row {
-  display: grid;
-  grid-template-columns: minmax(44px, auto) 1fr minmax(52px, auto) minmax(36px, auto);
-  gap: 8px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-  font-size: 0.9rem;
-}
-.tower-record-robot-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 10px;
-}
-@keyframes towerCombatHit {
-  0% { transform: translateX(0); filter: brightness(1); }
-  28% { transform: translateX(-10px); filter: brightness(1.8) drop-shadow(0 0 16px rgba(248, 113, 113, 0.75)); }
-  58% { transform: translateX(7px); }
-  100% { transform: translateX(0); filter: brightness(1); }
-}
-@keyframes towerProjectilePlayer {
-  0% { opacity: 0; transform: translate(-220px, -8px) scaleX(0.65); }
-  20% { opacity: 1; }
-  100% { opacity: 0; transform: translate(220px, -8px) scaleX(1.2); }
-}
-@keyframes towerProjectileEnemy {
-  0% { opacity: 0; transform: translate(220px, 8px) scaleX(0.65); }
-  20% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-220px, 8px) scaleX(1.2); }
-}
-@keyframes towerLogReveal {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .tower-combatant,
-  .tower-combatant img,
-  .tower-replay-projectile,
-  .tower-combat-card [data-tower-log-line] {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-@media (max-width: 560px) {
-  .tower-battle-topbar {
-    display: grid;
-    padding: 10px 12px;
-  }
-  .tower-battle-topbar .upgrade-cost {
-    white-space: normal;
-  }
-  .tower-combatants {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 8px;
-  }
-  .tower-combatant img {
-    width: min(112px, 38vw);
-    height: 90px;
-  }
-  .tower-versus {
-    font-size: 0.85rem;
-  }
-  .tower-floor-rail {
-    grid-template-columns: repeat(10, minmax(24px, 1fr));
-    gap: 4px;
-  }
-  .tower-floor-node {
-    min-height: 30px;
-    padding: 4px 2px;
-    font-size: 0.68rem;
-  }
-  .tower-battle-row {
-    grid-template-columns: 1fr 1fr;
-  }
-}
+.tower-co

@@ -108,6 +108,7 @@ class TowerRouteTests(unittest.TestCase):
         admin_html = self._client().get("/home").get_data(as_text=True)
         self.assertIn("観測塔 -ASTRAL SPIRE-", admin_html)
         self.assertIn("/tower", admin_html)
+        self.assertIn("home-tower-cta", admin_html)
         self.assertIn("管理者確認中", admin_html)
 
     def test_release_public_allows_layer4_user_only(self):
@@ -123,6 +124,7 @@ class TowerRouteTests(unittest.TestCase):
         user_html = self._client(self.user_id, "tower_user").get("/home").get_data(as_text=True)
         self.assertIn("観測塔 -ASTRAL SPIRE-", user_html)
         self.assertIn("/tower", user_html)
+        self.assertIn("home-tower-cta", user_html)
 
         locked_html = self._client(self.locked_user_id, "tower_locked").get("/home").get_data(as_text=True)
         self.assertNotIn("/tower", locked_html)
@@ -131,15 +133,16 @@ class TowerRouteTests(unittest.TestCase):
         self.assertEqual(tower_resp.status_code, 200)
         self.assertIn("3機小隊で深層記録に挑む", tower_resp.get_data(as_text=True))
 
-    def test_tower_top_compacts_environment_and_record_before_squad(self):
+    def test_tower_top_shows_squad_before_environment_summary(self):
         html = self._client().get("/tower").get_data(as_text=True)
         self.assertIn("今週の観測環境:", html)
         self.assertIn("自分の記録:", html)
         self.assertIn("小隊選択", html)
-        self.assertLess(html.index("今週の観測環境:"), html.index("小隊選択"))
+        self.assertLess(html.index("小隊選択"), html.index("今週の観測環境:"))
         self.assertNotIn('<div class="home-explore-kicker">今週の観測環境</div>', html)
         self.assertNotIn('<div class="home-explore-kicker">自分の記録</div>', html)
         self.assertIn("data-tower-start-button disabled", html)
+        self.assertIn("tower-start-button", html)
         self.assertIn("static/tower.js", html)
         self.assertNotIn("global_error_guard", html)
         self.assertNotIn("base_cleanup", html)
@@ -481,139 +484,4 @@ class TowerRouteTests(unittest.TestCase):
                     (run_id,),
                 ).fetchone()["id"]
             )
-        resp = self._client().get(f"/tower/result/{run_id}?battle_id={first_battle_id}")
-        html = resp.get_data(as_text=True)
-        self.assertIn("<div><b>1F 踏破</b></div>", html)
-        self.assertIn("最後の記録: 1F 踏破", html)
-
-    def test_completed_run_updates_record_and_world_logs(self):
-        run_id = self._start_run()
-        win = {"win": True, "turns": 2, "timeout": False, "player_damage_total": 10, "enemy_damage_total": 1, "enemy_final_hp": 0}
-        with patch("services.tower.simulate_battle", return_value=win):
-            client = self._client()
-            for index in range(10):
-                client.post(
-                    "/tower/battle",
-                    data={"run_id": run_id, "robot_instance_id": self.robot_ids[index % 3]},
-                )
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            run = db.execute("SELECT status, reached_floor FROM tower_runs WHERE id = ?", (run_id,)).fetchone()
-            self.assertEqual(run["status"], "completed")
-            self.assertEqual(int(run["reached_floor"]), 10)
-            record = db.execute("SELECT best_floor, weekly_best_floor FROM user_tower_records WHERE user_id = ?", (self.admin_user_id,)).fetchone()
-            self.assertEqual(int(record["best_floor"]), 10)
-            self.assertEqual(int(record["weekly_best_floor"]), 10)
-            events = [
-                row["event_type"]
-                for row in db.execute(
-                    "SELECT event_type FROM world_events_log WHERE user_id = ?",
-                    (self.admin_user_id,),
-                ).fetchall()
-            ]
-            self.assertIn("TOWER_BEST_FLOOR", events)
-            self.assertIn("TOWER_MILESTONE", events)
-            self.assertIn("TOWER_WEEKLY_LEADER", events)
-            self.assertIn("TOWER_ALL_TIME_LEADER", events)
-            self.assertIn("audit.tower.record.update", events)
-            self.assertIn("audit.tower.reward.grant", events)
-            reward = db.execute(
-                "SELECT reward_key FROM tower_reward_grants WHERE user_id = ?",
-                (self.admin_user_id,),
-            ).fetchone()
-            self.assertEqual(reward["reward_key"], "tower_floor_10")
-
-    def test_failed_run_stores_reached_floor(self):
-        run_id = self._start_run()
-        lose = {"win": False, "turns": 4, "timeout": False, "player_damage_total": 2, "enemy_damage_total": 20}
-        with patch("services.tower.simulate_battle", return_value=lose):
-            self._client().post("/tower/battle", data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]})
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            run = db.execute("SELECT status, reached_floor FROM tower_runs WHERE id = ?", (run_id,)).fetchone()
-            self.assertEqual(run["status"], "failed")
-            self.assertEqual(int(run["reached_floor"]), 0)
-        html = self._client().get(f"/tower/result/{run_id}").get_data(as_text=True)
-        self.assertIn("1F 撤退", html)
-        self.assertIn("到達記録: 0F", html)
-        self.assertIn("阻止されました", html)
-
-    def test_abandon_active_run_updates_status_and_audit(self):
-        run_id = self._start_run()
-        resp = self._client().post("/tower/abandon", data={"run_id": run_id}, follow_redirects=True)
-        html = resp.get_data(as_text=True)
-        self.assertIn("観測塔から撤退しました", html)
-        self.assertIn("使用した小隊", html)
-        self.assertIn("まだ観測ログがありません", html)
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            run = db.execute("SELECT status FROM tower_runs WHERE id = ?", (run_id,)).fetchone()
-            self.assertEqual(run["status"], "abandoned")
-            event = db.execute(
-                "SELECT event_type FROM world_events_log WHERE event_type = 'audit.tower.run.abandon' AND user_id = ?",
-                (self.admin_user_id,),
-            ).fetchone()
-            self.assertIsNotNone(event)
-
-    def test_abandoned_run_displays_latest_battle_card_without_battle_id(self):
-        run_id = self._start_run()
-        win = {"win": True, "turns": 3, "timeout": False, "player_damage_total": 12, "enemy_damage_total": 4, "enemy_final_hp": 0}
-        with patch("services.tower.simulate_battle", return_value=win):
-            self._client().post(
-                "/tower/battle",
-                data={"run_id": run_id, "robot_instance_id": self.robot_ids[0]},
-            )
-        resp = self._client().post("/tower/abandon", data={"run_id": run_id}, follow_redirects=True)
-        html = resp.get_data(as_text=True)
-        self.assertIn("最後の戦闘", html)
-        self.assertIn("1F 踏破", html)
-        self.assertIn("TowerBot1", html)
-        self.assertIn("観測敵", html)
-        self.assertIn("合計 12 ダメージ", html)
-        self.assertIn("合計 4 ダメージ", html)
-        self.assertIn("1戦", html)
-        self.assertTrue(("robot_composed/instance_" in html) or ("assets/placeholder_player.png" in html))
-
-    def test_ranking_displays_record(self):
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            now = "2026-06-08T00:00:00+00:00"
-            db.execute(
-                """
-                INSERT INTO user_tower_records
-                (user_id, best_floor, best_run_id, best_recorded_at, weekly_key, weekly_best_floor, weekly_best_run_id,
-                 weekly_best_recorded_at, created_at, updated_at)
-                VALUES (?, 7, 1, ?, ?, 7, 1, ?, ?, ?)
-                """,
-                (self.admin_user_id, now, game_app.get_current_tower_environment()["weekly_key"], now, now, now),
-            )
-            db.commit()
-        resp = self._client().get("/tower/ranking")
-        html = resp.get_data(as_text=True)
-        self.assertIn("観測塔ランキング", html)
-        self.assertIn("今週の最高到達小隊", html)
-        self.assertIn("歴代最高到達小隊", html)
-        self.assertIn("7F", html)
-        self.assertIn("低+値小隊記録", html)
-
-    def test_records_displays_tower_section_empty(self):
-        resp = self._client(self.user_id, "tower_user").get("/records")
-        html = resp.get_data(as_text=True)
-        self.assertIn("観測塔記録", html)
-        self.assertIn("まだ記録がありません", html)
-
-    def test_explore_route_still_works(self):
-        resp = self._client().get("/home")
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("出撃", resp.get_data(as_text=True))
-
-    def test_explore_battle_template_does_not_use_tower_spire_card(self):
-        template_path = os.path.join(os.path.dirname(game_app.__file__), "templates", "battle.html")
-        with open(template_path, encoding="utf-8") as fh:
-            source = fh.read()
-        self.assertNotIn("tower-spire-card", source)
-        self.assertNotIn("tower-combatants", source)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        resp = self._client().get(f"/tower/result/{run_id}?battle_id=

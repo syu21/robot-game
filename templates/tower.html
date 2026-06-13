@@ -1,19 +1,5 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card tower-hero tower-spire-card">
-  <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-  <h1>3機小隊で深層記録に挑む</h1>
-  <p class="upgrade-cost">第4層到達者向けの小隊記録試験です。本編進行には必須ではありません。</p>
-  <div class="tower-hero-meta">
-    <div><b>今週の観測環境:</b> {{ environment['display_name'] }}</div>
-    <div>{{ environment['description'] }}</div>
-    <div><b>自分の記録:</b> 歴代 {{ record['best_floor'] or 0 }}階 / 今週 {{ record['weekly_best_floor'] or 0 }}階</div>
-  </div>
-  <div class="home-inline-actions">
-    <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>
-  </div>
-</section>
-
 {% if message %}
 <div class="card"><p>{{ message }}</p></div>
 {% endif %}
@@ -119,8 +105,20 @@
   </div>
 </section>
 {% endif %}
+<section class="card tower-hero tower-spire-card tower-info-card">
+  <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
+  <h1>3機小隊で深層記録に挑む</h1>
+  <p class="upgrade-cost">第4層到達者向けの小隊記録試験です。本編進行には必須ではありません。</p>
+  <div class="tower-hero-meta">
+    <div><b>今週の観測環境:</b> {{ environment['display_name'] }}</div>
+    <div>{{ environment['description'] }}</div>
+    <div><b>自分の記録:</b> 歴代 {{ record['best_floor'] or 0 }}階 / 今週 {{ record['weekly_best_floor'] or 0 }}階</div>
+  </div>
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('tower_ranking') }}">ランキング</a>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='tower.js') }}?v={{ app_version }}"></script>
-{% endblock %}
