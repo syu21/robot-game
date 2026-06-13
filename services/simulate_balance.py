@@ -117,6 +117,7 @@ def simulate_battle(
     player_damage_total = 0
     enemy_damage_total = 0
     turns = 0
+    turn_logs = []
     for turn in range(1, int(max_turns) + 1):
         turns = turn
         player_first = player_spd >= enemy_spd
@@ -134,6 +135,16 @@ def simulate_battle(
             )
             enemy_hp = max(0, enemy_hp - player_damage)
             player_damage_total += player_damage
+            turn_logs.append(
+                {
+                    "turn": turn,
+                    "actor": "player",
+                    "target": "enemy",
+                    "damage": int(player_damage),
+                    "target_hp_after": int(enemy_hp),
+                    "first_actor": "player",
+                }
+            )
             if enemy_hp > 0:
                 enemy_damage, _ = resolve_attack(
                     enemy_atk,
@@ -148,6 +159,16 @@ def simulate_battle(
                 )
                 player_hp = max(0, player_hp - enemy_damage)
                 enemy_damage_total += enemy_damage
+                turn_logs.append(
+                    {
+                        "turn": turn,
+                        "actor": "enemy",
+                        "target": "player",
+                        "damage": int(enemy_damage),
+                        "target_hp_after": int(player_hp),
+                        "first_actor": "player",
+                    }
+                )
         else:
             enemy_damage, _ = resolve_attack(
                 enemy_atk,
@@ -162,6 +183,16 @@ def simulate_battle(
             )
             player_hp = max(0, player_hp - enemy_damage)
             enemy_damage_total += enemy_damage
+            turn_logs.append(
+                {
+                    "turn": turn,
+                    "actor": "enemy",
+                    "target": "player",
+                    "damage": int(enemy_damage),
+                    "target_hp_after": int(player_hp),
+                    "first_actor": "enemy",
+                }
+            )
             if player_hp > 0:
                 player_damage, _ = resolve_attack(
                     player_atk,
@@ -176,6 +207,16 @@ def simulate_battle(
                 )
                 enemy_hp = max(0, enemy_hp - player_damage)
                 player_damage_total += player_damage
+                turn_logs.append(
+                    {
+                        "turn": turn,
+                        "actor": "player",
+                        "target": "enemy",
+                        "damage": int(player_damage),
+                        "target_hp_after": int(enemy_hp),
+                        "first_actor": "enemy",
+                    }
+                )
 
         if enemy_hp == 0 or player_hp == 0:
             break
@@ -189,4 +230,6 @@ def simulate_battle(
         "enemy_damage_total": enemy_damage_total,
         "player_final_hp": player_hp,
         "enemy_final_hp": enemy_hp,
+        "turn_logs": turn_logs,
+        "first_actor": "player" if player_spd >= enemy_spd else "enemy",
     }

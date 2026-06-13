@@ -28496,6 +28496,21 @@ def _tower_battle_log_lines(battle, robot_name):
     taken = int(source.get("enemy_damage_total") or 0)
     enemy_name = str(source.get("enemy_name") or battle["enemy_name"] or "観測敵")
     result = str(source.get("result") or battle["battle_result"] or "")
+    turn_events = [item for item in (source.get("battle_turn_logs") or []) if isinstance(item, dict)]
+    if turn_events:
+        lines = []
+        for item in turn_events:
+            turn = max(1, int(item.get("turn") or 1))
+            damage = max(0, int(item.get("damage") or 0))
+            if str(item.get("actor") or "") == "enemy":
+                lines.append(f"{turn}T: {enemy_name} の攻撃。{robot_name} に合計 {damage} ダメージ。")
+            else:
+                lines.append(f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage} ダメージ。")
+                if int(item.get("target_hp_after") or 0) <= 0:
+                    lines.append("撃破成功。")
+                    return lines
+        lines.append("撃破成功。" if result == "win" else "撤退判断。")
+        return lines
     lines = [
         f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。",
     ]

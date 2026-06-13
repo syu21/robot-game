@@ -8,6 +8,7 @@ from unittest.mock import patch
 import app as game_app
 import init_db
 import services.tower as tower_service
+from services.simulate_balance import simulate_battle
 
 
 class TowerRouteTests(unittest.TestCase):
@@ -619,6 +620,53 @@ class TowerRouteTests(unittest.TestCase):
             source = fh.read()
         self.assertNotIn("tower-spire-card", source)
         self.assertNotIn("tower-combatants", source)
+
+    def test_tower_turn_log_does_not_show_counter_after_killing_hit(self):
+        payload = {
+            "enemy_name": "アイアンポーン",
+            "result": "win",
+            "turns": 1,
+            "player_damage_total": 47,
+            "enemy_damage_total": 1,
+            "battle_turn_logs": [
+                {
+                    "turn": 1,
+                    "actor": "player",
+                    "target": "enemy",
+                    "damage": 47,
+                    "target_hp_after": 0,
+                    "first_actor": "player",
+                }
+            ],
+        }
+        lines = game_app._tower_battle_log_lines(
+            {
+                "turn_logs_json": json.dumps([payload], ensure_ascii=False),
+                "turn_count": 1,
+                "enemy_name": "アイアンポーン",
+                "battle_result": "win",
+            },
+            "Starter Unit",
+        )
+        text = "\n".join(lines)
+        self.assertIn("Starter Unit の攻撃", text)
+        self.assertIn("撃破成功", text)
+        self.assertNotIn("アイアンポーン の攻撃", text)
+        self.assertNotIn("反撃", text)
+
+    def test_simulate_battle_uses_speed_for_first_actor_and_skips_dead_counter(self):
+        player = {"hp": 21, "atk": 80, "def": 20, "spd": 30, "acc": 99, "cri": 1}
+        enemy = {"hp": 33, "atk": 10, "def": 1, "spd": 5, "acc": 99, "cri": 1}
+        result = simulate_battle(player, enemy, seed=1, max_turns=100)
+        self.assertTrue(result["win"])
+        self.assertEqual(result["first_actor"], "player")
+        self.assertEqual(int(result["enemy_damage_total"]), 0)
+        self.assertEqual([row["actor"] for row in result["turn_logs"]], ["player"])
+
+        faster_enemy = {"hp": 33, "atk": 10, "def": 1, "spd": 50, "acc": 99, "cri": 1}
+        result = simulate_battle(player, faster_enemy, seed=1, max_turns=100)
+        self.assertEqual(result["first_actor"], "enemy")
+        self.assertEqual(result["turn_logs"][0]["actor"], "enemy")
 
 
 if __name__ == "__main__":

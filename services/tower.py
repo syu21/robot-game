@@ -559,6 +559,8 @@ def run_tower_battle(db, run_id, robot_instance_id, robot_stats_provider, *, now
             "enemy_final_hp": enemy_final_hp,
             "player_damage_total": player_damage_total,
             "enemy_damage_total": enemy_damage_total,
+            "battle_turn_logs": list(battle.get("turn_logs") or []),
+            "first_actor": str(battle.get("first_actor") or ""),
         }
     ]
     battle_cur = db.execute(
