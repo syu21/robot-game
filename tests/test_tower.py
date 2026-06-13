@@ -300,8 +300,10 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("次階 2F", html)
         self.assertIn("data-tower-battle-replay", html)
         self.assertIn("data-tower-log-line", html)
+        self.assertIn('data-tower-log-actor="player"', html)
         self.assertIn("data-tower-replay-actions", html)
         self.assertIn("static/tower.js", html)
+        self.assertIn("tower-replay-2", html)
         self.assertIn("ターン制限なし", html)
         self.assertLess(html.index("tower-floor-rail"), html.index("tower-combatants"))
         self.assertLess(html.index("tower-combatants"), html.index("tower-log-box"))
@@ -357,6 +359,7 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("data-tower-replay-projectile", html)
         self.assertIn("data-tower-hp-meter=\"player\"", html)
         self.assertIn("data-tower-hp-meter=\"enemy\"", html)
+        self.assertIn("data-tower-log-actor", html)
         self.assertLess(html.index("tower-floor-rail"), html.index("tower-combatants"))
         self.assertLess(html.index("tower-combatants"), html.index("tower-log-box"))
         self.assertLess(html.index("tower-combatants"), html.index("次階予告"))
@@ -627,6 +630,7 @@ class TowerRouteTests(unittest.TestCase):
             source = fh.read()
         self.assertIn('enemyName + " の攻撃"', source)
         self.assertIn('playerName + " の攻撃"', source)
+        self.assertIn("dataset.towerLogActor", source)
         self.assertIn("is-enemy-shot", source)
         self.assertIn("is-player-shot", source)
 
@@ -662,6 +666,17 @@ class TowerRouteTests(unittest.TestCase):
         self.assertIn("撃破成功", text)
         self.assertNotIn("アイアンポーン の攻撃", text)
         self.assertNotIn("反撃", text)
+        items = game_app._tower_battle_log_items(
+            {
+                "turn_logs_json": json.dumps([payload], ensure_ascii=False),
+                "turn_count": 1,
+                "enemy_name": "アイアンポーン",
+                "battle_result": "win",
+            },
+            "Starter Unit",
+        )
+        self.assertEqual(items[0]["actor"], "player")
+        self.assertEqual(items[-1]["actor"], "system")
 
     def test_simulate_battle_uses_speed_for_first_actor_and_skips_dead_counter(self):
         player = {"hp": 21, "atk": 80, "def": 20, "spd": 30, "acc": 99, "cri": 1}
@@ -676,6 +691,37 @@ class TowerRouteTests(unittest.TestCase):
         result = simulate_battle(player, faster_enemy, seed=1, max_turns=100)
         self.assertEqual(result["first_actor"], "enemy")
         self.assertEqual(result["turn_logs"][0]["actor"], "enemy")
+
+    def test_tower_turn_log_marks_enemy_first_kill_as_enemy_actor(self):
+        payload = {
+            "enemy_name": "焦牙機スコーチファング",
+            "result": "lose",
+            "turns": 1,
+            "player_damage_total": 0,
+            "enemy_damage_total": 65,
+            "battle_turn_logs": [
+                {
+                    "turn": 1,
+                    "actor": "enemy",
+                    "target": "player",
+                    "damage": 65,
+                    "target_hp_after": 0,
+                    "first_actor": "enemy",
+                }
+            ],
+        }
+        items = game_app._tower_battle_log_items(
+            {
+                "turn_logs_json": json.dumps([payload], ensure_ascii=False),
+                "turn_count": 1,
+                "enemy_name": "焦牙機スコーチファング",
+                "battle_result": "lose",
+            },
+            "クワサソリ",
+        )
+        self.assertEqual(items[0]["actor"], "enemy")
+        self.assertIn("焦牙機スコーチファング の攻撃", items[0]["text"])
+        self.assertNotIn("クワサソリ の攻撃", "\n".join(item["text"] for item in items))
 
 
 if __name__ == "__main__":

@@ -81,8 +81,8 @@
     <div class="tower-replay-projectile" data-tower-replay-projectile></div>
     <div class="tower-replay-caption" data-tower-replay-caption>交戦開始</div>
     <div class="tower-log-box">
-      {% for line in battle['log_lines'] %}
-      <div data-tower-log-line>{{ line }}</div>
+      {% for item in battle['log_items'] %}
+      <div data-tower-log-line data-tower-log-actor="{{ item['actor'] }}">{{ item['text'] }}</div>
       {% endfor %}
     </div>
     <div class="home-inline-actions" data-tower-replay-actions>
@@ -110,5 +110,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='tower.js') }}?v={{ app_version }}"></script>
+<script src="{{ url_for('static', filename='tower.js') }}?v={{ app_version }}-tower-replay-2"></script>
 {% endblock %}

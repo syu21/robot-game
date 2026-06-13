@@ -132,7 +132,14 @@
         if (finished) return;
         clearMotionClasses();
         var text = line ? line.textContent || "" : "";
-        var enemyTurn = isEnemyAttack(text);
+        var actor = line ? line.dataset.towerLogActor || "" : "";
+        var enemyTurn = actor === "enemy" || (!actor && isEnemyAttack(text));
+        var playerTurn = actor === "player" || (!actor && !enemyTurn);
+        if (!enemyTurn && !playerTurn) {
+          if (line) line.classList.add("is-visible");
+          setCaption(text || "交戦中");
+          return;
+        }
         var attacker = enemyTurn ? enemy : player;
         var defender = enemyTurn ? player : enemy;
         var shotClass = enemyTurn ? "is-enemy-shot" : "is-player-shot";

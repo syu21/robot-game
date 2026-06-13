@@ -28483,13 +28483,13 @@ def _tower_robot_image_url(row):
     return url_for("static", filename="assets/placeholder_player.png")
 
 
-def _tower_battle_log_lines(battle, robot_name):
+def _tower_battle_log_items(battle, robot_name):
     try:
         raw_logs = json.loads(battle["turn_logs_json"] or "[]")
     except (TypeError, ValueError, json.JSONDecodeError):
         raw_logs = []
     if not raw_logs:
-        return ["戦闘ログを取得できませんでした。"]
+        return [{"actor": "system", "text": "戦闘ログを取得できませんでした。"}]
     source = raw_logs[0] if isinstance(raw_logs[0], dict) else {}
     turns = max(1, int(source.get("turns") or battle["turn_count"] or 1))
     dealt = int(source.get("player_damage_total") or 0)
@@ -28498,30 +28498,32 @@ def _tower_battle_log_lines(battle, robot_name):
     result = str(source.get("result") or battle["battle_result"] or "")
     turn_events = [item for item in (source.get("battle_turn_logs") or []) if isinstance(item, dict)]
     if turn_events:
-        lines = []
+        items = []
         for item in turn_events:
             turn = max(1, int(item.get("turn") or 1))
             damage = max(0, int(item.get("damage") or 0))
             if str(item.get("actor") or "") == "enemy":
-                lines.append(f"{turn}T: {enemy_name} の攻撃。{robot_name} に合計 {damage} ダメージ。")
+                items.append({"actor": "enemy", "text": f"{turn}T: {enemy_name} の攻撃。{robot_name} に合計 {damage} ダメージ。"})
             else:
-                lines.append(f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage} ダメージ。")
+                items.append({"actor": "player", "text": f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage} ダメージ。"})
                 if int(item.get("target_hp_after") or 0) <= 0:
-                    lines.append("撃破成功。")
-                    return lines
-        lines.append("撃破成功。" if result == "win" else "撤退判断。")
-        return lines
-    lines = [
-        f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。",
-    ]
+                    items.append({"actor": "system", "text": "撃破成功。"})
+                    return items
+        items.append({"actor": "system", "text": "撃破成功。" if result == "win" else "撤退判断。"})
+        return items
+    items = [{"actor": "player", "text": f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。"}]
     if taken > 0:
-        lines.append(f"{enemy_name} の反撃。{robot_name} に合計 {taken} ダメージ。")
+        items.append({"actor": "enemy", "text": f"{enemy_name} の反撃。{robot_name} に合計 {taken} ダメージ。"})
     else:
-        lines.append(f"{enemy_name} の反撃を受けずに押し切った。")
+        items.append({"actor": "system", "text": f"{enemy_name} の反撃を受けずに押し切った。"})
     if turns > 1:
-        lines.append(f"{turns}T: 戦闘決着。")
-    lines.append("撃破成功。" if result == "win" else "撤退判断。")
-    return lines
+        items.append({"actor": "system", "text": f"{turns}T: 戦闘決着。"})
+    items.append({"actor": "system", "text": "撃破成功。" if result == "win" else "撤退判断。"})
+    return items
+
+
+def _tower_battle_log_lines(battle, robot_name):
+    return [item["text"] for item in _tower_battle_log_items(battle, robot_name)]
 
 
 def _tower_battle_hp_state(battle, robot_stats):
@@ -28662,6 +28664,7 @@ def _tower_battle_detail_view(db, battle):
             enemy["image_path"] if enemy else None,
             fallback_url=url_for("static", filename="assets/placeholder_enemy.png"),
         ),
+        "log_items": _tower_battle_log_items(battle, robot_name),
         "log_lines": _tower_battle_log_lines(battle, robot_name),
         "hp": hp_state,
         "robot_hp_start": hp_state["player_start"],
