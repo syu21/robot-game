@@ -128,8 +128,16 @@
   - `layer_5_pinnacle`: 攻撃・会心・速攻寄り
   - `layer_5_final`: 最終試験（思想完成）
 - 第1層固定ボス初突破:
-  - 既存ボスDECOR `boss_emblem_aurix` に加え、初突破DECOR `layer1_clear_emblem_001` とコイン `+100`
+  - 初回撃破時だけ `第1層突破ボーナス` としてコイン `+100`
+  - 既存ボスDECOR `boss_emblem_aurix` に加え、初突破DECOR `layer1_clear_emblem_001` を付与
   - 二重付与は `layer1_first_clear_reward_claimed` で防止
+- 第1層固定ボス未撃破ユーザー:
+  - `layer_1` の固定ボス遭遇率は `5.0%`
+  - 第1層固定ボスの戦闘時実効値は `HP x0.8 / ATK x0.8 / DEF x0.8 / ACC x0.9`
+  - 第1層固定ボスに敗北すると `tutorial_layer1_boss_help_ready=1`
+  - 次回の第1層固定ボス戦でプレイヤー側に `HP x1.2 / ATK x1.2 / ACC x1.1`
+  - 救済補正は勝利時に解除、敗北時は維持
+  - 第2層以降の通常敵・ボス・層進行・報酬には適用しない
 
 ## 7. 戦利品表示（battle結果）
 - 前面は最小表示:

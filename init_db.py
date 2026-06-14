@@ -765,6 +765,7 @@ def main():
             tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_boss_seen_at INTEGER,
             tutorial_layer1_boss_fail_count INTEGER NOT NULL DEFAULT 0,
+            tutorial_layer1_boss_help_ready INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_fuse_after_boss_fail_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0,
@@ -2314,6 +2315,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_seen_at INTEGER")
     if "tutorial_layer1_boss_fail_count" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_fail_count INTEGER NOT NULL DEFAULT 0")
+    if "tutorial_layer1_boss_help_ready" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_boss_help_ready INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_forced_boss_ready" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_forced_boss_ready INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_fuse_after_boss_fail_count" not in users_cols:
@@ -2464,6 +2467,7 @@ def main():
     cur.execute("UPDATE users SET tutorial_layer1_state = 'cleared_layer1' WHERE max_unlocked_layer >= 2")
     cur.execute("UPDATE users SET tutorial_layer1_normal_win_count = 0 WHERE tutorial_layer1_normal_win_count IS NULL OR tutorial_layer1_normal_win_count < 0")
     cur.execute("UPDATE users SET tutorial_layer1_boss_fail_count = 0 WHERE tutorial_layer1_boss_fail_count IS NULL OR tutorial_layer1_boss_fail_count < 0")
+    cur.execute("UPDATE users SET tutorial_layer1_boss_help_ready = 0 WHERE tutorial_layer1_boss_help_ready IS NULL")
     cur.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 0 WHERE tutorial_layer1_forced_boss_ready IS NULL")
     cur.execute("UPDATE users SET tutorial_layer1_fuse_after_boss_fail_count = 0 WHERE tutorial_layer1_fuse_after_boss_fail_count IS NULL OR tutorial_layer1_fuse_after_boss_fail_count < 0")
     cur.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")

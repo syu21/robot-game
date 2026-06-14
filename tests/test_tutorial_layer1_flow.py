@@ -107,6 +107,10 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         client = self._client()
         with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
             game_app, "_enforce_explore_cooldown_or_wait", return_value=0
+        ), patch.object(
+            game_app,
+            "_area_boss_spawn_check",
+            return_value={"spawn": False, "probability": 0.05, "pity_forced": False, "streak_before": 0},
         ), patch.object(game_app, "resolve_attack", side_effect=resolver):
             return client.post("/explore", data={"area_key": "layer_1"})
 
@@ -117,7 +121,8 @@ class TutorialLayer1FlowTests(unittest.TestCase):
                 """
                 SELECT tutorial_layer1_state, tutorial_layer1_normal_win_count,
                        tutorial_layer1_boss_seen_at, tutorial_layer1_boss_fail_count,
-                       tutorial_layer1_forced_boss_ready, tutorial_layer1_fuse_after_boss_fail_count,
+                       tutorial_layer1_boss_help_ready, tutorial_layer1_forced_boss_ready,
+                       tutorial_layer1_fuse_after_boss_fail_count,
                        max_unlocked_layer, coins, layer1_first_clear_reward_claimed,
                        layer1_first_clear_home_seen
                 FROM users
@@ -150,6 +155,13 @@ class TutorialLayer1FlowTests(unittest.TestCase):
                 payload={"area_key": "layer_1", "boss_kind": "fixed", "enemy_key": game_app.LAYER_BOSS_KEY_BY_LAYER[1]},
             )
             db.commit()
+
+    class FixedRandom:
+        def __init__(self, value):
+            self.value = float(value)
+
+        def random(self):
+            return self.value
 
     def _insert_strengthen_materials(self):
         with game_app.app.app_context():
@@ -191,14 +203,18 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         boss = self._explore(self._resolve_player_loss)
         self.assertEqual(boss.status_code, 200)
         html = boss.get_data(as_text=True)
-        self.assertIn("第1層ボスに敗北しました", html)
-        self.assertIn("パーツを強化する", html)
-        self.assertIn("ロボを組み立てる", html)
+        self.assertIn("あと少しで突破できそうです", html)
+        self.assertIn("パーツを強化したり、もう一度出撃すると第1層ボスを倒しやすくなります。", html)
+        self.assertIn("パーツ強化へ", html)
+        self.assertIn("ロボ編成へ", html)
+        self.assertIn("基地へ戻る", html)
         self.assertIn("もう一度出撃", html)
+        self.assertIn("ボスの動きを記録しました。次は少し有利に戦えそうです。", html)
         row = self._user_tutorial_row()
         self.assertEqual(row["tutorial_layer1_state"], game_app.TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE)
         self.assertGreater(int(row["tutorial_layer1_boss_seen_at"] or 0), 0)
         self.assertEqual(int(row["tutorial_layer1_boss_fail_count"]), 1)
+        self.assertEqual(int(row["tutorial_layer1_boss_help_ready"]), 1)
         self.assertEqual(int(row["tutorial_layer1_forced_boss_ready"]), 0)
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -213,14 +229,21 @@ class TutorialLayer1FlowTests(unittest.TestCase):
                 (self.user_id, game_app.AUDIT_EVENT_TYPES["NEWBIE_PROTECTION_BATTLE_ASSIST"]),
             ).fetchone()["payload_json"])
             self.assertEqual(payload["hp_multiplier"], 0.8)
-            self.assertEqual(payload["atk_multiplier"], 0.9)
-            self.assertEqual(payload["player_damage_multiplier"], 1.1)
+            self.assertEqual(payload["atk_multiplier"], 0.8)
+            self.assertEqual(payload["def_multiplier"], 0.8)
+            self.assertEqual(payload["acc_multiplier"], 0.9)
+            self.assertIsNone(payload["player_hp_multiplier"])
+            help_set = db.execute(
+                "SELECT 1 FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["TUTORIAL_LAYER1_BOSS_HELP_SET"]),
+            ).fetchone()
+            self.assertIsNotNone(help_set)
 
         home = self._client().get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("まずは出撃してパーツを集めましょう", home_html)
-        self.assertIn("同じ名前・同じレアリティのパーツが3個そろうと強化できます", home_html)
+        self.assertIn("第1層ボスに再挑戦しよう", home_html)
+        self.assertIn("前回の戦闘記録により、次は少し有利に戦えます。", home_html)
 
     def test_fuse_after_boss_fail_guarantees_retry_and_clear(self):
         self._explore(self._resolve_player_win)
@@ -246,6 +269,7 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         row = self._user_tutorial_row()
         self.assertEqual(row["tutorial_layer1_state"], game_app.TUTORIAL_LAYER1_STATE_CLEARED)
         self.assertEqual(int(row["max_unlocked_layer"]), 2)
+        self.assertEqual(int(row["tutorial_layer1_boss_help_ready"]), 0)
         self.assertEqual(int(row["layer1_first_clear_reward_claimed"]), 1)
         self.assertGreaterEqual(int(row["coins"]), 1100)
         with game_app.app.app_context():
@@ -263,6 +287,18 @@ class TutorialLayer1FlowTests(unittest.TestCase):
             duplicate = game_app._grant_layer1_first_clear_reward(db, self.user_id)
             self.assertFalse(duplicate["reward_granted"])
             self.assertEqual(duplicate["duplicate_skip_reason"], "already_claimed")
+            consume = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["TUTORIAL_LAYER1_BOSS_HELP_CONSUME"]),
+            ).fetchone()
+            self.assertIsNotNone(consume)
+            self.assertEqual(json.loads(consume["payload_json"])["result"], "win")
+            bonus = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["TUTORIAL_LAYER1_BOSS_BONUS_GRANT"]),
+            ).fetchone()
+            self.assertIsNotNone(bonus)
+            self.assertEqual(json.loads(bonus["payload_json"])["coins"], 100)
             db.commit()
 
         home = self._client().get("/home")
@@ -294,6 +330,67 @@ class TutorialLayer1FlowTests(unittest.TestCase):
             db = game_app.get_db()
             defeated_user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertFalse(game_app.is_layer1_protection_active(db, defeated_user))
+
+    def test_layer1_uncleared_boss_spawn_rate_is_five_percent_only_for_layer1(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            roll = game_app._area_boss_spawn_check(
+                db,
+                self.user_id,
+                "layer_1",
+                rng=self.FixedRandom(0.049),
+            )
+            self.assertTrue(roll["spawn"])
+            self.assertEqual(roll["probability"], 0.05)
+
+            game_app.audit_log(
+                db,
+                game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                user_id=self.user_id,
+                action_key="explore",
+                payload={"area_key": "layer_1", "boss_kind": "fixed", "enemy_key": game_app.LAYER_BOSS_KEY_BY_LAYER[1]},
+            )
+            db.commit()
+            cleared_roll = game_app._area_boss_spawn_check(
+                db,
+                self.user_id,
+                "layer_1",
+                rng=self.FixedRandom(0.01),
+            )
+            self.assertFalse(cleared_roll["spawn"])
+            self.assertEqual(cleared_roll["probability"], game_app.AREA_BOSS_SPAWN_RATES["layer_1"])
+
+            db.execute("UPDATE users SET max_unlocked_layer = 2 WHERE id = ?", (self.user_id,))
+            db.commit()
+            layer2_roll = game_app._area_boss_spawn_check(
+                db,
+                self.user_id,
+                "layer_2",
+                rng=self.FixedRandom(0.01),
+            )
+            self.assertFalse(layer2_roll["spawn"])
+            self.assertEqual(layer2_roll["probability"], game_app.AREA_BOSS_SPAWN_RATES["layer_2"])
+
+    def test_layer1_help_losing_retry_keeps_flag(self):
+        self._explore(self._resolve_player_win)
+        self._explore(self._resolve_player_loss)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET tutorial_layer1_forced_boss_ready = 1 WHERE id = ?", (self.user_id,))
+            db.commit()
+
+        retry = self._explore(self._resolve_player_loss)
+        self.assertEqual(retry.status_code, 200)
+        row = self._user_tutorial_row()
+        self.assertEqual(int(row["tutorial_layer1_boss_help_ready"]), 1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            consume = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["TUTORIAL_LAYER1_BOSS_HELP_CONSUME"]),
+            ).fetchone()
+            self.assertIsNotNone(consume)
+            self.assertEqual(json.loads(consume["payload_json"])["result"], "lose")
 
     def test_layer1_tenth_explore_guarantees_alert_not_immediate_battle(self):
         self._insert_layer1_explore_end_events(9)

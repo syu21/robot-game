@@ -38,6 +38,9 @@
 - `audit.newbie_protection.battle_assist`
 - `audit.layer1.first_clear`
 - `audit.layer1.first_clear.reward`
+- `audit.tutorial.layer1_boss_help.set`
+- `audit.tutorial.layer1_boss_help.consume`
+- `audit.tutorial.layer1_boss_bonus.grant`
 
 ### 4.2 経済/在庫
 - `audit.coin.delta`
@@ -186,7 +189,11 @@
   - `protection_applied`
   - `hp_multiplier`
   - `atk_multiplier`
-  - `player_damage_multiplier`
+  - `def_multiplier`
+  - `acc_multiplier`
+  - `player_hp_multiplier`
+  - `player_atk_multiplier`
+  - `player_acc_multiplier`
   - `alert_guaranteed`
   - `reward_granted`
   - `duplicate_skip_reason`
