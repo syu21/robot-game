@@ -523,10 +523,10 @@ class TowerRouteTests(unittest.TestCase):
                     (self.admin_user_id,),
                 ).fetchall()
             ]
-            self.assertIn("TOWER_BEST_FLOOR", events)
-            self.assertIn("TOWER_MILESTONE", events)
-            self.assertIn("TOWER_WEEKLY_LEADER", events)
-            self.assertIn("TOWER_ALL_TIME_LEADER", events)
+            self.assertIn("TOWER_PERSONAL_BEST", events)
+            self.assertIn("TOWER_MILESTONE_REACHED", events)
+            self.assertIn("TOWER_WEEKLY_TOP", events)
+            self.assertIn("TOWER_ALL_TIME_RECORD", events)
             self.assertIn("audit.tower.record.update", events)
             self.assertIn("audit.tower.reward.grant", events)
             reward = db.execute(
@@ -534,6 +534,159 @@ class TowerRouteTests(unittest.TestCase):
                 (self.admin_user_id,),
             ).fetchone()
             self.assertEqual(reward["reward_key"], "tower_floor_10")
+
+    def test_tower_world_log_events_use_public_conditions_and_dedupe(self):
+        now = "2026-06-08T00:00:00+00:00"
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO user_tower_records
+                (user_id, best_floor, best_run_id, best_recorded_at, weekly_key, weekly_best_floor, weekly_best_run_id,
+                 weekly_best_recorded_at, created_at, updated_at)
+                VALUES (?, 7, 999, ?, ?, 7, 999, ?, ?, ?)
+                """,
+                (self.user_id, now, tower_service.current_week_key(), now, now, now),
+            )
+            db.commit()
+
+            result = tower_service.update_tower_record_if_needed(
+                db,
+                self.admin_user_id,
+                101,
+                4,
+                self.robot_ids,
+                "stable_week",
+                now,
+                robot_instance_id=self.robot_ids[0],
+            )
+            self.assertTrue(result["best_updated"])
+            self.assertIsNone(
+                db.execute(
+                    "SELECT id FROM world_events_log WHERE event_type = 'TOWER_PERSONAL_BEST' AND user_id = ?",
+                    (self.admin_user_id,),
+                ).fetchone()
+            )
+
+            tower_service.update_tower_record_if_needed(
+                db,
+                self.admin_user_id,
+                101,
+                5,
+                self.robot_ids,
+                "stable_week",
+                now,
+                robot_instance_id=self.robot_ids[0],
+            )
+            tower_service.update_tower_record_if_needed(
+                db,
+                self.admin_user_id,
+                101,
+                5,
+                self.robot_ids,
+                "stable_week",
+                now,
+                robot_instance_id=self.robot_ids[0],
+            )
+            milestone_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = 'TOWER_MILESTONE_REACHED' AND user_id = ? AND CAST(json_extract(payload_json, '$.floor') AS INTEGER) = 5",
+                    (self.admin_user_id,),
+                ).fetchone()["c"]
+                or 0
+            )
+            self.assertEqual(milestone_count, 1)
+            personal_payload = json.loads(
+                db.execute(
+                    "SELECT payload_json FROM world_events_log WHERE event_type = 'TOWER_PERSONAL_BEST' AND user_id = ? ORDER BY id DESC LIMIT 1",
+                    (self.admin_user_id,),
+                ).fetchone()["payload_json"]
+            )
+            self.assertEqual(personal_payload["floor"], 5)
+            self.assertEqual(personal_payload["tower_run_id"], 101)
+            self.assertEqual(personal_payload["robot_instance_id"], self.robot_ids[0])
+            self.assertEqual(personal_payload["robot_name"], "TowerBot1")
+            self.assertEqual(personal_payload["previous_weekly_top_floor"], 7)
+            self.assertEqual(personal_payload["previous_all_time_record_floor"], 7)
+
+            tower_service.update_tower_record_if_needed(
+                db,
+                self.admin_user_id,
+                102,
+                7,
+                self.robot_ids,
+                "stable_week",
+                now,
+                robot_instance_id=self.robot_ids[1],
+            )
+            self.assertIsNone(
+                db.execute(
+                    "SELECT id FROM world_events_log WHERE event_type = 'TOWER_WEEKLY_TOP' AND user_id = ?",
+                    (self.admin_user_id,),
+                ).fetchone()
+            )
+
+            tower_service.update_tower_record_if_needed(
+                db,
+                self.admin_user_id,
+                103,
+                8,
+                self.robot_ids,
+                "stable_week",
+                now,
+                robot_instance_id=self.robot_ids[1],
+            )
+            self.assertIsNotNone(
+                db.execute(
+                    "SELECT id FROM world_events_log WHERE event_type = 'TOWER_WEEKLY_TOP' AND user_id = ?",
+                    (self.admin_user_id,),
+                ).fetchone()
+            )
+            self.assertIsNotNone(
+                db.execute(
+                    "SELECT id FROM world_events_log WHERE event_type = 'TOWER_ALL_TIME_RECORD' AND user_id = ?",
+                    (self.admin_user_id,),
+                ).fetchone()
+            )
+            db.commit()
+
+    def test_comms_world_shows_tower_world_log(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute("UPDATE release_flags SET is_public = 1, updated_at = ? WHERE key = 'tower'", (now,))
+            db.execute(
+                """
+                INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                VALUES (?, 'TOWER_MILESTONE_REACHED', ?, ?)
+                """,
+                (
+                    now,
+                    json.dumps(
+                        {
+                            "user_id": self.user_id,
+                            "username": "tower_user",
+                            "display_name": "tower_user",
+                            "robot_instance_id": self.user_robot_ids[0],
+                            "robot_name": "UserTowerBot1",
+                            "floor": 5,
+                            "previous_best_floor": 4,
+                            "previous_weekly_top_floor": 4,
+                            "previous_all_time_record_floor": 4,
+                            "event_label": "観測塔節目到達",
+                            "tower_run_id": 200,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    self.user_id,
+                ),
+            )
+            db.commit()
+        html = self._client(self.user_id, "tower_user").get("/comms/world").get_data(as_text=True)
+        self.assertIn("UserTowerBot1 が観測塔 5階に到達しました。", html)
+        self.assertIn("SYSTEM LOG", html)
+        feed_html = self._client(self.user_id, "tower_user").get("/feed").get_data(as_text=True)
+        self.assertIn("UserTowerBot1 が観測塔 5階に到達しました。", feed_html)
 
     def test_failed_run_stores_reached_floor(self):
         run_id = self._start_run()

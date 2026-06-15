@@ -13,10 +13,17 @@ TOWER_RUN_MAX_FLOOR = 10
 TOWER_BATTLE_MAX_TURNS = 100
 TOWER_BOSS_FLOOR_INTERVAL = 10
 TOWER_LOW_PLUS_LIMIT = 15
-TOWER_WORLD_BEST_EVENT = "TOWER_BEST_FLOOR"
-TOWER_WORLD_MILESTONE_EVENT = "TOWER_MILESTONE"
-TOWER_WORLD_WEEKLY_LEADER_EVENT = "TOWER_WEEKLY_LEADER"
-TOWER_WORLD_ALL_TIME_LEADER_EVENT = "TOWER_ALL_TIME_LEADER"
+TOWER_PERSONAL_BEST_MIN_PUBLIC_FLOOR = 5
+TOWER_WORLD_PERSONAL_BEST_EVENT = "TOWER_PERSONAL_BEST"
+TOWER_WORLD_MILESTONE_EVENT = "TOWER_MILESTONE_REACHED"
+TOWER_WORLD_WEEKLY_TOP_EVENT = "TOWER_WEEKLY_TOP"
+TOWER_WORLD_ALL_TIME_RECORD_EVENT = "TOWER_ALL_TIME_RECORD"
+TOWER_WORLD_EVENT_LABELS = {
+    TOWER_WORLD_MILESTONE_EVENT: "観測塔節目到達",
+    TOWER_WORLD_PERSONAL_BEST_EVENT: "観測塔自己記録更新",
+    TOWER_WORLD_WEEKLY_TOP_EVENT: "観測塔週間トップ更新",
+    TOWER_WORLD_ALL_TIME_RECORD_EVENT: "観測塔最高到達記録更新",
+}
 
 TOWER_ENVIRONMENTS = (
     {
@@ -617,7 +624,16 @@ def run_tower_battle(db, run_id, robot_instance_id, robot_stats_provider, *, now
         """,
         (next_floor, reached_floor, status, ended_at, json.dumps(summary, ensure_ascii=False), now, int(run_id)),
     )
-    record_result = update_tower_record_if_needed(db, int(run["user_id"]), int(run_id), reached_floor, _run_robot_ids(run), run["environment_key"], now)
+    record_result = update_tower_record_if_needed(
+        db,
+        int(run["user_id"]),
+        int(run_id),
+        reached_floor,
+        _run_robot_ids(run),
+        run["environment_key"],
+        now,
+        robot_instance_id=robot_id,
+    )
     reward_result = grant_tower_rewards_if_needed(db, int(run["user_id"]), int(run_id), reached_floor, now)
     audit_event = "TOWER_BATTLE"
     if status == "completed":
@@ -744,7 +760,57 @@ def abandon_tower_run(db, run_id, user_id, *, now_text=None):
     return {"ok": True, "run_id": int(run_id)}
 
 
+def _tower_milestone_floor(floor):
+    floor_num = int(floor or 0)
+    if floor_num == 5:
+        return True
+    return floor_num >= 10 and floor_num % 10 == 0
+
+
+def _tower_user_payload(db, user_id):
+    row = db.execute("SELECT username, display_name FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
+    if not row:
+        return {"username": f"User#{int(user_id)}", "display_name": f"User#{int(user_id)}"}
+    username = str(row["username"] or "").strip() or f"User#{int(user_id)}"
+    display_name = str(row["display_name"] or "").strip() or username
+    return {"username": username, "display_name": display_name}
+
+
+def _tower_robot_payload(db, robot_instance_id):
+    rid = int(robot_instance_id or 0)
+    if rid <= 0:
+        return {"robot_instance_id": None, "robot_name": ""}
+    row = db.execute("SELECT name FROM robot_instances WHERE id = ? LIMIT 1", (rid,)).fetchone()
+    return {"robot_instance_id": rid, "robot_name": (str(row["name"] or "").strip() if row else "") or f"ロボ#{rid}"}
+
+
+def _tower_world_event_exists(db, event_type, user_id, floor, tower_run_id=None):
+    params = [str(event_type), int(user_id), int(floor)]
+    where = [
+        "event_type = ?",
+        "user_id = ?",
+        "CAST(COALESCE(json_extract(payload_json, '$.floor'), json_extract(payload_json, '$.reached_floor'), 0) AS INTEGER) = ?",
+    ]
+    if tower_run_id is not None:
+        where.append("CAST(COALESCE(json_extract(payload_json, '$.tower_run_id'), json_extract(payload_json, '$.run_id'), 0) AS INTEGER) = ?")
+        params.append(int(tower_run_id))
+    row = db.execute(
+        f"""
+        SELECT id
+        FROM world_events_log
+        WHERE {' AND '.join(where)}
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return bool(row)
+
+
 def _insert_world_tower_event(db, event_type, user_id, payload):
+    floor = int((payload or {}).get("floor") or (payload or {}).get("reached_floor") or 0)
+    tower_run_id = (payload or {}).get("tower_run_id") or (payload or {}).get("run_id")
+    if _tower_world_event_exists(db, event_type, user_id, floor, tower_run_id):
+        return False
     db.execute(
         """
         INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key, entity_type, entity_id)
@@ -756,12 +822,13 @@ def _insert_world_tower_event(db, event_type, user_id, payload):
             json.dumps(payload or {}, ensure_ascii=False),
             int(user_id),
             "tower",
-            payload.get("run_id") if isinstance(payload, dict) else None,
+            payload.get("tower_run_id") or payload.get("run_id") if isinstance(payload, dict) else None,
         ),
     )
+    return True
 
 
-def update_tower_record_if_needed(db, user_id, run_id, reached_floor, squad_robot_ids, environment_key, now_text):
+def update_tower_record_if_needed(db, user_id, run_id, reached_floor, squad_robot_ids, environment_key, now_text, *, robot_instance_id=None):
     week_key = current_week_key()
     existing = db.execute("SELECT * FROM user_tower_records WHERE user_id = ?", (int(user_id),)).fetchone()
     previous_best = int(existing["best_floor"] or 0) if existing else 0
@@ -769,17 +836,16 @@ def update_tower_record_if_needed(db, user_id, run_id, reached_floor, squad_robo
     previous_weekly = int(existing["weekly_best_floor"] or 0) if existing and existing_week == week_key else 0
     best_updated = int(reached_floor) > previous_best
     weekly_updated = int(reached_floor) > previous_weekly
-    all_time_leader_before = int(
+    previous_all_time_record = int(
         db.execute(
-            "SELECT COALESCE(MAX(best_floor), 0) AS floor FROM user_tower_records WHERE user_id != ?",
-            (int(user_id),),
+            "SELECT COALESCE(MAX(best_floor), 0) AS floor FROM user_tower_records",
         ).fetchone()["floor"]
         or 0
     )
-    weekly_leader_before = int(
+    previous_weekly_top = int(
         db.execute(
-            "SELECT COALESCE(MAX(weekly_best_floor), 0) AS floor FROM user_tower_records WHERE weekly_key = ? AND user_id != ?",
-            (week_key, int(user_id)),
+            "SELECT COALESCE(MAX(weekly_best_floor), 0) AS floor FROM user_tower_records WHERE weekly_key = ?",
+            (week_key,),
         ).fetchone()["floor"]
         or 0
     )
@@ -839,29 +905,46 @@ def update_tower_record_if_needed(db, user_id, run_id, reached_floor, squad_robo
                 int(user_id),
             ),
         )
-    payload = {
+    selected_robot_id = int(robot_instance_id or squad_robot_ids[0])
+    user_payload = _tower_user_payload(db, int(user_id))
+    robot_payload = _tower_robot_payload(db, selected_robot_id)
+    base_payload = {
         "user_id": int(user_id),
+        "username": user_payload["username"],
+        "display_name": user_payload["display_name"],
         "run_id": int(run_id),
+        "tower_run_id": int(run_id),
         "reached_floor": int(reached_floor),
+        "floor": int(reached_floor),
         "previous_best_floor": int(previous_best),
+        "previous_weekly_top_floor": int(previous_weekly_top),
+        "previous_all_time_record_floor": int(previous_all_time_record),
+        "robot_instance_id": robot_payload["robot_instance_id"],
+        "robot_name": robot_payload["robot_name"],
         "weekly_key": week_key,
         "environment_key": environment_key,
         "environment_display_name": TOWER_ENVIRONMENT_BY_KEY.get(str(environment_key or ""), TOWER_ENVIRONMENTS[0])["display_name"],
         "squad_robot_ids": [int(x) for x in squad_robot_ids],
     }
-    if best_updated:
-        _insert_world_tower_event(db, TOWER_WORLD_BEST_EVENT, int(user_id), payload)
-    if int(reached_floor) > 0 and int(reached_floor) % TOWER_BOSS_FLOOR_INTERVAL == 0:
+    if _tower_milestone_floor(reached_floor):
+        payload = dict(base_payload, event_label=TOWER_WORLD_EVENT_LABELS[TOWER_WORLD_MILESTONE_EVENT])
         _insert_world_tower_event(db, TOWER_WORLD_MILESTONE_EVENT, int(user_id), payload)
-    if weekly_updated and int(reached_floor) > weekly_leader_before:
-        _insert_world_tower_event(db, TOWER_WORLD_WEEKLY_LEADER_EVENT, int(user_id), payload)
-    if best_updated and int(reached_floor) > all_time_leader_before:
-        _insert_world_tower_event(db, TOWER_WORLD_ALL_TIME_LEADER_EVENT, int(user_id), payload)
+    if best_updated and int(reached_floor) >= TOWER_PERSONAL_BEST_MIN_PUBLIC_FLOOR:
+        payload = dict(base_payload, event_label=TOWER_WORLD_EVENT_LABELS[TOWER_WORLD_PERSONAL_BEST_EVENT])
+        _insert_world_tower_event(db, TOWER_WORLD_PERSONAL_BEST_EVENT, int(user_id), payload)
+    if weekly_updated and int(reached_floor) > previous_weekly_top:
+        payload = dict(base_payload, event_label=TOWER_WORLD_EVENT_LABELS[TOWER_WORLD_WEEKLY_TOP_EVENT])
+        _insert_world_tower_event(db, TOWER_WORLD_WEEKLY_TOP_EVENT, int(user_id), payload)
+    if best_updated and int(reached_floor) > previous_all_time_record:
+        payload = dict(base_payload, event_label=TOWER_WORLD_EVENT_LABELS[TOWER_WORLD_ALL_TIME_RECORD_EVENT])
+        _insert_world_tower_event(db, TOWER_WORLD_ALL_TIME_RECORD_EVENT, int(user_id), payload)
     return {
         "best_updated": bool(best_updated),
         "weekly_updated": bool(weekly_updated),
         "previous_best_floor": int(previous_best),
         "previous_weekly_best_floor": int(previous_weekly),
+        "previous_weekly_top_floor": int(previous_weekly_top),
+        "previous_all_time_record_floor": int(previous_all_time_record),
         "weekly_key": week_key,
     }
 

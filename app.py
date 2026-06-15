@@ -22447,6 +22447,14 @@ def _recent_drop_items(db, user_id, limit=5):
     return items
 
 
+TOWER_WORLD_EVENT_TYPES = {
+    "TOWER_MILESTONE_REACHED",
+    "TOWER_PERSONAL_BEST",
+    "TOWER_WEEKLY_TOP",
+    "TOWER_ALL_TIME_RECORD",
+}
+
+
 FEED_EVENT_TYPES = {
     "boss": {"audit.boss.defeat"},
     "evolve": {"audit.part.evolve"},
@@ -22454,9 +22462,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", "TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", "TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"]}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -22471,10 +22479,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "CHAMP_DEFEAT_UPSET",
     "STYLE_RANK_UP",
     "STYLE_MASTER",
-    "TOWER_BEST_FLOOR",
-    "TOWER_MILESTONE",
-    "TOWER_WEEKLY_LEADER",
-    "TOWER_ALL_TIME_LEADER",
+    *TOWER_WORLD_EVENT_TYPES,
     AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"],
     *LAB_WORLD_EVENT_TYPES,
 }
@@ -22652,24 +22657,25 @@ def _feed_card_from_event(db, row):
         card["text"] = f"{actor_label}研究室が Lv.{level} に到達。{rank_label}として記録庫に登録されました。"
         card["meta_lines"] = [f"らぼLv.{level}", f"研究員ランク: {rank_label}"]
         card["link_url"] = url_for("world_view")
-    elif event_type in {"TOWER_BEST_FLOOR", "TOWER_MILESTONE", "TOWER_WEEKLY_LEADER", "TOWER_ALL_TIME_LEADER"}:
-        actor_label = card["user_label"]
-        floor = int(payload.get("reached_floor") or 0)
+    elif event_type in TOWER_WORLD_EVENT_TYPES:
+        actor_label = str(payload.get("display_name") or payload.get("username") or card["user_label"]).strip() or card["user_label"]
+        floor = int(payload.get("floor") or payload.get("reached_floor") or 0)
         previous = int(payload.get("previous_best_floor") or 0)
         env_name = str(payload.get("environment_display_name") or "").strip()
+        robot_name = str(payload.get("robot_name") or "ロボ").strip() or "ロボ"
         card["headline"] = "ASTRAL SPIRE"
         card["accent"] = "weekly"
-        if event_type == "TOWER_MILESTONE":
-            card["text"] = f"{actor_label}の3機が観測塔 -ASTRAL SPIRE- {floor}Fに到達"
-        elif event_type == "TOWER_WEEKLY_LEADER":
-            card["text"] = f"{actor_label}が今週の観測塔記録を更新"
-        elif event_type == "TOWER_ALL_TIME_LEADER":
-            card["text"] = f"{actor_label}が観測塔の歴代最高記録を更新"
+        if event_type == "TOWER_MILESTONE_REACHED":
+            card["text"] = f"{actor_label} の {robot_name} が観測塔 {floor}階に到達しました。"
+        elif event_type == "TOWER_WEEKLY_TOP":
+            card["text"] = f"{actor_label} が今週の観測塔トップに立ちました。到達階数: {floor}階"
+        elif event_type == "TOWER_ALL_TIME_RECORD":
+            card["text"] = f"{actor_label} が観測塔の最高到達記録を更新しました。到達階数: {floor}階"
         else:
-            card["text"] = f"{actor_label}が自己最高を {floor}F に更新"
-        card["meta_lines"] = [f"最高到達: {floor}F"]
-        if previous > 0 and event_type == "TOWER_BEST_FLOOR":
-            card["meta_lines"].append(f"前回の自己最高: {previous}F")
+            card["text"] = f"{actor_label} が観測塔の自己記録を更新しました。到達階数: {floor}階"
+        card["meta_lines"] = [f"最高到達: {floor}階"]
+        if previous > 0 and event_type == "TOWER_PERSONAL_BEST":
+            card["meta_lines"].append(f"前回の自己最高: {previous}階")
         if env_name:
             card["meta_lines"].append(f"環境: {env_name}")
         card["link_url"] = url_for("tower_ranking")
@@ -31295,7 +31301,7 @@ def _tower_records_snapshot(db, user_id):
         """
         SELECT wel.*
         FROM world_events_log wel
-        WHERE wel.event_type = 'TOWER_MILESTONE'
+        WHERE wel.event_type = 'TOWER_MILESTONE_REACHED'
         ORDER BY wel.created_at DESC, wel.id DESC
         LIMIT 3
         """

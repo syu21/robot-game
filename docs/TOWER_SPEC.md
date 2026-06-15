@@ -81,13 +81,13 @@ v1では表示と敵抽選の軽い偏りに使う。
 
 世界ログ:
 
-- `TOWER_BEST_FLOOR`
-- `TOWER_MILESTONE`
-- `TOWER_WEEKLY_LEADER`
-- `TOWER_ALL_TIME_LEADER`
+- `TOWER_MILESTONE_REACHED`
+- `TOWER_PERSONAL_BEST`
+- `TOWER_WEEKLY_TOP`
+- `TOWER_ALL_TIME_RECORD`
 
 通常挑戦は流さない。
-自己最高更新、10階単位、週最高更新、歴代最高更新のみ流す。
+5階/10階/以降10階ごとの節目、5階以上の自己最高更新、週間トップ更新、歴代最高更新のみ流す。
 
 ## 報酬方針
 

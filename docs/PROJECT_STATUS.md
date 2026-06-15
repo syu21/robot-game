@@ -488,7 +488,8 @@
 - 使用したロボは休憩中になり、3機すべて使用後に再び出撃できる状態へ戻る。
 - 本編 `/explore` のCT、ドロップ、ボス抽選、層進行は変更しない。
 - 記録は `tower_runs` / `tower_run_battles` / `user_tower_records` に保存。
-- 監査ログは `audit.tower.*`、世界ログは `TOWER_BEST_FLOOR` / `TOWER_MILESTONE`。
+- 監査ログは `audit.tower.*`、公開世界ログは節目・記録更新のみ `TOWER_MILESTONE_REACHED` / `TOWER_PERSONAL_BEST` / `TOWER_WEEKLY_TOP` / `TOWER_ALL_TIME_RECORD` として残す。
+- 観測塔の公開世界ログは `/comms/world`、`/feed`、ホーム通信タブの既存世界ログ表示に流れる。
 - 正本仕様は `docs/TOWER_SPEC.md`。
 
 ## 体験モード

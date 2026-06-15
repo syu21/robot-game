@@ -145,6 +145,23 @@
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
+### 4.12 観測塔
+- 監査ログ:
+  - `audit.tower.run.start`
+  - `audit.tower.battle`
+  - `audit.tower.run.complete`
+  - `audit.tower.run.failed`
+  - `audit.tower.run.abandon`
+  - `audit.tower.record.update`
+  - `audit.tower.reward.grant`
+  - `audit.tower.reward.skip_duplicate`
+- 公開世界ログ:
+  - `TOWER_MILESTONE_REACHED`
+  - `TOWER_PERSONAL_BEST`
+  - `TOWER_WEEKLY_TOP`
+  - `TOWER_ALL_TIME_RECORD`
+- 公開世界ログは全バトルではなく、5階/10階/以降10階ごとの節目、5階以上の自己ベスト、週間トップ更新、全ユーザー通算最高更新だけを記録する。
+
 ## 5. payload方針
 - 表示用テキストだけでなく、再計算可能な値を保持
 - 追加は可、既存キーの意味変更は不可
@@ -182,6 +199,20 @@
   - `turn_count`
   - `timeout`
   - `summary_label`
+- 観測塔の公開世界ログ payload は可能な範囲で以下を保持する
+  - `user_id`
+  - `username`
+  - `display_name`
+  - `robot_instance_id`
+  - `robot_name`
+  - `floor`
+  - `previous_best_floor`
+  - `previous_weekly_top_floor`
+  - `previous_all_time_record_floor`
+  - `event_label`
+  - `tower_run_id`
+  - 互換用に `run_id` / `reached_floor` を残してよい
+
 - 第1層試験支援 payload は可能な範囲で以下を保持する
   - `user_id`
   - `robot_instance_id`
@@ -198,7 +229,11 @@
   - `reward_granted`
   - `duplicate_skip_reason`
 
-## 6. 管理UI
+## 6. 公開世界ログの重複防止
+- 観測塔公開世界ログは `user_id + event_type + floor + tower_run_id` で重複投稿を避ける。
+- `tower_run_id` がない場合は `user_id + event_type + floor` で重複投稿を避ける。
+
+## 7. 管理UI
 - `/admin/audit` で検索
 - 推奨フィルタ:
   - `user_id`
