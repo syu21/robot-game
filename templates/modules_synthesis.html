@@ -8,51 +8,67 @@
   <div class="card">
     <div><b>素材2個を混ぜる</b></div>
     <div class="robot-time">親の傾向を受け継ぎます。結果にはゆらぎがあります。異常反応が起きることがあります。</div>
+    {% if material_candidate_count < 2 %}
+    <div class="upgrade-cost">研究合成には、未ロック・未使用中の所持モジュールが2個必要です。</div>
+    {% endif %}
     <form method="post" action="{{ url_for('modules_synthesis_confirm') }}" class="inline-form inline-form-top">
       <label for="module-a"><b>素材A</b></label>
-      <select id="module-a" name="module_a_id" required>
+      <select id="module-a" name="module_a_id" required {% if material_candidate_count < 2 %}disabled{% endif %}>
         <option value="">選択</option>
         {% for module in materials %}
         <option value="{{ module['instance_id'] }}" {% if selected_a_id == module['instance_id'] %}selected{% endif %} {% if not module['is_synthesis_material'] %}disabled{% endif %}>
-          {{ module['name_ja'] }} / {{ module['stat_line'] }}{% if module['synthesis_block_reason'] %}（{{ module['synthesis_block_reason'] }}）{% endif %}
+          {{ module['select_label'] }}{% if module['synthesis_block_reason'] %}（{{ module['synthesis_block_reason'] }}）{% endif %}
         </option>
         {% endfor %}
       </select>
       <label for="module-b"><b>素材B</b></label>
-      <select id="module-b" name="module_b_id" required>
+      <select id="module-b" name="module_b_id" required {% if material_candidate_count < 2 %}disabled{% endif %}>
         <option value="">選択</option>
         {% for module in materials %}
         <option value="{{ module['instance_id'] }}" {% if selected_b_id == module['instance_id'] %}selected{% endif %} {% if not module['is_synthesis_material'] %}disabled{% endif %}>
-          {{ module['name_ja'] }} / {{ module['stat_line'] }}{% if module['synthesis_block_reason'] %}（{{ module['synthesis_block_reason'] }}）{% endif %}
+          {{ module['select_label'] }}{% if module['synthesis_block_reason'] %}（{{ module['synthesis_block_reason'] }}）{% endif %}
         </option>
         {% endfor %}
       </select>
-      <button type="submit">確認へ</button>
+      <button type="submit" {% if material_candidate_count < 2 %}disabled{% endif %}>確認へ</button>
     </form>
   </div>
 
   <div class="card">
     <div><b>素材候補</b></div>
     {% if materials %}
-    <div class="stat-grid">
+    <div class="module-card-grid">
       {% for module in materials %}
-      <div class="stat-card">
-        <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }}</div>
-        <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
-        <div class="robot-time">{{ module['stat_line'] }}</div>
+      <div class="module-card">
+        <div class="module-card-title">{{ module['name_ja'] }}</div>
+        <div class="module-card-meta">
+          <span class="module-badge">{{ module['type_label'] }}</span>
+          <span class="module-badge {{ 'ok' if module['is_synthesis_material'] else 'muted' }}">{{ '素材OK' if module['is_synthesis_material'] else module['synthesis_block_reason'] }}</span>
+        </div>
+        {% if module['stat_chips'] %}
+        <div class="module-stat-chips">
+          {% for chip in module['stat_chips'] %}
+          <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="robot-time">{{ module['effect_text'] }}</div>
+        {% endif %}
         {% if module['synthesis_block_reason'] %}
         <div class="robot-time">素材不可: {{ module['synthesis_block_reason'] }}</div>
-        {% else %}
-        <div class="robot-time">素材可</div>
         {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="upgrade-cost">素材にできるモジュールがありません</div>
+    <div class="upgrade-cost">素材にできるモジュールがありません。</div>
+    <div class="robot-time">研究合成には、未ロック・未使用中の所持モジュールが2個必要です。</div>
+    <div class="robot-time">モジュールは第2層以降の通常戦や、研究ゲージ100到達で入手できます。</div>
     {% endif %}
   </div>
 
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">出撃する</a></p>
   <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">モジュール一覧へ</a></p>
 </div>
 {% endblock %}

@@ -165,6 +165,14 @@
 - [ ] `/modules/synthesis` でロック中/選択中を素材不可として表示し、2個合成結果が出る
 - [ ] 研究合成後、素材2個が `consumed`、生成モジュールが `inventory`、コイン消費と `audit.module.synthesis.*` が残る
 
+## 研究モジュール
+- [ ] `/modules` で内部値 `prototype` / `tier1` / `trade_policy` が表示されない
+- [ ] 図鑑で `未発見` / `発見済み` が表示される
+- [ ] `synthesized_module` が `None` 表示にならない
+- [ ] `/modules/synthesis` で素材候補0件時の案内が分かる
+- [ ] ロック中/使用中モジュールは素材にできない
+- [ ] 研究合成産モジュールの個体補正が表示される
+
 ## 10. 公開運用
 - [ ] `MAINTENANCE_MODE=partial` で閲覧は残り、更新系POSTだけがサーバー側で止まる
 - [ ] `MAINTENANCE_MODE=partial` 中に全ページ上部へメンテ告知帯が出る

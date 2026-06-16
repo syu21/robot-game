@@ -5,23 +5,33 @@
   {% if message %}
   <div class="flash">{{ message }}</div>
   {% endif %}
-  <div class="card">
-    <div><b>現在選択中</b></div>
+  <div class="card module-summary-card">
+    <div><b>現在の作戦</b></div>
     {% if active_research_module %}
     <div class="upgrade-cost">{{ active_research_module['name_ja'] }}</div>
-    <div class="robot-time">{{ active_research_module['stat_line'] }}</div>
+    <div class="module-stat-chips">
+      {% for chip in active_research_module['stat_chips'] %}
+      <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+      {% endfor %}
+    </div>
     {% else %}
-    <div class="upgrade-cost">未装備</div>
+    <div class="upgrade-cost">未設定</div>
     {% endif %}
     <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
-    <div class="upgrade-cost">モジュール図鑑: {{ catalog_summary['registered'] }}/{{ catalog_summary['total'] }}</div>
-    <div class="upgrade-cost">図鑑率: {{ catalog_summary['percent'] }}%</div>
+    <div class="robot-time">100で試作型モジュールを1個保証</div>
+    <div class="upgrade-cost">図鑑: {{ catalog_summary['registered'] }}/{{ catalog_summary['total'] }}（{{ catalog_summary['percent'] }}%）</div>
   </div>
 
-  <div class="card">
+  <div class="card module-summary-card">
     <div><b>研究合成</b></div>
     <div class="robot-time">研究モジュール2個とコインで、新しい作戦チップを生成します。</div>
+    {% if material_candidate_count >= 2 %}
     <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
+    {% else %}
+    <div class="upgrade-cost">研究合成には、素材にできるモジュールが2個必要です。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">出撃する</a></p>
+    {% endif %}
   </div>
 
   {% if combine_candidates %}
@@ -37,23 +47,43 @@
   </div>
   {% endif %}
 
-  <div class="card">
+  <div class="card module-section">
     <div><b>所持モジュール</b></div>
     {% if research_module_options %}
-    <div class="stat-grid">
+    <div class="module-card-grid">
       {% for module in research_module_options %}
-      <div class="stat-card">
-        <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }}</div>
-        <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
-        {% if module['is_locked'] %}
-        <div class="robot-time">保護中</div>
+      <div class="module-card">
+        <div class="module-card-title">{{ module['name_ja'] }}</div>
+        <div class="module-card-meta">
+          <span class="module-badge">{{ module['type_label'] }}</span>
+          {% if module['is_active_module'] %}<span class="module-badge active">使用中</span>{% endif %}
+          {% if module['is_locked'] %}<span class="module-badge locked">保護中</span>{% endif %}
+          <span class="module-badge {{ 'ok' if module['is_synthesis_material'] else 'muted' }}">{{ module['material_status_label'] }}</span>
+        </div>
+        {% if module['stat_chips'] %}
+        <div class="module-stat-chips">
+          {% for chip in module['stat_chips'] %}
+          <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="robot-time">{{ module['effect_text'] }}</div>
         {% endif %}
-        <div class="robot-time">{{ module['stat_line'] }}</div>
+        {% if module['module_key'] == 'synthesized_module' %}
+        <div class="robot-time">由来: {{ module['family_label'] }}</div>
+        {% endif %}
         <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
+        <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+          <button type="submit">次の出撃で使う</button>
+        </form>
         <form method="post" action="{{ url_for('modules_unlock' if module['is_locked'] else 'modules_lock') }}" class="inline-form inline-form-top">
           <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
           <button type="submit" class="btn-secondary">{{ '保護を外す' if module['is_locked'] else '保護する' }}</button>
         </form>
+        {% if module['is_synthesis_material'] %}
+        <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
+        {% endif %}
         {% if not module['is_locked'] and active_research_module and active_research_module['instance_id'] == module['instance_id'] %}
         <div class="robot-time">現在選択中は買取不可</div>
         {% elif not module['is_locked'] and module['npc_sell_price'] > 0 %}
@@ -63,25 +93,39 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="upgrade-cost">未所持</div>
+    <div class="upgrade-cost">まだモジュールを持っていません。</div>
+    <div class="robot-time">第2層以降の通常戦で低確率入手できます。研究ゲージが100に到達すると試作型を1個獲得できます。</div>
     {% endif %}
   </div>
 
-  <div class="card">
+  <div class="card module-section">
     <div><b>モジュール図鑑</b></div>
-    <div class="stat-grid">
+    <div class="module-card-grid">
       {% for module in catalog_rows %}
-      <div class="stat-card">
-        <div class="stat-label">{{ module['rarity'] }} / {{ module['family'] }} / tier{{ module['tier'] }}</div>
-        <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
-        <div class="robot-time">{{ '所持: ' ~ module['owned_count'] ~ '個' if module['owned_count'] > 0 else '未所持' }}</div>
+      <div class="module-card">
+        <div class="module-card-title">{{ module['name_ja'] }}</div>
+        <div class="module-card-meta">
+          <span class="module-badge">{{ module['type_label'] }}</span>
+          {% if module['tier_label'] %}<span class="module-badge muted">{{ module['tier_label'] }}</span>{% endif %}
+          <span class="module-badge {{ 'ok' if module['is_registered'] else 'muted' }}">{{ '発見済み' if module['is_registered'] else '未発見' }}</span>
+        </div>
+        {% if module['owned_count'] > 0 %}
+        <div class="robot-time">所持中: {{ module['owned_count'] }}個</div>
+        {% endif %}
         {% if module['first_obtained_at'] %}
         <div class="robot-time">初入手: {{ module['first_obtained_at'] }}</div>
         {% endif %}
-        <div class="robot-time">効果: {{ module['stat_line'] or 'なし' }}</div>
+        {% if module['stat_chips'] %}
+        <div class="module-stat-chips">
+          {% for chip in module['stat_chips'] %}
+          <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="robot-time">効果: {{ module['effect_text'] }}</div>
+        {% endif %}
         <div class="robot-time">入手: {{ module['source_label'] }}</div>
         <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
-        <div class="robot-time">trade_policy: {{ module['trade_policy'] }}</div>
       </div>
       {% endfor %}
     </div>

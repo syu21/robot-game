@@ -322,9 +322,29 @@ class ResearchModuleTests(unittest.TestCase):
             self.assertEqual(summary["registered"], 2)
             self.assertEqual(summary["total"], 13)
         html = self._client().get("/modules").get_data(as_text=True)
-        self.assertIn("モジュール図鑑: 2/13", html)
+        self.assertIn("図鑑: 2/13", html)
         self.assertIn("狙撃モジュール 完成型", html)
-        self.assertIn("未所持", html)
+        self.assertIn("未発見", html)
+
+    def test_modules_page_hides_internal_module_values(self):
+        self._grant_module(self.user_id, "analysis_prototype", count=1)
+        html = self._client().get("/modules").get_data(as_text=True)
+        self.assertIn("試作型", html)
+        self.assertIn("解析", html)
+        self.assertIn("発見済み", html)
+        self.assertNotIn("trade_policy", html)
+        self.assertNotIn("tier1", html)
+        self.assertNotIn("prototype /", html)
+        self.assertNotIn("analysis /", html)
+        self.assertNotIn("None", html)
+
+    def test_modules_synthesis_empty_state_guides_next_action(self):
+        html = self._client().get("/modules/synthesis").get_data(as_text=True)
+        self.assertIn("素材にできるモジュールがありません。", html)
+        self.assertIn("研究合成には、未ロック・未使用中の所持モジュールが2個必要です。", html)
+        self.assertIn("モジュールは第2層以降の通常戦", html)
+        self.assertIn("基地へ戻る", html)
+        self.assertIn("出撃する", html)
 
     def test_modules_page_links_research_synthesis(self):
         html = self._client().get("/modules").get_data(as_text=True)

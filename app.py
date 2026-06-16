@@ -269,6 +269,34 @@ RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
     "great": "研究大成功",
     "anomaly": "異常反応",
 }
+RESEARCH_MODULE_RARITY_LABELS = {
+    "prototype": "試作型",
+    "complete": "完成型",
+    "synth": "研究合成",
+    "synthesized": "研究合成",
+    "refined": "改良型",
+    "anomaly": "異常型",
+}
+RESEARCH_MODULE_FAMILY_LABELS = {
+    "analysis": "解析",
+    "assault": "強襲",
+    "berserk": "暴走",
+    "heavy": "重装",
+    "sniper": "狙撃",
+    "stable": "安定",
+    "synthesized": "合成",
+    "synth": "合成",
+}
+RESEARCH_MODULE_TIER_LABELS = {
+    1: "基礎",
+    2: "発展",
+    3: "高出力",
+}
+RESEARCH_MODULE_TRADE_POLICY_LABELS = {
+    "tradable": "買取可",
+    "bound": "買取不可",
+    "limited": "限定品",
+}
 RESEARCH_MODULE_FAMILY_PAIR_NAMES = {
     "sniper_assault": "精密突撃モジュール",
     "assault_sniper": "精密突撃モジュール",
@@ -13606,6 +13634,38 @@ def _research_module_stat_line(module):
     return " / ".join(parts)
 
 
+def _research_module_stat_chips(module):
+    if not module:
+        return []
+    labels = {
+        "hp_bonus": "耐久",
+        "atk_bonus": "攻撃",
+        "def_bonus": "防御",
+        "spd_bonus": "素早さ",
+        "acc_bonus": "命中",
+        "cri_bonus": "会心",
+    }
+    chips = []
+    for key, label in labels.items():
+        try:
+            raw_value = module.get(key) if isinstance(module, dict) else module[key]
+        except (KeyError, IndexError):
+            raw_value = 0
+        value = int(raw_value or 0)
+        if value == 0:
+            continue
+        sign = "+" if value > 0 else ""
+        chips.append(
+            {
+                "label": label,
+                "value": value,
+                "text": f"{label} {sign}{value}",
+                "tone": "positive" if value > 0 else "negative",
+            }
+        )
+    return chips
+
+
 def _research_module_family_label(family_key):
     labels = {
         "sniper": "精密",
@@ -13628,7 +13688,19 @@ def _synthesized_module_name(module):
         generated_name = None
     if generated_name:
         return str(generated_name)
-    family = str(module.get("synthesis_family") if isinstance(module, dict) else module["synthesis_family"] or "").strip()
+    try:
+        master_name = module.get("name_ja") if isinstance(module, dict) else module["name_ja"]
+    except (KeyError, IndexError):
+        master_name = None
+    if master_name:
+        return str(master_name)
+    try:
+        family = module.get("synthesis_family") if isinstance(module, dict) else module["synthesis_family"]
+    except (KeyError, IndexError):
+        family = ""
+    family = str(family or "").strip()
+    if family.lower() == "none":
+        family = ""
     if family in RESEARCH_MODULE_FAMILY_PAIR_NAMES:
         return RESEARCH_MODULE_FAMILY_PAIR_NAMES[family]
     parts = [part for part in family.split("_") if part]
@@ -13658,7 +13730,29 @@ def _research_module_view(row):
         module["result_label"] = ""
         module["synthesis_grade_label"] = ""
     module["stat_line"] = _research_module_stat_line(module)
+    module["stat_chips"] = _research_module_stat_chips(module)
+    module["effect_text"] = module["stat_line"] if module["stat_line"] else ("合成結果によって変化" if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY else "なし")
+    rarity_key = str(module.get("rarity") or "").strip()
+    family_key = str(module.get("family") or "").strip()
+    if family_key.lower() == "none":
+        family_key = ""
+    module["rarity_label"] = RESEARCH_MODULE_RARITY_LABELS.get(rarity_key, rarity_key or "研究")
+    module["family_label"] = RESEARCH_MODULE_FAMILY_LABELS.get(family_key, _research_module_family_label(family_key) if family_key else "研究")
+    module["tier_label"] = RESEARCH_MODULE_TIER_LABELS.get(int(module.get("tier") or 0), "")
+    module["trade_policy_label"] = RESEARCH_MODULE_TRADE_POLICY_LABELS.get(str(module.get("trade_policy") or ""), "")
+    if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
+        family_parts = [part for part in str(module.get("synthesis_family") or "").split("_") if part and part.lower() != "none"]
+        if family_parts:
+            module["family_label"] = " × ".join(RESEARCH_MODULE_FAMILY_LABELS.get(part, _research_module_family_label(part)) for part in family_parts)
+        else:
+            module["family_label"] = "合成"
+        grade_label = module.get("synthesis_grade_label") or RESEARCH_MODULE_RARITY_LABELS.get(str(module.get("synthesis_grade") or ""), "")
+        module["type_label"] = f"研究合成・{grade_label}" if grade_label else "研究合成"
+        module["source_label"] = "研究合成"
+    else:
+        module["type_label"] = f"{module['rarity_label']}・{module['family_label']}系"
     module["source_label"] = _research_module_source_label(module)
+    module["select_label"] = f"{module['name_ja']}｜{module['stat_line'] or module['effect_text']}"
     return module
 
 
@@ -14035,13 +14129,30 @@ def _research_module_synthesis_materials(db, user_id):
     for item in rows:
         reason = ""
         if int(item.get("is_locked") or 0) != 0:
-            reason = "保護中"
+            reason = "保護中のため素材不可"
         elif active_id and int(item["instance_id"]) == active_id:
-            reason = "現在選択中"
+            reason = "使用中のため素材不可"
         item["is_synthesis_material"] = not reason
         item["synthesis_block_reason"] = reason
         materials.append(item)
     return materials
+
+
+def _annotate_research_module_material_status(modules, active_module=None):
+    active_id = int(active_module.get("instance_id") or 0) if active_module else 0
+    for module in modules:
+        is_active = active_id and int(module.get("instance_id") or 0) == active_id
+        module["is_active_module"] = bool(is_active)
+        if is_active:
+            module["material_status_label"] = "使用中のため素材不可"
+            module["is_synthesis_material"] = False
+        elif int(module.get("is_locked") or 0) != 0:
+            module["material_status_label"] = "保護中のため素材不可"
+            module["is_synthesis_material"] = False
+        else:
+            module["material_status_label"] = "素材OK"
+            module["is_synthesis_material"] = True
+    return modules
 
 
 def _research_module_synthesis_cost(module_a, module_b):
@@ -28645,11 +28756,13 @@ def modules_synthesis():
     if not user:
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
+    materials = _research_module_synthesis_materials(db, user_id)
     return render_template(
         "modules_synthesis.html",
         user=user,
         message=session.pop("message", None),
-        materials=_research_module_synthesis_materials(db, user_id),
+        materials=materials,
+        material_candidate_count=sum(1 for item in materials if item.get("is_synthesis_material")),
         selected_a_id=0,
         selected_b_id=0,
     )
@@ -28718,11 +28831,13 @@ def modules_synthesis_create():
     coins_before = int(user["coins"] or 0) if user else 0
     cost = _research_module_synthesis_cost(module_a, module_b)
     if coins_before < cost:
+        materials = _research_module_synthesis_materials(db, user_id)
         return render_template(
             "modules_synthesis.html",
             user=user,
             message=f"コインが足りません。必要: {cost} / 所持: {coins_before}",
-            materials=_research_module_synthesis_materials(db, user_id),
+            materials=materials,
+            material_candidate_count=sum(1 for item in materials if item.get("is_synthesis_material")),
             selected_a_id=int(module_a_id),
             selected_b_id=int(module_b_id),
         )
@@ -28835,6 +28950,11 @@ def modules_synthesis_create():
     )
     db.commit()
     result_module = _research_module_instance_row(db, result_module_id, user_id)
+    result_descriptions = {
+        "normal": "親の特徴を受け継いだモジュールが生成されました。",
+        "great": "高出力の反応を確認しました。通常より良い性能になっています。",
+        "anomaly": "異常反応を確認しました。不安定ですが、突出した性能を持つモジュールです。",
+    }
     return render_template(
         "modules_synthesis_result.html",
         user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
@@ -28842,6 +28962,7 @@ def modules_synthesis_create():
         module_a=module_a,
         module_b=module_b,
         result_label=result["result_label"],
+        result_description=result_descriptions.get(result["result_type"], ""),
         cost_coins=cost,
     )
 
@@ -28857,6 +28978,8 @@ def modules():
         return redirect(url_for("login", next=request.path, reason="expired"))
     module_options = _user_research_module_options(db, user_id)
     active_module = _active_research_module_for_user(db, user_id, user_row=user)
+    module_options = _annotate_research_module_material_status(module_options, active_module)
+    material_candidate_count = sum(1 for item in module_options if item.get("is_synthesis_material"))
     combine_candidates = _research_module_combine_candidates(db, user_id)
     catalog_summary = _research_module_catalog_summary(db, user_id)
     catalog_rows = _research_module_catalog_rows(db, user_id)
@@ -28867,6 +28990,7 @@ def modules():
         message=message,
         active_research_module=active_module,
         research_module_options=module_options,
+        material_candidate_count=material_candidate_count,
         combine_candidates=combine_candidates,
         catalog_summary=catalog_summary,
         catalog_rows=catalog_rows,

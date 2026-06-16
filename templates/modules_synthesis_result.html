@@ -2,11 +2,20 @@
 {% block content %}
 <div class="panel">
   <h1>{{ result_label }}</h1>
+  {% if result_description %}
+  <div class="card">
+    <div class="upgrade-cost">{{ result_description }}</div>
+  </div>
+  {% endif %}
   <div class="card">
     <div class="stat-label">生成モジュール</div>
     <div class="stat-value">{{ module['name_ja'] }}</div>
-    <div class="upgrade-cost">{{ module['stat_line'] }}</div>
-    <div class="robot-time">系統: {{ module['family'] }}</div>
+    <div class="module-stat-chips">
+      {% for chip in module['stat_chips'] %}
+      <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+      {% endfor %}
+    </div>
+    <div class="robot-time">系統: {{ module['family_label'] }}</div>
     <div class="robot-time">評価: {{ module['synthesis_grade_label'] }} / 評価値: {{ module['synthesis_score'] }}</div>
     <div class="robot-time">由来: {{ module_a['name_ja'] }} + {{ module_b['name_ja'] }}</div>
     <div class="robot-time">消費コイン: {{ cost_coins }}</div>
