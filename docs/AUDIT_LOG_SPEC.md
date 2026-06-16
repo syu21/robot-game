@@ -126,6 +126,21 @@
 - `audit.lab.small_boost.grant`（旧研究ブースト付与イベント。新規記録は `audit.research_boost.grant`）
 - `audit.lab.small_boost.use`（旧時間制研究ブースト使用イベント。新規記録は `audit.research_boost.consume`）
 
+### 4.8.1 研究モジュール
+- `audit.module.drop`
+- `audit.module.select`
+- `audit.module.pity.progress`
+- `audit.module.pity.grant`
+- `audit.module.combine`
+- `audit.module.catalog.register`
+- `audit.module.lock`
+- `audit.module.unlock`
+- `audit.module.sell`
+- `audit.module.synthesis.preview`
+- `audit.module.synthesis.consume`
+- `audit.module.synthesis.create`
+- `audit.module.synthesis.result`
+
 ### 4.9 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`

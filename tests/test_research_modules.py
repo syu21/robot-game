@@ -153,11 +153,31 @@ class ResearchModuleTests(unittest.TestCase):
     def test_research_module_trade_columns_and_prices_exist(self):
         with game_app.app.app_context():
             db = game_app.get_db()
+            game_app.close_db()
+            init_db.main()
+            db = game_app.get_db()
             module_cols = {row["name"] for row in db.execute("PRAGMA table_info(research_modules)").fetchall()}
             instance_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_research_modules)").fetchall()}
             for col in ("tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"):
                 self.assertIn(col, module_cols)
-            for col in ("is_locked", "sold_at"):
+            for col in (
+                "is_locked",
+                "sold_at",
+                "hp_bonus",
+                "atk_bonus",
+                "def_bonus",
+                "spd_bonus",
+                "acc_bonus",
+                "cri_bonus",
+                "synthesis_grade",
+                "synthesis_family",
+                "synthesis_result_type",
+                "origin_module_a_id",
+                "origin_module_b_id",
+                "generation",
+                "synthesis_score",
+                "generated_name_ja",
+            ):
                 self.assertIn(col, instance_cols)
             proto = db.execute("SELECT tier, trade_policy, source_type, is_limited, npc_sell_price FROM research_modules WHERE module_key = 'sniper_prototype'").fetchone()
             self.assertEqual(int(proto["tier"]), 1)
@@ -171,6 +191,11 @@ class ResearchModuleTests(unittest.TestCase):
             self.assertEqual(complete["source_type"], "combine")
             self.assertEqual(int(complete["is_limited"]), 0)
             self.assertEqual(int(complete["npc_sell_price"]), 1500)
+            synth = db.execute("SELECT tier, trade_policy, source_type, npc_sell_price FROM research_modules WHERE module_key = 'synthesized_module'").fetchone()
+            self.assertEqual(int(synth["tier"]), 1)
+            self.assertEqual(synth["trade_policy"], "tradable")
+            self.assertEqual(synth["source_type"], "synthesis")
+            self.assertEqual(int(synth["npc_sell_price"]), 600)
 
     def test_target_area_win_adds_pity(self):
         resp = self._run_explore("layer_3")
@@ -295,11 +320,158 @@ class ResearchModuleTests(unittest.TestCase):
             db.commit()
             summary = game_app._research_module_catalog_summary(db, self.user_id)
             self.assertEqual(summary["registered"], 2)
-            self.assertEqual(summary["total"], 12)
+            self.assertEqual(summary["total"], 13)
         html = self._client().get("/modules").get_data(as_text=True)
-        self.assertIn("モジュール図鑑: 2/12", html)
+        self.assertIn("モジュール図鑑: 2/13", html)
         self.assertIn("狙撃モジュール 完成型", html)
         self.assertIn("未所持", html)
+
+    def test_modules_page_links_research_synthesis(self):
+        html = self._client().get("/modules").get_data(as_text=True)
+        self.assertIn("研究合成へ", html)
+        self.assertIn("/modules/synthesis", html)
+
+    def test_synthesis_consumes_two_modules_and_creates_inventory_result(self):
+        ids = self._grant_module(self.user_id, "sniper_prototype", count=1) + self._grant_module(self.user_id, "assault_prototype", count=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 1000 WHERE id = ?", (self.user_id,))
+            db.commit()
+        with mock.patch.object(game_app.random, "random", return_value=0.50), \
+             mock.patch.object(game_app.random, "randint", return_value=1):
+            resp = self._client().post(
+                "/modules/synthesis",
+                data={"module_a_id": ids[0], "module_b_id": ids[1]},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("成功", html)
+        self.assertIn("精密突撃モジュール", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            consumed = int(
+                db.execute(
+                    f"SELECT COUNT(*) AS c FROM user_research_modules WHERE id IN ({','.join(['?'] * len(ids))}) AND status = 'consumed'",
+                    ids,
+                ).fetchone()["c"]
+            )
+            self.assertEqual(consumed, 2)
+            result = db.execute(
+                """
+                SELECT *
+                FROM user_research_modules
+                WHERE user_id = ? AND module_key = 'synthesized_module' AND status = 'inventory'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertIsNotNone(result)
+            self.assertEqual(result["synthesis_result_type"], "normal")
+            self.assertEqual(result["synthesis_family"], "sniper_assault")
+            self.assertEqual(int(result["generation"]), 1)
+            self.assertEqual(int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"]), 500)
+            for event_type in (
+                game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_CONSUME"],
+                game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_CREATE"],
+                game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_RESULT"],
+                game_app.AUDIT_EVENT_TYPES["COIN_DELTA"],
+            ):
+                self.assertIsNotNone(
+                    db.execute(
+                        "SELECT id FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                        (self.user_id, event_type),
+                    ).fetchone()
+                )
+
+    def test_synthesis_rejects_locked_active_other_user_and_insufficient_coins(self):
+        locked_id = self._grant_module(self.user_id, "stable_prototype", count=1)[0]
+        active_id = self._grant_module(self.user_id, "analysis_prototype", count=1)[0]
+        own_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        other_id = self._grant_module(self.other_user_id, "assault_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET is_locked = 1 WHERE id = ?", (locked_id,))
+            db.execute("UPDATE users SET active_research_module_instance_id = ?, coins = 1000 WHERE id = ?", (active_id, self.user_id))
+            db.commit()
+        client = self._client()
+        locked_resp = client.post("/modules/synthesis", data={"module_a_id": locked_id, "module_b_id": own_id}, follow_redirects=True)
+        self.assertIn("ロック中のため素材にできません", locked_resp.get_data(as_text=True))
+        active_resp = client.post("/modules/synthesis", data={"module_a_id": active_id, "module_b_id": own_id}, follow_redirects=True)
+        self.assertIn("現在使用中のため素材にできません", active_resp.get_data(as_text=True))
+        other_resp = client.post("/modules/synthesis", data={"module_a_id": other_id, "module_b_id": own_id}, follow_redirects=True)
+        self.assertIn("所有者が違います", other_resp.get_data(as_text=True))
+
+        a_id, b_id = self._grant_module(self.user_id, "sniper_prototype", count=2)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET active_research_module_instance_id = NULL, coins = 100 WHERE id = ?", (self.user_id,))
+            db.commit()
+        coin_resp = client.post("/modules/synthesis", data={"module_a_id": a_id, "module_b_id": b_id})
+        self.assertIn("コインが足りません", coin_resp.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self.assertIsNone(
+                db.execute(
+                    "SELECT id FROM user_research_modules WHERE user_id = ? AND module_key = 'synthesized_module'",
+                    (self.user_id,),
+                ).fetchone()
+            )
+
+    def test_synthesis_roll_bounds_and_anomaly_negative_stats(self):
+        module_a = {"family": "berserk", "generation": 0, "hp_bonus": 0, "atk_bonus": 12, "def_bonus": 0, "spd_bonus": 0, "acc_bonus": -8, "cri_bonus": 6}
+        module_b = {"family": "sniper", "generation": 0, "hp_bonus": -3, "atk_bonus": 0, "def_bonus": 0, "spd_bonus": 0, "acc_bonus": 8, "cri_bonus": 3}
+        with mock.patch.object(game_app.random, "random", return_value=0.50), \
+             mock.patch.object(game_app.random, "randint", return_value=2):
+            normal = game_app._roll_research_module_synthesis(module_a, module_b)
+        self.assertTrue(all(int(value) <= 14 for value in normal["bonuses"].values()))
+
+        with mock.patch.object(game_app.random, "random", return_value=0.10), \
+             mock.patch.object(game_app.random, "randint", return_value=2), \
+             mock.patch.object(game_app.random, "choice", return_value="atk"):
+            great = game_app._roll_research_module_synthesis(module_a, module_b)
+        self.assertEqual(great["result_type"], "great")
+        self.assertTrue(all(int(value) <= 18 for value in great["bonuses"].values()))
+
+        with mock.patch.object(game_app.random, "random", return_value=0.01), \
+             mock.patch.object(game_app.random, "randint", return_value=8), \
+             mock.patch.object(game_app.random, "choice", return_value="atk"), \
+             mock.patch.object(game_app.random, "sample", return_value=["hp", "def"]):
+            anomaly = game_app._roll_research_module_synthesis(module_a, module_b)
+        self.assertEqual(anomaly["result_type"], "anomaly")
+        self.assertTrue(all(int(value) <= 24 for value in anomaly["bonuses"].values()))
+        self.assertGreaterEqual(sum(1 for value in anomaly["bonuses"].values() if int(value) < 0), 2)
+
+    def test_synthesized_module_uses_instance_bonus_and_master_module_falls_back(self):
+        ids = self._grant_module(self.user_id, "berserk_complete", count=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            cur = db.execute(
+                """
+                INSERT INTO user_research_modules
+                (user_id, module_key, status, hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+                 synthesis_grade, synthesis_family, synthesis_result_type, generation, synthesis_score, created_at, updated_at)
+                VALUES (?, 'synthesized_module', 'inventory', 2, 4, -3, 1, 5, 0, 'normal', 'sniper_assault', 'normal', 1, 9, ?, ?)
+                """,
+                (self.user_id, now, now),
+            )
+            synth_id = int(cur.lastrowid)
+            db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (synth_id, self.user_id))
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            module = game_app._active_research_module_for_user(db, self.user_id, user_row=user)
+            adjusted = game_app._apply_research_module_to_stats({"hp": 10, "atk": 10, "def": 10, "spd": 10, "acc": 10, "cri": 10}, module)
+            self.assertEqual(adjusted["atk"], 14)
+            self.assertEqual(adjusted["def"], 7)
+            self.assertEqual(adjusted["acc"], 15)
+
+            db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (ids[0], self.user_id))
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            master_module = game_app._active_research_module_for_user(db, self.user_id, user_row=user)
+            fallback = game_app._apply_research_module_to_stats({"hp": 10, "atk": 10, "def": 10, "spd": 10, "acc": 10, "cri": 10}, master_module)
+            self.assertEqual(fallback["atk"], 28)
+            self.assertEqual(fallback["cri"], 19)
+            self.assertEqual(fallback["acc"], 1)
 
     def test_lock_and_unlock_own_module(self):
         module_id = self._grant_module(self.user_id, "stable_prototype", count=1)[0]

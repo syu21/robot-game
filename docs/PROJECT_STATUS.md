@@ -112,6 +112,7 @@
   - `users.active_research_module_instance_id` で選択状態を管理し、ロボ個体には固定装備しない
   - 研究ゲージ `research_module_pity` を `x/100` で表示
   - 同種prototypeが3個以上ある場合、`/modules` からcompleteへ合成できる
+  - `/modules/synthesis` で研究モジュール2個 + コインからランダム性能の合成産モジュールを生成できる
   - `/modules` でモジュール図鑑、図鑑率、所持数、初入手履歴、入手方法、買取価格を確認できる
   - 所持モジュールは保護でき、保護中でも選択候補には出るが合成素材/NPC買取には使えない
   - 余った研究モジュールは確認画面を挟んでNPC買取でき、prototypeは300コイン、completeは1500コイン
@@ -203,9 +204,10 @@
 - セットボーナスは `発動中/未発動 / 条件 / 何が上がるか` を前面表示し、`同属性パーツ 4部位` 条件と属性ごとの上昇能力をガイドでも確認できる
 - 研究モジュール合成:
   - 同じprototype 3個を `consumed` にして、対応complete 1個を付与する
+  - 研究合成では2個の実効補正を平均し、normal/great/anomaly の揺らぎで `synthesized_module` 個体を生成する
   - 保護中または現在選択中のモジュールは素材に使えない
   - 合成で入手したcompleteもモジュール図鑑へ登録する
-  - 監査: `audit.module.combine`
+  - 監査: `audit.module.combine` / `audit.module.synthesis.*`
 
 ### 3.5 ボス・層進行
 - ボス出現率 0.5%（エリア条件あり）

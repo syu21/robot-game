@@ -108,11 +108,13 @@
     - `layer_4_forge` / `layer_4_haze` / `layer_4_burst`: +3
   - 100到達でランダムprototype研究モジュールを1個保証付与し、付与後 `-100`
   - complete研究モジュールは同種prototype 3個合成で入手する
+  - 研究合成産は `user_research_modules` の個体補正を持ち、出撃時だけ補正を適用する
   - 監査:
     - `audit.module.drop`
     - `audit.module.pity.progress`
     - `audit.module.pity.grant`
     - `audit.module.combine`
+    - `audit.module.synthesis.result`
 - 第4層の育成傾向:
   - `layer_4_forge`: 耐久・防御寄り
   - `layer_4_haze`: 命中・安定寄り

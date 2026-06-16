@@ -162,6 +162,8 @@
 - [ ] `/ranking` の user系は `小ロボ主役 + 補助アバター`、robot系は機体サムネで表示される
 - [ ] `/ranking` の robot系でプレースホルダ顔のまま残る古い機体画像があれば、自動で再生成される
 - [ ] 観測塔の節目到達ログが `/comms/world` に SYSTEM LOG として表示される
+- [ ] `/modules/synthesis` でロック中/選択中を素材不可として表示し、2個合成結果が出る
+- [ ] 研究合成後、素材2個が `consumed`、生成モジュールが `inventory`、コイン消費と `audit.module.synthesis.*` が残る
 
 ## 10. 公開運用
 - [ ] `MAINTENANCE_MODE=partial` で閲覧は残り、更新系POSTだけがサーバー側で止まる

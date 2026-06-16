@@ -186,6 +186,19 @@ RESEARCH_MODULE_SEEDS = (
         0,
         "命中と防御を補助し、観測戦を安定させる完成型モジュール。",
     ),
+    (
+        "synthesized_module",
+        "研究合成モジュール",
+        "synth",
+        "synthesized",
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        "研究合成によって生成された個体差を持つモジュール。",
+    ),
 )
 MINI_ROBOT_EVOLUTION_SEEDS = {
     "cerberus": ("cerberus_guard", "cerberus_wild", "cerberus_shadow"),
@@ -2386,6 +2399,20 @@ def main():
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
         "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
         "sold_at": "sold_at TEXT",
+        "hp_bonus": "hp_bonus INTEGER",
+        "atk_bonus": "atk_bonus INTEGER",
+        "def_bonus": "def_bonus INTEGER",
+        "spd_bonus": "spd_bonus INTEGER",
+        "acc_bonus": "acc_bonus INTEGER",
+        "cri_bonus": "cri_bonus INTEGER",
+        "synthesis_grade": "synthesis_grade TEXT",
+        "synthesis_family": "synthesis_family TEXT",
+        "synthesis_result_type": "synthesis_result_type TEXT",
+        "origin_module_a_id": "origin_module_a_id INTEGER",
+        "origin_module_b_id": "origin_module_b_id INTEGER",
+        "generation": "generation INTEGER NOT NULL DEFAULT 0",
+        "synthesis_score": "synthesis_score INTEGER NOT NULL DEFAULT 0",
+        "generated_name_ja": "generated_name_ja TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -2419,6 +2446,18 @@ def main():
             WHERE rarity IN ('prototype', 'complete')
             """
         )
+    cur.execute(
+        """
+        UPDATE research_modules
+        SET rarity = 'synth',
+            tier = 1,
+            trade_policy = 'tradable',
+            source_type = 'synthesis',
+            is_limited = 0,
+            npc_sell_price = 600
+        WHERE module_key = 'synthesized_module'
+        """
+    )
     cur.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     cur.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     cur.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")

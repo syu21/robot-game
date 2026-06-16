@@ -64,6 +64,7 @@ from constants import (
 )
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
+from services.research_module_synthesis import synthesize_research_module
 from services.daily_research import (
     EVENT_BUILD_VIEW,
     EVENT_WORLD_VIEW,
@@ -218,6 +219,7 @@ RESEARCH_MODULE_SEEDS = (
     ("stable_complete", "安定モジュール 完成型", "complete", "stable", 0, 0, 8, 0, 8, -5, "防御と命中を高め、事故を抑える完成型モジュール。"),
     ("berserk_complete", "暴走モジュール 完成型", "complete", "berserk", 0, 18, 0, 0, -12, 9, "攻撃と会心を最大級に伸ばす完成型モジュール。"),
     ("analysis_complete", "解析モジュール 完成型", "complete", "analysis", 0, -5, 5, 0, 10, 0, "命中と防御を補助し、観測戦を安定させる完成型モジュール。"),
+    ("synthesized_module", "研究合成モジュール", "synth", "synthesized", 0, 0, 0, 0, 0, 0, "研究合成によって生成された個体差を持つモジュール。"),
 )
 RESEARCH_MODULE_DROP_CONFIG = {
     "layer_2": (0.02, ("sniper_prototype", "stable_prototype", "analysis_prototype")),
@@ -259,6 +261,21 @@ RESEARCH_MODULE_PROTOTYPE_NAME_BY_COMPLETE = {
     "stable_complete": "安定モジュール 試作型",
     "berserk_complete": "暴走モジュール 試作型",
     "analysis_complete": "解析モジュール 試作型",
+}
+RESEARCH_MODULE_SYNTHESIS_KEY = "synthesized_module"
+RESEARCH_MODULE_SYNTHESIS_COST_COINS = 500
+RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
+    "normal": "研究成功",
+    "great": "研究大成功",
+    "anomaly": "異常反応",
+}
+RESEARCH_MODULE_FAMILY_PAIR_NAMES = {
+    "sniper_assault": "精密突撃モジュール",
+    "assault_sniper": "精密突撃モジュール",
+    "heavy_stable": "重装安定モジュール",
+    "stable_heavy": "重装安定モジュール",
+    "berserk_sniper": "暴走照準モジュール",
+    "sniper_berserk": "暴走照準モジュール",
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10320,6 +10337,20 @@ def ensure_schema(db):
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
         "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
         "sold_at": "sold_at TEXT",
+        "hp_bonus": "hp_bonus INTEGER",
+        "atk_bonus": "atk_bonus INTEGER",
+        "def_bonus": "def_bonus INTEGER",
+        "spd_bonus": "spd_bonus INTEGER",
+        "acc_bonus": "acc_bonus INTEGER",
+        "cri_bonus": "cri_bonus INTEGER",
+        "synthesis_grade": "synthesis_grade TEXT",
+        "synthesis_family": "synthesis_family TEXT",
+        "synthesis_result_type": "synthesis_result_type TEXT",
+        "origin_module_a_id": "origin_module_a_id INTEGER",
+        "origin_module_b_id": "origin_module_b_id INTEGER",
+        "generation": "generation INTEGER NOT NULL DEFAULT 0",
+        "synthesis_score": "synthesis_score INTEGER NOT NULL DEFAULT 0",
+        "generated_name_ja": "generated_name_ja TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
     }
@@ -10353,6 +10384,19 @@ def ensure_schema(db):
             WHERE rarity IN ('prototype', 'complete')
             """
         )
+    db.execute(
+        """
+        UPDATE research_modules
+        SET rarity = 'synth',
+            tier = 1,
+            trade_policy = 'tradable',
+            source_type = 'synthesis',
+            is_limited = 0,
+            npc_sell_price = 600
+        WHERE module_key = ?
+        """,
+        (RESEARCH_MODULE_SYNTHESIS_KEY,),
+    )
     db.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     db.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     db.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")
@@ -13562,10 +13606,57 @@ def _research_module_stat_line(module):
     return " / ".join(parts)
 
 
+def _research_module_family_label(family_key):
+    labels = {
+        "sniper": "精密",
+        "heavy": "重装",
+        "assault": "突撃",
+        "stable": "安定",
+        "berserk": "暴走",
+        "analysis": "解析",
+        "synthesized": "合成",
+    }
+    return labels.get(str(family_key or "").strip(), str(family_key or "").strip() or "研究")
+
+
+def _synthesized_module_name(module):
+    if not module:
+        return "研究合成モジュール"
+    try:
+        generated_name = module.get("generated_name_ja") if isinstance(module, dict) else module["generated_name_ja"]
+    except (KeyError, IndexError):
+        generated_name = None
+    if generated_name:
+        return str(generated_name)
+    family = str(module.get("synthesis_family") if isinstance(module, dict) else module["synthesis_family"] or "").strip()
+    if family in RESEARCH_MODULE_FAMILY_PAIR_NAMES:
+        return RESEARCH_MODULE_FAMILY_PAIR_NAMES[family]
+    parts = [part for part in family.split("_") if part]
+    if len(parts) >= 2:
+        return f"{_research_module_family_label(parts[0])}{_research_module_family_label(parts[1])}モジュール"
+    if parts:
+        return f"{_research_module_family_label(parts[0])}合成モジュール"
+    return "研究合成モジュール"
+
+
 def _research_module_view(row):
     if not row:
         return None
     module = dict(row)
+    if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
+        module["name_ja"] = _synthesized_module_name(module)
+        module["rarity"] = module.get("synthesis_grade") or module.get("rarity") or "refined"
+        module["family"] = module.get("synthesis_family") or module.get("family") or "synthesized"
+        module["result_label"] = RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS.get(str(module.get("synthesis_result_type") or ""), "研究合成")
+        module["synthesis_grade_label"] = {
+            "prototype": "試作型",
+            "refined": "改良型",
+            "complete": "完成型",
+            "anomaly": "異常型",
+        }.get(str(module.get("synthesis_grade") or ""), str(module.get("synthesis_grade") or ""))
+    else:
+        module["result_label"] = ""
+        module["synthesis_grade_label"] = ""
     module["stat_line"] = _research_module_stat_line(module)
     module["source_label"] = _research_module_source_label(module)
     return module
@@ -13576,6 +13667,8 @@ def _research_module_source_label(module):
         return ""
     module_key = str(module.get("module_key") if isinstance(module, dict) else module["module_key"] or "")
     rarity = str(module.get("rarity") if isinstance(module, dict) else module["rarity"] or "")
+    if module_key == RESEARCH_MODULE_SYNTHESIS_KEY:
+        return "研究合成"
     if rarity == "complete":
         source_name = RESEARCH_MODULE_PROTOTYPE_NAME_BY_COMPLETE.get(module_key)
         if source_name:
@@ -13595,9 +13688,16 @@ def _active_research_module_for_user(db, user_id, user_row=None):
         """
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
                rm.name_ja, rm.rarity, rm.family,
-               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus,
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
-               rm.is_active, urm.is_locked, urm.sold_at
+               rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
+               urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
+               urm.generation, urm.synthesis_score, urm.generated_name_ja
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -13616,9 +13716,16 @@ def _user_research_module_options(db, user_id):
         """
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
                rm.name_ja, rm.rarity, rm.family,
-               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus,
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
-               rm.is_active, urm.is_locked, urm.sold_at
+               rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
+               urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
+               urm.generation, urm.synthesis_score, urm.generated_name_ja
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.user_id = ?
@@ -13887,6 +13994,104 @@ def _research_module_catalog_rows(db, user_id):
         item["first_obtained_at"] = row["first_obtained_at"]
         result.append(item)
     return result
+
+
+def _research_module_instance_row(db, module_instance_id, user_id=None):
+    where = ["urm.id = ?", "rm.is_active = 1"]
+    params = [int(module_instance_id)]
+    if user_id is not None:
+        where.append("urm.user_id = ?")
+        params.append(int(user_id))
+    row = db.execute(
+        f"""
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
+               rm.name_ja, rm.rarity, rm.family,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus,
+               rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
+               rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
+               urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
+               COALESCE(urm.generation, 0) AS generation, COALESCE(urm.synthesis_score, 0) AS synthesis_score,
+               urm.generated_name_ja
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE {' AND '.join(where)}
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+    return _research_module_view(row)
+
+
+def _research_module_synthesis_materials(db, user_id):
+    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    rows = _user_research_module_options(db, user_id)
+    materials = []
+    for item in rows:
+        reason = ""
+        if int(item.get("is_locked") or 0) != 0:
+            reason = "保護中"
+        elif active_id and int(item["instance_id"]) == active_id:
+            reason = "現在選択中"
+        item["is_synthesis_material"] = not reason
+        item["synthesis_block_reason"] = reason
+        materials.append(item)
+    return materials
+
+
+def _research_module_synthesis_cost(module_a, module_b):
+    return RESEARCH_MODULE_SYNTHESIS_COST_COINS
+
+
+def _validate_research_module_synthesis_materials(db, user_id, module_a_id, module_b_id):
+    if int(module_a_id or 0) <= 0 or int(module_b_id or 0) <= 0:
+        return None, None, "素材は2個選んでください"
+    if int(module_a_id or 0) == int(module_b_id or 0):
+        return None, None, "同じモジュールを2つ選ぶことはできません"
+    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    modules = []
+    for module_id in (module_a_id, module_b_id):
+        module = _research_module_instance_row(db, int(module_id), None)
+        if not module:
+            return None, None, "素材に使えない研究モジュールです"
+        if int(module.get("user_id") or 0) != int(user_id):
+            return None, None, "所有者が違います"
+        if module.get("sold_at"):
+            return None, None, "すでに売却済みです"
+        if str(module.get("status") or "") != "inventory":
+            return None, None, "すでに消費済みです"
+        if int(module.get("is_locked") or 0) != 0:
+            return None, None, "ロック中のため素材にできません"
+        if active_id and int(module["instance_id"]) == active_id:
+            return None, None, "現在使用中のため素材にできません"
+        modules.append(module)
+    return modules[0], modules[1], ""
+
+
+def _research_module_synthesis_family(module_a, module_b):
+    families = sorted(
+        [
+            str(module_a.get("family") or "synthesized").strip(),
+            str(module_b.get("family") or "synthesized").strip(),
+        ]
+    )
+    return "_".join(families)
+
+
+def _research_module_synthesis_score(bonuses):
+    positives = sum(max(0, int(value or 0)) for value in bonuses.values())
+    negatives = sum(abs(min(0, int(value or 0))) for value in bonuses.values())
+    return int(positives - negatives // 2)
+
+
+def _roll_research_module_synthesis(module_a, module_b, *, rng=None):
+    return synthesize_research_module(module_a, module_b, rng=rng)
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -28072,21 +28277,7 @@ def modules_select():
     except ValueError:
         session["message"] = "研究モジュールの指定が不正です"
         return redirect(url_for("home"))
-    module = db.execute(
-        """
-        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
-               rm.name_ja, rm.rarity, rm.family, rm.is_active,
-               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus
-        FROM user_research_modules urm
-        JOIN research_modules rm ON rm.module_key = urm.module_key
-        WHERE urm.id = ?
-          AND urm.user_id = ?
-          AND urm.status = 'inventory'
-          AND rm.is_active = 1
-        LIMIT 1
-        """,
-        (module_instance_id, user_id),
-    ).fetchone()
+    module = _research_module_instance_row(db, module_instance_id, user_id)
     if not module:
         session["message"] = "選択できない研究モジュールです"
         return redirect(url_for("home"))
@@ -28116,6 +28307,12 @@ def modules_select():
     db.commit()
     session["message"] = "研究モジュールを設定しました"
     return redirect(url_for("home"))
+
+
+@app.route("/modules/synthesis/equip", methods=["POST"])
+@login_required
+def modules_synthesis_equip():
+    return modules_select()
 
 
 @app.route("/modules/combine", methods=["POST"])
@@ -28311,9 +28508,16 @@ def modules_sell_confirm(module_instance_id):
         """
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.is_locked,
                rm.name_ja, rm.rarity, rm.family,
-               rm.hp_bonus, rm.atk_bonus, rm.def_bonus, rm.spd_bonus, rm.acc_bonus, rm.cri_bonus,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus,
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
-               rm.is_active
+               rm.is_active, urm.synthesis_grade, urm.synthesis_family, urm.synthesis_result_type,
+               urm.origin_module_a_id, urm.origin_module_b_id, urm.generation, urm.synthesis_score,
+               urm.generated_name_ja
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -28354,7 +28558,8 @@ def modules_sell():
     module = db.execute(
         """
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.is_locked,
-               rm.name_ja, rm.rarity, rm.family, rm.trade_policy, rm.npc_sell_price
+               rm.name_ja, rm.rarity, rm.family, rm.trade_policy, rm.npc_sell_price,
+               urm.synthesis_grade, urm.synthesis_family, urm.synthesis_result_type
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -28429,6 +28634,216 @@ def modules_sell():
     db.commit()
     session["message"] = f"{module['name_ja']}を{price}コインで買取しました"
     return redirect(url_for("modules"))
+
+
+@app.route("/modules/synthesis")
+@login_required
+def modules_synthesis():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    return render_template(
+        "modules_synthesis.html",
+        user=user,
+        message=session.pop("message", None),
+        materials=_research_module_synthesis_materials(db, user_id),
+        selected_a_id=0,
+        selected_b_id=0,
+    )
+
+
+@app.route("/modules/synthesis/confirm", methods=["POST"])
+@login_required
+def modules_synthesis_confirm():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_a_id = int((request.form.get("module_a_id") or "").strip())
+        module_b_id = int((request.form.get("module_b_id") or "").strip())
+    except ValueError:
+        session["message"] = "素材の指定が不正です"
+        return redirect(url_for("modules_synthesis"))
+    module_a, module_b, error = _validate_research_module_synthesis_materials(db, user_id, module_a_id, module_b_id)
+    if error:
+        session["message"] = error
+        return redirect(url_for("modules_synthesis"))
+    cost = _research_module_synthesis_cost(module_a, module_b)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_PREVIEW"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_synthesis_preview",
+        entity_type="research_module",
+        payload={
+            "user_id": user_id,
+            "origin_module_a_id": int(module_a_id),
+            "origin_module_b_id": int(module_b_id),
+            "cost_coins": int(cost),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return render_template(
+        "modules_synthesis_confirm.html",
+        user=user,
+        module_a=module_a,
+        module_b=module_b,
+        cost_coins=cost,
+        coins_before=int(user["coins"] or 0),
+    )
+
+
+@app.route("/modules/synthesis", methods=["POST"])
+@app.route("/modules/synthesis/create", methods=["POST"])
+@login_required
+def modules_synthesis_create():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_a_id = int((request.form.get("module_a_id") or "").strip())
+        module_b_id = int((request.form.get("module_b_id") or "").strip())
+    except ValueError:
+        session["message"] = "素材の指定が不正です"
+        return redirect(url_for("modules_synthesis"))
+    module_a, module_b, error = _validate_research_module_synthesis_materials(db, user_id, module_a_id, module_b_id)
+    if error:
+        session["message"] = error
+        return redirect(url_for("modules_synthesis"))
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    coins_before = int(user["coins"] or 0) if user else 0
+    cost = _research_module_synthesis_cost(module_a, module_b)
+    if coins_before < cost:
+        return render_template(
+            "modules_synthesis.html",
+            user=user,
+            message=f"コインが足りません。必要: {cost} / 所持: {coins_before}",
+            materials=_research_module_synthesis_materials(db, user_id),
+            selected_a_id=int(module_a_id),
+            selected_b_id=int(module_b_id),
+        )
+    result = _roll_research_module_synthesis(module_a, module_b)
+    bonuses = result["bonuses"]
+    now_ts = int(time.time())
+    consume_cur = db.execute(
+        """
+        UPDATE user_research_modules
+        SET status = 'consumed', updated_at = ?
+        WHERE user_id = ?
+          AND id IN (?, ?)
+          AND status = 'inventory'
+          AND COALESCE(is_locked, 0) = 0
+        """,
+        (now_ts, user_id, int(module_a_id), int(module_b_id)),
+    )
+    if int(consume_cur.rowcount or 0) != 2:
+        db.rollback()
+        session["message"] = "素材の消費に失敗しました"
+        return redirect(url_for("modules_synthesis"))
+    cur = db.execute(
+        """
+        INSERT INTO user_research_modules
+        (user_id, module_key, status, is_locked, hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+         synthesis_grade, synthesis_family, synthesis_result_type, origin_module_a_id, origin_module_b_id,
+         generation, synthesis_score, generated_name_ja, created_at, updated_at)
+        VALUES (?, ?, 'inventory', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            RESEARCH_MODULE_SYNTHESIS_KEY,
+            int(bonuses["hp_bonus"]),
+            int(bonuses["atk_bonus"]),
+            int(bonuses["def_bonus"]),
+            int(bonuses["spd_bonus"]),
+            int(bonuses["acc_bonus"]),
+            int(bonuses["cri_bonus"]),
+            result["synthesis_grade"],
+            result["synthesis_family"],
+            result["result_type"],
+            int(module_a_id),
+            int(module_b_id),
+            int(result["generation"]),
+            int(result["synthesis_score"]),
+            result.get("generated_name_ja") or result.get("name_ja"),
+            now_ts,
+            now_ts,
+        ),
+    )
+    result_module_id = int(cur.lastrowid)
+    _register_research_module_catalog(
+        db,
+        user_id,
+        RESEARCH_MODULE_SYNTHESIS_KEY,
+        result_module_id,
+        source="synthesis",
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    coins_after = coins_before - cost
+    db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, user_id))
+    payload = {
+        "user_id": user_id,
+        "origin_module_a_id": int(module_a_id),
+        "origin_module_b_id": int(module_b_id),
+        "result_module_id": result_module_id,
+        "result_type": result["result_type"],
+        "synthesis_grade": result["synthesis_grade"],
+        "synthesis_family": result["synthesis_family"],
+        "generated_name_ja": result.get("generated_name_ja") or result.get("name_ja"),
+        "hp_bonus": int(bonuses["hp_bonus"]),
+        "atk_bonus": int(bonuses["atk_bonus"]),
+        "def_bonus": int(bonuses["def_bonus"]),
+        "spd_bonus": int(bonuses["spd_bonus"]),
+        "acc_bonus": int(bonuses["acc_bonus"]),
+        "cri_bonus": int(bonuses["cri_bonus"]),
+        "synthesis_score": int(result["synthesis_score"]),
+        "cost_coins": int(cost),
+        "coins_before": int(coins_before),
+        "coins_after": int(coins_after),
+    }
+    for event_key, action_key, entity_id in (
+        ("MODULE_SYNTHESIS_CONSUME", "module_synthesis_consume", int(module_a_id)),
+        ("MODULE_SYNTHESIS_CREATE", "module_synthesis_create", result_module_id),
+        ("MODULE_SYNTHESIS_RESULT", "module_synthesis_result", result_module_id),
+    ):
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES[event_key],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key=action_key,
+            entity_type="research_module",
+            entity_id=entity_id,
+            payload=payload,
+            ip=request.remote_addr,
+        )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COIN_DELTA"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_synthesis",
+        entity_type="research_module",
+        entity_id=result_module_id,
+        delta_coins=-int(cost),
+        payload={**payload, "source": "module_synthesis", "spend": int(cost)},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    result_module = _research_module_instance_row(db, result_module_id, user_id)
+    return render_template(
+        "modules_synthesis_result.html",
+        user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
+        module=result_module,
+        module_a=module_a,
+        module_b=module_b,
+        result_label=result["result_label"],
+        cost_coins=cost,
+    )
 
 
 @app.route("/modules")

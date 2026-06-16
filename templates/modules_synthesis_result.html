@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>{{ result_label }}</h1>
+  <div class="card">
+    <div class="stat-label">生成モジュール</div>
+    <div class="stat-value">{{ module['name_ja'] }}</div>
+    <div class="upgrade-cost">{{ module['stat_line'] }}</div>
+    <div class="robot-time">系統: {{ module['family'] }}</div>
+    <div class="robot-time">評価: {{ module['synthesis_grade_label'] }} / 評価値: {{ module['synthesis_score'] }}</div>
+    <div class="robot-time">由来: {{ module_a['name_ja'] }} + {{ module_b['name_ja'] }}</div>
+    <div class="robot-time">消費コイン: {{ cost_coins }}</div>
+  </div>
+  <div class="card">
+    <form method="post" action="{{ url_for('modules_synthesis_equip') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+      <button type="submit">次の出撃で使う</button>
+    </form>
+    <form method="post" action="{{ url_for('modules_lock') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+      <button type="submit" class="btn-secondary">保護する</button>
+    </form>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">もう一度研究合成</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">モジュール一覧へ</a></p>
+  </div>
+</div>
+{% endblock %}

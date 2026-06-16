@@ -18,9 +18,15 @@
     <div class="upgrade-cost">図鑑率: {{ catalog_summary['percent'] }}%</div>
   </div>
 
+  <div class="card">
+    <div><b>研究合成</b></div>
+    <div class="robot-time">研究モジュール2個とコインで、新しい作戦チップを生成します。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
+  </div>
+
   {% if combine_candidates %}
   <div class="card">
-    <div><b>完成型へ合成</b></div>
+    <div><b>同種3個合成</b></div>
     {% for item in combine_candidates %}
     <form method="post" action="{{ url_for('modules_combine') }}" class="inline-form inline-form-top">
       <input type="hidden" name="source_module_key" value="{{ item['source_module_key'] }}" />
