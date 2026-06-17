@@ -186,6 +186,30 @@
       </div>
     {% endif %}
   </div>
+  {% if summary.get('module_strategy') %}
+  {% set strategy = summary.get('module_strategy') %}
+  <section class="card module-strategy-card">
+    <div class="section-kicker">今回の作戦</div>
+    <h3>{{ strategy.get('module_name', '研究モジュール') }}</h3>
+    <div class="module-meta">
+      <span>{{ strategy.get('type_label', '研究モジュール') }}</span>
+      <span>{{ strategy.get('family_label', '研究') }}</span>
+    </div>
+    <div class="module-stat-chips">
+      {% for chip in strategy.get('stat_chips', []) %}
+      <span class="module-stat-chip {{ chip.get('tone', '') }}">{{ chip.get('text', '') }}</span>
+      {% endfor %}
+    </div>
+    <p class="module-result-message">{{ strategy.get('message', '') }}</p>
+    {% if strategy.get('metric_lines') %}
+    <div class="strategy-metrics">
+      {% for line in strategy.get('metric_lines', []) %}
+      <span>{{ line }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
   <div class="robot-time battle-result-saved-note">勝敗と戦利品は保存済みです。</div>
 
   <div class="battle-section-title battle-section-title-compact">次の行動</div>

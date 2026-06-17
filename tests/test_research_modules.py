@@ -493,6 +493,122 @@ class ResearchModuleTests(unittest.TestCase):
             self.assertEqual(fallback["cri"], 19)
             self.assertEqual(fallback["acc"], 1)
 
+    def test_battle_result_shows_strategy_card_for_active_module(self):
+        module_id = self._grant_module(self.user_id, "sniper_complete", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (module_id, self.user_id))
+            db.commit()
+        resp = self._run_explore("layer_2")
+        html = resp.get_data(as_text=True)
+        self.assertIn("今回の作戦", html)
+        self.assertIn("狙撃モジュール 完成型", html)
+        self.assertIn("命中 +12", html)
+        self.assertNotIn("None", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            apply_event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_STRATEGY_APPLY"]),
+            ).fetchone()
+            result_event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_STRATEGY_RESULT"]),
+            ).fetchone()
+            self.assertIsNotNone(apply_event)
+            self.assertIsNotNone(result_event)
+            payload = json.loads(result_event["payload_json"] or "{}")
+            self.assertEqual(payload["module_instance_id"], module_id)
+            self.assertTrue(payload["result_win"])
+            self.assertIn("turn_count", payload)
+
+    def test_battle_result_hides_strategy_card_without_active_module(self):
+        resp = self._run_explore("layer_2")
+        html = resp.get_data(as_text=True)
+        self.assertNotIn("今回の作戦", html)
+
+    def test_synthesized_module_strategy_card_uses_instance_bonus(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            cur = db.execute(
+                """
+                INSERT INTO user_research_modules
+                (user_id, module_key, status, hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+                 synthesis_grade, synthesis_family, synthesis_result_type, generated_name_ja, generation, synthesis_score, created_at, updated_at)
+                VALUES (?, 'synthesized_module', 'inventory', -2, 7, -1, 3, 5, 2,
+                        'refined', 'sniper_assault', 'great', '精密突撃モジュール', 1, 18, ?, ?)
+                """,
+                (self.user_id, now, now),
+            )
+            module_id = int(cur.lastrowid)
+            db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (module_id, self.user_id))
+            db.commit()
+        html = self._run_explore("layer_2").get_data(as_text=True)
+        self.assertIn("精密突撃モジュール", html)
+        self.assertIn("攻撃 +7", html)
+        self.assertIn("防御 -1", html)
+
+    def test_synthesis_result_equip_rejects_other_and_consumed_modules(self):
+        own_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        other_id = self._grant_module(self.other_user_id, "sniper_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET status = 'consumed' WHERE id = ?", (own_id,))
+            db.commit()
+        client = self._client()
+        client.post("/modules/synthesis/equip", data={"module_instance_id": other_id}, follow_redirects=False)
+        client.post("/modules/synthesis/equip", data={"module_instance_id": own_id}, follow_redirects=False)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            active_id = db.execute(
+                "SELECT active_research_module_instance_id FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()["active_research_module_instance_id"]
+            self.assertIsNone(active_id)
+
+    def test_synthesis_result_equip_and_lock_generated_module(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        client = self._client()
+        resp = client.post("/modules/synthesis/equip", data={"module_instance_id": module_id}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/home?module_equipped=1", resp.headers["Location"])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            active_id = int(db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (self.user_id,)).fetchone()["active_research_module_instance_id"])
+            self.assertEqual(active_id, module_id)
+        client.post("/modules/lock", data={"module_instance_id": module_id}, follow_redirects=False)
+        client.post("/modules/synthesis/equip", data={"module_instance_id": module_id}, follow_redirects=False)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(row["active_research_module_instance_id"]), module_id)
+
+    def test_personal_log_shows_synthesis_and_strategy_events(self):
+        ids = self._grant_module(self.user_id, "sniper_prototype", count=1) + self._grant_module(self.user_id, "assault_prototype", count=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 1000 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._client()
+        client.post("/modules/synthesis", data={"module_a_id": ids[0], "module_b_id": ids[1]}, follow_redirects=False)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            module_id = int(
+                db.execute(
+                    "SELECT id FROM user_research_modules WHERE user_id = ? AND module_key = 'synthesized_module' ORDER BY id DESC LIMIT 1",
+                    (self.user_id,),
+                ).fetchone()["id"]
+            )
+            db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (module_id, self.user_id))
+            db.commit()
+        self._run_explore("layer_2")
+        html = client.get("/comms/personal").get_data(as_text=True)
+        self.assertIn("研究合成", html)
+        self.assertIn("生成しました", html)
+        self.assertIn("今回の作戦", html)
+        self.assertIn("使って", html)
+
     def test_lock_and_unlock_own_module(self):
         module_id = self._grant_module(self.user_id, "stable_prototype", count=1)[0]
         client = self._client()

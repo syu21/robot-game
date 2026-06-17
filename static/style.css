@@ -15496,6 +15496,39 @@ button.robo-fixed-nav-item {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(252, 165, 165, 0.22);
 }
+.module-strategy-card,
+.module-recommend-card {
+  border-left: 4px solid rgba(99, 102, 241, 0.55);
+  background: linear-gradient(120deg, rgba(238, 242, 255, 0.96), rgba(245, 243, 255, 0.92));
+}
+.module-strategy-card h3 {
+  margin: 4px 0 6px;
+}
+.module-meta,
+.strategy-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.module-meta span,
+.strategy-metrics span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #312e81;
+  background: rgba(129, 140, 248, 0.14);
+  border: 1px solid rgba(129, 140, 248, 0.24);
+}
+.module-result-message {
+  margin: 8px 0 0;
+  font-weight: 750;
+  color: #1e293b;
+}
 @media (max-width: 560px) {
   .module-card-grid {
     grid-template-columns: 1fr;

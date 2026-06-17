@@ -13849,6 +13849,103 @@ def _apply_research_module_to_stats(stats, module):
     return result
 
 
+def _research_module_bonus_payload(module):
+    payload = {}
+    for key in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"):
+        payload[key] = int((module or {}).get(key) or 0)
+    return payload
+
+
+def _research_module_strategy_metrics(turn_logs, *, result_win=False):
+    logs = [dict(item) for item in (turn_logs or []) if isinstance(item, dict) and not item.get("separator_line")]
+    player_damage_values = [max(0, int(item.get("player_damage") or 0)) for item in logs]
+    metrics = {
+        "turn_count": len(logs),
+        "player_miss_count": sum(
+            1
+            for item in logs
+            if str(item.get("player_action") or "").strip() not in {"", "行動不能", "追撃不要"}
+            and int(item.get("player_damage") or 0) <= 0
+        ),
+        "player_crit_count": sum(1 for item in logs if bool(item.get("critical"))),
+        "player_max_damage": max(player_damage_values) if player_damage_values else 0,
+        "player_total_damage": sum(player_damage_values),
+        "player_damage_taken": sum(max(0, int(item.get("enemy_damage") or 0)) for item in logs),
+        "player_hp_remaining": int(logs[-1].get("player_after") or 0) if logs else 0,
+        "result_win": bool(result_win),
+    }
+    return metrics
+
+
+def _research_module_strategy_message(module, metrics):
+    if not metrics.get("result_win"):
+        return "作戦失敗。別の作戦や強化も試してみましょう。"
+    if int(metrics.get("player_hp_remaining") or 0) <= 3:
+        return "ギリギリの勝利。作戦が勝負を分けました。"
+    if int(metrics.get("player_crit_count") or 0) > 0:
+        return "会心が発生し、攻めの作戦が光りました。"
+    if int(metrics.get("player_miss_count") or 0) == 0 and int((module or {}).get("acc_bonus") or 0) > 0:
+        return "MISSなし。命中作戦が安定しました。"
+    return "作戦成功！このモジュールを使って勝利しました。"
+
+
+def _research_module_strategy_card(module, turn_logs, *, result_win=False):
+    if not module:
+        return None
+    module_view = dict(module)
+    bonuses = _research_module_bonus_payload(module_view)
+    stat_chips = list(module_view.get("stat_chips") or [])
+    if not stat_chips and module_view.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
+        stat_chips = [{"text": "効果: 合成結果によって変化", "tone": "neutral"}]
+    metrics = _research_module_strategy_metrics(turn_logs, result_win=result_win)
+    metric_lines = []
+    if int(metrics["turn_count"]) > 0:
+        metric_lines.append(f"ターン {int(metrics['turn_count'])}")
+    metric_lines.append(f"会心 {int(metrics['player_crit_count'])}回")
+    metric_lines.append(f"MISS {int(metrics['player_miss_count'])}回")
+    if int(metrics["player_max_damage"]) > 0:
+        metric_lines.append(f"最大ダメージ {int(metrics['player_max_damage'])}")
+    return {
+        "module_instance_id": int(module_view.get("instance_id") or 0),
+        "module_key": str(module_view.get("module_key") or ""),
+        "module_name": str(module_view.get("name_ja") or "研究モジュール").strip() or "研究モジュール",
+        "type_label": str(module_view.get("type_label") or module_view.get("rarity_label") or "研究モジュール"),
+        "family_label": str(module_view.get("family_label") or "研究"),
+        "result_type": str(module_view.get("synthesis_result_type") or ""),
+        "result_label": str(module_view.get("result_label") or ""),
+        "stat_chips": stat_chips,
+        "bonuses": bonuses,
+        "message": _research_module_strategy_message(module_view, metrics),
+        "metrics": metrics,
+        "metric_lines": metric_lines,
+    }
+
+
+def _recommend_areas_for_module(module):
+    bonuses = _research_module_bonus_payload(module)
+    if bonuses["acc_bonus"] >= 6:
+        return {
+            "reason": "命中が高めなので、回避の高い敵が出るエリアで試しやすいです。",
+            "areas": ["第2層Mist", "第4層Haze"],
+        }
+    if bonuses["hp_bonus"] >= 8 or bonuses["def_bonus"] >= 6:
+        return {
+            "reason": "耐久や防御が高めなので、長期戦になりやすいエリアで試しやすいです。",
+            "areas": ["第4層Forge", "第5層Labyrinth"],
+        }
+    if bonuses["atk_bonus"] >= 8 or bonuses["cri_bonus"] >= 6:
+        return {
+            "reason": "攻撃や会心が高めなので、短期決戦のエリアで試しやすいです。",
+            "areas": ["第2層Rush", "第4層Burst"],
+        }
+    if bonuses["spd_bonus"] >= 5:
+        return {
+            "reason": "素早さが高めなので、先手を取りたいエリアで試しやすいです。",
+            "areas": ["第2層Rush", "第5層Pinnacle"],
+        }
+    return None
+
+
 def _register_research_module_catalog(db, user_id, module_key, module_instance_id, *, source="admin", request_id=None, ip=None):
     now_ts = int(time.time())
     cur = db.execute(
@@ -22830,6 +22927,8 @@ PERSONAL_LOG_EVENT_TYPES = (
     AUDIT_EVENT_TYPES["STYLE_RANK_UP"],
     AUDIT_EVENT_TYPES["LAB_LEVEL_EXP_GAIN"],
     AUDIT_EVENT_TYPES["LAB_LEVEL_LEVEL_UP"],
+    AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_RESULT"],
+    AUDIT_EVENT_TYPES["MODULE_STRATEGY_RESULT"],
 )
 
 
@@ -24059,6 +24158,59 @@ def _personal_log_items(db, user_id, *, limit=COMM_PERSONAL_LOG_LIMIT):
             target = int(payload.get("target") or EVOLUTION_CORE_PROGRESS_TARGET)
             progress_after_reset = int(payload.get("progress_after_reset") or 0)
             item["meta_lines"] = [f"保証ライン: {int(target)}勝", f"次の進捗: {int(progress_after_reset)}/{int(target)}"]
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_RESULT"]:
+            module_name = str(
+                payload.get("module_name") or payload.get("generated_name_ja") or "研究合成モジュール"
+            ).strip()
+            result_type = str(payload.get("result_type") or "").strip()
+            if result_type == "great":
+                text = f"研究大成功！「{module_name}」を生成しました。"
+            elif result_type == "anomaly":
+                text = f"異常反応！「{module_name}」を生成しました。"
+            else:
+                text = f"研究合成で「{module_name}」を生成しました。"
+            item = dict(base)
+            item.update(
+                {
+                    "title": "研究合成",
+                    "text": text,
+                    "accent": "weekly",
+                    "link_url": url_for("modules"),
+                }
+            )
+            score = int(payload.get("synthesis_score") or 0)
+            if score:
+                item["meta_lines"].append(f"評価値: {score}")
+            items.append(item)
+        elif event_type == AUDIT_EVENT_TYPES["MODULE_STRATEGY_RESULT"]:
+            module_name = str(payload.get("module_name") or "研究モジュール").strip()
+            area_label = str(payload.get("area_label") or "").strip()
+            if not area_label and payload.get("area_key"):
+                area_label = _boss_area_label(payload.get("area_key"))
+            is_win = bool(payload.get("result_win"))
+            result_type = str(payload.get("result_type") or "").strip()
+            if result_type == "anomaly" and is_win:
+                text = f"異常反応モジュール「{module_name}」を使って勝利しました。"
+            elif is_win:
+                text = f"「{module_name}」を使って{area_label}で勝利しました。"
+            else:
+                text = f"「{module_name}」を使って{area_label}に挑みました。"
+            item = dict(base)
+            item.update(
+                {
+                    "title": "今回の作戦",
+                    "text": text,
+                    "accent": ("boss" if is_win else "default"),
+                    "link_url": url_for("modules"),
+                }
+            )
+            turn_count = int(payload.get("turn_count") or 0)
+            if turn_count:
+                item["meta_lines"].append(f"ターン: {turn_count}")
+            crit_count = int(payload.get("player_crit_count") or 0)
+            if crit_count:
+                item["meta_lines"].append(f"会心: {crit_count}回")
             items.append(item)
     items.extend(_personal_ranking_items(db, user_id))
     items.sort(key=lambda item: (int(item.get("sort_ts") or 0), int(item.get("sort_id") or 0)), reverse=True)
@@ -28392,6 +28544,9 @@ def modules_select():
     if not module:
         session["message"] = "選択できない研究モジュールです"
         return redirect(url_for("home"))
+    if str(module.get("status") or "") != "inventory" or module.get("sold_at"):
+        session["message"] = "所持中の研究モジュールだけ設定できます"
+        return redirect(url_for("home"))
     db.execute(
         "UPDATE users SET active_research_module_instance_id = ? WHERE id = ?",
         (module_instance_id, user_id),
@@ -28423,7 +28578,44 @@ def modules_select():
 @app.route("/modules/synthesis/equip", methods=["POST"])
 @login_required
 def modules_synthesis_equip():
-    return modules_select()
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_instance_id = int((request.form.get("module_instance_id") or "").strip())
+    except ValueError:
+        session["message"] = "研究モジュールの指定が不正です"
+        return redirect(url_for("modules"))
+    module = _research_module_instance_row(db, module_instance_id, user_id)
+    if not module or str(module.get("status") or "") != "inventory" or module.get("sold_at"):
+        session["message"] = "設定できない研究モジュールです"
+        return redirect(url_for("modules"))
+    db.execute(
+        "UPDATE users SET active_research_module_instance_id = ? WHERE id = ?",
+        (module_instance_id, user_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_SELECT"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_synthesis_equip",
+        entity_type="research_module",
+        entity_id=module_instance_id,
+        payload={
+            "user_id": user_id,
+            "module_instance_id": module_instance_id,
+            "module_key": module["module_key"],
+            "module_name": module["name_ja"],
+            "rarity": module["rarity"],
+            "family": module["family"],
+            "selected": True,
+            "source": "synthesis_result",
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "次の出撃用モジュールに設定しました。出撃時だけ効果が発動します。"
+    return redirect(url_for("home", module_equipped=1))
 
 
 @app.route("/modules/combine", methods=["POST"])
@@ -28564,11 +28756,13 @@ def modules_unlock():
 def _set_research_module_lock(locked):
     db = get_db()
     user_id = int(session["user_id"])
+    return_to = str(request.form.get("return_to") or "").strip()
+    redirect_target = return_to if return_to.startswith("/") and not return_to.startswith("//") else url_for("modules")
     try:
         module_instance_id = int((request.form.get("module_instance_id") or "").strip())
     except ValueError:
         session["message"] = "研究モジュールの指定が不正です"
-        return redirect(url_for("modules"))
+        return redirect(redirect_target)
     module = db.execute(
         """
         SELECT urm.id AS instance_id, urm.module_key, rm.name_ja
@@ -28583,7 +28777,7 @@ def _set_research_module_lock(locked):
     ).fetchone()
     if not module:
         session["message"] = "操作できない研究モジュールです"
-        return redirect(url_for("modules"))
+        return redirect(redirect_target)
     db.execute(
         "UPDATE user_research_modules SET is_locked = ?, updated_at = ? WHERE id = ? AND user_id = ?",
         (1 if locked else 0, int(time.time()), module_instance_id, user_id),
@@ -28605,8 +28799,8 @@ def _set_research_module_lock(locked):
         ip=request.remote_addr,
     )
     db.commit()
-    session["message"] = "保護しました" if locked else "保護を外しました"
-    return redirect(url_for("modules"))
+    session["message"] = "モジュールを保護しました。" if locked else "保護を外しました"
+    return redirect(redirect_target)
 
 
 @app.route("/modules/sell/confirm/<int:module_instance_id>")
@@ -28905,8 +29099,11 @@ def modules_synthesis_create():
         "origin_module_a_id": int(module_a_id),
         "origin_module_b_id": int(module_b_id),
         "result_module_id": result_module_id,
+        "module_name": result.get("generated_name_ja") or result.get("name_ja") or "研究合成モジュール",
         "result_type": result["result_type"],
+        "result_label": result.get("result_label") or RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS.get(result["result_type"], "研究合成"),
         "synthesis_grade": result["synthesis_grade"],
+        "synthesis_grade_label": RESEARCH_MODULE_RARITY_LABELS.get(result["synthesis_grade"], result["synthesis_grade"]),
         "synthesis_family": result["synthesis_family"],
         "generated_name_ja": result.get("generated_name_ja") or result.get("name_ja"),
         "hp_bonus": int(bonuses["hp_bonus"]),
@@ -28963,6 +29160,7 @@ def modules_synthesis_create():
         module_b=module_b,
         result_label=result["result_label"],
         result_description=result_descriptions.get(result["result_type"], ""),
+        recommendation=_recommend_areas_for_module(result_module),
         cost_coins=cost,
     )
 
@@ -29927,6 +30125,8 @@ def home():
     home_ranking_url = url_for("ranking", metric="weekly_explores")
     upgrade_cost = max(10, user["click_power"] * 10)
     message = session.pop("message", None)
+    if not message and str(request.args.get("module_equipped") or "") == "1":
+        message = "次の出撃用モジュールに設定しました。出撃時だけ効果が発動します。"
     slot_display_used = min(instance_count, limits["robot_slots"])
     slot_overflow = max(0, instance_count - limits["robot_slots"])
     unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
@@ -33107,6 +33307,26 @@ def explore():
         session["message"] = "アクティブロボの個体ステータスを取得できません。再編成後に探索してください。"
         return redirect(url_for("robots"))
     active_research_module = _active_research_module_for_user(db, user_id, user_row=user)
+    if active_research_module:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_STRATEGY_APPLY"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="research_module",
+            entity_id=int(active_research_module.get("instance_id") or 0),
+            payload={
+                "user_id": user_id,
+                "robot_instance_id": int(active["id"]) if active else None,
+                "module_instance_id": int(active_research_module.get("instance_id") or 0),
+                "module_key": active_research_module.get("module_key"),
+                "module_name": active_research_module.get("name_ja"),
+                "area_key": area_key,
+                **_research_module_bonus_payload(active_research_module),
+            },
+            ip=request.remote_addr,
+        )
     base_stats = _apply_research_module_to_stats(robot_stats["stats"], active_research_module)
     player_atk_base = int(base_stats["atk"])
     player_def_base = int(base_stats["def"])
@@ -34902,6 +35122,37 @@ def explore():
         _clear_explore_cooldown(db, user_id)
     else:
         _touch_explore_cooldown(db, user_id, now)
+    module_strategy_card = _research_module_strategy_card(
+        active_research_module,
+        all_turn_logs,
+        result_win=(final_outcome == "win"),
+    )
+    if module_strategy_card:
+        strategy_payload = {
+            "user_id": user_id,
+            "robot_instance_id": int(active["id"]) if active else None,
+            "module_instance_id": int(module_strategy_card.get("module_instance_id") or 0),
+            "module_key": module_strategy_card.get("module_key"),
+            "module_name": module_strategy_card.get("module_name"),
+            "area_key": area_key,
+            "area_label": _boss_area_label(area_key),
+            "enemy_key": (last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+            "enemy_name": (last_enemy["name_ja"] if last_enemy and "name_ja" in last_enemy.keys() else None),
+            "result_type": module_strategy_card.get("result_type"),
+            **module_strategy_card.get("bonuses", {}),
+            **module_strategy_card.get("metrics", {}),
+        }
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_STRATEGY_RESULT"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="research_module",
+            entity_id=int(module_strategy_card.get("module_instance_id") or 0),
+            payload=strategy_payload,
+            ip=request.remote_addr,
+        )
     area_turn_limit = get_battle_turn_limit(area_key, is_boss=bool(area_boss_active))
     area_turn_limit_removed = area_turn_limit is None
     area_safety_turn_cap = int(HARD_BATTLE_TURN_CAP) if area_turn_limit_removed else None
@@ -35320,6 +35571,7 @@ def explore():
         "explore_ct_is_admin": bool(explore_ct_is_admin),
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
+        "module_strategy": module_strategy_card,
         "tutorial_layer1_result_card": tutorial_layer1_result_card,
         "tutorial_layer1_next_action": (
             {

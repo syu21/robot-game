@@ -90,15 +90,28 @@
   - 系統
   - 評価
   - 由来
-  - 次の出撃で使う
-  - 保護する
+  - このモジュールを次の出撃で使う
+  - このモジュールを保護する
+  - おすすめ出撃先
+  - 基地へ戻って出撃する
   - モジュール一覧へ
+
+## 実戦導線
+- 合成結果画面の「このモジュールを次の出撃で使う」は `users.active_research_module_instance_id` を更新し、`/home?module_equipped=1` に戻す。
+- 使用設定は本人所有、`status='inventory'`、未売却のモジュールだけ許可する。
+- ロック中モジュールは素材・売却には使えないが、出撃用としては設定できる。
+- 出撃結果画面は active module がある場合だけ「今回の作戦」カードを表示する。
+- 「今回の作戦」はモジュール名、種別/評価、効果チップ、勝敗コメント、取れる範囲の戦闘メトリクスを表示する。
+- 0補正は効果チップから省略する。研究合成産で実効補正が取れない場合は「効果: 合成結果によって変化」と表示する。
+- 戦闘ログ形式は変更しない。メトリクスは既存 `turn_logs` から集計する。
 
 ## 監査ログ
 - `audit.module.synthesis.preview`
 - `audit.module.synthesis.create`
 - `audit.module.synthesis.consume`
 - `audit.module.synthesis.result`
+- `audit.module.strategy.apply`
+- `audit.module.strategy.result`
 - `audit.coin.delta`
 
 payload:
@@ -113,6 +126,39 @@ payload:
 - `cost_coins`
 - `coins_before`
 - `coins_after`
+
+`audit.module.strategy.apply` payload:
+- `user_id`
+- `robot_instance_id`
+- `module_instance_id`
+- `module_key`
+- `module_name`
+- `area_key`
+- `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
+
+`audit.module.strategy.result` payload:
+- `user_id`
+- `robot_instance_id`
+- `module_instance_id`
+- `module_name`
+- `area_key`
+- `area_label`
+- `enemy_key`
+- `enemy_name`
+- `result_win`
+- `turn_count`
+- `player_miss_count`
+- `player_crit_count`
+- `player_max_damage`
+- `player_total_damage`
+- `player_damage_taken`
+- `player_hp_remaining`
+- `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
+
+## 個人ログ
+- `audit.module.synthesis.result` は `/comms/personal` に「研究合成」ログとして表示する。
+- `audit.module.strategy.result` は `/comms/personal` に「今回の作戦」ログとして表示する。
+- 世界ログには公開しない。
 
 ## 非対象 v1
 - 世界ログ公開。

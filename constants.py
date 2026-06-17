@@ -178,6 +178,8 @@ AUDIT_EVENT_TYPES = {
     "MODULE_SYNTHESIS_CREATE": "audit.module.synthesis.create",
     "MODULE_SYNTHESIS_CONSUME": "audit.module.synthesis.consume",
     "MODULE_SYNTHESIS_RESULT": "audit.module.synthesis.result",
+    "MODULE_STRATEGY_APPLY": "audit.module.strategy.apply",
+    "MODULE_STRATEGY_RESULT": "audit.module.strategy.result",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",

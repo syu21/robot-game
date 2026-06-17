@@ -140,6 +140,14 @@
 - `audit.module.synthesis.consume`
 - `audit.module.synthesis.create`
 - `audit.module.synthesis.result`
+- `audit.module.strategy.apply`
+- `audit.module.strategy.result`
+
+補足:
+- `audit.module.strategy.apply` は出撃開始時に active module の実効補正を適用した記録。
+- `audit.module.strategy.result` は出撃終了時に active module 使用結果を記録する。
+- `audit.module.synthesis.result` と `audit.module.strategy.result` は `/comms/personal` の個人ログ表示対象。
+- `MODULE_SYNTHESIS_RESULT` / `MODULE_STRATEGY_RESULT` は将来の公開イベント候補だが、現時点では世界ログ公開に使わない。
 
 ### 4.9 管理者操作（追加）
 - `audit.admin.user.ban`

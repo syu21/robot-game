@@ -109,12 +109,16 @@
   - 100到達でランダムprototype研究モジュールを1個保証付与し、付与後 `-100`
   - complete研究モジュールは同種prototype 3個合成で入手する
   - 研究合成産は `user_research_modules` の個体補正を持ち、出撃時だけ補正を適用する
+  - active module がある出撃では、出撃開始時に `audit.module.strategy.apply`、終了時に `audit.module.strategy.result` を残す
+  - `audit.module.strategy.result` は `/comms/personal` の個人ログに表示し、世界ログには流さない
   - 監査:
     - `audit.module.drop`
     - `audit.module.pity.progress`
     - `audit.module.pity.grant`
     - `audit.module.combine`
     - `audit.module.synthesis.result`
+    - `audit.module.strategy.apply`
+    - `audit.module.strategy.result`
 - 第4層の育成傾向:
   - `layer_4_forge`: 耐久・防御寄り
   - `layer_4_haze`: 命中・安定寄り
@@ -147,6 +151,12 @@
   - ドロップ結果（なしなら `戦利品なし`）
 - `進化コア保証` や `ボス報酬` は短い結果行で区別して表示
 - 研究モジュールは `研究ゲージ +n` / `研究モジュール獲得: ...` / `研究ゲージ達成: ...を獲得` を短く表示
+- active module がある場合は、戦利品の下に「今回の作戦」カードを表示する
+  - 使用モジュール名
+  - 種別/評価
+  - 実効補正チップ
+  - 勝敗コメント
+  - ターン数、会心回数、MISS回数、最大ダメージなど取れる範囲のメトリクス
 - battle結果の followup は `結果 / 戦利品 / 次の行動` を先頭に寄せ、敵情報と詳細ログは折りたたみへ退避してスマホでも再出撃しやすくする
 - 下部の `次の行動` はカード表示にし、`もう一度出撃 / 入手したパーツを見る / 基地へ戻る` を押しやすく出す
 - パーツ獲得がある、または所持数が上限の80%以上の場合は、次の
