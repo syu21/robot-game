@@ -5,14 +5,14 @@
 {% if not user_faction %}
 <div class="card">
   <p>陣営は、ロボらぼ内での所属です。今後の週間競争・世界ログ・陣営戦で使われます。</p>
-  <p>一度選ぶと変更できません。現時点では、陣営によってロボのステータス成長が直接変わることはありません。</p>
+  <p>選択後は{{ cooldown_days }}日間変更できません。現時点では、陣営によってロボのステータス成長が直接変わることはありません。</p>
 </div>
 {% endif %}
 
 {% if user_faction %}
 <div class="card">
   <p>所属済み: <b>{{ faction_labels.get(user_faction, user_faction) }}</b></p>
-  <p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
+  <p class="link"><a href="{{ url_for('faction_view') }}">陣営を見る</a> | <a href="{{ url_for('home') }}">基地へ戻る</a></p>
 </div>
 {% elif not can_choose %}
 <div class="card">
@@ -36,6 +36,7 @@
     <div>
       <b>{{ row['label'] }}</b>
       {% if recommended_faction == row['key'] %}<span class="weekly-fit-badge">おすすめ</span>{% endif %}
+      {% if row['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
       {% if row['is_weekly_tailwind'] %}<span class="weekly-fit-badge">今週の追い風</span>{% endif %}
     </div>
     <div class="upgrade-cost">{{ row['doctrine_title'] }}</div>

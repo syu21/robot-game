@@ -98,6 +98,8 @@
 - `audit.referral.attach`
 - `audit.referral.qualified`
 - `audit.faction.choose`
+- `audit.faction.change`
+  - 初回選択後の陣営変更時に記録する。payload は `before_faction`, `after_faction`, `changed_at`, `cooldown_days` を含める。
 - `audit.faction.points.add`
   - 陣営ポイント加算時に記録する。payload は `week_key`, `faction`, `event_type`, `points`, `counters`, `payload`, `log_created` を含める
   - 未所属ユーザーは加算されない

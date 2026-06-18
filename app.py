@@ -376,6 +376,7 @@ FACTION_UNLOCK_REQUIREMENTS = {
     "layer1_explore": {"required": 3},
     "strengthen": {"required": 1},
 }
+FACTION_CHANGE_COOLDOWN_DAYS = 7
 FACTION_WAR_POINTS = {
     "explore_win": 1,
     "boss_defeat": 10,
@@ -7098,7 +7099,7 @@ def _submit_chat_message(db, *, user_id, username, room_key, surface):
     )
     text = str(request.form.get("message") or "").strip()
     if not text:
-        session["message"] = "投稿内容を入力してください。"
+        session["message"] = "通信文を入力してください。"
         return redirect(redirect_target)
     if len(text) > int(settings["max_chars"]):
         session["message"] = f"{int(settings['max_chars'])}文字以内で入力してください。"
@@ -10245,6 +10246,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN desperate_low_hp_wins INTEGER NOT NULL DEFAULT 0")
     if "faction" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN faction TEXT")
+    if "faction_changed_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN faction_changed_at TEXT")
     if "last_seen_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0")
     if "invite_code" not in cols:
@@ -20617,6 +20620,64 @@ def _faction_member_counts(db):
     return counts
 
 
+def get_faction_counts(db):
+    return _faction_member_counts(db)
+
+
+def _faction_minority_keys(counts):
+    values = {key: int((counts or {}).get(key, 0) or 0) for key in FACTION_KEYS}
+    if not values or len(set(values.values())) <= 1:
+        return set()
+    minimum = min(values.values())
+    return {key for key, value in values.items() if value == minimum}
+
+
+def _faction_changed_at_ts(value):
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(time.mktime(time.strptime(text[:19], "%Y-%m-%d %H:%M:%S")))
+    except (OverflowError, TypeError, ValueError):
+        return 0
+
+
+def _faction_change_status(user_row, now_ts=None):
+    current = _normalize_faction_key(user_row["faction"] if user_row and "faction" in user_row.keys() else None)
+    if not current:
+        return {
+            "can_change": True,
+            "current_faction": None,
+            "next_change_at": 0,
+            "next_change_at_text": "",
+            "remaining_seconds": 0,
+        }
+    changed_at = user_row["faction_changed_at"] if "faction_changed_at" in user_row.keys() else None
+    changed_ts = _faction_changed_at_ts(changed_at)
+    if changed_ts <= 0:
+        return {
+            "can_change": True,
+            "current_faction": current,
+            "next_change_at": 0,
+            "next_change_at_text": "",
+            "remaining_seconds": 0,
+        }
+    now_value = int(_now_ts() if now_ts is None else now_ts)
+    next_ts = int(changed_ts + FACTION_CHANGE_COOLDOWN_DAYS * 86400)
+    remaining = max(0, next_ts - now_value)
+    return {
+        "can_change": remaining <= 0,
+        "current_faction": current,
+        "next_change_at": next_ts,
+        "next_change_at_text": _format_jst_ts(next_ts),
+        "remaining_seconds": remaining,
+    }
+
+
 def _faction_recommended_key(counts):
     ranked = sorted([(int(counts.get(k, 0)), k) for k in FACTION_KEYS], key=lambda x: (x[0], x[1]))
     return ranked[0][1] if ranked else None
@@ -21943,6 +22004,7 @@ def _world_hot_area_rows(db, week_key, limit=4, *, user_row=None, user_id=None, 
 
 def _faction_score_rows(score_map, member_counts=None, *, user_faction=None, weekly_faction_key=None):
     counts = member_counts or {}
+    minority_keys = _faction_minority_keys(counts)
     rows = []
     for key in FACTION_KEYS:
         doctrine = FACTION_DOCTRINES.get(key, {})
@@ -21959,6 +22021,7 @@ def _faction_score_rows(score_map, member_counts=None, *, user_faction=None, wee
                 "world_hint": doctrine.get("world_hint", ""),
                 "is_user_faction": bool(user_faction and key == user_faction),
                 "is_weekly_tailwind": bool(weekly_faction_key and key == weekly_faction_key),
+                "is_minority": key in minority_keys,
             }
         )
     rows.sort(key=lambda item: (-int(item["points"]), item["label"]))
@@ -21969,6 +22032,7 @@ def _faction_detail_rows(db, week_key, *, member_counts=None, user_faction=None,
     details = aggregate_faction_details(db, str(week_key))
     scores = _faction_week_scores(db, str(week_key))
     counts = member_counts or _faction_member_counts(db)
+    minority_keys = _faction_minority_keys(counts)
     rows = []
     rank_map = {row["faction"]: int(row["rank"]) for row in rank_factions(details)}
     for key in FACTION_KEYS:
@@ -21997,6 +22061,7 @@ def _faction_detail_rows(db, week_key, *, member_counts=None, user_faction=None,
                 "world_hint": doctrine.get("world_hint", ""),
                 "is_user_faction": bool(user_faction and key == user_faction),
                 "is_weekly_tailwind": bool(weekly_faction_key and key == weekly_faction_key),
+                "is_minority": key in minority_keys,
             }
         )
     rows.sort(key=lambda item: (int(item["rank"]), -int(item["points"]), item["label"]))
@@ -31774,14 +31839,7 @@ def champion_challenge():
     )
 
 
-@app.route("/faction/choose", methods=["GET", "POST"])
-@login_required
-def faction_choose():
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    if not user:
-        session.clear()
-        return redirect(url_for("login"))
+def _faction_page_context(db, user):
     user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
     counts = _faction_unlock_counts(db, user["id"])
     can_choose = bool((not user_faction) and _faction_unlock_ready(counts))
@@ -31796,32 +31854,138 @@ def faction_choose():
         user_faction=user_faction,
         weekly_faction_key=weekly_faction_key,
     )
+    return {
+        "user": user,
+        "user_faction": user_faction,
+        "can_choose": can_choose,
+        "unlock_counts": counts,
+        "unlock_progress_line": _faction_unlock_progress_line(counts),
+        "unlock_progress_rows": _faction_unlock_progress_rows(counts),
+        "faction_labels": FACTION_LABELS,
+        "faction_emblems": FACTION_EMBLEMS,
+        "member_counts": member_counts,
+        "recommended_faction": recommended_faction,
+        "faction_score_rows": faction_score_rows,
+        "current_week_key": current_week_key,
+        "change_status": _faction_change_status(user),
+        "cooldown_days": FACTION_CHANGE_COOLDOWN_DAYS,
+        "minority_factions": _faction_minority_keys(member_counts),
+    }
+
+
+@app.route("/faction")
+@login_required
+def faction_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    context = _faction_page_context(db, user)
+    return render_template("faction.html", **context)
+
+
+@app.route("/faction/change", methods=["POST"])
+@login_required
+def faction_change():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    current = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    chosen = _normalize_faction_key(request.form.get("selected_faction") or request.form.get("faction"))
+    if not chosen:
+        flash("陣営を選択してください。", "error")
+        return redirect(url_for("faction_view"))
+    if current and chosen == current:
+        flash("現在と同じ陣営は選べません。", "error")
+        return redirect(url_for("faction_view"))
+
+    unlock_counts = _faction_unlock_counts(db, int(user["id"]))
+    if not current and not _faction_unlock_ready(unlock_counts):
+        flash("まだ陣営選択は解禁されていません。", "error")
+        return redirect(url_for("faction_view"))
+    if current:
+        change_status = _faction_change_status(user)
+        if not change_status["can_change"]:
+            flash(f"陣営変更は{change_status['next_change_at_text']}以降に可能です。", "error")
+            return redirect(url_for("faction_view"))
+
+    changed_at = now_str()
+    db.execute("UPDATE users SET faction = ?, faction_changed_at = ? WHERE id = ?", (chosen, changed_at, int(user["id"])))
+    if current:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTION_CHANGE"],
+            user_id=int(user["id"]),
+            request_id=(getattr(g, "request_id", None) if g else None),
+            action_key="faction_change",
+            entity_type="user",
+            entity_id=int(user["id"]),
+            payload={
+                "before_faction": current,
+                "after_faction": chosen,
+                "changed_at": changed_at,
+                "cooldown_days": FACTION_CHANGE_COOLDOWN_DAYS,
+            },
+            ip=request.remote_addr,
+        )
+        flash(f"{FACTION_LABELS.get(chosen, chosen)} に変更しました。", "notice")
+    else:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTION_CHOOSE"],
+            user_id=int(user["id"]),
+            request_id=(getattr(g, "request_id", None) if g else None),
+            action_key="faction_choose",
+            entity_type="user",
+            entity_id=int(user["id"]),
+            payload={
+                "chosen_faction": chosen,
+                "counts_snapshot": unlock_counts,
+            },
+            ip=request.remote_addr,
+        )
+        db.execute(
+            "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
+            (
+                int(user["id"]),
+                "SYSTEM",
+                f"{session.get('username', 'unknown')} が {FACTION_LABELS.get(chosen, chosen)} に所属した。",
+                changed_at,
+            ),
+        )
+        flash(f"{FACTION_LABELS.get(chosen, chosen)} に所属しました。", "notice")
+    db.commit()
+    return redirect(url_for("faction_view"))
+
+
+@app.route("/faction/choose", methods=["GET", "POST"])
+@login_required
+def faction_choose():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    context = _faction_page_context(db, user)
+    user_faction = context["user_faction"]
+    counts = context["unlock_counts"]
+    can_choose = context["can_choose"]
 
     if request.method == "POST":
         if user_faction:
             flash("すでに陣営所属済みです。", "notice")
-            return redirect(url_for("faction_choose"))
+            return redirect(url_for("faction_view"))
         if not can_choose:
-            return render_template(
-                "faction_choose.html",
-                user=user,
-                user_faction=None,
-                can_choose=False,
-                unlock_counts=counts,
-                unlock_progress_line=_faction_unlock_progress_line(counts),
-                unlock_progress_rows=_faction_unlock_progress_rows(counts),
-                faction_labels=FACTION_LABELS,
-                faction_emblems=FACTION_EMBLEMS,
-                member_counts=member_counts,
-                recommended_faction=recommended_faction,
-                faction_score_rows=faction_score_rows,
-                current_week_key=current_week_key,
-            ), 403
+            return render_template("faction_choose.html", **context), 403
         chosen = _normalize_faction_key(request.form.get("faction"))
         if not chosen:
             flash("陣営を選択してください。", "error")
             return redirect(url_for("faction_choose"))
-        db.execute("UPDATE users SET faction = ? WHERE id = ?", (chosen, user["id"]))
+        changed_at = now_str()
+        db.execute("UPDATE users SET faction = ?, faction_changed_at = ? WHERE id = ?", (chosen, changed_at, user["id"]))
         audit_log(
             db,
             AUDIT_EVENT_TYPES["FACTION_CHOOSE"],
@@ -31842,31 +32006,17 @@ def faction_choose():
                 int(user["id"]),
                 "SYSTEM",
                 f"{session.get('username', 'unknown')} が {FACTION_LABELS.get(chosen, chosen)} に所属した。",
-                now_str(),
+                changed_at,
             ),
         )
         db.commit()
         flash(f"{FACTION_LABELS.get(chosen, chosen)} に所属しました。", "notice")
-        return redirect(url_for("home"))
+        return redirect(url_for("faction_view"))
 
     status_code = 200
     if (not user_faction) and (not can_choose):
         status_code = 403
-    return render_template(
-        "faction_choose.html",
-        user=user,
-        user_faction=user_faction,
-        can_choose=can_choose,
-        unlock_counts=counts,
-        unlock_progress_line=_faction_unlock_progress_line(counts),
-        unlock_progress_rows=_faction_unlock_progress_rows(counts),
-        faction_labels=FACTION_LABELS,
-        faction_emblems=FACTION_EMBLEMS,
-        member_counts=member_counts,
-        recommended_faction=recommended_faction,
-        faction_score_rows=faction_score_rows,
-        current_week_key=current_week_key,
-    ), status_code
+    return render_template("faction_choose.html", **context), status_code
 
 
 @app.route("/progress")

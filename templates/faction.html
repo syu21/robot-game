@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営</h1>
+
+<div class="card">
+  {% if user_faction %}
+  <p>現在の所属: <b>{{ faction_labels.get(user_faction, user_faction) }}</b></p>
+  {% if change_status['can_change'] %}
+  <p class="upgrade-cost">陣営は変更できます。変更後は{{ cooldown_days }}日間、再変更できません。</p>
+  {% else %}
+  <p class="upgrade-cost">次の変更可能日時: {{ change_status['next_change_at_text'] }} JST</p>
+  {% endif %}
+  {% else %}
+  <p>まだ陣営に所属していません。</p>
+  {% if can_choose %}
+  <p class="upgrade-cost">所属先を選んでください。選択後は{{ cooldown_days }}日間、変更できません。</p>
+  {% else %}
+  <p><b>陣営参加まで</b></p>
+  {% for row in unlock_progress_rows %}
+  <div>{{ row['label'] }}：{{ row['value'] }}</div>
+  {% endfor %}
+  {% endif %}
+  {% endif %}
+</div>
+
+<div class="showcase-grid">
+  {% for row in faction_score_rows %}
+  <form method="post" action="{{ url_for('faction_change') }}" class="card">
+    <input type="hidden" name="selected_faction" value="{{ row['key'] }}" />
+    <div>
+      <b>{{ row['label'] }}</b>
+      {% if row['is_user_faction'] %}<span class="weekly-fit-badge">所属中</span>{% endif %}
+      {% if row['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      {% if row['is_weekly_tailwind'] %}<span class="weekly-fit-badge">今週の追い風</span>{% endif %}
+    </div>
+    <div class="upgrade-cost">{{ row['doctrine_title'] }} / {{ row['focus'] }}</div>
+    <div class="upgrade-cost">所属人数: {{ row['member_count'] }} / 今週 {{ row['points'] }}pt</div>
+    <div class="upgrade-cost">{{ row['doctrine_summary'] }}</div>
+    <div class="robot-part">{{ row['world_hint'] }}</div>
+    {% if row['is_user_faction'] %}
+    <button type="submit" disabled>現在所属中</button>
+    {% elif user_faction and not change_status['can_change'] %}
+    <button type="submit" disabled>変更待機中</button>
+    {% elif (not user_faction) and (not can_choose) %}
+    <button type="submit" disabled>未解禁</button>
+    {% else %}
+    <button type="submit">{% if user_faction %}この陣営へ変更{% else %}この陣営に所属{% endif %}</button>
+    {% endif %}
+  </form>
+  {% endfor %}
+</div>
+
+<div class="link"><a href="{{ url_for('home') }}">基地へ戻る</a> | <a href="{{ url_for('world_view') }}">陣営戦を見る</a></div>
+{% endblock %}

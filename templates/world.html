@@ -78,7 +78,7 @@
       <div><b>所属:</b> 未所属</div>
       <div class="upgrade-cost">{{ faction_unlock_progress_line }}</div>
       {% if faction_can_choose %}
-      <div class="link"><a href="{{ url_for('faction_choose') }}">陣営を選ぶ</a></div>
+      <div class="link"><a href="{{ url_for('faction_view') }}">陣営を選ぶ</a></div>
       {% endif %}
       {% endif %}
       {% if prev_faction_result %}

@@ -34,10 +34,10 @@
     <a class="battle-home-link" href="{{ url_for('comms_rooms', room=selected_room_key) }}">手動更新</a>
   </div>
 
-  <form method="post" action="{{ url_for('comms_rooms', room=selected_room_key) }}" class="post-form comms-room-form" data-comms-compose="1">
+  <form method="post" action="{{ url_for('comms_rooms', room=selected_room_key) }}" class="post-form comms-room-form" data-comms-compose="1" novalidate>
     <input type="hidden" name="next" value="{{ url_for('comms_rooms', room=selected_room_key) }}" />
     <input type="hidden" name="room_key" value="{{ selected_room_key }}" />
-    <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="3" placeholder="{{ selected_room['title'] }} に投稿する" required></textarea>
+    <textarea name="message" maxlength="{{ room_settings['max_chars'] }}" rows="3" placeholder="{{ selected_room['title'] }} に投稿する"></textarea>
     <button type="submit">送信</button>
   </form>
 

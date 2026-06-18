@@ -19,9 +19,9 @@
     </div>
     <a class="battle-home-link" href="{{ url_for('comms_world') }}">手動更新</a>
   </div>
-  <form method="post" action="{{ url_for('comms_world') }}" class="home-chat-form comms-post-form" data-comms-compose="1">
+  <form method="post" action="{{ url_for('comms_world') }}" class="home-chat-form comms-post-form" data-comms-compose="1" novalidate>
     <input type="hidden" name="next" value="{{ request.path }}" />
-    <input type="text" name="message" maxlength="{{ world_settings['max_chars'] }}" placeholder="世界にひとこと送る" required />
+    <input type="text" name="message" maxlength="{{ world_settings['max_chars'] }}" placeholder="世界にひとこと送る" />
     <button type="submit">送信</button>
   </form>
 

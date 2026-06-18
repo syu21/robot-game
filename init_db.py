@@ -756,6 +756,7 @@ def main():
             burst_crit_finisher_kills INTEGER NOT NULL DEFAULT 0,
             desperate_low_hp_wins INTEGER NOT NULL DEFAULT 0,
             faction TEXT,
+            faction_changed_at TEXT,
             is_banned INTEGER NOT NULL DEFAULT 0,
             is_admin_protected INTEGER NOT NULL DEFAULT 0,
             banned_at TEXT,
@@ -2286,6 +2287,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN desperate_low_hp_wins INTEGER NOT NULL DEFAULT 0")
     if "faction" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN faction TEXT")
+    if "faction_changed_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN faction_changed_at TEXT")
     if "is_banned" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0")
     if "is_admin_protected" not in users_cols:

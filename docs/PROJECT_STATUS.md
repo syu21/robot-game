@@ -335,9 +335,14 @@
   - 各投稿は `小ロボ主役 + 補助アバター` に presence ラベルを添えて表示する
 - `/comms/faction`
   - 陣営所属済みユーザーは `自陣営 / 全陣営 / 自分` の3系統で陣営ログを確認できる
-  - 未所属ユーザーは陣営選択までの進捗、選択可能ユーザーは `/faction/choose` 導線を表示する
+  - 未所属ユーザーは陣営選択までの進捗、選択可能ユーザーは `/faction` 導線を表示する
   - 出撃勝利 / 編成 / 強化 / 進化 / ボス撃破 / チャンプ撃破を陣営貢献として記録する
   - 通常出撃ログは低頻度表示、進化・ボス・チャンプなど大きい出来事は陣営通信へ出す
+- `/faction`
+  - 初回所属と所属後の陣営変更を扱う。
+  - 陣営変更は `FACTION_CHANGE_COOLDOWN_DAYS = 7` 日ごと。
+  - 各陣営の所属人数を表示し、最少人数の陣営だけ `研究支援中` バッジを出す。全陣営同数ならバッジなし。
+  - 変更時は `audit.faction.change`、初回選択は既存 `audit.faction.choose` を記録する。
 - `/comms/personal`
   - パーツ入手 / 強化 / 探索 / ボス遭遇 / ボス撃破 / 進化成功 / 層解放 / 招待条件達成 / 進化コア保証到達 / 個人ランキングを読み返す
   - 直近30件、読み取り専用
@@ -383,6 +388,7 @@
   - `active_robot_id`
   - `max_unlocked_layer`
   - `faction`
+  - `faction_changed_at`
   - `avatar_path`
   - `invite_code`
   - `lab_coin`, `lab_coin_last_daily_at`
