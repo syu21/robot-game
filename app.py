@@ -20683,6 +20683,203 @@ def _faction_recommended_key(counts):
     return ranked[0][1] if ranked else None
 
 
+def get_current_week_range(week_key=None):
+    return _world_week_bounds(str(week_key or _world_week_key()))
+
+
+def _faction_activity_score(*, explore_count=0, boss_defeat_count=0, evolve_count=0):
+    return int(explore_count or 0) + int(boss_defeat_count or 0) * 20 + int(evolve_count or 0) * 10
+
+
+def get_weekly_faction_activity(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    start_dt, end_dt = get_current_week_range(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    member_counts = _faction_member_counts(db)
+    minority_keys = _faction_minority_keys(member_counts)
+    rows = db.execute(
+        """
+        SELECT
+            LOWER(TRIM(u.faction)) AS faction,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS explore_count,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS boss_defeat_count,
+            SUM(
+                CASE
+                    WHEN e.event_type = ?
+                     AND LOWER(COALESCE(CAST(json_extract(e.payload_json, '$.success') AS TEXT), 'true')) NOT IN ('0', 'false', 'no')
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS evolve_count
+        FROM world_events_log e
+        JOIN users u ON u.id = e.user_id
+        WHERE e.user_id IS NOT NULL
+          AND e.created_at >= ?
+          AND e.created_at < ?
+          AND e.event_type IN (?, ?, ?)
+          AND LOWER(TRIM(COALESCE(u.faction, ''))) IN ('ignis', 'ventra', 'aurix')
+          AND COALESCE(u.is_admin, 0) = 0
+        GROUP BY LOWER(TRIM(u.faction))
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+        ),
+    ).fetchall()
+    by_key = {}
+    for row in rows:
+        key = _normalize_faction_key(row["faction"])
+        if not key:
+            continue
+        explore_count = int(row["explore_count"] or 0)
+        boss_defeat_count = int(row["boss_defeat_count"] or 0)
+        evolve_count = int(row["evolve_count"] or 0)
+        by_key[key] = {
+            "explore_count": explore_count,
+            "boss_defeat_count": boss_defeat_count,
+            "evolve_count": evolve_count,
+            "activity_score": _faction_activity_score(
+                explore_count=explore_count,
+                boss_defeat_count=boss_defeat_count,
+                evolve_count=evolve_count,
+            ),
+        }
+    out = []
+    for key in FACTION_KEYS:
+        base = by_key.get(key, {})
+        out.append(
+            {
+                "faction_key": key,
+                "faction_name": FACTION_LABELS.get(key, key),
+                "member_count": int(member_counts.get(key, 0) or 0),
+                "explore_count": int(base.get("explore_count", 0) or 0),
+                "boss_defeat_count": int(base.get("boss_defeat_count", 0) or 0),
+                "evolve_count": int(base.get("evolve_count", 0) or 0),
+                "activity_score": int(base.get("activity_score", 0) or 0),
+                "is_minority": key in minority_keys,
+            }
+        )
+    return out
+
+
+def _faction_spotlight_label(row):
+    explore_count = int(row.get("explore_count", 0) or 0)
+    boss_defeat_count = int(row.get("boss_defeat_count", 0) or 0)
+    evolve_count = int(row.get("evolve_count", 0) or 0)
+    if explore_count > 0 and boss_defeat_count > 0 and evolve_count > 0:
+        return "今週の研究主力"
+    if boss_defeat_count > 0:
+        return "今週の突破役"
+    if evolve_count > 0:
+        return "今週の進化担当"
+    if explore_count > 0:
+        return "今週の周回担当"
+    return "今週の研究員"
+
+
+def get_weekly_faction_members_spotlight(db, faction_key, limit=5, week_key=None):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return []
+    wk = str(week_key or _world_week_key())
+    start_dt, end_dt = get_current_week_range(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    rows = db.execute(
+        """
+        SELECT
+            u.id AS user_id,
+            u.username,
+            u.display_name,
+            ri.name AS robot_name,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS explore_count,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS boss_defeat_count,
+            SUM(
+                CASE
+                    WHEN e.event_type = ?
+                     AND LOWER(COALESCE(CAST(json_extract(e.payload_json, '$.success') AS TEXT), 'true')) NOT IN ('0', 'false', 'no')
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS evolve_count
+        FROM world_events_log e
+        JOIN users u ON u.id = e.user_id
+        LEFT JOIN robot_instances ri ON ri.id = u.active_robot_id
+        WHERE e.user_id IS NOT NULL
+          AND e.created_at >= ?
+          AND e.created_at < ?
+          AND e.event_type IN (?, ?, ?)
+          AND LOWER(TRIM(COALESCE(u.faction, ''))) = ?
+          AND COALESCE(u.is_admin, 0) = 0
+        GROUP BY u.id
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            key,
+        ),
+    ).fetchall()
+    visuals_cache = {}
+    out = []
+    for row in rows:
+        explore_count = int(row["explore_count"] or 0)
+        boss_defeat_count = int(row["boss_defeat_count"] or 0)
+        evolve_count = int(row["evolve_count"] or 0)
+        activity_score = _faction_activity_score(
+            explore_count=explore_count,
+            boss_defeat_count=boss_defeat_count,
+            evolve_count=evolve_count,
+        )
+        if activity_score <= 0:
+            continue
+        visuals = _user_visuals(db, int(row["user_id"]), visuals_cache)
+        item = {
+            "user_id": int(row["user_id"]),
+            "username": row["display_name"] or row["username"],
+            "display_username": visuals["display_username"],
+            "robot_name": row["robot_name"] or "",
+            "explore_count": explore_count,
+            "boss_defeat_count": boss_defeat_count,
+            "evolve_count": evolve_count,
+            "activity_score": activity_score,
+            "avatar_path": visuals["avatar"],
+            "avatar_url": visuals.get("avatar_url"),
+            "avatar_kind": visuals.get("avatar_kind", "seed"),
+            "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+            "badge_path": visuals["badge"],
+            "trophy_keys": list(visuals.get("trophy_keys") or []),
+            "trophy_badges": list(visuals.get("trophy_badges") or []),
+            "presence_state": visuals.get("presence_state", "idle"),
+            "presence_label": visuals.get("presence_label", "探索待機中"),
+            "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
+        }
+        item["spotlight_label"] = _faction_spotlight_label(item)
+        out.append(item)
+    out.sort(
+        key=lambda item: (
+            -int(item["activity_score"]),
+            -int(item["boss_defeat_count"]),
+            -int(item["evolve_count"]),
+            -int(item["explore_count"]),
+            str(item["display_username"]),
+        )
+    )
+    return out[: max(1, int(limit))]
+
+
 def _faction_week_result(db, week_key):
     row = db.execute(
         """
@@ -31854,6 +32051,7 @@ def _faction_page_context(db, user):
         user_faction=user_faction,
         weekly_faction_key=weekly_faction_key,
     )
+    faction_activity_rows = get_weekly_faction_activity(db, current_week_key)
     return {
         "user": user,
         "user_faction": user_faction,
@@ -31866,6 +32064,8 @@ def _faction_page_context(db, user):
         "member_counts": member_counts,
         "recommended_faction": recommended_faction,
         "faction_score_rows": faction_score_rows,
+        "faction_activity_rows": faction_activity_rows,
+        "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
         "cooldown_days": FACTION_CHANGE_COOLDOWN_DAYS,
@@ -32098,6 +32298,7 @@ def world_view():
         prev_faction_result = _faction_week_result(db, prev_week_key)
     faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
+    faction_activity_rows = get_weekly_faction_activity(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -32114,6 +32315,7 @@ def world_view():
         faction_emblems=FACTION_EMBLEMS,
         faction_score_rows=faction_score_rows,
         faction_detail_rows=faction_detail_rows,
+        faction_activity_rows=faction_activity_rows,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
         prev_faction_result=prev_faction_result,

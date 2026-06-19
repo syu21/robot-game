@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
 {% block content %}
 <h1>陣営</h1>
 
@@ -22,6 +23,55 @@
   {% endif %}
   {% endif %}
 </div>
+
+<section class="panel">
+  <h2>今週の陣営活動</h2>
+  <p class="upgrade-cost">活動スコアは今週の研究活動を見える化したものです。報酬や戦闘補正はありません。</p>
+  <div class="showcase-grid">
+    {% for row in faction_activity_rows %}
+    <div class="card">
+      <div>
+        <b>{{ row['faction_name'] }}</b>
+        {% if row['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      <div class="upgrade-cost">所属人数: {{ row['member_count'] }}</div>
+      <div class="upgrade-cost">今週の出撃数: {{ row['explore_count'] }}</div>
+      <div class="upgrade-cost">ボス撃破数: {{ row['boss_defeat_count'] }}</div>
+      <div class="upgrade-cost">進化数: {{ row['evolve_count'] }}</div>
+      <div class="robot-part">活動スコア: {{ row['activity_score'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>所属陣営の注目研究員</h2>
+  {% if user_faction %}
+    {% if faction_spotlight_rows %}
+    <div class="showcase-grid">
+      {% for item in faction_spotlight_rows %}
+      <div class="card">
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(item, 'log', item['display_username'] ~ ' robot') }}
+          <div class="user-signal-meta">
+            {{ render_user_name_badged_html(item, item['display_username'], 'feed-user user-signal-name') }}
+            <div class="presence-mini-label">{{ item['presence_label'] }}</div>
+          </div>
+        </div>
+        {% if item['robot_name'] %}<div class="robot-part">{{ item['robot_name'] }}</div>{% endif %}
+        <div><span class="weekly-fit-badge">{{ item['spotlight_label'] }}</span></div>
+        <div class="upgrade-cost">出撃 {{ item['explore_count'] }} / ボス {{ item['boss_defeat_count'] }} / 進化 {{ item['evolve_count'] }}</div>
+        <div class="robot-part">活動スコア: {{ item['activity_score'] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">今週の注目研究員はまだ集計中です。</div>
+    {% endif %}
+  {% else %}
+  <div class="card">陣営に所属すると、同じ陣営の研究員の活動が見えるようになります。</div>
+  {% endif %}
+</section>
 
 <div class="showcase-grid">
   {% for row in faction_score_rows %}

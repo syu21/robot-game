@@ -21,6 +21,24 @@
   </div>
 </div>
 
+<section class="panel">
+  <h2>今週の陣営レポート</h2>
+  <p class="upgrade-cost">陣営ごとの研究活動を集計中です。現在は勝敗や報酬には影響しません。</p>
+  <div class="showcase-grid">
+    {% for row in faction_activity_rows %}
+    <div class="card">
+      <div>
+        <b>{{ row['faction_name'] }}</b>
+        {% if row['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      <div class="upgrade-cost">所属人数: {{ row['member_count'] }}</div>
+      <div class="upgrade-cost">出撃 {{ row['explore_count'] }} / ボス {{ row['boss_defeat_count'] }} / 進化 {{ row['evolve_count'] }}</div>
+      <div class="robot-part">活動スコア: {{ row['activity_score'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 <div class="world-competition-grid">
   <section class="panel">
     <h2>今週の熱源</h2>
