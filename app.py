@@ -6141,6 +6141,12 @@ FRAME_TYPE_DEFS = (
         "description": "昆虫系パーツで組み立てる特殊フレームです。",
         "detail": "細身で尖った性能を持ちます。",
     },
+    {
+        "key": "dinosaur",
+        "label": "恐竜型",
+        "description": "恐竜型フレーム専用。恐竜型パーツどうしで編成できます。",
+        "detail": "通常型・虫型とは混成できません。恐竜シリーズ内の組み替えは可能です。",
+    },
 )
 FRAME_TYPE_DEF_BY_KEY = {item["key"]: item for item in FRAME_TYPE_DEFS}
 
@@ -6156,6 +6162,8 @@ def _infer_frame_type_from_series_key(series_key):
     key = str(series_key or "").strip().lower()
     if key.startswith("insect_"):
         return "insect"
+    if key.startswith("dino_"):
+        return "dinosaur"
     return "normal"
 
 
@@ -12207,6 +12215,7 @@ def ensure_schema(db):
     db.execute("UPDATE series_master SET max_rarity = 'N' WHERE max_rarity IS NULL OR TRIM(max_rarity) = ''")
     db.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
     db.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
+    db.execute("UPDATE series_master SET frame_type = 'dinosaur', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'dino_%'")
     db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%'")
     db.execute(
         """
@@ -13258,6 +13267,7 @@ def _sync_series_catalog(db):
         WHERE frame_type IS NULL OR TRIM(frame_type) = ''
         """
     )
+    db.execute("UPDATE robot_parts SET frame_type = 'dinosaur' WHERE COALESCE(series_key, series, '') LIKE 'dino_%'")
     db.execute(
         """
         UPDATE robot_parts
@@ -33155,7 +33165,7 @@ def milestone_claim():
 def _part_lock_redirect_params():
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
     selected_frame_type = str(request.form.get("frame_type") or "").strip().lower()
-    if selected_frame_type not in {"", "normal", "insect"}:
+    if selected_frame_type not in {"", *FRAME_TYPE_DEF_BY_KEY.keys()}:
         selected_frame_type = ""
     selected_rarity = str(request.form.get("rarity") or "").strip().upper()
     if selected_rarity not in {"", "N", "R", "SR", "SSR", "UR"}:
@@ -33276,7 +33286,7 @@ def parts_discard():
     db = get_db()
     selected_part_type = _normalize_part_type_filter(request.form.get("part_type"))
     selected_frame_type = str(request.form.get("frame_type") or "").strip().lower()
-    if selected_frame_type not in {"", "normal", "insect"}:
+    if selected_frame_type not in {"", *FRAME_TYPE_DEF_BY_KEY.keys()}:
         selected_frame_type = ""
     selected_sort = _normalize_parts_sort(request.form.get("sort"))
     try:
@@ -38019,7 +38029,7 @@ def build_confirm():
         return _build_redirect()
     selected_frame_types = {resolved_slots[key]["frame_type"] for key in ("head", "r_arm", "l_arm", "legs")}
     if len(selected_frame_types) != 1 or selected_frame_type not in selected_frame_types:
-        session["message"] = "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで組み立てできます。"
+        session["message"] = "このパーツ同士はフレームが異なるため編成できません。恐竜型パーツは恐竜型どうしで編成してください。"
         return _build_redirect()
 
     head_key = resolved_slots["head"]["key"]
@@ -42163,7 +42173,7 @@ def parts():
     ).fetchone()
     selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
     selected_frame_type = str(request.args.get("frame_type") or "").strip().lower()
-    if selected_frame_type not in {"", "normal", "insect"}:
+    if selected_frame_type not in {"", *FRAME_TYPE_DEF_BY_KEY.keys()}:
         selected_frame_type = ""
     selected_compare_ids = _normalize_instance_id_values((request.args.get("compare_ids"),), limit=6)
     selected_sort = _normalize_parts_sort(request.args.get("sort"))

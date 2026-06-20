@@ -134,16 +134,25 @@ class FrameTypeSystemTests(unittest.TestCase):
     def test_build_filters_candidates_by_frame_type(self):
         normal_head_id = self._create_instance(self.normal_parts["HEAD"]["key"])
         insect_head_id = self._create_instance("head_kabuto")
+        dinosaur_head_id = self._create_instance("head_n_dino_tyranno")
         client = self._client()
 
         normal_html = client.get("/build?frame_type=normal").get_data(as_text=True)
         self.assertIn(f'id="head_key_{normal_head_id}"', normal_html)
         self.assertNotIn(f'id="head_key_{insect_head_id}"', normal_html)
+        self.assertNotIn(f'id="head_key_{dinosaur_head_id}"', normal_html)
 
         insect_html = client.get("/build?frame_type=insect").get_data(as_text=True)
         self.assertIn(f'id="head_key_{insect_head_id}"', insect_html)
         self.assertNotIn(f'id="head_key_{normal_head_id}"', insect_html)
+        self.assertNotIn(f'id="head_key_{dinosaur_head_id}"', insect_html)
         self.assertIn("昆虫系パーツで組み立てる特殊フレームです。", insect_html)
+
+        dinosaur_html = client.get("/build?frame_type=dinosaur").get_data(as_text=True)
+        self.assertIn(f'id="head_key_{dinosaur_head_id}"', dinosaur_html)
+        self.assertNotIn(f'id="head_key_{normal_head_id}"', dinosaur_html)
+        self.assertNotIn(f'id="head_key_{insect_head_id}"', dinosaur_html)
+        self.assertIn("恐竜型フレーム専用", dinosaur_html)
 
     def test_build_confirm_rejects_mixed_frames(self):
         normal_head_id = self._create_instance(self.normal_parts["HEAD"]["key"])
@@ -165,9 +174,61 @@ class FrameTypeSystemTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertIn(
-            "選択したパーツのフレームタイプが混ざっています。通常型は通常パーツ、虫型は虫パーツだけで組み立てできます。",
+            "このパーツ同士はフレームが異なるため編成できません。",
             resp.get_data(as_text=True),
         )
+
+    def test_build_confirm_allows_dinosaur_mixed_series(self):
+        dinosaur_ids = {
+            "head_key": self._create_instance("head_n_dino_tyranno"),
+            "r_arm_key": self._create_instance("right_arm_n_dino_spino"),
+            "l_arm_key": self._create_instance("left_arm_n_dino_tricera"),
+            "legs_key": self._create_instance("legs_n_dino_raptor"),
+        }
+        client = self._client()
+        resp = client.post(
+            "/build/confirm",
+            data={
+                "robot_name": "DinoMixBot",
+                "frame_type": "dinosaur",
+                **{key: str(value) for key, value in dinosaur_ids.items()},
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                "SELECT frame_type, composed_image_path, icon_32_path FROM robot_instances WHERE user_id = ? AND name = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, "DinoMixBot"),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["frame_type"], "dinosaur")
+            self.assertTrue(row["composed_image_path"])
+            self.assertTrue(row["icon_32_path"])
+
+    def test_build_confirm_rejects_dinosaur_standard_mix(self):
+        normal_head_id = self._create_instance(self.normal_parts["HEAD"]["key"])
+        dinosaur_ids = {
+            "r_arm_key": self._create_instance("right_arm_n_dino_tyranno"),
+            "l_arm_key": self._create_instance("left_arm_n_dino_tyranno"),
+            "legs_key": self._create_instance("legs_n_dino_tyranno"),
+        }
+        client = self._client()
+        resp = client.post(
+            "/build/confirm",
+            data={
+                "robot_name": "BadDinoMix",
+                "frame_type": "dinosaur",
+                "head_key": str(normal_head_id),
+                **{key: str(value) for key, value in dinosaur_ids.items()},
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("このパーツ同士はフレームが異なるため編成できません。", html)
+        self.assertIn("恐竜型パーツは恐竜型どうしで編成してください。", html)
 
     def test_insect_build_generates_robot_and_icon_assets(self):
         insect_ids = {
@@ -204,6 +265,7 @@ class FrameTypeSystemTests(unittest.TestCase):
         self.assertIn("すべて", html)
         self.assertIn("通常型", html)
         self.assertIn("虫型", html)
+        self.assertIn("恐竜型", html)
         self.assertIn("フレーム：虫型", html)
         self.assertIn("剛角ヘッド", html)
         self.assertIn("シリーズ：カブト", html)

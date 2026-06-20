@@ -68,7 +68,7 @@ class DinosaurAdminSeriesTests(unittest.TestCase):
             self.assertEqual({row["part_type"] for row in rows}, {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"})
             self.assertEqual({row["rarity"] for row in rows}, {"N"})
             for row in rows:
-                self.assertEqual(row["frame_type"], "normal")
+                self.assertEqual(row["frame_type"], "dinosaur")
                 self.assertEqual(int(row["is_admin_only"]), 1)
                 self.assertTrue(str(row["key"]).startswith(("head_n_dino_", "right_arm_n_dino_", "left_arm_n_dino_", "legs_n_dino_")))
                 self.assertEqual(row["image_path"], f"parts/dinosaur/{row['key']}.png")
@@ -82,13 +82,14 @@ class DinosaurAdminSeriesTests(unittest.TestCase):
 
             series_rows = db.execute(
                 """
-                SELECT series_key, max_rarity, can_evolve, is_active
+                SELECT series_key, frame_type, max_rarity, can_evolve, is_active
                 FROM series_master
                 WHERE series_key LIKE 'dino_%'
                 """
             ).fetchall()
             self.assertEqual(len(series_rows), 7)
             for row in series_rows:
+                self.assertEqual(row["frame_type"], "dinosaur")
                 self.assertEqual(row["max_rarity"], "N")
                 self.assertEqual(int(row["can_evolve"]), 0)
                 self.assertEqual(int(row["is_active"]), 1)
