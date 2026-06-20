@@ -151,7 +151,15 @@
 - `audit.module.synthesis.result` と `audit.module.strategy.result` は `/comms/personal` の個人ログ表示対象。
 - `MODULE_SYNTHESIS_RESULT` / `MODULE_STRATEGY_RESULT` は将来の公開イベント候補だが、現時点では世界ログ公開に使わない。
 
-### 4.9 管理者操作（追加）
+### 4.9 陣営内表彰
+- `audit.faction.awards.recalculate`
+
+補足:
+- 管理者が `faction_weekly_awards` を手動再集計した記録。
+- payload には `week_key`, `created_or_updated_count`, `actor_admin_id` を含める。
+- 表彰は `/faction` 内の名誉表示であり、世界ログ公開イベント、陣営勝敗、戦闘補正、報酬配布には使わない。
+
+### 4.10 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`

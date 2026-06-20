@@ -11040,6 +11040,23 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_weekly_awards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            award_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            score INTEGER NOT NULL DEFAULT 0,
+            rank INTEGER NOT NULL DEFAULT 1,
+            reward_status TEXT NOT NULL DEFAULT 'none',
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key, award_key, user_id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_typing_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -12501,6 +12518,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_faction_created ON world_faction_logs(week_key, faction, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
@@ -20687,6 +20705,10 @@ def get_current_week_range(week_key=None):
     return _world_week_bounds(str(week_key or _world_week_key()))
 
 
+def get_current_week_key():
+    return _world_week_key()
+
+
 def _faction_activity_score(*, explore_count=0, boss_defeat_count=0, evolve_count=0):
     return int(explore_count or 0) + int(boss_defeat_count or 0) * 20 + int(evolve_count or 0) * 10
 
@@ -20878,6 +20900,190 @@ def get_weekly_faction_members_spotlight(db, faction_key, limit=5, week_key=None
         )
     )
     return out[: max(1, int(limit))]
+
+
+FACTION_WEEKLY_AWARD_DEFS = (
+    {"key": "explore", "label": "今週の周回担当", "metric": "explore_count", "score_label": "出撃数", "unit": "回"},
+    {"key": "boss", "label": "今週の突破担当", "metric": "boss_defeat_count", "score_label": "ボス撃破", "unit": "回"},
+    {"key": "evolve", "label": "今週の進化担当", "metric": "evolve_count", "score_label": "進化成功", "unit": "回"},
+    {"key": "activity", "label": "今週の研究主力", "metric": "activity_score", "score_label": "活動スコア", "unit": ""},
+)
+
+
+def _weekly_faction_user_activity_rows(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    start_dt, end_dt = get_current_week_range(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    rows = db.execute(
+        """
+        SELECT
+            u.id AS user_id,
+            LOWER(TRIM(u.faction)) AS faction_key,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS explore_count,
+            SUM(CASE WHEN e.event_type = ? THEN 1 ELSE 0 END) AS boss_defeat_count,
+            SUM(
+                CASE
+                    WHEN e.event_type = ?
+                     AND LOWER(COALESCE(CAST(json_extract(e.payload_json, '$.success') AS TEXT), 'true')) NOT IN ('0', 'false', 'no')
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS evolve_count
+        FROM world_events_log e
+        JOIN users u ON u.id = e.user_id
+        WHERE e.user_id IS NOT NULL
+          AND e.created_at >= ?
+          AND e.created_at < ?
+          AND e.event_type IN (?, ?, ?)
+          AND LOWER(TRIM(COALESCE(u.faction, ''))) IN ('ignis', 'ventra', 'aurix')
+          AND COALESCE(u.is_admin, 0) = 0
+        GROUP BY u.id, LOWER(TRIM(u.faction))
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+        ),
+    ).fetchall()
+    out = []
+    for row in rows:
+        faction_key = _normalize_faction_key(row["faction_key"])
+        if not faction_key:
+            continue
+        explore_count = int(row["explore_count"] or 0)
+        boss_defeat_count = int(row["boss_defeat_count"] or 0)
+        evolve_count = int(row["evolve_count"] or 0)
+        activity_score = _faction_activity_score(
+            explore_count=explore_count,
+            boss_defeat_count=boss_defeat_count,
+            evolve_count=evolve_count,
+        )
+        if activity_score <= 0:
+            continue
+        out.append(
+            {
+                "user_id": int(row["user_id"]),
+                "faction_key": faction_key,
+                "explore_count": explore_count,
+                "boss_defeat_count": boss_defeat_count,
+                "evolve_count": evolve_count,
+                "activity_score": activity_score,
+            }
+        )
+    return out
+
+
+def calculate_faction_weekly_awards(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    now_text = now_str()
+    user_rows = _weekly_faction_user_activity_rows(db, wk)
+    db.execute("DELETE FROM faction_weekly_awards WHERE week_key = ?", (wk,))
+    created_count = 0
+    for faction_key in FACTION_KEYS:
+        faction_rows = [row for row in user_rows if row["faction_key"] == faction_key]
+        for award_def in FACTION_WEEKLY_AWARD_DEFS:
+            metric = award_def["metric"]
+            top_score = max((int(row.get(metric, 0) or 0) for row in faction_rows), default=0)
+            if top_score <= 0:
+                continue
+            winners = [
+                row
+                for row in faction_rows
+                if int(row.get(metric, 0) or 0) == top_score
+            ]
+            winners.sort(key=lambda row: int(row["user_id"]))
+            for winner in winners[:3]:
+                db.execute(
+                    """
+                    INSERT INTO faction_weekly_awards
+                    (week_key, faction_key, award_key, user_id, score, rank, reward_status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 1, 'none', ?, ?)
+                    ON CONFLICT(week_key, faction_key, award_key, user_id) DO UPDATE SET
+                        score = excluded.score,
+                        rank = excluded.rank,
+                        reward_status = excluded.reward_status,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        wk,
+                        faction_key,
+                        award_def["key"],
+                        int(winner["user_id"]),
+                        top_score,
+                        now_text,
+                        now_text,
+                    ),
+                )
+                created_count += 1
+    return {"week_key": wk, "created_or_updated_count": created_count}
+
+
+def get_faction_weekly_awards(db, faction_key, week_key=None):
+    key = _normalize_faction_key(faction_key)
+    awards = {award_def["key"]: [] for award_def in FACTION_WEEKLY_AWARD_DEFS}
+    if not key:
+        return awards
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        """
+        SELECT
+            fwa.week_key,
+            fwa.faction_key,
+            fwa.award_key,
+            fwa.user_id,
+            fwa.score,
+            fwa.rank,
+            fwa.reward_status,
+            u.username,
+            u.display_name,
+            ri.name AS robot_name
+        FROM faction_weekly_awards fwa
+        JOIN users u ON u.id = fwa.user_id
+        LEFT JOIN robot_instances ri ON ri.id = u.active_robot_id
+        WHERE fwa.week_key = ?
+          AND fwa.faction_key = ?
+        ORDER BY fwa.award_key ASC, fwa.rank ASC, fwa.score DESC, fwa.user_id ASC
+        """,
+        (wk, key),
+    ).fetchall()
+    visuals_cache = {}
+    for row in rows:
+        award_key = str(row["award_key"] or "")
+        if award_key not in awards:
+            continue
+        visuals = _user_visuals(db, int(row["user_id"]), visuals_cache)
+        awards[award_key].append(
+            {
+                "week_key": row["week_key"],
+                "faction_key": row["faction_key"],
+                "award_key": award_key,
+                "user_id": int(row["user_id"]),
+                "score": int(row["score"] or 0),
+                "rank": int(row["rank"] or 1),
+                "reward_status": row["reward_status"] or "none",
+                "username": row["display_name"] or row["username"],
+                "display_username": visuals["display_username"],
+                "robot_name": row["robot_name"] or "",
+                "avatar_path": visuals["avatar"],
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+                "badge_path": visuals["badge"],
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
+                "presence_state": visuals.get("presence_state", "idle"),
+                "presence_label": visuals.get("presence_label", "探索待機中"),
+                "presence_title": visuals.get("presence_title", "いまは静かに待機中のロボ使い"),
+            }
+        )
+    return awards
 
 
 def _faction_week_result(db, week_key):
@@ -32052,6 +32258,7 @@ def _faction_page_context(db, user):
         weekly_faction_key=weekly_faction_key,
     )
     faction_activity_rows = get_weekly_faction_activity(db, current_week_key)
+    faction_awards = get_faction_weekly_awards(db, user_faction, current_week_key) if user_faction else {}
     return {
         "user": user,
         "user_faction": user_faction,
@@ -32065,11 +32272,17 @@ def _faction_page_context(db, user):
         "recommended_faction": recommended_faction,
         "faction_score_rows": faction_score_rows,
         "faction_activity_rows": faction_activity_rows,
+        "faction_awards": faction_awards,
+        "faction_award_categories": [
+            {**award_def, "entries": list(faction_awards.get(award_def["key"], []))}
+            for award_def in FACTION_WEEKLY_AWARD_DEFS
+        ],
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
         "cooldown_days": FACTION_CHANGE_COOLDOWN_DAYS,
         "minority_factions": _faction_minority_keys(member_counts),
+        "user_is_admin": bool(user and "is_admin" in user.keys() and int(user["is_admin"] or 0) == 1),
     }
 
 
@@ -32158,6 +32371,37 @@ def faction_change():
         )
         flash(f"{FACTION_LABELS.get(chosen, chosen)} に所属しました。", "notice")
     db.commit()
+    return redirect(url_for("faction_view"))
+
+
+@app.route("/admin/factions/awards/recalculate", methods=["POST"])
+@login_required
+def admin_faction_awards_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = calculate_faction_weekly_awards(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("faction_view"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_AWARDS_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_awards_recalculate",
+        entity_type="faction_weekly_awards",
+        payload={
+            "week_key": result["week_key"],
+            "created_or_updated_count": int(result["created_or_updated_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営内表彰を再集計しました（{result['week_key']} / {result['created_or_updated_count']}件）。", "notice")
     return redirect(url_for("faction_view"))
 
 

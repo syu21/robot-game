@@ -45,6 +45,43 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営内表彰</h2>
+  {% if user_faction %}
+  <p class="upgrade-cost">同じ研究方針の中で、今週よく動いた研究員です。現在は名誉表示のみで、戦闘ステータスへの補正はありません。</p>
+  {% if user_is_admin %}
+  <form method="post" action="{{ url_for('admin_faction_awards_recalculate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ current_week_key }}" />
+    <button type="submit">今週分を再集計</button>
+  </form>
+  {% endif %}
+  <div class="showcase-grid">
+    {% for category in faction_award_categories %}
+    <div class="card">
+      <div><b>{{ category['label'] }}</b></div>
+      {% if category['entries'] %}
+        {% for item in category['entries'] %}
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(item, 'log', item['display_username'] ~ ' robot') }}
+          <div class="user-signal-meta">
+            {{ render_user_name_badged_html(item, item['display_username'], 'feed-user user-signal-name') }}
+            <div class="presence-mini-label">{{ item['presence_label'] }}</div>
+          </div>
+        </div>
+        {% if item['robot_name'] %}<div class="upgrade-cost">{{ item['robot_name'] }}</div>{% endif %}
+        <div class="robot-part">{{ category['score_label'] }}: {{ item['score'] }}{{ category['unit'] }}</div>
+        {% endfor %}
+      {% else %}
+      <div class="upgrade-cost">今週はまだ該当者なし</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">陣営に所属すると、今週の陣営内表彰が見られます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>所属陣営の注目研究員</h2>
   {% if user_faction %}
     {% if faction_spotlight_rows %}

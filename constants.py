@@ -252,6 +252,7 @@ AUDIT_EVENT_TYPES = {
     "REFERRAL_QUALIFIED": "audit.referral.qualified",
     "FACTION_CHOOSE": "audit.faction.choose",
     "FACTION_CHANGE": "audit.faction.change",
+    "FACTION_AWARDS_RECALCULATE": "audit.faction.awards.recalculate",
     "SYSTEM_MAINTENANCE_BLOCK": "audit.system.maintenance_block",
     "ADMIN_MAINTENANCE_MODE_SET": "audit.admin.maintenance_mode.set",
     "ADMIN_USER_BAN": "audit.admin.user.ban",
