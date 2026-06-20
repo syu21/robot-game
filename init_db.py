@@ -314,16 +314,18 @@ def _upsert_series_rows(cur):
     for bonus in SERIES_BONUS_DEFINITIONS:
         cur.execute(
             """
-            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value, value_type)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(series_key, pieces_required, stat_key) DO UPDATE SET
-                value = excluded.value
+                value = excluded.value,
+                value_type = excluded.value_type
             """,
             (
                 bonus["series_key"],
                 int(bonus["pieces_required"]),
                 bonus["stat_key"],
                 float(bonus["value"]),
+                str(bonus.get("value_type") or "percent"),
             ),
             )
 
@@ -433,9 +435,10 @@ def _apply_series_part_assignments(cur):
                 offset_y,
                 is_active,
                 is_unlocked,
+                is_admin_only,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
@@ -446,7 +449,8 @@ def _apply_series_part_assignments(cur):
                 series_key = excluded.series_key,
                 series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
-                is_active = 1
+                is_active = 1,
+                is_admin_only = excluded.is_admin_only
             """,
             (
                 part["part_type"],
@@ -459,6 +463,7 @@ def _apply_series_part_assignments(cur):
                 part.get("series_key") or part.get("series"),
                 part.get("series_label"),
                 part["display_name_ja"],
+                int(part.get("is_admin_only", 0)),
                 now,
             ),
         )
@@ -480,9 +485,10 @@ def _apply_series_part_assignments(cur):
                 offset_y,
                 is_active,
                 is_unlocked,
+                is_admin_only,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, 0, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
@@ -494,7 +500,8 @@ def _apply_series_part_assignments(cur):
                 series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
                 is_active = 1,
-                is_unlocked = 1
+                is_unlocked = 1,
+                is_admin_only = 0
             """,
             (
                 part["part_type"],
@@ -525,7 +532,12 @@ def _apply_series_part_assignments(cur):
             UPDATE robot_parts
             SET
                 series = ?,
-                frame_type = 'insect',
+                frame_type = COALESCE((
+                    SELECT sm.frame_type
+                    FROM series_master sm
+                    WHERE sm.series_key = ?
+                    LIMIT 1
+                ), frame_type, 'normal'),
                 series_key = ?,
                 series_label = (
                     SELECT display_name
@@ -535,7 +547,7 @@ def _apply_series_part_assignments(cur):
                 )
             WHERE key = ?
             """,
-            (series_key, series_key, series_key, part_key),
+            (series_key, series_key, series_key, series_key, part_key),
         )
     cur.execute(
         """
@@ -901,6 +913,7 @@ def main():
             offset_y INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             is_unlocked INTEGER NOT NULL DEFAULT 1,
+            is_admin_only INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
         """
@@ -929,6 +942,7 @@ def main():
             pieces_required INTEGER NOT NULL,
             stat_key TEXT NOT NULL,
             value REAL NOT NULL,
+            value_type TEXT NOT NULL DEFAULT 'percent',
             UNIQUE(series_key, pieces_required, stat_key),
             FOREIGN KEY (series_key) REFERENCES series_master(series_key)
         )
@@ -2641,6 +2655,8 @@ def main():
         cur.execute("ALTER TABLE robot_parts ADD COLUMN series_label TEXT")
     if "display_name_ja" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
+    if "is_admin_only" not in rp_cols:
+        cur.execute("ALTER TABLE robot_parts ADD COLUMN is_admin_only INTEGER NOT NULL DEFAULT 0")
     cur.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")
     cur.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     cur.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
@@ -2673,7 +2689,7 @@ def main():
     cur.execute("UPDATE series_master SET max_rarity = 'N' WHERE max_rarity IS NULL OR TRIM(max_rarity) = ''")
     cur.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
     cur.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
-    cur.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%'")
+    cur.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%'")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (
@@ -2682,10 +2698,14 @@ def main():
             pieces_required INTEGER NOT NULL,
             stat_key TEXT NOT NULL,
             value REAL NOT NULL,
+            value_type TEXT NOT NULL DEFAULT 'percent',
             UNIQUE(series_key, pieces_required, stat_key)
         )
         """
     )
+    ssb_cols = {row[1] for row in cur.execute("PRAGMA table_info(series_set_bonus)").fetchall()}
+    if "value_type" not in ssb_cols:
+        cur.execute("ALTER TABLE series_set_bonus ADD COLUMN value_type TEXT NOT NULL DEFAULT 'percent'")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS enemy_series_drops (

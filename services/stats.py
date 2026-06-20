@@ -156,21 +156,28 @@ def apply_series_bonus(stats, parts, series_bonus_defs=None, progress_layer=5):
             pieces_required = int(bonus.get("pieces_required") or 0)
             if not pieces_required or part_count < pieces_required:
                 continue
-            scale, stage_label = _series_bonus_scale(progress_layer, pieces_required)
-            if scale <= 0.0:
-                continue
             stat_key = str(bonus.get("stat_key") or "").strip().lower()
             if stat_key not in STATS:
                 continue
+            value_type = str(bonus.get("value_type") or "percent").strip().lower()
             configured_value = float(bonus.get("value") or 0.0)
-            applied_value = configured_value * scale
             before_value = int(out.get(stat_key) or 0)
-            if before_value > 0 and applied_value < 0:
-                reduced_value = int(math.floor(before_value * (1.0 + applied_value)))
-                after_value = max(1, min(before_value - 1, reduced_value))
+            if value_type == "flat":
+                stage_label = "固定"
+                applied_value = configured_value
+                after_value = max(1, before_value + int(round(applied_value)))
             else:
-                boosted_value = int(math.ceil(before_value * (1.0 + applied_value)))
-                after_value = max(before_value + 1, boosted_value) if before_value > 0 else boosted_value
+                value_type = "percent"
+                scale, stage_label = _series_bonus_scale(progress_layer, pieces_required)
+                if scale <= 0.0:
+                    continue
+                applied_value = configured_value * scale
+                if before_value > 0 and applied_value < 0:
+                    reduced_value = int(math.floor(before_value * (1.0 + applied_value)))
+                    after_value = max(1, min(before_value - 1, reduced_value))
+                else:
+                    boosted_value = int(math.ceil(before_value * (1.0 + applied_value)))
+                    after_value = max(before_value + 1, boosted_value) if before_value > 0 else boosted_value
             out[stat_key] = after_value
             applied.append(
                 {
@@ -178,6 +185,7 @@ def apply_series_bonus(stats, parts, series_bonus_defs=None, progress_layer=5):
                     "pieces_required": pieces_required,
                     "count": int(part_count),
                     "stat_key": stat_key,
+                    "value_type": value_type,
                     "configured_value": configured_value,
                     "applied_value": applied_value,
                     "stage_label": stage_label,

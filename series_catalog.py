@@ -95,6 +95,95 @@ SERIES_VARIANTS = (
     {"series_key": "insect_butterfly", "asset_suffix": "butterfly", "name_ja": "チョウ"},
 )
 
+DINO_SERIES_VARIANTS = (
+    {
+        "series_key": "dino_tyranno",
+        "asset_suffix": "dino_tyranno",
+        "name_ja": "ティラノ",
+        "display_name": "ティラノフレーム",
+        "role_label": "攻撃・会心",
+        "description": "攻撃と会心に優れた恐竜型フレーム。短期決着を狙う研究員向け。",
+        "primary_stat": "atk",
+        "secondary_stat": "cri",
+    },
+    {
+        "series_key": "dino_raptor",
+        "asset_suffix": "dino_raptor",
+        "name_ja": "ラプトル",
+        "display_name": "ラプトルシリーズ",
+        "role_label": "速度・攻撃",
+        "description": "素早さと会心に優れた軽量フレーム。先手を取って攻める型。",
+        "primary_stat": "spd",
+        "secondary_stat": "cri",
+    },
+    {
+        "series_key": "dino_ptera",
+        "asset_suffix": "dino_ptera",
+        "name_ja": "プテラ",
+        "display_name": "プテラシリーズ",
+        "role_label": "命中・速度",
+        "description": "素早さと命中に優れた飛行型フレーム。安定して先に動きたい研究員向け。",
+        "primary_stat": "acc",
+        "secondary_stat": "spd",
+    },
+    {
+        "series_key": "dino_parasa",
+        "asset_suffix": "dino_parasa",
+        "name_ja": "パラサ",
+        "display_name": "パラサウンドフレーム",
+        "role_label": "命中・防御",
+        "description": "命中に優れた共鳴型フレーム。ミスを減らして安定させる型。",
+        "primary_stat": "acc",
+        "secondary_stat": "def",
+    },
+    {
+        "series_key": "dino_tricera",
+        "asset_suffix": "dino_tricera",
+        "name_ja": "トリケラ",
+        "display_name": "トリケラシリーズ",
+        "role_label": "防御・HP",
+        "description": "防御に優れた重装フレーム。正面から受け止めて進む型。",
+        "primary_stat": "def",
+        "secondary_stat": "hp",
+    },
+    {
+        "series_key": "dino_ankylo",
+        "asset_suffix": "dino_ankylo",
+        "name_ja": "アンキロ",
+        "display_name": "アンキロシリーズ",
+        "role_label": "HP・防御",
+        "description": "耐久と防御に優れた重装フレーム。遅い代わりに粘り強い型。",
+        "primary_stat": "hp",
+        "secondary_stat": "def",
+    },
+    {
+        "series_key": "dino_spino",
+        "asset_suffix": "dino_spino",
+        "name_ja": "スピノ",
+        "display_name": "スピノシリーズ",
+        "role_label": "攻撃・命中",
+        "description": "攻撃と命中のバランスに優れた水圧型フレーム。安定して削る型。",
+        "primary_stat": "atk",
+        "secondary_stat": "acc",
+    },
+)
+
+SERIES_DEFINITIONS.extend(
+    {
+        "series_key": variant["series_key"],
+        "display_name": variant["display_name"],
+        "short_label": variant["name_ja"],
+        "category": "dinosaur",
+        "frame_type": "normal",
+        "role_label": variant["role_label"],
+        "description": variant["description"],
+        "max_rarity": "N",
+        "can_evolve": 0,
+        "default_active": 1,
+    }
+    for variant in DINO_SERIES_VARIANTS
+)
+
 SERIES_PART_SLOT_DEFS = (
     {"part_type": "HEAD", "key_prefix": "head", "image_dir": "head", "label_ja": "ヘッド"},
     {"part_type": "RIGHT_ARM", "key_prefix": "right_arm", "image_dir": "right_arm", "label_ja": "右腕"},
@@ -173,6 +262,33 @@ SERIES_BONUS_DEFINITIONS = [
     {"series_key": "insect_butterfly", "pieces_required": 4, "stat_key": "hp", "value": -0.02},
 ]
 
+for variant in DINO_SERIES_VARIANTS:
+    SERIES_BONUS_DEFINITIONS.extend(
+        (
+            {
+                "series_key": variant["series_key"],
+                "pieces_required": 2,
+                "stat_key": variant["primary_stat"],
+                "value": 1,
+                "value_type": "flat",
+            },
+            {
+                "series_key": variant["series_key"],
+                "pieces_required": 4,
+                "stat_key": variant["primary_stat"],
+                "value": 1,
+                "value_type": "flat",
+            },
+            {
+                "series_key": variant["series_key"],
+                "pieces_required": 4,
+                "stat_key": variant["secondary_stat"],
+                "value": 1,
+                "value_type": "flat",
+            },
+        )
+    )
+
 SERIES_WEIGHT_BIASES = {
     "insect_kabuto": {"hp": 0.08, "def": 0.08, "spd": -0.05, "cri": -0.05, "atk": -0.02},
     "insect_kuwagata": {"atk": 0.10, "cri": 0.08, "acc": -0.05, "def": -0.07, "hp": -0.03},
@@ -217,6 +333,84 @@ INSECT_R_PART_DISPLAY_NAME_OVERRIDES = {
     "left_arm_r_butterfly": "幻彩シールド",
     "legs_r_butterfly": "幻舞レッグ",
 }
+
+DINO_PART_STATS_BY_SERIES = {
+    "dino_tyranno": {
+        "HEAD": {"hp": 3, "atk": 3, "def": 2, "spd": 1, "acc": 1, "cri": 2},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 2, "cri": 3},
+        "LEFT_ARM": {"hp": 3, "atk": 1, "def": 4, "spd": 1, "acc": 2, "cri": 1},
+        "LEGS": {"hp": 2, "atk": 2, "def": 1, "spd": 4, "acc": 1, "cri": 2},
+    },
+    "dino_raptor": {
+        "HEAD": {"hp": 2, "atk": 2, "def": 1, "spd": 4, "acc": 1, "cri": 2},
+        "RIGHT_ARM": {"hp": 1, "atk": 3, "def": 1, "spd": 3, "acc": 1, "cri": 3},
+        "LEFT_ARM": {"hp": 2, "atk": 1, "def": 3, "spd": 2, "acc": 3, "cri": 1},
+        "LEGS": {"hp": 1, "atk": 2, "def": 1, "spd": 5, "acc": 2, "cri": 1},
+    },
+    "dino_ptera": {
+        "HEAD": {"hp": 2, "atk": 1, "def": 1, "spd": 3, "acc": 4, "cri": 1},
+        "RIGHT_ARM": {"hp": 1, "atk": 3, "def": 1, "spd": 4, "acc": 2, "cri": 1},
+        "LEFT_ARM": {"hp": 1, "atk": 1, "def": 2, "spd": 3, "acc": 4, "cri": 1},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 5, "acc": 3, "cri": 1},
+    },
+    "dino_parasa": {
+        "HEAD": {"hp": 2, "atk": 1, "def": 2, "spd": 1, "acc": 5, "cri": 1},
+        "RIGHT_ARM": {"hp": 1, "atk": 3, "def": 1, "spd": 1, "acc": 5, "cri": 1},
+        "LEFT_ARM": {"hp": 3, "atk": 1, "def": 3, "spd": 1, "acc": 3, "cri": 1},
+        "LEGS": {"hp": 2, "atk": 1, "def": 2, "spd": 3, "acc": 3, "cri": 1},
+    },
+    "dino_tricera": {
+        "HEAD": {"hp": 3, "atk": 1, "def": 4, "spd": 1, "acc": 2, "cri": 1},
+        "RIGHT_ARM": {"hp": 2, "atk": 3, "def": 3, "spd": 1, "acc": 2, "cri": 1},
+        "LEFT_ARM": {"hp": 3, "atk": 1, "def": 4, "spd": 1, "acc": 2, "cri": 1},
+        "LEGS": {"hp": 3, "atk": 1, "def": 3, "spd": 2, "acc": 2, "cri": 1},
+    },
+    "dino_ankylo": {
+        "HEAD": {"hp": 4, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 1},
+        "RIGHT_ARM": {"hp": 3, "atk": 3, "def": 3, "spd": 1, "acc": 1, "cri": 1},
+        "LEFT_ARM": {"hp": 4, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 1},
+        "LEGS": {"hp": 4, "atk": 1, "def": 3, "spd": 2, "acc": 1, "cri": 1},
+    },
+    "dino_spino": {
+        "HEAD": {"hp": 3, "atk": 3, "def": 2, "spd": 1, "acc": 2, "cri": 1},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 2, "acc": 3, "cri": 1},
+        "LEFT_ARM": {"hp": 3, "atk": 1, "def": 3, "spd": 1, "acc": 3, "cri": 1},
+        "LEGS": {"hp": 3, "atk": 2, "def": 2, "spd": 3, "acc": 1, "cri": 1},
+    },
+}
+
+DINO_PART_DISPLAY_NAMES_BY_KEY = {
+    "head_n_dino_tyranno": "ティラノヘッドコア",
+    "right_arm_n_dino_tyranno": "ティラノクラッシュクロー",
+    "left_arm_n_dino_tyranno": "ティラノガードシールド",
+    "legs_n_dino_tyranno": "ティラノパワーレッグ",
+    "head_n_dino_raptor": "ラプトルヘッドコア",
+    "right_arm_n_dino_raptor": "ラプトルスラッシュアーム",
+    "left_arm_n_dino_raptor": "ラプトルラウンドシールド",
+    "legs_n_dino_raptor": "ラプトルランナーレッグ",
+    "head_n_dino_ptera": "プテラヘッドコア",
+    "right_arm_n_dino_ptera": "プテラウィングブレード",
+    "left_arm_n_dino_ptera": "プテラエアシールド",
+    "legs_n_dino_ptera": "プテラライトレッグ",
+    "head_n_dino_parasa": "パラサウンドヘッドコア",
+    "right_arm_n_dino_parasa": "パラサウンドブレード",
+    "left_arm_n_dino_parasa": "パラサウンドシールド",
+    "legs_n_dino_parasa": "パラサウンドスタンド",
+    "head_n_dino_tricera": "トリケラホーンコア",
+    "right_arm_n_dino_tricera": "トリケラドリルアーム",
+    "left_arm_n_dino_tricera": "トリケラバルクシールド",
+    "legs_n_dino_tricera": "トリケラスタンプレッグ",
+    "head_n_dino_ankylo": "アンキロアーマーコア",
+    "right_arm_n_dino_ankylo": "アンキロメイスアーム",
+    "left_arm_n_dino_ankylo": "アンキロスパイクシールド",
+    "legs_n_dino_ankylo": "アンキロヘビーレッグ",
+    "head_n_dino_spino": "スピノセイルコア",
+    "right_arm_n_dino_spino": "スピノアクアブレード",
+    "left_arm_n_dino_spino": "スピノリーフシールド",
+    "legs_n_dino_spino": "スピノスプラッシュレッグ",
+}
+
+DINO_PART_DEFINITIONS = []
 for variant in SERIES_VARIANTS:
     for slot in SERIES_PART_SLOT_DEFS:
         key = f"{slot['key_prefix']}_{variant['asset_suffix']}"
@@ -273,6 +467,30 @@ for variant in SERIES_VARIANTS:
             }
         )
         PART_KEY_SERIES_ASSIGNMENTS[r_key] = variant["series_key"]
+
+for variant in DINO_SERIES_VARIANTS:
+    for slot in SERIES_PART_SLOT_DEFS:
+        key = f"{slot['key_prefix']}_n_{variant['asset_suffix']}"
+        part = {
+            "key": key,
+            "part_type": slot["part_type"],
+            "image_path": f"parts/dinosaur/{key}.png",
+            "rarity": "N",
+            "element": "NORMAL",
+            "series": variant["series_key"],
+            "series_key": variant["series_key"],
+            "series_label": variant["display_name"],
+            "frame_type": "normal",
+            "display_name_ja": DINO_PART_DISPLAY_NAMES_BY_KEY[key],
+            "is_admin_only": 1,
+            "stats": dict(DINO_PART_STATS_BY_SERIES[variant["series_key"]][slot["part_type"]]),
+        }
+        DINO_PART_DEFINITIONS.append(part)
+        SERIES_PART_DEFINITIONS.append(part)
+        PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
+
+DINO_PART_KEYS = tuple(part["key"] for part in DINO_PART_DEFINITIONS)
+DINO_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in DINO_PART_DEFINITIONS}
 
 LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
 

@@ -30,6 +30,8 @@ from balance_config import (
     RARITY_WEIGHTS_BY_TIER,
 )
 from series_catalog import (
+    DINO_PART_KEYS,
+    DINO_PART_STAT_BY_KEY,
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
     INSECT_R_PART_DEFINITIONS,
     LEGACY_GENERIC_SERIES_KEYS,
@@ -3623,6 +3625,7 @@ def _pick_drop_part_master(db, *, rarity=None, area_key=None, user_id=None):
             WHERE rp.is_active = 1
               AND UPPER(COALESCE(rp.rarity, '')) = 'R'
               AND rp.is_unlocked = 1
+              AND COALESCE(rp.is_admin_only, 0) = 0
               AND NOT (
                     COALESCE(rp.frame_type, 'normal') = 'insect'
                     OR COALESCE(rp.series_key, rp.series, '') LIKE 'insect_%'
@@ -3643,6 +3646,7 @@ def _pick_drop_part_master(db, *, rarity=None, area_key=None, user_id=None):
             LEFT JOIN series_master sm ON sm.series_key = rp.series
             WHERE rp.is_active = 1
               AND UPPER(COALESCE(rp.rarity, '')) = UPPER(?)
+              AND COALESCE(rp.is_admin_only, 0) = 0
               AND (
                     COALESCE(TRIM(rp.series), '') = ''
                     OR rp.series IN ('S1', 'n1')
@@ -5952,7 +5956,7 @@ def _load_series_master_map(db, active_only=False):
 def _load_series_bonus_defs(db, active_only=True):
     rows = db.execute(
         f"""
-        SELECT ssb.series_key, ssb.pieces_required, ssb.stat_key, ssb.value
+        SELECT ssb.series_key, ssb.pieces_required, ssb.stat_key, ssb.value, COALESCE(ssb.value_type, 'percent') AS value_type
         FROM series_set_bonus ssb
         JOIN series_master sm ON sm.series_key = ssb.series_key
         {"WHERE sm.is_active = 1" if active_only else ""}
@@ -5967,13 +5971,16 @@ def _load_series_bonus_defs(db, active_only=True):
                 "pieces_required": int(row["pieces_required"] or 0),
                 "stat_key": str(row["stat_key"] or ""),
                 "value": float(row["value"] or 0.0),
+                "value_type": str(row["value_type"] or "percent"),
             }
         )
     return mapping
 
 
-def _format_series_bonus_value(rate):
-    pct = int(round(float(rate or 0.0) * 100))
+def _format_series_bonus_value(value, value_type="percent"):
+    if str(value_type or "percent").strip().lower() == "flat":
+        return f"{int(round(float(value or 0.0))):+d}"
+    pct = int(round(float(value or 0.0) * 100))
     return f"{pct:+d}%"
 
 
@@ -5989,7 +5996,7 @@ def _series_bonus_view_for_loadout(db, parts, series_calc=None, progress_layer=1
             continue
         series_effects = [row for row in applied if str(row.get("series_key")) == series_key]
         effect_text = " / ".join(
-            f"{_stat_label(row['stat_key'])} {_format_series_bonus_value(row['applied_value'])}"
+            f"{_stat_label(row['stat_key'])} {_format_series_bonus_value(row['applied_value'], row.get('value_type'))}"
             for row in series_effects
         ) or "未発動"
         if count < 2:
@@ -6664,6 +6671,16 @@ def _part_image_candidates(image_path):
     rels = []
     if aliased and aliased != raw:
         rels.append(f"robot_assets/{aliased}")
+    if raw.startswith("parts/dinosaur/"):
+        filename = raw.rsplit("/", 1)[-1]
+        if filename.startswith("head_"):
+            rels.append(f"robot_assets/parts/head/{filename}")
+        elif filename.startswith("right_arm_"):
+            rels.append(f"robot_assets/parts/right_arm/{filename}")
+        elif filename.startswith("left_arm_"):
+            rels.append(f"robot_assets/parts/left_arm/{filename}")
+        elif filename.startswith("legs_"):
+            rels.append(f"robot_assets/parts/legs/{filename}")
     rels.append(f"robot_assets/{raw}")
     seen = set()
     out = []
@@ -9997,6 +10014,7 @@ def ensure_schema(db):
             offset_y INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
             is_unlocked INTEGER NOT NULL DEFAULT 1,
+            is_admin_only INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
         """
@@ -12151,11 +12169,14 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_parts ADD COLUMN series_label TEXT")
     if "display_name_ja" not in rp_cols:
         db.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
+    if "is_admin_only" not in rp_cols:
+        db.execute("ALTER TABLE robot_parts ADD COLUMN is_admin_only INTEGER NOT NULL DEFAULT 0")
     db.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")
     db.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     db.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
     db.execute("UPDATE robot_parts SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
     db.execute("UPDATE robot_parts SET is_active = 1 WHERE is_active IS NULL")
+    db.execute("UPDATE robot_parts SET is_admin_only = 0 WHERE is_admin_only IS NULL")
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE is_unlocked IS NULL")
     db.execute("UPDATE robot_parts SET is_unlocked = 1 WHERE UPPER(COALESCE(rarity, '')) = 'N'")
     db.execute("UPDATE robot_parts SET is_unlocked = 0 WHERE UPPER(COALESCE(rarity, '')) = 'R'")
@@ -12186,7 +12207,7 @@ def ensure_schema(db):
     db.execute("UPDATE series_master SET max_rarity = 'N' WHERE max_rarity IS NULL OR TRIM(max_rarity) = ''")
     db.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
     db.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
-    db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%'")
+    db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%'")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (
@@ -12195,10 +12216,14 @@ def ensure_schema(db):
             pieces_required INTEGER NOT NULL,
             stat_key TEXT NOT NULL,
             value REAL NOT NULL,
+            value_type TEXT NOT NULL DEFAULT 'percent',
             UNIQUE(series_key, pieces_required, stat_key)
         )
         """
     )
+    ssb_cols = {row["name"] for row in db.execute("PRAGMA table_info(series_set_bonus)").fetchall()}
+    if "value_type" not in ssb_cols:
+        db.execute("ALTER TABLE series_set_bonus ADD COLUMN value_type TEXT NOT NULL DEFAULT 'percent'")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS enemy_series_drops (
@@ -13080,16 +13105,18 @@ def _sync_series_catalog(db):
     for bonus in SERIES_BONUS_DEFINITIONS:
         db.execute(
             """
-            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO series_set_bonus (series_key, pieces_required, stat_key, value, value_type)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(series_key, pieces_required, stat_key) DO UPDATE SET
-                value = excluded.value
+                value = excluded.value,
+                value_type = excluded.value_type
             """,
             (
                 bonus["series_key"],
                 int(bonus["pieces_required"]),
                 bonus["stat_key"],
                 float(bonus["value"]),
+                str(bonus.get("value_type") or "percent"),
             ),
         )
     for part in SERIES_PART_DEFINITIONS:
@@ -13110,9 +13137,10 @@ def _sync_series_catalog(db):
                 offset_y,
                 is_active,
                 is_unlocked,
+                is_admin_only,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
@@ -13123,7 +13151,8 @@ def _sync_series_catalog(db):
                 series_key = excluded.series_key,
                 series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
-                is_active = 1
+                is_active = 1,
+                is_admin_only = excluded.is_admin_only
             """,
             (
                 part["part_type"],
@@ -13136,6 +13165,7 @@ def _sync_series_catalog(db):
                 part.get("series_key") or part.get("series"),
                 part.get("series_label"),
                 part["display_name_ja"],
+                int(part.get("is_admin_only", 0)),
                 now,
             ),
         )
@@ -13157,9 +13187,10 @@ def _sync_series_catalog(db):
                 offset_y,
                 is_active,
                 is_unlocked,
+                is_admin_only,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 1, 0, ?)
             ON CONFLICT(key) DO UPDATE SET
                 part_type = excluded.part_type,
                 image_path = excluded.image_path,
@@ -13171,7 +13202,8 @@ def _sync_series_catalog(db):
                 series_label = excluded.series_label,
                 display_name_ja = excluded.display_name_ja,
                 is_active = 1,
-                is_unlocked = 1
+                is_unlocked = 1,
+                is_admin_only = 0
             """,
             (
                 part["part_type"],
@@ -13202,7 +13234,12 @@ def _sync_series_catalog(db):
             UPDATE robot_parts
             SET
                 series = ?,
-                frame_type = 'insect',
+                frame_type = COALESCE((
+                    SELECT sm.frame_type
+                    FROM series_master sm
+                    WHERE sm.series_key = ?
+                    LIMIT 1
+                ), frame_type, 'normal'),
                 series_key = ?,
                 series_label = (
                     SELECT display_name
@@ -13212,7 +13249,7 @@ def _sync_series_catalog(db):
                 )
             WHERE key = ?
             """,
-            (series_key, series_key, series_key, part_key),
+            (series_key, series_key, series_key, series_key, part_key),
         )
     db.execute(
         """
@@ -14626,12 +14663,17 @@ def _norm_part_type(part_type):
 
 def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=None, status="inventory"):
     ptype = _norm_part_type(part_row["part_type"])
-    bias = dict(_area_weight_bias(area_key) or {})
-    series_bias = _series_weight_bias_for_part_row(part_row) or {}
-    for stat_key, delta in series_bias.items():
-        bias[stat_key] = float(bias.get(stat_key, 0.0)) + float(delta or 0.0)
-    weights = generate_noisy_weights(ptype, bias=bias)
     rarity = (part_row["rarity"] or "N").upper()
+    part_key = str(part_row["key"] or "")
+    if rarity == "N" and part_key in DINO_PART_STAT_BY_KEY:
+        fixed_stats = DINO_PART_STAT_BY_KEY[part_key]
+        weights = {f"w_{stat_key}": float(fixed_stats.get(stat_key, 0) or 0) / 12.0 for stat_key in STATS}
+    else:
+        bias = dict(_area_weight_bias(area_key) or {})
+        series_bias = _series_weight_bias_for_part_row(part_row) or {}
+        for stat_key, delta in series_bias.items():
+            bias[stat_key] = float(bias.get(stat_key, 0.0)) + float(delta or 0.0)
+        weights = generate_noisy_weights(ptype, bias=bias)
     element = (part_row["element"] or "NORMAL").upper()
     series = part_row["series"] or "S1"
     status_key = str(status or "inventory").strip().lower()
@@ -15877,22 +15919,22 @@ def _compose_instance_image(db, instance_row, parts_row):
     offsets = _robot_instance_part_offsets(parts_row)
     compose_robot(
         {
-            "path": _asset_abs(head["image_path"]),
+            "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
         },
         {
-            "path": _asset_abs(r_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(l_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(legs["image_path"]),
+            "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
         },
@@ -15947,22 +15989,22 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
 
     compose_robot(
         {
-            "path": _asset_abs(head["image_path"]),
+            "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
         },
         {
-            "path": _asset_abs(r_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(l_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(legs["image_path"]),
+            "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
         },
@@ -25570,6 +25612,8 @@ def compose_robot(head_layer, r_arm_layer, l_arm_layer, legs_layer, out_path, de
             _warn_missing_asset_once(f"compose:{image_path}", detail="compose_robot_layer")
             image_path = _static_abs("enemies/_placeholder.png")
         img = Image.open(image_path).convert("RGBA")
+        if img.size != (CANVAS_SIZE, CANVAS_SIZE) and not bool(layer.get("is_decor")):
+            img = img.resize((CANVAS_SIZE, CANVAS_SIZE), Image.LANCZOS)
         canvas = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
         if bool(layer.get("is_decor")):
             # DECOR is rendered as a small badge to avoid covering the robot body.
@@ -25602,22 +25646,22 @@ def _compose_build_image(db, build_id, head_key, r_arm_key, l_arm_key, legs_key,
     offsets = offsets or {}
     compose_robot(
         {
-            "path": _asset_abs(head["image_path"]),
+            "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
         },
         {
-            "path": _asset_abs(r_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(l_arm["image_path"]),
+            "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
         },
         {
-            "path": _asset_abs(legs["image_path"]),
+            "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
         },
@@ -46399,6 +46443,74 @@ def admin_parts():
         element_options=ELEMENTS,
         element_labels=ELEMENT_LABEL_MAP,
     )
+
+
+@app.route("/admin/parts/grant-dinosaur-n", methods=["POST"])
+@login_required
+def admin_parts_grant_dinosaur_n():
+    db = get_db()
+    admin_user_id = int(session["user_id"])
+    if not _is_admin_user(admin_user_id):
+        return abort(403)
+    rows = db.execute(
+        """
+        SELECT *
+        FROM robot_parts
+        WHERE key IN ({})
+        ORDER BY key ASC
+        """.format(",".join(["?"] * len(DINO_PART_KEYS))),
+        tuple(DINO_PART_KEYS),
+    ).fetchall()
+    by_key = {str(row["key"]): row for row in rows}
+    granted_keys = []
+    skipped_keys = []
+    missing_master_keys = []
+    for part_key in DINO_PART_KEYS:
+        part = by_key.get(part_key)
+        if not part:
+            missing_master_keys.append(part_key)
+            continue
+        existing = db.execute(
+            """
+            SELECT id
+            FROM part_instances
+            WHERE user_id = ? AND part_id = ?
+            LIMIT 1
+            """,
+            (admin_user_id, int(part["id"])),
+        ).fetchone()
+        if existing:
+            skipped_keys.append(part_key)
+            continue
+        _create_part_instance_from_master(db, admin_user_id, part, plus=0, status="inventory")
+        granted_keys.append(part_key)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
+        user_id=admin_user_id,
+        action_key="admin_grant_dinosaur_n_series",
+        entity_type="part_instance",
+        entity_id=None,
+        delta_count=len(granted_keys),
+        payload={
+            "reason": "admin_grant_dinosaur_n_series",
+            "rarity": "N",
+            "series_count": 7,
+            "part_count": len(DINO_PART_KEYS),
+            "granted_count": len(granted_keys),
+            "skipped_count": len(skipped_keys),
+            "missing_master_count": len(missing_master_keys),
+            "granted_part_keys": granted_keys,
+            "skipped_part_keys": skipped_keys,
+            "missing_master_keys": missing_master_keys,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"恐竜Nシリーズを付与しました。追加 {len(granted_keys)} / 既存 {len(skipped_keys)}"
+    if missing_master_keys:
+        session["message"] += f" / マスタ未登録 {len(missing_master_keys)}"
+    return redirect(url_for("admin_parts", show_inactive=1))
 
 
 @app.route("/admin/parts/align", methods=["GET", "POST"])

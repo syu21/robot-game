@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>パーツ登録</h1>
+<div class="card">
+  <h2>管理者限定シリーズ</h2>
+  <p>恐竜Nシリーズ28種を自分のインベントリへ不足分だけ追加します。通常ドロップには入りません。</p>
+  <form method="post" action="{{ url_for('admin_parts_grant_dinosaur_n') }}" onsubmit="return confirm('恐竜Nシリーズを管理者インベントリへ付与します。よろしいですか？');">
+    <button type="submit">恐竜Nシリーズを付与</button>
+  </form>
+</div>
 <form method="post" enctype="multipart/form-data" class="card">
   {% if editing %}
   <input type="hidden" name="edit_part_id" value="{{ editing['id'] }}" />
@@ -66,6 +73,7 @@
           <th>rarity</th>
           <th>element</th>
           <th>series</th>
+          <th>限定</th>
           <th>サムネ</th>
           <th>画像パス</th>
           <th>登録日時</th>
@@ -88,6 +96,7 @@
             <td>{{ r['rarity'] or '-' }}</td>
             <td>{{ element_labels.get((r['element'] or '').upper(), r['element'] or '-') }}</td>
             <td>{{ r['series'] or '-' }}</td>
+            <td>{% if r.get('is_admin_only') %}管理者{% else %}-{% endif %}</td>
             <td>
               {% if r['image_url'] %}
                 <a href="{{ r['image_url'] }}" target="_blank" rel="noopener noreferrer">
