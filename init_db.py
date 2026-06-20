@@ -2811,6 +2811,10 @@ def main():
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_part_instance_id INTEGER")
     if "decor_asset_id" not in rip_cols:
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
+    for scale_col in ("head_scale_percent", "r_arm_scale_percent", "l_arm_scale_percent", "legs_scale_percent"):
+        if scale_col not in rip_cols:
+            cur.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {scale_col} INTEGER NOT NULL DEFAULT 100")
+        cur.execute(f"UPDATE robot_instance_parts SET {scale_col} = 100 WHERE {scale_col} IS NULL")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_instance_decors (

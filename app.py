@@ -363,6 +363,10 @@ BOSS_BATTLE_SAFETY_MAX_TURNS = 50
 HARD_BATTLE_TURN_CAP = int(os.getenv("HARD_BATTLE_TURN_CAP", "100"))
 BUILD_PART_OFFSET_MIN = -24
 BUILD_PART_OFFSET_MAX = 24
+BUILD_PART_SCALE_MIN = 70
+BUILD_PART_SCALE_MAX = 130
+BUILD_PART_SCALE_DEFAULT = 100
+BUILD_PART_SCALE_STEP = 5
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
@@ -10709,6 +10713,10 @@ def ensure_schema(db):
             l_arm_offset_y INTEGER NOT NULL DEFAULT 0,
             legs_offset_x INTEGER NOT NULL DEFAULT 0,
             legs_offset_y INTEGER NOT NULL DEFAULT 0,
+            head_scale_percent INTEGER NOT NULL DEFAULT 100,
+            r_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            l_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            legs_scale_percent INTEGER NOT NULL DEFAULT 100,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
         )
@@ -12270,6 +12278,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_offset_x INTEGER NOT NULL DEFAULT 0")
     if "legs_offset_y" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_offset_y INTEGER NOT NULL DEFAULT 0")
+    for scale_col in ("head_scale_percent", "r_arm_scale_percent", "l_arm_scale_percent", "legs_scale_percent"):
+        if scale_col not in rip_cols:
+            db.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {scale_col} INTEGER NOT NULL DEFAULT 100")
+        db.execute(f"UPDATE robot_instance_parts SET {scale_col} = 100 WHERE {scale_col} IS NULL")
     if "decor_asset_id" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
     db.execute(
@@ -13508,9 +13520,10 @@ def _create_robot_instance(
             r_arm_offset_x, r_arm_offset_y,
             l_arm_offset_x, l_arm_offset_y,
             legs_offset_x, legs_offset_y,
+            head_scale_percent, r_arm_scale_percent, l_arm_scale_percent, legs_scale_percent,
             decor_asset_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             instance_id,
@@ -13526,6 +13539,10 @@ def _create_robot_instance(
             int(offsets.get("l_arm_offset_y", 0)),
             int(offsets.get("legs_offset_x", 0)),
             int(offsets.get("legs_offset_y", 0)),
+            _normalize_build_scale_percent(offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT)),
             decor_asset_id,
         ),
     )
@@ -15622,6 +15639,18 @@ def _build_offset_field_name(slot, axis):
     return f"{slot}_offset_{axis}"
 
 
+def _build_scale_field_name(slot):
+    return f"{slot}_scale_percent"
+
+
+def _normalize_build_scale_percent(raw):
+    try:
+        val = int(str(raw or "").strip())
+    except (TypeError, ValueError):
+        val = BUILD_PART_SCALE_DEFAULT
+    return int(_clamp(val, BUILD_PART_SCALE_MIN, BUILD_PART_SCALE_MAX))
+
+
 def _build_offset_payload_from_values(values):
     payload = {}
     for cfg in BUILD_OFFSET_CONTROL_DEFS:
@@ -15639,6 +15668,14 @@ def _build_offset_payload_from_values(values):
             except (TypeError, ValueError):
                 val = 0
             payload[field] = int(_clamp(val, BUILD_PART_OFFSET_MIN, BUILD_PART_OFFSET_MAX))
+        scale_field = _build_scale_field_name(slot)
+        raw_scale = ""
+        if values is not None:
+            try:
+                raw_scale = values.get(scale_field, "")
+            except Exception:
+                raw_scale = ""
+        payload[scale_field] = _normalize_build_scale_percent(raw_scale)
     return payload
 
 
@@ -15650,6 +15687,12 @@ def _robot_instance_part_offsets(parts_row):
         for axis in ("x", "y"):
             field = _build_offset_field_name(slot, axis)
             payload[field] = int(parts_row[field] or 0) if field in row_keys else 0
+        scale_field = _build_scale_field_name(slot)
+        payload[scale_field] = (
+            _normalize_build_scale_percent(parts_row[scale_field])
+            if scale_field in row_keys
+            else BUILD_PART_SCALE_DEFAULT
+        )
     return payload
 
 
@@ -15932,21 +15975,25 @@ def _compose_instance_image(db, instance_row, parts_row):
             "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
+            "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
+            "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
+            "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
+            "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         out_path,
         decor_layers,
@@ -16002,21 +16049,25 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
             "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
+            "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
+            "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
+            "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
+            "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         out_path,
         decor_layers,
@@ -25638,6 +25689,11 @@ def compose_robot(head_layer, r_arm_layer, l_arm_layer, legs_layer, out_path, de
         else:
             if img.size != (CANVAS_SIZE, CANVAS_SIZE):
                 raise ValueError("size mismatch")
+            scale_percent = _normalize_build_scale_percent(layer.get("scale_percent", BUILD_PART_SCALE_DEFAULT))
+            if scale_percent != BUILD_PART_SCALE_DEFAULT:
+                resample_lanczos = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
+                scaled_size = max(1, int(round(CANVAS_SIZE * scale_percent / 100)))
+                img = img.resize((scaled_size, scaled_size), resample_lanczos)
             canvas.paste(img, (layer["x"], layer["y"]), img)
         base = Image.alpha_composite(base, canvas)
     base.save(out_path, format="PNG")
@@ -25659,21 +25715,25 @@ def _compose_build_image(db, build_id, head_key, r_arm_key, l_arm_key, legs_key,
             "path": _static_abs(_part_image_rel(head)),
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
+            "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
+            "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
+            "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
+            "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
         },
         out_path,
         None,
@@ -37859,6 +37919,9 @@ def build():
         build_offset_control_defs=BUILD_OFFSET_CONTROL_DEFS,
         build_offset_min=BUILD_PART_OFFSET_MIN,
         build_offset_max=BUILD_PART_OFFSET_MAX,
+        build_scale_min=BUILD_PART_SCALE_MIN,
+        build_scale_max=BUILD_PART_SCALE_MAX,
+        build_scale_step=BUILD_PART_SCALE_STEP,
         boss_alert_active=boss_alert_hint["boss_alert_active"],
         boss_type=boss_alert_hint["boss_type"],
         recommended_build=boss_alert_hint["recommended_build"],

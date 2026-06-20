@@ -3004,7 +3004,8 @@ body.lightbox-open .lightbox-overlay {
   transform: translate(
     calc(var(--layer-offset-x, 0) * var(--preview-layer-scale, 1) * 1px),
     calc(var(--layer-offset-y, 0) * var(--preview-layer-scale, 1) * 1px)
-  );
+  ) scale(var(--layer-scale, 1));
+  transform-origin: top left;
 }
 .robot-preview .layer[data-layer="DECORATION"] {
   top: 6px;

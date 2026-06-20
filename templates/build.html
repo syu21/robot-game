@@ -204,8 +204,8 @@
         <img id="pv-decor" data-layer="DECORATION" class="layer{% if not decor_default %} is-hidden{% endif %}" src="{{ url_for('static', filename=decor_default['display_image_path']) if decor_default else '' }}" alt="decor preview" />
       </div>
       <section class="card build-offset-panel">
-        <h3>位置の微調整</h3>
-        <div class="upgrade-cost">完成後の見た目に反映されます。各部位を ±{{ build_offset_max }}px まで動かせます。</div>
+        <h3>位置と大きさの調整</h3>
+        <div class="upgrade-cost">パーツの位置や大きさを微調整できます。見た目だけの調整で、ステータスには影響しません。</div>
         <div class="build-offset-grid">
           {% for control in build_offset_control_defs %}
           <div class="build-offset-card" data-offset-slot="{{ control['slot'] }}" data-preview-target="{{ control['preview_target'] }}">
@@ -243,9 +243,25 @@
               />
               <output id="{{ control['slot'] }}_offset_y_value" for="{{ control['slot'] }}_offset_y">{{ selected_offsets[control['slot'] ~ '_offset_y'] }}</output>
             </label>
+            <label class="build-offset-row build-scale-row" for="{{ control['slot'] }}_scale_percent">
+              <span>大きさ</span>
+              <input
+                type="range"
+                id="{{ control['slot'] }}_scale_percent"
+                name="{{ control['slot'] }}_scale_percent"
+                min="{{ build_scale_min }}"
+                max="{{ build_scale_max }}"
+                step="{{ build_scale_step }}"
+                value="{{ selected_offsets[control['slot'] ~ '_scale_percent'] }}"
+                data-offset-slot="{{ control['slot'] }}"
+                data-scale-control="1"
+              />
+              <output id="{{ control['slot'] }}_scale_percent_value" for="{{ control['slot'] }}_scale_percent">{{ selected_offsets[control['slot'] ~ '_scale_percent'] }}%</output>
+            </label>
           </div>
           {% endfor %}
         </div>
+        <div class="robot-time">この調整は見た目だけに反映されます。ステータスや戦闘性能は変わりません。</div>
       </section>
       <div class="build-estimate card">
         <h3>ステータス比較</h3>

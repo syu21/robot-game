@@ -45,13 +45,20 @@
   const partImageMap = {};
   const partOffsetMap = {};
   const offsetInputMap = {};
+  const scaleInputMap = {};
   const offsetInputs = Array.from(document.querySelectorAll("input[type='range'][data-offset-slot][data-offset-axis]"));
+  const scaleInputs = Array.from(document.querySelectorAll("input[type='range'][data-offset-slot][data-scale-control]"));
   offsetInputs.forEach((input) => {
     const slot = String(input.dataset.offsetSlot || "").trim();
     const axis = String(input.dataset.offsetAxis || "").trim();
     if (!slot || !axis) return;
     offsetInputMap[slot] = offsetInputMap[slot] || {};
     offsetInputMap[slot][axis] = input;
+  });
+  scaleInputs.forEach((input) => {
+    const slot = String(input.dataset.offsetSlot || "").trim();
+    if (!slot) return;
+    scaleInputMap[slot] = input;
   });
   document
     .querySelectorAll("input[type='radio'][data-part-key][data-img]")
@@ -79,6 +86,14 @@
     };
   }
 
+  function currentUserScale(target) {
+    const slot = previewTargetToOffsetSlot[target];
+    if (!slot) return 100;
+    const input = scaleInputMap[slot];
+    const value = Number((input || {}).value || 100);
+    return Number.isFinite(value) ? value : 100;
+  }
+
   function applyPreview(target, imgUrl, offsetX, offsetY) {
     const el = targetMap[target];
     if (!el) return;
@@ -87,6 +102,7 @@
       el.classList.add("is-hidden");
       el.style.setProperty("--layer-offset-x", "0");
       el.style.setProperty("--layer-offset-y", "0");
+      el.style.setProperty("--layer-scale", "1");
       return;
     }
     const stamp = String(Date.now());
@@ -100,6 +116,7 @@
     const dy = (Number.isFinite(baseY) ? baseY : 0) + userOffset.y;
     el.style.setProperty("--layer-offset-x", String(dx));
     el.style.setProperty("--layer-offset-y", String(dy));
+    el.style.setProperty("--layer-scale", String(currentUserScale(target) / 100));
   }
 
   function selectedInput(name) {
@@ -382,10 +399,21 @@
     output.textContent = String(Number.isFinite(val) ? val : 0);
   }
 
+  function syncScaleOutput(slot) {
+    const input = scaleInputMap[slot] || null;
+    const output = document.getElementById(`${slot}_scale_percent_value`);
+    if (!input || !output) return;
+    const val = Number(input.value || 100);
+    output.textContent = `${Number.isFinite(val) ? val : 100}%`;
+  }
+
   function syncAllOffsetOutputs() {
     Object.keys(offsetInputMap).forEach((slot) => {
       syncOffsetOutput(slot, "x");
       syncOffsetOutput(slot, "y");
+    });
+    Object.keys(scaleInputMap).forEach((slot) => {
+      syncScaleOutput(slot);
     });
   }
 
@@ -471,14 +499,31 @@
     });
   });
 
+  scaleInputs.forEach((input) => {
+    input.addEventListener("input", () => {
+      const slot = String(input.dataset.offsetSlot || "").trim();
+      syncScaleOutput(slot);
+      const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
+      if (target) refreshPreviewTarget(target[0]);
+    });
+    input.addEventListener("change", () => {
+      const slot = String(input.dataset.offsetSlot || "").trim();
+      syncScaleOutput(slot);
+      const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
+      if (target) refreshPreviewTarget(target[0]);
+    });
+  });
+
   formEl.querySelectorAll("button[data-offset-reset]").forEach((button) => {
     button.addEventListener("click", () => {
       const slot = String(button.dataset.offsetReset || "").trim();
       if (!slot || !offsetInputMap[slot]) return;
       if (offsetInputMap[slot].x) offsetInputMap[slot].x.value = "0";
       if (offsetInputMap[slot].y) offsetInputMap[slot].y.value = "0";
+      if (scaleInputMap[slot]) scaleInputMap[slot].value = "100";
       syncOffsetOutput(slot, "x");
       syncOffsetOutput(slot, "y");
+      syncScaleOutput(slot);
       const target = Object.entries(previewTargetToOffsetSlot).find(([, value]) => value === slot);
       if (target) refreshPreviewTarget(target[0]);
     });

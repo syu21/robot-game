@@ -207,6 +207,49 @@ class FrameTypeSystemTests(unittest.TestCase):
             self.assertTrue(row["composed_image_path"])
             self.assertTrue(row["icon_32_path"])
 
+    def test_build_confirm_clamps_visual_scale_percent(self):
+        normal_ids = {
+            "head_key": self._create_instance(self.normal_parts["HEAD"]["key"]),
+            "r_arm_key": self._create_instance(self.normal_parts["RIGHT_ARM"]["key"]),
+            "l_arm_key": self._create_instance(self.normal_parts["LEFT_ARM"]["key"]),
+            "legs_key": self._create_instance(self.normal_parts["LEGS"]["key"]),
+        }
+        resp = self._client().post(
+            "/build/confirm",
+            data={
+                "robot_name": "ScaleClampBot",
+                "frame_type": "normal",
+                "head_scale_percent": "50",
+                "r_arm_scale_percent": "200",
+                "l_arm_scale_percent": "abc",
+                "legs_scale_percent": "115",
+                **{key: str(value) for key, value in normal_ids.items()},
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT head_scale_percent, r_arm_scale_percent, l_arm_scale_percent, legs_scale_percent,
+                       composed_image_path, icon_32_path
+                FROM robot_instances ri
+                JOIN robot_instance_parts rip ON rip.robot_instance_id = ri.id
+                WHERE ri.user_id = ? AND ri.name = ?
+                ORDER BY ri.id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "ScaleClampBot"),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row["head_scale_percent"]), 70)
+            self.assertEqual(int(row["r_arm_scale_percent"]), 130)
+            self.assertEqual(int(row["l_arm_scale_percent"]), 100)
+            self.assertEqual(int(row["legs_scale_percent"]), 115)
+            self.assertTrue(row["composed_image_path"])
+            self.assertTrue(row["icon_32_path"])
+
     def test_build_confirm_rejects_dinosaur_standard_mix(self):
         normal_head_id = self._create_instance(self.normal_parts["HEAD"]["key"])
         dinosaur_ids = {
