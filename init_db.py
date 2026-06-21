@@ -1066,6 +1066,8 @@ def main():
             icon_32_path TEXT,
             combat_mode TEXT NOT NULL DEFAULT 'normal',
             frame_type TEXT DEFAULT 'normal',
+            is_mixed_frame INTEGER NOT NULL DEFAULT 0,
+            build_frame_mode TEXT NOT NULL DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
             style_scores_json TEXT,
@@ -1766,6 +1768,28 @@ def main():
             created_at TEXT NOT NULL,
             updated_at TEXT,
             UNIQUE(week_key, faction_key, award_key, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            member_count INTEGER NOT NULL DEFAULT 0,
+            explore_count INTEGER NOT NULL DEFAULT 0,
+            boss_defeat_count INTEGER NOT NULL DEFAULT 0,
+            evolve_count INTEGER NOT NULL DEFAULT 0,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            rank INTEGER,
+            report_label TEXT,
+            is_minority INTEGER NOT NULL DEFAULT 0,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key)
         )
         """
     )
@@ -2611,6 +2635,10 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
     if "frame_type" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "is_mixed_frame" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN is_mixed_frame INTEGER NOT NULL DEFAULT 0")
+    if "build_frame_mode" not in ri_cols:
+        cur.execute("ALTER TABLE robot_instances ADD COLUMN build_frame_mode TEXT NOT NULL DEFAULT 'normal'")
     if "is_public" not in ri_cols:
         cur.execute("ALTER TABLE robot_instances ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
     if "style_key" not in ri_cols:
@@ -2635,6 +2663,8 @@ def main():
         cur.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     cur.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     cur.execute("UPDATE robot_instances SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
+    cur.execute("UPDATE robot_instances SET is_mixed_frame = 0 WHERE is_mixed_frame IS NULL")
+    cur.execute("UPDATE robot_instances SET build_frame_mode = 'normal' WHERE build_frame_mode IS NULL OR TRIM(build_frame_mode) = ''")
     cur.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     cur.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
     cur.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
@@ -3002,6 +3032,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")

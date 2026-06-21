@@ -38,6 +38,31 @@
     <input type="text" name="week_key" value="{{ week_key }}" />
     <button type="submit">陣営戦を再集計</button>
   </form>
+  <form method="post" action="{{ url_for('admin_faction_report_recalculate') }}" class="post-form">
+    <label>week_key</label>
+    <input type="text" name="week_key" value="{{ week_key }}" />
+    <button type="submit">陣営週間レポートを再集計</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_report_finalize') }}" class="post-form">
+    <label>week_key</label>
+    <input type="text" name="week_key" value="{{ week_key }}" />
+    <button type="submit" onclick="return confirm('陣営週間レポートを確定して世界ログへ公開しますか？');">陣営週間レポートを確定</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>陣営週間レポート（{{ week_key }}）</h2>
+  <p>研究活動の見える化用です。報酬や戦闘補正はありません。</p>
+  <ul class="ranking-mini">
+    {% for row in faction_weekly_report_rows %}
+    <li>
+      <span>{{ row['rank'] }}位 {{ row['faction_name'] }} / {{ row['report_label_text'] }}{% if row['is_minority'] %} / 研究支援中{% endif %}</span>
+      <span>score {{ row['activity_score'] }} / 出撃{{ row['explore_count'] }} ボス{{ row['boss_defeat_count'] }} 進化{{ row['evolve_count'] }}</span>
+    </li>
+    {% else %}
+    <li>まだ週間レポートはありません。</li>
+    {% endfor %}
+  </ul>
 </div>
 
 <div class="card">

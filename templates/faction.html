@@ -25,6 +25,38 @@
 </div>
 
 <section class="panel">
+  <h2>今週の陣営比較</h2>
+  <p class="upgrade-cost">陣営ごとの今週の研究活動を集計しています。現在は勝敗報酬や戦闘補正はありません。</p>
+  {% if user_faction and my_faction_weekly_position %}
+  <div class="card">
+    あなたの研究方針「{{ my_faction_weekly_position['faction_name'] }}」は、今週 {{ my_faction_weekly_position['rank'] }}位 です。
+    現在は「{{ my_faction_weekly_position['report_label_text'] }}」です。
+  </div>
+  {% elif not user_faction %}
+  <div class="card">陣営に所属すると、自分の研究方針が今週どの位置にいるか確認できます。</div>
+  {% endif %}
+  {% if faction_weekly_report_rows %}
+  <div class="showcase-grid">
+    {% for row in faction_weekly_report_rows %}
+    <div class="card{% if row['faction_key'] == user_faction %} active-card{% endif %}">
+      <div>
+        <b>{{ row['rank'] }}位 {{ row['faction_name'] }}</b>
+        {% if row['faction_key'] == user_faction %}<span class="weekly-fit-badge">所属中</span>{% endif %}
+        {% if row['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      <div class="robot-part">{{ row['report_label_text'] }}</div>
+      <div class="upgrade-cost">所属人数: {{ row['member_count'] }}</div>
+      <div class="upgrade-cost">出撃 {{ row['explore_count'] }} / ボス {{ row['boss_defeat_count'] }} / 進化 {{ row['evolve_count'] }}</div>
+      <div class="robot-part">活動スコア: {{ row['activity_score'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">今週の陣営比較は集計準備中です。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営活動</h2>
   <p class="upgrade-cost">活動スコアは今週の研究活動を見える化したものです。報酬や戦闘補正はありません。</p>
   <div class="showcase-grid">

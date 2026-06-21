@@ -5809,7 +5809,24 @@ def _set_bonus_base_stats(parts):
     return total
 
 
-def _set_bonus_view_for_loadout(parts, set_bonus_key=None):
+def _set_bonus_view_for_loadout(parts, set_bonus_key=None, disabled_reason=None):
+    if disabled_reason:
+        rows = _set_bonus_catalog_rows()
+        return {
+            "active": False,
+            "status_label": "なし",
+            "condition_text": str(disabled_reason),
+            "element_key": None,
+            "element_label": None,
+            "stat_key": None,
+            "stat_label": None,
+            "rate_text": "",
+            "delta_value": 0,
+            "effect_text": "セットボーナスなし",
+            "detail_text": "実験機：自由編成のためセットボーナスなし",
+            "hint_text": "固定フレームで組むとセットボーナス対象になります。",
+            "catalog_rows": rows,
+        }
     active_key = str(set_bonus_key or "").strip().upper()
     rows = _set_bonus_catalog_rows()
     if active_key and active_key in SET_BONUS_TABLE:
@@ -6153,13 +6170,35 @@ FRAME_TYPE_DEFS = (
     },
 )
 FRAME_TYPE_DEF_BY_KEY = {item["key"]: item for item in FRAME_TYPE_DEFS}
+FREE_BUILD_FRAME_MODE = "free"
+BUILD_FRAME_MODE_DEFS = (
+    *FRAME_TYPE_DEFS,
+    {
+        "key": FREE_BUILD_FRAME_MODE,
+        "label": "自由編成",
+        "description": "通常型・虫型・恐竜型を自由に組み合わせます。",
+        "detail": "異なるフレームが混ざったロボは実験機になり、セットボーナスとシリーズ効果は発動しません。",
+    },
+)
+BUILD_FRAME_MODE_DEF_BY_KEY = {item["key"]: item for item in BUILD_FRAME_MODE_DEFS}
 
 
 def _normalize_frame_type(raw_value, default="normal"):
     key = str(raw_value or "").strip().lower()
+    if key == "standard":
+        key = "normal"
     if key in FRAME_TYPE_DEF_BY_KEY:
         return key
     return str(default or "normal").strip().lower()
+
+
+def _normalize_build_frame_mode(raw_value, default="normal"):
+    key = str(raw_value or "").strip().lower()
+    if key == "standard":
+        key = "normal"
+    if key in BUILD_FRAME_MODE_DEF_BY_KEY:
+        return key
+    return _normalize_frame_type(default)
 
 
 def _infer_frame_type_from_series_key(series_key):
@@ -6344,6 +6383,29 @@ def _frame_type_filter_rows(selected_frame_type, endpoint, *, extra_params=None,
                 "key": key,
                 "label": label,
                 "is_active": selected_frame_type == key,
+                "url": url_for(endpoint, **next_params),
+            }
+        )
+    return rows
+
+
+def _build_frame_mode_filter_rows(selected_build_frame_mode, endpoint, *, extra_params=None):
+    params = {
+        str(key): value
+        for key, value in (extra_params or {}).items()
+        if value not in (None, "")
+    }
+    rows = []
+    for item in BUILD_FRAME_MODE_DEFS:
+        key = item["key"]
+        next_params = dict(params)
+        next_params.pop("page", None)
+        next_params["frame_type"] = key
+        rows.append(
+            {
+                "key": key,
+                "label": item["label"],
+                "is_active": selected_build_frame_mode == key,
                 "url": url_for(endpoint, **next_params),
             }
         )
@@ -10683,6 +10745,8 @@ def ensure_schema(db):
             decomposed_at INTEGER,
             combat_mode TEXT NOT NULL DEFAULT 'normal',
             frame_type TEXT DEFAULT 'normal',
+            is_mixed_frame INTEGER NOT NULL DEFAULT 0,
+            build_frame_mode TEXT NOT NULL DEFAULT 'normal',
             style_key TEXT NOT NULL DEFAULT 'stable',
             style_stats_json TEXT NOT NULL DEFAULT '{}',
             style_scores_json TEXT,
@@ -11086,6 +11150,28 @@ def ensure_schema(db):
             created_at TEXT NOT NULL,
             updated_at TEXT,
             UNIQUE(week_key, faction_key, award_key, user_id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            member_count INTEGER NOT NULL DEFAULT 0,
+            explore_count INTEGER NOT NULL DEFAULT 0,
+            boss_defeat_count INTEGER NOT NULL DEFAULT 0,
+            evolve_count INTEGER NOT NULL DEFAULT 0,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            rank INTEGER,
+            report_label TEXT,
+            is_minority INTEGER NOT NULL DEFAULT 0,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key)
         )
         """
     )
@@ -12075,6 +12161,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN combat_mode TEXT NOT NULL DEFAULT 'normal'")
     if "frame_type" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN frame_type TEXT DEFAULT 'normal'")
+    if "is_mixed_frame" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN is_mixed_frame INTEGER NOT NULL DEFAULT 0")
+    if "build_frame_mode" not in ri_cols:
+        db.execute("ALTER TABLE robot_instances ADD COLUMN build_frame_mode TEXT NOT NULL DEFAULT 'normal'")
     if "is_public" not in ri_cols:
         db.execute("ALTER TABLE robot_instances ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1")
     if "style_key" not in ri_cols:
@@ -12099,6 +12189,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_instances ADD COLUMN honor_title_key TEXT")
     db.execute("UPDATE robot_instances SET combat_mode = 'normal' WHERE combat_mode IS NULL OR combat_mode = ''")
     db.execute("UPDATE robot_instances SET frame_type = 'normal' WHERE frame_type IS NULL OR TRIM(frame_type) = ''")
+    db.execute("UPDATE robot_instances SET is_mixed_frame = 0 WHERE is_mixed_frame IS NULL")
+    db.execute("UPDATE robot_instances SET build_frame_mode = 'normal' WHERE build_frame_mode IS NULL OR TRIM(build_frame_mode) = ''")
     db.execute("UPDATE robot_instances SET is_public = 1 WHERE is_public IS NULL")
     db.execute("UPDATE robot_instances SET style_key = 'stable' WHERE style_key IS NULL OR TRIM(style_key) = ''")
     db.execute("UPDATE robot_instances SET style_stats_json = '{}' WHERE style_stats_json IS NULL OR TRIM(style_stats_json) = ''")
@@ -12565,6 +12657,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
@@ -13486,6 +13579,8 @@ def _create_robot_instance(
     personality=None,
     combat_mode="normal",
     frame_type="normal",
+    is_mixed_frame=False,
+    build_frame_mode=None,
     offsets=None,
 ):
     now = int(time.time())
@@ -13494,9 +13589,10 @@ def _create_robot_instance(
     cur = db.execute(
         """
         INSERT INTO robot_instances (
-            user_id, name, status, personality, combat_mode, frame_type, style_key, style_stats_json, style_rank_json, created_at, updated_at
+            user_id, name, status, personality, combat_mode, frame_type, is_mixed_frame, build_frame_mode,
+            style_key, style_stats_json, style_rank_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'stable', '{}', ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stable', '{}', ?, ?, ?)
         """,
         (
             user_id,
@@ -13505,6 +13601,8 @@ def _create_robot_instance(
             personality,
             _normalize_combat_mode(combat_mode),
             _normalize_frame_type(frame_type),
+            1 if is_mixed_frame else 0,
+            _normalize_build_frame_mode(build_frame_mode or frame_type),
             encode_style_rank_state(empty_style_rank_state()),
             now,
             now,
@@ -15454,7 +15552,7 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
     if not mapping or not all(mapping.values()):
         return None
     owner_row = db.execute(
-        "SELECT user_id FROM robot_instances WHERE id = ?",
+        "SELECT user_id, COALESCE(is_mixed_frame, 0) AS is_mixed_frame FROM robot_instances WHERE id = ?",
         (int(robot_instance_id),),
     ).fetchone()
     series_progress_layer = _series_progress_layer_for_user(db, owner_row["user_id"]) if owner_row else 1
@@ -15482,6 +15580,7 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         ordered,
         series_bonus_defs=series_bonus_defs,
         series_progress_layer=series_progress_layer,
+        disable_set_bonus=bool(int(owner_row["is_mixed_frame"] or 0)) if owner_row else False,
     )
     archetype = compute_archetype(ordered)
     computed_style = _robot_style_from_final_stats(calc["stats"])
@@ -15501,6 +15600,8 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         "set_bonus": calc["set_bonus"],
         "series_bonus": calc.get("series_bonus") or [],
         "series_counts": calc.get("series_counts") or {},
+        "set_bonus_enabled": bool(calc.get("set_bonus_enabled", True)),
+        "is_mixed_frame": bool(int(owner_row["is_mixed_frame"] or 0)) if owner_row else False,
         "series_progress_layer": int(series_progress_layer),
         "parts": ordered,
         "archetype": archetype,
@@ -20894,6 +20995,174 @@ def get_weekly_faction_activity(db, week_key=None):
     return out
 
 
+FACTION_WEEKLY_REPORT_LABELS = {
+    "research_leader": "今週の研究優勢陣営",
+    "chasing": "追跡中",
+    "minority_elite": "少数精鋭で研究中",
+    "steady": "研究継続中",
+}
+
+
+def _faction_weekly_report_label(rank, is_minority):
+    try:
+        rank_int = int(rank or 0)
+    except (TypeError, ValueError):
+        rank_int = 0
+    if rank_int == 1:
+        return "research_leader"
+    if bool(is_minority):
+        return "minority_elite"
+    if rank_int == 2:
+        return "chasing"
+    return "steady"
+
+
+def _faction_weekly_report_view_row(row):
+    label_key = str(row["report_label"] or "").strip() or _faction_weekly_report_label(row["rank"], row["is_minority"])
+    faction_key = _normalize_faction_key(row["faction_key"]) or str(row["faction_key"] or "")
+    return {
+        "week_key": row["week_key"],
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "member_count": int(row["member_count"] or 0),
+        "explore_count": int(row["explore_count"] or 0),
+        "boss_defeat_count": int(row["boss_defeat_count"] or 0),
+        "evolve_count": int(row["evolve_count"] or 0),
+        "activity_score": int(row["activity_score"] or 0),
+        "rank": int(row["rank"] or 0),
+        "report_label": label_key,
+        "report_label_text": FACTION_WEEKLY_REPORT_LABELS.get(label_key, "研究継続中"),
+        "is_minority": bool(int(row["is_minority"] or 0)),
+        "is_finalized": bool(int(row["is_finalized"] or 0)),
+        "finalized_at": row["finalized_at"],
+    }
+
+
+def calculate_faction_weekly_report(db, week_key=None, finalize=False):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    now_text = now_str()
+    activity_rows = get_weekly_faction_activity(db, wk)
+    ordered = sorted(
+        activity_rows,
+        key=lambda row: (
+            -int(row.get("activity_score", 0) or 0),
+            int(row.get("member_count", 0) or 0),
+            str(row.get("faction_key") or ""),
+        ),
+    )
+    previous_score = None
+    previous_rank = 0
+    for idx, row in enumerate(ordered, start=1):
+        score = int(row.get("activity_score", 0) or 0)
+        if previous_score is None or score != previous_score:
+            previous_rank = idx
+            previous_score = score
+        row["rank"] = previous_rank
+        row["report_label"] = _faction_weekly_report_label(previous_rank, row.get("is_minority"))
+
+    finalized_at = now_text if finalize else None
+    updated_count = 0
+    for row in ordered:
+        db.execute(
+            """
+            INSERT INTO faction_weekly_reports
+            (week_key, faction_key, member_count, explore_count, boss_defeat_count, evolve_count,
+             activity_score, rank, report_label, is_minority, is_finalized, finalized_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(week_key, faction_key) DO UPDATE SET
+                member_count = excluded.member_count,
+                explore_count = excluded.explore_count,
+                boss_defeat_count = excluded.boss_defeat_count,
+                evolve_count = excluded.evolve_count,
+                activity_score = excluded.activity_score,
+                rank = excluded.rank,
+                report_label = excluded.report_label,
+                is_minority = excluded.is_minority,
+                is_finalized = CASE WHEN excluded.is_finalized = 1 THEN 1 ELSE faction_weekly_reports.is_finalized END,
+                finalized_at = CASE WHEN excluded.is_finalized = 1 THEN excluded.finalized_at ELSE faction_weekly_reports.finalized_at END,
+                updated_at = excluded.updated_at
+            """,
+            (
+                wk,
+                row["faction_key"],
+                int(row.get("member_count", 0) or 0),
+                int(row.get("explore_count", 0) or 0),
+                int(row.get("boss_defeat_count", 0) or 0),
+                int(row.get("evolve_count", 0) or 0),
+                int(row.get("activity_score", 0) or 0),
+                int(row.get("rank", 0) or 0),
+                row.get("report_label") or "steady",
+                1 if row.get("is_minority") else 0,
+                1 if finalize else 0,
+                finalized_at,
+                now_text,
+                now_text,
+            ),
+        )
+        updated_count += 1
+    emitted_world_event = False
+    if finalize:
+        emitted_world_event = _emit_faction_weekly_report_world_event(db, wk)
+    return {"week_key": wk, "updated_count": updated_count, "finalized": bool(finalize), "emitted_world_event": emitted_world_event}
+
+
+def get_faction_weekly_report(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        """
+        SELECT *
+        FROM faction_weekly_reports
+        WHERE week_key = ?
+        ORDER BY COALESCE(rank, 99) ASC, activity_score DESC, member_count ASC, faction_key ASC
+        """,
+        (wk,),
+    ).fetchall()
+    return [_faction_weekly_report_view_row(row) for row in rows]
+
+
+def get_my_faction_weekly_position(db, user, week_key=None):
+    if not user:
+        return None
+    faction_key = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    if not faction_key:
+        return None
+    for row in get_faction_weekly_report(db, week_key):
+        if row["faction_key"] == faction_key:
+            return row
+    return None
+
+
+def _emit_faction_weekly_report_world_event(db, week_key):
+    exists = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_WEEKLY_REPORT_EVENT_TYPE, week_key),
+    ).fetchone()
+    if exists:
+        return False
+    rows = get_faction_weekly_report(db, week_key)
+    if not rows:
+        return False
+    top = rows[0]
+    payload = {
+        "week_key": week_key,
+        "top_faction": top["faction_key"],
+        "top_faction_name": top["faction_name"],
+        "activity_score": int(top["activity_score"]),
+        "explore_count": int(top["explore_count"]),
+        "boss_defeat_count": int(top["boss_defeat_count"]),
+        "evolve_count": int(top["evolve_count"]),
+    }
+    _world_event_log(db, FACTION_WEEKLY_REPORT_EVENT_TYPE, payload)
+    return True
+
+
 def _faction_spotlight_label(row):
     explore_count = int(row.get("explore_count", 0) or 0)
     boss_defeat_count = int(row.get("boss_defeat_count", 0) or 0)
@@ -23438,6 +23707,7 @@ TOWER_WORLD_EVENT_TYPES = {
     "TOWER_ALL_TIME_RECORD",
 }
 
+FACTION_WEEKLY_REPORT_EVENT_TYPE = "FACTION_WEEKLY_REPORT"
 
 FEED_EVENT_TYPES = {
     "boss": {"audit.boss.defeat"},
@@ -23446,14 +23716,15 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
     "week_rollover",
     "FACTION_WAR_RESULT",
+    FACTION_WEEKLY_REPORT_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -23838,6 +24109,18 @@ def _feed_card_from_event(db, row):
         overall_mvp = mvp.get("overall") if isinstance(mvp.get("overall"), dict) else None
         if overall_mvp:
             card["meta_lines"].append(f"陣営MVP: User #{int(overall_mvp.get('user_id') or 0)} / {int(overall_mvp.get('points') or 0)}pt")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_WEEKLY_REPORT_EVENT_TYPE:
+        faction_key = _normalize_faction_key(payload.get("top_faction"))
+        faction_name = str(payload.get("top_faction_name") or FACTION_LABELS.get(faction_key, faction_key or "未確定")).strip()
+        explore_count = int(payload.get("explore_count") or 0)
+        boss_defeat_count = int(payload.get("boss_defeat_count") or 0)
+        evolve_count = int(payload.get("evolve_count") or 0)
+        activity_score = int(payload.get("activity_score") or 0)
+        card["headline"] = "陣営週間レポート"
+        card["accent"] = "weekly"
+        card["text"] = f"今週の研究優勢陣営は「{faction_name}」でした。出撃{explore_count}回、ボス撃破{boss_defeat_count}回、進化{evolve_count}回の研究活動が記録されています。"
+        card["meta_lines"] = [f"活動スコア: {activity_score}", f"対象週: {payload.get('week_key') or '-'}"]
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -30482,6 +30765,7 @@ def home():
     main_robot_set_bonus_view = _set_bonus_view_for_loadout(
         (main_robot_stats or {}).get("parts"),
         (main_robot_stats or {}).get("set_bonus"),
+        disabled_reason="自由編成の混成ロボはセットボーナスなし" if (main_robot_stats or {}).get("is_mixed_frame") else None,
     )
     style_achievements = _style_achievements_progress(main_robot)
     idle_line = None
@@ -32372,6 +32656,8 @@ def _faction_page_context(db, user):
         weekly_faction_key=weekly_faction_key,
     )
     faction_activity_rows = get_weekly_faction_activity(db, current_week_key)
+    faction_weekly_report_rows = get_faction_weekly_report(db, current_week_key)
+    my_faction_weekly_position = get_my_faction_weekly_position(db, user, current_week_key)
     faction_awards = get_faction_weekly_awards(db, user_faction, current_week_key) if user_faction else {}
     return {
         "user": user,
@@ -32386,6 +32672,8 @@ def _faction_page_context(db, user):
         "recommended_faction": recommended_faction,
         "faction_score_rows": faction_score_rows,
         "faction_activity_rows": faction_activity_rows,
+        "faction_weekly_report_rows": faction_weekly_report_rows,
+        "my_faction_weekly_position": my_faction_weekly_position,
         "faction_awards": faction_awards,
         "faction_award_categories": [
             {**award_def, "entries": list(faction_awards.get(award_def["key"], []))}
@@ -32397,6 +32685,7 @@ def _faction_page_context(db, user):
         "cooldown_days": FACTION_CHANGE_COOLDOWN_DAYS,
         "minority_factions": _faction_minority_keys(member_counts),
         "user_is_admin": bool(user and "is_admin" in user.keys() and int(user["is_admin"] or 0) == 1),
+        "faction_report_labels": FACTION_WEEKLY_REPORT_LABELS,
     }
 
 
@@ -32517,6 +32806,69 @@ def admin_faction_awards_recalculate():
     db.commit()
     flash(f"陣営内表彰を再集計しました（{result['week_key']} / {result['created_or_updated_count']}件）。", "notice")
     return redirect(url_for("faction_view"))
+
+
+@app.route("/admin/factions/report/recalculate", methods=["POST"])
+@login_required
+def admin_faction_report_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = calculate_faction_weekly_report(db, week_key, finalize=False)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(request.referrer or url_for("admin_world"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPORT_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_report_recalculate",
+        entity_type="faction_weekly_reports",
+        payload={
+            "week_key": result["week_key"],
+            "updated_count": int(result["updated_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営週間レポートを再集計しました（{result['week_key']} / {result['updated_count']}件）。", "notice")
+    return redirect(request.referrer or url_for("admin_world"))
+
+
+@app.route("/admin/factions/report/finalize", methods=["POST"])
+@login_required
+def admin_faction_report_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = calculate_faction_weekly_report(db, week_key, finalize=True)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(request.referrer or url_for("admin_world"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPORT_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_report_finalize",
+        entity_type="faction_weekly_reports",
+        payload={
+            "week_key": result["week_key"],
+            "updated_count": int(result["updated_count"]),
+            "actor_admin_id": int(session["user_id"]),
+            "world_event_created": bool(result["emitted_world_event"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営週間レポートを確定しました（{result['week_key']} / 世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(request.referrer or url_for("admin_world"))
 
 
 @app.route("/faction/choose", methods=["GET", "POST"])
@@ -32657,6 +33009,7 @@ def world_view():
     faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
     faction_activity_rows = get_weekly_faction_activity(db, week_key)
+    faction_weekly_report_rows = get_faction_weekly_report(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -32674,6 +33027,8 @@ def world_view():
         faction_score_rows=faction_score_rows,
         faction_detail_rows=faction_detail_rows,
         faction_activity_rows=faction_activity_rows,
+        faction_weekly_report_rows=faction_weekly_report_rows,
+        faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
         prev_faction_result=prev_faction_result,
@@ -36604,12 +36959,14 @@ def robots():
             inst["final_stats"] = stat_obj["stats"]
             inst["power"] = stat_obj["power"]
             inst["set_bonus"] = stat_obj["set_bonus"]
+            inst["is_mixed_frame"] = bool(stat_obj.get("is_mixed_frame"))
             inst["archetype"] = stat_obj.get("archetype")
             inst["robot_profile"] = _robot_profile_view(stat_obj)
         else:
             inst["final_stats"] = None
             inst["power"] = None
             inst["set_bonus"] = None
+            inst["is_mixed_frame"] = bool(int(inst.get("is_mixed_frame") or 0))
             inst["archetype"] = None
             inst["robot_profile"] = _robot_profile_view(None)
         inst["weekly_fit"] = _robot_weekly_fit(db, inst["id"], weekly_element) if weekly_element else False
@@ -36690,6 +37047,7 @@ def robot_detail(instance_id):
     robot["set_bonus_view"] = _set_bonus_view_for_loadout(
         (stat_obj or {}).get("parts"),
         (stat_obj or {}).get("set_bonus"),
+        disabled_reason="自由編成の混成ロボはセットボーナスなし" if (stat_obj or {}).get("is_mixed_frame") else None,
     )
     robot["series_view"] = (
         _series_bonus_view_for_loadout(
@@ -37604,15 +37962,15 @@ def build():
         ip=request.remote_addr,
     )
     db.commit()
-    requested_frame_type = (request.args.get("frame_type") or "").strip()
-    selected_frame_type = _normalize_frame_type(requested_frame_type or "normal")
+    requested_frame_type = (request.args.get("build_mode") or request.args.get("frame_type") or "").strip()
+    selected_frame_type = _normalize_build_frame_mode(requested_frame_type or "normal")
     series_progress_layer = _series_progress_layer_for_user(db, user_id)
     series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
     active_robot = _get_active_robot(db, user_id)
     saved_robot_rows = db.execute(
         """
-        SELECT id, name, frame_type, composed_image_path, icon_32_path, updated_at
+        SELECT id, name, frame_type, COALESCE(is_mixed_frame, 0) AS is_mixed_frame, build_frame_mode, composed_image_path, icon_32_path, updated_at
         FROM robot_instances
         WHERE user_id = ? AND status != 'decomposed'
         ORDER BY
@@ -37649,7 +38007,15 @@ def build():
             base_robot_id = None
     compare_robot = base_robot if build_mode == "modify" and base_robot else active_robot
     if not requested_frame_type and compare_robot:
-        selected_frame_type = _normalize_frame_type(dict(compare_robot).get("frame_type"), default=selected_frame_type)
+        compare_robot_dict = dict(compare_robot)
+        selected_frame_type = (
+            FREE_BUILD_FRAME_MODE
+            if int(compare_robot_dict.get("is_mixed_frame") or 0)
+            else _normalize_build_frame_mode(
+                compare_robot_dict.get("build_frame_mode") or compare_robot_dict.get("frame_type"),
+                default=selected_frame_type,
+            )
+        )
     current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
     if compare_robot:
         active_mapping = _ensure_robot_instance_part_instances(db, int(compare_robot["id"])) or {}
@@ -37673,8 +38039,13 @@ def build():
             current_row = current_rows_by_id.get(int(active_mapping.get(mapping_key) or 0))
             if current_row:
                 current_part_items[part_type] = _build_picker_part_item(current_row)
+    frame_filter_sql = ""
+    owned_params = [user_id]
+    if selected_frame_type != FREE_BUILD_FRAME_MODE:
+        frame_filter_sql = "AND COALESCE(rp.frame_type, 'normal') = ?"
+        owned_params.append(selected_frame_type)
     owned_rows = db.execute(
-        """
+        f"""
         WITH inv AS (
             SELECT
                 pi.id AS instance_id,
@@ -37688,7 +38059,7 @@ def build():
             FROM part_instances pi
             JOIN robot_parts rp ON rp.id = pi.part_id
             WHERE pi.user_id = ? AND pi.status = 'inventory' AND rp.is_active = 1
-              AND COALESCE(rp.frame_type, 'normal') = ?
+              {frame_filter_sql}
         ),
         ranked AS (
             SELECT
@@ -37713,7 +38084,7 @@ def build():
             COALESCE(instance_series, series, '') ASC,
             instance_id ASC
         """,
-        (user_id, selected_frame_type),
+        owned_params,
     ).fetchall()
     part_groups = {"HEAD": [], "RIGHT_ARM": [], "LEFT_ARM": [], "LEGS": []}
     for row in owned_rows:
@@ -37753,6 +38124,7 @@ def build():
                     "part_type": display_option.get("part_type"),
                     "key": display_option.get("key"),
                     "series": (display_option.get("instance_series") or display_option.get("series")),
+                    "frame_type": display_option.get("frame_type"),
                     "rarity": (display_option.get("instance_rarity") or display_option.get("rarity") or "N"),
                     "element": (display_option.get("instance_element") or display_option.get("element") or "NORMAL"),
                     "plus": int(display_option.get("plus") or 0),
@@ -37770,10 +38142,13 @@ def build():
             selected_payloads,
             series_bonus_defs=series_bonus_defs,
             series_progress_layer=series_progress_layer,
+            disable_set_bonus=len({p.get("frame_type") for p in selected_payloads if p.get("frame_type")}) > 1,
         )
         if len(selected_payloads) == 4
         else None
     )
+    candidate_frame_types = sorted({str(p.get("frame_type") or "normal") for p in selected_payloads}) if len(selected_payloads) == 4 else []
+    candidate_is_mixed_frame = len(candidate_frame_types) > 1
     decor_assets = db.execute(
         """
         SELECT rda.id, rda.key, rda.name_ja, rda.image_path
@@ -37845,6 +38220,7 @@ def build():
     candidate_set_bonus_view = _set_bonus_view_for_loadout(
         selected_payloads,
         (estimate or {}).get("set_bonus"),
+        disabled_reason="自由編成の混成ロボはセットボーナスなし" if candidate_is_mixed_frame else None,
     )
     candidate_series_view = (
         _series_bonus_view_for_loadout(
@@ -37859,6 +38235,7 @@ def build():
     current_set_bonus_view = _set_bonus_view_for_loadout(
         (current_robot_stats_obj or {}).get("parts"),
         (current_robot_stats_obj or {}).get("set_bonus"),
+        disabled_reason="自由編成の混成ロボはセットボーナスなし" if (current_robot_stats_obj or {}).get("is_mixed_frame") else None,
     )
     current_series_view = (
         _series_bonus_view_for_loadout(
@@ -37892,8 +38269,14 @@ def build():
         part_groups=part_groups,
         missing_part_types=missing_part_types,
         selected_frame_type=selected_frame_type,
-        frame_type_defs=FRAME_TYPE_DEFS,
-        frame_type_filters=_frame_type_filter_rows(selected_frame_type, "build"),
+        frame_type_defs=BUILD_FRAME_MODE_DEFS,
+        frame_type_filters=_build_frame_mode_filter_rows(
+            selected_frame_type,
+            "build",
+            extra_params={"mode": build_mode, "base_robot_id": base_robot_id},
+        ),
+        candidate_is_mixed_frame=candidate_is_mixed_frame,
+        candidate_frame_types=candidate_frame_types,
         selected_slot_values=selected_slot_values,
         selected_parts=selected_parts,
         current_part_items=current_part_items,
@@ -37941,7 +38324,7 @@ def build_confirm():
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
-    selected_frame_type = _normalize_frame_type(request.form.get("frame_type"))
+    selected_frame_type = _normalize_build_frame_mode(request.form.get("build_mode") or request.form.get("frame_type"))
     build_mode = (request.form.get("mode") or "new").strip().lower()
     if build_mode not in {"new", "modify"}:
         build_mode = "new"
@@ -38091,9 +38474,12 @@ def build_confirm():
         session["message"] = "同じ個体を複数部位へは設定できません。"
         return _build_redirect()
     selected_frame_types = {resolved_slots[key]["frame_type"] for key in ("head", "r_arm", "l_arm", "legs")}
-    if len(selected_frame_types) != 1 or selected_frame_type not in selected_frame_types:
-        session["message"] = "このパーツ同士はフレームが異なるため編成できません。恐竜型パーツは恐竜型どうしで編成してください。"
+    is_free_build = selected_frame_type == FREE_BUILD_FRAME_MODE
+    is_mixed_frame = len(selected_frame_types) > 1
+    if not is_free_build and (len(selected_frame_types) != 1 or selected_frame_type not in selected_frame_types):
+        session["message"] = "選択中の編成モードでは、このパーツ同士を組み合わせられません。自由編成を選ぶと、異なる型のパーツも組み合わせられます。"
         return _build_redirect()
+    robot_frame_type = resolved_slots["head"]["frame_type"] if is_mixed_frame else next(iter(selected_frame_types))
 
     head_key = resolved_slots["head"]["key"]
     r_arm_key = resolved_slots["r_arm"]["key"]
@@ -38161,7 +38547,9 @@ def build_confirm():
             decor_asset_id=decor_asset_id,
             status="active",
             combat_mode=combat_mode,
-            frame_type=selected_frame_type,
+            frame_type=robot_frame_type,
+            is_mixed_frame=is_mixed_frame,
+            build_frame_mode=selected_frame_type,
             offsets=selected_offsets,
         )
         _equip_part_instances_on_robot(db, instance_id, selected)
@@ -38209,6 +38597,10 @@ def build_confirm():
                 "legs_key": legs_key,
                 "decor_asset_id": decor_asset_id,
                 "combat_mode": combat_mode,
+                "build_mode": selected_frame_type,
+                "frame_types": sorted(selected_frame_types),
+                "is_mixed_frame": bool(is_mixed_frame),
+                "set_bonus_enabled": not bool(is_mixed_frame),
                 "offsets": dict(selected_offsets),
                 "consumed_part_instance_ids": consumed_ids,
                 "style": {
@@ -45933,6 +46325,8 @@ def admin_world():
         faction_week_scores=_faction_week_scores(db, week_key),
         faction_week_result=_faction_week_result(db, week_key),
         faction_detail_rows=_faction_detail_rows(db, week_key),
+        faction_weekly_report_rows=get_faction_weekly_report(db, week_key),
+        faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_top_contributions=_faction_top_contribution_rows(db, week_key, limit=10),
         faction_recent_logs=_faction_log_rows(db, week_key, limit=50),
     )

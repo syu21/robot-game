@@ -180,7 +180,14 @@
     const elementLabelEl = document.getElementById("build-element-label-map");
     const elementLabelMap = elementLabelEl ? JSON.parse(elementLabelEl.value || "{}") : {};
     const elements = slots.map((s) => (s.dataset.element || "").toUpperCase());
-    if (elements.every((e) => e && e === elements[0])) {
+    const frameTypes = new Set(slots.map((s) => String(s.dataset.frameType || "normal").trim()).filter(Boolean));
+    const isMixedFrame = frameTypes.size > 1;
+    if (isMixedFrame) {
+      bonusStatus = "なし";
+      bonusCondition = "自由編成の混成ロボはセットボーナスなし";
+      bonusEffect = "セットボーナスなし";
+      bonusDetail = "実験機：自由編成のためセットボーナスなし";
+    } else if (elements.every((e) => e && e === elements[0])) {
       const bonus = setBonusTable[elements[0]];
       if (Array.isArray(bonus) && bonus.length >= 2) {
         const stat = String(bonus[0] || "").toLowerCase();

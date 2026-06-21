@@ -17,6 +17,7 @@
       data-offset-y="{{ p['offset_y'] }}"
       data-series="{{ p.get('series', '') }}"
       data-element="{{ p['estimate_element'] }}"
+      data-frame-type="{{ p['frame_type'] }}"
       data-stat-hp="{{ p['estimate_stats']['hp'] }}"
       data-stat-atk="{{ p['estimate_stats']['atk'] }}"
       data-stat-def="{{ p['estimate_stats']['def'] }}"
@@ -133,7 +134,7 @@
   {% if saved_robot_rows %}
   <div class="build-base-robots">
     {% for robot in saved_robot_rows %}
-    <a class="build-base-robot {% if base_robot_id and robot['id'] == base_robot_id %}is-active{% endif %}" href="{{ url_for('build', mode='modify', base_robot_id=robot['id'], frame_type=robot['frame_type'] or selected_frame_type) }}">
+    <a class="build-base-robot {% if base_robot_id and robot['id'] == base_robot_id %}is-active{% endif %}" href="{{ url_for('build', mode='modify', base_robot_id=robot['id'], frame_type='free' if robot['is_mixed_frame'] else (robot['build_frame_mode'] or robot['frame_type'] or selected_frame_type)) }}">
       {% if robot['icon_32_path'] %}
       <img src="{{ url_for('static', filename=robot['icon_32_path'], v=app_version) }}" alt="" loading="lazy" />
       {% endif %}
@@ -188,6 +189,7 @@
   <input type="hidden" name="mode" value="{{ build_mode }}" />
   <input type="hidden" name="base_robot_id" value="{{ base_robot_id or '' }}" />
   <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
+  <input type="hidden" name="build_mode" value="{{ selected_frame_type }}" />
   <div class="build-grid">
     <section class="card build-preview build-preview-primary">
       <h2>プレビュー</h2>
@@ -275,6 +277,13 @@
           <div class="estimate-item">会心 <b id="est-cri">{{ estimate['stats']['cri'] if estimate else 0 }}</b></div>
         </div>
         <div class="upgrade-cost">総合: <b id="est-power">{{ estimate['power'] if estimate else 0 }}</b></div>
+        {% if candidate_is_mixed_frame %}
+        <div class="estimate-bonus">
+          <div><b>実験機</b></div>
+          <div>自由編成のためセットボーナスなし</div>
+          <div class="robot-time">通常型・虫型・恐竜型を混ぜた構成です。本編出撃はできます。</div>
+        </div>
+        {% endif %}
         <div class="estimate-bonus" id="est-bonus">
           <div><b>セットボーナス: <span id="est-bonus-status">{{ candidate_set_bonus_view['status_label'] }}</span></b></div>
           <div id="est-bonus-condition">{{ candidate_set_bonus_view['condition_text'] }}</div>

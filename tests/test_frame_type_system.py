@@ -154,6 +154,12 @@ class FrameTypeSystemTests(unittest.TestCase):
         self.assertNotIn(f'id="head_key_{insect_head_id}"', dinosaur_html)
         self.assertIn("恐竜型フレーム専用", dinosaur_html)
 
+        free_html = client.get("/build?frame_type=free").get_data(as_text=True)
+        self.assertIn("自由編成", free_html)
+        self.assertIn(f'id="head_key_{normal_head_id}"', free_html)
+        self.assertIn(f'id="head_key_{insect_head_id}"', free_html)
+        self.assertIn(f'id="head_key_{dinosaur_head_id}"', free_html)
+
     def test_build_confirm_rejects_mixed_frames(self):
         normal_head_id = self._create_instance(self.normal_parts["HEAD"]["key"])
         insect_ids = {
@@ -174,9 +180,55 @@ class FrameTypeSystemTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertIn(
-            "このパーツ同士はフレームが異なるため編成できません。",
+            "選択中の編成モードでは、このパーツ同士を組み合わせられません。",
             resp.get_data(as_text=True),
         )
+
+    def test_build_confirm_free_mode_allows_mixed_frame_experiment_robot(self):
+        mixed_ids = {
+            "head_key": self._create_instance(self.normal_parts["HEAD"]["key"]),
+            "r_arm_key": self._create_instance("right_arm_kabuto"),
+            "l_arm_key": self._create_instance("left_arm_n_dino_tyranno"),
+            "legs_key": self._create_instance(self.normal_parts["LEGS"]["key"]),
+        }
+        client = self._client()
+        resp = client.post(
+            "/build/confirm",
+            data={
+                "robot_name": "ExperimentBot",
+                "frame_type": "free",
+                "build_mode": "free",
+                **{key: str(value) for key, value in mixed_ids.items()},
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT id, is_mixed_frame, build_frame_mode, composed_image_path, icon_32_path
+                FROM robot_instances
+                WHERE user_id = ? AND name = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id, "ExperimentBot"),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(int(row["is_mixed_frame"]), 1)
+            self.assertEqual(row["build_frame_mode"], "free")
+            self.assertTrue(row["composed_image_path"])
+            self.assertTrue(row["icon_32_path"])
+            robot_id = int(row["id"])
+            stats = game_app._compute_robot_stats_for_instance(db, int(row["id"]))
+            self.assertIsNotNone(stats)
+            self.assertIsNone(stats["set_bonus"])
+            self.assertFalse(stats["set_bonus_enabled"])
+
+        detail_html = client.get(f"/robots/{robot_id}").get_data(as_text=True)
+        self.assertIn("実験機", detail_html)
+        self.assertIn("セットボーナスなし", detail_html)
 
     def test_build_confirm_allows_dinosaur_mixed_series(self):
         dinosaur_ids = {
@@ -270,8 +322,8 @@ class FrameTypeSystemTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("このパーツ同士はフレームが異なるため編成できません。", html)
-        self.assertIn("恐竜型パーツは恐竜型どうしで編成してください。", html)
+        self.assertIn("選択中の編成モードでは、このパーツ同士を組み合わせられません。", html)
+        self.assertIn("自由編成を選ぶと、異なる型のパーツも組み合わせられます。", html)
 
     def test_insect_build_generates_robot_and_icon_assets(self):
         insect_ids = {

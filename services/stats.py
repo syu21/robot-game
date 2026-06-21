@@ -210,12 +210,22 @@ def compute_power(stats):
     )
 
 
-def compute_robot_stats(parts, *, series_bonus_defs=None, series_progress_layer=5):
+def compute_robot_stats(parts, *, series_bonus_defs=None, series_progress_layer=5, disable_set_bonus=False):
     total = {k: 0 for k in STATS}
     for p in parts:
         ps = compute_part_stats(p)
         for k in STATS:
             total[k] += ps[k]
+    if disable_set_bonus:
+        series_counts = count_series(parts, series_bonus_defs)
+        return {
+            "stats": total,
+            "power": compute_power(total),
+            "set_bonus": None,
+            "series_counts": series_counts,
+            "series_bonus": [],
+            "set_bonus_enabled": False,
+        }
     total_with_bonus, element = apply_set_bonus(total, parts)
     total_with_series, series_counts, series_bonus = apply_series_bonus(
         total_with_bonus,
@@ -229,6 +239,7 @@ def compute_robot_stats(parts, *, series_bonus_defs=None, series_progress_layer=
         "set_bonus": element,
         "series_counts": series_counts,
         "series_bonus": series_bonus,
+        "set_bonus_enabled": True,
     }
 
 

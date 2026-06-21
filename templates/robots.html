@@ -31,6 +31,7 @@
       <div class="robot-card">
         <div class="robot-id">
           {{ i['display_name'] }}
+          {% if i.get('is_mixed_frame') %}<span class="robot-part"> 実験機</span>{% endif %}
           {% if i['set_bonus'] %}<span class="robot-part"> {{ i['set_bonus'] }}</span>{% endif %}
           {% if i['weekly_fit'] %}<span class="weekly-fit-badge">WEEK適合</span>{% endif %}
           {% if active_robot_id == i['id'] %}<span class="robot-part"> 出撃機体</span>{% endif %}
@@ -52,6 +53,9 @@
         <div class="robot-part">R_ARM: {{ i['r_arm_key'] }}</div>
         <div class="robot-part">L_ARM: {{ i['l_arm_key'] }}</div>
         <div class="robot-part">LEGS: {{ i['legs_key'] }}</div>
+        {% if i.get('is_mixed_frame') %}
+          <div class="robot-time">自由編成のためセットボーナスなし</div>
+        {% endif %}
         {% if i['final_stats'] %}
           {% if i.get('robot_profile') and i['robot_profile'].get('signature_label') %}
             <div class="robot-part">思想: {{ i['robot_profile']['signature_label'] }}</div>

@@ -530,6 +530,9 @@
               </div>
             </div>
             {% endif %}
+            {% if main_robot_stats and main_robot_stats.get('is_mixed_frame') %}
+            <div class="upgrade-cost">実験機：自由編成のためセットボーナスなし</div>
+            {% endif %}
             <div class="upgrade-cost">セットボーナス: {{ main_robot_set_bonus_view['status_label'] }}</div>
             <div class="upgrade-cost">{{ main_robot_set_bonus_view['condition_text'] }}</div>
             <div class="upgrade-cost">{{ main_robot_set_bonus_view['effect_text'] }}</div>
