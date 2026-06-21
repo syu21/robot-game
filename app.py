@@ -11348,6 +11348,55 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_guardians (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            guardian_name TEXT NOT NULL,
+            guardian_title TEXT,
+            source_type TEXT NOT NULL DEFAULT 'submission',
+            submission_id INTEGER,
+            author_user_id INTEGER,
+            author_faction_key TEXT,
+            image_path TEXT,
+            faith_profile_json TEXT,
+            max_hp INTEGER NOT NULL DEFAULT 1000,
+            current_hp INTEGER NOT NULL DEFAULT 1000,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            fallback_cross_faction INTEGER NOT NULL DEFAULT 0,
+            selected_at TEXT,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(week_key, faction_key),
+            FOREIGN KEY (submission_id) REFERENCES lab_robot_submissions(id),
+            FOREIGN KEY (author_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_guardian_attacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            attacker_faction_key TEXT NOT NULL,
+            target_faction_key TEXT NOT NULL,
+            guardian_id INTEGER NOT NULL,
+            attacker_user_id INTEGER NOT NULL,
+            source_event_type TEXT NOT NULL,
+            source_event_id INTEGER,
+            request_id TEXT,
+            damage INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(source_event_type, source_event_id, attacker_user_id),
+            FOREIGN KEY (guardian_id) REFERENCES faction_guardians(id),
+            FOREIGN KEY (attacker_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_typing_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -12833,6 +12882,11 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardians_week_faction ON faction_guardians(week_key, faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardians_submission ON faction_guardians(submission_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
@@ -21826,6 +21880,491 @@ def finalize_faction_weekly_missions(db, week_key=None):
     }
 
 
+FACTION_GUARDIAN_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_RESULT"
+FACTION_GUARDIAN_MAX_HP = 1000
+FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
+    AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: 30,
+    AUDIT_EVENT_TYPES["PART_EVOLVE"]: 15,
+}
+FACTION_GUARDIAN_TARGET_ROTATION = {
+    "ignis": "ventra",
+    "ventra": "aurix",
+    "aurix": "ignis",
+}
+
+
+def get_faction_faith_profile(faction_key):
+    key = _normalize_faction_key(faction_key)
+    # TODO: 陣営信仰の正式パラメータ定義を追加したら、ここを参照元に差し替える。
+    profiles = {
+        "ignis": {
+            "label": "攻撃・会心信仰",
+            "summary": FACTION_DOCTRINES["ignis"]["summary"],
+            "primary_stats": ["atk", "cri"],
+            "stats": {"hp": 2, "atk": 5, "def": 2, "spd": 3, "acc": 2, "cri": 5},
+        },
+        "ventra": {
+            "label": "速度・命中信仰",
+            "summary": FACTION_DOCTRINES["ventra"]["summary"],
+            "primary_stats": ["spd", "acc"],
+            "stats": {"hp": 2, "atk": 3, "def": 2, "spd": 5, "acc": 5, "cri": 2},
+        },
+        "aurix": {
+            "label": "耐久・防御信仰",
+            "summary": FACTION_DOCTRINES["aurix"]["summary"],
+            "primary_stats": ["hp", "def"],
+            "stats": {"hp": 5, "atk": 2, "def": 5, "spd": 2, "acc": 3, "cri": 2},
+        },
+    }
+    return profiles.get(key, {"label": "未設定", "summary": "", "primary_stats": [], "stats": {}})
+
+
+def get_guardian_target_faction(attacker_faction_key, week_key=None):
+    key = _normalize_faction_key(attacker_faction_key)
+    return FACTION_GUARDIAN_TARGET_ROTATION.get(key)
+
+
+def _guardian_submission_row(db, submission_id):
+    return db.execute(
+        """
+        SELECT
+            s.id,
+            s.user_id,
+            s.title,
+            s.image_path,
+            s.thumb_path,
+            s.status,
+            s.disabled_at,
+            u.username,
+            u.display_name,
+            LOWER(TRIM(COALESCE(u.faction, ''))) AS author_faction_key
+        FROM lab_robot_submissions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = ?
+          AND s.status = 'approved'
+          AND s.disabled_at IS NULL
+        LIMIT 1
+        """,
+        (int(submission_id),),
+    ).fetchone()
+
+
+def get_guardian_submission_candidates(db, faction_key=None, *, allow_cross_faction=True, limit=100):
+    key = _normalize_faction_key(faction_key)
+    params = []
+    where = ["s.status = 'approved'", "s.disabled_at IS NULL"]
+    if key and not allow_cross_faction:
+        where.append("LOWER(TRIM(COALESCE(u.faction, ''))) = ?")
+        params.append(key)
+    rows = db.execute(
+        f"""
+        SELECT
+            s.id,
+            s.user_id,
+            s.title,
+            s.image_path,
+            s.thumb_path,
+            s.approved_at,
+            s.created_at,
+            u.username,
+            u.display_name,
+            LOWER(TRIM(COALESCE(u.faction, ''))) AS author_faction_key
+        FROM lab_robot_submissions s
+        JOIN users u ON u.id = s.user_id
+        WHERE {' AND '.join(where)}
+        ORDER BY COALESCE(s.approved_at, s.created_at) DESC, s.id DESC
+        LIMIT ?
+        """,
+        (*params, int(limit)),
+    ).fetchall()
+    candidates = []
+    for row in rows:
+        author_faction = _normalize_faction_key(row["author_faction_key"])
+        candidates.append(
+            {
+                "submission_id": int(row["id"]),
+                "title": row["title"],
+                "image_path": row["thumb_path"] or row["image_path"],
+                "author_user_id": int(row["user_id"]),
+                "author_name": row["display_name"] or row["username"],
+                "author_faction_key": author_faction,
+                "author_faction_name": FACTION_LABELS.get(author_faction, author_faction or "未所属"),
+                "is_same_faction": bool(key and author_faction == key),
+            }
+        )
+    return candidates
+
+
+def pick_random_guardian_submission(db, faction_key, week_key=None):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    same_faction = get_guardian_submission_candidates(db, key, allow_cross_faction=False)
+    pool = same_faction or get_guardian_submission_candidates(db, key, allow_cross_faction=True)
+    if not pool:
+        return None
+    return random.Random(f"{wk}:{key}:guardian").choice(pool)
+
+
+def _set_unset_faction_guardian(db, week_key, faction_key):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    now_text = now_str()
+    db.execute(
+        """
+        INSERT INTO faction_guardians
+        (week_key, faction_key, guardian_name, guardian_title, source_type, faith_profile_json,
+         max_hp, current_hp, is_active, is_finalized, fallback_cross_faction, selected_at, created_at, updated_at)
+        VALUES (?, ?, '未設定', ?, 'unset', ?, ?, ?, 1, 0, 0, ?, ?, ?)
+        ON CONFLICT(week_key, faction_key) DO UPDATE SET
+            guardian_name = excluded.guardian_name,
+            guardian_title = excluded.guardian_title,
+            source_type = excluded.source_type,
+            submission_id = NULL,
+            author_user_id = NULL,
+            author_faction_key = NULL,
+            image_path = NULL,
+            faith_profile_json = excluded.faith_profile_json,
+            max_hp = excluded.max_hp,
+            current_hp = excluded.current_hp,
+            is_active = 1,
+            is_finalized = 0,
+            fallback_cross_faction = 0,
+            selected_at = excluded.selected_at,
+            updated_at = excluded.updated_at
+        """,
+        (
+            wk,
+            key,
+            f"{FACTION_LABELS.get(key, key)}守護機",
+            json.dumps(get_faction_faith_profile(key), ensure_ascii=False),
+            FACTION_GUARDIAN_MAX_HP,
+            FACTION_GUARDIAN_MAX_HP,
+            now_text,
+            now_text,
+            now_text,
+        ),
+    )
+
+
+def set_faction_guardian_from_submission(db, week_key, faction_key, submission_id, guardian_name=None):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        raise ValueError("invalid faction_key")
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    submission = _guardian_submission_row(db, submission_id)
+    if not submission:
+        raise ValueError("invalid submission_id")
+    author_faction = _normalize_faction_key(submission["author_faction_key"])
+    now_text = now_str()
+    name = str(guardian_name or submission["title"] or "").strip() or f"{FACTION_LABELS.get(key, key)}守護機"
+    db.execute(
+        """
+        INSERT INTO faction_guardians
+        (week_key, faction_key, guardian_name, guardian_title, source_type, submission_id, author_user_id,
+         author_faction_key, image_path, faith_profile_json, max_hp, current_hp, is_active, is_finalized,
+         fallback_cross_faction, selected_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'submission', ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+        ON CONFLICT(week_key, faction_key) DO UPDATE SET
+            guardian_name = excluded.guardian_name,
+            guardian_title = excluded.guardian_title,
+            source_type = excluded.source_type,
+            submission_id = excluded.submission_id,
+            author_user_id = excluded.author_user_id,
+            author_faction_key = excluded.author_faction_key,
+            image_path = excluded.image_path,
+            faith_profile_json = excluded.faith_profile_json,
+            max_hp = excluded.max_hp,
+            current_hp = excluded.current_hp,
+            is_active = 1,
+            is_finalized = 0,
+            fallback_cross_faction = excluded.fallback_cross_faction,
+            selected_at = excluded.selected_at,
+            updated_at = excluded.updated_at
+        """,
+        (
+            wk,
+            key,
+            name,
+            f"{FACTION_LABELS.get(key, key)}守護機",
+            int(submission["id"]),
+            int(submission["user_id"]),
+            author_faction,
+            submission["thumb_path"] or submission["image_path"],
+            json.dumps(get_faction_faith_profile(key), ensure_ascii=False),
+            FACTION_GUARDIAN_MAX_HP,
+            FACTION_GUARDIAN_MAX_HP,
+            1 if author_faction != key else 0,
+            now_text,
+            now_text,
+            now_text,
+        ),
+    )
+    return get_faction_guardian_row(db, wk, key)
+
+
+def auto_pick_faction_guardian(db, week_key, faction_key):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    candidate = pick_random_guardian_submission(db, key, wk)
+    if not candidate:
+        _set_unset_faction_guardian(db, wk, key)
+        return {"week_key": wk, "faction_key": key, "selected": False, "submission_id": None}
+    row = set_faction_guardian_from_submission(db, wk, key, int(candidate["submission_id"]))
+    return {
+        "week_key": wk,
+        "faction_key": key,
+        "selected": True,
+        "submission_id": int(row["submission_id"]),
+        "fallback_cross_faction": bool(int(row["fallback_cross_faction"] or 0)),
+    }
+
+
+def get_faction_guardian_row(db, week_key, faction_key):
+    return db.execute(
+        "SELECT * FROM faction_guardians WHERE week_key = ? AND faction_key = ? LIMIT 1",
+        (str(week_key or _world_week_key()), _normalize_faction_key(faction_key)),
+    ).fetchone()
+
+
+def ensure_faction_guardians(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    for faction_key in FACTION_KEYS:
+        if not get_faction_guardian_row(db, wk, faction_key):
+            _set_unset_faction_guardian(db, wk, faction_key)
+    return wk
+
+
+def _guardian_image_url(image_path):
+    if not has_request_context():
+        return None
+    rel = _safe_static_rel(image_path)
+    return url_for("static", filename=rel) if rel else None
+
+
+def _guardian_view_row(db, row):
+    faction_key = _normalize_faction_key(row["faction_key"])
+    author_name = ""
+    if row["author_user_id"]:
+        author = db.execute("SELECT id, username, display_name, is_admin FROM users WHERE id = ?", (int(row["author_user_id"]),)).fetchone()
+        author_name = _display_username_for_user_row(db, author) if author else ""
+    try:
+        faith_profile = json.loads(row["faith_profile_json"] or "{}")
+    except json.JSONDecodeError:
+        faith_profile = {}
+    max_hp = max(1, int(row["max_hp"] or FACTION_GUARDIAN_MAX_HP))
+    current_hp = max(0, int(row["current_hp"] or 0))
+    parsed_percent = min(100, int(math.floor((max_hp - current_hp) * 100 / max_hp)))
+    target_by = next((fk for fk, target in FACTION_GUARDIAN_TARGET_ROTATION.items() if target == faction_key), None)
+    return {
+        "id": int(row["id"]),
+        "week_key": row["week_key"],
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "guardian_name": row["guardian_name"],
+        "guardian_title": row["guardian_title"] or f"{FACTION_LABELS.get(faction_key, faction_key)}守護機",
+        "source_type": row["source_type"],
+        "submission_id": int(row["submission_id"]) if row["submission_id"] else None,
+        "submission_url": (
+            url_for("lab_submission_detail", submission_id=int(row["submission_id"]))
+            if row["submission_id"] and has_request_context()
+            else None
+        ),
+        "author_user_id": int(row["author_user_id"]) if row["author_user_id"] else None,
+        "author_name": author_name,
+        "author_faction_key": _normalize_faction_key(row["author_faction_key"]),
+        "author_faction_name": FACTION_LABELS.get(_normalize_faction_key(row["author_faction_key"]), "未所属"),
+        "image_url": _guardian_image_url(row["image_path"]),
+        "faith_profile": faith_profile,
+        "max_hp": max_hp,
+        "current_hp": current_hp,
+        "parsed_percent": parsed_percent,
+        "defense_percent": max(0, min(100, int(math.ceil(current_hp * 100 / max_hp)))),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "is_finalized": bool(int(row["is_finalized"] or 0)),
+        "fallback_cross_faction": bool(int(row["fallback_cross_faction"] or 0)),
+        "target_faction_key": get_guardian_target_faction(faction_key),
+        "target_faction_name": FACTION_LABELS.get(get_guardian_target_faction(faction_key), ""),
+        "targeted_by_faction_key": target_by,
+        "targeted_by_faction_name": FACTION_LABELS.get(target_by, "") if target_by else "",
+    }
+
+
+def get_faction_guardians_view(db, week_key=None):
+    wk = ensure_faction_guardians(db, week_key)
+    rows = db.execute(
+        "SELECT * FROM faction_guardians WHERE week_key = ? ORDER BY faction_key ASC",
+        (wk,),
+    ).fetchall()
+    by_key = {_normalize_faction_key(row["faction_key"]): _guardian_view_row(db, row) for row in rows}
+    return [by_key[key] for key in FACTION_KEYS if key in by_key]
+
+
+def _guardian_event_payload(payload_json):
+    try:
+        return json.loads(payload_json or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
+def _guardian_event_counts(event_type, payload):
+    if event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+        result_text = str(payload.get("result") or payload.get("outcome") or "").strip().lower()
+        if result_text in {"lose", "loss", "defeat", "failed", "fail"}:
+            return False
+        if str(payload.get("win")).strip().lower() in {"0", "false", "no"}:
+            return False
+        return True
+    if event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+        return str(payload.get("success", True)).strip().lower() not in {"0", "false", "no"}
+    return event_type in FACTION_GUARDIAN_DAMAGE_BY_EVENT
+
+
+def recalculate_faction_guardian_attacks(db, week_key=None):
+    wk = ensure_faction_guardians(db, week_key)
+    start_dt, end_dt = get_current_week_range(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    now_text = now_str()
+    db.execute("DELETE FROM faction_guardian_attacks WHERE week_key = ?", (wk,))
+    db.execute(
+        "UPDATE faction_guardians SET current_hp = max_hp, is_finalized = 0, finalized_at = NULL, updated_at = ? WHERE week_key = ?",
+        (now_text, wk),
+    )
+    guardians = {
+        _normalize_faction_key(row["faction_key"]): row
+        for row in db.execute("SELECT * FROM faction_guardians WHERE week_key = ?", (wk,)).fetchall()
+    }
+    rows = db.execute(
+        """
+        SELECT
+            e.id,
+            e.event_type,
+            e.payload_json,
+            e.user_id,
+            e.request_id,
+            LOWER(TRIM(COALESCE(u.faction, ''))) AS attacker_faction_key,
+            COALESCE(u.is_admin, 0) AS is_admin
+        FROM world_events_log e
+        JOIN users u ON u.id = e.user_id
+        WHERE e.created_at >= ?
+          AND e.created_at < ?
+          AND e.user_id IS NOT NULL
+          AND e.event_type IN (?, ?, ?)
+        ORDER BY e.id ASC
+        """,
+        (
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+        ),
+    ).fetchall()
+    total_damage = 0
+    inserted_count = 0
+    for event in rows:
+        if int(event["is_admin"] or 0) == 1:
+            continue
+        attacker_faction = _normalize_faction_key(event["attacker_faction_key"])
+        target_faction = get_guardian_target_faction(attacker_faction, wk)
+        guardian = guardians.get(target_faction)
+        if not attacker_faction or not target_faction or not guardian:
+            continue
+        if str(guardian["source_type"] or "") == "unset":
+            continue
+        payload = _guardian_event_payload(event["payload_json"])
+        if not _guardian_event_counts(event["event_type"], payload):
+            continue
+        damage = int(FACTION_GUARDIAN_DAMAGE_BY_EVENT.get(event["event_type"], 0) or 0)
+        if damage <= 0:
+            continue
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_guardian_attacks
+            (week_key, attacker_faction_key, target_faction_key, guardian_id, attacker_user_id,
+             source_event_type, source_event_id, request_id, damage, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                wk,
+                attacker_faction,
+                target_faction,
+                int(guardian["id"]),
+                int(event["user_id"]),
+                event["event_type"],
+                int(event["id"]),
+                event["request_id"],
+                damage,
+                now_text,
+            ),
+        )
+        if int(cur.rowcount or 0) <= 0:
+            continue
+        inserted_count += 1
+        total_damage += damage
+        new_hp = max(0, int(guardian["current_hp"] or FACTION_GUARDIAN_MAX_HP) - damage)
+        db.execute(
+            "UPDATE faction_guardians SET current_hp = ?, updated_at = ? WHERE id = ?",
+            (new_hp, now_text, int(guardian["id"])),
+        )
+        guardian = dict(guardian)
+        guardian["current_hp"] = new_hp
+        guardians[target_faction] = guardian
+    return {"week_key": wk, "attack_count": inserted_count, "total_damage": total_damage}
+
+
+def _emit_faction_guardian_result_world_event(db, week_key):
+    exists = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_GUARDIAN_RESULT_EVENT_TYPE, week_key),
+    ).fetchone()
+    if exists:
+        return False
+    guardians = {row["faction_key"]: row for row in get_faction_guardians_view(db, week_key)}
+    results = []
+    for attacker in FACTION_KEYS:
+        target = get_guardian_target_faction(attacker, week_key)
+        target_guardian = guardians.get(target)
+        if not target_guardian:
+            continue
+        results.append(
+            {
+                "attacker_faction": attacker,
+                "attacker_faction_name": FACTION_LABELS.get(attacker, attacker),
+                "target_faction": target,
+                "target_faction_name": FACTION_LABELS.get(target, target),
+                "guardian_name": target_guardian["guardian_name"],
+                "parsed_percent": int(target_guardian["parsed_percent"]),
+                "current_hp": int(target_guardian["current_hp"]),
+                "max_hp": int(target_guardian["max_hp"]),
+            }
+        )
+    _world_event_log(db, FACTION_GUARDIAN_RESULT_EVENT_TYPE, {"week_key": week_key, "results": results})
+    return True
+
+
+def finalize_faction_guardians(db, week_key=None):
+    result = recalculate_faction_guardian_attacks(db, week_key)
+    wk = result["week_key"]
+    now_text = now_str()
+    db.execute(
+        "UPDATE faction_guardians SET is_finalized = 1, finalized_at = COALESCE(finalized_at, ?), updated_at = ? WHERE week_key = ?",
+        (now_text, now_text, wk),
+    )
+    emitted = _emit_faction_guardian_result_world_event(db, wk)
+    return {**result, "emitted_world_event": emitted}
+
+
 def _faction_spotlight_label(row):
     explore_count = int(row.get("explore_count", 0) or 0)
     boss_defeat_count = int(row.get("boss_defeat_count", 0) or 0)
@@ -24471,9 +25010,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -24481,6 +25020,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     "FACTION_WAR_RESULT",
     FACTION_WEEKLY_REPORT_EVENT_TYPE,
     FACTION_MISSION_RESULT_EVENT_TYPE,
+    FACTION_GUARDIAN_RESULT_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -24889,6 +25429,20 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"{faction_name}が「{mission_title}」を達成しました。")
         if not card["meta_lines"]:
             card["meta_lines"].append("今週は継続研究として記録されました。")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_GUARDIAN_RESULT_EVENT_TYPE:
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        card["headline"] = "陣営守護戦"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営守護戦の結果がまとまりました。"
+        for item in results[:3]:
+            attacker_name = str(item.get("attacker_faction_name") or FACTION_LABELS.get(_normalize_faction_key(item.get("attacker_faction")), "陣営")).strip()
+            target_name = str(item.get("target_faction_name") or FACTION_LABELS.get(_normalize_faction_key(item.get("target_faction")), "相手陣営")).strip()
+            guardian_name = str(item.get("guardian_name") or "守護機").strip()
+            parsed_percent = int(item.get("parsed_percent") or 0)
+            card["meta_lines"].append(f"{attacker_name}は{target_name}守護機「{guardian_name}」を{parsed_percent}%まで解析しました。")
+        if not card["meta_lines"]:
+            card["meta_lines"].append("守護機の解析記録はまだありません。")
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -33432,6 +33986,9 @@ def _faction_page_context(db, user):
     faction_weekly_bonus = can_claim_faction_weekly_bonus(db, int(user["id"]), current_week_key)
     faction_badges = get_user_faction_badges(db, int(user["id"]), limit=5)
     faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
+    faction_guardians = get_faction_guardians_view(db, current_week_key)
+    faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
+    guardian_target_key = get_guardian_target_faction(user_faction, current_week_key) if user_faction else None
     return {
         "user": user,
         "user_faction": user_faction,
@@ -33455,6 +34012,9 @@ def _faction_page_context(db, user):
         "faction_weekly_bonus": faction_weekly_bonus,
         "faction_badges": faction_badges,
         "faction_weekly_missions": faction_weekly_missions,
+        "faction_guardians": faction_guardians,
+        "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
+        "my_guardian_target": faction_guardians_by_key.get(guardian_target_key) if guardian_target_key else None,
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
@@ -33768,6 +34328,169 @@ def admin_faction_missions_finalize():
     return redirect(url_for("admin_faction_missions", week_key=result["week_key"]))
 
 
+@app.route("/admin/factions/guardians")
+@login_required
+def admin_faction_guardians():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        guardians = get_faction_guardians_view(db, week_key)
+        candidates = {
+            key: get_guardian_submission_candidates(db, key, allow_cross_faction=True, limit=60)
+            for key in FACTION_KEYS
+        }
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_guardians.html",
+        week_key=week_key,
+        guardians=guardians,
+        candidates=candidates,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/guardians/set", methods=["POST"])
+@login_required
+def admin_faction_guardians_set():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    submission_id = int(request.form.get("submission_id") or 0)
+    guardian_name = (request.form.get("guardian_name") or "").strip()
+    try:
+        row = set_faction_guardian_from_submission(db, week_key, faction_key, submission_id, guardian_name)
+    except Exception:
+        flash("守護機に使える承認済み投稿を選択してください。", "error")
+        return redirect(url_for("admin_faction_guardians", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_SET"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_set",
+        entity_type="faction_guardians",
+        entity_id=int(row["id"]),
+        payload={
+            "week_key": week_key,
+            "faction_key": faction_key,
+            "submission_id": submission_id,
+            "guardian_name": row["guardian_name"],
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{FACTION_LABELS.get(faction_key, faction_key)}の守護機を設定しました。", "notice")
+    return redirect(url_for("admin_faction_guardians", week_key=week_key))
+
+
+@app.route("/admin/factions/guardians/auto-pick", methods=["POST"])
+@login_required
+def admin_faction_guardians_auto_pick():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    targets = [faction_key] if faction_key else list(FACTION_KEYS)
+    try:
+        results = [auto_pick_faction_guardian(db, week_key, key) for key in targets if key]
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_guardians"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_AUTO_PICK"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_auto_pick",
+        entity_type="faction_guardians",
+        payload={
+            "week_key": week_key,
+            "targets": targets,
+            "selected_count": sum(1 for row in results if row.get("selected")),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"守護機を自動選定しました（選定 {sum(1 for row in results if row.get('selected'))}件）。", "notice")
+    return redirect(url_for("admin_faction_guardians", week_key=week_key))
+
+
+@app.route("/admin/factions/guardians/recalculate", methods=["POST"])
+@login_required
+def admin_faction_guardians_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = recalculate_faction_guardian_attacks(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_guardians"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_recalculate",
+        entity_type="faction_guardian_attacks",
+        payload={
+            "week_key": result["week_key"],
+            "attack_count": int(result["attack_count"]),
+            "total_damage": int(result["total_damage"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営守護戦を再集計しました（{result['attack_count']}件 / {result['total_damage']}ダメージ）。", "notice")
+    return redirect(url_for("admin_faction_guardians", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/guardians/finalize", methods=["POST"])
+@login_required
+def admin_faction_guardians_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = finalize_faction_guardians(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_guardians"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_finalize",
+        entity_type="faction_guardians",
+        payload={
+            "week_key": result["week_key"],
+            "attack_count": int(result["attack_count"]),
+            "total_damage": int(result["total_damage"]),
+            "world_event_created": bool(result["emitted_world_event"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営守護戦を確定しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_guardians", week_key=result["week_key"]))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -33971,6 +34694,7 @@ def world_view():
     faction_activity_rows = get_weekly_faction_activity(db, week_key)
     faction_weekly_report_rows = get_faction_weekly_report(db, week_key)
     faction_weekly_missions = get_faction_weekly_missions(db, week_key)
+    faction_guardians = get_faction_guardians_view(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -33990,6 +34714,7 @@ def world_view():
         faction_activity_rows=faction_activity_rows,
         faction_weekly_report_rows=faction_weekly_report_rows,
         faction_weekly_missions=faction_weekly_missions,
+        faction_guardians=faction_guardians,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,

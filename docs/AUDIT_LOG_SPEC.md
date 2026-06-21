@@ -176,7 +176,24 @@
 - payload には `week_key`, `mission_count`, `updated_progress_count`, `actor_admin_id` を含める。
 - `FACTION_MISSION_RESULT` は `week_key` ごとに1件だけ作成し、payload に達成陣営の `mission_title`, `faction_key`, `faction_name`, `current_value`, `target_value` を含める。
 
-### 4.11 管理者操作（追加）
+### 4.11 陣営守護戦
+- `audit.faction.guardian.set`
+- `audit.faction.guardian.auto_pick`
+- `audit.faction.guardian.recalculate`
+- `audit.faction.guardian.finalize`
+- `FACTION_GUARDIAN_RESULT`（公開世界ログ）
+
+補足:
+- 守護機は承認済み `lab_robot_submissions` から週ごと・陣営ごとに選定する。
+- `audit.faction.guardian.set` は管理者が投稿を手動で守護機に設定した記録。
+- `audit.faction.guardian.auto_pick` は管理者が自動選定した記録。
+- `audit.faction.guardian.recalculate` は出撃勝利 / ボス撃破 / 進化成功から解析ダメージを再集計した記録。
+- `audit.faction.guardian.finalize` は週次結果を確定した記録。
+- payload には `week_key`, `faction_key`, `submission_id`, `attack_count`, `total_damage`, `actor_admin_id` を可能な範囲で含める。
+- `FACTION_GUARDIAN_RESULT` は `week_key` ごとに1件だけ作成し、payload に `attacker_faction`, `target_faction`, `guardian_name`, `parsed_percent`, `current_hp`, `max_hp` を含める。
+- 守護戦は直接PvP、戦闘補正、報酬配布には使わない。
+
+### 4.12 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -184,22 +201,23 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.12 パーツ保護
+### 4.13 パーツ保護
 - `audit.part.lock`
 - `audit.part.unlock`
 - payload推奨: `part_instance_id`, `part_key`, `part_name`, `rarity`, `plus`, `locked`
 
-### 4.13 システム
+### 4.14 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `audit.faction.report.recalculate`
 - `audit.faction.report.finalize`
 - `FACTION_WEEKLY_REPORT`（世界イベント）
 - `FACTION_MISSION_RESULT`（世界イベント）
+- `FACTION_GUARDIAN_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
-### 4.14 観測塔
+### 4.15 観測塔
 - 監査ログ:
   - `audit.tower.run.start`
   - `audit.tower.battle`
@@ -297,6 +315,7 @@
 - `tower_run_id` がない場合は `user_id + event_type + floor` で重複投稿を避ける。
 - 陣営週間レポートの公開世界ログ `FACTION_WEEKLY_REPORT` は `week_key` ごとに1件だけ作成する。
 - 陣営週間ミッションの公開世界ログ `FACTION_MISSION_RESULT` は `week_key` ごとに1件だけ作成する。
+- 陣営守護戦の公開世界ログ `FACTION_GUARDIAN_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

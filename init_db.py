@@ -1867,6 +1867,51 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_guardians (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            guardian_name TEXT NOT NULL,
+            guardian_title TEXT,
+            source_type TEXT NOT NULL DEFAULT 'submission',
+            submission_id INTEGER,
+            author_user_id INTEGER,
+            author_faction_key TEXT,
+            image_path TEXT,
+            faith_profile_json TEXT,
+            max_hp INTEGER NOT NULL DEFAULT 1000,
+            current_hp INTEGER NOT NULL DEFAULT 1000,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            fallback_cross_faction INTEGER NOT NULL DEFAULT 0,
+            selected_at TEXT,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(week_key, faction_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_guardian_attacks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            attacker_faction_key TEXT NOT NULL,
+            target_faction_key TEXT NOT NULL,
+            guardian_id INTEGER NOT NULL,
+            attacker_user_id INTEGER NOT NULL,
+            source_event_type TEXT NOT NULL,
+            source_event_id INTEGER,
+            request_id TEXT,
+            damage INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(source_event_type, source_event_id, attacker_user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS champ_defeat_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3109,6 +3154,11 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardians_week_faction ON faction_guardians(week_key, faction_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardians_submission ON faction_guardians(submission_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")

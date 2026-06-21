@@ -53,6 +53,47 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営守護戦</h2>
+  <p class="upgrade-cost">各陣営の実験室投稿ロボを守護機として表示します。今週は解析率の見える化のみで、報酬や戦闘補正はありません。</p>
+  {% if user_faction and my_faction_guardian %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div><b>自陣営の守護機</b> <span class="weekly-fit-badge">{{ my_faction_guardian['faction_name'] }}</span></div>
+      <div class="robot-part">{{ my_faction_guardian['guardian_name'] }}</div>
+      {% if my_faction_guardian['image_url'] %}<img class="robot-thumb" src="{{ my_faction_guardian['image_url'] }}" alt="{{ my_faction_guardian['guardian_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">信仰: {{ my_faction_guardian['faith_profile'].get('label', '未設定') }}</div>
+      <div class="upgrade-cost">防衛HP: {{ my_faction_guardian['current_hp'] }} / {{ my_faction_guardian['max_hp'] }}</div>
+      <progress value="{{ my_faction_guardian['defense_percent'] }}" max="100"></progress>
+      {% if my_faction_guardian['submission_url'] %}<div class="link"><a href="{{ my_faction_guardian['submission_url'] }}">守護機の投稿を見る</a></div>{% endif %}
+    </div>
+    {% if my_guardian_target %}
+    <div class="card">
+      <div><b>今週の解析対象</b> <span class="weekly-fit-badge">{{ my_guardian_target['faction_name'] }}</span></div>
+      <div class="robot-part">{{ my_guardian_target['guardian_name'] }}</div>
+      {% if my_guardian_target['image_url'] %}<img class="robot-thumb" src="{{ my_guardian_target['image_url'] }}" alt="{{ my_guardian_target['guardian_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">解析率: {{ my_guardian_target['parsed_percent'] }}%</div>
+      <progress value="{{ my_guardian_target['parsed_percent'] }}" max="100"></progress>
+      {% if my_guardian_target['submission_url'] %}<div class="link"><a href="{{ my_guardian_target['submission_url'] }}">投稿を見る</a></div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% elif not user_faction %}
+  <div class="card">陣営に所属すると、自陣営の守護機と今週の解析対象が見られます。</div>
+  {% endif %}
+  <div class="showcase-grid">
+    {% for guardian in faction_guardians %}
+    <div class="card">
+      <div><b>{{ guardian['faction_name'] }}</b> <span class="weekly-fit-badge">{{ guardian['faith_profile'].get('label', '守護機') }}</span></div>
+      <div class="robot-part">{{ guardian['guardian_name'] }}</div>
+      <div class="upgrade-cost">{{ guardian['targeted_by_faction_name'] }}から解析対象</div>
+      <div class="upgrade-cost">解析率 {{ guardian['parsed_percent'] }}%</div>
+      <progress value="{{ guardian['parsed_percent'] }}" max="100"></progress>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>今週の陣営ミッション</h2>
   <p class="upgrade-cost">陣営ミッションは、同じ研究方針の仲間と進める週ごとの目標です。現在は戦闘補正や大きな報酬はありません。</p>
   {% if not user_faction %}

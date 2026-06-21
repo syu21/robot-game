@@ -63,6 +63,32 @@
 </section>
 
 <section class="panel">
+  <h2>陣営守護戦</h2>
+  <p class="upgrade-cost">実験室投稿から選ばれた守護機の解析状況です。現在は勝敗報酬や戦闘補正はありません。</p>
+  {% if faction_guardians %}
+  <div class="showcase-grid">
+    {% for guardian in faction_guardians %}
+    <div class="card">
+      <div>
+        <b>{{ guardian['faction_name'] }}守護機</b>
+        {% if guardian['faction_key'] == user_faction %}<span class="weekly-fit-badge">所属中</span>{% endif %}
+      </div>
+      <div class="robot-part">{{ guardian['guardian_name'] }}</div>
+      {% if guardian['image_url'] %}<img class="robot-thumb" src="{{ guardian['image_url'] }}" alt="{{ guardian['guardian_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">信仰: {{ guardian['faith_profile'].get('label', '未設定') }}</div>
+      <div class="upgrade-cost">{{ guardian['targeted_by_faction_name'] }}が解析中 / 解析率 {{ guardian['parsed_percent'] }}%</div>
+      <progress value="{{ guardian['parsed_percent'] }}" max="100"></progress>
+      {% if guardian['submission_url'] %}<div class="link"><a href="{{ guardian['submission_url'] }}">投稿を見る</a></div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="link"><a href="{{ url_for('faction_view') }}">陣営守護戦の詳細を見る</a></p>
+  {% else %}
+  <div class="card">今週の陣営守護戦は準備中です。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>陣営ミッション進捗</h2>
   <p class="upgrade-cost">今週の陣営ミッション進捗です。現在は勝敗報酬ではなく、陣営ごとの研究活動を見える化しています。</p>
   {% if faction_weekly_missions %}

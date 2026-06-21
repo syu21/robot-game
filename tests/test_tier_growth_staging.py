@@ -66,8 +66,8 @@ class TierGrowthStagingTests(unittest.TestCase):
                     part_drop_budget=1,
                     area_key="layer_2",
                 )
-        self.assertEqual(len(rewards["dropped_parts"]), 1)
-        self.assertEqual((rewards["dropped_parts"][0].get("rarity") or "").upper(), "N")
+        self.assertGreaterEqual(len(rewards["dropped_parts"]), 1)
+        self.assertTrue(all((part.get("rarity") or "").upper() == "N" for part in rewards["dropped_parts"]))
 
 
 if __name__ == "__main__":

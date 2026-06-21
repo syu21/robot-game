@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営守護戦管理</h1>
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_guardians') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_guardians_auto_pick') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">全陣営を自動選定</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_guardians_recalculate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">再集計</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_guardians_finalize') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">今週分を確定</button>
+  </form>
+  <p class="upgrade-cost">集計対象: 出撃勝利 +1 / ボス撃破 +30 / 進化成功 +15。管理者の活動は対象外。</p>
+</div>
+
+<section class="panel">
+  <h2>守護機設定</h2>
+  <div class="showcase-grid">
+    {% for guardian in guardians %}
+    <div class="card">
+      <div><b>{{ guardian['faction_name'] }}</b> <span class="weekly-fit-badge">{{ guardian['guardian_title'] }}</span></div>
+      <div class="robot-part">{{ guardian['guardian_name'] }}</div>
+      {% if guardian['image_url'] %}<img class="robot-thumb" src="{{ guardian['image_url'] }}" alt="{{ guardian['guardian_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">作者: {{ guardian['author_name'] or '-' }} / {{ guardian['author_faction_name'] }}</div>
+      <div class="upgrade-cost">対象: {{ guardian['target_faction_name'] }}</div>
+      <div class="upgrade-cost">HP: {{ guardian['current_hp'] }} / {{ guardian['max_hp'] }}（解析 {{ guardian['parsed_percent'] }}%）</div>
+      <progress value="{{ guardian['parsed_percent'] }}" max="100"></progress>
+      <div class="upgrade-cost">{{ guardian['faith_profile'].get('label', '未設定') }}</div>
+      {% if guardian['submission_url'] %}<div class="link"><a href="{{ guardian['submission_url'] }}">投稿を見る</a></div>{% endif %}
+
+      <form method="post" action="{{ url_for('admin_faction_guardians_set') }}">
+        <input type="hidden" name="week_key" value="{{ week_key }}" />
+        <input type="hidden" name="faction_key" value="{{ guardian['faction_key'] }}" />
+        <label>投稿
+          <select name="submission_id" required>
+            {% for candidate in candidates.get(guardian['faction_key'], []) %}
+            <option value="{{ candidate['submission_id'] }}" {% if candidate['submission_id'] == guardian['submission_id'] %}selected{% endif %}>
+              #{{ candidate['submission_id'] }} {{ candidate['title'] }} / {{ candidate['author_name'] }} / {{ candidate['author_faction_name'] }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>表示名
+          <input type="text" name="guardian_name" value="{{ guardian['guardian_name'] if guardian['source_type'] != 'unset' else '' }}" placeholder="未入力なら投稿タイトル" />
+        </label>
+        <button type="submit">この投稿を守護機にする</button>
+      </form>
+      <form method="post" action="{{ url_for('admin_faction_guardians_auto_pick') }}" class="inline-form">
+        <input type="hidden" name="week_key" value="{{ week_key }}" />
+        <input type="hidden" name="faction_key" value="{{ guardian['faction_key'] }}" />
+        <button type="submit">この陣営を自動選定</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
