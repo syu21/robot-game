@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営ミッション管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" class="inline-form">
+    <label>week_key</label>
+    <input type="text" name="week_key" value="{{ week_key }}" />
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_missions_create_default') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">デフォルト作成</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_missions_recalculate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">進捗再集計</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_missions_finalize') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">結果確定</button>
+  </form>
+</div>
+
+<section class="panel">
+  <h2>今週のミッション</h2>
+  {% if missions %}
+  <div class="showcase-grid">
+    {% for mission in missions %}
+    <div class="card">
+      <div><b>{{ mission['title'] }}</b></div>
+      <div class="upgrade-cost">{{ mission['description'] }}</div>
+      <div class="robot-part">目標: {{ mission['target_value'] }} {{ mission['unit'] }}</div>
+      {% for progress in mission['progress_by_faction'] %}
+      <div class="upgrade-cost">
+        {{ progress['faction_name'] }}:
+        {{ progress['current_value'] }} / {{ progress['target_value'] }}
+        （{{ progress['progress_percent'] }}%）
+        {% if progress['is_completed'] %}<span class="weekly-fit-badge">達成</span>{% endif %}
+        {% if progress['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      <progress value="{{ progress['progress_percent'] }}" max="100"></progress>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">ミッションはまだありません。</div>
+  {% endif %}
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

@@ -529,6 +529,16 @@
 - 確定時は公開世界ログ `FACTION_WEEKLY_REPORT` を週1件だけ作成する。
 - 今回は勝敗報酬、コイン報酬、戦闘ステータス補正は追加しない。
 
+## 陣営週間ミッション v1
+- `faction_weekly_missions` に週ごとの共通ミッションを保存する。
+- `faction_weekly_mission_progress` に陣営ごとの進捗と達成率を保存する。
+- 初期ミッションは `共同出撃` / `共同突破` / `共同進化` の3件。
+- `/faction` に「今週の陣営ミッション」、`/world` に「陣営ミッション進捗」を表示する。
+- 管理者は `/admin/factions/missions` で作成・再集計・確定できる。
+- 確定時は公開世界ログ `FACTION_MISSION_RESULT` を週1件だけ作成する。
+- 管理者は `/admin/comms/factions` で全陣営通信を確認できる。通常ユーザーの `/comms/faction` は既存どおり自陣営表示のみ。
+- 直接PvP、戦闘ステータス補正、大きな報酬は追加しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

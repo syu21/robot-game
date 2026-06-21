@@ -53,6 +53,44 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営ミッション</h2>
+  <p class="upgrade-cost">陣営ミッションは、同じ研究方針の仲間と進める週ごとの目標です。現在は戦闘補正や大きな報酬はありません。</p>
+  {% if not user_faction %}
+  <div class="card">研究方針を選ぶと、陣営ミッションに参加できます。</div>
+  {% endif %}
+  {% if faction_weekly_missions %}
+  <div class="showcase-grid">
+    {% for mission in faction_weekly_missions[:3] %}
+    {% set ns = namespace(own=none) %}
+    {% for progress in mission['progress_by_faction'] %}
+      {% if progress['faction_key'] == user_faction %}{% set ns.own = progress %}{% endif %}
+    {% endfor %}
+    <div class="card">
+      <div><b>{{ mission['title'] }}</b></div>
+      <div class="upgrade-cost">{{ mission['description'] }}</div>
+      {% if user_faction and ns.own %}
+      <div class="robot-part">{{ ns.own['faction_name'] }}: {{ ns.own['current_value'] }} / {{ mission['target_value'] }} {{ mission['unit'] }}</div>
+      <div class="upgrade-cost">達成率 {{ ns.own['progress_percent'] }}%</div>
+      <progress value="{{ ns.own['progress_percent'] }}" max="100"></progress>
+      {% if ns.own['is_completed'] %}<div><span class="weekly-fit-badge">達成</span></div>{% else %}<div><span class="weekly-fit-badge">進行中</span></div>{% endif %}
+      {% endif %}
+      <div class="upgrade-cost">他陣営の進捗</div>
+      {% for progress in mission['progress_by_faction'] %}
+      <div class="upgrade-cost">
+        {{ progress['faction_name'] }}: {{ progress['current_value'] }} / {{ mission['target_value'] }}（{{ progress['progress_percent'] }}%）
+        {% if progress['is_completed'] %}<span class="weekly-fit-badge">達成</span>{% endif %}
+        {% if progress['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">今週の陣営ミッションは準備中です。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営比較</h2>
   <p class="upgrade-cost">陣営ごとの今週の研究活動を集計しています。現在は勝敗報酬や戦闘補正はありません。</p>
   {% if user_faction and my_faction_weekly_position %}

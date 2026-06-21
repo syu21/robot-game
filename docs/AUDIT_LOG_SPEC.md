@@ -163,7 +163,20 @@
 - 管理者が表彰バッジを付与した記録では、payload に `week_key`, `granted_count`, `processed_count`, `actor_admin_id` を含める。
 - 表彰は `/faction` 内の名誉表示であり、世界ログ公開イベント、陣営勝敗、戦闘補正には使わない。
 
-### 4.10 管理者操作（追加）
+### 4.10 陣営週間ミッション
+- `audit.faction.missions.create_default`
+- `audit.faction.missions.recalculate`
+- `audit.faction.missions.finalize`
+- `FACTION_MISSION_RESULT`（公開世界ログ）
+
+補足:
+- `audit.faction.missions.create_default` は管理者が週次ミッションを作成した記録。
+- `audit.faction.missions.recalculate` は管理者が進捗を再集計した記録。
+- `audit.faction.missions.finalize` は管理者が週次結果を確定した記録。
+- payload には `week_key`, `mission_count`, `updated_progress_count`, `actor_admin_id` を含める。
+- `FACTION_MISSION_RESULT` は `week_key` ごとに1件だけ作成し、payload に達成陣営の `mission_title`, `faction_key`, `faction_name`, `current_value`, `target_value` を含める。
+
+### 4.11 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -171,21 +184,22 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.10 パーツ保護
+### 4.12 パーツ保護
 - `audit.part.lock`
 - `audit.part.unlock`
 - payload推奨: `part_instance_id`, `part_key`, `part_name`, `rarity`, `plus`, `locked`
 
-### 4.11 システム
+### 4.13 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `audit.faction.report.recalculate`
 - `audit.faction.report.finalize`
 - `FACTION_WEEKLY_REPORT`（世界イベント）
+- `FACTION_MISSION_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
-### 4.12 観測塔
+### 4.14 観測塔
 - 監査ログ:
   - `audit.tower.run.start`
   - `audit.tower.battle`
@@ -282,6 +296,7 @@
 - 観測塔公開世界ログは `user_id + event_type + floor + tower_run_id` で重複投稿を避ける。
 - `tower_run_id` がない場合は `user_id + event_type + floor` で重複投稿を避ける。
 - 陣営週間レポートの公開世界ログ `FACTION_WEEKLY_REPORT` は `week_key` ごとに1件だけ作成する。
+- 陣営週間ミッションの公開世界ログ `FACTION_MISSION_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営通信確認</h1>
+
+<div class="card">
+  <form method="get">
+    <label>陣営</label>
+    <select name="faction_key">
+      <option value="">すべて</option>
+      {% for key, label in faction_labels.items() %}
+        {% if key != 'neutral' %}
+        <option value="{{ key }}" {% if filters['faction_key'] == key %}selected{% endif %}>{{ label }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+    <label>ユーザーID</label>
+    <input type="number" name="user_id" value="{{ filters['user_id'] }}" />
+    <label>キーワード</label>
+    <input type="text" name="keyword" value="{{ filters['keyword'] }}" />
+    <label>
+      <input type="checkbox" name="include_deleted" value="1" {% if filters['include_deleted'] %}checked{% endif %} />
+      削除済みを含む
+    </label>
+    <button type="submit">絞り込み</button>
+  </form>
+</div>
+
+<section class="panel">
+  <h2>全陣営通信</h2>
+  {% if rows %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>日時</th>
+          <th>陣営</th>
+          <th>投稿者</th>
+          <th>user_id</th>
+          <th>投稿内容</th>
+          <th>状態</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row['created_at'] }}</td>
+          <td>{{ row['faction_label'] }}</td>
+          <td>{{ row['username'] }}</td>
+          <td>{{ row['user_id'] or '-' }}</td>
+          <td>{{ row['message'] }}</td>
+          <td>{% if row['is_deleted'] %}削除済み{% else %}表示中{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card">該当する投稿はありません。</div>
+  {% endif %}
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

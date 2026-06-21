@@ -11288,6 +11288,44 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_weekly_missions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            mission_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            target_value INTEGER NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, mission_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_mission_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            mission_id INTEGER NOT NULL,
+            faction_key TEXT NOT NULL,
+            current_value INTEGER NOT NULL DEFAULT 0,
+            target_value INTEGER NOT NULL DEFAULT 0,
+            progress_percent INTEGER NOT NULL DEFAULT 0,
+            is_completed INTEGER NOT NULL DEFAULT 0,
+            completed_at TEXT,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, mission_id, faction_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -12792,6 +12830,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_badges_user_week ON user_faction_badges(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
@@ -21516,6 +21556,276 @@ def _emit_faction_weekly_report_world_event(db, week_key):
     return True
 
 
+FACTION_WEEKLY_MISSION_DEFS = (
+    {
+        "mission_type": "explore_count",
+        "title": "今週の共同出撃",
+        "description": "陣営全体で出撃300回を目指します。",
+        "target_value": 300,
+        "unit": "回",
+    },
+    {
+        "mission_type": "boss_defeat_count",
+        "title": "今週の共同突破",
+        "description": "陣営全体でボス撃破5回を目指します。",
+        "target_value": 5,
+        "unit": "回",
+    },
+    {
+        "mission_type": "evolve_count",
+        "title": "今週の共同進化",
+        "description": "陣営全体で進化成功10回を目指します。",
+        "target_value": 10,
+        "unit": "回",
+    },
+)
+
+
+def _faction_mission_key(mission_type, week_key):
+    return f"{str(mission_type or '').strip()}_{str(week_key or '').replace('-', '_')}"
+
+
+def create_default_faction_weekly_missions(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    now_text = now_str()
+    created_count = 0
+    for mission_def in FACTION_WEEKLY_MISSION_DEFS:
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_weekly_missions
+            (week_key, mission_key, mission_type, title, description, target_value, is_active, is_finalized, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            """,
+            (
+                wk,
+                _faction_mission_key(mission_def["mission_type"], wk),
+                mission_def["mission_type"],
+                mission_def["title"],
+                mission_def["description"],
+                int(mission_def["target_value"]),
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"week_key": wk, "created_count": created_count, "mission_count": len(FACTION_WEEKLY_MISSION_DEFS)}
+
+
+def _faction_activity_by_key(db, week_key):
+    return {row["faction_key"]: row for row in get_weekly_faction_activity(db, week_key)}
+
+
+def recalculate_faction_mission_progress(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    create_default_faction_weekly_missions(db, wk)
+    now_text = now_str()
+    missions = db.execute(
+        """
+        SELECT *
+        FROM faction_weekly_missions
+        WHERE week_key = ? AND is_active = 1
+        ORDER BY id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    activity_by_key = _faction_activity_by_key(db, wk)
+    updated_count = 0
+    for mission in missions:
+        mission_type = str(mission["mission_type"] or "")
+        target_value = max(1, int(mission["target_value"] or 1))
+        for faction_key in FACTION_KEYS:
+            source = activity_by_key.get(faction_key, {})
+            current_value = int(source.get(mission_type, 0) or 0)
+            if mission_type == "activity_score":
+                current_value = int(source.get("activity_score", 0) or 0)
+            progress_percent = min(100, int(math.floor(current_value * 100 / target_value)))
+            is_completed = current_value >= target_value
+            existing = db.execute(
+                """
+                SELECT completed_at
+                FROM faction_weekly_mission_progress
+                WHERE week_key = ? AND mission_id = ? AND faction_key = ?
+                """,
+                (wk, int(mission["id"]), faction_key),
+            ).fetchone()
+            completed_at = (
+                existing["completed_at"]
+                if existing and existing["completed_at"]
+                else (now_text if is_completed else None)
+            )
+            db.execute(
+                """
+                INSERT INTO faction_weekly_mission_progress
+                (week_key, mission_id, faction_key, current_value, target_value, progress_percent,
+                 is_completed, completed_at, is_finalized, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                ON CONFLICT(week_key, mission_id, faction_key) DO UPDATE SET
+                    current_value = excluded.current_value,
+                    target_value = excluded.target_value,
+                    progress_percent = excluded.progress_percent,
+                    is_completed = excluded.is_completed,
+                    completed_at = COALESCE(faction_weekly_mission_progress.completed_at, excluded.completed_at),
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    wk,
+                    int(mission["id"]),
+                    faction_key,
+                    current_value,
+                    target_value,
+                    progress_percent,
+                    1 if is_completed else 0,
+                    completed_at,
+                    now_text,
+                    now_text,
+                ),
+            )
+            updated_count += 1
+    return {"week_key": wk, "mission_count": len(missions), "updated_progress_count": updated_count}
+
+
+def get_faction_weekly_missions(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    create_default_faction_weekly_missions(db, wk)
+    recalculate_faction_mission_progress(db, wk)
+    member_counts = _faction_member_counts(db)
+    minority_keys = _faction_minority_keys(member_counts)
+    rows = db.execute(
+        """
+        SELECT
+            m.id AS mission_id,
+            m.week_key,
+            m.mission_key,
+            m.mission_type,
+            m.title,
+            m.description,
+            m.target_value,
+            m.is_finalized AS mission_finalized,
+            p.faction_key,
+            p.current_value,
+            p.progress_percent,
+            p.is_completed,
+            p.completed_at,
+            p.is_finalized AS progress_finalized
+        FROM faction_weekly_missions m
+        LEFT JOIN faction_weekly_mission_progress p
+          ON p.week_key = m.week_key AND p.mission_id = m.id
+        WHERE m.week_key = ? AND m.is_active = 1
+        ORDER BY m.id ASC, p.progress_percent DESC, p.current_value DESC, p.faction_key ASC
+        """,
+        (wk,),
+    ).fetchall()
+    by_id = {}
+    for row in rows:
+        mid = int(row["mission_id"])
+        if mid not in by_id:
+            by_id[mid] = {
+                "mission_id": mid,
+                "week_key": row["week_key"],
+                "mission_key": row["mission_key"],
+                "mission_type": row["mission_type"],
+                "title": row["title"],
+                "description": row["description"] or "",
+                "target_value": int(row["target_value"] or 0),
+                "unit": "pt" if row["mission_type"] == "activity_score" else "回",
+                "is_finalized": bool(int(row["mission_finalized"] or 0)),
+                "progress_by_faction": [],
+            }
+        faction_key = _normalize_faction_key(row["faction_key"])
+        if not faction_key:
+            continue
+        by_id[mid]["progress_by_faction"].append(
+            {
+                "faction_key": faction_key,
+                "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+                "current_value": int(row["current_value"] or 0),
+                "target_value": int(row["target_value"] or 0),
+                "progress_percent": int(row["progress_percent"] or 0),
+                "is_completed": bool(int(row["is_completed"] or 0)),
+                "completed_at": row["completed_at"],
+                "is_finalized": bool(int(row["progress_finalized"] or 0)),
+                "is_minority": faction_key in minority_keys,
+            }
+        )
+    for mission in by_id.values():
+        present = {row["faction_key"] for row in mission["progress_by_faction"]}
+        for faction_key in FACTION_KEYS:
+            if faction_key in present:
+                continue
+            mission["progress_by_faction"].append(
+                {
+                    "faction_key": faction_key,
+                    "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+                    "current_value": 0,
+                    "target_value": int(mission["target_value"]),
+                    "progress_percent": 0,
+                    "is_completed": False,
+                    "completed_at": None,
+                    "is_finalized": False,
+                    "is_minority": faction_key in minority_keys,
+                }
+            )
+        mission["progress_by_faction"].sort(
+            key=lambda item: (-int(item["progress_percent"]), -int(item["current_value"]), str(item["faction_key"]))
+        )
+    return list(by_id.values())
+
+
+def finalize_faction_weekly_missions(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    recalc = recalculate_faction_mission_progress(db, wk)
+    now_text = now_str()
+    db.execute(
+        "UPDATE faction_weekly_missions SET is_finalized = 1, finalized_at = COALESCE(finalized_at, ?), updated_at = ? WHERE week_key = ?",
+        (now_text, now_text, wk),
+    )
+    db.execute(
+        "UPDATE faction_weekly_mission_progress SET is_finalized = 1, updated_at = ? WHERE week_key = ?",
+        (now_text, wk),
+    )
+    completed = []
+    for mission in get_faction_weekly_missions(db, wk):
+        for row in mission["progress_by_faction"]:
+            if not row["is_completed"]:
+                continue
+            completed.append(
+                {
+                    "mission_title": mission["title"],
+                    "faction_key": row["faction_key"],
+                    "faction_name": row["faction_name"],
+                    "current_value": int(row["current_value"]),
+                    "target_value": int(row["target_value"]),
+                }
+            )
+    exists = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_MISSION_RESULT_EVENT_TYPE, wk),
+    ).fetchone()
+    emitted_world_event = False
+    if not exists:
+        _world_event_log(
+            db,
+            FACTION_MISSION_RESULT_EVENT_TYPE,
+            {"week_key": wk, "completed": completed},
+        )
+        emitted_world_event = True
+    return {
+        "week_key": wk,
+        "mission_count": int(recalc["mission_count"]),
+        "updated_progress_count": int(recalc["updated_progress_count"]),
+        "completed_count": len(completed),
+        "emitted_world_event": emitted_world_event,
+    }
+
+
 def _faction_spotlight_label(row):
     explore_count = int(row.get("explore_count", 0) or 0)
     boss_defeat_count = int(row.get("boss_defeat_count", 0) or 0)
@@ -24152,6 +24462,7 @@ TOWER_WORLD_EVENT_TYPES = {
 }
 
 FACTION_WEEKLY_REPORT_EVENT_TYPE = "FACTION_WEEKLY_REPORT"
+FACTION_MISSION_RESULT_EVENT_TYPE = "FACTION_MISSION_RESULT"
 
 FEED_EVENT_TYPES = {
     "boss": {"audit.boss.defeat"},
@@ -24160,15 +24471,16 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
     "week_rollover",
     "FACTION_WAR_RESULT",
     FACTION_WEEKLY_REPORT_EVENT_TYPE,
+    FACTION_MISSION_RESULT_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -24565,6 +24877,18 @@ def _feed_card_from_event(db, row):
         card["accent"] = "weekly"
         card["text"] = f"今週の研究優勢陣営は「{faction_name}」でした。出撃{explore_count}回、ボス撃破{boss_defeat_count}回、進化{evolve_count}回の研究活動が記録されています。"
         card["meta_lines"] = [f"活動スコア: {activity_score}", f"対象週: {payload.get('week_key') or '-'}"]
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_MISSION_RESULT_EVENT_TYPE:
+        completed = payload.get("completed") if isinstance(payload.get("completed"), list) else []
+        card["headline"] = "陣営ミッション"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営ミッション結果がまとまりました。"
+        for item in completed[:3]:
+            faction_name = str(item.get("faction_name") or FACTION_LABELS.get(_normalize_faction_key(item.get("faction_key")), "陣営")).strip()
+            mission_title = str(item.get("mission_title") or "共同研究").strip()
+            card["meta_lines"].append(f"{faction_name}が「{mission_title}」を達成しました。")
+        if not card["meta_lines"]:
+            card["meta_lines"].append("今週は継続研究として記録されました。")
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -33107,6 +33431,7 @@ def _faction_page_context(db, user):
     faction_awards = get_faction_weekly_awards(db, user_faction, current_week_key) if user_faction else {}
     faction_weekly_bonus = can_claim_faction_weekly_bonus(db, int(user["id"]), current_week_key)
     faction_badges = get_user_faction_badges(db, int(user["id"]), limit=5)
+    faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
     return {
         "user": user,
         "user_faction": user_faction,
@@ -33129,6 +33454,7 @@ def _faction_page_context(db, user):
         ],
         "faction_weekly_bonus": faction_weekly_bonus,
         "faction_badges": faction_badges,
+        "faction_weekly_missions": faction_weekly_missions,
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
@@ -33148,6 +33474,7 @@ def faction_view():
         session.clear()
         return redirect(url_for("login"))
     context = _faction_page_context(db, user)
+    db.commit()
     return render_template("faction.html", **context)
 
 
@@ -33319,6 +33646,126 @@ def admin_faction_awards_grant_badges():
     db.commit()
     flash(f"陣営内表彰バッジを付与しました（{result['week_key']} / 新規{result['granted_count']}件）。", "notice")
     return redirect(url_for("faction_view"))
+
+
+@app.route("/admin/factions/missions")
+@login_required
+def admin_faction_missions():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        missions = get_faction_weekly_missions(db, week_key)
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_missions.html",
+        week_key=week_key,
+        missions=missions,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/missions/create-default", methods=["POST"])
+@login_required
+def admin_faction_missions_create_default():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = create_default_faction_weekly_missions(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_missions"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_MISSIONS_CREATE_DEFAULT"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_missions_create_default",
+        entity_type="faction_weekly_missions",
+        payload={
+            "week_key": result["week_key"],
+            "mission_count": int(result["mission_count"]),
+            "created_count": int(result["created_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営ミッションを作成しました（{result['week_key']} / 新規{result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_missions", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/missions/recalculate", methods=["POST"])
+@login_required
+def admin_faction_missions_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = recalculate_faction_mission_progress(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_missions"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_MISSIONS_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_missions_recalculate",
+        entity_type="faction_weekly_mission_progress",
+        payload={
+            "week_key": result["week_key"],
+            "mission_count": int(result["mission_count"]),
+            "updated_progress_count": int(result["updated_progress_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営ミッション進捗を再集計しました（{result['week_key']} / {result['updated_progress_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_missions", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/missions/finalize", methods=["POST"])
+@login_required
+def admin_faction_missions_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = finalize_faction_weekly_missions(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_missions"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_MISSIONS_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_missions_finalize",
+        entity_type="faction_weekly_missions",
+        payload={
+            "week_key": result["week_key"],
+            "mission_count": int(result["mission_count"]),
+            "updated_progress_count": int(result["updated_progress_count"]),
+            "completed_count": int(result["completed_count"]),
+            "actor_admin_id": int(session["user_id"]),
+            "world_event_created": bool(result["emitted_world_event"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営ミッションを確定しました（{result['week_key']} / 達成{result['completed_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_missions", week_key=result["week_key"]))
 
 
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
@@ -33523,6 +33970,7 @@ def world_view():
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
     faction_activity_rows = get_weekly_faction_activity(db, week_key)
     faction_weekly_report_rows = get_faction_weekly_report(db, week_key)
+    faction_weekly_missions = get_faction_weekly_missions(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -33541,6 +33989,7 @@ def world_view():
         faction_detail_rows=faction_detail_rows,
         faction_activity_rows=faction_activity_rows,
         faction_weekly_report_rows=faction_weekly_report_rows,
+        faction_weekly_missions=faction_weekly_missions,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
@@ -33889,6 +34338,96 @@ def comms_personal():
         "comms_personal.html",
         items=_personal_log_items(db, int(user["id"]), limit=COMM_PERSONAL_LOG_LIMIT),
         message=session.pop("message", None),
+    )
+
+
+def _admin_faction_comms_rows(db, *, faction_key="", user_id="", keyword="", include_deleted=False, limit=100):
+    where = ["COALESCE(cm.room_key, '') LIKE 'faction_%'"]
+    params = []
+    key = _normalize_faction_key(faction_key)
+    if key:
+        where.append("cm.room_key = ?")
+        params.append(f"faction_{key}")
+    if str(user_id or "").strip().isdigit():
+        where.append("cm.user_id = ?")
+        params.append(int(str(user_id).strip()))
+    kw = str(keyword or "").strip()
+    if kw:
+        where.append("cm.message LIKE ?")
+        params.append(f"%{kw}%")
+    if not include_deleted:
+        where.append("cm.deleted_at IS NULL")
+    rows = db.execute(
+        f"""
+        SELECT
+            cm.id,
+            cm.user_id,
+            cm.username,
+            cm.room_key,
+            cm.message,
+            cm.created_at,
+            cm.deleted_at,
+            u.faction AS user_faction,
+            u.display_name
+        FROM chat_messages cm
+        LEFT JOIN users u ON u.id = cm.user_id
+        WHERE {" AND ".join(where)}
+        ORDER BY cm.created_at DESC, cm.id DESC
+        LIMIT ?
+        """,
+        (*params, max(1, min(300, int(limit or 100)))),
+    ).fetchall()
+    out = []
+    for row in rows:
+        room_key = str(row["room_key"] or "")
+        room_faction = _normalize_faction_key(room_key.replace("faction_", "", 1))
+        user_faction = _normalize_faction_key(row["user_faction"] if "user_faction" in row.keys() else None)
+        out.append(
+            {
+                "id": int(row["id"]),
+                "user_id": int(row["user_id"] or 0) if row["user_id"] is not None else None,
+                "username": row["display_name"] or row["username"] or "unknown",
+                "room_key": room_key,
+                "faction_key": room_faction,
+                "faction_label": FACTION_LABELS.get(room_faction, room_faction or room_key),
+                "user_faction_label": FACTION_LABELS.get(user_faction, user_faction or "-"),
+                "message": row["message"] or "",
+                "created_at": row["created_at"] or "",
+                "deleted_at": row["deleted_at"],
+                "is_deleted": bool(row["deleted_at"]),
+            }
+        )
+    return out
+
+
+@app.route("/admin/comms/factions")
+@login_required
+def admin_comms_factions():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    faction_key = (request.args.get("faction_key") or "").strip()
+    user_id = (request.args.get("user_id") or "").strip()
+    keyword = (request.args.get("keyword") or "").strip()
+    include_deleted = (request.args.get("include_deleted") or "").strip() == "1"
+    rows = _admin_faction_comms_rows(
+        db,
+        faction_key=faction_key,
+        user_id=user_id,
+        keyword=keyword,
+        include_deleted=include_deleted,
+        limit=100,
+    )
+    return render_template(
+        "admin_faction_comms.html",
+        rows=rows,
+        faction_labels=FACTION_LABELS,
+        filters={
+            "faction_key": _normalize_faction_key(faction_key) or "",
+            "user_id": user_id,
+            "keyword": keyword,
+            "include_deleted": include_deleted,
+        },
     )
 
 
@@ -46832,6 +47371,8 @@ def admin_world():
         """,
         (week_key,),
     ).fetchall()
+    faction_weekly_missions = get_faction_weekly_missions(db, week_key)
+    db.commit()
     return render_template(
         "admin_world.html",
         message=message,
@@ -46845,6 +47386,7 @@ def admin_world():
         faction_week_result=_faction_week_result(db, week_key),
         faction_detail_rows=_faction_detail_rows(db, week_key),
         faction_weekly_report_rows=get_faction_weekly_report(db, week_key),
+        faction_weekly_missions=faction_weekly_missions,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_top_contributions=_faction_top_contribution_rows(db, week_key, limit=10),
         faction_recent_logs=_faction_log_rows(db, week_key, limit=50),

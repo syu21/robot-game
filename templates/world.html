@@ -62,6 +62,32 @@
   {% endif %}
 </section>
 
+<section class="panel">
+  <h2>陣営ミッション進捗</h2>
+  <p class="upgrade-cost">今週の陣営ミッション進捗です。現在は勝敗報酬ではなく、陣営ごとの研究活動を見える化しています。</p>
+  {% if faction_weekly_missions %}
+  <div class="showcase-grid">
+    {% for mission in faction_weekly_missions[:3] %}
+    <div class="card">
+      <div><b>{{ mission['title'] }}</b></div>
+      <div class="upgrade-cost">目標: {{ mission['target_value'] }} {{ mission['unit'] }}</div>
+      {% for progress in mission['progress_by_faction'] %}
+      <div class="upgrade-cost">
+        {{ progress['faction_name'] }}: {{ progress['current_value'] }} / {{ mission['target_value'] }}（{{ progress['progress_percent'] }}%）
+        {% if progress['is_completed'] %}<span class="weekly-fit-badge">達成</span>{% endif %}
+        {% if progress['is_minority'] %}<span class="weekly-fit-badge">研究支援中</span>{% endif %}
+      </div>
+      <progress value="{{ progress['progress_percent'] }}" max="100"></progress>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="link"><a href="{{ url_for('faction_view') }}">陣営ミッションの詳細を見る</a></p>
+  {% else %}
+  <div class="card">今週の陣営ミッションは準備中です。</div>
+  {% endif %}
+</section>
+
 <div class="world-competition-grid">
   <section class="panel">
     <h2>今週の熱源</h2>
