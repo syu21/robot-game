@@ -448,4 +448,53 @@ for variant in SERIES_VARIANTS:
             {
                 "key": r_key,
                 "source_key": key,
-                "part_type": s
+                "part_type": slot["part_type"],
+                "image_path": r_image_path,
+                "rarity": "R",
+                "element": "NORMAL",
+                "series": variant["series_key"],
+                "series_key": variant["series_key"],
+                "series_label": next(
+                    (
+                        item["display_name"]
+                        for item in SERIES_DEFINITIONS
+                        if item["series_key"] == variant["series_key"]
+                    ),
+                    variant["name_ja"],
+                ),
+                "frame_type": "insect",
+                "display_name_ja": INSECT_R_PART_DISPLAY_NAME_OVERRIDES[r_key],
+            }
+        )
+        PART_KEY_SERIES_ASSIGNMENTS[r_key] = variant["series_key"]
+
+for variant in DINO_SERIES_VARIANTS:
+    for slot in SERIES_PART_SLOT_DEFS:
+        key = f"{slot['key_prefix']}_n_{variant['asset_suffix']}"
+        part = {
+            "key": key,
+            "part_type": slot["part_type"],
+            "image_path": f"parts/dinosaur/{key}.png",
+            "rarity": "N",
+            "element": "NORMAL",
+            "series": variant["series_key"],
+            "series_key": variant["series_key"],
+            "series_label": variant["display_name"],
+            "frame_type": "dinosaur",
+            "display_name_ja": DINO_PART_DISPLAY_NAMES_BY_KEY[key],
+            "is_admin_only": 0,
+            "stats": dict(DINO_PART_STATS_BY_SERIES[variant["series_key"]][slot["part_type"]]),
+        }
+        DINO_PART_DEFINITIONS.append(part)
+        SERIES_PART_DEFINITIONS.append(part)
+        PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
+
+DINO_PART_KEYS = tuple(part["key"] for part in DINO_PART_DEFINITIONS)
+DINO_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in DINO_PART_DEFINITIONS}
+
+LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
+
+SERIES_METADATA_BY_KEY = {
+    str(item["series_key"]): dict(item)
+    for item in SERIES_DEFINITIONS
+}

@@ -212,4 +212,15 @@
 - [ ] `GET http://127.0.0.1:8000/healthz` が `200`
 - [ ] `GET https://robolabo.site/healthz` が `200`
 - [ ] `GET /sitemap.xml` が `200` で `application/xml`
-- [ ] `https://robol
+- [ ] `https://robolabo.site/terms` が利用規約として表示される
+- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
+- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
+- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
+- [ ] favicon が配信される
+  - `GET /static/favicon.png` が `200`
+- [ ] `robot-game.service` が active
+- [ ] `robot-game-healthcheck.timer` が active
+- [ ] `robot-game-backup.timer` が active
+- [ ] `robot-game-portal-online.timer` が active
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
+- [ ] `.env.production` に `POC
