@@ -1002,31 +1002,34 @@
       </div>
     </div>
     {% endif %}
-    {% if home_insect_research and home_insect_research.get('enabled') %}
+    {% if home_dinosaur_campaign and home_dinosaur_campaign.get('enabled') %}
     <div class="card home-insect-research-card">
       <div class="home-insect-research-head">
         <div>
           <div class="home-explore-kicker">期間限定</div>
-          <div class="home-insect-research-title">虫型研究 進行中</div>
+          <div class="home-insect-research-title">恐竜発掘キャンペーン</div>
         </div>
-        <a class="battle-home-link" href="{{ url_for('showcase', sort='insect') }}">虫型展示</a>
+        <a class="battle-home-link" href="{{ url_for('map_view') }}">出撃する</a>
       </div>
-      <div class="upgrade-cost">虫型パーツを集めて、研究記録を進めよう。</div>
+      <div class="upgrade-cost">
+        出撃で恐竜型パーツを発見できることがあります。集めた恐竜パーツは、恐竜型どうしで編成できます。
+        自由編成では通常型・虫型とも組み合わせ可能です。
+      </div>
       <div class="home-insect-research-grid">
         <div class="home-insect-research-stat">
-          <span>今週の虫型パーツ入手数</span>
-          <b>{{ home_insect_research.get('part_drops', 0) }}</b>
+          <span>キャンペーン追加発見率</span>
+          <b>{{ home_dinosaur_campaign.get('drop_rate_pct', 10) }}%</b>
         </div>
         <div class="home-insect-research-stat">
-          <span>今週の虫型ロボ完成数</span>
-          <b>{{ home_insect_research.get('complete_robots', 0) }}</b>
+          <span>今週の恐竜型パーツ入手数</span>
+          <b>{{ home_dinosaur_campaign.get('part_drops', 0) }}</b>
         </div>
         <div class="home-insect-research-stat">
-          <span>今週の虫型敵撃破数</span>
-          <b>{{ home_insect_research.get('enemy_defeats', 0) }}</b>
+          <span>対象</span>
+          <b>N恐竜</b>
         </div>
       </div>
-      <p class="link home-insect-research-link"><a href="{{ url_for('ranking', metric='weekly_insect_parts') }}">虫型研究ランキングを見る</a></p>
+      <p class="link home-insect-research-link"><a href="{{ url_for('build') }}">ロボ編成を見る</a></p>
     </div>
     {% endif %}
     {% if has_any_robot %}
@@ -1324,10 +1327,3 @@
     {% endif %}
 </div>
 </div>
-</div>
-{% endif %}
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
-<script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
-{% endblock %}

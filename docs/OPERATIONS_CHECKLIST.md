@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-05-17
+最終更新日: 2026-06-21
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -52,10 +52,13 @@
 - [ ] `/home` のパーツ在庫が `所持 X/Y` のみで表示される
 - [ ] `/parts` に旧保管セクションや `所持へ戻す` 導線が残っていない
 - [ ] 所持上限超過の新規戦利品は `audit.part.auto_sell` とコイン加算が残る
+- [ ] 恐竜発掘キャンペーン中、勝利時に恐竜Nパーツが追加発見されることがある
+- [ ] 恐竜キャンペーン産の `audit.drop` payload に `source=campaign / campaign_key=dinosaur_debut` が残る
 - [ ] 旧 `overflow` は一括移行で `audit.part.overflow_cleanup_sell` として売却できる
 - [ ] 装備中個体を選んで `破棄` しても、装備中のまま残る
 - [ ] N画像が見つからないときに broken image ではなくプレースホルダへ落ちる
 - [ ] `/build` で4部位必須 + DECOR任意
+- [ ] `/build` の恐竜型モードで恐竜Nパーツを編成でき、自由編成では通常型・虫型・恐竜型を混成できる
 - [ ] `/build` の候補カードで `現在装備との差分` が先頭に出て、必要時だけ `詳細を開く` で 6ステ実数を確認できる
 - [ ] `/build` のセットボーナス表示で `発動中/未発動 / 同属性パーツ 4部位で発動 / 何が上がるか` が分かる
 - [ ] 保存枠満杯時に保存ブロック
@@ -90,6 +93,7 @@
   - `plus`, `w_hp..w_cri` 引き継ぎ
 - [ ] 虫シリーズN -> 虫シリーズRの進化候補は `release_flags.insect_r_parts` が public の一般ユーザー、または管理者だけに出る
 - [ ] 虫Rは進化合成で入手でき、廃品市場には出ない
+- [ ] R恐竜と恐竜N->R進化候補はまだ一般表示されない
 - [ ] `/parts/evolve` で進化前後の比較が6ステで見える
 - [ ] 第2層固定ボス撃破前は基地や個体一覧に進化合成導線が表示されない
 - [ ] 第2層固定ボス撃破後は基地に進化合成カードが表示される
@@ -208,15 +212,4 @@
 - [ ] `GET http://127.0.0.1:8000/healthz` が `200`
 - [ ] `GET https://robolabo.site/healthz` が `200`
 - [ ] `GET /sitemap.xml` が `200` で `application/xml`
-- [ ] `https://robolabo.site/terms` が利用規約として表示される
-- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
-- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
-- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
-- [ ] favicon が配信される
-  - `GET /static/favicon.png` が `200`
-- [ ] `robot-game.service` が active
-- [ ] `robot-game-healthcheck.timer` が active
-- [ ] `robot-game-backup.timer` が active
-- [ ] `robot-game-portal-online.timer` が active
-- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
-- [ ] `.env.production` に `POC
+- [ ] `https://robol

@@ -133,8 +133,8 @@ class InsectResearchTests(unittest.TestCase):
         home = client.get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("虫型研究 進行中", home_html)
-        self.assertIn("今週の虫型パーツ入手数", home_html)
+        self.assertIn("恐竜発掘キャンペーン", home_html)
+        self.assertNotIn("虫型研究 進行中", home_html)
 
         self._set_insect_parts(2)
         ranking = client.get("/ranking?metric=weekly_insect_parts")

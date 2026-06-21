@@ -1,6 +1,6 @@
 # 出撃仕様（/explore）
 
-最終更新日: 2026-05-17
+最終更新日: 2026-06-21
 
 ## 1. エンドポイント
 - 実行: `POST /explore`
@@ -119,6 +119,14 @@
     - `audit.module.synthesis.result`
     - `audit.module.strategy.apply`
     - `audit.module.strategy.result`
+- 恐竜発掘キャンペーン:
+  - `campaign_key=dinosaur_debut`
+  - 対象は恐竜Nシリーズ7種 x 4部位
+  - 対象エリアは `layer_1 / layer_2 / layer_2_mist / layer_2_rush / layer_3 / layer_4_forge / layer_4_haze / layer_4_burst / layer_5_labyrinth / layer_5_pinnacle`
+  - 通常ドロップとは別枠で、通常戦勝利時に10%で恐竜Nパーツを1個追加発見する
+  - 戦利品では `恐竜発掘！` を付けて表示する
+  - `audit.drop` payload には `source=campaign / campaign_key=dinosaur_debut` を残す
+  - R恐竜とN->R進化は対象外
 - 第4層の育成傾向:
   - `layer_4_forge`: 耐久・防御寄り
   - `layer_4_haze`: 命中・安定寄り
@@ -154,9 +162,3 @@
 - active module がある場合は、戦利品の下に「今回の作戦」カードを表示する
   - 使用モジュール名
   - 種別/評価
-  - 実効補正チップ
-  - 勝敗コメント
-  - ターン数、会心回数、MISS回数、最大ダメージなど取れる範囲のメトリクス
-- battle結果の followup は `結果 / 戦利品 / 次の行動` を先頭に寄せ、敵情報と詳細ログは折りたたみへ退避してスマホでも再出撃しやすくする
-- 下部の `次の行動` はカード表示にし、`もう一度出撃 / 入手したパーツを見る / 基地へ戻る` を押しやすく出す
-- パーツ獲得がある、または所持数が上限の80%以上の場合は、次の
