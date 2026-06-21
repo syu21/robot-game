@@ -253,6 +253,8 @@ AUDIT_EVENT_TYPES = {
     "FACTION_CHOOSE": "audit.faction.choose",
     "FACTION_CHANGE": "audit.faction.change",
     "FACTION_AWARDS_RECALCULATE": "audit.faction.awards.recalculate",
+    "FACTION_WEEKLY_BONUS_CLAIM": "audit.faction.weekly_bonus.claim",
+    "FACTION_AWARDS_BADGES_GRANT": "audit.faction.awards.badges.grant",
     "FACTION_REPORT_RECALCULATE": "audit.faction.report.recalculate",
     "FACTION_REPORT_FINALIZE": "audit.faction.report.finalize",
     "SYSTEM_MAINTENANCE_BLOCK": "audit.system.maintenance_block",

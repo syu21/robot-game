@@ -25,6 +25,34 @@
 </div>
 
 <section class="panel">
+  <h2>今週の陣営特典</h2>
+  <p class="upgrade-cost">今週少しでも研究活動を行うと、陣営参加バッジと小さなコインを受け取れます。戦闘ステータスへの補正はありません。</p>
+  {% if user_faction %}
+  <div class="card">
+    <div><b>{{ faction_labels.get(user_faction, user_faction) }} の参加特典</b></div>
+    <div class="upgrade-cost">今週の活動スコア: {{ faction_weekly_bonus.get('activity_score', 0) }}</div>
+    <div class="upgrade-cost">必要活動スコア: {{ faction_weekly_bonus.get('required_score', 10) }}</div>
+    <div class="upgrade-cost">報酬: コイン +{{ faction_weekly_bonus.get('coin_reward', 50) }}</div>
+    <div class="upgrade-cost">報酬: 陣営参加バッジ「{{ faction_weekly_bonus.get('badge_label') or '今週の陣営研究員' }}」</div>
+    {% if faction_weekly_bonus.get('can_claim') %}
+      <div class="robot-part">今週の陣営特典を受け取れます。</div>
+      <form method="post" action="{{ url_for('faction_weekly_bonus_claim') }}" class="inline-form">
+        <button type="submit">受け取る</button>
+      </form>
+    {% elif faction_weekly_bonus.get('reason') == 'already_claimed' %}
+      <div class="robot-part">今週の陣営特典は受け取り済みです。</div>
+      <button type="button" disabled>今週は受け取り済み</button>
+    {% else %}
+      <div class="robot-part">あと少し研究活動を行うと、今週の陣営特典を受け取れます。</div>
+      <button type="button" disabled>条件未達</button>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card">研究方針を選ぶと、週ごとの陣営特典を受け取れるようになります。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営比較</h2>
   <p class="upgrade-cost">陣営ごとの今週の研究活動を集計しています。現在は勝敗報酬や戦闘補正はありません。</p>
   {% if user_faction and my_faction_weekly_position %}
@@ -85,6 +113,10 @@
     <input type="hidden" name="week_key" value="{{ current_week_key }}" />
     <button type="submit">今週分を再集計</button>
   </form>
+  <form method="post" action="{{ url_for('admin_faction_awards_grant_badges') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ current_week_key }}" />
+    <button type="submit">表彰バッジを付与</button>
+  </form>
   {% endif %}
   <div class="showcase-grid">
     {% for category in faction_award_categories %}
@@ -110,6 +142,24 @@
   </div>
   {% else %}
   <div class="card">陣営に所属すると、今週の陣営内表彰が見られます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>獲得した陣営バッジ</h2>
+  <p class="upgrade-cost">バッジは表示用の記録です。戦闘効果はありません。</p>
+  {% if faction_badges %}
+  <div class="showcase-grid">
+    {% for badge in faction_badges %}
+    <div class="card">
+      <div><b>{{ badge['badge_label'] }}</b></div>
+      <div class="upgrade-cost">{{ badge['badge_kind_label'] }} / {{ badge['faction_label'] }}</div>
+      {% if badge['week_key'] %}<div class="robot-part">{{ badge['week_key'] }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">陣営特典や表彰で獲得したバッジがここに表示されます。</div>
   {% endif %}
 </section>
 

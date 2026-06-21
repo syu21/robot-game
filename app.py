@@ -11254,6 +11254,40 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_faction_badges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            faction_key TEXT NOT NULL,
+            badge_key TEXT NOT NULL,
+            badge_label TEXT NOT NULL,
+            badge_kind TEXT NOT NULL,
+            week_key TEXT,
+            source_type TEXT,
+            source_id INTEGER,
+            granted_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, badge_key, week_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            coin_reward INTEGER NOT NULL DEFAULT 0,
+            badge_key TEXT,
+            claimed_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, week_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -12756,6 +12790,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_badges_user_week ON user_faction_badges(user_id, week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
@@ -21051,6 +21087,189 @@ def _faction_activity_score(*, explore_count=0, boss_defeat_count=0, evolve_coun
     return int(explore_count or 0) + int(boss_defeat_count or 0) * 20 + int(evolve_count or 0) * 10
 
 
+FACTION_WEEKLY_BONUS_REQUIRED_SCORE = 10
+FACTION_WEEKLY_BONUS_COINS = 50
+
+
+def _faction_weekly_participation_badge(faction_key, week_key):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    safe_week = wk.replace("-", "_")
+    return {
+        "badge_key": f"weekly_{key}_{safe_week}",
+        "badge_label": f"今週の{FACTION_LABELS.get(key, key)}研究員",
+    }
+
+
+def get_user_weekly_faction_activity(db, user_id, week_key=None):
+    wk = str(week_key or _world_week_key())
+    start_dt, end_dt = get_current_week_range(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    user = db.execute("SELECT id, faction FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    faction_key = _normalize_faction_key(user["faction"] if user and "faction" in user.keys() else None)
+    base = {
+        "week_key": wk,
+        "faction_key": faction_key,
+        "explore_count": 0,
+        "boss_defeat_count": 0,
+        "evolve_count": 0,
+        "activity_score": 0,
+    }
+    if not user:
+        return base
+    row = db.execute(
+        """
+        SELECT
+            SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END) AS explore_count,
+            SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END) AS boss_defeat_count,
+            SUM(
+                CASE
+                    WHEN event_type = ?
+                     AND LOWER(COALESCE(CAST(json_extract(payload_json, '$.success') AS TEXT), 'true')) NOT IN ('0', 'false', 'no')
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS evolve_count
+        FROM world_events_log
+        WHERE user_id = ?
+          AND created_at >= ?
+          AND created_at < ?
+          AND event_type IN (?, ?, ?)
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+            int(user_id),
+            start_ts,
+            end_ts,
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            AUDIT_EVENT_TYPES["PART_EVOLVE"],
+        ),
+    ).fetchone()
+    explore_count = int((row or {})["explore_count"] or 0)
+    boss_defeat_count = int((row or {})["boss_defeat_count"] or 0)
+    evolve_count = int((row or {})["evolve_count"] or 0)
+    base.update(
+        {
+            "explore_count": explore_count,
+            "boss_defeat_count": boss_defeat_count,
+            "evolve_count": evolve_count,
+            "activity_score": _faction_activity_score(
+                explore_count=explore_count,
+                boss_defeat_count=boss_defeat_count,
+                evolve_count=evolve_count,
+            ),
+        }
+    )
+    return base
+
+
+def can_claim_faction_weekly_bonus(db, user_id, week_key=None):
+    activity = get_user_weekly_faction_activity(db, user_id, week_key)
+    faction_key = _normalize_faction_key(activity.get("faction_key"))
+    wk = activity["week_key"]
+    badge = _faction_weekly_participation_badge(faction_key, wk) if faction_key else {"badge_key": None, "badge_label": None}
+    result = {
+        "can_claim": False,
+        "reason": None,
+        "week_key": wk,
+        "faction_key": faction_key,
+        "activity_score": int(activity.get("activity_score") or 0),
+        "coin_reward": FACTION_WEEKLY_BONUS_COINS,
+        "badge_key": badge["badge_key"],
+        "badge_label": badge["badge_label"],
+        "required_score": FACTION_WEEKLY_BONUS_REQUIRED_SCORE,
+    }
+    if not faction_key:
+        result["reason"] = "no_faction"
+        return result
+    if int(activity.get("activity_score") or 0) < FACTION_WEEKLY_BONUS_REQUIRED_SCORE:
+        result["reason"] = "insufficient_activity"
+        return result
+    exists = db.execute(
+        "SELECT 1 FROM faction_weekly_claims WHERE user_id = ? AND week_key = ? LIMIT 1",
+        (int(user_id), wk),
+    ).fetchone()
+    if exists:
+        result["reason"] = "already_claimed"
+        return result
+    result["can_claim"] = True
+    return result
+
+
+def grant_faction_weekly_bonus(db, user_id, week_key=None, *, request_id=None, ip=None):
+    claim = can_claim_faction_weekly_bonus(db, user_id, week_key)
+    if not claim.get("can_claim"):
+        return {**claim, "claimed": False}
+    now_text = now_str()
+    user_id_int = int(user_id)
+    coins_before = int(
+        db.execute("SELECT COALESCE(coins, 0) AS coins FROM users WHERE id = ?", (user_id_int,)).fetchone()["coins"]
+        or 0
+    )
+    db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (int(claim["coin_reward"]), user_id_int))
+    db.execute(
+        """
+        INSERT INTO faction_weekly_claims
+        (user_id, week_key, faction_key, activity_score, coin_reward, badge_key, claimed_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id_int,
+            claim["week_key"],
+            claim["faction_key"],
+            int(claim["activity_score"]),
+            int(claim["coin_reward"]),
+            claim["badge_key"],
+            now_text,
+            now_text,
+        ),
+    )
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_faction_badges
+        (user_id, faction_key, badge_key, badge_label, badge_kind, week_key, source_type, granted_at, created_at)
+        VALUES (?, ?, ?, ?, 'weekly_participation', ?, 'participation', ?, ?)
+        """,
+        (
+            user_id_int,
+            claim["faction_key"],
+            claim["badge_key"],
+            claim["badge_label"],
+            claim["week_key"],
+            now_text,
+            now_text,
+        ),
+    )
+    payload = {
+        "user_id": user_id_int,
+        "week_key": claim["week_key"],
+        "faction_key": claim["faction_key"],
+        "activity_score": int(claim["activity_score"]),
+        "coin_reward": int(claim["coin_reward"]),
+        "badge_key": claim["badge_key"],
+        "coins_before": coins_before,
+        "coins_after": coins_before + int(claim["coin_reward"]),
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_WEEKLY_BONUS_CLAIM"],
+        user_id=user_id_int,
+        request_id=request_id,
+        action_key="faction_weekly_bonus_claim",
+        entity_type="user",
+        entity_id=user_id_int,
+        delta_coins=int(claim["coin_reward"]),
+        delta_count=1,
+        payload=payload,
+        ip=ip,
+    )
+    return {**claim, "claimed": True, "coins_before": coins_before, "coins_after": coins_before + int(claim["coin_reward"])}
+
+
 def get_weekly_faction_activity(db, week_key=None):
     wk = str(week_key or _world_week_key())
     start_dt, end_dt = get_current_week_range(wk)
@@ -21590,6 +21809,97 @@ def get_faction_weekly_awards(db, faction_key, week_key=None):
             }
         )
     return awards
+
+
+def _faction_award_badge_meta(award_key, week_key):
+    wk = str(week_key or _world_week_key())
+    safe_week = wk.replace("-", "_")
+    labels = {item["key"]: item["label"] for item in FACTION_WEEKLY_AWARD_DEFS}
+    label = labels.get(str(award_key), str(award_key or "陣営内表彰"))
+    return {
+        "badge_key": f"weekly_award_{award_key}_{safe_week}",
+        "badge_label": label,
+    }
+
+
+def grant_faction_award_badges(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    now_text = now_str()
+    rows = db.execute(
+        """
+        SELECT id, week_key, faction_key, award_key, user_id
+        FROM faction_weekly_awards
+        WHERE week_key = ?
+        ORDER BY id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    before = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM user_faction_badges WHERE week_key = ? AND badge_kind = 'weekly_award'",
+            (wk,),
+        ).fetchone()["c"]
+        or 0
+    )
+    for row in rows:
+        meta = _faction_award_badge_meta(row["award_key"], wk)
+        db.execute(
+            """
+            INSERT OR IGNORE INTO user_faction_badges
+            (user_id, faction_key, badge_key, badge_label, badge_kind, week_key, source_type, source_id, granted_at, created_at)
+            VALUES (?, ?, ?, ?, 'weekly_award', ?, 'award', ?, ?, ?)
+            """,
+            (
+                int(row["user_id"]),
+                _normalize_faction_key(row["faction_key"]) or row["faction_key"],
+                meta["badge_key"],
+                meta["badge_label"],
+                wk,
+                int(row["id"]),
+                now_text,
+                now_text,
+            ),
+        )
+        db.execute("UPDATE faction_weekly_awards SET reward_status = 'badge_granted', updated_at = ? WHERE id = ?", (now_text, int(row["id"])))
+    after = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM user_faction_badges WHERE week_key = ? AND badge_kind = 'weekly_award'",
+            (wk,),
+        ).fetchone()["c"]
+        or 0
+    )
+    return {"week_key": wk, "processed_count": len(rows), "granted_count": max(0, after - before)}
+
+
+def get_user_faction_badges(db, user_id, limit=5):
+    rows = db.execute(
+        """
+        SELECT user_id, faction_key, badge_key, badge_label, badge_kind, week_key, source_type, granted_at
+        FROM user_faction_badges
+        WHERE user_id = ?
+        ORDER BY granted_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user_id), max(1, int(limit or 5))),
+    ).fetchall()
+    out = []
+    for row in rows:
+        faction_key = _normalize_faction_key(row["faction_key"]) or str(row["faction_key"] or "")
+        out.append(
+            {
+                "badge_key": row["badge_key"],
+                "badge_label": row["badge_label"],
+                "badge_kind": row["badge_kind"],
+                "badge_kind_label": "表彰バッジ" if row["badge_kind"] == "weekly_award" else "陣営参加バッジ",
+                "week_key": row["week_key"],
+                "faction_key": faction_key,
+                "faction_label": FACTION_LABELS.get(faction_key, faction_key),
+                "source_type": row["source_type"],
+                "granted_at": row["granted_at"],
+            }
+        )
+    return out
 
 
 def _faction_week_result(db, week_key):
@@ -32795,6 +33105,8 @@ def _faction_page_context(db, user):
     faction_weekly_report_rows = get_faction_weekly_report(db, current_week_key)
     my_faction_weekly_position = get_my_faction_weekly_position(db, user, current_week_key)
     faction_awards = get_faction_weekly_awards(db, user_faction, current_week_key) if user_faction else {}
+    faction_weekly_bonus = can_claim_faction_weekly_bonus(db, int(user["id"]), current_week_key)
+    faction_badges = get_user_faction_badges(db, int(user["id"]), limit=5)
     return {
         "user": user,
         "user_faction": user_faction,
@@ -32815,6 +33127,8 @@ def _faction_page_context(db, user):
             {**award_def, "entries": list(faction_awards.get(award_def["key"], []))}
             for award_def in FACTION_WEEKLY_AWARD_DEFS
         ],
+        "faction_weekly_bonus": faction_weekly_bonus,
+        "faction_badges": faction_badges,
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
@@ -32913,6 +33227,37 @@ def faction_change():
     return redirect(url_for("faction_view"))
 
 
+@app.route("/faction/weekly-bonus/claim", methods=["POST"])
+@login_required
+def faction_weekly_bonus_claim():
+    db = get_db()
+    user_id = int(session["user_id"])
+    claim = can_claim_faction_weekly_bonus(db, user_id)
+    if not claim.get("can_claim"):
+        reason = claim.get("reason")
+        if reason == "already_claimed":
+            flash("今週の陣営特典はすでに受け取り済みです。", "notice")
+        elif reason == "no_faction":
+            flash("研究方針を選ぶと、週ごとの陣営特典を受け取れるようになります。", "error")
+        else:
+            flash("今週の陣営特典を受け取るには、もう少し研究活動が必要です。", "error")
+        return redirect(url_for("faction_view"))
+    try:
+        grant_faction_weekly_bonus(
+            db,
+            user_id,
+            request_id=(getattr(g, "request_id", None) if g else None),
+            ip=request.remote_addr,
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        flash("今週の陣営特典はすでに受け取り済みです。", "notice")
+        return redirect(url_for("faction_view"))
+    flash("今週の陣営特典を受け取りました。", "notice")
+    return redirect(url_for("faction_view"))
+
+
 @app.route("/admin/factions/awards/recalculate", methods=["POST"])
 @login_required
 def admin_faction_awards_recalculate():
@@ -32941,6 +33286,38 @@ def admin_faction_awards_recalculate():
     )
     db.commit()
     flash(f"陣営内表彰を再集計しました（{result['week_key']} / {result['created_or_updated_count']}件）。", "notice")
+    return redirect(url_for("faction_view"))
+
+
+@app.route("/admin/factions/awards/grant-badges", methods=["POST"])
+@login_required
+def admin_faction_awards_grant_badges():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = grant_faction_award_badges(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("faction_view"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_AWARDS_BADGES_GRANT"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_awards_badges_grant",
+        entity_type="user_faction_badges",
+        payload={
+            "week_key": result["week_key"],
+            "granted_count": int(result["granted_count"]),
+            "processed_count": int(result["processed_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営内表彰バッジを付与しました（{result['week_key']} / 新規{result['granted_count']}件）。", "notice")
     return redirect(url_for("faction_view"))
 
 

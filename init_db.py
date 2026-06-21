@@ -1773,6 +1773,40 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_faction_badges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            faction_key TEXT NOT NULL,
+            badge_key TEXT NOT NULL,
+            badge_label TEXT NOT NULL,
+            badge_kind TEXT NOT NULL,
+            week_key TEXT,
+            source_type TEXT,
+            source_id INTEGER,
+            granted_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, badge_key, week_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            coin_reward INTEGER NOT NULL DEFAULT 0,
+            badge_key TEXT,
+            claimed_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, week_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -3032,6 +3066,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_logs_week_event_created ON world_faction_logs(week_key, event_type, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_badges_user_week ON user_faction_badges(user_id, week_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_reports_week_rank ON faction_weekly_reports(week_key, rank, activity_score DESC)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")

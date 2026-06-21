@@ -104,6 +104,8 @@
   - 陣営ポイント加算時に記録する。payload は `week_key`, `faction`, `event_type`, `points`, `counters`, `payload`, `log_created` を含める
   - 未所属ユーザーは加算されない
   - 再集計時は二重監査を避けるため、このauditは生成しない
+- `audit.faction.weekly_bonus.claim`
+  - `/faction` の週次参加特典を受け取った時に記録する。payload は `user_id`, `week_key`, `faction_key`, `activity_score`, `coin_reward`, `badge_key`, `coins_before`, `coins_after` を含める。
 
 ### 4.7 チャンプ/非同期挑戦
 - `audit.champion.select`
@@ -153,11 +155,13 @@
 
 ### 4.9 陣営内表彰
 - `audit.faction.awards.recalculate`
+- `audit.faction.awards.badges.grant`
 
 補足:
 - 管理者が `faction_weekly_awards` を手動再集計した記録。
 - payload には `week_key`, `created_or_updated_count`, `actor_admin_id` を含める。
-- 表彰は `/faction` 内の名誉表示であり、世界ログ公開イベント、陣営勝敗、戦闘補正、報酬配布には使わない。
+- 管理者が表彰バッジを付与した記録では、payload に `week_key`, `granted_count`, `processed_count`, `actor_admin_id` を含める。
+- 表彰は `/faction` 内の名誉表示であり、世界ログ公開イベント、陣営勝敗、戦闘補正には使わない。
 
 ### 4.10 管理者操作（追加）
 - `audit.admin.user.ban`
@@ -175,6 +179,9 @@
 ### 4.11 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
+- `audit.faction.report.recalculate`
+- `audit.faction.report.finalize`
+- `FACTION_WEEKLY_REPORT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
@@ -246,6 +253,15 @@
   - `tower_run_id`
   - 互換用に `run_id` / `reached_floor` を残してよい
 
+- 陣営週間レポート payload は可能な範囲で以下を保持する
+  - `week_key`
+  - `top_faction`
+  - `top_faction_name`
+  - `activity_score`
+  - `explore_count`
+  - `boss_defeat_count`
+  - `evolve_count`
+
 - 第1層試験支援 payload は可能な範囲で以下を保持する
   - `user_id`
   - `robot_instance_id`
@@ -265,6 +281,7 @@
 ## 6. 公開世界ログの重複防止
 - 観測塔公開世界ログは `user_id + event_type + floor + tower_run_id` で重複投稿を避ける。
 - `tower_run_id` がない場合は `user_id + event_type + floor` で重複投稿を避ける。
+- 陣営週間レポートの公開世界ログ `FACTION_WEEKLY_REPORT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索
