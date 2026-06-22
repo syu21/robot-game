@@ -91,6 +91,50 @@
     </div>
     {% endfor %}
   </div>
+  {% if user_faction %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <h3>あなたの今週の守護戦貢献</h3>
+      {% if guardian_contribution %}
+      <div class="robot-part">合計研究ダメージ: {{ guardian_contribution['total_damage'] }}</div>
+      <div class="upgrade-cost">
+        出撃: {{ guardian_contribution['explore_damage'] }} /
+        ボス解析: {{ guardian_contribution['boss_damage'] }} /
+        進化成功: {{ guardian_contribution['evolve_damage'] }} /
+        観測塔: {{ guardian_contribution['tower_damage'] }}
+      </div>
+      <div class="upgrade-cost">{{ faction_labels.get(user_faction, user_faction) }}内 貢献順位: {% if guardian_contribution['rank_in_faction'] %}{{ guardian_contribution['rank_in_faction'] }}位{% else %}-{% endif %}</div>
+      {% if guardian_contribution['target_faction_name'] %}
+      <div class="upgrade-cost">今週は{{ guardian_contribution['target_faction_name'] }}守護機の解析に貢献しています。</div>
+      {% endif %}
+      {% else %}
+      <div class="upgrade-cost">今週の守護戦貢献はまだありません。</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>今週の守護戦貢献者</h3>
+      <ul class="ranking-mini">
+        {% for item in guardian_contribution_ranking %}
+        <li><span>{{ item['rank'] }}位 {{ item['display_name'] }} <span class="weekly-fit-badge">{{ item['label'] }}</span></span><span>{{ item['total_damage'] }}研究ダメージ</span></li>
+        {% else %}
+        <li>今週の貢献者はまだいません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="card">
+    <h3>陣営守護戦ログ</h3>
+    <ul class="ranking-mini faction-log-list">
+      {% for item in guardian_logs %}
+      <li>
+        <span>{{ item['attacker_faction_name'] }}研究員 {{ item['display_name'] }} が、{{ item['target_faction_name'] }}守護機「{{ item['guardian_name'] }}」に {{ item['damage'] }} 研究ダメージ。{{ item['source_message'] }}</span>
+      </li>
+      {% else %}
+      <li>今週の守護戦ログはまだありません。</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 </section>
 
 <section class="panel">

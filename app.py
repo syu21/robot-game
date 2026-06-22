@@ -22203,6 +22203,236 @@ def get_faction_guardians_view(db, week_key=None):
     return [by_key[key] for key in FACTION_KEYS if key in by_key]
 
 
+def _guardian_source_damage_expr(source_event_type):
+    return f"COALESCE(SUM(CASE WHEN source_event_type = '{source_event_type}' THEN damage ELSE 0 END), 0)"
+
+
+def _guardian_contribution_label(total_damage, explore_damage, boss_damage, evolve_damage):
+    total = int(total_damage or 0)
+    if total <= 0:
+        return "解析準備中"
+    values = {
+        "突破貢献": int(boss_damage or 0),
+        "進化貢献": int(evolve_damage or 0),
+        "継続貢献": int(explore_damage or 0),
+    }
+    label = max(values.items(), key=lambda item: item[1])[0]
+    return label if values[label] > 0 else "解析貢献"
+
+
+def _guardian_source_message(source_event_type):
+    if source_event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+        return "ボス解析の成果が大きく反映されました。"
+    if source_event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+        return "進化実験の成果が解析に反映されました。"
+    if source_event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+        return "出撃データが解析に反映されました。"
+    return "研究活動が解析に反映されました。"
+
+
+def _guardian_log_view_row(db, row):
+    attacker_faction = _normalize_faction_key(row["attacker_faction_key"])
+    target_faction = _normalize_faction_key(row["target_faction_key"])
+    user_row = {
+        "id": row["attacker_user_id"],
+        "username": row["username"],
+        "display_name": row["display_name"],
+        "is_admin": row["is_admin"] if "is_admin" in row.keys() else 0,
+    }
+    display_name = _display_username_for_user_row(db, user_row)
+    guardian_name = row["guardian_name"] or f"{FACTION_LABELS.get(target_faction, target_faction)}守護機"
+    return {
+        "id": int(row["id"]),
+        "week_key": row["week_key"],
+        "attacker_faction_key": attacker_faction,
+        "attacker_faction_name": FACTION_LABELS.get(attacker_faction, attacker_faction),
+        "target_faction_key": target_faction,
+        "target_faction_name": FACTION_LABELS.get(target_faction, target_faction),
+        "attacker_user_id": int(row["attacker_user_id"]),
+        "display_name": display_name,
+        "guardian_name": guardian_name,
+        "damage": int(row["damage"] or 0),
+        "source_event_type": row["source_event_type"],
+        "source_message": _guardian_source_message(row["source_event_type"]),
+        "created_at": row["created_at"],
+    }
+
+
+def get_faction_guardian_contribution_ranking(db, faction_key, week_key=None, limit=5):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return []
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        f"""
+        SELECT
+            a.attacker_user_id AS user_id,
+            u.username,
+            u.display_name,
+            u.is_admin,
+            COALESCE(SUM(a.damage), 0) AS total_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["EXPLORE_END"])} AS explore_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["BOSS_DEFEAT"])} AS boss_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["PART_EVOLVE"])} AS evolve_damage
+        FROM faction_guardian_attacks a
+        JOIN users u ON u.id = a.attacker_user_id
+        WHERE a.week_key = ?
+          AND a.attacker_faction_key = ?
+          AND LOWER(TRIM(COALESCE(u.faction, ''))) = ?
+        GROUP BY a.attacker_user_id
+        HAVING total_damage > 0
+        ORDER BY total_damage DESC, a.attacker_user_id ASC
+        LIMIT ?
+        """,
+        (wk, key, key, max(1, int(limit or 5))),
+    ).fetchall()
+    out = []
+    for index, row in enumerate(rows, start=1):
+        total = int(row["total_damage"] or 0)
+        explore = int(row["explore_damage"] or 0)
+        boss = int(row["boss_damage"] or 0)
+        evolve = int(row["evolve_damage"] or 0)
+        out.append(
+            {
+                "rank": index,
+                "user_id": int(row["user_id"]),
+                "display_name": _display_username_for_user_row(db, row),
+                "total_damage": total,
+                "explore_damage": explore,
+                "boss_damage": boss,
+                "evolve_damage": evolve,
+                "tower_damage": 0,
+                "label": "守護戦主力" if index == 1 else _guardian_contribution_label(total, explore, boss, evolve),
+            }
+        )
+    return out
+
+
+def get_user_guardian_contribution(db, user_id, week_key=None):
+    wk = str(week_key or _world_week_key())
+    user = db.execute("SELECT id, faction FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    faction_key = _normalize_faction_key(user["faction"] if user and "faction" in user.keys() else None)
+    target_faction_key = get_guardian_target_faction(faction_key, wk) if faction_key else None
+    row = db.execute(
+        f"""
+        SELECT
+            COALESCE(SUM(damage), 0) AS total_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["EXPLORE_END"])} AS explore_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["BOSS_DEFEAT"])} AS boss_damage,
+            {_guardian_source_damage_expr(AUDIT_EVENT_TYPES["PART_EVOLVE"])} AS evolve_damage
+        FROM faction_guardian_attacks
+        WHERE week_key = ?
+          AND attacker_user_id = ?
+          AND attacker_faction_key = ?
+        """,
+        (wk, int(user_id), faction_key),
+    ).fetchone()
+    ranking = get_faction_guardian_contribution_ranking(db, faction_key, wk, limit=100) if faction_key else []
+    rank = next((item["rank"] for item in ranking if int(item["user_id"]) == int(user_id)), None)
+    total = int(row["total_damage"] or 0) if row else 0
+    return {
+        "week_key": wk,
+        "user_id": int(user_id),
+        "faction_key": faction_key,
+        "target_faction_key": target_faction_key,
+        "target_faction_name": FACTION_LABELS.get(target_faction_key, target_faction_key or ""),
+        "total_damage": total,
+        "explore_damage": int(row["explore_damage"] or 0) if row else 0,
+        "boss_damage": int(row["boss_damage"] or 0) if row else 0,
+        "evolve_damage": int(row["evolve_damage"] or 0) if row else 0,
+        "tower_damage": 0,
+        "rank_in_faction": rank,
+    }
+
+
+def get_faction_guardian_logs_for_faction(db, faction_key, week_key=None, limit=10):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return []
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        """
+        SELECT
+            a.*,
+            u.username,
+            u.display_name,
+            u.is_admin,
+            g.guardian_name
+        FROM faction_guardian_attacks a
+        JOIN users u ON u.id = a.attacker_user_id
+        LEFT JOIN faction_guardians g ON g.id = a.guardian_id
+        WHERE a.week_key = ?
+          AND (a.attacker_faction_key = ? OR a.target_faction_key = ?)
+        ORDER BY a.id DESC
+        LIMIT ?
+        """,
+        (wk, key, key, max(1, int(limit or 10))),
+    ).fetchall()
+    return [_guardian_log_view_row(db, row) for row in rows]
+
+
+def get_global_guardian_highlight_logs(db, week_key=None, limit=5):
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        """
+        SELECT
+            a.*,
+            u.username,
+            u.display_name,
+            u.is_admin,
+            g.guardian_name
+        FROM faction_guardian_attacks a
+        JOIN users u ON u.id = a.attacker_user_id
+        LEFT JOIN faction_guardians g ON g.id = a.guardian_id
+        WHERE a.week_key = ?
+          AND (
+            a.damage >= 15
+            OR a.source_event_type IN (?, ?)
+          )
+        ORDER BY a.id DESC
+        LIMIT ?
+        """,
+        (wk, AUDIT_EVENT_TYPES["BOSS_DEFEAT"], AUDIT_EVENT_TYPES["PART_EVOLVE"], max(1, int(limit or 5))),
+    ).fetchall()
+    return [_guardian_log_view_row(db, row) for row in rows]
+
+
+def get_faction_guardian_comms_summary(db, faction_key, week_key=None):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return None
+    wk = str(week_key or _world_week_key())
+    guardians = {row["faction_key"]: row for row in get_faction_guardians_view(db, wk)}
+    own = guardians.get(key)
+    target_key = get_guardian_target_faction(key, wk)
+    target = guardians.get(target_key)
+    def own_payload(row):
+        if not row:
+            return None
+        return {
+            "faction_key": row["faction_key"],
+            "guardian_name": row["guardian_name"],
+            "is_unset": row["source_type"] == "unset",
+            "current_hp": int(row["current_hp"]),
+            "max_hp": int(row["max_hp"]),
+            "defense_percent": int(row["defense_percent"]),
+        }
+    def target_payload(row):
+        if not row:
+            return None
+        return {
+            "target_faction_key": row["faction_key"],
+            "target_faction_name": row["faction_name"],
+            "guardian_name": row["guardian_name"],
+            "is_unset": row["source_type"] == "unset",
+            "current_hp": int(row["current_hp"]),
+            "max_hp": int(row["max_hp"]),
+            "progress_percent": int(row["parsed_percent"]),
+            "remaining_damage": max(0, int(row["current_hp"])),
+        }
+    return {"own_guardian": own_payload(own), "target_guardian": target_payload(target)}
+
+
 def _guardian_event_payload(payload_json):
     try:
         return json.loads(payload_json or "{}")
@@ -33989,6 +34219,7 @@ def _faction_page_context(db, user):
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
     guardian_target_key = get_guardian_target_faction(user_faction, current_week_key) if user_faction else None
+    guardian_contribution = get_user_guardian_contribution(db, int(user["id"]), current_week_key) if user_faction else None
     return {
         "user": user,
         "user_faction": user_faction,
@@ -34015,6 +34246,9 @@ def _faction_page_context(db, user):
         "faction_guardians": faction_guardians,
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
         "my_guardian_target": faction_guardians_by_key.get(guardian_target_key) if guardian_target_key else None,
+        "guardian_contribution": guardian_contribution,
+        "guardian_contribution_ranking": get_faction_guardian_contribution_ranking(db, user_faction, current_week_key, limit=5) if user_faction else [],
+        "guardian_logs": get_faction_guardian_logs_for_faction(db, user_faction, current_week_key, limit=10) if user_faction else [],
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
@@ -34695,6 +34929,7 @@ def world_view():
     faction_weekly_report_rows = get_faction_weekly_report(db, week_key)
     faction_weekly_missions = get_faction_weekly_missions(db, week_key)
     faction_guardians = get_faction_guardians_view(db, week_key)
+    guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     db.commit()
     return render_template(
         "world.html",
@@ -34715,6 +34950,7 @@ def world_view():
         faction_weekly_report_rows=faction_weekly_report_rows,
         faction_weekly_missions=faction_weekly_missions,
         faction_guardians=faction_guardians,
+        guardian_highlight_logs=guardian_highlight_logs,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
@@ -35031,6 +35267,7 @@ def comms_faction():
         limit=40,
     )
     my_logs = _faction_log_rows(db, week_key, user_id=int(user["id"]), limit=40)
+    guardian_comms_summary = get_faction_guardian_comms_summary(db, user_faction, week_key) if user_faction else None
     return render_template(
         "comms_faction.html",
         message=session.pop("message", None),
@@ -35046,6 +35283,7 @@ def comms_faction():
         contribution=contribution,
         faction_rank=(user_faction_row.get("rank") if user_faction_row else None),
         faction_count=len(FACTION_KEYS),
+        guardian_comms_summary=guardian_comms_summary,
         own_logs=own_logs,
         all_logs=all_logs,
         my_logs=my_logs,

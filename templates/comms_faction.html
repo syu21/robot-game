@@ -28,6 +28,23 @@
   {% else %}
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の陣営守護戦</h2>
+    {% if guardian_comms_summary and guardian_comms_summary['own_guardian'] and guardian_comms_summary['target_guardian'] %}
+      {% if guardian_comms_summary['own_guardian']['is_unset'] or guardian_comms_summary['target_guardian']['is_unset'] %}
+      <p>今週の守護機はまだ設定されていません。</p>
+      {% else %}
+      <p>自陣営守護機: {{ user_faction_label }}守護機「{{ guardian_comms_summary['own_guardian']['guardian_name'] }}」 / 防衛率 {{ guardian_comms_summary['own_guardian']['defense_percent'] }}%</p>
+      <p>攻略対象: {{ guardian_comms_summary['target_guardian']['target_faction_name'] }}守護機「{{ guardian_comms_summary['target_guardian']['guardian_name'] }}」 / 解析率 {{ guardian_comms_summary['target_guardian']['progress_percent'] }}%</p>
+      <p class="upgrade-cost">あと {{ guardian_comms_summary['target_guardian']['remaining_damage'] }} 研究ダメージで解析完了</p>
+      {% endif %}
+    {% else %}
+    <p>今週の守護機はまだ設定されていません。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">研究方針ページへ</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>あなたの今週の貢献: {{ contribution['points'] }}pt</h2>
     <p>陣営内順位: {% if contribution['rank'] %}{{ contribution['rank'] }}位{% else %}-{% endif %} / 今週の{{ user_faction_label }}: {% if faction_rank %}{{ faction_rank }}位{% else %}-{% endif %} / {{ faction_count }}陣営中</p>
     <p class="upgrade-cost">

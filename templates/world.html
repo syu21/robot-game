@@ -89,6 +89,22 @@
 </section>
 
 <section class="panel">
+  <h2>守護戦ハイライト</h2>
+  <p class="upgrade-cost">大きな研究ダメージだけを表示します。出撃ごとの小さなログは陣営ページで確認できます。</p>
+  <div class="card">
+    <ul class="ranking-mini faction-log-list">
+      {% for item in guardian_highlight_logs %}
+      <li>
+        <span>{{ item['attacker_faction_name'] }}研究員 {{ item['display_name'] }} が、{{ item['target_faction_name'] }}守護機「{{ item['guardian_name'] }}」に {{ item['damage'] }}研究ダメージ。{{ item['source_message'] }}</span>
+      </li>
+      {% else %}
+      <li>守護戦ハイライトはまだありません。</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
   <h2>陣営ミッション進捗</h2>
   <p class="upgrade-cost">今週の陣営ミッション進捗です。現在は勝敗報酬ではなく、陣営ごとの研究活動を見える化しています。</p>
   {% if faction_weekly_missions %}
