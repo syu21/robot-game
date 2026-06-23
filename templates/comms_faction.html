@@ -28,6 +28,23 @@
   {% else %}
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    {% if faction_strategy_status and faction_strategy_status['is_finalized'] and faction_strategy_status['finalized_strategy'] %}
+    <h2>今週の陣営作戦：{{ faction_strategy_status['finalized_strategy']['label'] }}</h2>
+    <p class="robot-part">{{ faction_strategy_status['finalized_strategy']['effect_label'] }}</p>
+    <p class="upgrade-cost">{{ faction_strategy_status['finalized_strategy']['description'] }}</p>
+    {% elif faction_strategy_status %}
+    <h2>今週の陣営作戦：投票中</h2>
+    <p>現在トップ：{{ faction_strategy_status['top_strategy']['label'] }} {{ faction_strategy_status['top_vote_count'] }}票</p>
+    <p class="upgrade-cost">作戦を相談して、研究方針ページから投票できます。</p>
+    {% else %}
+    <h2>今週の陣営作戦</h2>
+    <p>研究方針を選ぶと、今週の陣営作戦に投票できます。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">作戦に投票する</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>今週の陣営守護戦</h2>
     {% if guardian_comms_summary and guardian_comms_summary['own_guardian'] and guardian_comms_summary['target_guardian'] %}
       {% if guardian_comms_summary['own_guardian']['is_unset'] or guardian_comms_summary['target_guardian']['is_unset'] %}

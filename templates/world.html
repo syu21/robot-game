@@ -63,6 +63,25 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営作戦</h2>
+  <p class="upgrade-cost">各陣営が今週の守護戦へどう研究データを反映するかを表示します。通常戦闘の強さには影響しません。</p>
+  <div class="showcase-grid">
+    {% for status in faction_strategy_statuses %}
+    <div class="card">
+      <div><b>{{ status['faction_name'] }}</b></div>
+      {% if status['is_finalized'] and status['finalized_strategy'] %}
+      <div class="robot-part">{{ status['finalized_strategy']['label'] }}</div>
+      <div class="upgrade-cost">{{ status['finalized_strategy']['effect_label'] }}</div>
+      {% else %}
+      <div class="robot-part">投票中</div>
+      <div class="upgrade-cost">現在トップ: {{ status['top_strategy']['label'] }} {{ status['top_vote_count'] }}票</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>陣営守護戦</h2>
   <p class="upgrade-cost">実験室投稿から選ばれた守護機の解析状況です。現在は勝敗報酬や戦闘補正はありません。</p>
   {% if faction_guardians %}

@@ -11397,6 +11397,37 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_strategy_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            strategy_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            strategy_key TEXT NOT NULL,
+            vote_count INTEGER NOT NULL DEFAULT 0,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_typing_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -12887,6 +12918,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
@@ -21892,6 +21925,49 @@ FACTION_GUARDIAN_TARGET_ROTATION = {
     "ventra": "aurix",
     "aurix": "ignis",
 }
+FACTION_STRATEGY_FINALIZED_EVENT_TYPE = "FACTION_STRATEGY_FINALIZED"
+FACTION_STRATEGY_DEFAULT_KEY = "steady_sortie"
+FACTION_STRATEGY_TIE_ORDER = ("steady_sortie", "focus_analysis", "defense_test", "evolution_research")
+FACTION_STRATEGIES = {
+    "focus_analysis": {
+        "key": "focus_analysis",
+        "label": "集中解析",
+        "description": "攻略対象の守護機を重点的に解析する作戦。",
+        "detail": "守護戦で与える研究ダメージが少し増えます。",
+        "effect_label": "守護戦で与える研究ダメージ +10%",
+        "kind": "attack_percent",
+        "value": 10,
+    },
+    "defense_test": {
+        "key": "defense_test",
+        "label": "防衛試験",
+        "description": "守護機の防衛データを重点的に補強する作戦。",
+        "detail": "自陣営守護機が受ける研究ダメージを少し抑えます。",
+        "effect_label": "自陣営守護機が受ける研究ダメージ -10%",
+        "kind": "defense_percent",
+        "value": 10,
+    },
+    "evolution_research": {
+        "key": "evolution_research",
+        "label": "進化研究",
+        "description": "進化実験の成果を守護戦へ強く反映する作戦。",
+        "detail": "進化成功時の研究ダメージが増えます。",
+        "effect_label": "進化成功時の研究ダメージ +10",
+        "kind": "source_flat_bonus",
+        "source_event_type": AUDIT_EVENT_TYPES["PART_EVOLVE"],
+        "value": 10,
+    },
+    "steady_sortie": {
+        "key": "steady_sortie",
+        "label": "継続出撃",
+        "description": "日々の出撃データを守護戦へ多く反映する作戦。",
+        "detail": "出撃勝利時の研究ダメージが少し増えます。",
+        "effect_label": "出撃勝利時の研究ダメージ +1",
+        "kind": "source_flat_bonus",
+        "source_event_type": AUDIT_EVENT_TYPES["EXPLORE_END"],
+        "value": 1,
+    },
+}
 
 
 def get_faction_faith_profile(faction_key):
@@ -22203,6 +22279,190 @@ def get_faction_guardians_view(db, week_key=None):
     return [by_key[key] for key in FACTION_KEYS if key in by_key]
 
 
+def _faction_strategy_def(strategy_key):
+    key = str(strategy_key or "").strip()
+    return FACTION_STRATEGIES.get(key)
+
+
+def _faction_strategy_vote_counts(db, week_key, faction_key):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return {strategy_key: 0 for strategy_key in FACTION_STRATEGIES}
+    rows = db.execute(
+        """
+        SELECT strategy_key, COUNT(*) AS c
+        FROM faction_strategy_votes
+        WHERE week_key = ?
+          AND faction_key = ?
+        GROUP BY strategy_key
+        """,
+        (str(week_key or _world_week_key()), key),
+    ).fetchall()
+    counts = {strategy_key: 0 for strategy_key in FACTION_STRATEGIES}
+    for row in rows:
+        strategy_key = str(row["strategy_key"] or "").strip()
+        if strategy_key in counts:
+            counts[strategy_key] = int(row["c"] or 0)
+    return counts
+
+
+def _pick_faction_strategy_from_counts(counts):
+    counts = {key: int((counts or {}).get(key, 0) or 0) for key in FACTION_STRATEGIES}
+    best_count = max(counts.values(), default=0)
+    if best_count <= 0:
+        return FACTION_STRATEGY_DEFAULT_KEY, 0
+    for strategy_key in FACTION_STRATEGY_TIE_ORDER:
+        if counts.get(strategy_key, 0) == best_count:
+            return strategy_key, best_count
+    strategy_key = max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+    return strategy_key, best_count
+
+
+def get_faction_strategy_row(db, week_key, faction_key):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return None
+    return db.execute(
+        "SELECT * FROM faction_weekly_strategies WHERE week_key = ? AND faction_key = ? LIMIT 1",
+        (str(week_key or _world_week_key()), key),
+    ).fetchone()
+
+
+def _faction_strategy_view_from_row(row):
+    if not row:
+        return None
+    strategy = _faction_strategy_def(row["strategy_key"]) or FACTION_STRATEGIES[FACTION_STRATEGY_DEFAULT_KEY]
+    faction_key = _normalize_faction_key(row["faction_key"])
+    return {
+        "week_key": row["week_key"],
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "strategy_key": strategy["key"],
+        "label": strategy["label"],
+        "description": strategy["description"],
+        "detail": strategy["detail"],
+        "effect_label": strategy["effect_label"],
+        "vote_count": int(row["vote_count"] or 0),
+        "is_finalized": bool(int(row["is_finalized"] or 0)),
+        "finalized_at": row["finalized_at"],
+    }
+
+
+def get_faction_strategy_status(db, faction_key, week_key=None, user_id=None):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    if not key:
+        return None
+    counts = _faction_strategy_vote_counts(db, wk, key)
+    top_key, top_count = _pick_faction_strategy_from_counts(counts)
+    row = get_faction_strategy_row(db, wk, key)
+    finalized = _faction_strategy_view_from_row(row)
+    my_vote = None
+    if user_id:
+        my_vote = db.execute(
+            "SELECT * FROM faction_strategy_votes WHERE week_key = ? AND user_id = ? LIMIT 1",
+            (wk, int(user_id)),
+        ).fetchone()
+    voted_strategy = _faction_strategy_def(my_vote["strategy_key"]) if my_vote else None
+    vote_faction_key = _normalize_faction_key(my_vote["faction_key"]) if my_vote else None
+    return {
+        "week_key": wk,
+        "faction_key": key,
+        "faction_name": FACTION_LABELS.get(key, key),
+        "strategies": list(FACTION_STRATEGIES.values()),
+        "vote_counts": counts,
+        "vote_total": sum(int(v) for v in counts.values()),
+        "top_strategy_key": top_key,
+        "top_strategy": FACTION_STRATEGIES[top_key],
+        "top_vote_count": int(top_count),
+        "finalized_strategy": finalized,
+        "is_finalized": bool(finalized and finalized["is_finalized"]),
+        "my_vote_strategy_key": voted_strategy["key"] if voted_strategy else None,
+        "my_vote_label": voted_strategy["label"] if voted_strategy else "",
+        "my_vote_faction_key": vote_faction_key,
+        "my_vote_faction_name": FACTION_LABELS.get(vote_faction_key, vote_faction_key or ""),
+        "can_vote": bool((not finalized or not finalized["is_finalized"]) and ((not my_vote) or vote_faction_key == key)),
+        "vote_locked_by_other_faction": bool(my_vote and vote_faction_key != key),
+    }
+
+
+def get_all_faction_strategy_statuses(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    return [get_faction_strategy_status(db, key, wk) for key in FACTION_KEYS]
+
+
+def get_finalized_faction_strategies(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    rows = db.execute(
+        "SELECT * FROM faction_weekly_strategies WHERE week_key = ? AND is_finalized = 1",
+        (wk,),
+    ).fetchall()
+    return {_normalize_faction_key(row["faction_key"]): _faction_strategy_def(row["strategy_key"]) for row in rows}
+
+
+def apply_faction_strategy_damage(base_damage, source_event_type, attacker_faction_key, target_faction_key, strategies_by_faction):
+    damage = float(max(0, int(base_damage or 0)))
+    attacker_strategy = (strategies_by_faction or {}).get(_normalize_faction_key(attacker_faction_key))
+    target_strategy = (strategies_by_faction or {}).get(_normalize_faction_key(target_faction_key))
+    if attacker_strategy:
+        if attacker_strategy.get("kind") == "source_flat_bonus" and attacker_strategy.get("source_event_type") == source_event_type:
+            damage += int(attacker_strategy.get("value") or 0)
+        elif attacker_strategy.get("kind") == "attack_percent":
+            damage *= 1.0 + (float(attacker_strategy.get("value") or 0) / 100.0)
+    if target_strategy and target_strategy.get("kind") == "defense_percent":
+        damage *= max(0.0, 1.0 - (float(target_strategy.get("value") or 0) / 100.0))
+    return max(1, int(damage))
+
+
+def finalize_faction_strategies(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    now_text = now_str()
+    results = []
+    for faction_key in FACTION_KEYS:
+        counts = _faction_strategy_vote_counts(db, wk, faction_key)
+        strategy_key, vote_count = _pick_faction_strategy_from_counts(counts)
+        db.execute(
+            """
+            INSERT INTO faction_weekly_strategies
+            (week_key, faction_key, strategy_key, vote_count, is_finalized, finalized_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(week_key, faction_key) DO UPDATE SET
+                strategy_key = excluded.strategy_key,
+                vote_count = excluded.vote_count,
+                is_finalized = 1,
+                finalized_at = excluded.finalized_at,
+                updated_at = excluded.updated_at
+            """,
+            (wk, faction_key, strategy_key, int(vote_count), now_text, now_text, now_text),
+        )
+        strategy = FACTION_STRATEGIES[strategy_key]
+        results.append(
+            {
+                "faction_key": faction_key,
+                "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+                "strategy_key": strategy_key,
+                "strategy_label": strategy["label"],
+                "effect_label": strategy["effect_label"],
+                "vote_count": int(vote_count),
+            }
+        )
+    exists = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_STRATEGY_FINALIZED_EVENT_TYPE, wk),
+    ).fetchone()
+    emitted_world_event = False
+    if not exists:
+        _world_event_log(db, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, {"week_key": wk, "strategies": results})
+        emitted_world_event = True
+    return {"week_key": wk, "strategies": results, "emitted_world_event": emitted_world_event}
+
+
 def _guardian_source_damage_expr(source_event_type):
     return f"COALESCE(SUM(CASE WHEN source_event_type = '{source_event_type}' THEN damage ELSE 0 END), 0)"
 
@@ -22459,6 +22719,7 @@ def recalculate_faction_guardian_attacks(db, week_key=None):
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
     now_text = now_str()
+    strategies_by_faction = get_finalized_faction_strategies(db, wk)
     db.execute("DELETE FROM faction_guardian_attacks WHERE week_key = ?", (wk,))
     db.execute(
         "UPDATE faction_guardians SET current_hp = max_hp, is_finalized = 0, finalized_at = NULL, updated_at = ? WHERE week_key = ?",
@@ -22509,9 +22770,16 @@ def recalculate_faction_guardian_attacks(db, week_key=None):
         payload = _guardian_event_payload(event["payload_json"])
         if not _guardian_event_counts(event["event_type"], payload):
             continue
-        damage = int(FACTION_GUARDIAN_DAMAGE_BY_EVENT.get(event["event_type"], 0) or 0)
-        if damage <= 0:
+        base_damage = int(FACTION_GUARDIAN_DAMAGE_BY_EVENT.get(event["event_type"], 0) or 0)
+        if base_damage <= 0:
             continue
+        damage = apply_faction_strategy_damage(
+            base_damage,
+            event["event_type"],
+            attacker_faction,
+            target_faction,
+            strategies_by_faction,
+        )
         cur = db.execute(
             """
             INSERT OR IGNORE INTO faction_guardian_attacks
@@ -25240,9 +25508,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -25251,6 +25519,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_WEEKLY_REPORT_EVENT_TYPE,
     FACTION_MISSION_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_RESULT_EVENT_TYPE,
+    FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -25673,6 +25942,19 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"{attacker_name}は{target_name}守護機「{guardian_name}」を{parsed_percent}%まで解析しました。")
         if not card["meta_lines"]:
             card["meta_lines"].append("守護機の解析記録はまだありません。")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
+        strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
+        card["headline"] = "陣営作戦"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営作戦が確定しました。"
+        for item in strategies[:3]:
+            faction_name = str(item.get("faction_name") or FACTION_LABELS.get(_normalize_faction_key(item.get("faction_key")), "陣営")).strip()
+            strategy_label = str(item.get("strategy_label") or "継続出撃").strip()
+            effect_label = str(item.get("effect_label") or "").strip()
+            card["meta_lines"].append(f"{faction_name}: {strategy_label}" + (f" / {effect_label}" if effect_label else ""))
+        if not card["meta_lines"]:
+            card["meta_lines"].append("今週は継続研究として記録されました。")
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -34220,6 +34502,7 @@ def _faction_page_context(db, user):
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
     guardian_target_key = get_guardian_target_faction(user_faction, current_week_key) if user_faction else None
     guardian_contribution = get_user_guardian_contribution(db, int(user["id"]), current_week_key) if user_faction else None
+    faction_strategy_status = get_faction_strategy_status(db, user_faction, current_week_key, user_id=int(user["id"])) if user_faction else None
     return {
         "user": user,
         "user_faction": user_faction,
@@ -34249,6 +34532,8 @@ def _faction_page_context(db, user):
         "guardian_contribution": guardian_contribution,
         "guardian_contribution_ranking": get_faction_guardian_contribution_ranking(db, user_faction, current_week_key, limit=5) if user_faction else [],
         "guardian_logs": get_faction_guardian_logs_for_faction(db, user_faction, current_week_key, limit=10) if user_faction else [],
+        "faction_strategy_status": faction_strategy_status,
+        "faction_strategy_defs": list(FACTION_STRATEGIES.values()),
         "faction_spotlight_rows": get_weekly_faction_members_spotlight(db, user_faction, limit=5, week_key=current_week_key) if user_faction else [],
         "current_week_key": current_week_key,
         "change_status": _faction_change_status(user),
@@ -34377,6 +34662,128 @@ def faction_weekly_bonus_claim():
         return redirect(url_for("faction_view"))
     flash("今週の陣営特典を受け取りました。", "notice")
     return redirect(url_for("faction_view"))
+
+
+@app.route("/faction/strategy/vote", methods=["POST"])
+@login_required
+def faction_strategy_vote():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    faction_key = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    if not faction_key:
+        flash("研究方針を選ぶと、陣営作戦に投票できます。", "error")
+        return redirect(url_for("faction_view"))
+    strategy_key = str(request.form.get("strategy_key") or "").strip()
+    if strategy_key not in FACTION_STRATEGIES:
+        flash("作戦を選択してください。", "error")
+        return redirect(url_for("faction_view"))
+    week_key = _world_week_key()
+    existing_strategy = get_faction_strategy_row(db, week_key, faction_key)
+    if existing_strategy and int(existing_strategy["is_finalized"] or 0) == 1:
+        flash("今週の陣営作戦はすでに確定しています。", "notice")
+        return redirect(url_for("faction_view"))
+    existing_vote = db.execute(
+        "SELECT * FROM faction_strategy_votes WHERE week_key = ? AND user_id = ? LIMIT 1",
+        (week_key, int(user["id"])),
+    ).fetchone()
+    if existing_vote and _normalize_faction_key(existing_vote["faction_key"]) != faction_key:
+        flash("投票は週に1回です。陣営を変更しても、同じ週に再投票はできません。", "error")
+        return redirect(url_for("faction_view"))
+    now_text = now_str()
+    changed = bool(existing_vote and str(existing_vote["strategy_key"] or "") != strategy_key)
+    if existing_vote:
+        db.execute(
+            """
+            UPDATE faction_strategy_votes
+            SET strategy_key = ?, updated_at = ?
+            WHERE week_key = ? AND user_id = ?
+            """,
+            (strategy_key, now_text, week_key, int(user["id"])),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO faction_strategy_votes
+            (week_key, faction_key, user_id, strategy_key, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (week_key, faction_key, int(user["id"]), strategy_key, now_text, now_text),
+        )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_STRATEGY_VOTE"],
+        user_id=int(user["id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_strategy_vote",
+        entity_type="faction_strategy_votes",
+        payload={
+            "week_key": week_key,
+            "faction_key": faction_key,
+            "strategy_key": strategy_key,
+            "changed": changed,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("今週の陣営作戦への投票を変更しました。" if changed else "今週の陣営作戦に投票しました。", "notice")
+    return redirect(url_for("faction_view"))
+
+
+@app.route("/admin/factions/strategies")
+@login_required
+def admin_faction_strategies():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        statuses = get_all_faction_strategy_statuses(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_strategies.html",
+        week_key=week_key,
+        statuses=statuses,
+        strategy_defs=list(FACTION_STRATEGIES.values()),
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/strategies/finalize", methods=["POST"])
+@login_required
+def admin_faction_strategies_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = finalize_faction_strategies(db, week_key)
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin_faction_strategies"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_STRATEGY_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_strategy_finalize",
+        entity_type="faction_weekly_strategies",
+        payload={
+            "week_key": result["week_key"],
+            "strategies": result["strategies"],
+            "world_event_created": bool(result["emitted_world_event"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営作戦を確定しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_strategies", week_key=result["week_key"]))
 
 
 @app.route("/admin/factions/awards/recalculate", methods=["POST"])
@@ -34930,6 +35337,7 @@ def world_view():
     faction_weekly_missions = get_faction_weekly_missions(db, week_key)
     faction_guardians = get_faction_guardians_view(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
+    faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -34951,6 +35359,7 @@ def world_view():
         faction_weekly_missions=faction_weekly_missions,
         faction_guardians=faction_guardians,
         guardian_highlight_logs=guardian_highlight_logs,
+        faction_strategy_statuses=faction_strategy_statuses,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
@@ -35268,6 +35677,7 @@ def comms_faction():
     )
     my_logs = _faction_log_rows(db, week_key, user_id=int(user["id"]), limit=40)
     guardian_comms_summary = get_faction_guardian_comms_summary(db, user_faction, week_key) if user_faction else None
+    faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     return render_template(
         "comms_faction.html",
         message=session.pop("message", None),
@@ -35284,6 +35694,7 @@ def comms_faction():
         faction_rank=(user_faction_row.get("rank") if user_faction_row else None),
         faction_count=len(FACTION_KEYS),
         guardian_comms_summary=guardian_comms_summary,
+        faction_strategy_status=faction_strategy_status,
         own_logs=own_logs,
         all_logs=all_logs,
         my_logs=my_logs,

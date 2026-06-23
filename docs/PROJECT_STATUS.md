@@ -556,6 +556,15 @@
 - 新しい行動ログテーブルは追加せず、既存 `faction_guardian_attacks` を表示用ログとして使う。
 - 報酬、直接PvP、プレイヤー本編ステータス補正は追加しない。
 
+## 陣営作戦投票 v1
+- `faction_strategy_votes` に週ごとの陣営作戦投票を保存する。1ユーザー週1票で、同じ陣営内なら確定前に変更できる。
+- `faction_weekly_strategies` に管理者が確定した週次作戦を保存する。
+- 作戦は `集中解析` / `防衛試験` / `進化研究` / `継続出撃` の4種類。
+- 確定後の守護戦再集計では、確定済み作戦を `faction_guardian_attacks.damage` に反映する。
+- `/faction` に投票UI、`/world` に全陣営の作戦、`/comms/faction` に作戦会議向けサマリーを表示する。
+- 管理者は `/admin/factions/strategies` で投票状況を確認し、`/admin/factions/strategies/finalize` で確定する。
+- 通常戦闘ステータス、ボス難度、パーツ性能、モジュール性能、報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

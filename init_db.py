@@ -1912,6 +1912,36 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_strategy_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            strategy_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_strategies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            strategy_key TEXT NOT NULL,
+            vote_count INTEGER NOT NULL DEFAULT 0,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS champ_defeat_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3159,6 +3189,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_enemy_dex_user_seen ON user_enemy_dex(user_id, seen_count DESC)")

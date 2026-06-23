@@ -25,6 +25,55 @@
 </div>
 
 <section class="panel">
+  <h2>今週の陣営作戦</h2>
+  {% if user_faction and faction_strategy_status %}
+  <p class="upgrade-cost">{{ faction_strategy_status['faction_name'] }}の今週の作戦を投票で決めます。投票は週に1回です。陣営を変更しても、同じ週に再投票はできません。</p>
+  {% if faction_strategy_status['is_finalized'] and faction_strategy_status['finalized_strategy'] %}
+  <div class="card active-card">
+    <div class="comms-status-badge">確定</div>
+    <h3>{{ faction_strategy_status['faction_name'] }}の作戦は「{{ faction_strategy_status['finalized_strategy']['label'] }}」に決まりました。</h3>
+    <div class="robot-part">{{ faction_strategy_status['finalized_strategy']['effect_label'] }}</div>
+    <div class="upgrade-cost">{{ faction_strategy_status['finalized_strategy']['description'] }}</div>
+    <div class="upgrade-cost">{{ faction_strategy_status['finalized_strategy']['detail'] }}</div>
+  </div>
+  {% else %}
+  <div class="showcase-grid">
+    <div class="card">
+      <h3>現在の投票状況</h3>
+      <ul class="ranking-mini">
+        {% for strategy in faction_strategy_defs %}
+        <li><span>{{ strategy['label'] }}</span><span>{{ faction_strategy_status['vote_counts'].get(strategy['key'], 0) }}票</span></li>
+        {% endfor %}
+      </ul>
+      <div class="upgrade-cost">現在トップ: {{ faction_strategy_status['top_strategy']['label'] }} {{ faction_strategy_status['top_vote_count'] }}票</div>
+      {% if faction_strategy_status['my_vote_label'] %}
+      <div class="robot-part">あなたの投票: {{ faction_strategy_status['my_vote_label'] }}</div>
+      {% else %}
+      <div class="upgrade-cost">あなたの投票: 未投票</div>
+      {% endif %}
+      {% if faction_strategy_status['vote_locked_by_other_faction'] %}
+      <div class="upgrade-cost">今週の投票は{{ faction_strategy_status['my_vote_faction_name'] }}の票として記録済みです。</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>作戦に投票</h3>
+      {% for strategy in faction_strategy_defs %}
+      <form method="post" action="{{ url_for('faction_strategy_vote') }}" class="inline-form">
+        <input type="hidden" name="strategy_key" value="{{ strategy['key'] }}" />
+        <button type="submit" {% if not faction_strategy_status['can_vote'] %}disabled{% endif %}>{{ strategy['label'] }}に投票</button>
+      </form>
+      <div class="upgrade-cost">{{ strategy['effect_label'] }} / {{ strategy['description'] }}</div>
+      {% endfor %}
+      <div class="upgrade-cost">締切前なら投票を変更できます。</div>
+    </div>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="card">研究方針を選ぶと、今週の陣営作戦に投票できます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営特典</h2>
   <p class="upgrade-cost">今週少しでも研究活動を行うと、陣営参加バッジと小さなコインを受け取れます。戦闘ステータスへの補正はありません。</p>
   {% if user_faction %}

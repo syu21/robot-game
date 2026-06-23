@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営作戦管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_strategies') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_strategies_finalize') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">今週分を確定</button>
+  </form>
+  <p class="upgrade-cost">最多票の作戦を採用します。同票時は 継続出撃 → 集中解析 → 防衛試験 → 進化研究 の順で決定します。</p>
+</div>
+
+<section class="panel">
+  <h2>投票状況</h2>
+  <div class="showcase-grid">
+    {% for status in statuses %}
+    <div class="card">
+      <div><b>{{ status['faction_name'] }}</b></div>
+      {% if status['is_finalized'] and status['finalized_strategy'] %}
+      <div><span class="weekly-fit-badge">確定済み</span></div>
+      <div class="robot-part">{{ status['finalized_strategy']['label'] }}</div>
+      <div class="upgrade-cost">{{ status['finalized_strategy']['effect_label'] }}</div>
+      {% else %}
+      <div><span class="weekly-fit-badge">投票中</span></div>
+      <div class="robot-part">現在トップ: {{ status['top_strategy']['label'] }} {{ status['top_vote_count'] }}票</div>
+      {% endif %}
+      <ul class="ranking-mini">
+        {% for strategy in strategy_defs %}
+        <li><span>{{ strategy['label'] }}</span><span>{{ status['vote_counts'].get(strategy['key'], 0) }}票</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>作戦定義</h2>
+  <div class="showcase-grid">
+    {% for strategy in strategy_defs %}
+    <div class="card">
+      <div><b>{{ strategy['label'] }}</b></div>
+      <div class="robot-part">{{ strategy['effect_label'] }}</div>
+      <div class="upgrade-cost">{{ strategy['description'] }}</div>
+      <div class="upgrade-cost">{{ strategy['detail'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
