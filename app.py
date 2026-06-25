@@ -11428,6 +11428,48 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_representatives (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            user_id INTEGER,
+            robot_id INTEGER,
+            robot_name TEXT,
+            robot_image_path TEXT,
+            selection_type TEXT NOT NULL DEFAULT 'manual',
+            contribution_damage INTEGER NOT NULL DEFAULT 0,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_representative_matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            match_key TEXT NOT NULL,
+            faction_a_key TEXT NOT NULL,
+            faction_b_key TEXT NOT NULL,
+            representative_a_id INTEGER,
+            representative_b_id INTEGER,
+            winner_faction_key TEXT,
+            winner_user_id INTEGER,
+            result_status TEXT NOT NULL DEFAULT 'pending',
+            battle_log_json TEXT,
+            summary_text TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            updated_at TEXT,
+            UNIQUE(week_key, match_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_typing_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -12920,6 +12962,8 @@ def ensure_schema(db):
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_representative_matches_week ON faction_representative_matches(week_key, result_status)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_user_created ON lab_typing_runs(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_score_created ON lab_typing_runs(score, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_lab_typing_runs_weekly ON lab_typing_runs(created_at, score)")
@@ -21926,6 +21970,7 @@ FACTION_GUARDIAN_TARGET_ROTATION = {
     "aurix": "ignis",
 }
 FACTION_STRATEGY_FINALIZED_EVENT_TYPE = "FACTION_STRATEGY_FINALIZED"
+FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE = "FACTION_REPRESENTATIVE_MATCH_RESULT"
 FACTION_STRATEGY_DEFAULT_KEY = "steady_sortie"
 FACTION_STRATEGY_TIE_ORDER = ("steady_sortie", "focus_analysis", "defense_test", "evolution_research")
 FACTION_STRATEGIES = {
@@ -21968,6 +22013,13 @@ FACTION_STRATEGIES = {
         "value": 1,
     },
 }
+FACTION_REPRESENTATIVE_STRATEGY_STAT_BONUS = {
+    "focus_analysis": "atk",
+    "defense_test": "def",
+    "evolution_research": "cri",
+    "steady_sortie": "spd",
+}
+FACTION_REPRESENTATIVE_MATCHUPS = (("aurix", "ignis"), ("ignis", "ventra"), ("ventra", "aurix"))
 
 
 def get_faction_faith_profile(faction_key):
@@ -22461,6 +22513,507 @@ def finalize_faction_strategies(db, week_key=None):
         _world_event_log(db, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, {"week_key": wk, "strategies": results})
         emitted_world_event = True
     return {"week_key": wk, "strategies": results, "emitted_world_event": emitted_world_event}
+
+
+def get_faction_representative_matchups(week_key=None):
+    return [{"faction_a": a, "faction_b": b, "match_key": f"{a}_vs_{b}"} for a, b in FACTION_REPRESENTATIVE_MATCHUPS]
+
+
+def _representative_robot_row(db, user_id, robot_id=None):
+    params = [int(user_id)]
+    where = ["ri.user_id = ?", "ri.status = 'active'"]
+    if robot_id:
+        where.append("ri.id = ?")
+        params.append(int(robot_id))
+    else:
+        where.append("ri.id = u.active_robot_id")
+    return db.execute(
+        f"""
+        SELECT
+            ri.id,
+            ri.user_id,
+            ri.name,
+            ri.composed_image_path,
+            ri.icon_32_path,
+            ri.updated_at
+        FROM users u
+        JOIN robot_instances ri ON ri.user_id = u.id
+        WHERE {' AND '.join(where)}
+        ORDER BY ri.updated_at DESC, ri.id DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+
+
+def _faction_representative_candidate_rows(db, faction_key, week_key=None, limit=50):
+    key = _normalize_faction_key(faction_key)
+    wk = str(week_key or _world_week_key())
+    if not key:
+        return []
+    rows = db.execute(
+        """
+        SELECT
+            u.id AS user_id,
+            u.username,
+            COALESCE(NULLIF(TRIM(u.display_name), ''), u.username) AS display_name,
+            u.active_robot_id AS robot_id,
+            ri.name AS robot_name,
+            ri.composed_image_path AS robot_image_path,
+            ri.updated_at AS robot_updated_at,
+            COALESCE(SUM(a.damage), 0) AS contribution_damage
+        FROM users u
+        JOIN robot_instances ri
+          ON ri.id = u.active_robot_id
+         AND ri.user_id = u.id
+         AND ri.status = 'active'
+        LEFT JOIN faction_guardian_attacks a
+          ON a.week_key = ?
+         AND a.attacker_user_id = u.id
+         AND a.attacker_faction_key = ?
+        WHERE LOWER(TRIM(COALESCE(u.faction, ''))) = ?
+          AND COALESCE(u.is_banned, 0) = 0
+          AND COALESCE(TRIM(ri.composed_image_path), '') != ''
+        GROUP BY u.id, ri.id
+        """,
+        (wk, key, key),
+    ).fetchall()
+    candidates = []
+    for row in rows:
+        activity = get_user_weekly_faction_activity(db, int(row["user_id"]), wk)
+        item = dict(row)
+        item["faction_key"] = key
+        item["faction_name"] = FACTION_LABELS.get(key, key)
+        item["contribution_damage"] = int(row["contribution_damage"] or 0)
+        item["activity_score"] = int(activity.get("activity_score") or 0)
+        item["robot_image_url"] = _composed_image_url(row["robot_image_path"], row["robot_updated_at"]) if has_request_context() else None
+        candidates.append(item)
+    candidates.sort(key=lambda item: (-int(item["contribution_damage"]), -int(item["activity_score"]), int(item["user_id"])))
+    return candidates[: int(limit or 50)]
+
+
+def get_faction_representative_candidates(db, faction_key, week_key=None, limit=50):
+    return _faction_representative_candidate_rows(db, faction_key, week_key, limit)
+
+
+def _representative_selection_reason(selection_type, contribution_damage):
+    if selection_type == "auto" and int(contribution_damage or 0) > 0:
+        return "今週の守護戦貢献トップ"
+    if selection_type == "auto":
+        return "今週の代表候補から自動選出"
+    if selection_type == "manual":
+        return "管理者選出"
+    return "代表未設定"
+
+
+def _representative_view(row):
+    if not row:
+        return None
+    faction_key = _normalize_faction_key(row["faction_key"])
+    selection_type = str(row["selection_type"] or "unset")
+    return {
+        "id": int(row["id"]),
+        "week_key": row["week_key"],
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "user_id": int(row["user_id"]) if row["user_id"] else None,
+        "username": row["username"] if "username" in row.keys() else "",
+        "display_name": row["display_name"] if "display_name" in row.keys() else "",
+        "robot_id": int(row["robot_id"]) if row["robot_id"] else None,
+        "robot_name": row["robot_name"] or "代表ロボ未設定",
+        "robot_image_path": row["robot_image_path"],
+        "robot_image_url": _composed_image_url(row["robot_image_path"]) if has_request_context() else None,
+        "selection_type": selection_type,
+        "selection_reason": _representative_selection_reason(selection_type, row["contribution_damage"]),
+        "contribution_damage": int(row["contribution_damage"] or 0),
+        "activity_score": int(row["activity_score"] or 0),
+        "is_active": bool(int(row["is_active"] or 0)),
+    }
+
+
+def get_faction_representative_row(db, week_key, faction_key):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return None
+    return db.execute(
+        """
+        SELECT fr.*, u.username, COALESCE(NULLIF(TRIM(u.display_name), ''), u.username) AS display_name
+        FROM faction_representatives fr
+        LEFT JOIN users u ON u.id = fr.user_id
+        WHERE fr.week_key = ? AND fr.faction_key = ?
+        LIMIT 1
+        """,
+        (str(week_key or _world_week_key()), key),
+    ).fetchone()
+
+
+def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id=None, selection_type="manual"):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        raise ValueError("invalid faction")
+    now_text = now_str()
+    if not user_id:
+        db.execute(
+            """
+            INSERT INTO faction_representatives
+            (week_key, faction_key, user_id, robot_id, robot_name, robot_image_path, selection_type,
+             contribution_damage, activity_score, is_active, created_at, updated_at)
+            VALUES (?, ?, NULL, NULL, NULL, NULL, 'unset', 0, 0, 0, ?, ?)
+            ON CONFLICT(week_key, faction_key) DO UPDATE SET
+                user_id = NULL,
+                robot_id = NULL,
+                robot_name = NULL,
+                robot_image_path = NULL,
+                selection_type = 'unset',
+                contribution_damage = 0,
+                activity_score = 0,
+                is_active = 0,
+                updated_at = excluded.updated_at
+            """,
+            (wk, key, now_text, now_text),
+        )
+        return get_faction_representative_row(db, wk, key)
+    user = db.execute("SELECT id, faction FROM users WHERE id = ? AND COALESCE(is_banned, 0) = 0", (int(user_id),)).fetchone()
+    if not user or _normalize_faction_key(user["faction"]) != key:
+        raise ValueError("invalid representative user")
+    robot = _representative_robot_row(db, int(user_id), int(robot_id) if robot_id else None)
+    if not robot or not str(robot["composed_image_path"] or "").strip():
+        raise ValueError("invalid representative robot")
+    contribution = get_user_guardian_contribution(db, int(user_id), wk)
+    activity = get_user_weekly_faction_activity(db, int(user_id), wk)
+    db.execute(
+        """
+        INSERT INTO faction_representatives
+        (week_key, faction_key, user_id, robot_id, robot_name, robot_image_path, selection_type,
+         contribution_damage, activity_score, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(week_key, faction_key) DO UPDATE SET
+            user_id = excluded.user_id,
+            robot_id = excluded.robot_id,
+            robot_name = excluded.robot_name,
+            robot_image_path = excluded.robot_image_path,
+            selection_type = excluded.selection_type,
+            contribution_damage = excluded.contribution_damage,
+            activity_score = excluded.activity_score,
+            is_active = 1,
+            updated_at = excluded.updated_at
+        """,
+        (
+            wk,
+            key,
+            int(user_id),
+            int(robot["id"]),
+            str(robot["name"] or "代表ロボ"),
+            str(robot["composed_image_path"] or ""),
+            selection_type if selection_type in ("manual", "auto") else "manual",
+            int(contribution.get("total_damage") or 0),
+            int(activity.get("activity_score") or 0),
+            now_text,
+            now_text,
+        ),
+    )
+    return get_faction_representative_row(db, wk, key)
+
+
+def auto_pick_faction_representatives(db, week_key=None, faction_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    targets = [_normalize_faction_key(faction_key)] if faction_key else list(FACTION_KEYS)
+    results = []
+    for key in [k for k in targets if k]:
+        candidates = get_faction_representative_candidates(db, key, wk, limit=1)
+        if candidates:
+            candidate = candidates[0]
+            row = set_faction_representative(db, wk, key, candidate["user_id"], candidate["robot_id"], selection_type="auto")
+            results.append({"faction_key": key, "selected": True, "representative_id": int(row["id"])})
+        else:
+            row = set_faction_representative(db, wk, key, None, None, selection_type="unset")
+            results.append({"faction_key": key, "selected": False, "representative_id": int(row["id"])})
+    return {"week_key": wk, "results": results, "selected_count": sum(1 for item in results if item["selected"])}
+
+
+def get_faction_representatives_view(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    rows = {
+        _normalize_faction_key(row["faction_key"]): row
+        for row in db.execute(
+            """
+            SELECT fr.*, u.username, COALESCE(NULLIF(TRIM(u.display_name), ''), u.username) AS display_name
+            FROM faction_representatives fr
+            LEFT JOIN users u ON u.id = fr.user_id
+            WHERE fr.week_key = ?
+            """,
+            (wk,),
+        ).fetchall()
+    }
+    out = []
+    for key in FACTION_KEYS:
+        row = rows.get(key)
+        if row:
+            out.append(_representative_view(row))
+        else:
+            out.append(
+                {
+                    "id": None,
+                    "week_key": wk,
+                    "faction_key": key,
+                    "faction_name": FACTION_LABELS.get(key, key),
+                    "user_id": None,
+                    "username": "",
+                    "display_name": "",
+                    "robot_id": None,
+                    "robot_name": "代表ロボ未設定",
+                    "robot_image_path": None,
+                    "robot_image_url": None,
+                    "selection_type": "unset",
+                    "selection_reason": "代表未設定",
+                    "contribution_damage": 0,
+                    "activity_score": 0,
+                    "is_active": False,
+                }
+            )
+    return out
+
+
+def generate_faction_representative_matches(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    representatives = {row["faction_key"]: row for row in get_faction_representatives_view(db, wk)}
+    created_count = 0
+    now_text = now_str()
+    for matchup in get_faction_representative_matchups(wk):
+        rep_a = representatives.get(matchup["faction_a"]) or {}
+        rep_b = representatives.get(matchup["faction_b"]) or {}
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_representative_matches
+            (week_key, match_key, faction_a_key, faction_b_key, representative_a_id, representative_b_id,
+             result_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (
+                wk,
+                matchup["match_key"],
+                matchup["faction_a"],
+                matchup["faction_b"],
+                rep_a.get("id"),
+                rep_b.get("id"),
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"week_key": wk, "created_count": created_count, "match_count": len(FACTION_REPRESENTATIVE_MATCHUPS)}
+
+
+def _faction_representative_base_stats(db, representative, week_key=None):
+    robot_id = int((representative or {}).get("robot_id") or 0)
+    faction_key = _normalize_faction_key((representative or {}).get("faction_key"))
+    stat_obj = _compute_robot_stats_for_instance(db, robot_id) if robot_id else None
+    stats = {key: int((stat_obj or {}).get("stats", {}).get(key) or 1) for key in ("hp", "atk", "def", "spd", "acc", "cri")}
+    faith = get_faction_faith_profile(faction_key)
+    for stat_key in faith.get("primary_stats", []):
+        if stat_key in stats:
+            stats[stat_key] = int(stats[stat_key] * 1.05)
+    strategies = get_finalized_faction_strategies(db, week_key)
+    strategy = strategies.get(faction_key)
+    bonus_stat = FACTION_REPRESENTATIVE_STRATEGY_STAT_BONUS.get((strategy or {}).get("key"))
+    if bonus_stat in stats:
+        stats[bonus_stat] = int(stats[bonus_stat] * 1.03)
+    for stat_key in stats:
+        stats[stat_key] = min(999, max(1, int(stats[stat_key])))
+    stats["hp"] = max(10, stats["hp"])
+    return stats
+
+
+def _representative_roll(seed):
+    return (int(seed) * 1103515245 + 12345) % 100
+
+
+def simulate_faction_representative_match(db, rep_a, rep_b, week_key=None):
+    wk = str(week_key or _world_week_key())
+    if not rep_a or not rep_b or not rep_a.get("robot_id") or not rep_b.get("robot_id"):
+        return {"status": "skipped", "winner_faction_key": None, "winner_user_id": None, "summary_text": "代表未設定のため演習を見送りました。", "battle_log": []}
+    a = dict(rep_a)
+    b = dict(rep_b)
+    a["stats"] = _faction_representative_base_stats(db, a, wk)
+    b["stats"] = _faction_representative_base_stats(db, b, wk)
+    hp = {a["faction_key"]: int(a["stats"]["hp"]), b["faction_key"]: int(b["stats"]["hp"])}
+    max_hp = dict(hp)
+    dealt = {a["faction_key"]: 0, b["faction_key"]: 0}
+    battle_log = []
+    first, second = (a, b) if a["stats"]["spd"] >= b["stats"]["spd"] else (b, a)
+    for turn in range(1, 11):
+        for actor, target in ((first, second), (second, first)):
+            if hp[target["faction_key"]] <= 0:
+                continue
+            hit_rate = min(95, max(50, 78 + actor["stats"]["acc"] // 10 - target["stats"]["spd"] // 20))
+            hit = _representative_roll(turn * 31 + int(actor["user_id"] or 0) + int(target["robot_id"] or 0)) < hit_rate
+            critical_rate = min(35, max(3, 5 + actor["stats"]["cri"] // 20))
+            critical = bool(hit and _representative_roll(turn * 47 + int(actor["robot_id"] or 0)) < critical_rate)
+            damage = 0
+            if hit:
+                damage = max(1, int(actor["stats"]["atk"]) - int(target["stats"]["def"]) // 2)
+                if critical:
+                    damage = max(1, int(damage * 1.5))
+                hp[target["faction_key"]] = max(0, hp[target["faction_key"]] - damage)
+                dealt[actor["faction_key"]] += damage
+            battle_log.append(
+                {
+                    "turn": turn,
+                    "actor": actor["faction_key"],
+                    "target": target["faction_key"],
+                    "hit": bool(hit),
+                    "critical": bool(critical),
+                    "damage": int(damage),
+                    "target_hp_after": int(hp[target["faction_key"]]),
+                }
+            )
+            if hp[target["faction_key"]] <= 0:
+                break
+        if hp[a["faction_key"]] <= 0 or hp[b["faction_key"]] <= 0:
+            break
+    if hp[a["faction_key"]] != hp[b["faction_key"]]:
+        winner = a if (hp[a["faction_key"]] / max_hp[a["faction_key"]]) > (hp[b["faction_key"]] / max_hp[b["faction_key"]]) else b
+    elif dealt[a["faction_key"]] != dealt[b["faction_key"]]:
+        winner = a if dealt[a["faction_key"]] > dealt[b["faction_key"]] else b
+    else:
+        winner = a if a["faction_key"] < b["faction_key"] else b
+    summary = f"{FACTION_LABELS.get(winner['faction_key'], winner['faction_key'])}代表が演習で優勢を記録しました。"
+    return {
+        "status": "completed",
+        "winner_faction_key": winner["faction_key"],
+        "winner_user_id": int(winner["user_id"] or 0),
+        "summary_text": summary,
+        "battle_log": battle_log,
+    }
+
+
+def get_faction_representative_matches_view(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    reps = {row["faction_key"]: row for row in get_faction_representatives_view(db, wk)}
+    rows = db.execute(
+        "SELECT * FROM faction_representative_matches WHERE week_key = ? ORDER BY id ASC",
+        (wk,),
+    ).fetchall()
+    out = []
+    for row in rows:
+        a_key = _normalize_faction_key(row["faction_a_key"])
+        b_key = _normalize_faction_key(row["faction_b_key"])
+        log = []
+        try:
+            log = json.loads(row["battle_log_json"] or "[]")
+        except Exception:
+            log = []
+        out.append(
+            {
+                "id": int(row["id"]),
+                "week_key": row["week_key"],
+                "match_key": row["match_key"],
+                "faction_a_key": a_key,
+                "faction_b_key": b_key,
+                "faction_a_name": FACTION_LABELS.get(a_key, a_key),
+                "faction_b_name": FACTION_LABELS.get(b_key, b_key),
+                "representative_a": reps.get(a_key),
+                "representative_b": reps.get(b_key),
+                "winner_faction_key": _normalize_faction_key(row["winner_faction_key"]),
+                "winner_faction_name": FACTION_LABELS.get(_normalize_faction_key(row["winner_faction_key"]), ""),
+                "winner_user_id": int(row["winner_user_id"]) if row["winner_user_id"] else None,
+                "result_status": row["result_status"],
+                "summary_text": row["summary_text"] or "",
+                "battle_log": log,
+            }
+        )
+    if not out:
+        for matchup in get_faction_representative_matchups(wk):
+            a_key = matchup["faction_a"]
+            b_key = matchup["faction_b"]
+            out.append(
+                {
+                    "id": None,
+                    "week_key": wk,
+                    "match_key": matchup["match_key"],
+                    "faction_a_key": a_key,
+                    "faction_b_key": b_key,
+                    "faction_a_name": FACTION_LABELS.get(a_key, a_key),
+                    "faction_b_name": FACTION_LABELS.get(b_key, b_key),
+                    "representative_a": reps.get(a_key),
+                    "representative_b": reps.get(b_key),
+                    "winner_faction_key": None,
+                    "winner_faction_name": "",
+                    "winner_user_id": None,
+                    "result_status": "pending",
+                    "summary_text": "",
+                    "battle_log": [],
+                }
+            )
+    return out
+
+
+def run_faction_representative_matches(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    generate_faction_representative_matches(db, wk)
+    reps = {row["faction_key"]: row for row in get_faction_representatives_view(db, wk)}
+    rows = db.execute(
+        "SELECT * FROM faction_representative_matches WHERE week_key = ? AND result_status = 'pending' ORDER BY id ASC",
+        (wk,),
+    ).fetchall()
+    now_text = now_str()
+    results = []
+    for row in rows:
+        rep_a = reps.get(_normalize_faction_key(row["faction_a_key"]))
+        rep_b = reps.get(_normalize_faction_key(row["faction_b_key"]))
+        result = simulate_faction_representative_match(db, rep_a, rep_b, wk)
+        db.execute(
+            """
+            UPDATE faction_representative_matches
+            SET winner_faction_key = ?,
+                winner_user_id = ?,
+                result_status = ?,
+                battle_log_json = ?,
+                summary_text = ?,
+                completed_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                result["winner_faction_key"],
+                result["winner_user_id"],
+                result["status"],
+                json.dumps(result["battle_log"], ensure_ascii=False),
+                result["summary_text"],
+                now_text,
+                now_text,
+                int(row["id"]),
+            ),
+        )
+        results.append(
+            {
+                "match_key": row["match_key"],
+                "faction_a": row["faction_a_key"],
+                "faction_b": row["faction_b_key"],
+                "winner_faction_key": result["winner_faction_key"],
+                "winner_user_id": result["winner_user_id"],
+                "status": result["status"],
+            }
+        )
+    exists = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, wk),
+    ).fetchone()
+    emitted_world_event = False
+    if rows and not exists:
+        _world_event_log(db, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, {"week_key": wk, "results": results})
+        emitted_world_event = True
+    return {"week_key": wk, "run_count": len(rows), "results": results, "emitted_world_event": emitted_world_event}
 
 
 def _guardian_source_damage_expr(source_event_type):
@@ -25508,9 +26061,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -25520,6 +26073,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_MISSION_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_RESULT_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
+    FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -25955,6 +26509,23 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"{faction_name}: {strategy_label}" + (f" / {effect_label}" if effect_label else ""))
         if not card["meta_lines"]:
             card["meta_lines"].append("今週は継続研究として記録されました。")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE:
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        card["headline"] = "陣営代表模擬戦"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営代表模擬戦が終了しました。"
+        for item in results[:3]:
+            a_name = FACTION_LABELS.get(_normalize_faction_key(item.get("faction_a")), item.get("faction_a") or "")
+            b_name = FACTION_LABELS.get(_normalize_faction_key(item.get("faction_b")), item.get("faction_b") or "")
+            winner = _normalize_faction_key(item.get("winner_faction_key"))
+            winner_name = FACTION_LABELS.get(winner, "") if winner else ""
+            if winner_name:
+                card["meta_lines"].append(f"{a_name} vs {b_name}: {winner_name}代表が優勢")
+            else:
+                card["meta_lines"].append(f"{a_name} vs {b_name}: 演習見送り")
+        if not card["meta_lines"]:
+            card["meta_lines"].append("代表戦結果は世界戦況から確認できます。")
         card["link_url"] = url_for("world_view")
     elif event_type == "RESEARCH_UNLOCK":
         wk = payload.get("week_key") or "-"
@@ -34500,6 +35071,9 @@ def _faction_page_context(db, user):
     faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
+    faction_representatives = get_faction_representatives_view(db, current_week_key)
+    faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
+    faction_representative_matches = get_faction_representative_matches_view(db, current_week_key)
     guardian_target_key = get_guardian_target_faction(user_faction, current_week_key) if user_faction else None
     guardian_contribution = get_user_guardian_contribution(db, int(user["id"]), current_week_key) if user_faction else None
     faction_strategy_status = get_faction_strategy_status(db, user_faction, current_week_key, user_id=int(user["id"])) if user_faction else None
@@ -34529,6 +35103,9 @@ def _faction_page_context(db, user):
         "faction_guardians": faction_guardians,
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
         "my_guardian_target": faction_guardians_by_key.get(guardian_target_key) if guardian_target_key else None,
+        "faction_representatives": faction_representatives,
+        "my_faction_representative": faction_representatives_by_key.get(user_faction) if user_faction else None,
+        "faction_representative_matches": faction_representative_matches,
         "guardian_contribution": guardian_contribution,
         "guardian_contribution_ranking": get_faction_guardian_contribution_ranking(db, user_faction, current_week_key, limit=5) if user_faction else [],
         "guardian_logs": get_faction_guardian_logs_for_faction(db, user_faction, current_week_key, limit=10) if user_faction else [],
@@ -34784,6 +35361,166 @@ def admin_faction_strategies_finalize():
     db.commit()
     flash(f"陣営作戦を確定しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
     return redirect(url_for("admin_faction_strategies", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/representatives")
+@login_required
+def admin_faction_representatives():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        _world_week_bounds(week_key)
+        representatives = get_faction_representatives_view(db, week_key)
+        matches = get_faction_representative_matches_view(db, week_key)
+        candidates = {key: get_faction_representative_candidates(db, key, week_key, limit=60) for key in FACTION_KEYS}
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_representatives.html",
+        week_key=week_key,
+        representatives=representatives,
+        matches=matches,
+        candidates=candidates,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/representatives/auto-pick", methods=["POST"])
+@login_required
+def admin_faction_representatives_auto_pick():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    try:
+        result = auto_pick_faction_representatives(db, week_key, faction_key=faction_key)
+    except Exception:
+        flash("代表を自動選出できませんでした。", "error")
+        return redirect(url_for("admin_faction_representatives", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPRESENTATIVE_AUTO_PICK"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_representative_auto_pick",
+        entity_type="faction_representatives",
+        payload={
+            "week_key": result["week_key"],
+            "faction_key": faction_key,
+            "selected_count": int(result["selected_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営代表を自動選出しました（選出 {result['selected_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_representatives", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/representatives/set", methods=["POST"])
+@login_required
+def admin_faction_representatives_set():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    user_id = int(request.form.get("user_id") or 0)
+    robot_id = int(request.form.get("robot_id") or 0)
+    try:
+        row = set_faction_representative(db, week_key, faction_key, user_id, robot_id, selection_type="manual")
+    except Exception:
+        flash("対象陣営の研究員と所有ロボを選択してください。", "error")
+        return redirect(url_for("admin_faction_representatives", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPRESENTATIVE_SET"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_representative_set",
+        entity_type="faction_representatives",
+        entity_id=int(row["id"]),
+        payload={
+            "week_key": week_key,
+            "faction_key": faction_key,
+            "representative_user_id": user_id,
+            "robot_id": robot_id,
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{FACTION_LABELS.get(faction_key, faction_key)}の代表を設定しました。", "notice")
+    return redirect(url_for("admin_faction_representatives", week_key=week_key))
+
+
+@app.route("/admin/factions/representatives/generate-matches", methods=["POST"])
+@login_required
+def admin_faction_representatives_generate_matches():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = generate_faction_representative_matches(db, week_key)
+    except Exception:
+        flash("代表戦カードを生成できませんでした。", "error")
+        return redirect(url_for("admin_faction_representatives", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPRESENTATIVE_MATCHES_GENERATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_representative_matches_generate",
+        entity_type="faction_representative_matches",
+        payload={
+            "week_key": result["week_key"],
+            "created_count": int(result["created_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"代表戦カードを生成しました（新規 {result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_representatives", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/representatives/run-matches", methods=["POST"])
+@login_required
+def admin_faction_representatives_run_matches():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = run_faction_representative_matches(db, week_key)
+    except Exception:
+        flash("代表戦を実行できませんでした。", "error")
+        return redirect(url_for("admin_faction_representatives", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_REPRESENTATIVE_MATCHES_RUN"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_representative_matches_run",
+        entity_type="faction_representative_matches",
+        payload={
+            "week_key": result["week_key"],
+            "run_count": int(result["run_count"]),
+            "world_event_created": bool(result["emitted_world_event"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"代表戦を実行しました（{result['run_count']}件 / 世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_representatives", week_key=result["week_key"]))
 
 
 @app.route("/admin/factions/awards/recalculate", methods=["POST"])
@@ -35338,6 +36075,8 @@ def world_view():
     faction_guardians = get_faction_guardians_view(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
+    faction_representatives = get_faction_representatives_view(db, week_key)
+    faction_representative_matches = get_faction_representative_matches_view(db, week_key)
     db.commit()
     return render_template(
         "world.html",
@@ -35360,6 +36099,8 @@ def world_view():
         faction_guardians=faction_guardians,
         guardian_highlight_logs=guardian_highlight_logs,
         faction_strategy_statuses=faction_strategy_statuses,
+        faction_representatives=faction_representatives,
+        faction_representative_matches=faction_representative_matches,
         faction_report_labels=FACTION_WEEKLY_REPORT_LABELS,
         faction_user_contribution=faction_user_contribution,
         prev_week_key=prev_week_key,
@@ -35678,6 +36419,12 @@ def comms_faction():
     my_logs = _faction_log_rows(db, week_key, user_id=int(user["id"]), limit=40)
     guardian_comms_summary = get_faction_guardian_comms_summary(db, user_faction, week_key) if user_faction else None
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
+    faction_representatives = get_faction_representatives_view(db, week_key)
+    faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
+    faction_representative_matches = [
+        row for row in get_faction_representative_matches_view(db, week_key)
+        if user_faction and user_faction in (row["faction_a_key"], row["faction_b_key"])
+    ]
     return render_template(
         "comms_faction.html",
         message=session.pop("message", None),
@@ -35695,6 +36442,8 @@ def comms_faction():
         faction_count=len(FACTION_KEYS),
         guardian_comms_summary=guardian_comms_summary,
         faction_strategy_status=faction_strategy_status,
+        my_faction_representative=faction_representatives_by_key.get(user_faction) if user_faction else None,
+        faction_representative_matches=faction_representative_matches,
         own_logs=own_logs,
         all_logs=all_logs,
         my_logs=my_logs,

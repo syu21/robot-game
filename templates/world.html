@@ -82,6 +82,39 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営代表戦</h2>
+  <p class="upgrade-cost">各陣営の代表ロボによる週次の非同期模擬戦です。通常出撃やボス戦の強さには影響しません。</p>
+  <div class="showcase-grid">
+    {% for representative in faction_representatives %}
+    <div class="card">
+      <div><b>{{ representative['faction_name'] }}</b></div>
+      <div class="robot-part">{{ representative['robot_name'] }}</div>
+      {% if representative['robot_image_url'] %}<img class="robot-thumb" src="{{ representative['robot_image_url'] }}" alt="{{ representative['robot_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">代表研究員: {{ representative['display_name'] or '-' }}</div>
+      <div class="upgrade-cost">{{ representative['selection_reason'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="showcase-grid">
+    {% for match in faction_representative_matches %}
+    <div class="card">
+      <div><b>{{ match['faction_a_name'] }} vs {{ match['faction_b_name'] }}</b></div>
+      {% if match['winner_faction_name'] %}
+      <div class="robot-part">{{ match['winner_faction_name'] }}代表が優勢</div>
+      <div class="upgrade-cost">{{ match['summary_text'] }}</div>
+      {% elif match['result_status'] == 'skipped' %}
+      <div class="robot-part">演習見送り</div>
+      <div class="upgrade-cost">{{ match['summary_text'] }}</div>
+      {% else %}
+      <div class="robot-part">演習予定</div>
+      <div class="upgrade-cost">代表戦カードの確定を待っています。</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>陣営守護戦</h2>
   <p class="upgrade-cost">実験室投稿から選ばれた守護機の解析状況です。現在は勝敗報酬や戦闘補正はありません。</p>
   {% if faction_guardians %}

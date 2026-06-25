@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営代表戦管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_representatives') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_representatives_auto_pick') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">全陣営を自動選出</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_representatives_generate_matches') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">代表戦カード生成</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_representatives_run_matches') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">代表戦を実行</button>
+  </form>
+  <p class="upgrade-cost">代表戦は週次の非同期模擬戦です。通常出撃やボス戦の強さには影響しません。</p>
+</div>
+
+<section class="panel">
+  <h2>代表設定</h2>
+  <div class="showcase-grid">
+    {% for representative in representatives %}
+    <div class="card">
+      <div><b>{{ representative['faction_name'] }}</b> <span class="weekly-fit-badge">{{ representative['selection_reason'] }}</span></div>
+      <div class="robot-part">{{ representative['robot_name'] }}</div>
+      {% if representative['robot_image_url'] %}<img class="robot-thumb" src="{{ representative['robot_image_url'] }}" alt="{{ representative['robot_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">代表研究員: {{ representative['display_name'] or '-' }}</div>
+      <div class="upgrade-cost">守護戦貢献: {{ representative['contribution_damage'] }} / 活動スコア: {{ representative['activity_score'] }}</div>
+
+      <form method="post" action="{{ url_for('admin_faction_representatives_set') }}">
+        <input type="hidden" name="week_key" value="{{ week_key }}" />
+        <input type="hidden" name="faction_key" value="{{ representative['faction_key'] }}" />
+        <label>候補
+          <select name="user_id" required>
+            {% for candidate in candidates.get(representative['faction_key'], []) %}
+            <option value="{{ candidate['user_id'] }}" {% if candidate['user_id'] == representative['user_id'] %}selected{% endif %}>
+              {{ candidate['display_name'] }} / {{ candidate['robot_name'] }} / 貢献{{ candidate['contribution_damage'] }} / 活動{{ candidate['activity_score'] }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>ロボID
+          <select name="robot_id" required>
+            {% for candidate in candidates.get(representative['faction_key'], []) %}
+            <option value="{{ candidate['robot_id'] }}" {% if candidate['robot_id'] == representative['robot_id'] %}selected{% endif %}>
+              #{{ candidate['robot_id'] }} {{ candidate['robot_name'] }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">この候補を代表にする</button>
+      </form>
+      <form method="post" action="{{ url_for('admin_faction_representatives_auto_pick') }}" class="inline-form">
+        <input type="hidden" name="week_key" value="{{ week_key }}" />
+        <input type="hidden" name="faction_key" value="{{ representative['faction_key'] }}" />
+        <button type="submit">この陣営を自動選出</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>代表戦カード</h2>
+  <div class="showcase-grid">
+    {% for match in matches %}
+    <div class="card">
+      <div><b>{{ match['faction_a_name'] }} vs {{ match['faction_b_name'] }}</b></div>
+      <div class="upgrade-cost">状態: {{ match['result_status'] }}</div>
+      {% if match['winner_faction_name'] %}
+      <div class="robot-part">{{ match['winner_faction_name'] }}代表が優勢</div>
+      {% elif match['summary_text'] %}
+      <div class="upgrade-cost">{{ match['summary_text'] }}</div>
+      {% else %}
+      <div class="upgrade-cost">演習待機中</div>
+      {% endif %}
+      {% if match['battle_log'] %}
+      <ul class="ranking-mini">
+        {% for log in match['battle_log'] %}
+        {% if loop.index <= 3 %}
+        <li><span>{{ log['actor'] }} → {{ log['target'] }}</span><span>{{ log['damage'] }} dmg</span></li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

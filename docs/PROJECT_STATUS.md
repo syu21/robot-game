@@ -565,6 +565,17 @@
 - 管理者は `/admin/factions/strategies` で投票状況を確認し、`/admin/factions/strategies/finalize` で確定する。
 - 通常戦闘ステータス、ボス難度、パーツ性能、モジュール性能、報酬には影響しない。
 
+## 陣営代表模擬戦 v1
+- `faction_representatives` に週ごとの各陣営代表ロボを保存する。代表枠は各陣営1体。
+- `faction_representative_matches` に総当たりの代表模擬戦カードと演習ログを保存する。
+- 管理者は `/admin/factions/representatives` で自動選出、手動設定、カード生成、代表戦実行を行う。
+- 自動選出は守護戦貢献、週次活動スコア、`user_id` の順で代表候補を決める。
+- 代表戦は週次の非同期模擬戦であり、常設PvPやプレイヤー指定攻撃ではない。
+- 代表戦用ステータスはシミュレーション内だけで丸め、陣営信仰と確定済み陣営作戦を軽く反映する。
+- `/faction`、`/world`、`/comms/faction` に代表、予定、結果、短い演習ログを表示する。
+- 公開世界ログ `FACTION_REPRESENTATIVE_MATCH_RESULT` は週1件だけ作成する。
+- 本編ステータス、通常出撃、ボス戦、報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

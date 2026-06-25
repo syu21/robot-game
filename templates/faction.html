@@ -74,6 +74,48 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営代表戦</h2>
+  {% if user_faction and my_faction_representative %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div class="comms-status-badge">{{ my_faction_representative['selection_reason'] }}</div>
+      <h3>今週の{{ my_faction_representative['faction_name'] }}代表</h3>
+      <div class="robot-part">{{ my_faction_representative['display_name'] or '研究員' }}の「{{ my_faction_representative['robot_name'] }}」</div>
+      {% if my_faction_representative['robot_image_url'] %}
+      <img class="robot-thumb" src="{{ my_faction_representative['robot_image_url'] }}" alt="{{ my_faction_representative['robot_name'] }}" loading="lazy" decoding="async" />
+      {% endif %}
+      <div class="upgrade-cost">守護戦貢献 {{ my_faction_representative['contribution_damage'] }} / 活動スコア {{ my_faction_representative['activity_score'] }}</div>
+    </div>
+    <div class="card">
+      <h3>代表戦予定・結果</h3>
+      <ul class="ranking-mini">
+        {% for match in faction_representative_matches %}
+        {% if match['faction_a_key'] == user_faction or match['faction_b_key'] == user_faction %}
+        <li>
+          <span>{{ match['faction_a_name'] }} vs {{ match['faction_b_name'] }}</span>
+          <span>{% if match['winner_faction_name'] %}{{ match['winner_faction_name'] }}優勢{% elif match['result_status'] == 'skipped' %}見送り{% else %}予定{% endif %}</span>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% for match in faction_representative_matches %}
+      {% if (match['faction_a_key'] == user_faction or match['faction_b_key'] == user_faction) and match['battle_log'] %}
+      <div class="upgrade-cost">{{ match['summary_text'] }}</div>
+      {% for log in match['battle_log'] %}
+      {% if loop.index <= 3 %}
+      <div class="upgrade-cost">演習ログ: {{ log['actor'] }} → {{ log['target'] }} / {{ log['damage'] }}</div>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card">今週の陣営代表はまだ設定されていません。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営特典</h2>
   <p class="upgrade-cost">今週少しでも研究活動を行うと、陣営参加バッジと小さなコインを受け取れます。戦闘ステータスへの補正はありません。</p>
   {% if user_faction %}

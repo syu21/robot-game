@@ -45,6 +45,28 @@
 
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の陣営代表戦</h2>
+    {% if my_faction_representative and my_faction_representative['user_id'] %}
+    <p class="robot-part">{{ my_faction_representative['display_name'] or '研究員' }}の「{{ my_faction_representative['robot_name'] }}」が代表です。</p>
+    <p class="upgrade-cost">{{ my_faction_representative['selection_reason'] }}。代表を応援しましょう。</p>
+    {% else %}
+    <p>今週の代表はまだ設定されていません。</p>
+    {% endif %}
+    {% if faction_representative_matches %}
+    <ul class="ranking-mini">
+      {% for match in faction_representative_matches %}
+      <li>
+        <span>{{ match['faction_a_name'] }} vs {{ match['faction_b_name'] }}</span>
+        <span>{% if match['winner_faction_name'] %}{{ match['winner_faction_name'] }}優勢{% elif match['result_status'] == 'skipped' %}見送り{% else %}予定{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">代表戦を見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>今週の陣営守護戦</h2>
     {% if guardian_comms_summary and guardian_comms_summary['own_guardian'] and guardian_comms_summary['target_guardian'] %}
       {% if guardian_comms_summary['own_guardian']['is_unset'] or guardian_comms_summary['target_guardian']['is_unset'] %}
