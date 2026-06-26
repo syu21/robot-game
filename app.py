@@ -11437,6 +11437,7 @@ def ensure_schema(db):
             robot_name TEXT,
             robot_image_path TEXT,
             selection_type TEXT NOT NULL DEFAULT 'manual',
+            selection_reason TEXT,
             contribution_damage INTEGER NOT NULL DEFAULT 0,
             activity_score INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -11468,6 +11469,9 @@ def ensure_schema(db):
         )
         """
     )
+    rep_cols = {row["name"] for row in db.execute("PRAGMA table_info(faction_representatives)").fetchall()}
+    if "selection_reason" not in rep_cols:
+        db.execute("ALTER TABLE faction_representatives ADD COLUMN selection_reason TEXT")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS lab_typing_runs (
@@ -22596,13 +22600,34 @@ def get_faction_representative_candidates(db, faction_key, week_key=None, limit=
     return _faction_representative_candidate_rows(db, faction_key, week_key, limit)
 
 
-def _representative_selection_reason(selection_type, contribution_damage):
-    if selection_type == "auto" and int(contribution_damage or 0) > 0:
-        return "今週の守護戦貢献トップ"
-    if selection_type == "auto":
-        return "今週の代表候補から自動選出"
+def _representative_selection_reason_key(selection_type, contribution_damage=0, activity_score=0):
     if selection_type == "manual":
+        return "manual"
+    if selection_type == "auto" and int(contribution_damage or 0) > 0:
+        return "guardian_contribution_top"
+    if selection_type == "auto" and int(activity_score or 0) > 0:
+        return "activity_score_top"
+    if selection_type == "auto":
+        return "fallback"
+    return "unset"
+
+
+def _representative_selection_reason_label(reason_key, selection_type=None, contribution_damage=0):
+    key = str(reason_key or "").strip()
+    if key == "guardian_contribution_top":
+        return "今週の守護戦貢献トップ"
+    if key == "activity_score_top":
+        return "活動スコア上位"
+    if key == "manual":
         return "管理者選出"
+    if key == "fallback":
+        return "自動選出"
+    if not key:
+        return _representative_selection_reason_label(
+            _representative_selection_reason_key(selection_type, contribution_damage),
+            selection_type,
+            contribution_damage,
+        )
     return "代表未設定"
 
 
@@ -22624,7 +22649,12 @@ def _representative_view(row):
         "robot_image_path": row["robot_image_path"],
         "robot_image_url": _composed_image_url(row["robot_image_path"]) if has_request_context() else None,
         "selection_type": selection_type,
-        "selection_reason": _representative_selection_reason(selection_type, row["contribution_damage"]),
+        "selection_reason_key": row["selection_reason"] if "selection_reason" in row.keys() else "",
+        "selection_reason": _representative_selection_reason_label(
+            row["selection_reason"] if "selection_reason" in row.keys() else "",
+            selection_type,
+            row["contribution_damage"],
+        ),
         "contribution_damage": int(row["contribution_damage"] or 0),
         "activity_score": int(row["activity_score"] or 0),
         "is_active": bool(int(row["is_active"] or 0)),
@@ -22647,7 +22677,7 @@ def get_faction_representative_row(db, week_key, faction_key):
     ).fetchone()
 
 
-def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id=None, selection_type="manual"):
+def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id=None, selection_type="manual", selection_reason=None):
     wk = str(week_key or _world_week_key())
     _world_week_bounds(wk)
     key = _normalize_faction_key(faction_key)
@@ -22659,14 +22689,15 @@ def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id
             """
             INSERT INTO faction_representatives
             (week_key, faction_key, user_id, robot_id, robot_name, robot_image_path, selection_type,
-             contribution_damage, activity_score, is_active, created_at, updated_at)
-            VALUES (?, ?, NULL, NULL, NULL, NULL, 'unset', 0, 0, 0, ?, ?)
+             selection_reason, contribution_damage, activity_score, is_active, created_at, updated_at)
+            VALUES (?, ?, NULL, NULL, NULL, NULL, 'unset', 'unset', 0, 0, 0, ?, ?)
             ON CONFLICT(week_key, faction_key) DO UPDATE SET
                 user_id = NULL,
                 robot_id = NULL,
                 robot_name = NULL,
                 robot_image_path = NULL,
                 selection_type = 'unset',
+                selection_reason = 'unset',
                 contribution_damage = 0,
                 activity_score = 0,
                 is_active = 0,
@@ -22683,18 +22714,25 @@ def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id
         raise ValueError("invalid representative robot")
     contribution = get_user_guardian_contribution(db, int(user_id), wk)
     activity = get_user_weekly_faction_activity(db, int(user_id), wk)
+    selection_type = selection_type if selection_type in ("manual", "auto") else "manual"
+    reason_key = str(selection_reason or "").strip() or _representative_selection_reason_key(
+        selection_type,
+        contribution.get("total_damage"),
+        activity.get("activity_score"),
+    )
     db.execute(
         """
         INSERT INTO faction_representatives
         (week_key, faction_key, user_id, robot_id, robot_name, robot_image_path, selection_type,
-         contribution_damage, activity_score, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+         selection_reason, contribution_damage, activity_score, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         ON CONFLICT(week_key, faction_key) DO UPDATE SET
             user_id = excluded.user_id,
             robot_id = excluded.robot_id,
             robot_name = excluded.robot_name,
             robot_image_path = excluded.robot_image_path,
             selection_type = excluded.selection_type,
+            selection_reason = excluded.selection_reason,
             contribution_damage = excluded.contribution_damage,
             activity_score = excluded.activity_score,
             is_active = 1,
@@ -22707,7 +22745,8 @@ def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id
             int(robot["id"]),
             str(robot["name"] or "代表ロボ"),
             str(robot["composed_image_path"] or ""),
-            selection_type if selection_type in ("manual", "auto") else "manual",
+            selection_type,
+            reason_key,
             int(contribution.get("total_damage") or 0),
             int(activity.get("activity_score") or 0),
             now_text,
@@ -22717,16 +22756,29 @@ def set_faction_representative(db, week_key, faction_key, user_id=None, robot_id
     return get_faction_representative_row(db, wk, key)
 
 
-def auto_pick_faction_representatives(db, week_key=None, faction_key=None):
+def auto_pick_faction_representatives(db, week_key=None, faction_key=None, overwrite=False):
     wk = str(week_key or _world_week_key())
     _world_week_bounds(wk)
     targets = [_normalize_faction_key(faction_key)] if faction_key else list(FACTION_KEYS)
     results = []
     for key in [k for k in targets if k]:
+        existing = get_faction_representative_row(db, wk, key)
+        if existing and int(existing["is_active"] or 0) == 1 and existing["user_id"] and not overwrite:
+            results.append({"faction_key": key, "selected": False, "skipped_existing": True, "representative_id": int(existing["id"])})
+            continue
         candidates = get_faction_representative_candidates(db, key, wk, limit=1)
         if candidates:
             candidate = candidates[0]
-            row = set_faction_representative(db, wk, key, candidate["user_id"], candidate["robot_id"], selection_type="auto")
+            reason_key = _representative_selection_reason_key("auto", candidate["contribution_damage"], candidate["activity_score"])
+            row = set_faction_representative(
+                db,
+                wk,
+                key,
+                candidate["user_id"],
+                candidate["robot_id"],
+                selection_type="auto",
+                selection_reason=reason_key,
+            )
             results.append({"faction_key": key, "selected": True, "representative_id": int(row["id"])})
         else:
             row = set_faction_representative(db, wk, key, None, None, selection_type="unset")
@@ -22768,6 +22820,7 @@ def get_faction_representatives_view(db, week_key=None):
                     "robot_image_path": None,
                     "robot_image_url": None,
                     "selection_type": "unset",
+                    "selection_reason_key": "unset",
                     "selection_reason": "代表未設定",
                     "contribution_damage": 0,
                     "activity_score": 0,
@@ -22844,18 +22897,23 @@ def simulate_faction_representative_match(db, rep_a, rep_b, week_key=None):
     max_hp = dict(hp)
     dealt = {a["faction_key"]: 0, b["faction_key"]: 0}
     battle_log = []
-    first, second = (a, b) if a["stats"]["spd"] >= b["stats"]["spd"] else (b, a)
+    if int(a["stats"]["spd"]) > int(b["stats"]["spd"]) or (
+        int(a["stats"]["spd"]) == int(b["stats"]["spd"]) and a["faction_key"] <= b["faction_key"]
+    ):
+        first, second = a, b
+    else:
+        first, second = b, a
     for turn in range(1, 11):
         for actor, target in ((first, second), (second, first)):
             if hp[target["faction_key"]] <= 0:
                 continue
-            hit_rate = min(95, max(50, 78 + actor["stats"]["acc"] // 10 - target["stats"]["spd"] // 20))
+            hit_rate = min(95, max(50, int(75 + (int(actor["stats"]["acc"]) - int(target["stats"]["spd"])) * 0.3)))
             hit = _representative_roll(turn * 31 + int(actor["user_id"] or 0) + int(target["robot_id"] or 0)) < hit_rate
-            critical_rate = min(35, max(3, 5 + actor["stats"]["cri"] // 20))
+            critical_rate = min(30, max(3, int(int(actor["stats"]["cri"]) * 0.2)))
             critical = bool(hit and _representative_roll(turn * 47 + int(actor["robot_id"] or 0)) < critical_rate)
             damage = 0
             if hit:
-                damage = max(1, int(actor["stats"]["atk"]) - int(target["stats"]["def"]) // 2)
+                damage = max(1, int(int(actor["stats"]["atk"]) - int(target["stats"]["def"]) * 0.45))
                 if critical:
                     damage = max(1, int(damage * 1.5))
                 hp[target["faction_key"]] = max(0, hp[target["faction_key"]] - damage)
@@ -22864,7 +22922,10 @@ def simulate_faction_representative_match(db, rep_a, rep_b, week_key=None):
                 {
                     "turn": turn,
                     "actor": actor["faction_key"],
+                    "actor_faction": actor["faction_key"],
+                    "actor_name": actor.get("display_name") or actor.get("username") or actor["faction_name"],
                     "target": target["faction_key"],
+                    "target_faction": target["faction_key"],
                     "hit": bool(hit),
                     "critical": bool(critical),
                     "damage": int(damage),
@@ -35399,7 +35460,7 @@ def admin_faction_representatives_auto_pick():
     week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
     faction_key = _normalize_faction_key(request.form.get("faction_key"))
     try:
-        result = auto_pick_faction_representatives(db, week_key, faction_key=faction_key)
+        result = auto_pick_faction_representatives(db, week_key, faction_key=faction_key, overwrite=True)
     except Exception:
         flash("代表を自動選出できませんでした。", "error")
         return redirect(url_for("admin_faction_representatives", week_key=week_key))

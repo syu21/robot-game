@@ -112,15 +112,25 @@ class FactionRepresentativeMatchTests(unittest.TestCase):
     def test_auto_pick_uses_contribution_then_activity(self):
         with game_app.app.app_context():
             db = game_app.get_db()
+            rep_cols = {row["name"] for row in db.execute("PRAGMA table_info(faction_representatives)").fetchall()}
+            match_cols = {row["name"] for row in db.execute("PRAGMA table_info(faction_representative_matches)").fetchall()}
+            self.assertIn("selection_reason", rep_cols)
+            self.assertIn("battle_log_json", match_cols)
             result = game_app.auto_pick_faction_representatives(db, self.week_key, faction_key="aurix")
             self.assertEqual(result["selected_count"], 1)
             rep = game_app.get_faction_representative_row(db, self.week_key, "aurix")
             self.assertEqual(rep["user_id"], self.aurix_top)
+            self.assertEqual(rep["selection_reason"], "guardian_contribution_top")
 
             db.execute("DELETE FROM faction_guardian_attacks WHERE attacker_faction_key = 'aurix'")
-            game_app.auto_pick_faction_representatives(db, self.week_key, faction_key="aurix")
+            skipped = game_app.auto_pick_faction_representatives(db, self.week_key, faction_key="aurix")
+            self.assertEqual(skipped["selected_count"], 0)
+            rep = game_app.get_faction_representative_row(db, self.week_key, "aurix")
+            self.assertEqual(rep["user_id"], self.aurix_top)
+            game_app.auto_pick_faction_representatives(db, self.week_key, faction_key="aurix", overwrite=True)
             rep = game_app.get_faction_representative_row(db, self.week_key, "aurix")
             self.assertEqual(rep["user_id"], self.aurix_active)
+            self.assertEqual(rep["selection_reason"], "activity_score_top")
 
     def test_manual_set_validates_faction_and_robot_owner(self):
         with game_app.app.app_context():
@@ -151,6 +161,10 @@ class FactionRepresentativeMatchTests(unittest.TestCase):
             self.assertTrue(all(row["result_status"] in ("completed", "skipped") for row in rows))
             self.assertTrue(any(row["winner_faction_key"] for row in rows))
             self.assertTrue(any(json.loads(row["battle_log_json"] or "[]") for row in rows))
+            before_stats = db.execute("SELECT style_stats_json FROM robot_instances WHERE user_id = ?", (self.aurix_top,)).fetchone()["style_stats_json"]
+            game_app.run_faction_representative_matches(db, self.week_key)
+            after_stats = db.execute("SELECT style_stats_json FROM robot_instances WHERE user_id = ?", (self.aurix_top,)).fetchone()["style_stats_json"]
+            self.assertEqual(before_stats, after_stats)
             event_count = db.execute(
                 "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ?",
                 (game_app.FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,),

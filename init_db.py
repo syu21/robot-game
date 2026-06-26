@@ -1951,6 +1951,7 @@ def main():
             robot_name TEXT,
             robot_image_path TEXT,
             selection_type TEXT NOT NULL DEFAULT 'manual',
+            selection_reason TEXT,
             contribution_damage INTEGER NOT NULL DEFAULT 0,
             activity_score INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -1960,6 +1961,9 @@ def main():
         )
         """
     )
+    rep_cols = {row[1] for row in cur.execute("PRAGMA table_info(faction_representatives)").fetchall()}
+    if "selection_reason" not in rep_cols:
+        cur.execute("ALTER TABLE faction_representatives ADD COLUMN selection_reason TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS faction_representative_matches (
