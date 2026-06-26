@@ -11418,6 +11418,53 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_facilities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_key TEXT NOT NULL UNIQUE,
+            facility_key TEXT NOT NULL,
+            facility_name TEXT NOT NULL,
+            description TEXT,
+            level INTEGER NOT NULL DEFAULT 1,
+            current_exp INTEGER NOT NULL DEFAULT 0,
+            next_level_exp INTEGER NOT NULL DEFAULT 100,
+            total_exp INTEGER NOT NULL DEFAULT 0,
+            visual_tier INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_facility_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL DEFAULT 0,
+            source_event_type TEXT NOT NULL,
+            source_event_id INTEGER NOT NULL DEFAULT 0,
+            material_amount INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            UNIQUE(source_event_type, source_event_id, user_id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_facility_level_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_key TEXT NOT NULL,
+            facility_key TEXT NOT NULL,
+            old_level INTEGER NOT NULL,
+            new_level INTEGER NOT NULL,
+            total_exp INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -12986,6 +13033,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_duels_week ON faction_guardian_duels(week_key, result_status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_week_faction ON faction_facility_contributions(week_key, faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_user_week ON faction_facility_contributions(user_id, week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_level_logs_faction_created ON faction_facility_level_logs(faction_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")
@@ -21985,6 +22035,7 @@ def finalize_faction_weekly_missions(db, week_key=None):
 
 FACTION_GUARDIAN_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_RESULT"
 FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_DUEL_RESULT"
+FACTION_FACILITY_LEVEL_UP_EVENT_TYPE = "FACTION_FACILITY_LEVEL_UP"
 FACTION_GUARDIAN_MAX_HP = 1000
 FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
@@ -22048,6 +22099,28 @@ FACTION_REPRESENTATIVE_STRATEGY_STAT_BONUS = {
 }
 FACTION_REPRESENTATIVE_MATCHUPS = (("aurix", "ignis"), ("ignis", "ventra"), ("ventra", "aurix"))
 FACTION_GUARDIAN_DUEL_MATCHUPS = FACTION_REPRESENTATIVE_MATCHUPS
+FACTION_FACILITY_DEFS = {
+    "aurix": {
+        "facility_key": "aurix_bastion_lab",
+        "facility_name": "オリクス防壁研究所",
+        "description": "守護・耐久・防衛データを蓄積する陣営施設。",
+    },
+    "ignis": {
+        "facility_key": "ignis_core_furnace",
+        "facility_name": "イグニス炉心実験炉",
+        "description": "火力・会心・突破データを蓄積する陣営施設。",
+    },
+    "ventra": {
+        "facility_key": "ventra_wind_observatory",
+        "facility_name": "ヴェントラ風洞観測塔",
+        "description": "速度・命中・観測データを蓄積する陣営施設。",
+    },
+}
+FACTION_FACILITY_EVENT_MATERIALS = {
+    AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: 20,
+    AUDIT_EVENT_TYPES["PART_EVOLVE"]: 10,
+}
 
 
 def get_faction_faith_profile(faction_key):
@@ -22074,6 +22147,349 @@ def get_faction_faith_profile(faction_key):
         },
     }
     return profiles.get(key, {"label": "未設定", "summary": "", "primary_stats": [], "stats": {}})
+
+
+def get_next_facility_exp(level):
+    level_num = max(1, int(level or 1))
+    base = {1: 100, 2: 250, 3: 500, 4: 900}
+    if level_num in base:
+        return base[level_num]
+    value = base[4]
+    for _ in range(5, level_num + 1):
+        value = int(math.ceil(value * 1.35))
+    return max(100, value)
+
+
+def get_facility_visual_tier(level):
+    level_num = max(1, int(level or 1))
+    if level_num >= 11:
+        return 5
+    if level_num >= 8:
+        return 4
+    if level_num >= 5:
+        return 3
+    if level_num >= 3:
+        return 2
+    return 1
+
+
+def _facility_def_for_faction(faction_key):
+    key = _normalize_faction_key(faction_key)
+    return FACTION_FACILITY_DEFS.get(key)
+
+
+def ensure_faction_facilities(db):
+    now_text = now_str()
+    created_count = 0
+    for faction_key in FACTION_KEYS:
+        facility_def = _facility_def_for_faction(faction_key)
+        if not facility_def:
+            continue
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_facilities
+            (faction_key, facility_key, facility_name, description, level, current_exp, next_level_exp,
+             total_exp, visual_tier, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, 0, ?, 0, 1, 1, ?, ?)
+            """,
+            (
+                faction_key,
+                facility_def["facility_key"],
+                facility_def["facility_name"],
+                facility_def["description"],
+                get_next_facility_exp(1),
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"created_count": created_count, "facilities": get_faction_facilities_view(db, sync=False)}
+
+
+def _facility_row_view(db, row, week_key):
+    level = max(1, int(row["level"] or 1))
+    current_exp = max(0, int(row["current_exp"] or 0))
+    next_exp = max(1, int(row["next_level_exp"] or get_next_facility_exp(level)))
+    faction_key = _normalize_faction_key(row["faction_key"])
+    weekly_material = db.execute(
+        """
+        SELECT COALESCE(SUM(material_amount), 0) AS total
+        FROM faction_facility_contributions
+        WHERE week_key = ? AND faction_key = ?
+        """,
+        (week_key, faction_key),
+    ).fetchone()
+    latest_log = db.execute(
+        """
+        SELECT * FROM faction_facility_level_logs
+        WHERE faction_key = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (faction_key,),
+    ).fetchone()
+    return {
+        "id": int(row["id"]),
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "facility_key": row["facility_key"],
+        "facility_name": row["facility_name"],
+        "description": row["description"] or "",
+        "level": level,
+        "current_exp": current_exp,
+        "next_level_exp": next_exp,
+        "total_exp": max(0, int(row["total_exp"] or 0)),
+        "visual_tier": max(1, int(row["visual_tier"] or get_facility_visual_tier(level))),
+        "progress_percent": min(100, int(math.floor(current_exp * 100 / next_exp))),
+        "remaining_exp": max(0, next_exp - current_exp),
+        "weekly_material_amount": int(weekly_material["total"] or 0),
+        "latest_level_log": dict(latest_log) if latest_log else None,
+    }
+
+
+def get_faction_facilities_view(db, week_key=None, *, sync=True):
+    wk = str(week_key or _world_week_key())
+    if sync:
+        ensure_faction_facilities(db)
+    rows = db.execute(
+        """
+        SELECT * FROM faction_facilities
+        WHERE is_active = 1
+        ORDER BY CASE faction_key WHEN 'ignis' THEN 1 WHEN 'ventra' THEN 2 WHEN 'aurix' THEN 3 ELSE 9 END
+        """
+    ).fetchall()
+    return [_facility_row_view(db, row, wk) for row in rows]
+
+
+def get_user_faction_facility_weekly_contribution(db, user_id, week_key=None):
+    row = db.execute(
+        """
+        SELECT COALESCE(SUM(material_amount), 0) AS total
+        FROM faction_facility_contributions
+        WHERE week_key = ? AND user_id = ?
+        """,
+        (str(week_key or _world_week_key()), int(user_id)),
+    ).fetchone()
+    return int(row["total"] or 0) if row else 0
+
+
+def get_faction_facility_weekly_contributors(db, faction_key, week_key=None, limit=5):
+    key = _normalize_faction_key(faction_key)
+    if not key:
+        return []
+    rows = db.execute(
+        """
+        SELECT c.user_id, COALESCE(SUM(c.material_amount), 0) AS material_amount,
+               u.username, u.display_name, u.is_admin
+        FROM faction_facility_contributions c
+        LEFT JOIN users u ON u.id = c.user_id
+        WHERE c.week_key = ? AND c.faction_key = ? AND c.user_id > 0
+        GROUP BY c.user_id
+        ORDER BY material_amount DESC, c.user_id ASC
+        LIMIT ?
+        """,
+        (str(week_key or _world_week_key()), key, int(limit)),
+    ).fetchall()
+    result = []
+    for rank, row in enumerate(rows, start=1):
+        result.append(
+            {
+                "rank": rank,
+                "user_id": int(row["user_id"]),
+                "display_name": _display_username_for_user_row(db, row),
+                "material_amount": int(row["material_amount"] or 0),
+            }
+        )
+    return result
+
+
+def grant_faction_facility_material(db, faction_key, user_id, source_event_type, source_event_id, material_amount, week_key=None):
+    key = _normalize_faction_key(faction_key)
+    amount = int(material_amount or 0)
+    uid = int(user_id or 0)
+    if not key or amount <= 0:
+        return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
+    ensure_faction_facilities(db)
+    source_type = str(source_event_type or "manual").strip() or "manual"
+    source_id = int(source_event_id or (time.time_ns() % 2147483647))
+    wk = str(week_key or _world_week_key())
+    now_text = now_str()
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO faction_facility_contributions
+        (week_key, faction_key, user_id, source_event_type, source_event_id, material_amount, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (wk, key, uid, source_type, source_id, amount, now_text),
+    )
+    if int(cur.rowcount or 0) == 0:
+        return {"granted": False, "skipped_duplicate": True, "material_amount": 0, "level_ups": []}
+    row = db.execute("SELECT * FROM faction_facilities WHERE faction_key = ? LIMIT 1", (key,)).fetchone()
+    if not row:
+        return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
+    facility_key = row["facility_key"]
+    level = max(1, int(row["level"] or 1))
+    current_exp = max(0, int(row["current_exp"] or 0)) + amount
+    total_exp = max(0, int(row["total_exp"] or 0)) + amount
+    level_ups = []
+    next_exp = max(1, int(row["next_level_exp"] or get_next_facility_exp(level)))
+    while current_exp >= next_exp:
+        old_level = level
+        current_exp -= next_exp
+        level += 1
+        next_exp = get_next_facility_exp(level)
+        level_ups.append({"old_level": old_level, "new_level": level})
+        db.execute(
+            """
+            INSERT INTO faction_facility_level_logs
+            (faction_key, facility_key, old_level, new_level, total_exp, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (key, facility_key, old_level, level, total_exp, now_text),
+        )
+    visual_tier = get_facility_visual_tier(level)
+    db.execute(
+        """
+        UPDATE faction_facilities
+        SET level = ?, current_exp = ?, next_level_exp = ?, total_exp = ?, visual_tier = ?, updated_at = ?
+        WHERE faction_key = ?
+        """,
+        (level, current_exp, next_exp, total_exp, visual_tier, now_text, key),
+    )
+    if level_ups:
+        _world_event_log(
+            db,
+            FACTION_FACILITY_LEVEL_UP_EVENT_TYPE,
+            {
+                "week_key": wk,
+                "faction_key": key,
+                "faction_name": FACTION_LABELS.get(key, key),
+                "facility_key": facility_key,
+                "facility_name": row["facility_name"],
+                "old_level": int(level_ups[0]["old_level"]),
+                "new_level": int(level_ups[-1]["new_level"]),
+                "total_exp": total_exp,
+                "visual_tier": visual_tier,
+            },
+        )
+    return {
+        "granted": True,
+        "skipped_duplicate": False,
+        "material_amount": amount,
+        "level_ups": level_ups,
+        "new_level": level,
+        "current_exp": current_exp,
+        "total_exp": total_exp,
+    }
+
+
+def _facility_material_amount_for_event(event_type, payload):
+    if event_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+        if payload and payload.get("success") is False:
+            return 0
+    return int(FACTION_FACILITY_EVENT_MATERIALS.get(event_type, 0) or 0)
+
+
+def _event_week_key_from_created_at(created_at):
+    try:
+        dt = datetime.fromtimestamp(int(created_at or time.time()), JST)
+        return dt.strftime("%G-W%V")
+    except Exception:
+        return _world_week_key()
+
+
+def _week_bounds_as_timestamps(week_key):
+    start_value, end_value = _world_week_bounds(week_key)
+    if isinstance(start_value, datetime):
+        start_ts = int(start_value.timestamp())
+    else:
+        start_ts = int(start_value)
+    if isinstance(end_value, datetime):
+        end_ts = int(end_value.timestamp())
+    else:
+        end_ts = int(end_value)
+    return start_ts, end_ts
+
+
+def grant_facility_material_for_audit_event(db, event_row):
+    if not event_row or event_row["user_id"] is None:
+        return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
+    try:
+        payload = json.loads(event_row["payload_json"] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    amount = _facility_material_amount_for_event(event_row["event_type"], payload)
+    if amount <= 0:
+        return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
+    user = db.execute("SELECT id, faction FROM users WHERE id = ? LIMIT 1", (int(event_row["user_id"]),)).fetchone()
+    faction_key = _normalize_faction_key(user["faction"] if user else None)
+    if not faction_key:
+        return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
+    return grant_faction_facility_material(
+        db,
+        faction_key,
+        int(event_row["user_id"]),
+        event_row["event_type"],
+        int(event_row["id"]),
+        amount,
+        week_key=_event_week_key_from_created_at(event_row["created_at"]),
+    )
+
+
+def sync_faction_facility_materials(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    start_ts, end_ts = _week_bounds_as_timestamps(wk)
+    ensure_faction_facilities(db)
+    event_types = tuple(FACTION_FACILITY_EVENT_MATERIALS.keys())
+    placeholders = ",".join("?" for _ in event_types)
+    rows = db.execute(
+        f"""
+        SELECT *
+        FROM world_events_log
+        WHERE event_type IN ({placeholders})
+          AND created_at >= ?
+          AND created_at < ?
+          AND user_id IS NOT NULL
+        ORDER BY id ASC
+        """,
+        (*event_types, start_ts, end_ts),
+    ).fetchall()
+    granted = 0
+    skipped = 0
+    material_total = 0
+    for row in rows:
+        result = grant_facility_material_for_audit_event(db, row)
+        if result.get("granted"):
+            granted += 1
+            material_total += int(result.get("material_amount") or 0)
+        elif result.get("skipped_duplicate"):
+            skipped += 1
+    attack_rows = db.execute(
+        """
+        SELECT *
+        FROM faction_guardian_attacks
+        WHERE week_key = ?
+        ORDER BY id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    for row in attack_rows:
+        amount = max(1, int(math.floor(int(row["damage"] or 0) * 0.2)))
+        result = grant_faction_facility_material(
+            db,
+            row["attacker_faction_key"],
+            int(row["attacker_user_id"]),
+            "faction_guardian_attack",
+            int(row["id"]),
+            amount,
+            week_key=wk,
+        )
+        if result.get("granted"):
+            granted += 1
+            material_total += int(result.get("material_amount") or 0)
+        elif result.get("skipped_duplicate"):
+            skipped += 1
+    return {"week_key": wk, "granted_count": granted, "skipped_duplicate_count": skipped, "material_total": material_total}
 
 
 def get_guardian_target_faction(attacker_faction_key, week_key=None):
@@ -26423,9 +26839,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -26435,6 +26851,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_MISSION_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE,
+    FACTION_FACILITY_LEVEL_UP_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
@@ -26876,6 +27293,16 @@ def _feed_card_from_event(db, row):
                 card["meta_lines"].append(f"{a_name}守護機 vs {b_name}守護機: 演習見送り")
         if not card["meta_lines"]:
             card["meta_lines"].append("守護機演習結果は世界戦況から確認できます。")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_FACILITY_LEVEL_UP_EVENT_TYPE:
+        faction_key = _normalize_faction_key(payload.get("faction_key"))
+        facility_name = str(payload.get("facility_name") or "陣営施設").strip()
+        new_level = int(payload.get("new_level") or 1)
+        tier = int(payload.get("visual_tier") or get_facility_visual_tier(new_level))
+        card["headline"] = "陣営施設"
+        card["accent"] = "weekly"
+        card["text"] = f"{FACTION_LABELS.get(faction_key, '陣営')}の{facility_name}が Lv.{new_level} に成長しました。"
+        card["meta_lines"] = [f"外観段階: {tier}", f"累計資材: {int(payload.get('total_exp') or 0)}"]
         card["link_url"] = url_for("world_view")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
@@ -35452,6 +35879,9 @@ def _faction_page_context(db, user):
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
     faction_guardian_duels = get_faction_guardian_duels_view(db, current_week_key)
+    sync_faction_facility_materials(db, current_week_key)
+    faction_facilities = get_faction_facilities_view(db, current_week_key)
+    faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
     faction_representatives = get_faction_representatives_view(db, current_week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
     faction_representative_matches = get_faction_representative_matches_view(db, current_week_key)
@@ -35485,6 +35915,10 @@ def _faction_page_context(db, user):
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
         "my_guardian_target": faction_guardians_by_key.get(guardian_target_key) if guardian_target_key else None,
         "faction_guardian_duels": faction_guardian_duels,
+        "faction_facilities": faction_facilities,
+        "my_faction_facility": faction_facilities_by_key.get(user_faction) if user_faction else None,
+        "my_facility_contribution": get_user_faction_facility_weekly_contribution(db, int(user["id"]), current_week_key) if user_faction else 0,
+        "facility_contribution_ranking": get_faction_facility_weekly_contributors(db, user_faction, current_week_key, limit=5) if user_faction else [],
         "faction_representatives": faction_representatives,
         "my_faction_representative": faction_representatives_by_key.get(user_faction) if user_faction else None,
         "faction_representative_matches": faction_representative_matches,
@@ -36343,6 +36777,124 @@ def admin_faction_guardian_duels_run():
     return redirect(url_for("admin_faction_guardian_duels", week_key=result["week_key"]))
 
 
+@app.route("/admin/factions/facilities")
+@login_required
+def admin_faction_facilities():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        sync_result = sync_faction_facility_materials(db, week_key)
+        facilities = get_faction_facilities_view(db, week_key)
+        contributors = {
+            row["faction_key"]: get_faction_facility_weekly_contributors(db, row["faction_key"], week_key, limit=10)
+            for row in facilities
+        }
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_facilities.html",
+        week_key=week_key,
+        facilities=facilities,
+        contributors=contributors,
+        sync_result=sync_result,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/facilities/ensure", methods=["POST"])
+@login_required
+def admin_faction_facilities_ensure():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    result = ensure_faction_facilities(db)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_FACILITY_ENSURE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_facility_ensure",
+        entity_type="faction_facilities",
+        payload={"created_count": int(result["created_count"]), "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営施設を確認しました（新規 {result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_facilities", week_key=(request.form.get("week_key") or _world_week_key())))
+
+
+@app.route("/admin/factions/facilities/recalculate", methods=["POST"])
+@login_required
+def admin_faction_facilities_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    result = sync_faction_facility_materials(db, week_key)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_FACILITY_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_facility_recalculate",
+        entity_type="faction_facilities",
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"施設資材を同期しました（新規 {result['granted_count']}件 / 資材 {result['material_total']}）。", "notice")
+    return redirect(url_for("admin_faction_facilities", week_key=week_key))
+
+
+@app.route("/admin/factions/facilities/grant", methods=["POST"])
+@login_required
+def admin_faction_facilities_grant():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    try:
+        amount = max(1, min(10000, int(request.form.get("material_amount") or 0)))
+        result = grant_faction_facility_material(
+            db,
+            faction_key,
+            0,
+            "admin.faction_facility.grant",
+            int(time.time_ns() % 2147483647),
+            amount,
+            week_key=week_key,
+        )
+    except Exception:
+        flash("資材付与に失敗しました。", "error")
+        return redirect(url_for("admin_faction_facilities", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_FACILITY_GRANT"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_facility_grant",
+        entity_type="faction_facilities",
+        entity_id=faction_key,
+        payload={
+            "week_key": week_key,
+            "faction_key": faction_key,
+            "material_amount": amount,
+            "granted": bool(result.get("granted")),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"{FACTION_LABELS.get(faction_key, faction_key)}に施設資材 {amount} を付与しました。", "notice")
+    return redirect(url_for("admin_faction_facilities", week_key=week_key))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -36548,6 +37100,8 @@ def world_view():
     faction_weekly_missions = get_faction_weekly_missions(db, week_key)
     faction_guardians = get_faction_guardians_view(db, week_key)
     faction_guardian_duels = get_faction_guardian_duels_view(db, week_key)
+    sync_faction_facility_materials(db, week_key)
+    faction_facilities = get_faction_facilities_view(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     faction_representatives = get_faction_representatives_view(db, week_key)
@@ -36573,6 +37127,7 @@ def world_view():
         faction_weekly_missions=faction_weekly_missions,
         faction_guardians=faction_guardians,
         faction_guardian_duels=faction_guardian_duels,
+        faction_facilities=faction_facilities,
         guardian_highlight_logs=guardian_highlight_logs,
         faction_strategy_statuses=faction_strategy_statuses,
         faction_representatives=faction_representatives,
@@ -36900,6 +37455,9 @@ def comms_faction():
         row for row in get_faction_guardian_duels_view(db, week_key)
         if user_faction and user_faction in (row["faction_a_key"], row["faction_b_key"])
     ]
+    sync_faction_facility_materials(db, week_key)
+    faction_facilities = get_faction_facilities_view(db, week_key)
+    faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
@@ -36907,6 +37465,7 @@ def comms_faction():
         row for row in get_faction_representative_matches_view(db, week_key)
         if user_faction and user_faction in (row["faction_a_key"], row["faction_b_key"])
     ]
+    db.commit()
     return render_template(
         "comms_faction.html",
         message=session.pop("message", None),
@@ -36925,6 +37484,9 @@ def comms_faction():
         guardian_comms_summary=guardian_comms_summary,
         my_faction_guardian=faction_guardians_by_key.get(user_faction) if user_faction else None,
         faction_guardian_duels=faction_guardian_duels,
+        my_faction_facility=faction_facilities_by_key.get(user_faction) if user_faction else None,
+        my_facility_contribution=get_user_faction_facility_weekly_contribution(db, int(user["id"]), week_key) if user_faction else 0,
+        facility_contribution_ranking=get_faction_facility_weekly_contributors(db, user_faction, week_key, limit=5) if user_faction else [],
         faction_strategy_status=faction_strategy_status,
         my_faction_representative=faction_representatives_by_key.get(user_faction) if user_faction else None,
         faction_representative_matches=faction_representative_matches,

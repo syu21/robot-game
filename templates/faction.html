@@ -25,6 +25,35 @@
 </div>
 
 <section class="panel">
+  <h2>陣営施設</h2>
+  {% if user_faction and my_faction_facility %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div class="comms-status-badge">{{ my_faction_facility['faction_name'] }}施設</div>
+      <h3>{{ my_faction_facility['facility_name'] }} Lv.{{ my_faction_facility['level'] }}</h3>
+      <div class="upgrade-cost">{{ my_faction_facility['description'] }}</div>
+      <progress value="{{ my_faction_facility['progress_percent'] }}" max="100"></progress>
+      <div class="upgrade-cost">{{ my_faction_facility['current_exp'] }} / {{ my_faction_facility['next_level_exp'] }}、残り {{ my_faction_facility['remaining_exp'] }}</div>
+      <div class="robot-part">あなたの今週資材: {{ my_facility_contribution }}</div>
+    </div>
+    <div class="card">
+      <h3>陣営内資材ランキング</h3>
+      <ul class="ranking-mini">
+        {% for contributor in facility_contribution_ranking %}
+        <li><span>{{ contributor['rank'] }}. {{ contributor['display_name'] }}</span><span>{{ contributor['material_amount'] }}</span></li>
+        {% else %}
+        <li><span>まだ記録なし</span><span>0</span></li>
+        {% endfor %}
+      </ul>
+      <div class="upgrade-cost">出撃 +1 / ボス撃破 +20 / 進化成功 +10 / 守護戦ダメージの20%</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">陣営に所属すると、共同研究で施設資材を集められます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営作戦</h2>
   {% if user_faction and faction_strategy_status %}
   <p class="upgrade-cost">{{ faction_strategy_status['faction_name'] }}の今週の作戦を投票で決めます。投票は週に1回です。陣営を変更しても、同じ週に再投票はできません。</p>

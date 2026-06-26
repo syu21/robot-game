@@ -1933,6 +1933,53 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_facilities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_key TEXT NOT NULL UNIQUE,
+            facility_key TEXT NOT NULL,
+            facility_name TEXT NOT NULL,
+            description TEXT,
+            level INTEGER NOT NULL DEFAULT 1,
+            current_exp INTEGER NOT NULL DEFAULT 0,
+            next_level_exp INTEGER NOT NULL DEFAULT 100,
+            total_exp INTEGER NOT NULL DEFAULT 0,
+            visual_tier INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_facility_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL DEFAULT 0,
+            source_event_type TEXT NOT NULL,
+            source_event_id INTEGER NOT NULL DEFAULT 0,
+            material_amount INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            UNIQUE(source_event_type, source_event_id, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_facility_level_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            faction_key TEXT NOT NULL,
+            facility_key TEXT NOT NULL,
+            old_level INTEGER NOT NULL,
+            new_level INTEGER NOT NULL,
+            total_exp INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -3257,6 +3304,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_duels_week ON faction_guardian_duels(week_key, result_status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_week_faction ON faction_facility_contributions(week_key, faction_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_user_week ON faction_facility_contributions(user_id, week_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_level_logs_faction_created ON faction_facility_level_logs(faction_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")

@@ -63,6 +63,22 @@
 </section>
 
 <section class="panel">
+  <h2>陣営施設状況</h2>
+  <p class="upgrade-cost">共同研究で育つ長期施設です。v1では通常戦闘の強さには影響しません。</p>
+  <div class="showcase-grid">
+    {% for facility in faction_facilities %}
+    <div class="card">
+      <div><b>{{ facility['faction_name'] }}</b> <span class="weekly-fit-badge">Tier {{ facility['visual_tier'] }}</span></div>
+      <div class="robot-part">{{ facility['facility_name'] }} Lv.{{ facility['level'] }}</div>
+      <progress value="{{ facility['progress_percent'] }}" max="100"></progress>
+      <div class="upgrade-cost">{{ facility['current_exp'] }} / {{ facility['next_level_exp'] }}、残り {{ facility['remaining_exp'] }}</div>
+      <div class="upgrade-cost">累計 {{ facility['total_exp'] }} / 今週 {{ facility['weekly_material_amount'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>今週の陣営作戦</h2>
   <p class="upgrade-cost">各陣営が今週の守護戦へどう研究データを反映するかを表示します。通常戦闘の強さには影響しません。</p>
   <div class="showcase-grid">

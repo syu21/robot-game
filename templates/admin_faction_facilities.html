@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営施設管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_facilities') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_facilities_ensure') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">施設を確認</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_facilities_recalculate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">資材を同期</button>
+  </form>
+  <p class="upgrade-cost">同期結果: 新規 {{ sync_result['granted_count'] }}件 / 重複 {{ sync_result['skipped_duplicate_count'] }}件 / 資材 {{ sync_result['material_total'] }}</p>
+</div>
+
+<section class="panel">
+  <h2>手動付与</h2>
+  <form method="post" action="{{ url_for('admin_faction_facilities_grant') }}" class="card">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <label>陣営
+      <select name="faction_key" required>
+        {% for key, label in faction_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>資材
+      <input type="number" name="material_amount" min="1" max="10000" value="10" required />
+    </label>
+    <button type="submit">付与</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>施設状況</h2>
+  <div class="showcase-grid">
+    {% for facility in facilities %}
+    <div class="card">
+      <div><b>{{ facility['faction_name'] }}</b> <span class="weekly-fit-badge">Tier {{ facility['visual_tier'] }}</span></div>
+      <div class="robot-part">{{ facility['facility_name'] }} Lv.{{ facility['level'] }}</div>
+      <div class="upgrade-cost">{{ facility['description'] }}</div>
+      <progress value="{{ facility['progress_percent'] }}" max="100"></progress>
+      <div class="upgrade-cost">{{ facility['current_exp'] }} / {{ facility['next_level_exp'] }}、残り {{ facility['remaining_exp'] }}</div>
+      <div class="upgrade-cost">累計 {{ facility['total_exp'] }} / 今週 {{ facility['weekly_material_amount'] }}</div>
+      <h3>今週の貢献</h3>
+      <ul class="ranking-mini">
+        {% for contributor in contributors.get(facility['faction_key'], []) %}
+        <li><span>{{ contributor['rank'] }}. {{ contributor['display_name'] }}</span><span>{{ contributor['material_amount'] }}</span></li>
+        {% else %}
+        <li><span>まだ記録なし</span><span>0</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

@@ -45,6 +45,26 @@
 
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>陣営施設</h2>
+    {% if my_faction_facility %}
+    <p class="robot-part">{{ my_faction_facility['facility_name'] }} Lv.{{ my_faction_facility['level'] }}</p>
+    <progress value="{{ my_faction_facility['progress_percent'] }}" max="100"></progress>
+    <p class="upgrade-cost">次のLvまで {{ my_faction_facility['remaining_exp'] }} / あなたの今週資材 {{ my_facility_contribution }}</p>
+    <ul class="ranking-mini">
+      {% for contributor in facility_contribution_ranking %}
+      <li><span>{{ contributor['rank'] }}. {{ contributor['display_name'] }}</span><span>{{ contributor['material_amount'] }}</span></li>
+      {% else %}
+      <li><span>まだ記録なし</span><span>0</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>陣営に所属すると、共同研究で施設資材を集められます。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">施設状況を見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>今週の守護機演習</h2>
     {% if my_faction_guardian and my_faction_guardian['source_type'] != 'unset' %}
     <p class="robot-part">{{ user_faction_label }}守護機「{{ my_faction_guardian['guardian_name'] }}」</p>
