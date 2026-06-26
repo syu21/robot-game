@@ -244,6 +244,14 @@
   - `FACTION_REPRESENTATIVE_MATCH_RESULT`
 - 代表模擬戦は週次の非同期イベント。通常出撃、ボス戦、本編ステータス、報酬には影響させない。
 
+### 守護機演習
+- 管理者操作:
+  - `audit.faction.guardian_duel.generate`
+  - `audit.faction.guardian_duel.run`
+- 公開世界ログ:
+  - `FACTION_GUARDIAN_DUEL_RESULT`
+- 守護機演習は投稿ロボ由来の守護機を使う週次模擬戦。投稿ロボの本編性能、通常出撃、ボス戦、本編ステータス、報酬には影響させない。
+
 ## 5. payload方針
 - 表示用テキストだけでなく、再計算可能な値を保持
 - 追加は可、既存キーの意味変更は不可
@@ -327,6 +335,7 @@
 - 陣営週間ミッションの公開世界ログ `FACTION_MISSION_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営守護戦の公開世界ログ `FACTION_GUARDIAN_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営代表模擬戦の公開世界ログ `FACTION_REPRESENTATIVE_MATCH_RESULT` は `week_key` ごとに1件だけ作成する。
+- 守護機演習の公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

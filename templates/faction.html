@@ -116,6 +116,50 @@
 </section>
 
 <section class="panel">
+  <h2>今週の守護機演習</h2>
+  <p class="upgrade-cost">投稿ロボから選ばれた守護機同士の週次模擬戦です。本編ステータスには影響しません。</p>
+  {% if user_faction and my_faction_guardian %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div class="comms-status-badge">{{ my_faction_guardian['faction_name'] }}守護機</div>
+      <div class="robot-part">{{ my_faction_guardian['guardian_name'] }}</div>
+      {% if my_faction_guardian['image_url'] %}
+      <img class="robot-thumb" src="{{ my_faction_guardian['image_url'] }}" alt="{{ my_faction_guardian['guardian_name'] }}" loading="lazy" decoding="async" />
+      {% endif %}
+      <div class="upgrade-cost">作者: {{ my_faction_guardian['author_name'] or '-' }}</div>
+      <div class="upgrade-cost">信仰: {{ my_faction_guardian['faith_profile'].get('label', '未設定') }}</div>
+      {% if my_faction_guardian['submission_url'] %}<div class="link"><a href="{{ my_faction_guardian['submission_url'] }}">守護機の投稿を見る</a></div>{% endif %}
+    </div>
+    <div class="card">
+      <h3>演習予定・結果</h3>
+      <ul class="ranking-mini">
+        {% for duel in faction_guardian_duels %}
+        {% if duel['faction_a_key'] == user_faction or duel['faction_b_key'] == user_faction %}
+        <li>
+          <span>{{ duel['faction_a_name'] }}守護機 vs {{ duel['faction_b_name'] }}守護機</span>
+          <span>{% if duel['winner_faction_name'] %}{{ duel['winner_faction_name'] }}優勢{% elif duel['result_status'] == 'skipped' %}見送り{% else %}予定{% endif %}</span>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% for duel in faction_guardian_duels %}
+      {% if (duel['faction_a_key'] == user_faction or duel['faction_b_key'] == user_faction) and duel['battle_log'] %}
+      <div class="upgrade-cost">{{ duel['summary_text'] }}</div>
+      {% for log in duel['battle_log'] %}
+      {% if loop.index <= 3 %}
+      <div class="upgrade-cost">演習ログ: {{ log['actor_guardian_name'] }} → {{ log['target_guardian_name'] }} / {{ log['damage'] }}</div>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card">今週の守護機演習は準備中です。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営特典</h2>
   <p class="upgrade-cost">今週少しでも研究活動を行うと、陣営参加バッジと小さなコインを受け取れます。戦闘ステータスへの補正はありません。</p>
   {% if user_faction %}

@@ -115,6 +115,28 @@
 </section>
 
 <section class="panel">
+  <h2>今週の守護機演習</h2>
+  <p class="upgrade-cost">投稿ロボから選ばれた各陣営の守護機による週次模擬戦です。本編ステータスには影響しません。</p>
+  <div class="showcase-grid">
+    {% for duel in faction_guardian_duels %}
+    <div class="card">
+      <div><b>{{ duel['faction_a_name'] }}守護機 vs {{ duel['faction_b_name'] }}守護機</b></div>
+      {% if duel['winner_faction_name'] %}
+      <div class="robot-part">{{ duel['winner_faction_name'] }}守護機が優勢</div>
+      <div class="upgrade-cost">{{ duel['summary_text'] }}</div>
+      {% elif duel['result_status'] == 'skipped' %}
+      <div class="robot-part">演習見送り</div>
+      <div class="upgrade-cost">{{ duel['summary_text'] }}</div>
+      {% else %}
+      <div class="robot-part">演習待ち</div>
+      <div class="upgrade-cost">守護機演習カードの確定を待っています。</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>陣営守護戦</h2>
   <p class="upgrade-cost">実験室投稿から選ばれた守護機の解析状況です。現在は勝敗報酬や戦闘補正はありません。</p>
   {% if faction_guardians %}

@@ -576,6 +576,16 @@
 - 公開世界ログ `FACTION_REPRESENTATIVE_MATCH_RESULT` は週1件だけ作成する。
 - 本編ステータス、通常出撃、ボス戦、報酬には影響しない。
 
+## 陣営守護機 vs 守護機の自動決戦 v1
+- `faction_guardian_duels` に週ごとの守護機演習カードと演習ログを保存する。
+- 対戦カードは `aurix vs ignis` / `ignis vs ventra` / `ventra vs aurix` の総当たり。
+- 守護機演習は投稿ロボ由来の見た目を使うが、投稿ロボの本編性能は使わない。
+- 守護機ステータスは `faith_profile_json` と陣営信仰ステータスから生成し、確定済み陣営作戦を演習内だけ軽く反映する。
+- 管理者は `/admin/factions/guardian-duels` でカード生成と演習実行を行う。
+- `/faction`、`/world`、`/comms/faction` に守護機演習の予定・結果・短い演習ログを表示する。
+- 公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は週1件だけ作成する。
+- プレイヤー本編ステータス、投稿ロボデータ、通常出撃、ボス戦、観測塔、報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

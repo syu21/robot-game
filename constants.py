@@ -262,6 +262,8 @@ AUDIT_EVENT_TYPES = {
     "FACTION_GUARDIAN_AUTO_PICK": "audit.faction.guardian.auto_pick",
     "FACTION_GUARDIAN_RECALCULATE": "audit.faction.guardian.recalculate",
     "FACTION_GUARDIAN_FINALIZE": "audit.faction.guardian.finalize",
+    "FACTION_GUARDIAN_DUEL_GENERATE": "audit.faction.guardian_duel.generate",
+    "FACTION_GUARDIAN_DUEL_RUN": "audit.faction.guardian_duel.run",
     "FACTION_STRATEGY_VOTE": "audit.faction.strategy.vote",
     "FACTION_STRATEGY_FINALIZE": "audit.faction.strategy.finalize",
     "FACTION_REPRESENTATIVE_AUTO_PICK": "audit.faction.representative.auto_pick",

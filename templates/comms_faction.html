@@ -45,6 +45,28 @@
 
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の守護機演習</h2>
+    {% if my_faction_guardian and my_faction_guardian['source_type'] != 'unset' %}
+    <p class="robot-part">{{ user_faction_label }}守護機「{{ my_faction_guardian['guardian_name'] }}」</p>
+    <p class="upgrade-cost">守護機同士の演習で防衛データを確認します。</p>
+    {% else %}
+    <p>今週の守護機演習は準備中です。</p>
+    {% endif %}
+    {% if faction_guardian_duels %}
+    <ul class="ranking-mini">
+      {% for duel in faction_guardian_duels %}
+      <li>
+        <span>{{ duel['faction_a_name'] }}守護機 vs {{ duel['faction_b_name'] }}守護機</span>
+        <span>{% if duel['winner_faction_name'] %}{{ duel['winner_faction_name'] }}優勢{% elif duel['result_status'] == 'skipped' %}見送り{% else %}予定{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">守護機演習を見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>今週の陣営代表戦</h2>
     {% if my_faction_representative and my_faction_representative['user_id'] %}
     <p class="robot-part">{{ my_faction_representative['display_name'] or '研究員' }}の「{{ my_faction_representative['robot_name'] }}」が代表です。</p>

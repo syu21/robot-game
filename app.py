@@ -11397,6 +11397,27 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_guardian_duels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            duel_key TEXT NOT NULL,
+            faction_a_key TEXT NOT NULL,
+            faction_b_key TEXT NOT NULL,
+            guardian_a_id INTEGER,
+            guardian_b_id INTEGER,
+            winner_faction_key TEXT,
+            result_status TEXT NOT NULL DEFAULT 'pending',
+            battle_log_json TEXT,
+            summary_text TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            updated_at TEXT,
+            UNIQUE(week_key, duel_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -12964,6 +12985,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_duels_week ON faction_guardian_duels(week_key, result_status)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")
@@ -21962,6 +21984,7 @@ def finalize_faction_weekly_missions(db, week_key=None):
 
 
 FACTION_GUARDIAN_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_RESULT"
+FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_DUEL_RESULT"
 FACTION_GUARDIAN_MAX_HP = 1000
 FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
@@ -22024,6 +22047,7 @@ FACTION_REPRESENTATIVE_STRATEGY_STAT_BONUS = {
     "steady_sortie": "spd",
 }
 FACTION_REPRESENTATIVE_MATCHUPS = (("aurix", "ignis"), ("ignis", "ventra"), ("ventra", "aurix"))
+FACTION_GUARDIAN_DUEL_MATCHUPS = FACTION_REPRESENTATIVE_MATCHUPS
 
 
 def get_faction_faith_profile(faction_key):
@@ -22333,6 +22357,283 @@ def get_faction_guardians_view(db, week_key=None):
     ).fetchall()
     by_key = {_normalize_faction_key(row["faction_key"]): _guardian_view_row(db, row) for row in rows}
     return [by_key[key] for key in FACTION_KEYS if key in by_key]
+
+
+def get_faction_guardian_duel_matchups(week_key=None):
+    return [{"faction_a": a, "faction_b": b, "duel_key": f"{a}_vs_{b}"} for a, b in FACTION_GUARDIAN_DUEL_MATCHUPS]
+
+
+def generate_faction_guardian_duels(db, week_key=None):
+    wk = ensure_faction_guardians(db, week_key)
+    guardians = {row["faction_key"]: row for row in get_faction_guardians_view(db, wk)}
+    created_count = 0
+    now_text = now_str()
+    for matchup in get_faction_guardian_duel_matchups(wk):
+        guardian_a = guardians.get(matchup["faction_a"]) or {}
+        guardian_b = guardians.get(matchup["faction_b"]) or {}
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_guardian_duels
+            (week_key, duel_key, faction_a_key, faction_b_key, guardian_a_id, guardian_b_id,
+             result_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (
+                wk,
+                matchup["duel_key"],
+                matchup["faction_a"],
+                matchup["faction_b"],
+                guardian_a.get("id"),
+                guardian_b.get("id"),
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"week_key": wk, "created_count": created_count, "duel_count": len(FACTION_GUARDIAN_DUEL_MATCHUPS)}
+
+
+def _guardian_duel_faith_profile(guardian):
+    raw = (guardian or {}).get("faith_profile") if isinstance(guardian, dict) else None
+    if isinstance(raw, dict) and raw:
+        return raw
+    raw_json = (guardian or {}).get("faith_profile_json") if isinstance(guardian, dict) else None
+    if raw_json:
+        try:
+            data = json.loads(raw_json or "{}")
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return get_faction_faith_profile((guardian or {}).get("faction_key"))
+
+
+def build_guardian_duel_stats(db, guardian, week_key=None):
+    faction_key = _normalize_faction_key((guardian or {}).get("faction_key"))
+    profile = _guardian_duel_faith_profile(guardian)
+    stars = profile.get("stats") if isinstance(profile.get("stats"), dict) else {}
+    stats = {}
+    for stat_key in ("atk", "def", "spd", "acc", "cri"):
+        stats[stat_key] = 50 + int(stars.get(stat_key, 1) or 1) * 10
+    stats["hp"] = 120 + int(stars.get("hp", 1) or 1) * 25
+    strategies = get_finalized_faction_strategies(db, week_key)
+    strategy = strategies.get(faction_key)
+    bonus_stat = FACTION_REPRESENTATIVE_STRATEGY_STAT_BONUS.get((strategy or {}).get("key"))
+    if bonus_stat in stats:
+        stats[bonus_stat] = int(stats[bonus_stat] * 1.03)
+    for stat_key in stats:
+        stats[stat_key] = min(999, max(1, int(stats[stat_key])))
+    stats["hp"] = max(10, stats["hp"])
+    return stats
+
+
+def _guardian_duel_roll(seed):
+    return (int(seed) * 1103515245 + 12345) % 100
+
+
+def _simulate_guardian_duel_battle(db, guardian_a, guardian_b, week_key=None):
+    wk = str(week_key or _world_week_key())
+    if not guardian_a or not guardian_b or guardian_a.get("source_type") == "unset" or guardian_b.get("source_type") == "unset":
+        return {"status": "skipped", "winner_faction_key": None, "summary_text": "守護機未設定のため演習を見送りました。", "battle_log": []}
+    a = dict(guardian_a)
+    b = dict(guardian_b)
+    a["stats"] = build_guardian_duel_stats(db, a, wk)
+    b["stats"] = build_guardian_duel_stats(db, b, wk)
+    hp = {a["faction_key"]: int(a["stats"]["hp"]), b["faction_key"]: int(b["stats"]["hp"])}
+    max_hp = dict(hp)
+    dealt = {a["faction_key"]: 0, b["faction_key"]: 0}
+    battle_log = []
+    if int(a["stats"]["spd"]) > int(b["stats"]["spd"]) or (
+        int(a["stats"]["spd"]) == int(b["stats"]["spd"]) and a["faction_key"] <= b["faction_key"]
+    ):
+        first, second = a, b
+    else:
+        first, second = b, a
+    for turn in range(1, 11):
+        for actor, target in ((first, second), (second, first)):
+            if hp[target["faction_key"]] <= 0:
+                continue
+            hit_rate = min(95, max(50, int(75 + (int(actor["stats"]["acc"]) - int(target["stats"]["spd"])) * 0.3)))
+            hit = _guardian_duel_roll(turn * 31 + int(actor["id"] or 0) + int(target["id"] or 0)) < hit_rate
+            critical_rate = min(30, max(3, int(int(actor["stats"]["cri"]) * 0.2)))
+            critical = bool(hit and _guardian_duel_roll(turn * 47 + int(actor["id"] or 0)) < critical_rate)
+            damage = 0
+            if hit:
+                damage = max(1, int(int(actor["stats"]["atk"]) - int(target["stats"]["def"]) * 0.45))
+                if critical:
+                    damage = max(1, int(damage * 1.5))
+                hp[target["faction_key"]] = max(0, hp[target["faction_key"]] - damage)
+                dealt[actor["faction_key"]] += damage
+            battle_log.append(
+                {
+                    "turn": turn,
+                    "actor_faction": actor["faction_key"],
+                    "actor_guardian_name": actor.get("guardian_name") or actor.get("faction_name") or actor["faction_key"],
+                    "target_faction": target["faction_key"],
+                    "target_guardian_name": target.get("guardian_name") or target.get("faction_name") or target["faction_key"],
+                    "hit": bool(hit),
+                    "critical": bool(critical),
+                    "damage": int(damage),
+                    "target_hp_after": int(hp[target["faction_key"]]),
+                }
+            )
+            if hp[target["faction_key"]] <= 0:
+                break
+        if hp[a["faction_key"]] <= 0 or hp[b["faction_key"]] <= 0:
+            break
+    if hp[a["faction_key"]] != hp[b["faction_key"]]:
+        winner = a if (hp[a["faction_key"]] / max_hp[a["faction_key"]]) > (hp[b["faction_key"]] / max_hp[b["faction_key"]]) else b
+    elif dealt[a["faction_key"]] != dealt[b["faction_key"]]:
+        winner = a if dealt[a["faction_key"]] > dealt[b["faction_key"]] else b
+    else:
+        winner = a if a["faction_key"] < b["faction_key"] else b
+    summary = f"{FACTION_LABELS.get(winner['faction_key'], winner['faction_key'])}守護機が演習で優勢を記録しました。"
+    return {
+        "status": "completed",
+        "winner_faction_key": winner["faction_key"],
+        "summary_text": summary,
+        "battle_log": battle_log,
+    }
+
+
+def simulate_faction_guardian_duel(db, duel_id, week_key=None):
+    row = db.execute("SELECT * FROM faction_guardian_duels WHERE id = ? LIMIT 1", (int(duel_id),)).fetchone()
+    if not row:
+        raise ValueError("invalid duel_id")
+    wk = str(week_key or row["week_key"] or _world_week_key())
+    guardians = {item["faction_key"]: item for item in get_faction_guardians_view(db, wk)}
+    result = _simulate_guardian_duel_battle(
+        db,
+        guardians.get(_normalize_faction_key(row["faction_a_key"])),
+        guardians.get(_normalize_faction_key(row["faction_b_key"])),
+        wk,
+    )
+    now_text = now_str()
+    db.execute(
+        """
+        UPDATE faction_guardian_duels
+        SET winner_faction_key = ?,
+            result_status = ?,
+            battle_log_json = ?,
+            summary_text = ?,
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            result["winner_faction_key"],
+            result["status"],
+            json.dumps(result["battle_log"], ensure_ascii=False),
+            result["summary_text"],
+            now_text,
+            now_text,
+            int(duel_id),
+        ),
+    )
+    return result
+
+
+def get_faction_guardian_duels_view(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    guardians = {item["faction_key"]: item for item in get_faction_guardians_view(db, wk)}
+    rows = db.execute(
+        "SELECT * FROM faction_guardian_duels WHERE week_key = ? ORDER BY id ASC",
+        (wk,),
+    ).fetchall()
+    out = []
+    source_rows = rows
+    if not source_rows:
+        source_rows = [
+            {
+                "id": None,
+                "week_key": wk,
+                "duel_key": matchup["duel_key"],
+                "faction_a_key": matchup["faction_a"],
+                "faction_b_key": matchup["faction_b"],
+                "winner_faction_key": None,
+                "result_status": "pending",
+                "battle_log_json": "[]",
+                "summary_text": "",
+            }
+            for matchup in get_faction_guardian_duel_matchups(wk)
+        ]
+    for row in source_rows:
+        a_key = _normalize_faction_key(row["faction_a_key"])
+        b_key = _normalize_faction_key(row["faction_b_key"])
+        winner = _normalize_faction_key(row["winner_faction_key"])
+        try:
+            battle_log = json.loads(row["battle_log_json"] or "[]")
+        except Exception:
+            battle_log = []
+        out.append(
+            {
+                "id": int(row["id"]) if row["id"] else None,
+                "week_key": row["week_key"],
+                "duel_key": row["duel_key"],
+                "faction_a_key": a_key,
+                "faction_b_key": b_key,
+                "faction_a_name": FACTION_LABELS.get(a_key, a_key),
+                "faction_b_name": FACTION_LABELS.get(b_key, b_key),
+                "guardian_a": guardians.get(a_key),
+                "guardian_b": guardians.get(b_key),
+                "winner_faction_key": winner,
+                "winner_faction_name": FACTION_LABELS.get(winner, "") if winner else "",
+                "result_status": row["result_status"],
+                "summary_text": row["summary_text"] or "",
+                "battle_log": battle_log,
+            }
+        )
+    return out
+
+
+def run_faction_guardian_duels(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    generate_faction_guardian_duels(db, wk)
+    rows = db.execute(
+        "SELECT * FROM faction_guardian_duels WHERE week_key = ? AND result_status = 'pending' ORDER BY id ASC",
+        (wk,),
+    ).fetchall()
+    results = []
+    completed_count = 0
+    skipped_count = 0
+    for row in rows:
+        result = simulate_faction_guardian_duel(db, int(row["id"]), wk)
+        if result["status"] == "completed":
+            completed_count += 1
+        elif result["status"] == "skipped":
+            skipped_count += 1
+        results.append(
+            {
+                "duel_key": row["duel_key"],
+                "faction_a": row["faction_a_key"],
+                "faction_b": row["faction_b_key"],
+                "winner_faction_key": result["winner_faction_key"],
+                "guardian_a_id": int(row["guardian_a_id"]) if row["guardian_a_id"] else None,
+                "guardian_b_id": int(row["guardian_b_id"]) if row["guardian_b_id"] else None,
+                "status": result["status"],
+            }
+        )
+    exists = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, wk),
+    ).fetchone()
+    emitted_world_event = False
+    if rows and not exists:
+        _world_event_log(db, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, {"week_key": wk, "results": results})
+        emitted_world_event = True
+    return {
+        "week_key": wk,
+        "run_count": len(rows),
+        "completed_count": completed_count,
+        "skipped_count": skipped_count,
+        "results": results,
+        "emitted_world_event": emitted_world_event,
+    }
 
 
 def _faction_strategy_def(strategy_key):
@@ -26122,9 +26423,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -26133,6 +26434,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_WEEKLY_REPORT_EVENT_TYPE,
     FACTION_MISSION_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_RESULT_EVENT_TYPE,
+    FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
@@ -26557,6 +26859,23 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"{attacker_name}は{target_name}守護機「{guardian_name}」を{parsed_percent}%まで解析しました。")
         if not card["meta_lines"]:
             card["meta_lines"].append("守護機の解析記録はまだありません。")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE:
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        card["headline"] = "守護機演習"
+        card["accent"] = "weekly"
+        card["text"] = "今週の守護機演習が終了しました。"
+        for item in results[:3]:
+            a_name = FACTION_LABELS.get(_normalize_faction_key(item.get("faction_a")), item.get("faction_a") or "")
+            b_name = FACTION_LABELS.get(_normalize_faction_key(item.get("faction_b")), item.get("faction_b") or "")
+            winner = _normalize_faction_key(item.get("winner_faction_key"))
+            winner_name = FACTION_LABELS.get(winner, "") if winner else ""
+            if winner_name:
+                card["meta_lines"].append(f"{a_name}守護機 vs {b_name}守護機: {winner_name}守護機が優勢")
+            else:
+                card["meta_lines"].append(f"{a_name}守護機 vs {b_name}守護機: 演習見送り")
+        if not card["meta_lines"]:
+            card["meta_lines"].append("守護機演習結果は世界戦況から確認できます。")
         card["link_url"] = url_for("world_view")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
@@ -35132,6 +35451,7 @@ def _faction_page_context(db, user):
     faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
+    faction_guardian_duels = get_faction_guardian_duels_view(db, current_week_key)
     faction_representatives = get_faction_representatives_view(db, current_week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
     faction_representative_matches = get_faction_representative_matches_view(db, current_week_key)
@@ -35164,6 +35484,7 @@ def _faction_page_context(db, user):
         "faction_guardians": faction_guardians,
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
         "my_guardian_target": faction_guardians_by_key.get(guardian_target_key) if guardian_target_key else None,
+        "faction_guardian_duels": faction_guardian_duels,
         "faction_representatives": faction_representatives,
         "my_faction_representative": faction_representatives_by_key.get(user_faction) if user_faction else None,
         "faction_representative_matches": faction_representative_matches,
@@ -35930,6 +36251,98 @@ def admin_faction_guardians_finalize():
     return redirect(url_for("admin_faction_guardians", week_key=result["week_key"]))
 
 
+@app.route("/admin/factions/guardian-duels")
+@login_required
+def admin_faction_guardian_duels():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        guardians = get_faction_guardians_view(db, week_key)
+        duels = get_faction_guardian_duels_view(db, week_key)
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_guardian_duels.html",
+        week_key=week_key,
+        guardians=guardians,
+        duels=duels,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/guardian-duels/generate", methods=["POST"])
+@login_required
+def admin_faction_guardian_duels_generate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = generate_faction_guardian_duels(db, week_key)
+    except Exception:
+        flash("守護機演習カードを生成できませんでした。", "error")
+        return redirect(url_for("admin_faction_guardian_duels", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_DUEL_GENERATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_duel_generate",
+        entity_type="faction_guardian_duels",
+        payload={
+            "week_key": result["week_key"],
+            "created_count": int(result["created_count"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"守護機演習カードを生成しました（新規 {result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_guardian_duels", week_key=result["week_key"]))
+
+
+@app.route("/admin/factions/guardian-duels/run", methods=["POST"])
+@login_required
+def admin_faction_guardian_duels_run():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = run_faction_guardian_duels(db, week_key)
+    except Exception:
+        flash("守護機演習を実行できませんでした。", "error")
+        return redirect(url_for("admin_faction_guardian_duels", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_GUARDIAN_DUEL_RUN"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_guardian_duel_run",
+        entity_type="faction_guardian_duels",
+        payload={
+            "week_key": result["week_key"],
+            "run_count": int(result["run_count"]),
+            "completed_count": int(result["completed_count"]),
+            "skipped_count": int(result["skipped_count"]),
+            "world_event_created": bool(result["emitted_world_event"]),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(
+        f"守護機演習を実行しました（完了 {result['completed_count']}件 / 見送り {result['skipped_count']}件 / 世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。",
+        "notice",
+    )
+    return redirect(url_for("admin_faction_guardian_duels", week_key=result["week_key"]))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -36134,6 +36547,7 @@ def world_view():
     faction_weekly_report_rows = get_faction_weekly_report(db, week_key)
     faction_weekly_missions = get_faction_weekly_missions(db, week_key)
     faction_guardians = get_faction_guardians_view(db, week_key)
+    faction_guardian_duels = get_faction_guardian_duels_view(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     faction_representatives = get_faction_representatives_view(db, week_key)
@@ -36158,6 +36572,7 @@ def world_view():
         faction_weekly_report_rows=faction_weekly_report_rows,
         faction_weekly_missions=faction_weekly_missions,
         faction_guardians=faction_guardians,
+        faction_guardian_duels=faction_guardian_duels,
         guardian_highlight_logs=guardian_highlight_logs,
         faction_strategy_statuses=faction_strategy_statuses,
         faction_representatives=faction_representatives,
@@ -36479,6 +36894,12 @@ def comms_faction():
     )
     my_logs = _faction_log_rows(db, week_key, user_id=int(user["id"]), limit=40)
     guardian_comms_summary = get_faction_guardian_comms_summary(db, user_faction, week_key) if user_faction else None
+    faction_guardians = get_faction_guardians_view(db, week_key)
+    faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
+    faction_guardian_duels = [
+        row for row in get_faction_guardian_duels_view(db, week_key)
+        if user_faction and user_faction in (row["faction_a_key"], row["faction_b_key"])
+    ]
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
@@ -36502,6 +36923,8 @@ def comms_faction():
         faction_rank=(user_faction_row.get("rank") if user_faction_row else None),
         faction_count=len(FACTION_KEYS),
         guardian_comms_summary=guardian_comms_summary,
+        my_faction_guardian=faction_guardians_by_key.get(user_faction) if user_faction else None,
+        faction_guardian_duels=faction_guardian_duels,
         faction_strategy_status=faction_strategy_status,
         my_faction_representative=faction_representatives_by_key.get(user_faction) if user_faction else None,
         faction_representative_matches=faction_representative_matches,

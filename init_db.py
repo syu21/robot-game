@@ -1912,6 +1912,27 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_guardian_duels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            duel_key TEXT NOT NULL,
+            faction_a_key TEXT NOT NULL,
+            faction_b_key TEXT NOT NULL,
+            guardian_a_id INTEGER,
+            guardian_b_id INTEGER,
+            winner_faction_key TEXT,
+            result_status TEXT NOT NULL DEFAULT 'pending',
+            battle_log_json TEXT,
+            summary_text TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            updated_at TEXT,
+            UNIQUE(week_key, duel_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -3235,6 +3256,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_week ON faction_guardian_attacks(week_key, attacker_faction_key, target_faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_attacks_event ON faction_guardian_attacks(source_event_type, source_event_id)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_faction_guardian_attacks_request_user ON faction_guardian_attacks(source_event_type, request_id, attacker_user_id) WHERE request_id IS NOT NULL")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_guardian_duels_week ON faction_guardian_duels(week_key, result_status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")

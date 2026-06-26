@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>守護機演習管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_guardian_duels') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_guardian_duels_generate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">演習カード生成</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_guardian_duels_run') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">守護機演習を実行</button>
+  </form>
+  <p class="upgrade-cost">守護機演習は投稿ロボ由来の見た目と、陣営信仰ステータスだけを使う週次模擬戦です。</p>
+</div>
+
+<section class="panel">
+  <h2>今週の守護機</h2>
+  <div class="showcase-grid">
+    {% for guardian in guardians %}
+    <div class="card">
+      <div><b>{{ guardian['faction_name'] }}</b></div>
+      <div class="robot-part">{{ guardian['guardian_name'] }}</div>
+      {% if guardian['image_url'] %}<img class="robot-thumb" src="{{ guardian['image_url'] }}" alt="{{ guardian['guardian_name'] }}" loading="lazy" decoding="async" />{% endif %}
+      <div class="upgrade-cost">作者: {{ guardian['author_name'] or '-' }}</div>
+      <div class="upgrade-cost">{{ guardian['faith_profile'].get('label', '未設定') }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>演習カード</h2>
+  <div class="showcase-grid">
+    {% for duel in duels %}
+    <div class="card">
+      <div><b>{{ duel['faction_a_name'] }}守護機 vs {{ duel['faction_b_name'] }}守護機</b></div>
+      <div class="upgrade-cost">状態: {{ duel['result_status'] }}</div>
+      {% if duel['winner_faction_name'] %}
+      <div class="robot-part">{{ duel['winner_faction_name'] }}守護機が優勢</div>
+      {% elif duel['result_status'] == 'skipped' %}
+      <div class="robot-part">演習見送り</div>
+      {% else %}
+      <div class="robot-part">演習待機中</div>
+      {% endif %}
+      {% if duel['summary_text'] %}<div class="upgrade-cost">{{ duel['summary_text'] }}</div>{% endif %}
+      {% if duel['battle_log'] %}
+      <ul class="ranking-mini">
+        {% for log in duel['battle_log'] %}
+        {% if loop.index <= 3 %}
+        <li><span>{{ log['actor_guardian_name'] }} → {{ log['target_guardian_name'] }}</span><span>{{ log['damage'] }}</span></li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
