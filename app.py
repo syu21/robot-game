@@ -11305,6 +11305,38 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_weekly_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL UNIQUE,
+            event_key TEXT NOT NULL,
+            event_name TEXT NOT NULL,
+            description TEXT,
+            effect_summary TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            starts_at TEXT,
+            ends_at TEXT,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            finalized_at TEXT
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_event_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            event_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            admin_user_id INTEGER,
+            payload_json TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -13111,6 +13143,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_user_granted ON user_faction_titles(user_id, granted_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_week_faction ON user_faction_titles(week_key, faction_key, title_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_title_logs_week ON faction_title_grant_logs(week_key, title_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_events_status ON faction_weekly_events(week_key, status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_event_logs_week ON faction_weekly_event_logs(week_key, action)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
@@ -22129,6 +22163,8 @@ FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_DUEL_RESULT"
 FACTION_FACILITY_LEVEL_UP_EVENT_TYPE = "FACTION_FACILITY_LEVEL_UP"
 FACTION_TERRITORY_RESULT_EVENT_TYPE = "FACTION_TERRITORY_RESULT"
 FACTION_TITLE_GRANT_RESULT_EVENT_TYPE = "FACTION_TITLE_GRANT_RESULT"
+FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE = "FACTION_WEEKLY_EVENT_STARTED"
+FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE = "FACTION_WEEKLY_EVENT_FINALIZED"
 FACTION_GUARDIAN_MAX_HP = 1000
 FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
@@ -22317,6 +22353,256 @@ FACTION_TITLES = {
         "source_type": "guardian_author",
     },
 }
+FACTION_WEEKLY_EVENTS = {
+    "guardian_focus": {
+        "name": "守護戦強化週間",
+        "description": "守護機への研究活動が注目される週です。",
+        "effect_summary": "守護戦研究ダメージによる施設資材が少し増えます。",
+        "action_hint": "守護戦への研究貢献を積み重ねましょう。",
+    },
+    "facility_focus": {
+        "name": "施設建設週間",
+        "description": "陣営施設の建設が進みやすい週です。",
+        "effect_summary": "出撃・ボス撃破・進化成功による施設資材が少し増えます。",
+        "action_hint": "出撃、ボス撃破、進化成功で施設建設を進めましょう。",
+    },
+    "territory_focus": {
+        "name": "領土観測週間",
+        "description": "研究影響エリアの変化に注目する週です。",
+        "effect_summary": "陣営活動が領土スコアに少し反映されやすくなります。",
+        "action_hint": "陣営活動と施設成長で研究影響エリアを広げましょう。",
+    },
+    "representative_focus": {
+        "name": "代表応援週間",
+        "description": "陣営代表ロボの模擬戦に注目する週です。",
+        "effect_summary": "代表戦の結果や代表称号が目立ちます。",
+        "action_hint": "代表ロボと代表戦の結果に注目しましょう。",
+    },
+    "guardian_author_focus": {
+        "name": "投稿守護機週間",
+        "description": "投稿ロボから選ばれた守護機に注目する週です。",
+        "effect_summary": "守護機作者や守護機演習が目立ちます。",
+        "action_hint": "守護機演習と投稿ロボの見せ場を確認しましょう。",
+    },
+}
+
+
+def _faction_weekly_event_def(event_key):
+    return FACTION_WEEKLY_EVENTS.get(str(event_key or "").strip())
+
+
+def _faction_weekly_event_view_row(row):
+    if not row:
+        return None
+    event_key = str(row["event_key"] or "").strip()
+    event_def = _faction_weekly_event_def(event_key) or {}
+    return {
+        "id": int(row["id"]),
+        "week_key": row["week_key"],
+        "event_key": event_key,
+        "event_name": row["event_name"] or event_def.get("name", event_key),
+        "description": row["description"] or event_def.get("description", ""),
+        "effect_summary": row["effect_summary"] or event_def.get("effect_summary", ""),
+        "action_hint": event_def.get("action_hint", ""),
+        "status": row["status"],
+        "starts_at": row["starts_at"],
+        "ends_at": row["ends_at"],
+        "finalized_at": row["finalized_at"],
+    }
+
+
+def get_current_faction_weekly_event(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    row = db.execute(
+        """
+        SELECT *
+        FROM faction_weekly_events
+        WHERE week_key = ? AND status IN ('active', 'finalized')
+        ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'finalized' THEN 2 ELSE 9 END, id DESC
+        LIMIT 1
+        """,
+        (wk,),
+    ).fetchone()
+    return _faction_weekly_event_view_row(row)
+
+
+def get_faction_weekly_event_row(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    row = db.execute(
+        "SELECT * FROM faction_weekly_events WHERE week_key = ? LIMIT 1",
+        (wk,),
+    ).fetchone()
+    return _faction_weekly_event_view_row(row)
+
+
+def _insert_faction_weekly_event_log(db, week_key, event_key, action, admin_user_id=None, payload=None):
+    db.execute(
+        """
+        INSERT INTO faction_weekly_event_logs
+        (week_key, event_key, action, admin_user_id, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(week_key),
+            str(event_key),
+            str(action),
+            int(admin_user_id) if admin_user_id else None,
+            json.dumps(payload or {}, ensure_ascii=False),
+            now_str(),
+        ),
+    )
+
+
+def set_faction_weekly_event(db, week_key, event_key, status="draft", admin_user_id=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    event_def = _faction_weekly_event_def(event_key)
+    if not event_def:
+        raise ValueError("invalid event_key")
+    status_value = str(status or "draft").strip()
+    if status_value not in {"draft", "active", "finalized", "cancelled"}:
+        status_value = "draft"
+    now_text = now_str()
+    db.execute(
+        """
+        INSERT INTO faction_weekly_events
+        (week_key, event_key, event_name, description, effect_summary, status, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(week_key) DO UPDATE SET
+            event_key = excluded.event_key,
+            event_name = excluded.event_name,
+            description = excluded.description,
+            effect_summary = excluded.effect_summary,
+            status = excluded.status,
+            updated_at = excluded.updated_at
+        """,
+        (
+            wk,
+            str(event_key),
+            event_def["name"],
+            event_def["description"],
+            event_def["effect_summary"],
+            status_value,
+            int(admin_user_id) if admin_user_id else None,
+            now_text,
+            now_text,
+        ),
+    )
+    _insert_faction_weekly_event_log(db, wk, event_key, "set", admin_user_id, {"status": status_value})
+    return get_faction_weekly_event_row(db, wk)
+
+
+def _emit_faction_weekly_event_log_once(db, week_key, event_type, event_row):
+    existing = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (event_type, str(week_key)),
+    ).fetchone()
+    if existing:
+        return False
+    _world_event_log(
+        db,
+        event_type,
+        {
+            "week_key": str(week_key),
+            "event_key": event_row["event_key"],
+            "event_name": event_row["event_name"],
+            "description": event_row["description"],
+            "effect_summary": event_row["effect_summary"],
+        },
+    )
+    return True
+
+
+def activate_faction_weekly_event(db, week_key, admin_user_id=None):
+    wk = str(week_key or _world_week_key())
+    event = get_faction_weekly_event_row(db, wk)
+    if not event:
+        raise ValueError("weekly event is not set")
+    now_text = now_str()
+    db.execute(
+        "UPDATE faction_weekly_events SET status = 'active', starts_at = COALESCE(starts_at, ?), updated_at = ? WHERE week_key = ?",
+        (now_text, now_text, wk),
+    )
+    event = get_faction_weekly_event_row(db, wk)
+    _insert_faction_weekly_event_log(db, wk, event["event_key"], "activate", admin_user_id)
+    emitted = _emit_faction_weekly_event_log_once(db, wk, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, event)
+    return {**event, "emitted_world_event": emitted}
+
+
+def finalize_faction_weekly_event(db, week_key, admin_user_id=None):
+    wk = str(week_key or _world_week_key())
+    event = get_faction_weekly_event_row(db, wk)
+    if not event:
+        raise ValueError("weekly event is not set")
+    now_text = now_str()
+    db.execute(
+        """
+        UPDATE faction_weekly_events
+        SET status = 'finalized', ends_at = COALESCE(ends_at, ?), finalized_at = COALESCE(finalized_at, ?), updated_at = ?
+        WHERE week_key = ?
+        """,
+        (now_text, now_text, now_text, wk),
+    )
+    event = get_faction_weekly_event_row(db, wk)
+    _insert_faction_weekly_event_log(db, wk, event["event_key"], "finalize", admin_user_id)
+    emitted = _emit_faction_weekly_event_log_once(db, wk, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, event)
+    return {**event, "emitted_world_event": emitted}
+
+
+def cancel_faction_weekly_event(db, week_key, admin_user_id=None):
+    wk = str(week_key or _world_week_key())
+    event = get_faction_weekly_event_row(db, wk)
+    if not event:
+        raise ValueError("weekly event is not set")
+    now_text = now_str()
+    db.execute("UPDATE faction_weekly_events SET status = 'cancelled', ends_at = COALESCE(ends_at, ?), updated_at = ? WHERE week_key = ?", (now_text, now_text, wk))
+    _insert_faction_weekly_event_log(db, wk, event["event_key"], "cancel", admin_user_id)
+    return get_faction_weekly_event_row(db, wk)
+
+
+def get_faction_event_material_bonus(db, source_event_type, base_amount, week_key=None):
+    amount = max(0, int(base_amount or 0))
+    event = get_current_faction_weekly_event(db, week_key)
+    if not event:
+        return amount
+    source_type = str(source_event_type or "")
+    if event["event_key"] == "facility_focus":
+        if source_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+            return amount + 1
+        if source_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
+            return amount + 5
+        if source_type == AUDIT_EVENT_TYPES["PART_EVOLVE"]:
+            return amount + 5
+    if event["event_key"] == "guardian_focus" and source_type == "faction_guardian_attack":
+        return max(1, int(math.ceil(amount * 1.2)))
+    if amount > 0:
+        return max(1, amount)
+    return amount
+
+
+def apply_faction_event_territory_score_bonus(db, score_parts, week_key=None):
+    event = get_current_faction_weekly_event(db, week_key)
+    parts = dict(score_parts or {})
+    if not event:
+        return parts
+    def _add_ten_percent(value):
+        return (int(value or 0) * 11 + 9) // 10
+
+    if event["event_key"] == "territory_focus":
+        parts["activity_score"] = _add_ten_percent(parts.get("activity_score", 0))
+        parts["facility_score"] = _add_ten_percent(parts.get("facility_score", 0))
+    elif event["event_key"] == "guardian_focus":
+        parts["guardian_score"] = _add_ten_percent(parts.get("guardian_score", 0))
+    elif event["event_key"] == "representative_focus":
+        parts["representative_score"] = _add_ten_percent(parts.get("representative_score", 0))
+    elif event["event_key"] == "guardian_author_focus":
+        parts["guardian_duel_score"] = _add_ten_percent(parts.get("guardian_duel_score", 0))
+    return parts
 
 
 def get_faction_faith_profile(faction_key):
@@ -22501,14 +22787,14 @@ def get_faction_facility_weekly_contributors(db, faction_key, week_key=None, lim
 
 def grant_faction_facility_material(db, faction_key, user_id, source_event_type, source_event_id, material_amount, week_key=None):
     key = _normalize_faction_key(faction_key)
-    amount = int(material_amount or 0)
+    wk = str(week_key or _world_week_key())
+    amount = get_faction_event_material_bonus(db, source_event_type, int(material_amount or 0), week_key=wk)
     uid = int(user_id or 0)
     if not key or amount <= 0:
         return {"granted": False, "skipped_duplicate": False, "material_amount": 0, "level_ups": []}
     ensure_faction_facilities(db)
     source_type = str(source_event_type or "manual").strip() or "manual"
     source_id = int(source_event_id or (time.time_ns() % 2147483647))
-    wk = str(week_key or _world_week_key())
     now_text = now_str()
     cur = db.execute(
         """
@@ -22825,7 +23111,7 @@ def calculate_faction_territory_scores(db, week_key=None):
         area_def = _territory_area_def(area["area_key"]) or {}
         weights = area_def.get("weights", {})
         for faction_key in FACTION_KEYS:
-            component = components_by_faction.get(faction_key, {})
+            component = apply_faction_event_territory_score_bonus(db, components_by_faction.get(faction_key, {}), wk)
             total, _reason = _territory_total_and_reason(component, weights)
             db.execute(
                 """
@@ -27733,9 +28019,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -27748,6 +28034,8 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_FACILITY_LEVEL_UP_EVENT_TYPE,
     FACTION_TERRITORY_RESULT_EVENT_TYPE,
     FACTION_TITLE_GRANT_RESULT_EVENT_TYPE,
+    FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE,
+    FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
@@ -28224,6 +28512,18 @@ def _feed_card_from_event(db, row):
             card["meta_lines"].append(f"{faction_name}: {title_label}")
         if not card["meta_lines"]:
             card["meta_lines"].append(f"付与数: {int(payload.get('granted_count') or 0)}")
+        card["link_url"] = url_for("world_view")
+    elif event_type in {FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE}:
+        event_name = str(payload.get("event_name") or "陣営イベント").strip()
+        effect_summary = str(payload.get("effect_summary") or "").strip()
+        card["headline"] = "陣営イベント"
+        card["accent"] = "weekly"
+        if event_type == FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE:
+            card["text"] = f"今週の陣営イベント「{event_name}」が始まりました。"
+        else:
+            card["text"] = f"今週の陣営イベント「{event_name}」が終了しました。"
+        if effect_summary:
+            card["meta_lines"].append(effect_summary)
         card["link_url"] = url_for("world_view")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
@@ -36782,6 +37082,7 @@ def _faction_page_context(db, user):
     member_counts = _faction_member_counts(db)
     recommended_faction = _faction_recommended_key(member_counts)
     current_week_key = _world_week_key()
+    faction_weekly_event = get_current_faction_weekly_event(db, current_week_key)
     weekly_env = _world_current_environment(db)
     weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else None
     faction_score_rows = _faction_score_rows(
@@ -36822,6 +37123,7 @@ def _faction_page_context(db, user):
         "unlock_progress_line": _faction_unlock_progress_line(counts),
         "unlock_progress_rows": _faction_unlock_progress_rows(counts),
         "faction_labels": FACTION_LABELS,
+        "faction_weekly_event": faction_weekly_event,
         "faction_emblems": FACTION_EMBLEMS,
         "member_counts": member_counts,
         "recommended_faction": recommended_faction,
@@ -38027,6 +38329,156 @@ def admin_faction_titles_grant_manual():
     return redirect(url_for("admin_faction_titles", week_key=week_key))
 
 
+@app.route("/admin/factions/events")
+@login_required
+def admin_faction_weekly_events():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    current_event = get_faction_weekly_event_row(db, week_key)
+    rows = db.execute(
+        """
+        SELECT *
+        FROM faction_weekly_events
+        ORDER BY week_key DESC, id DESC
+        LIMIT 12
+        """
+    ).fetchall()
+    logs = db.execute(
+        """
+        SELECT *
+        FROM faction_weekly_event_logs
+        WHERE week_key = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 20
+        """,
+        (week_key,),
+    ).fetchall()
+    return render_template(
+        "admin_faction_weekly_events.html",
+        week_key=week_key,
+        current_event=current_event,
+        event_defs=FACTION_WEEKLY_EVENTS,
+        history=[_faction_weekly_event_view_row(row) for row in rows],
+        logs=logs,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/events/set", methods=["POST"])
+@login_required
+def admin_faction_weekly_events_set():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    event_key = (request.form.get("event_key") or "").strip()
+    try:
+        event = set_faction_weekly_event(db, week_key, event_key, status="draft", admin_user_id=int(session["user_id"]))
+    except Exception:
+        flash("陣営イベントを設定できませんでした。", "error")
+        return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_WEEKLY_EVENT_SET"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_weekly_event_set",
+        entity_type="faction_weekly_events",
+        entity_id=event["id"],
+        payload={"week_key": week_key, "event_key": event_key, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営イベントを設定しました。", "notice")
+    return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+
+
+@app.route("/admin/factions/events/activate", methods=["POST"])
+@login_required
+def admin_faction_weekly_events_activate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = activate_faction_weekly_event(db, week_key, admin_user_id=int(session["user_id"]))
+    except Exception:
+        flash("陣営イベントを開始できませんでした。", "error")
+        return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_WEEKLY_EVENT_ACTIVATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_weekly_event_activate",
+        entity_type="faction_weekly_events",
+        entity_id=result["id"],
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営イベントを開始しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+
+
+@app.route("/admin/factions/events/finalize", methods=["POST"])
+@login_required
+def admin_faction_weekly_events_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = finalize_faction_weekly_event(db, week_key, admin_user_id=int(session["user_id"]))
+    except Exception:
+        flash("陣営イベントを終了できませんでした。", "error")
+        return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_WEEKLY_EVENT_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_weekly_event_finalize",
+        entity_type="faction_weekly_events",
+        entity_id=result["id"],
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営イベントを終了しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+
+
+@app.route("/admin/factions/events/cancel", methods=["POST"])
+@login_required
+def admin_faction_weekly_events_cancel():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = cancel_faction_weekly_event(db, week_key, admin_user_id=int(session["user_id"]))
+    except Exception:
+        flash("陣営イベントをキャンセルできませんでした。", "error")
+        return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_WEEKLY_EVENT_CANCEL"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_weekly_event_cancel",
+        entity_type="faction_weekly_events",
+        entity_id=result["id"],
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営イベントをキャンセルしました。", "notice")
+    return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -38236,6 +38688,7 @@ def world_view():
     faction_facilities = get_faction_facilities_view(db, week_key)
     faction_territory_map = get_current_faction_territory_map(db, week_key)
     faction_title_highlights = get_weekly_faction_title_highlights(db, week_key, limit=12)
+    faction_weekly_event = get_current_faction_weekly_event(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     faction_representatives = get_faction_representatives_view(db, week_key)
@@ -38244,6 +38697,7 @@ def world_view():
     return render_template(
         "world.html",
         week_key=week_key,
+        faction_weekly_event=faction_weekly_event,
         weekly_env=weekly_env,
         weekly_env_effect_lines=weekly_env_effect_lines,
         weekly_recommendation=weekly_recommendation,
@@ -38596,6 +39050,7 @@ def comms_faction():
     faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
     faction_territory_summary = get_faction_territory_summary(db, user_faction, week_key) if user_faction else None
     faction_title_highlights = get_weekly_faction_title_highlights(db, week_key, faction_key=user_faction, limit=5) if user_faction else []
+    faction_weekly_event = get_current_faction_weekly_event(db, week_key)
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
@@ -38608,6 +39063,7 @@ def comms_faction():
         "comms_faction.html",
         message=session.pop("message", None),
         week_key=week_key,
+        faction_weekly_event=faction_weekly_event,
         user=user,
         user_faction=user_faction,
         user_faction_label=FACTION_LABELS.get(user_faction, user_faction),

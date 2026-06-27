@@ -614,6 +614,19 @@
 - 称号装備は表示だけで、本編ステータス、通常出撃、ボス戦、観測塔、守護戦ダメージ、報酬には影響しない。
 - 週次付与時は公開世界ログ `FACTION_TITLE_GRANT_RESULT` を週1件だけ作成する。
 
+## 陣営イベント週 v1
+- `faction_weekly_events` に週ごとの陣営イベント設定を保存する。
+- `faction_weekly_event_logs` に設定、開始、終了、キャンセルの操作履歴を保存する。
+- イベントは `guardian_focus` / `facility_focus` / `territory_focus` / `representative_focus` / `guardian_author_focus` の5種類。
+- 管理者は `/admin/factions/events` でイベント設定、開始、終了、キャンセルを行う。
+- `/faction`、`/world`、`/comms/faction` に今週の陣営イベントを表示する。
+- `facility_focus` は出撃、ボス撃破、進化成功由来の施設資材を少し増やす。
+- `guardian_focus` は守護戦研究ダメージ由来の施設資材と領土の守護戦スコアを少し増やす。
+- `territory_focus` は領土の活動スコアと施設スコアを少し増やす。
+- `representative_focus` / `guardian_author_focus` は代表戦、守護機演習の見せ場を強める表示・領土スコア補正に限定する。
+- 開始時は `FACTION_WEEKLY_EVENT_STARTED`、終了時は `FACTION_WEEKLY_EVENT_FINALIZED` を週1件だけ世界ログへ作成する。
+- 陣営イベント週は既存陣営コンテンツの注目軸であり、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能、コイン報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

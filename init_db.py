@@ -1824,6 +1824,38 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_weekly_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL UNIQUE,
+            event_key TEXT NOT NULL,
+            event_name TEXT NOT NULL,
+            description TEXT,
+            effect_summary TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            starts_at TEXT,
+            ends_at TEXT,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            finalized_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_event_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            event_key TEXT NOT NULL,
+            action TEXT NOT NULL,
+            admin_user_id INTEGER,
+            payload_json TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3382,6 +3414,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_user_granted ON user_faction_titles(user_id, granted_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_week_faction ON user_faction_titles(week_key, faction_key, title_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_title_logs_week ON faction_title_grant_logs(week_key, title_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_events_status ON faction_weekly_events(week_key, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_event_logs_week ON faction_weekly_event_logs(week_key, action)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")

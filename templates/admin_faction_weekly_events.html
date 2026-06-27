@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営イベント週管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_weekly_events') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <p class="upgrade-cost">陣営イベント週は行動の見せ場づくり用です。ロボ本体ステータスやコイン報酬には影響しません。</p>
+</div>
+
+<section class="panel">
+  <h2>今週の設定</h2>
+  <div class="card">
+    {% if current_event %}
+    <div><b>{{ current_event['event_name'] }}</b> <span class="weekly-fit-badge">{{ current_event['status'] }}</span></div>
+    <div class="robot-part">{{ current_event['description'] }}</div>
+    <div class="upgrade-cost">{{ current_event['effect_summary'] }}</div>
+    <div class="upgrade-cost">{{ current_event['action_hint'] }}</div>
+    <div class="upgrade-cost">開始: {{ current_event['starts_at'] or '-' }} / 終了: {{ current_event['ends_at'] or '-' }}</div>
+    {% else %}
+    <div>この週の陣営イベントは未設定です。</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>イベント設定</h2>
+  <form method="post" action="{{ url_for('admin_faction_weekly_events_set') }}" class="card">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <label>イベント
+      <select name="event_key" required>
+        {% for key, event in event_defs.items() %}
+        <option value="{{ key }}" {% if current_event and current_event['event_key'] == key %}selected{% endif %}>{{ event['name'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">下書き設定</button>
+  </form>
+  <div class="showcase-grid">
+    {% for key, event in event_defs.items() %}
+    <div class="card">
+      <div><b>{{ event['name'] }}</b></div>
+      <div class="robot-part">{{ event['description'] }}</div>
+      <div class="upgrade-cost">{{ event['effect_summary'] }}</div>
+      <div class="upgrade-cost">{{ event['action_hint'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>操作</h2>
+  <div class="card">
+    <form method="post" action="{{ url_for('admin_faction_weekly_events_activate') }}" class="inline-form">
+      <input type="hidden" name="week_key" value="{{ week_key }}" />
+      <button type="submit">開始</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_faction_weekly_events_finalize') }}" class="inline-form">
+      <input type="hidden" name="week_key" value="{{ week_key }}" />
+      <button type="submit">終了</button>
+    </form>
+    <form method="post" action="{{ url_for('admin_faction_weekly_events_cancel') }}" class="inline-form">
+      <input type="hidden" name="week_key" value="{{ week_key }}" />
+      <button type="submit">キャンセル</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>履歴</h2>
+  <div class="showcase-grid">
+    {% for event in history %}
+    <div class="card">
+      <div><b>{{ event['week_key'] }}</b> <span class="weekly-fit-badge">{{ event['status'] }}</span></div>
+      <div class="robot-part">{{ event['event_name'] }}</div>
+      <div class="upgrade-cost">{{ event['effect_summary'] }}</div>
+    </div>
+    {% else %}
+    <div class="card">履歴なし</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>操作ログ</h2>
+  <div class="card">
+    <ul class="ranking-mini">
+      {% for log in logs %}
+      <li><span>{{ log['created_at'] }} / {{ log['action'] }} / {{ log['event_key'] }}</span><span>{{ log['admin_user_id'] or '-' }}</span></li>
+      {% else %}
+      <li><span>ログなし</span><span>0</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

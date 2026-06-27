@@ -28,6 +28,19 @@
   {% else %}
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の陣営イベント</h2>
+    {% if faction_weekly_event %}
+    <p class="robot-part">{{ faction_weekly_event['event_name'] }}</p>
+    <p class="upgrade-cost">{{ faction_weekly_event['effect_summary'] }}</p>
+    {% if faction_weekly_event['action_hint'] %}<p>{{ faction_weekly_event['action_hint'] }}</p>{% endif %}
+    {% else %}
+    <p>今週の陣営イベントは準備中です。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('world_view') }}">世界戦況を見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     {% if faction_strategy_status and faction_strategy_status['is_finalized'] and faction_strategy_status['finalized_strategy'] %}
     <h2>今週の陣営作戦：{{ faction_strategy_status['finalized_strategy']['label'] }}</h2>
     <p class="robot-part">{{ faction_strategy_status['finalized_strategy']['effect_label'] }}</p>

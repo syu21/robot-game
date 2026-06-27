@@ -22,6 +22,20 @@
 </div>
 
 <section class="panel">
+  <h2>今週の陣営イベント</h2>
+  {% if faction_weekly_event %}
+  <div class="card active-card">
+    <div class="comms-status-badge">{{ faction_weekly_event['status'] }}</div>
+    <h3>{{ faction_weekly_event['event_name'] }}</h3>
+    <div class="robot-part">{{ faction_weekly_event['description'] }}</div>
+    <div class="upgrade-cost">{{ faction_weekly_event['effect_summary'] }}</div>
+  </div>
+  {% else %}
+  <div class="card">今週の陣営イベントは準備中です。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>陣営領土マップ</h2>
   <p class="upgrade-cost">今週の陣営活動・守護戦・代表戦・施設成長から、各研究区の研究影響を表示します。本編ステータスには影響しません。</p>
   <div class="showcase-grid">

@@ -219,6 +219,18 @@
 - `FACTION_TITLE_GRANT_RESULT` は `week_key` ごとに1件だけ作成し、payload に `granted_count`, `titles` を含める。
 - 称号は名誉・表示・記録用であり、直接PvP、戦闘補正、報酬配布には使わない。
 
+### 4.13.1 陣営イベント週
+- 管理者操作:
+  - `audit.faction.weekly_event.set`
+  - `audit.faction.weekly_event.activate`
+  - `audit.faction.weekly_event.finalize`
+  - `audit.faction.weekly_event.cancel`
+- 公開世界ログ:
+  - `FACTION_WEEKLY_EVENT_STARTED`
+  - `FACTION_WEEKLY_EVENT_FINALIZED`
+- payload には `week_key`, `event_key`, `event_name`, `description`, `effect_summary`, `status`, `actor_admin_id` を可能な範囲で含める。
+- 陣営イベント週は既存陣営コンテンツの注目軸。通常出撃、ボス戦、本編ステータス、パーツ性能、コイン報酬には影響させない。
+
 ### 4.14 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
@@ -242,6 +254,8 @@
 - `FACTION_GUARDIAN_RESULT`（世界イベント）
 - `FACTION_TERRITORY_RESULT`（世界イベント）
 - `FACTION_TITLE_GRANT_RESULT`（世界イベント）
+- `FACTION_WEEKLY_EVENT_STARTED`（世界イベント）
+- `FACTION_WEEKLY_EVENT_FINALIZED`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
@@ -366,6 +380,7 @@
 - 守護機演習の公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営領土マップの公開世界ログ `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営称号の公開世界ログ `FACTION_TITLE_GRANT_RESULT` は `week_key` ごとに1件だけ作成する。
+- 陣営イベント週の公開世界ログ `FACTION_WEEKLY_EVENT_STARTED` / `FACTION_WEEKLY_EVENT_FINALIZED` は `week_key` ごとに各1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索
