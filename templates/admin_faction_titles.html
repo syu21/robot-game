@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営称号管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_titles') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_titles_grant_weekly') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">週次称号を自動付与</button>
+  </form>
+  <p class="upgrade-cost">称号は名誉・記録用です。本編ステータスには影響しません。</p>
+</div>
+
+<section class="panel">
+  <h2>手動付与</h2>
+  <form method="post" action="{{ url_for('admin_faction_titles_grant_manual') }}" class="card">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <label>user_id
+      <input type="number" name="user_id" min="1" required />
+    </label>
+    <label>陣営
+      <select name="faction_key" required>
+        {% for key, label in faction_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>称号
+      <select name="title_key" required>
+        {% for key, title in title_defs.items() %}
+        <option value="{{ key }}">{{ title['label'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">付与</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>今週の称号獲得者</h2>
+  <div class="showcase-grid">
+    {% for title in titles %}
+    <div class="card">
+      <div><b>{{ title['title_label'] }}</b> <span class="weekly-fit-badge">{{ title['faction_name'] }}</span></div>
+      <div class="robot-part">{{ title['display_name'] }}</div>
+      <div class="upgrade-cost">{{ title['title_description'] }}</div>
+      <div class="upgrade-cost">source: {{ title['source_type'] }} / user_id {{ title['user_id'] }}</div>
+    </div>
+    {% else %}
+    <div class="card">今週の称号はまだ付与されていません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>付与ログ</h2>
+  <div class="card">
+    <ul class="ranking-mini">
+      {% for log in logs %}
+      <li><span>{{ log['title_key'] }} / {{ log['faction_key'] or '-' }} / {{ log['source_type'] }}</span><span>{{ log['granted_count'] }}</span></li>
+      {% else %}
+      <li><span>ログなし</span><span>0</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

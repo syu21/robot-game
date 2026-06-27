@@ -211,6 +211,8 @@ AUDIT_EVENT_TYPES = {
     "FACTION_TERRITORY_ENSURE": "audit.faction.territory.ensure",
     "FACTION_TERRITORY_RECALCULATE": "audit.faction.territory.recalculate",
     "FACTION_TERRITORY_FINALIZE": "audit.faction.territory.finalize",
+    "FACTION_TITLES_GRANT_WEEKLY": "audit.faction.titles.grant_weekly",
+    "FACTION_TITLES_GRANT_MANUAL": "audit.faction.titles.grant_manual",
     "TOWER_RUN_START": "audit.tower.run.start",
     "TOWER_BATTLE": "audit.tower.battle",
     "TOWER_RUN_COMPLETE": "audit.tower.run.complete",

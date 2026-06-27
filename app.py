@@ -11272,6 +11272,39 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_faction_titles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            faction_key TEXT NOT NULL,
+            title_key TEXT NOT NULL,
+            title_label TEXT NOT NULL,
+            title_description TEXT,
+            week_key TEXT NOT NULL DEFAULT '',
+            source_type TEXT NOT NULL,
+            source_id INTEGER,
+            is_equipped INTEGER NOT NULL DEFAULT 0,
+            granted_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, title_key, week_key, source_type)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_title_grant_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL DEFAULT '',
+            title_key TEXT NOT NULL,
+            faction_key TEXT,
+            granted_count INTEGER NOT NULL DEFAULT 0,
+            source_type TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(week_key, title_key, faction_key, source_type)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -13075,6 +13108,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mvp_week_category ON world_faction_weekly_mvp(week_key, category)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_awards_week_faction ON faction_weekly_awards(week_key, faction_key, award_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_badges_user_week ON user_faction_badges(user_id, week_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_user_granted ON user_faction_titles(user_id, granted_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_faction_titles_week_faction ON user_faction_titles(week_key, faction_key, title_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_title_logs_week ON faction_title_grant_logs(week_key, title_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
@@ -22092,6 +22128,7 @@ FACTION_GUARDIAN_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_RESULT"
 FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_DUEL_RESULT"
 FACTION_FACILITY_LEVEL_UP_EVENT_TYPE = "FACTION_FACILITY_LEVEL_UP"
 FACTION_TERRITORY_RESULT_EVENT_TYPE = "FACTION_TERRITORY_RESULT"
+FACTION_TITLE_GRANT_RESULT_EVENT_TYPE = "FACTION_TITLE_GRANT_RESULT"
 FACTION_GUARDIAN_MAX_HP = 1000
 FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
@@ -22227,6 +22264,58 @@ FACTION_TERRITORY_REASON_LABELS = {
     "facility": "施設成長",
     "mixed": "総合研究",
     "initial": "初期観測",
+}
+FACTION_TITLES = {
+    "guardian_main": {
+        "label": "守護戦主力",
+        "description": "今週の守護戦で大きく貢献した研究員に贈られる称号。",
+        "source_type": "guardian_contribution",
+    },
+    "guardian_analyst": {
+        "label": "解析担当",
+        "description": "守護戦の解析研究を積み重ねた研究員に贈られる称号。",
+        "source_type": "guardian_contribution",
+    },
+    "faction_representative": {
+        "label": "陣営代表",
+        "description": "今週の陣営代表ロボに選出された研究員に贈られる称号。",
+        "source_type": "representative",
+    },
+    "representative_winner": {
+        "label": "代表演習優勢",
+        "description": "代表模擬戦で研究優勢を記録した研究員に贈られる称号。",
+        "source_type": "representative_match",
+    },
+    "guardian_supporter": {
+        "label": "守護機支援者",
+        "description": "守護機演習を支えた研究員に贈られる称号。",
+        "source_type": "guardian_duel",
+    },
+    "facility_contributor": {
+        "label": "施設貢献者",
+        "description": "陣営施設建設に大きく貢献した研究員に贈られる称号。",
+        "source_type": "facility",
+    },
+    "facility_leader": {
+        "label": "建設主任",
+        "description": "今週の陣営施設建設に最も貢献した研究員に贈られる称号。",
+        "source_type": "facility",
+    },
+    "territory_pioneer": {
+        "label": "領域開拓者",
+        "description": "研究影響エリアの拡大に貢献した研究員に贈られる称号。",
+        "source_type": "territory",
+    },
+    "territory_influencer": {
+        "label": "研究影響者",
+        "description": "陣営の研究影響を広げる活動に貢献した研究員に贈られる称号。",
+        "source_type": "territory",
+    },
+    "guardian_author": {
+        "label": "守護機作者",
+        "description": "投稿ロボが陣営守護機に採用された研究員に贈られる称号。",
+        "source_type": "guardian_author",
+    },
 }
 
 
@@ -25091,6 +25180,300 @@ def get_user_faction_badges(db, user_id, limit=5):
     return out
 
 
+def _faction_title_view_row(db, row):
+    faction_key = _normalize_faction_key(row["faction_key"]) or str(row["faction_key"] or "")
+    user = db.execute("SELECT id, username, display_name, is_admin FROM users WHERE id = ?", (int(row["user_id"]),)).fetchone()
+    return {
+        "id": int(row["id"]),
+        "user_id": int(row["user_id"]),
+        "display_name": _display_username_for_user_row(db, user) if user else f"User#{int(row['user_id'])}",
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, faction_key),
+        "title_key": row["title_key"],
+        "title_label": row["title_label"],
+        "title_description": row["title_description"] or "",
+        "week_key": row["week_key"] or "",
+        "source_type": row["source_type"],
+        "source_id": int(row["source_id"]) if row["source_id"] is not None else None,
+        "is_equipped": bool(int(row["is_equipped"] or 0)),
+        "granted_at": row["granted_at"],
+    }
+
+
+def grant_user_faction_title(db, user_id, faction_key, title_key, week_key=None, source_type="manual", source_id=None, *, equip_if_first=False):
+    key = _normalize_faction_key(faction_key)
+    title = FACTION_TITLES.get(str(title_key or "").strip())
+    if not key:
+        raise ValueError("invalid faction_key")
+    if not title:
+        raise ValueError("invalid title_key")
+    user = db.execute("SELECT id FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
+    if not user:
+        raise ValueError("invalid user_id")
+    wk = str(week_key or _world_week_key())
+    source = str(source_type or title.get("source_type") or "manual").strip() or "manual"
+    now_text = now_str()
+    equipped_exists = db.execute(
+        "SELECT 1 FROM user_faction_titles WHERE user_id = ? AND is_equipped = 1 LIMIT 1",
+        (int(user_id),),
+    ).fetchone()
+    is_equipped = 1 if equip_if_first and not equipped_exists else 0
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO user_faction_titles
+        (user_id, faction_key, title_key, title_label, title_description, week_key, source_type,
+         source_id, is_equipped, granted_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            key,
+            str(title_key),
+            title["label"],
+            title["description"],
+            wk,
+            source,
+            int(source_id) if source_id is not None else None,
+            is_equipped,
+            now_text,
+            now_text,
+        ),
+    )
+    row = db.execute(
+        """
+        SELECT * FROM user_faction_titles
+        WHERE user_id = ? AND title_key = ? AND week_key = ? AND source_type = ?
+        LIMIT 1
+        """,
+        (int(user_id), str(title_key), wk, source),
+    ).fetchone()
+    return {"granted": bool(int(cur.rowcount or 0)), "title": _faction_title_view_row(db, row) if row else None}
+
+
+def get_user_faction_titles(db, user_id, limit=8):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM user_faction_titles
+        WHERE user_id = ?
+        ORDER BY is_equipped DESC, granted_at DESC, id DESC
+        LIMIT ?
+        """,
+        (int(user_id), max(1, int(limit or 8))),
+    ).fetchall()
+    return [_faction_title_view_row(db, row) for row in rows]
+
+
+def get_equipped_faction_title(db, user_id):
+    row = db.execute(
+        """
+        SELECT *
+        FROM user_faction_titles
+        WHERE user_id = ? AND is_equipped = 1
+        ORDER BY granted_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    return _faction_title_view_row(db, row) if row else None
+
+
+def equip_user_faction_title(db, user_id, title_id):
+    row = db.execute(
+        "SELECT * FROM user_faction_titles WHERE id = ? AND user_id = ? LIMIT 1",
+        (int(title_id), int(user_id)),
+    ).fetchone()
+    if not row:
+        return False
+    db.execute("UPDATE user_faction_titles SET is_equipped = 0 WHERE user_id = ?", (int(user_id),))
+    db.execute("UPDATE user_faction_titles SET is_equipped = 1 WHERE id = ?", (int(title_id),))
+    return True
+
+
+def _record_faction_title_grant_log(db, week_key, title_key, faction_key, source_type, granted_count):
+    db.execute(
+        """
+        INSERT INTO faction_title_grant_logs
+        (week_key, title_key, faction_key, granted_count, source_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(week_key, title_key, faction_key, source_type) DO UPDATE SET
+            granted_count = excluded.granted_count,
+            created_at = excluded.created_at
+        """,
+        (str(week_key or _world_week_key()), str(title_key), _normalize_faction_key(faction_key), int(granted_count or 0), str(source_type), now_str()),
+    )
+
+
+def _emit_faction_title_world_event(db, week_key, granted_titles):
+    existing = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, week_key),
+    ).fetchone()
+    if existing:
+        return False
+    if not granted_titles:
+        return False
+    _world_event_log(
+        db,
+        FACTION_TITLE_GRANT_RESULT_EVENT_TYPE,
+        {
+            "week_key": week_key,
+            "granted_count": len(granted_titles),
+            "titles": granted_titles[:20],
+        },
+    )
+    return True
+
+
+def grant_weekly_faction_titles(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    _world_week_bounds(wk)
+    granted_titles = []
+
+    def add_title(user_id, faction_key, title_key, source_type, source_id=None):
+        result = grant_user_faction_title(
+            db,
+            int(user_id),
+            faction_key,
+            title_key,
+            week_key=wk,
+            source_type=source_type,
+            source_id=source_id,
+            equip_if_first=True,
+        )
+        if result.get("granted") and result.get("title"):
+            title = result["title"]
+            granted_titles.append(
+                {
+                    "title_key": title["title_key"],
+                    "title_label": title["title_label"],
+                    "user_id": title["user_id"],
+                    "faction_key": title["faction_key"],
+                }
+            )
+        return bool(result.get("granted"))
+
+    total_by_log = {}
+    guardian_rows = db.execute(
+        """
+        SELECT attacker_faction_key AS faction_key, attacker_user_id AS user_id, COALESCE(SUM(damage), 0) AS score
+        FROM faction_guardian_attacks
+        WHERE week_key = ?
+        GROUP BY attacker_faction_key, attacker_user_id
+        HAVING score > 0
+        ORDER BY faction_key ASC, score DESC, user_id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    for faction_key in FACTION_KEYS:
+        top = next((row for row in guardian_rows if _normalize_faction_key(row["faction_key"]) == faction_key), None)
+        if top and add_title(top["user_id"], faction_key, "guardian_main", "guardian_contribution", int(top["user_id"])):
+            total_by_log[(faction_key, "guardian_main", "guardian_contribution")] = total_by_log.get((faction_key, "guardian_main", "guardian_contribution"), 0) + 1
+
+    rep_rows = db.execute(
+        """
+        SELECT id, faction_key, user_id
+        FROM faction_representatives
+        WHERE week_key = ? AND user_id IS NOT NULL AND is_active = 1
+        """,
+        (wk,),
+    ).fetchall()
+    for row in rep_rows:
+        faction_key = _normalize_faction_key(row["faction_key"])
+        if faction_key and add_title(row["user_id"], faction_key, "faction_representative", "representative", int(row["id"])):
+            total_by_log[(faction_key, "faction_representative", "representative")] = total_by_log.get((faction_key, "faction_representative", "representative"), 0) + 1
+
+    winner_rows = db.execute(
+        """
+        SELECT id, winner_faction_key, winner_user_id
+        FROM faction_representative_matches
+        WHERE week_key = ? AND result_status = 'completed' AND winner_faction_key IS NOT NULL AND winner_user_id IS NOT NULL
+        """,
+        (wk,),
+    ).fetchall()
+    for row in winner_rows:
+        faction_key = _normalize_faction_key(row["winner_faction_key"])
+        if faction_key and add_title(row["winner_user_id"], faction_key, "representative_winner", "representative_match", int(row["id"])):
+            total_by_log[(faction_key, "representative_winner", "representative_match")] = total_by_log.get((faction_key, "representative_winner", "representative_match"), 0) + 1
+
+    facility_rows = db.execute(
+        """
+        SELECT faction_key, user_id, COALESCE(SUM(material_amount), 0) AS score
+        FROM faction_facility_contributions
+        WHERE week_key = ? AND user_id > 0
+        GROUP BY faction_key, user_id
+        HAVING score > 0
+        ORDER BY faction_key ASC, score DESC, user_id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    for faction_key in FACTION_KEYS:
+        top = next((row for row in facility_rows if _normalize_faction_key(row["faction_key"]) == faction_key), None)
+        if top and add_title(top["user_id"], faction_key, "facility_leader", "facility", int(top["user_id"])):
+            total_by_log[(faction_key, "facility_leader", "facility")] = total_by_log.get((faction_key, "facility_leader", "facility"), 0) + 1
+
+    guardian_author_rows = db.execute(
+        """
+        SELECT id, faction_key, author_user_id
+        FROM faction_guardians
+        WHERE week_key = ? AND author_user_id IS NOT NULL AND source_type != 'unset'
+        """,
+        (wk,),
+    ).fetchall()
+    for row in guardian_author_rows:
+        faction_key = _normalize_faction_key(row["faction_key"])
+        if faction_key and add_title(row["author_user_id"], faction_key, "guardian_author", "guardian_author", int(row["id"])):
+            total_by_log[(faction_key, "guardian_author", "guardian_author")] = total_by_log.get((faction_key, "guardian_author", "guardian_author"), 0) + 1
+
+    territory_rows = db.execute(
+        """
+        SELECT area_key, controlling_faction_key
+        FROM faction_territory_states
+        WHERE week_key = ?
+          AND controlling_faction_key IS NOT NULL
+          AND previous_faction_key IS NOT NULL
+          AND previous_faction_key != controlling_faction_key
+        """,
+        (wk,),
+    ).fetchall()
+    for row in territory_rows:
+        faction_key = _normalize_faction_key(row["controlling_faction_key"])
+        top = next((item for item in facility_rows if _normalize_faction_key(item["faction_key"]) == faction_key), None)
+        if faction_key and top and add_title(top["user_id"], faction_key, "territory_pioneer", "territory", None):
+            total_by_log[(faction_key, "territory_pioneer", "territory")] = total_by_log.get((faction_key, "territory_pioneer", "territory"), 0) + 1
+
+    for (faction_key, title_key, source_type), count in total_by_log.items():
+        _record_faction_title_grant_log(db, wk, title_key, faction_key, source_type, count)
+    emitted_world_event = _emit_faction_title_world_event(db, wk, granted_titles)
+    return {"week_key": wk, "granted_count": len(granted_titles), "titles": granted_titles, "emitted_world_event": emitted_world_event}
+
+
+def get_weekly_faction_title_highlights(db, week_key=None, faction_key=None, limit=12):
+    wk = str(week_key or _world_week_key())
+    params = [wk]
+    where = ["uft.week_key = ?"]
+    key = _normalize_faction_key(faction_key)
+    if key:
+        where.append("uft.faction_key = ?")
+        params.append(key)
+    rows = db.execute(
+        f"""
+        SELECT uft.*
+        FROM user_faction_titles uft
+        WHERE {' AND '.join(where)}
+        ORDER BY uft.granted_at DESC, uft.id DESC
+        LIMIT ?
+        """,
+        (*params, max(1, int(limit or 12))),
+    ).fetchall()
+    return [_faction_title_view_row(db, row) for row in rows]
+
+
 def _faction_week_result(db, week_key):
     row = db.execute(
         """
@@ -27350,9 +27733,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -27364,6 +27747,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE,
     FACTION_FACILITY_LEVEL_UP_EVENT_TYPE,
     FACTION_TERRITORY_RESULT_EVENT_TYPE,
+    FACTION_TITLE_GRANT_RESULT_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
@@ -27828,6 +28212,18 @@ def _feed_card_from_event(db, row):
         card["meta_lines"] = count_lines
         if changed:
             card["meta_lines"].append(f"研究影響が変化したエリア: {len(changed)}")
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_TITLE_GRANT_RESULT_EVENT_TYPE:
+        titles = payload.get("titles") if isinstance(payload.get("titles"), list) else []
+        card["headline"] = "陣営称号"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営称号が発表されました。"
+        for item in titles[:3]:
+            faction_name = FACTION_LABELS.get(_normalize_faction_key(item.get("faction_key")), "陣営")
+            title_label = str(item.get("title_label") or "称号").strip()
+            card["meta_lines"].append(f"{faction_name}: {title_label}")
+        if not card["meta_lines"]:
+            card["meta_lines"].append(f"付与数: {int(payload.get('granted_count') or 0)}")
         card["link_url"] = url_for("world_view")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
@@ -36400,6 +36796,8 @@ def _faction_page_context(db, user):
     faction_awards = get_faction_weekly_awards(db, user_faction, current_week_key) if user_faction else {}
     faction_weekly_bonus = can_claim_faction_weekly_bonus(db, int(user["id"]), current_week_key)
     faction_badges = get_user_faction_badges(db, int(user["id"]), limit=5)
+    faction_titles = get_user_faction_titles(db, int(user["id"]), limit=8)
+    equipped_faction_title = get_equipped_faction_title(db, int(user["id"]))
     faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
@@ -36409,6 +36807,7 @@ def _faction_page_context(db, user):
     faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
     faction_territory_map = get_current_faction_territory_map(db, current_week_key)
     faction_territory_summary = get_faction_territory_summary(db, user_faction, current_week_key, refresh=False) if user_faction else None
+    faction_title_highlights = get_weekly_faction_title_highlights(db, current_week_key, faction_key=user_faction, limit=8) if user_faction else []
     faction_representatives = get_faction_representatives_view(db, current_week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
     faction_representative_matches = get_faction_representative_matches_view(db, current_week_key)
@@ -36437,6 +36836,8 @@ def _faction_page_context(db, user):
         ],
         "faction_weekly_bonus": faction_weekly_bonus,
         "faction_badges": faction_badges,
+        "faction_titles": faction_titles,
+        "equipped_faction_title": equipped_faction_title,
         "faction_weekly_missions": faction_weekly_missions,
         "faction_guardians": faction_guardians,
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
@@ -36448,6 +36849,7 @@ def _faction_page_context(db, user):
         "facility_contribution_ranking": get_faction_facility_weekly_contributors(db, user_faction, current_week_key, limit=5) if user_faction else [],
         "faction_territory_map": faction_territory_map,
         "faction_territory_summary": faction_territory_summary,
+        "faction_title_highlights": faction_title_highlights,
         "faction_representatives": faction_representatives,
         "my_faction_representative": faction_representatives_by_key.get(user_faction) if user_faction else None,
         "faction_representative_matches": faction_representative_matches,
@@ -36552,6 +36954,20 @@ def faction_change():
         )
         flash(f"{FACTION_LABELS.get(chosen, chosen)} に所属しました。", "notice")
     db.commit()
+    return redirect(url_for("faction_view"))
+
+
+@app.route("/faction/title/equip", methods=["POST"])
+@login_required
+def faction_title_equip():
+    db = get_db()
+    user_id = int(session["user_id"])
+    title_id = int(request.form.get("title_id") or 0)
+    if not equip_user_faction_title(db, user_id, title_id):
+        flash("装備できる陣営称号が見つかりません。", "error")
+        return redirect(url_for("faction_view"))
+    db.commit()
+    flash("陣営称号を装備しました。", "notice")
     return redirect(url_for("faction_view"))
 
 
@@ -37518,6 +37934,99 @@ def admin_faction_territory_finalize():
     return redirect(url_for("admin_faction_territory", week_key=week_key))
 
 
+@app.route("/admin/factions/titles")
+@login_required
+def admin_faction_titles():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    titles = get_weekly_faction_title_highlights(db, week_key, limit=100)
+    logs = db.execute(
+        """
+        SELECT *
+        FROM faction_title_grant_logs
+        WHERE week_key = ?
+        ORDER BY created_at DESC, id DESC
+        """,
+        (week_key,),
+    ).fetchall()
+    return render_template(
+        "admin_faction_titles.html",
+        week_key=week_key,
+        title_defs=FACTION_TITLES,
+        titles=titles,
+        logs=logs,
+        faction_labels=FACTION_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/titles/grant-weekly", methods=["POST"])
+@login_required
+def admin_faction_titles_grant_weekly():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = grant_weekly_faction_titles(db, week_key)
+    except Exception:
+        flash("週次称号の付与に失敗しました。", "error")
+        return redirect(url_for("admin_faction_titles", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_TITLES_GRANT_WEEKLY"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_titles_grant_weekly",
+        entity_type="user_faction_titles",
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"週次称号を付与しました（新規 {result['granted_count']}件 / 世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_titles", week_key=week_key))
+
+
+@app.route("/admin/factions/titles/grant-manual", methods=["POST"])
+@login_required
+def admin_faction_titles_grant_manual():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    faction_key = _normalize_faction_key(request.form.get("faction_key"))
+    title_key = str(request.form.get("title_key") or "").strip()
+    user_id = int(request.form.get("user_id") or 0)
+    try:
+        result = grant_user_faction_title(db, user_id, faction_key, title_key, week_key=week_key, source_type="manual", source_id=int(time.time_ns() % 2147483647), equip_if_first=True)
+    except Exception:
+        flash("手動称号付与に失敗しました。user_id / 陣営 / 称号を確認してください。", "error")
+        return redirect(url_for("admin_faction_titles", week_key=week_key))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_TITLES_GRANT_MANUAL"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_titles_grant_manual",
+        entity_type="user_faction_titles",
+        entity_id=(result.get("title") or {}).get("id"),
+        payload={
+            "week_key": week_key,
+            "target_user_id": user_id,
+            "faction_key": faction_key,
+            "title_key": title_key,
+            "granted": bool(result.get("granted")),
+            "actor_admin_id": int(session["user_id"]),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営称号を手動付与しました。", "notice")
+    return redirect(url_for("admin_faction_titles", week_key=week_key))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -37726,6 +38235,7 @@ def world_view():
     sync_faction_facility_materials(db, week_key)
     faction_facilities = get_faction_facilities_view(db, week_key)
     faction_territory_map = get_current_faction_territory_map(db, week_key)
+    faction_title_highlights = get_weekly_faction_title_highlights(db, week_key, limit=12)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     faction_representatives = get_faction_representatives_view(db, week_key)
@@ -37753,6 +38263,7 @@ def world_view():
         faction_guardian_duels=faction_guardian_duels,
         faction_facilities=faction_facilities,
         faction_territory_map=faction_territory_map,
+        faction_title_highlights=faction_title_highlights,
         guardian_highlight_logs=guardian_highlight_logs,
         faction_strategy_statuses=faction_strategy_statuses,
         faction_representatives=faction_representatives,
@@ -38084,6 +38595,7 @@ def comms_faction():
     faction_facilities = get_faction_facilities_view(db, week_key)
     faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
     faction_territory_summary = get_faction_territory_summary(db, user_faction, week_key) if user_faction else None
+    faction_title_highlights = get_weekly_faction_title_highlights(db, week_key, faction_key=user_faction, limit=5) if user_faction else []
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
@@ -38114,6 +38626,7 @@ def comms_faction():
         my_facility_contribution=get_user_faction_facility_weekly_contribution(db, int(user["id"]), week_key) if user_faction else 0,
         facility_contribution_ranking=get_faction_facility_weekly_contributors(db, user_faction, week_key, limit=5) if user_faction else [],
         faction_territory_summary=faction_territory_summary,
+        faction_title_highlights=faction_title_highlights,
         faction_strategy_status=faction_strategy_status,
         my_faction_representative=faction_representatives_by_key.get(user_faction) if user_faction else None,
         faction_representative_matches=faction_representative_matches,

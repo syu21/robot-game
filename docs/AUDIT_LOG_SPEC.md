@@ -207,7 +207,19 @@
 - `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成し、payload に `area_counts`, `changed_areas` を含める。
 - 領土マップは世界戦況の見える化であり、直接PvP、戦闘補正、報酬配布には使わない。
 
-### 4.13 管理者操作（追加）
+### 4.13 陣営称号・肩書き
+- `audit.faction.titles.grant_weekly`
+- `audit.faction.titles.grant_manual`
+- `FACTION_TITLE_GRANT_RESULT`（公開世界ログ）
+
+補足:
+- `audit.faction.titles.grant_weekly` は管理者が週次称号を自動付与した記録。
+- `audit.faction.titles.grant_manual` は管理者が特定ユーザーへ称号を手動付与した記録。
+- payload には `week_key`, `granted_count`, `titles`, `actor_admin_id` を可能な範囲で含める。
+- `FACTION_TITLE_GRANT_RESULT` は `week_key` ごとに1件だけ作成し、payload に `granted_count`, `titles` を含める。
+- 称号は名誉・表示・記録用であり、直接PvP、戦闘補正、報酬配布には使わない。
+
+### 4.14 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -215,12 +227,12 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.14 パーツ保護
+### 4.15 パーツ保護
 - `audit.part.lock`
 - `audit.part.unlock`
 - payload推奨: `part_instance_id`, `part_key`, `part_name`, `rarity`, `plus`, `locked`
 
-### 4.15 システム
+### 4.16 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `audit.faction.report.recalculate`
@@ -229,10 +241,11 @@
 - `FACTION_MISSION_RESULT`（世界イベント）
 - `FACTION_GUARDIAN_RESULT`（世界イベント）
 - `FACTION_TERRITORY_RESULT`（世界イベント）
+- `FACTION_TITLE_GRANT_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
-### 4.16 観測塔
+### 4.17 観測塔
 - 監査ログ:
   - `audit.tower.run.start`
   - `audit.tower.battle`
@@ -352,6 +365,7 @@
 - 陣営代表模擬戦の公開世界ログ `FACTION_REPRESENTATIVE_MATCH_RESULT` は `week_key` ごとに1件だけ作成する。
 - 守護機演習の公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営領土マップの公開世界ログ `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成する。
+- 陣営称号の公開世界ログ `FACTION_TITLE_GRANT_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

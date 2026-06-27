@@ -41,6 +41,22 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営称号</h2>
+  <p class="upgrade-cost">陣営での活躍を記録する名誉称号です。本編ステータスには影響しません。</p>
+  <div class="showcase-grid">
+    {% for title in faction_title_highlights %}
+    <div class="card">
+      <div><b>{{ title['faction_name'] }}</b> <span class="weekly-fit-badge">{{ title['title_label'] }}</span></div>
+      <div class="robot-part">{{ title['display_name'] }}</div>
+      <div class="upgrade-cost">{{ title['title_description'] }}</div>
+    </div>
+    {% else %}
+    <div class="card">今週の陣営称号はまだ発表されていません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>今週の陣営レポート</h2>
   <p class="upgrade-cost">陣営ごとの研究活動を集計中です。現在は勝敗や報酬には影響しません。</p>
   <div class="showcase-grid">

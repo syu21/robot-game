@@ -25,6 +25,49 @@
 </div>
 
 <section class="panel">
+  <h2>あなたの陣営称号</h2>
+  {% if user_faction %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div class="comms-status-badge">装備中</div>
+      {% if equipped_faction_title %}
+      <h3>{{ equipped_faction_title['title_label'] }}</h3>
+      <div class="upgrade-cost">{{ equipped_faction_title['title_description'] }}</div>
+      <div class="robot-part">{{ equipped_faction_title['faction_name'] }} / {{ equipped_faction_title['week_key'] }}</div>
+      {% else %}
+      <h3>未装備</h3>
+      <div class="upgrade-cost">獲得した称号を1つ装備できます。</div>
+      {% endif %}
+      <div class="upgrade-cost">称号は陣営での活躍の記録です。本編ステータスには影響しません。</div>
+    </div>
+    <div class="card">
+      <h3>最近の称号</h3>
+      <ul class="ranking-mini">
+        {% for title in faction_titles %}
+        <li>
+          <span>{{ title['title_label'] }}{% if title['is_equipped'] %} / 装備中{% endif %}</span>
+          <span>{{ title['week_key'] }}</span>
+        </li>
+        {% else %}
+        <li><span>まだ称号はありません</span><span>-</span></li>
+        {% endfor %}
+      </ul>
+      {% for title in faction_titles %}
+      {% if not title['is_equipped'] %}
+      <form method="post" action="{{ url_for('faction_title_equip') }}" class="inline-form">
+        <input type="hidden" name="title_id" value="{{ title['id'] }}" />
+        <button type="submit">{{ title['title_label'] }}を装備</button>
+      </form>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card">陣営に所属すると、陣営称号を獲得できます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>陣営施設</h2>
   {% if user_faction and my_faction_facility %}
   <div class="showcase-grid">
