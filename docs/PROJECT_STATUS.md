@@ -586,6 +586,25 @@
 - 公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は週1件だけ作成する。
 - プレイヤー本編ステータス、投稿ロボデータ、通常出撃、ボス戦、観測塔、報酬には影響しない。
 
+## 陣営施設の建設 v1
+- `faction_facilities` に陣営ごとの長期成長施設を保存する。
+- `faction_facility_contributions` に出撃、ボス撃破、進化成功、守護戦ダメージから得た施設資材を保存する。
+- `/faction`、`/world`、`/comms/faction` に施設Lv、進捗、週間資材、陣営内貢献を表示する。
+- 管理者は `/admin/factions/facilities` で施設作成、資材同期、手動付与を行う。
+- 施設Lvアップ時は `FACTION_FACILITY_LEVEL_UP` を世界ログへ記録する。
+- 施設は長期的な見える化コンテンツであり、本編ステータス、通常出撃、ボス戦、観測塔、報酬には影響しない。
+
+## 陣営領土マップ v1
+- `faction_territory_areas` に5つの研究エリアを保存する。
+- `faction_territory_states` に週ごとの研究影響下エリアを保存する。
+- `faction_territory_scores` に活動、守護戦、代表戦、守護機演習、施設成長の領土スコアを保存する。
+- `/world` に「陣営領土マップ」として5エリアの研究影響状況を表示する。
+- `/faction` に自陣営の研究影響エリア数、影響下エリア、あと少しのエリアを表示する。
+- `/comms/faction` に今週の研究影響エリアサマリーを表示する。
+- 管理者は `/admin/factions/territory` で初期エリア作成、再計算、確定を行う。
+- 確定時は公開世界ログ `FACTION_TERRITORY_RESULT` を週1件だけ作成する。
+- 領土マップは世界戦況の見える化であり、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能、報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

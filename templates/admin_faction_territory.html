@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営領土マップ管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_territory') }}" class="inline-form">
+    <label>週
+      <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" />
+    </label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_territory_ensure') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">初期エリア確認</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_territory_recalculate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">再計算</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_territory_finalize') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">確定</button>
+  </form>
+  <p class="upgrade-cost">更新 {{ result['updated_count'] }}エリア / 世界ログは確定時に週1件だけ作成</p>
+</div>
+
+<section class="panel">
+  <h2>領土マップ</h2>
+  <div class="showcase-grid">
+    {% for area in territory_map %}
+    <div class="card">
+      <div><b>{{ area['area_name'] }}</b> {% if area['changed'] %}<span class="weekly-fit-badge">変化</span>{% endif %}</div>
+      <div class="robot-part">{{ area['controlling_faction_name'] }}研究影響下</div>
+      <div class="upgrade-cost">理由: {{ area['control_reason_label'] }} / score {{ area['control_score'] }}</div>
+      <div class="upgrade-cost">{{ area['description'] }}</div>
+      <ul class="ranking-mini">
+        {% for score in area['scores'] %}
+        <li>
+          <span>{{ score['faction_name'] }}</span>
+          <span>{{ score['total_score'] }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="upgrade-cost">
+        {% for score in area['scores'] %}
+        {{ score['faction_name'] }}: 活動{{ score['activity_score'] }} / 守護{{ score['guardian_score'] }} / 代表{{ score['representative_score'] }} / 演習{{ score['guardian_duel_score'] }} / 施設{{ score['facility_score'] }}{% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

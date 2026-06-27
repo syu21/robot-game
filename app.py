@@ -11465,6 +11465,58 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_territory_areas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_key TEXT NOT NULL UNIQUE,
+            area_name TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            base_faction_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_territory_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            area_key TEXT NOT NULL,
+            controlling_faction_key TEXT,
+            previous_faction_key TEXT,
+            control_score INTEGER NOT NULL DEFAULT 0,
+            control_reason TEXT,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, area_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_territory_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            area_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            guardian_score INTEGER NOT NULL DEFAULT 0,
+            representative_score INTEGER NOT NULL DEFAULT 0,
+            guardian_duel_score INTEGER NOT NULL DEFAULT 0,
+            facility_score INTEGER NOT NULL DEFAULT 0,
+            total_score INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, area_key, faction_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -13036,6 +13088,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_week_faction ON faction_facility_contributions(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_user_week ON faction_facility_contributions(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_level_logs_faction_created ON faction_facility_level_logs(faction_key, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_areas_active_order ON faction_territory_areas(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_states_week ON faction_territory_states(week_key, controlling_faction_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_scores_week_area ON faction_territory_scores(week_key, area_key, total_score DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")
@@ -22036,6 +22091,7 @@ def finalize_faction_weekly_missions(db, week_key=None):
 FACTION_GUARDIAN_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_RESULT"
 FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE = "FACTION_GUARDIAN_DUEL_RESULT"
 FACTION_FACILITY_LEVEL_UP_EVENT_TYPE = "FACTION_FACILITY_LEVEL_UP"
+FACTION_TERRITORY_RESULT_EVENT_TYPE = "FACTION_TERRITORY_RESULT"
 FACTION_GUARDIAN_MAX_HP = 1000
 FACTION_GUARDIAN_DAMAGE_BY_EVENT = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
@@ -22120,6 +22176,57 @@ FACTION_FACILITY_EVENT_MATERIALS = {
     AUDIT_EVENT_TYPES["EXPLORE_END"]: 1,
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: 20,
     AUDIT_EVENT_TYPES["PART_EVOLVE"]: 10,
+}
+FACTION_TERRITORY_AREAS = (
+    {
+        "area_key": "central_observation",
+        "area_name": "中央観測区",
+        "description": "各陣営の研究活動がぶつかる中心エリア。",
+        "sort_order": 10,
+        "base_faction_key": None,
+        "weights": {"activity": 1.0, "guardian": 1.0, "representative": 1.0, "guardian_duel": 1.0, "facility": 0.5},
+    },
+    {
+        "area_key": "north_bastion",
+        "area_name": "北部防衛区",
+        "description": "守護機の防衛データが集まるエリア。",
+        "sort_order": 20,
+        "base_faction_key": "aurix",
+        "weights": {"activity": 0.5, "guardian": 1.5, "representative": 0.5, "guardian_duel": 1.2, "facility": 1.0},
+    },
+    {
+        "area_key": "east_core",
+        "area_name": "東部炉心区",
+        "description": "進化・突破データが集まる高熱エリア。",
+        "sort_order": 30,
+        "base_faction_key": "ignis",
+        "weights": {"activity": 0.8, "guardian": 0.8, "representative": 1.5, "guardian_duel": 1.0, "facility": 0.5},
+    },
+    {
+        "area_key": "west_wind",
+        "area_name": "西部風洞区",
+        "description": "速度・命中・観測データが流れるエリア。",
+        "sort_order": 40,
+        "base_faction_key": "ventra",
+        "weights": {"activity": 1.5, "guardian": 0.8, "representative": 0.8, "guardian_duel": 0.8, "facility": 0.5},
+    },
+    {
+        "area_key": "outer_trial",
+        "area_name": "外縁実験区",
+        "description": "投稿ロボや試験データが集まる周辺エリア。",
+        "sort_order": 50,
+        "base_faction_key": None,
+        "weights": {"activity": 1.0, "guardian": 0.8, "representative": 0.5, "guardian_duel": 0.5, "facility": 1.5},
+    },
+)
+FACTION_TERRITORY_REASON_LABELS = {
+    "activity": "継続出撃",
+    "guardian": "守護戦データ",
+    "representative": "代表戦成果",
+    "guardian_duel": "守護機演習",
+    "facility": "施設成長",
+    "mixed": "総合研究",
+    "initial": "初期観測",
 }
 
 
@@ -22490,6 +22597,410 @@ def sync_faction_facility_materials(db, week_key=None):
         elif result.get("skipped_duplicate"):
             skipped += 1
     return {"week_key": wk, "granted_count": granted, "skipped_duplicate_count": skipped, "material_total": material_total}
+
+
+def ensure_faction_territory_areas(db):
+    now_text = now_str()
+    created_count = 0
+    for area in FACTION_TERRITORY_AREAS:
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_territory_areas
+            (area_key, area_name, description, sort_order, base_faction_key, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                area["area_key"],
+                area["area_name"],
+                area["description"],
+                int(area["sort_order"]),
+                _normalize_faction_key(area.get("base_faction_key")) or None,
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"created_count": created_count, "areas": get_faction_territory_area_rows(db)}
+
+
+def get_faction_territory_area_rows(db):
+    return db.execute(
+        """
+        SELECT *
+        FROM faction_territory_areas
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, id ASC
+        """
+    ).fetchall()
+
+
+def _territory_area_def(area_key):
+    key = str(area_key or "").strip()
+    return next((area for area in FACTION_TERRITORY_AREAS if area["area_key"] == key), None)
+
+
+def _territory_component_scores(db, week_key):
+    wk = str(week_key or _world_week_key())
+    activity_rows = get_weekly_faction_activity(db, wk)
+    activity = {row["faction_key"]: int(row.get("activity_score", 0) or 0) for row in activity_rows}
+    guardian = {key: 0 for key in FACTION_KEYS}
+    for row in db.execute(
+        """
+        SELECT attacker_faction_key AS faction_key, COALESCE(SUM(damage), 0) AS score
+        FROM faction_guardian_attacks
+        WHERE week_key = ?
+        GROUP BY attacker_faction_key
+        """,
+        (wk,),
+    ).fetchall():
+        key = _normalize_faction_key(row["faction_key"])
+        if key:
+            guardian[key] = int(row["score"] or 0)
+    representative = {key: 0 for key in FACTION_KEYS}
+    for row in db.execute(
+        """
+        SELECT winner_faction_key AS faction_key, COUNT(*) * 100 AS score
+        FROM faction_representative_matches
+        WHERE week_key = ? AND result_status = 'completed' AND winner_faction_key IS NOT NULL
+        GROUP BY winner_faction_key
+        """,
+        (wk,),
+    ).fetchall():
+        key = _normalize_faction_key(row["faction_key"])
+        if key:
+            representative[key] = int(row["score"] or 0)
+    guardian_duel = {key: 0 for key in FACTION_KEYS}
+    for row in db.execute(
+        """
+        SELECT winner_faction_key AS faction_key, COUNT(*) * 100 AS score
+        FROM faction_guardian_duels
+        WHERE week_key = ? AND result_status = 'completed' AND winner_faction_key IS NOT NULL
+        GROUP BY winner_faction_key
+        """,
+        (wk,),
+    ).fetchall():
+        key = _normalize_faction_key(row["faction_key"])
+        if key:
+            guardian_duel[key] = int(row["score"] or 0)
+    facility = {key: 0 for key in FACTION_KEYS}
+    for row in db.execute(
+        """
+        SELECT faction_key, COALESCE(SUM(material_amount), 0) AS score
+        FROM faction_facility_contributions
+        WHERE week_key = ?
+        GROUP BY faction_key
+        """,
+        (wk,),
+    ).fetchall():
+        key = _normalize_faction_key(row["faction_key"])
+        if key:
+            facility[key] = int(row["score"] or 0)
+    return {
+        key: {
+            "activity_score": int(activity.get(key, 0) or 0),
+            "guardian_score": int(guardian.get(key, 0) or 0),
+            "representative_score": int(representative.get(key, 0) or 0),
+            "guardian_duel_score": int(guardian_duel.get(key, 0) or 0),
+            "facility_score": int(facility.get(key, 0) or 0),
+        }
+        for key in FACTION_KEYS
+    }
+
+
+def _territory_total_and_reason(component, weights):
+    weighted = {
+        "activity": float(component["activity_score"]) * float(weights.get("activity", 0)),
+        "guardian": float(component["guardian_score"]) * float(weights.get("guardian", 0)),
+        "representative": float(component["representative_score"]) * float(weights.get("representative", 0)),
+        "guardian_duel": float(component["guardian_duel_score"]) * float(weights.get("guardian_duel", 0)),
+        "facility": float(component["facility_score"]) * float(weights.get("facility", 0)),
+    }
+    total = int(round(sum(weighted.values())))
+    positives = [(key, value) for key, value in weighted.items() if value > 0]
+    if not positives:
+        return total, "initial"
+    positives.sort(key=lambda item: (-item[1], item[0]))
+    if len(positives) >= 2 and int(positives[0][1]) == int(positives[1][1]):
+        return total, "mixed"
+    return total, positives[0][0]
+
+
+def calculate_faction_territory_scores(db, week_key=None):
+    wk = str(week_key or _world_week_key())
+    ensure_faction_territory_areas(db)
+    sync_faction_facility_materials(db, wk)
+    components_by_faction = _territory_component_scores(db, wk)
+    now_text = now_str()
+    rows = []
+    for area in get_faction_territory_area_rows(db):
+        area_def = _territory_area_def(area["area_key"]) or {}
+        weights = area_def.get("weights", {})
+        for faction_key in FACTION_KEYS:
+            component = components_by_faction.get(faction_key, {})
+            total, _reason = _territory_total_and_reason(component, weights)
+            db.execute(
+                """
+                INSERT INTO faction_territory_scores
+                (week_key, area_key, faction_key, activity_score, guardian_score, representative_score,
+                 guardian_duel_score, facility_score, total_score, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(week_key, area_key, faction_key) DO UPDATE SET
+                    activity_score = excluded.activity_score,
+                    guardian_score = excluded.guardian_score,
+                    representative_score = excluded.representative_score,
+                    guardian_duel_score = excluded.guardian_duel_score,
+                    facility_score = excluded.facility_score,
+                    total_score = excluded.total_score,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    wk,
+                    area["area_key"],
+                    faction_key,
+                    int(component.get("activity_score", 0) or 0),
+                    int(component.get("guardian_score", 0) or 0),
+                    int(component.get("representative_score", 0) or 0),
+                    int(component.get("guardian_duel_score", 0) or 0),
+                    int(component.get("facility_score", 0) or 0),
+                    total,
+                    now_text,
+                    now_text,
+                ),
+            )
+            rows.append({"week_key": wk, "area_key": area["area_key"], "faction_key": faction_key, **component, "total_score": total})
+    return {"week_key": wk, "scores": rows}
+
+
+def _territory_previous_faction(db, week_key, area_key):
+    prev_week = _faction_prev_week_key(week_key)
+    row = db.execute(
+        "SELECT controlling_faction_key FROM faction_territory_states WHERE week_key = ? AND area_key = ? LIMIT 1",
+        (prev_week, area_key),
+    ).fetchone()
+    return _normalize_faction_key(row["controlling_faction_key"]) if row else None
+
+
+def _pick_territory_controller(db, week_key, area):
+    scores = db.execute(
+        """
+        SELECT *
+        FROM faction_territory_scores
+        WHERE week_key = ? AND area_key = ?
+        ORDER BY total_score DESC, faction_key ASC
+        """,
+        (week_key, area["area_key"]),
+    ).fetchall()
+    if not scores:
+        return None, 0, "initial"
+    max_score = max(int(row["total_score"] or 0) for row in scores)
+    candidates = [_normalize_faction_key(row["faction_key"]) for row in scores if int(row["total_score"] or 0) == max_score]
+    previous = _territory_previous_faction(db, week_key, area["area_key"])
+    base = _normalize_faction_key(area["base_faction_key"])
+    if previous in candidates:
+        chosen = previous
+    elif base in candidates:
+        chosen = base
+    else:
+        chosen = sorted(candidates)[0] if candidates else None
+    component = next((row for row in scores if _normalize_faction_key(row["faction_key"]) == chosen), scores[0])
+    weights = (_territory_area_def(area["area_key"]) or {}).get("weights", {})
+    _total, reason = _territory_total_and_reason(component, weights)
+    return chosen, max_score, reason
+
+
+def _territory_area_counts(db, week_key):
+    return {
+        key: int(
+            db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM faction_territory_states
+                WHERE week_key = ? AND controlling_faction_key = ?
+                """,
+                (week_key, key),
+            ).fetchone()["c"]
+            or 0
+        )
+        for key in FACTION_KEYS
+    }
+
+
+def _emit_faction_territory_world_event(db, week_key, changed_areas):
+    existing = db.execute(
+        """
+        SELECT 1 FROM world_events_log
+        WHERE event_type = ?
+          AND json_extract(payload_json, '$.week_key') = ?
+        LIMIT 1
+        """,
+        (FACTION_TERRITORY_RESULT_EVENT_TYPE, week_key),
+    ).fetchone()
+    if existing:
+        return False
+    counts = _territory_area_counts(db, week_key)
+    _world_event_log(
+        db,
+        FACTION_TERRITORY_RESULT_EVENT_TYPE,
+        {
+            "week_key": week_key,
+            "area_counts": counts,
+            "changed_areas": changed_areas,
+        },
+    )
+    return True
+
+
+def update_faction_territory_states(db, week_key=None, finalize=False):
+    wk = str(week_key or _world_week_key())
+    calculate_faction_territory_scores(db, wk)
+    now_text = now_str()
+    finalized_at = now_text if finalize else None
+    changed_areas = []
+    updated_count = 0
+    for area in get_faction_territory_area_rows(db):
+        previous = _territory_previous_faction(db, wk, area["area_key"])
+        chosen, control_score, reason = _pick_territory_controller(db, wk, area)
+        current = db.execute(
+            "SELECT controlling_faction_key FROM faction_territory_states WHERE week_key = ? AND area_key = ? LIMIT 1",
+            (wk, area["area_key"]),
+        ).fetchone()
+        current_key = _normalize_faction_key(current["controlling_faction_key"]) if current else None
+        if chosen and current_key and chosen != current_key:
+            changed_areas.append({"area_key": area["area_key"], "previous_faction_key": current_key, "controlling_faction_key": chosen})
+        elif chosen and previous and previous != chosen:
+            changed_areas.append({"area_key": area["area_key"], "previous_faction_key": previous, "controlling_faction_key": chosen})
+        db.execute(
+            """
+            INSERT INTO faction_territory_states
+            (week_key, area_key, controlling_faction_key, previous_faction_key, control_score, control_reason,
+             is_finalized, finalized_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(week_key, area_key) DO UPDATE SET
+                controlling_faction_key = excluded.controlling_faction_key,
+                previous_faction_key = excluded.previous_faction_key,
+                control_score = excluded.control_score,
+                control_reason = excluded.control_reason,
+                is_finalized = CASE WHEN excluded.is_finalized = 1 THEN 1 ELSE faction_territory_states.is_finalized END,
+                finalized_at = CASE WHEN excluded.is_finalized = 1 THEN excluded.finalized_at ELSE faction_territory_states.finalized_at END,
+                updated_at = excluded.updated_at
+            """,
+            (
+                wk,
+                area["area_key"],
+                chosen,
+                previous,
+                int(control_score or 0),
+                reason,
+                1 if finalize else 0,
+                finalized_at,
+                now_text,
+                now_text,
+            ),
+        )
+        updated_count += 1
+    emitted_world_event = _emit_faction_territory_world_event(db, wk, changed_areas) if finalize else False
+    return {
+        "week_key": wk,
+        "updated_count": updated_count,
+        "finalized": bool(finalize),
+        "changed_areas": changed_areas,
+        "emitted_world_event": emitted_world_event,
+    }
+
+
+def _territory_score_rows(db, week_key, area_key):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM faction_territory_scores
+        WHERE week_key = ? AND area_key = ?
+        ORDER BY total_score DESC, faction_key ASC
+        """,
+        (week_key, area_key),
+    ).fetchall()
+    return [
+        {
+            "faction_key": _normalize_faction_key(row["faction_key"]),
+            "faction_name": FACTION_LABELS.get(_normalize_faction_key(row["faction_key"]), row["faction_key"]),
+            "activity_score": int(row["activity_score"] or 0),
+            "guardian_score": int(row["guardian_score"] or 0),
+            "representative_score": int(row["representative_score"] or 0),
+            "guardian_duel_score": int(row["guardian_duel_score"] or 0),
+            "facility_score": int(row["facility_score"] or 0),
+            "total_score": int(row["total_score"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def get_current_faction_territory_map(db, week_key=None, *, refresh=True):
+    wk = str(week_key or _world_week_key())
+    if refresh:
+        update_faction_territory_states(db, wk, finalize=False)
+    ensure_faction_territory_areas(db)
+    rows = db.execute(
+        """
+        SELECT a.*, s.controlling_faction_key, s.previous_faction_key, s.control_score,
+               s.control_reason, s.is_finalized, s.finalized_at
+        FROM faction_territory_areas a
+        LEFT JOIN faction_territory_states s ON s.area_key = a.area_key AND s.week_key = ?
+        WHERE a.is_active = 1
+        ORDER BY a.sort_order ASC, a.id ASC
+        """,
+        (wk,),
+    ).fetchall()
+    out = []
+    for row in rows:
+        controlling = _normalize_faction_key(row["controlling_faction_key"]) or _normalize_faction_key(row["base_faction_key"])
+        previous = _normalize_faction_key(row["previous_faction_key"])
+        reason = str(row["control_reason"] or "initial")
+        out.append(
+            {
+                "week_key": wk,
+                "area_key": row["area_key"],
+                "area_name": row["area_name"],
+                "description": row["description"] or "",
+                "base_faction_key": _normalize_faction_key(row["base_faction_key"]),
+                "base_faction_name": FACTION_LABELS.get(_normalize_faction_key(row["base_faction_key"]), ""),
+                "controlling_faction_key": controlling,
+                "controlling_faction_name": FACTION_LABELS.get(controlling, controlling or "未観測"),
+                "previous_faction_key": previous,
+                "previous_faction_name": FACTION_LABELS.get(previous, previous or ""),
+                "control_score": int(row["control_score"] or 0),
+                "control_reason": reason,
+                "control_reason_label": FACTION_TERRITORY_REASON_LABELS.get(reason, "総合研究"),
+                "is_finalized": bool(int(row["is_finalized"] or 0)),
+                "changed": bool(previous and controlling and previous != controlling),
+                "scores": _territory_score_rows(db, wk, row["area_key"]),
+            }
+        )
+    return out
+
+
+def get_faction_territory_summary(db, faction_key, week_key=None, *, refresh=True):
+    key = _normalize_faction_key(faction_key)
+    territory_map = get_current_faction_territory_map(db, week_key, refresh=refresh)
+    controlled = [row for row in territory_map if row["controlling_faction_key"] == key]
+    near = []
+    for row in territory_map:
+        if row["controlling_faction_key"] == key:
+            continue
+        scores = row.get("scores") or []
+        own = next((score for score in scores if score["faction_key"] == key), None)
+        top = scores[0] if scores else None
+        if own and top:
+            gap = max(0, int(top["total_score"] or 0) - int(own["total_score"] or 0))
+            near.append({**row, "gap_score": gap, "own_score": int(own["total_score"] or 0), "top_score": int(top["total_score"] or 0)})
+    near.sort(key=lambda row: (int(row.get("gap_score", 999999)), row["area_key"]))
+    return {
+        "faction_key": key,
+        "faction_name": FACTION_LABELS.get(key, key),
+        "controlled_count": len(controlled),
+        "total_area_count": len(territory_map),
+        "controlled_areas": controlled,
+        "near_capture_areas": near[:3],
+        "territory_map": territory_map,
+    }
 
 
 def get_guardian_target_faction(attacker_faction_key, week_key=None):
@@ -26839,9 +27350,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -26852,6 +27363,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_GUARDIAN_RESULT_EVENT_TYPE,
     FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE,
     FACTION_FACILITY_LEVEL_UP_EVENT_TYPE,
+    FACTION_TERRITORY_RESULT_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
     "daily_title_posted",
@@ -27303,6 +27815,19 @@ def _feed_card_from_event(db, row):
         card["accent"] = "weekly"
         card["text"] = f"{FACTION_LABELS.get(faction_key, '陣営')}の{facility_name}が Lv.{new_level} に成長しました。"
         card["meta_lines"] = [f"外観段階: {tier}", f"累計資材: {int(payload.get('total_exp') or 0)}"]
+        card["link_url"] = url_for("world_view")
+    elif event_type == FACTION_TERRITORY_RESULT_EVENT_TYPE:
+        counts = payload.get("area_counts") if isinstance(payload.get("area_counts"), dict) else {}
+        changed = payload.get("changed_areas") if isinstance(payload.get("changed_areas"), list) else []
+        count_lines = []
+        for faction_key in FACTION_KEYS:
+            count_lines.append(f"{FACTION_LABELS.get(faction_key, faction_key)} {int(counts.get(faction_key, 0) or 0)}エリア")
+        card["headline"] = "陣営領土マップ"
+        card["accent"] = "weekly"
+        card["text"] = "今週の陣営領土マップが更新されました。"
+        card["meta_lines"] = count_lines
+        if changed:
+            card["meta_lines"].append(f"研究影響が変化したエリア: {len(changed)}")
         card["link_url"] = url_for("world_view")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
@@ -35882,6 +36407,8 @@ def _faction_page_context(db, user):
     sync_faction_facility_materials(db, current_week_key)
     faction_facilities = get_faction_facilities_view(db, current_week_key)
     faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
+    faction_territory_map = get_current_faction_territory_map(db, current_week_key)
+    faction_territory_summary = get_faction_territory_summary(db, user_faction, current_week_key, refresh=False) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, current_week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
     faction_representative_matches = get_faction_representative_matches_view(db, current_week_key)
@@ -35919,6 +36446,8 @@ def _faction_page_context(db, user):
         "my_faction_facility": faction_facilities_by_key.get(user_faction) if user_faction else None,
         "my_facility_contribution": get_user_faction_facility_weekly_contribution(db, int(user["id"]), current_week_key) if user_faction else 0,
         "facility_contribution_ranking": get_faction_facility_weekly_contributors(db, user_faction, current_week_key, limit=5) if user_faction else [],
+        "faction_territory_map": faction_territory_map,
+        "faction_territory_summary": faction_territory_summary,
         "faction_representatives": faction_representatives,
         "my_faction_representative": faction_representatives_by_key.get(user_faction) if user_faction else None,
         "faction_representative_matches": faction_representative_matches,
@@ -36895,6 +37424,100 @@ def admin_faction_facilities_grant():
     return redirect(url_for("admin_faction_facilities", week_key=week_key))
 
 
+@app.route("/admin/factions/territory")
+@login_required
+def admin_faction_territory():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.args.get("week_key") or "").strip() or _world_week_key()
+    try:
+        result = update_faction_territory_states(db, week_key, finalize=False)
+        territory_map = get_current_faction_territory_map(db, week_key, refresh=False)
+        db.commit()
+    except Exception:
+        flash("week_key が不正です。例: 2026-W10", "error")
+        return redirect(url_for("admin"))
+    return render_template(
+        "admin_faction_territory.html",
+        week_key=week_key,
+        territory_map=territory_map,
+        result=result,
+        faction_labels=FACTION_LABELS,
+        reason_labels=FACTION_TERRITORY_REASON_LABELS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/territory/ensure", methods=["POST"])
+@login_required
+def admin_faction_territory_ensure():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    result = ensure_faction_territory_areas(db)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_TERRITORY_ENSURE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_territory_ensure",
+        entity_type="faction_territory_areas",
+        payload={"created_count": int(result["created_count"]), "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営領土エリアを確認しました（新規 {result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_territory", week_key=week_key))
+
+
+@app.route("/admin/factions/territory/recalculate", methods=["POST"])
+@login_required
+def admin_faction_territory_recalculate():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    result = update_faction_territory_states(db, week_key, finalize=False)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_TERRITORY_RECALCULATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_territory_recalculate",
+        entity_type="faction_territory_states",
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営領土マップを再計算しました（{result['updated_count']}エリア）。", "notice")
+    return redirect(url_for("admin_faction_territory", week_key=week_key))
+
+
+@app.route("/admin/factions/territory/finalize", methods=["POST"])
+@login_required
+def admin_faction_territory_finalize():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    week_key = (request.form.get("week_key") or "").strip() or _world_week_key()
+    result = update_faction_territory_states(db, week_key, finalize=True)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_TERRITORY_FINALIZE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_territory_finalize",
+        entity_type="faction_territory_states",
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"陣営領土マップを確定しました（世界ログ: {'作成' if result['emitted_world_event'] else '既存'}）。", "notice")
+    return redirect(url_for("admin_faction_territory", week_key=week_key))
+
+
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
 @login_required
 def admin_faction_report_recalculate():
@@ -37102,6 +37725,7 @@ def world_view():
     faction_guardian_duels = get_faction_guardian_duels_view(db, week_key)
     sync_faction_facility_materials(db, week_key)
     faction_facilities = get_faction_facilities_view(db, week_key)
+    faction_territory_map = get_current_faction_territory_map(db, week_key)
     guardian_highlight_logs = get_global_guardian_highlight_logs(db, week_key, limit=5)
     faction_strategy_statuses = get_all_faction_strategy_statuses(db, week_key)
     faction_representatives = get_faction_representatives_view(db, week_key)
@@ -37128,6 +37752,7 @@ def world_view():
         faction_guardians=faction_guardians,
         faction_guardian_duels=faction_guardian_duels,
         faction_facilities=faction_facilities,
+        faction_territory_map=faction_territory_map,
         guardian_highlight_logs=guardian_highlight_logs,
         faction_strategy_statuses=faction_strategy_statuses,
         faction_representatives=faction_representatives,
@@ -37458,6 +38083,7 @@ def comms_faction():
     sync_faction_facility_materials(db, week_key)
     faction_facilities = get_faction_facilities_view(db, week_key)
     faction_facilities_by_key = {row["faction_key"]: row for row in faction_facilities}
+    faction_territory_summary = get_faction_territory_summary(db, user_faction, week_key) if user_faction else None
     faction_strategy_status = get_faction_strategy_status(db, user_faction, week_key, user_id=int(user["id"])) if user_faction else None
     faction_representatives = get_faction_representatives_view(db, week_key)
     faction_representatives_by_key = {row["faction_key"]: row for row in faction_representatives}
@@ -37487,6 +38113,7 @@ def comms_faction():
         my_faction_facility=faction_facilities_by_key.get(user_faction) if user_faction else None,
         my_facility_contribution=get_user_faction_facility_weekly_contribution(db, int(user["id"]), week_key) if user_faction else 0,
         facility_contribution_ranking=get_faction_facility_weekly_contributors(db, user_faction, week_key, limit=5) if user_faction else [],
+        faction_territory_summary=faction_territory_summary,
         faction_strategy_status=faction_strategy_status,
         my_faction_representative=faction_representatives_by_key.get(user_faction) if user_faction else None,
         faction_representative_matches=faction_representative_matches,

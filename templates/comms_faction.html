@@ -45,6 +45,22 @@
 
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の研究影響エリア</h2>
+    {% if faction_territory_summary %}
+    <p class="robot-part">{{ user_faction_label }}は {{ faction_territory_summary['controlled_count'] }} / {{ faction_territory_summary['total_area_count'] }} エリアで研究優勢です。</p>
+    {% if faction_territory_summary['near_capture_areas'] %}
+    <p class="upgrade-cost">あと少し: {{ faction_territory_summary['near_capture_areas'][0]['area_name'] }} / あと {{ faction_territory_summary['near_capture_areas'][0]['gap_score'] }}</p>
+    {% else %}
+    <p class="upgrade-cost">接戦エリアは集計中です。</p>
+    {% endif %}
+    {% else %}
+    <p>陣営に所属すると、研究影響エリアを確認できます。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('world_view') }}">世界戦況を見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     <h2>陣営施設</h2>
     {% if my_faction_facility %}
     <p class="robot-part">{{ my_faction_facility['facility_name'] }} Lv.{{ my_faction_facility['level'] }}</p>

@@ -22,6 +22,25 @@
 </div>
 
 <section class="panel">
+  <h2>陣営領土マップ</h2>
+  <p class="upgrade-cost">今週の陣営活動・守護戦・代表戦・施設成長から、各研究区の研究影響を表示します。本編ステータスには影響しません。</p>
+  <div class="showcase-grid">
+    {% for area in faction_territory_map %}
+    <div class="card">
+      <div><b>{{ area['area_name'] }}</b> {% if area['changed'] %}<span class="weekly-fit-badge">変化</span>{% endif %}</div>
+      <div class="robot-part">{{ area['controlling_faction_name'] }}研究影響下</div>
+      <div class="upgrade-cost">理由: {{ area['control_reason_label'] }}</div>
+      <ul class="ranking-mini">
+        {% for score in area['scores'][:3] %}
+        <li><span>{{ score['faction_name'] }}</span><span>{{ score['total_score'] }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
   <h2>今週の陣営レポート</h2>
   <p class="upgrade-cost">陣営ごとの研究活動を集計中です。現在は勝敗や報酬には影響しません。</p>
   <div class="showcase-grid">

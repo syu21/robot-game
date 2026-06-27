@@ -193,7 +193,21 @@
 - `FACTION_GUARDIAN_RESULT` は `week_key` ごとに1件だけ作成し、payload に `attacker_faction`, `target_faction`, `guardian_name`, `parsed_percent`, `current_hp`, `max_hp` を含める。
 - 守護戦は直接PvP、戦闘補正、報酬配布には使わない。
 
-### 4.12 管理者操作（追加）
+### 4.12 陣営領土マップ
+- `audit.faction.territory.ensure`
+- `audit.faction.territory.recalculate`
+- `audit.faction.territory.finalize`
+- `FACTION_TERRITORY_RESULT`（公開世界ログ）
+
+補足:
+- `audit.faction.territory.ensure` は管理者が初期5エリアを作成または確認した記録。
+- `audit.faction.territory.recalculate` は管理者が週次領土スコアを再計算した記録。
+- `audit.faction.territory.finalize` は管理者が週次領土マップを確定した記録。
+- payload には `week_key`, `updated_count`, `changed_areas`, `actor_admin_id` を含める。
+- `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成し、payload に `area_counts`, `changed_areas` を含める。
+- 領土マップは世界戦況の見える化であり、直接PvP、戦闘補正、報酬配布には使わない。
+
+### 4.13 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
 - `audit.admin.user.protect_login`
@@ -201,12 +215,12 @@
 - `audit.admin.user.delete`
   - payload推奨: `deleted_user_id`, `deleted_username`, `actor_admin_id`
 
-### 4.13 パーツ保護
+### 4.14 パーツ保護
 - `audit.part.lock`
 - `audit.part.unlock`
 - payload推奨: `part_instance_id`, `part_key`, `part_name`, `rarity`, `plus`, `locked`
 
-### 4.14 システム
+### 4.15 システム
 - `audit.system.maintenance_block`
 - `FACTION_WAR_RESULT`（世界イベント）
 - `audit.faction.report.recalculate`
@@ -214,10 +228,11 @@
 - `FACTION_WEEKLY_REPORT`（世界イベント）
 - `FACTION_MISSION_RESULT`（世界イベント）
 - `FACTION_GUARDIAN_RESULT`（世界イベント）
+- `FACTION_TERRITORY_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
-### 4.15 観測塔
+### 4.16 観測塔
 - 監査ログ:
   - `audit.tower.run.start`
   - `audit.tower.battle`
@@ -336,6 +351,7 @@
 - 陣営守護戦の公開世界ログ `FACTION_GUARDIAN_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営代表模擬戦の公開世界ログ `FACTION_REPRESENTATIVE_MATCH_RESULT` は `week_key` ごとに1件だけ作成する。
 - 守護機演習の公開世界ログ `FACTION_GUARDIAN_DUEL_RESULT` は `week_key` ごとに1件だけ作成する。
+- 陣営領土マップの公開世界ログ `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

@@ -1980,6 +1980,58 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_territory_areas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_key TEXT NOT NULL UNIQUE,
+            area_name TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            base_faction_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_territory_states (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            area_key TEXT NOT NULL,
+            controlling_faction_key TEXT,
+            previous_faction_key TEXT,
+            control_score INTEGER NOT NULL DEFAULT 0,
+            control_reason TEXT,
+            is_finalized INTEGER NOT NULL DEFAULT 0,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, area_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_territory_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            area_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            activity_score INTEGER NOT NULL DEFAULT 0,
+            guardian_score INTEGER NOT NULL DEFAULT 0,
+            representative_score INTEGER NOT NULL DEFAULT 0,
+            guardian_duel_score INTEGER NOT NULL DEFAULT 0,
+            facility_score INTEGER NOT NULL DEFAULT 0,
+            total_score INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, area_key, faction_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_strategy_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             week_key TEXT NOT NULL,
@@ -3307,6 +3359,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_week_faction ON faction_facility_contributions(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_contrib_user_week ON faction_facility_contributions(user_id, week_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_facility_level_logs_faction_created ON faction_facility_level_logs(faction_key, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_areas_active_order ON faction_territory_areas(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_states_week ON faction_territory_states(week_key, controlling_faction_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_territory_scores_week_area ON faction_territory_scores(week_key, area_key, total_score DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_strategy_votes_week_faction ON faction_strategy_votes(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_strategies_week ON faction_weekly_strategies(week_key, faction_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_representatives_week ON faction_representatives(week_key, faction_key)")

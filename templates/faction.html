@@ -103,6 +103,39 @@
 </section>
 
 <section class="panel">
+  <h2>自陣営の研究影響エリア</h2>
+  {% if user_faction and faction_territory_summary %}
+  <div class="showcase-grid">
+    <div class="card active-card">
+      <div class="comms-status-badge">{{ faction_territory_summary['faction_name'] }}</div>
+      <h3>現在 {{ faction_territory_summary['controlled_count'] }} / {{ faction_territory_summary['total_area_count'] }} エリアで研究優勢</h3>
+      <div class="upgrade-cost">領土マップは今週の陣営活動・守護戦・代表戦・施設成長をもとに更新されます。本編戦闘ステータスには影響しません。</div>
+      <ul class="ranking-mini">
+        {% for area in faction_territory_summary['controlled_areas'] %}
+        <li><span>{{ area['area_name'] }}</span><span>{{ area['control_reason_label'] }}</span></li>
+        {% else %}
+        <li><span>研究影響エリアは集計中</span><span>-</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h3>あと少しのエリア</h3>
+      <ul class="ranking-mini">
+        {% for area in faction_territory_summary['near_capture_areas'] %}
+        <li><span>{{ area['area_name'] }}</span><span>あと {{ area['gap_score'] }}</span></li>
+        {% else %}
+        <li><span>接戦エリアはまだありません</span><span>-</span></li>
+        {% endfor %}
+      </ul>
+      <p class="link"><a href="{{ url_for('world_view') }}">世界戦況で全エリアを見る</a></p>
+    </div>
+  </div>
+  {% else %}
+  <div class="card">陣営に所属すると、自陣営の研究影響エリアを確認できます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>今週の陣営代表戦</h2>
   {% if user_faction and my_faction_representative %}
   <div class="showcase-grid">
