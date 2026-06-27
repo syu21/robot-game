@@ -231,6 +231,17 @@
 - payload には `week_key`, `event_key`, `event_name`, `description`, `effect_summary`, `status`, `actor_admin_id` を可能な範囲で含める。
 - 陣営イベント週は既存陣営コンテンツの注目軸。通常出撃、ボス戦、本編ステータス、パーツ性能、コイン報酬には影響させない。
 
+### 4.13.2 陣営ショップ
+- 管理者操作:
+  - `audit.faction.shop.ensure_defaults`
+  - `audit.faction.shop.create`
+  - `audit.faction.shop.update`
+- ユーザー操作:
+  - `audit.faction.shop.purchase`
+  - `audit.faction.shop.equip`
+- payload には `user_id`, `item_key`, `item_type`, `price_paid_coins`, `coins_after`, `slot_key`, `actor_admin_id` を可能な範囲で含める。
+- 陣営ショップは既存コインで表示用記念品を交換する機能。新通貨を作らず、戦闘ステータス、通常出撃、ボス戦、観測塔、報酬には影響させない。
+
 ### 4.14 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`

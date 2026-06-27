@@ -627,6 +627,18 @@
 - 開始時は `FACTION_WEEKLY_EVENT_STARTED`、終了時は `FACTION_WEEKLY_EVENT_FINALIZED` を週1件だけ世界ログへ作成する。
 - 陣営イベント週は既存陣営コンテンツの注目軸であり、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能、コイン報酬には影響しない。
 
+## 陣営ショップ v1
+- `faction_shop_items` に陣営ショップ商品を保存する。
+- `user_faction_shop_purchases` にユーザーの購入履歴を保存する。
+- `user_equipped_faction_shop_items` に装備中のショップ装飾を保存する。
+- 新通貨は作らず、既存の `users.coins` で交換する。
+- 商品は `faction_badge` / `profile_background` / `title_ticket` / `event_memorial` / `guardian_support_item` の表示用アイテムに限定する。
+- 管理者は `/admin/factions/shop` で初期商品作成、商品作成、商品更新を行う。
+- ユーザーは `/faction/shop` で商品確認、購入、陣営バッジ装備を行う。
+- `title_ticket` は購入時に `user_faction_titles` へ `source_type='shop'` の称号を付与する。
+- `/faction`、`/world`、`/comms/faction` にショップ導線を表示する。
+- 陣営ショップは記念品交換所であり、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能、報酬には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営ショップ管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="{{ url_for('admin_faction_shop_ensure_defaults') }}" class="inline-form">
+    <button type="submit">初期商品を作成</button>
+  </form>
+  <p class="upgrade-cost">陣営ショップ商品は表示用の記念品です。本編ステータスや報酬には影響させません。</p>
+</div>
+
+<section class="panel">
+  <h2>新規作成</h2>
+  <form method="post" action="{{ url_for('admin_faction_shop_create') }}" class="card">
+    <label>item_key <input type="text" name="item_key" required /></label>
+    <label>商品名 <input type="text" name="item_name" required /></label>
+    <label>説明 <input type="text" name="description" /></label>
+    <label>種類
+      <select name="item_type">
+        {% for key, label in item_type_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>陣営
+      <select name="faction_key">
+        <option value="">全陣営</option>
+        {% for key, label in faction_labels.items() if key != 'neutral' %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>価格 <input type="number" name="price_coins" min="0" value="100" /></label>
+    <label>施設Lv条件 <input type="number" name="required_facility_level" min="0" value="0" /></label>
+    <label>必要称号key <input type="text" name="required_title_key" /></label>
+    <label>必要イベントkey <input type="text" name="required_event_key" /></label>
+    <label>領土数条件 <input type="number" name="required_territory_count" min="0" value="0" /></label>
+    <label><input type="checkbox" name="required_guardian_author" value="1" /> 守護機作者限定</label>
+    <label>付与称号key <input type="text" name="grant_title_key" /></label>
+    <label>バッジ表示名 <input type="text" name="badge_label" /></label>
+    <label>画像path <input type="text" name="image_path" /></label>
+    <label>並び順 <input type="number" name="sort_order" value="100" /></label>
+    <label><input type="checkbox" name="is_active" value="1" checked /> 有効</label>
+    <label><input type="checkbox" name="is_limited" value="1" /> 期間限定</label>
+    <label>開始 <input type="text" name="starts_at" placeholder="2026-06-27 00:00:00" /></label>
+    <label>終了 <input type="text" name="ends_at" placeholder="2026-07-04 23:59:59" /></label>
+    <button type="submit">作成</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>商品一覧</h2>
+  <div class="showcase-grid">
+    {% for item in items %}
+    <form method="post" action="{{ url_for('admin_faction_shop_update') }}" class="card">
+      <input type="hidden" name="item_id" value="{{ item['id'] }}" />
+      <input type="hidden" name="item_key" value="{{ item['item_key'] }}" />
+      <div><b>{{ item['item_key'] }}</b> <span class="weekly-fit-badge">{{ item['purchase_count'] }}件</span></div>
+      <label>商品名 <input type="text" name="item_name" value="{{ item['item_name'] }}" required /></label>
+      <label>説明 <input type="text" name="description" value="{{ item['description'] }}" /></label>
+      <label>種類
+        <select name="item_type">
+          {% for key, label in item_type_labels.items() %}
+          <option value="{{ key }}" {% if item['item_type'] == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>陣営
+        <select name="faction_key">
+          <option value="">全陣営</option>
+          {% for key, label in faction_labels.items() if key != 'neutral' %}
+          <option value="{{ key }}" {% if item['faction_key'] == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>価格 <input type="number" name="price_coins" min="0" value="{{ item['price_coins'] }}" /></label>
+      <label>施設Lv条件 <input type="number" name="required_facility_level" min="0" value="{{ item['required_facility_level'] }}" /></label>
+      <label>必要称号key <input type="text" name="required_title_key" value="{{ item['required_title_key'] }}" /></label>
+      <label>必要イベントkey <input type="text" name="required_event_key" value="{{ item['required_event_key'] }}" /></label>
+      <label>領土数条件 <input type="number" name="required_territory_count" min="0" value="{{ item['required_territory_count'] }}" /></label>
+      <label><input type="checkbox" name="required_guardian_author" value="1" {% if item['required_guardian_author'] %}checked{% endif %} /> 守護機作者限定</label>
+      <label>付与称号key <input type="text" name="grant_title_key" value="{{ item['grant_title_key'] }}" /></label>
+      <label>バッジ表示名 <input type="text" name="badge_label" value="{{ item['badge_label'] }}" /></label>
+      <label>画像path <input type="text" name="image_path" value="{{ item['image_path'] }}" /></label>
+      <label>並び順 <input type="number" name="sort_order" value="{{ item['sort_order'] }}" /></label>
+      <label><input type="checkbox" name="is_active" value="1" {% if item['is_active'] %}checked{% endif %} /> 有効</label>
+      <label><input type="checkbox" name="is_limited" value="1" {% if item['is_limited'] %}checked{% endif %} /> 期間限定</label>
+      <label>開始 <input type="text" name="starts_at" value="{{ item['starts_at'] }}" /></label>
+      <label>終了 <input type="text" name="ends_at" value="{{ item['ends_at'] }}" /></label>
+      <button type="submit">更新</button>
+    </form>
+    {% else %}
+    <div class="card">商品はまだありません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}

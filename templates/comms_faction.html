@@ -40,6 +40,14 @@
   </div>
 
   <div class="card faction-contribution-card">
+    <div class="comms-status-badge">SHOP</div>
+    <h2>陣営ショップ</h2>
+    <p>施設レベルや称号に応じた記念品を、既存コインで交換できます。</p>
+    <p class="upgrade-cost">バッジ・肩書きなどの表示用アイテムだけを扱います。本編ステータスには影響しません。</p>
+    <p class="link"><a href="{{ url_for('faction_shop') }}">陣営ショップへ</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
     {% if faction_strategy_status and faction_strategy_status['is_finalized'] and faction_strategy_status['finalized_strategy'] %}
     <h2>今週の陣営作戦：{{ faction_strategy_status['finalized_strategy']['label'] }}</h2>

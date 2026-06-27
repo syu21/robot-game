@@ -1856,6 +1856,63 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_shop_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_key TEXT NOT NULL UNIQUE,
+            item_name TEXT NOT NULL,
+            description TEXT,
+            item_type TEXT NOT NULL,
+            faction_key TEXT,
+            price_coins INTEGER NOT NULL DEFAULT 0,
+            required_facility_level INTEGER NOT NULL DEFAULT 0,
+            required_title_key TEXT,
+            required_event_key TEXT,
+            required_territory_count INTEGER NOT NULL DEFAULT 0,
+            required_guardian_author INTEGER NOT NULL DEFAULT 0,
+            grant_title_key TEXT,
+            badge_label TEXT,
+            image_path TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_limited INTEGER NOT NULL DEFAULT 0,
+            starts_at TEXT,
+            ends_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_faction_shop_purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            faction_key TEXT,
+            price_paid_coins INTEGER NOT NULL DEFAULT 0,
+            purchased_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, item_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_equipped_faction_shop_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            slot_key TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            equipped_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(user_id, slot_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3416,6 +3473,10 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_title_logs_week ON faction_title_grant_logs(week_key, title_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_events_status ON faction_weekly_events(week_key, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_event_logs_week ON faction_weekly_event_logs(week_key, action)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_items_active ON faction_shop_items(is_active, sort_order, item_type)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_items_faction ON faction_shop_items(faction_key, is_active)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_purchases_user ON user_faction_shop_purchases(user_id, purchased_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_equipped_faction_shop_items_user ON user_equipped_faction_shop_items(user_id, slot_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")

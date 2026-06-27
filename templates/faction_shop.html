@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営ショップ</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <p>陣営活動の記念品を既存コインで交換できます。</p>
+  <p class="robot-part">所持コイン: {{ user['coins'] }}</p>
+  {% if user_faction %}
+  <p>所属: <b>{{ faction_labels.get(user_faction, user_faction) }}</b></p>
+  {% else %}
+  <p>研究方針を選ぶと陣営ショップを利用できます。</p>
+  {% endif %}
+  <p class="upgrade-cost">商品は称号・バッジなどの表示用アイテムです。本編ステータスには影響しません。</p>
+</div>
+
+<section class="panel">
+  <h2>装備中バッジ</h2>
+  <div class="card active-card">
+    {% if equipped.get('faction_badge') %}
+    <div class="comms-status-badge">装備中</div>
+    <h3>{{ equipped.get('faction_badge')['badge_label'] }}</h3>
+    <div class="upgrade-cost">{{ equipped.get('faction_badge')['item_name'] }}</div>
+    {% else %}
+    <div class="comms-status-badge is-muted">未装備</div>
+    <h3>バッジ未装備</h3>
+    <div class="upgrade-cost">購入済みの陣営バッジを1つ装備できます。</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>商品一覧</h2>
+  <div class="showcase-grid">
+    {% for item in items %}
+    <div class="card {% if item['purchased'] %}active-card{% endif %}">
+      <div><b>{{ item['item_name'] }}</b> <span class="weekly-fit-badge">{{ item['item_type_label'] }}</span></div>
+      <div class="robot-part">{{ item['price_coins'] }} コイン</div>
+      <div class="upgrade-cost">{{ item['description'] }}</div>
+      <div class="upgrade-cost">対象: {{ item['faction_name'] }} / 条件: {{ item['condition_text'] }}</div>
+      {% if item['purchased'] %}
+      <div class="comms-status-badge">購入済み</div>
+      {% elif item['can_purchase'] and item['can_purchase']['ok'] %}
+      <form method="post" action="{{ url_for('faction_shop_buy') }}" class="inline-form">
+        <input type="hidden" name="item_id" value="{{ item['id'] }}" />
+        <button type="submit">交換する</button>
+      </form>
+      {% else %}
+      <div class="upgrade-cost">{{ item['can_purchase']['reason'] if item['can_purchase'] else '交換できません。' }}</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">商品はまだありません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>購入済み</h2>
+  <div class="showcase-grid">
+    {% for purchase in purchases %}
+    <div class="card">
+      <div><b>{{ purchase['item_name'] }}</b> <span class="weekly-fit-badge">{{ purchase['item_type_label'] }}</span></div>
+      <div class="upgrade-cost">{{ purchase['description'] }}</div>
+      <div class="robot-part">{{ purchase['purchased_at'] }} / {{ purchase['price_paid_coins'] }} コイン</div>
+      {% if purchase['equippable_slot'] %}
+      {% if purchase['equipped_slot'] %}
+      <div class="comms-status-badge">装備中</div>
+      {% else %}
+      <form method="post" action="{{ url_for('faction_shop_equip') }}" class="inline-form">
+        <input type="hidden" name="purchase_id" value="{{ purchase['id'] }}" />
+        <input type="hidden" name="slot_key" value="{{ purchase['equippable_slot'] }}" />
+        <button type="submit">装備する</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">購入済み商品はまだありません。</div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="link"><a href="{{ url_for('faction_view') }}">陣営へ戻る</a></p>
+{% endblock %}

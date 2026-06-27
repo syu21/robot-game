@@ -40,6 +40,22 @@
 </section>
 
 <section class="panel">
+  <h2>陣営ショップ</h2>
+  <div class="card active-card">
+    <div class="comms-status-badge">記念品</div>
+    <h3>陣営活動の記録をコインで交換</h3>
+    <div class="robot-part">所持コイン: {{ user['coins'] }} / 購入済み: {{ faction_shop_purchase_count }}</div>
+    {% if equipped_shop_items.get('faction_badge') %}
+    <div class="upgrade-cost">装備中バッジ: {{ equipped_shop_items.get('faction_badge')['badge_label'] }}</div>
+    {% else %}
+    <div class="upgrade-cost">陣営バッジ、肩書き、イベント記念品を交換できます。</div>
+    {% endif %}
+    <div class="upgrade-cost">本編ステータスには影響しません。</div>
+    <p class="link"><a href="{{ url_for('faction_shop') }}">陣営ショップへ</a></p>
+  </div>
+</section>
+
+<section class="panel">
   <h2>あなたの陣営称号</h2>
   {% if user_faction %}
   <div class="showcase-grid">

@@ -11337,6 +11337,63 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_shop_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_key TEXT NOT NULL UNIQUE,
+            item_name TEXT NOT NULL,
+            description TEXT,
+            item_type TEXT NOT NULL,
+            faction_key TEXT,
+            price_coins INTEGER NOT NULL DEFAULT 0,
+            required_facility_level INTEGER NOT NULL DEFAULT 0,
+            required_title_key TEXT,
+            required_event_key TEXT,
+            required_territory_count INTEGER NOT NULL DEFAULT 0,
+            required_guardian_author INTEGER NOT NULL DEFAULT 0,
+            grant_title_key TEXT,
+            badge_label TEXT,
+            image_path TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_limited INTEGER NOT NULL DEFAULT 0,
+            starts_at TEXT,
+            ends_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_faction_shop_purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            faction_key TEXT,
+            price_paid_coins INTEGER NOT NULL DEFAULT 0,
+            purchased_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, item_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_equipped_faction_shop_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            slot_key TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            item_key TEXT NOT NULL,
+            equipped_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(user_id, slot_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -13145,6 +13202,10 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_title_logs_week ON faction_title_grant_logs(week_key, title_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_events_status ON faction_weekly_events(week_key, status)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_event_logs_week ON faction_weekly_event_logs(week_key, action)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_items_active ON faction_shop_items(is_active, sort_order, item_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_items_faction ON faction_shop_items(faction_key, is_active)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_purchases_user ON user_faction_shop_purchases(user_id, purchased_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_equipped_faction_shop_items_user ON user_equipped_faction_shop_items(user_id, slot_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")
@@ -22352,7 +22413,120 @@ FACTION_TITLES = {
         "description": "投稿ロボが陣営守護機に採用された研究員に贈られる称号。",
         "source_type": "guardian_author",
     },
+    "shop_aurix_guard": {
+        "label": "オリクス守護隊",
+        "description": "陣営ショップで交換した肩書きです。本編ステータスには影響しません。",
+        "source_type": "shop",
+    },
+    "shop_ignis_break": {
+        "label": "イグニス突破班",
+        "description": "陣営ショップで交換した肩書きです。本編ステータスには影響しません。",
+        "source_type": "shop",
+    },
+    "shop_ventra_observer": {
+        "label": "ヴェントラ観測班",
+        "description": "陣営ショップで交換した肩書きです。本編ステータスには影響しません。",
+        "source_type": "shop",
+    },
 }
+FACTION_SHOP_ITEM_TYPES = {
+    "faction_badge": "陣営バッジ",
+    "profile_background": "プロフィール背景",
+    "title_ticket": "肩書き",
+    "event_memorial": "イベント記念品",
+    "guardian_support_item": "守護機応援記念品",
+}
+FACTION_SHOP_EQUIP_SLOTS = {
+    "faction_badge": "faction_badge",
+    "profile_background": "profile_background",
+}
+DEFAULT_FACTION_SHOP_ITEMS = [
+    {
+        "item_key": "weekly_event_memorial_badge",
+        "item_name": "陣営イベント参加記念バッジ",
+        "item_type": "event_memorial",
+        "price_coins": 100,
+        "description": "陣営イベントに参加した研究員向けの記念バッジ。",
+        "badge_label": "イベント参加記念",
+        "sort_order": 10,
+    },
+    {
+        "item_key": "territory_observer_badge",
+        "item_name": "領土観測員バッジ",
+        "item_type": "faction_badge",
+        "price_coins": 200,
+        "required_territory_count": 1,
+        "description": "陣営領土マップで研究影響エリアを持つ陣営の研究員向けバッジ。",
+        "badge_label": "領土観測員",
+        "sort_order": 20,
+    },
+    {
+        "item_key": "aurix_bastion_badge",
+        "item_name": "オリクス防壁バッジ",
+        "item_type": "faction_badge",
+        "faction_key": "aurix",
+        "price_coins": 300,
+        "required_facility_level": 2,
+        "description": "オリクス施設の成長を記念する防壁バッジ。",
+        "badge_label": "オリクス防壁",
+        "sort_order": 30,
+    },
+    {
+        "item_key": "aurix_guard_title",
+        "item_name": "オリクス守護隊の肩書き",
+        "item_type": "title_ticket",
+        "faction_key": "aurix",
+        "price_coins": 400,
+        "required_facility_level": 3,
+        "grant_title_key": "shop_aurix_guard",
+        "description": "オリクス守護隊を名乗れるショップ限定肩書き。",
+        "sort_order": 40,
+    },
+    {
+        "item_key": "ignis_core_badge",
+        "item_name": "イグニス炉心バッジ",
+        "item_type": "faction_badge",
+        "faction_key": "ignis",
+        "price_coins": 300,
+        "required_facility_level": 2,
+        "description": "イグニス施設の成長を記念する炉心バッジ。",
+        "badge_label": "イグニス炉心",
+        "sort_order": 50,
+    },
+    {
+        "item_key": "ignis_break_title",
+        "item_name": "イグニス突破班の肩書き",
+        "item_type": "title_ticket",
+        "faction_key": "ignis",
+        "price_coins": 400,
+        "required_facility_level": 3,
+        "grant_title_key": "shop_ignis_break",
+        "description": "イグニス突破班を名乗れるショップ限定肩書き。",
+        "sort_order": 60,
+    },
+    {
+        "item_key": "ventra_wind_badge",
+        "item_name": "ヴェントラ風洞バッジ",
+        "item_type": "faction_badge",
+        "faction_key": "ventra",
+        "price_coins": 300,
+        "required_facility_level": 2,
+        "description": "ヴェントラ施設の成長を記念する風洞バッジ。",
+        "badge_label": "ヴェントラ風洞",
+        "sort_order": 70,
+    },
+    {
+        "item_key": "ventra_observer_title",
+        "item_name": "ヴェントラ観測班の肩書き",
+        "item_type": "title_ticket",
+        "faction_key": "ventra",
+        "price_coins": 400,
+        "required_facility_level": 3,
+        "grant_title_key": "shop_ventra_observer",
+        "description": "ヴェントラ観測班を名乗れるショップ限定肩書き。",
+        "sort_order": 80,
+    },
+]
 FACTION_WEEKLY_EVENTS = {
     "guardian_focus": {
         "name": "守護戦強化週間",
@@ -22603,6 +22777,368 @@ def apply_faction_event_territory_score_bonus(db, score_parts, week_key=None):
     elif event["event_key"] == "guardian_author_focus":
         parts["guardian_duel_score"] = _add_ten_percent(parts.get("guardian_duel_score", 0))
     return parts
+
+
+def _faction_shop_item_type_label(item_type):
+    return FACTION_SHOP_ITEM_TYPES.get(str(item_type or "").strip(), str(item_type or ""))
+
+
+def _faction_shop_item_view_row(row, *, purchased=False, can_purchase=None, equipped_slot=None):
+    if not row:
+        return None
+    faction_key = _normalize_faction_key(row["faction_key"]) if row["faction_key"] else None
+    item_type = str(row["item_type"] or "").strip()
+    conditions = []
+    if faction_key:
+        conditions.append(f"{FACTION_LABELS.get(faction_key, faction_key)}所属")
+    if int(row["required_facility_level"] or 0) > 0:
+        conditions.append(f"施設Lv.{int(row['required_facility_level'])}以上")
+    if row["required_title_key"]:
+        title_def = FACTION_TITLES.get(str(row["required_title_key"]))
+        conditions.append(f"称号: {title_def['label'] if title_def else row['required_title_key']}")
+    if row["required_event_key"]:
+        event_def = _faction_weekly_event_def(row["required_event_key"])
+        conditions.append(f"イベント: {event_def['name'] if event_def else row['required_event_key']}")
+    if int(row["required_territory_count"] or 0) > 0:
+        conditions.append(f"研究影響エリア {int(row['required_territory_count'])}以上")
+    if int(row["required_guardian_author"] or 0) == 1:
+        conditions.append("守護機作者")
+    return {
+        "id": int(row["id"]),
+        "item_key": row["item_key"],
+        "item_name": row["item_name"],
+        "description": row["description"] or "",
+        "item_type": item_type,
+        "item_type_label": _faction_shop_item_type_label(item_type),
+        "faction_key": faction_key,
+        "faction_name": FACTION_LABELS.get(faction_key, "全陣営") if faction_key else "全陣営",
+        "price_coins": max(0, int(row["price_coins"] or 0)),
+        "required_facility_level": int(row["required_facility_level"] or 0),
+        "required_title_key": row["required_title_key"] or "",
+        "required_event_key": row["required_event_key"] or "",
+        "required_territory_count": int(row["required_territory_count"] or 0),
+        "required_guardian_author": bool(int(row["required_guardian_author"] or 0)),
+        "grant_title_key": row["grant_title_key"] or "",
+        "badge_label": row["badge_label"] or "",
+        "image_path": row["image_path"] or "",
+        "sort_order": int(row["sort_order"] or 0),
+        "is_active": bool(int(row["is_active"] or 0)),
+        "is_limited": bool(int(row["is_limited"] or 0)),
+        "starts_at": row["starts_at"] or "",
+        "ends_at": row["ends_at"] or "",
+        "conditions": conditions,
+        "condition_text": " / ".join(conditions) if conditions else "条件なし",
+        "purchased": bool(purchased),
+        "can_purchase": can_purchase,
+        "equippable_slot": FACTION_SHOP_EQUIP_SLOTS.get(item_type),
+        "equipped_slot": equipped_slot,
+    }
+
+
+def ensure_default_faction_shop_items(db):
+    now_text = now_str()
+    created_count = 0
+    for seed in DEFAULT_FACTION_SHOP_ITEMS:
+        item_type = str(seed.get("item_type") or "").strip()
+        if item_type not in FACTION_SHOP_ITEM_TYPES:
+            continue
+        faction_key = _normalize_faction_key(seed.get("faction_key")) if seed.get("faction_key") else None
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO faction_shop_items
+            (item_key, item_name, description, item_type, faction_key, price_coins,
+             required_facility_level, required_title_key, required_event_key, required_territory_count,
+             required_guardian_author, grant_title_key, badge_label, image_path, sort_order,
+             is_active, is_limited, starts_at, ends_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, ?, ?)
+            """,
+            (
+                seed["item_key"],
+                seed["item_name"],
+                seed.get("description") or "",
+                item_type,
+                faction_key,
+                max(0, int(seed.get("price_coins") or 0)),
+                max(0, int(seed.get("required_facility_level") or 0)),
+                seed.get("required_title_key") or None,
+                seed.get("required_event_key") or None,
+                max(0, int(seed.get("required_territory_count") or 0)),
+                1 if seed.get("required_guardian_author") else 0,
+                seed.get("grant_title_key") or None,
+                seed.get("badge_label") or "",
+                seed.get("image_path") or "",
+                int(seed.get("sort_order") or 0),
+                now_text,
+                now_text,
+            ),
+        )
+        created_count += int(cur.rowcount or 0)
+    return {"created_count": created_count}
+
+
+def get_faction_shop_items(db, *, include_inactive=False):
+    where = "" if include_inactive else "WHERE is_active = 1"
+    rows = db.execute(
+        f"""
+        SELECT *
+        FROM faction_shop_items
+        {where}
+        ORDER BY sort_order ASC, id ASC
+        """
+    ).fetchall()
+    return [_faction_shop_item_view_row(row) for row in rows]
+
+
+def _get_faction_shop_item_row(db, item_id):
+    return db.execute("SELECT * FROM faction_shop_items WHERE id = ? LIMIT 1", (int(item_id),)).fetchone()
+
+
+def get_user_faction_shop_purchases(db, user_id):
+    rows = db.execute(
+        """
+        SELECT p.*, i.item_name, i.description, i.item_type, i.badge_label, i.image_path
+        FROM user_faction_shop_purchases p
+        JOIN faction_shop_items i ON i.id = p.item_id
+        WHERE p.user_id = ?
+        ORDER BY p.purchased_at DESC, p.id DESC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    equipped = get_user_equipped_faction_shop_items(db, user_id)
+    result = []
+    for row in rows:
+        slot = equipped.get(str(row["item_key"]))
+        result.append(
+            {
+                "id": int(row["id"]),
+                "item_id": int(row["item_id"]),
+                "item_key": row["item_key"],
+                "item_name": row["item_name"],
+                "description": row["description"] or "",
+                "item_type": row["item_type"],
+                "item_type_label": _faction_shop_item_type_label(row["item_type"]),
+                "faction_key": _normalize_faction_key(row["faction_key"]) if row["faction_key"] else None,
+                "price_paid_coins": int(row["price_paid_coins"] or 0),
+                "purchased_at": row["purchased_at"],
+                "badge_label": row["badge_label"] or "",
+                "image_path": row["image_path"] or "",
+                "equippable_slot": FACTION_SHOP_EQUIP_SLOTS.get(str(row["item_type"] or "")),
+                "equipped_slot": slot,
+            }
+        )
+    return result
+
+
+def get_user_equipped_faction_shop_items(db, user_id):
+    rows = db.execute(
+        """
+        SELECT e.*, i.item_name, i.item_type, i.badge_label, i.image_path
+        FROM user_equipped_faction_shop_items e
+        JOIN faction_shop_items i ON i.id = e.item_id
+        WHERE e.user_id = ?
+        """,
+        (int(user_id),),
+    ).fetchall()
+    by_item_key = {}
+    for row in rows:
+        item = {
+            "slot_key": row["slot_key"],
+            "item_id": int(row["item_id"]),
+            "item_key": row["item_key"],
+            "item_name": row["item_name"],
+            "item_type": row["item_type"],
+            "badge_label": row["badge_label"] or row["item_name"],
+            "image_path": row["image_path"] or "",
+        }
+        by_item_key[str(row["item_key"])] = item
+        by_item_key[str(row["slot_key"])] = item
+    return by_item_key
+
+
+def _faction_shop_current_seconds():
+    return int(time.time())
+
+
+def _faction_shop_parse_time(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return int(datetime.strptime(text, fmt).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+def _user_has_faction_title(db, user_id, title_key):
+    return bool(
+        db.execute(
+            "SELECT 1 FROM user_faction_titles WHERE user_id = ? AND title_key = ? LIMIT 1",
+            (int(user_id), str(title_key)),
+        ).fetchone()
+    )
+
+
+def _user_is_guardian_author(db, user_id):
+    if _user_has_faction_title(db, user_id, "guardian_author"):
+        return True
+    return bool(
+        db.execute(
+            "SELECT 1 FROM faction_guardians WHERE author_user_id = ? LIMIT 1",
+            (int(user_id),),
+        ).fetchone()
+    )
+
+
+def can_purchase_faction_shop_item(db, user_id, item_id):
+    user = db.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
+    if not user:
+        return {"ok": False, "reason": "ユーザーが見つかりません。"}
+    item = _get_faction_shop_item_row(db, item_id)
+    if not item or int(item["is_active"] or 0) != 1:
+        return {"ok": False, "reason": "この商品は現在交換できません。"}
+    now_ts = _faction_shop_current_seconds()
+    if int(item["is_limited"] or 0) == 1:
+        starts_at = _faction_shop_parse_time(item["starts_at"])
+        ends_at = _faction_shop_parse_time(item["ends_at"])
+        if starts_at and now_ts < starts_at:
+            return {"ok": False, "reason": "この商品の交換期間はまだ始まっていません。"}
+        if ends_at and now_ts > ends_at:
+            return {"ok": False, "reason": "この商品の交換期間は終了しました。"}
+    if db.execute("SELECT 1 FROM user_faction_shop_purchases WHERE user_id = ? AND item_key = ? LIMIT 1", (int(user_id), item["item_key"])).fetchone():
+        return {"ok": False, "reason": "すでに購入済みです。"}
+    price = max(0, int(item["price_coins"] or 0))
+    if int(user["coins"] or 0) < price:
+        return {"ok": False, "reason": "コインが不足しています。"}
+    user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
+    item_faction = _normalize_faction_key(item["faction_key"]) if item["faction_key"] else None
+    if not user_faction:
+        return {"ok": False, "reason": "研究方針を選ぶと陣営ショップを利用できます。"}
+    if item_faction and user_faction != item_faction:
+        return {"ok": False, "reason": f"この商品は{FACTION_LABELS.get(item_faction, item_faction)}所属研究員向けです。"}
+    required_level = int(item["required_facility_level"] or 0)
+    if required_level > 0:
+        ensure_faction_facilities(db)
+        facility = db.execute("SELECT level FROM faction_facilities WHERE faction_key = ? LIMIT 1", (item_faction or user_faction,)).fetchone()
+        if not facility or int(facility["level"] or 0) < required_level:
+            return {"ok": False, "reason": "施設レベルが足りません。"}
+    if item["required_title_key"] and not _user_has_faction_title(db, user_id, item["required_title_key"]):
+        return {"ok": False, "reason": "必要な称号をまだ獲得していません。"}
+    if item["required_event_key"]:
+        if not db.execute(
+            """
+            SELECT 1 FROM faction_weekly_events
+            WHERE event_key = ? AND status IN ('active', 'finalized')
+            LIMIT 1
+            """,
+            (item["required_event_key"],),
+        ).fetchone():
+            return {"ok": False, "reason": "必要な陣営イベントの記録がまだありません。"}
+    required_territory = int(item["required_territory_count"] or 0)
+    if required_territory > 0:
+        summary = get_faction_territory_summary(db, user_faction, _world_week_key())
+        if int((summary or {}).get("controlled_count") or 0) < required_territory:
+            return {"ok": False, "reason": "研究影響エリア数が足りません。"}
+    if int(item["required_guardian_author"] or 0) == 1 and not _user_is_guardian_author(db, user_id):
+        return {"ok": False, "reason": "守護機作者向けの商品です。"}
+    return {"ok": True, "reason": "交換できます。", "item": _faction_shop_item_view_row(item), "user_coins": int(user["coins"] or 0)}
+
+
+def purchase_faction_shop_item(db, user_id, item_id):
+    check = can_purchase_faction_shop_item(db, user_id, item_id)
+    if not check["ok"]:
+        return {"ok": False, "reason": check["reason"]}
+    item = _get_faction_shop_item_row(db, item_id)
+    price = max(0, int(item["price_coins"] or 0))
+    now_text = now_str()
+    try:
+        cur = db.execute(
+            "UPDATE users SET coins = COALESCE(coins, 0) - ? WHERE id = ? AND COALESCE(coins, 0) >= ?",
+            (price, int(user_id), price),
+        )
+        if int(cur.rowcount or 0) != 1:
+            db.rollback()
+            return {"ok": False, "reason": "コインが不足しています。"}
+        db.execute(
+            """
+            INSERT INTO user_faction_shop_purchases
+            (user_id, item_id, item_key, faction_key, price_paid_coins, purchased_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                int(item["id"]),
+                item["item_key"],
+                _normalize_faction_key(item["faction_key"]) if item["faction_key"] else None,
+                price,
+                now_text,
+                now_text,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return {"ok": False, "reason": "すでに購入済みです。"}
+    title_result = None
+    if str(item["item_type"] or "") == "title_ticket" and item["grant_title_key"]:
+        title_result = grant_user_faction_title(
+            db,
+            int(user_id),
+            _normalize_faction_key(item["faction_key"]) or db.execute("SELECT faction FROM users WHERE id = ?", (int(user_id),)).fetchone()["faction"],
+            str(item["grant_title_key"]),
+            week_key="shop",
+            source_type="shop",
+            source_id=int(item["id"]),
+            equip_if_first=True,
+        )
+    row = db.execute(
+        "SELECT * FROM user_faction_shop_purchases WHERE user_id = ? AND item_key = ? LIMIT 1",
+        (int(user_id), item["item_key"]),
+    ).fetchone()
+    after = db.execute("SELECT coins FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
+    return {
+        "ok": True,
+        "reason": "交換しました。",
+        "purchase_id": int(row["id"]) if row else None,
+        "item": _faction_shop_item_view_row(item, purchased=True),
+        "price_paid_coins": price,
+        "coins_after": int(after["coins"] or 0) if after else 0,
+        "title_result": title_result,
+    }
+
+
+def equip_faction_shop_item(db, user_id, purchase_id, slot_key):
+    purchase = db.execute(
+        """
+        SELECT p.*, i.item_type
+        FROM user_faction_shop_purchases p
+        JOIN faction_shop_items i ON i.id = p.item_id
+        WHERE p.id = ? AND p.user_id = ?
+        LIMIT 1
+        """,
+        (int(purchase_id), int(user_id)),
+    ).fetchone()
+    if not purchase:
+        return {"ok": False, "reason": "購入済みアイテムが見つかりません。"}
+    expected_slot = FACTION_SHOP_EQUIP_SLOTS.get(str(purchase["item_type"] or ""))
+    chosen_slot = str(slot_key or "").strip()
+    if not expected_slot or chosen_slot != expected_slot:
+        return {"ok": False, "reason": "このアイテムはその枠に装備できません。"}
+    now_text = now_str()
+    db.execute(
+        """
+        INSERT INTO user_equipped_faction_shop_items
+        (user_id, slot_key, item_id, item_key, equipped_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, slot_key) DO UPDATE SET
+            item_id = excluded.item_id,
+            item_key = excluded.item_key,
+            equipped_at = excluded.equipped_at,
+            updated_at = excluded.updated_at
+        """,
+        (int(user_id), chosen_slot, int(purchase["item_id"]), purchase["item_key"], now_text, now_text),
+    )
+    return {"ok": True, "reason": "装備しました。", "item_key": purchase["item_key"], "slot_key": chosen_slot, "item_id": int(purchase["item_id"])}
 
 
 def get_faction_faith_profile(faction_key):
@@ -37099,6 +37635,11 @@ def _faction_page_context(db, user):
     faction_badges = get_user_faction_badges(db, int(user["id"]), limit=5)
     faction_titles = get_user_faction_titles(db, int(user["id"]), limit=8)
     equipped_faction_title = get_equipped_faction_title(db, int(user["id"]))
+    equipped_shop_items = get_user_equipped_faction_shop_items(db, int(user["id"]))
+    faction_shop_purchase_count = int(
+        db.execute("SELECT COUNT(*) AS c FROM user_faction_shop_purchases WHERE user_id = ?", (int(user["id"]),)).fetchone()["c"]
+        or 0
+    )
     faction_weekly_missions = get_faction_weekly_missions(db, current_week_key)
     faction_guardians = get_faction_guardians_view(db, current_week_key)
     faction_guardians_by_key = {row["faction_key"]: row for row in faction_guardians}
@@ -37140,6 +37681,8 @@ def _faction_page_context(db, user):
         "faction_badges": faction_badges,
         "faction_titles": faction_titles,
         "equipped_faction_title": equipped_faction_title,
+        "equipped_shop_items": equipped_shop_items,
+        "faction_shop_purchase_count": faction_shop_purchase_count,
         "faction_weekly_missions": faction_weekly_missions,
         "faction_guardians": faction_guardians,
         "my_faction_guardian": faction_guardians_by_key.get(user_faction) if user_faction else None,
@@ -37181,6 +37724,102 @@ def faction_view():
     context = _faction_page_context(db, user)
     db.commit()
     return render_template("faction.html", **context)
+
+
+@app.route("/faction/shop")
+@login_required
+def faction_shop():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    ensure_default_faction_shop_items(db)
+    purchases = get_user_faction_shop_purchases(db, int(user["id"]))
+    purchased_keys = {row["item_key"] for row in purchases}
+    equipped = get_user_equipped_faction_shop_items(db, int(user["id"]))
+    items = []
+    for item in get_faction_shop_items(db):
+        raw = _get_faction_shop_item_row(db, item["id"])
+        can = can_purchase_faction_shop_item(db, int(user["id"]), int(item["id"])) if raw else {"ok": False, "reason": "商品が見つかりません。"}
+        items.append(_faction_shop_item_view_row(raw, purchased=item["item_key"] in purchased_keys, can_purchase=can, equipped_slot=(equipped.get(item["item_key"]) or {}).get("slot_key")) if raw else item)
+    db.commit()
+    return render_template(
+        "faction_shop.html",
+        user=user,
+        user_faction=_normalize_faction_key(user["faction"] if "faction" in user.keys() else None),
+        faction_labels=FACTION_LABELS,
+        item_type_labels=FACTION_SHOP_ITEM_TYPES,
+        items=items,
+        purchases=purchases,
+        equipped=equipped,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/faction/shop/buy", methods=["POST"])
+@login_required
+def faction_shop_buy():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    item_id = int(request.form.get("item_id") or 0)
+    result = purchase_faction_shop_item(db, int(user["id"]), item_id)
+    if not result["ok"]:
+        flash(result["reason"], "error")
+        return redirect(url_for("faction_shop"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_SHOP_PURCHASE"],
+        user_id=int(user["id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_shop_purchase",
+        entity_type="faction_shop_items",
+        entity_id=int(item_id),
+        delta_coins=-int(result["price_paid_coins"]),
+        payload={
+            "item_key": result["item"]["item_key"],
+            "item_type": result["item"]["item_type"],
+            "price_paid_coins": int(result["price_paid_coins"]),
+            "coins_after": int(result["coins_after"]),
+            "purchase_id": result["purchase_id"],
+            "title_granted": bool((result.get("title_result") or {}).get("granted")),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営ショップ商品を交換しました。", "notice")
+    return redirect(url_for("faction_shop"))
+
+
+@app.route("/faction/shop/equip", methods=["POST"])
+@login_required
+def faction_shop_equip():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    result = equip_faction_shop_item(db, int(user["id"]), int(request.form.get("purchase_id") or 0), request.form.get("slot_key"))
+    if not result["ok"]:
+        flash(result["reason"], "error")
+        return redirect(url_for("faction_shop"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_SHOP_EQUIP"],
+        user_id=int(user["id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_shop_equip",
+        entity_type="faction_shop_items",
+        entity_id=int(result["item_id"]),
+        payload={"item_key": result["item_key"], "slot_key": result["slot_key"]},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営ショップのバッジを装備しました。", "notice")
+    return redirect(url_for("faction_shop"))
 
 
 @app.route("/faction/change", methods=["POST"])
@@ -38477,6 +39116,190 @@ def admin_faction_weekly_events_cancel():
     db.commit()
     flash("陣営イベントをキャンセルしました。", "notice")
     return redirect(url_for("admin_faction_weekly_events", week_key=week_key))
+
+
+def _faction_shop_form_payload(form):
+    item_type = str(form.get("item_type") or "").strip()
+    if item_type not in FACTION_SHOP_ITEM_TYPES:
+        raise ValueError("invalid item_type")
+    faction_key_raw = str(form.get("faction_key") or "").strip()
+    faction_key = _normalize_faction_key(faction_key_raw) if faction_key_raw else None
+    if faction_key_raw and not faction_key:
+        raise ValueError("invalid faction_key")
+    price = max(0, int(form.get("price_coins") or 0))
+    required_facility_level = max(0, int(form.get("required_facility_level") or 0))
+    required_territory_count = max(0, int(form.get("required_territory_count") or 0))
+    required_guardian_author = 1 if str(form.get("required_guardian_author") or "").strip() in {"1", "on", "true"} else 0
+    is_active = 1 if str(form.get("is_active") or "").strip() in {"1", "on", "true"} else 0
+    is_limited = 1 if str(form.get("is_limited") or "").strip() in {"1", "on", "true"} else 0
+    return {
+        "item_key": re.sub(r"[^a-zA-Z0-9_:-]", "", str(form.get("item_key") or "").strip()),
+        "item_name": str(form.get("item_name") or "").strip(),
+        "description": str(form.get("description") or "").strip(),
+        "item_type": item_type,
+        "faction_key": faction_key,
+        "price_coins": price,
+        "required_facility_level": required_facility_level,
+        "required_title_key": str(form.get("required_title_key") or "").strip() or None,
+        "required_event_key": str(form.get("required_event_key") or "").strip() or None,
+        "required_territory_count": required_territory_count,
+        "required_guardian_author": required_guardian_author,
+        "grant_title_key": str(form.get("grant_title_key") or "").strip() or None,
+        "badge_label": str(form.get("badge_label") or "").strip(),
+        "image_path": str(form.get("image_path") or "").strip(),
+        "sort_order": int(form.get("sort_order") or 0),
+        "is_active": is_active,
+        "is_limited": is_limited,
+        "starts_at": str(form.get("starts_at") or "").strip() or None,
+        "ends_at": str(form.get("ends_at") or "").strip() or None,
+    }
+
+
+@app.route("/admin/factions/shop")
+@login_required
+def admin_faction_shop():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    rows = db.execute(
+        """
+        SELECT i.*, COUNT(p.id) AS purchase_count
+        FROM faction_shop_items i
+        LEFT JOIN user_faction_shop_purchases p ON p.item_key = i.item_key
+        GROUP BY i.id
+        ORDER BY i.sort_order ASC, i.id ASC
+        """
+    ).fetchall()
+    return render_template(
+        "admin_faction_shop.html",
+        items=[{**_faction_shop_item_view_row(row), "purchase_count": int(row["purchase_count"] or 0)} for row in rows],
+        item_type_labels=FACTION_SHOP_ITEM_TYPES,
+        faction_labels=FACTION_LABELS,
+        title_defs=FACTION_TITLES,
+        event_defs=FACTION_WEEKLY_EVENTS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/admin/factions/shop/ensure-defaults", methods=["POST"])
+@login_required
+def admin_faction_shop_ensure_defaults():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    result = ensure_default_faction_shop_items(db)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_SHOP_ENSURE_DEFAULTS"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_shop_ensure_defaults",
+        entity_type="faction_shop_items",
+        payload={**result, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash(f"初期商品を確認しました（新規 {result['created_count']}件）。", "notice")
+    return redirect(url_for("admin_faction_shop"))
+
+
+@app.route("/admin/factions/shop/create", methods=["POST"])
+@login_required
+def admin_faction_shop_create():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    try:
+        payload = _faction_shop_form_payload(request.form)
+        if not payload["item_key"] or not payload["item_name"]:
+            raise ValueError("missing required")
+        now_text = now_str()
+        db.execute(
+            """
+            INSERT INTO faction_shop_items
+            (item_key, item_name, description, item_type, faction_key, price_coins,
+             required_facility_level, required_title_key, required_event_key, required_territory_count,
+             required_guardian_author, grant_title_key, badge_label, image_path, sort_order,
+             is_active, is_limited, starts_at, ends_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["item_key"], payload["item_name"], payload["description"], payload["item_type"], payload["faction_key"],
+                payload["price_coins"], payload["required_facility_level"], payload["required_title_key"], payload["required_event_key"],
+                payload["required_territory_count"], payload["required_guardian_author"], payload["grant_title_key"], payload["badge_label"],
+                payload["image_path"], payload["sort_order"], payload["is_active"], payload["is_limited"], payload["starts_at"],
+                payload["ends_at"], now_text, now_text,
+            ),
+        )
+        item = db.execute("SELECT id FROM faction_shop_items WHERE item_key = ? LIMIT 1", (payload["item_key"],)).fetchone()
+    except Exception:
+        db.rollback()
+        flash("商品を作成できませんでした。入力値と item_key 重複を確認してください。", "error")
+        return redirect(url_for("admin_faction_shop"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_SHOP_CREATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_shop_create",
+        entity_type="faction_shop_items",
+        entity_id=int(item["id"]) if item else None,
+        payload={**payload, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営ショップ商品を作成しました。", "notice")
+    return redirect(url_for("admin_faction_shop"))
+
+
+@app.route("/admin/factions/shop/update", methods=["POST"])
+@login_required
+def admin_faction_shop_update():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    item_id = int(request.form.get("item_id") or 0)
+    try:
+        payload = _faction_shop_form_payload(request.form)
+        if not payload["item_name"]:
+            raise ValueError("missing name")
+        now_text = now_str()
+        db.execute(
+            """
+            UPDATE faction_shop_items
+            SET item_name = ?, description = ?, item_type = ?, faction_key = ?, price_coins = ?,
+                required_facility_level = ?, required_title_key = ?, required_event_key = ?,
+                required_territory_count = ?, required_guardian_author = ?, grant_title_key = ?,
+                badge_label = ?, image_path = ?, sort_order = ?, is_active = ?, is_limited = ?,
+                starts_at = ?, ends_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                payload["item_name"], payload["description"], payload["item_type"], payload["faction_key"], payload["price_coins"],
+                payload["required_facility_level"], payload["required_title_key"], payload["required_event_key"],
+                payload["required_territory_count"], payload["required_guardian_author"], payload["grant_title_key"],
+                payload["badge_label"], payload["image_path"], payload["sort_order"], payload["is_active"], payload["is_limited"],
+                payload["starts_at"], payload["ends_at"], now_text, item_id,
+            ),
+        )
+    except Exception:
+        db.rollback()
+        flash("商品を更新できませんでした。入力値を確認してください。", "error")
+        return redirect(url_for("admin_faction_shop"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTION_SHOP_UPDATE"],
+        user_id=int(session["user_id"]),
+        request_id=(getattr(g, "request_id", None) if g else None),
+        action_key="faction_shop_update",
+        entity_type="faction_shop_items",
+        entity_id=item_id,
+        payload={**payload, "actor_admin_id": int(session["user_id"])},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    flash("陣営ショップ商品を更新しました。", "notice")
+    return redirect(url_for("admin_faction_shop"))
 
 
 @app.route("/admin/factions/report/recalculate", methods=["POST"])
