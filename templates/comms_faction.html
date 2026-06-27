@@ -49,6 +49,22 @@
 
   <div class="card faction-contribution-card">
     <div class="comms-status-badge">{{ week_key }}</div>
+    <h2>今週の陣営クエスト</h2>
+    {% if faction_weekly_quests %}
+    <ul class="ranking-mini">
+      {% for quest in faction_weekly_quests[:3] %}
+      <li><span>{{ quest['quest_name'] }}</span><span>{{ quest['current_value'] }} / {{ quest['target_value'] }}</span></li>
+      {% endfor %}
+    </ul>
+    <p class="upgrade-cost">あと少しのクエストは陣営内で相談して進めましょう。</p>
+    {% else %}
+    <p>今週の陣営クエストはまだ生成されていません。</p>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('faction_view') }}">クエストを見る</a></p>
+  </div>
+
+  <div class="card faction-contribution-card">
+    <div class="comms-status-badge">{{ week_key }}</div>
     {% if faction_strategy_status and faction_strategy_status['is_finalized'] and faction_strategy_status['finalized_strategy'] %}
     <h2>今週の陣営作戦：{{ faction_strategy_status['finalized_strategy']['label'] }}</h2>
     <p class="robot-part">{{ faction_strategy_status['finalized_strategy']['effect_label'] }}</p>

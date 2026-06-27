@@ -639,6 +639,16 @@
 - `/faction`、`/world`、`/comms/faction` にショップ導線を表示する。
 - 陣営ショップは記念品交換所であり、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能、報酬には影響しない。
 
+## 陣営クエスト v1
+- `faction_weekly_quests` に週ごとの陣営クエストを保存する。
+- `faction_weekly_quest_participants` にユーザー別貢献と報酬受け取り状態を保存する。
+- `faction_weekly_quest_logs` に生成、進行、達成、報酬受け取り、確定、取消を保存する。
+- クエスト種別は共同出撃、ボス解析、進化研究、守護機解析、施設建設、領土観測。
+- 管理者は `/admin/factions/quests` で週次クエスト生成、確定、取消を行う。
+- `/faction`、`/world`、`/comms/faction` に今週の陣営クエスト進捗を表示する。
+- 達成時は `FACTION_WEEKLY_QUEST_COMPLETED`、週次確定時は `FACTION_WEEKLY_QUEST_RESULT` を世界ログへ作成する。
+- 報酬は既存コインと施設資材に限定し、本編ステータス、通常出撃、ボス戦、観測塔、パーツ性能には影響しない。
+
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。
 - 貸与ロボ `アーク・プロト` は既存 `robot_parts` のNパーツを読み取り、session内の一時パーツとして構成する。

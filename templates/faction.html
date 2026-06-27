@@ -40,6 +40,36 @@
 </section>
 
 <section class="panel">
+  <h2>今週の陣営クエスト</h2>
+  {% if user_faction %}
+  <div class="showcase-grid">
+    {% for quest in faction_weekly_quests %}
+    <div class="card {% if quest['status'] in ['completed', 'finalized'] %}active-card{% endif %}">
+      <div><b>{{ quest['quest_name'] }}</b> <span class="weekly-fit-badge">{{ quest['status'] }}</span></div>
+      <div class="upgrade-cost">{{ quest['description'] }}</div>
+      <progress value="{{ quest['progress_percent'] }}" max="100"></progress>
+      <div class="robot-part">{{ quest['current_value'] }} / {{ quest['target_value'] }}</div>
+      <div class="upgrade-cost">あなたの貢献: {{ quest['my_contribution'] }}</div>
+      <div class="upgrade-cost">報酬: {{ quest['reward_coins'] }}コイン / 施設資材 +{{ quest['reward_facility_material'] }}</div>
+      {% if quest['can_claim'] %}
+      <form method="post" action="{{ url_for('faction_quest_claim') }}" class="inline-form">
+        <input type="hidden" name="quest_id" value="{{ quest['id'] }}" />
+        <button type="submit">報酬を受け取る</button>
+      </form>
+      {% elif quest['reward_claimed'] %}
+      <div class="comms-status-badge">受け取り済み</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">今週の陣営クエストはまだ生成されていません。</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">研究方針を選ぶと、陣営クエストに参加できます。</div>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>陣営ショップ</h2>
   <div class="card active-card">
     <div class="comms-status-badge">記念品</div>

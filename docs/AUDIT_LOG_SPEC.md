@@ -242,6 +242,22 @@
 - payload には `user_id`, `item_key`, `item_type`, `price_paid_coins`, `coins_after`, `slot_key`, `actor_admin_id` を可能な範囲で含める。
 - 陣営ショップは既存コインで表示用記念品を交換する機能。新通貨を作らず、戦闘ステータス、通常出撃、ボス戦、観測塔、報酬には影響させない。
 
+### 4.13.3 陣営クエスト
+- 管理者操作:
+  - `audit.faction.quest.generate`
+  - `audit.faction.quest.finalize`
+  - `audit.faction.quest.cancel`
+- ユーザー操作:
+  - `audit.faction.quest.reward_claim`
+- 内部ログ:
+  - `audit.faction.quest.progress`
+  - `audit.faction.quest.complete`
+- 世界イベント:
+  - `FACTION_WEEKLY_QUEST_COMPLETED`
+  - `FACTION_WEEKLY_QUEST_RESULT`
+- payload には `week_key`, `faction_key`, `quest_id`, `quest_key`, `quest_type`, `current_value`, `target_value`, `user_id`, `reward_coins`, `reward_facility_material`, `actor_admin_id` を可能な範囲で含める。
+- 陣営クエストは週次の共同目標。報酬は既存コインと施設資材に限定し、戦闘ステータス、通常出撃、ボス戦、観測塔、パーツ性能には影響させない。
+
 ### 4.14 管理者操作（追加）
 - `audit.admin.user.ban`
 - `audit.admin.user.unban`
@@ -267,6 +283,8 @@
 - `FACTION_TITLE_GRANT_RESULT`（世界イベント）
 - `FACTION_WEEKLY_EVENT_STARTED`（世界イベント）
 - `FACTION_WEEKLY_EVENT_FINALIZED`（世界イベント）
+- `FACTION_WEEKLY_QUEST_COMPLETED`（世界イベント）
+- `FACTION_WEEKLY_QUEST_RESULT`（世界イベント）
 - `RESEARCH_ADVANCE` / `RESEARCH_UNLOCK`（世界イベント）
 - `LAB_RACE_WIN` / `LAB_RACE_UPSET` / `LAB_RACE_POPULAR_ENTRY`（実験室公開イベント）
 
@@ -392,6 +410,8 @@
 - 陣営領土マップの公開世界ログ `FACTION_TERRITORY_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営称号の公開世界ログ `FACTION_TITLE_GRANT_RESULT` は `week_key` ごとに1件だけ作成する。
 - 陣営イベント週の公開世界ログ `FACTION_WEEKLY_EVENT_STARTED` / `FACTION_WEEKLY_EVENT_FINALIZED` は `week_key` ごとに各1件だけ作成する。
+- 陣営クエスト達成ログ `FACTION_WEEKLY_QUEST_COMPLETED` は `quest_id` ごとに1件だけ作成する。
+- 陣営クエスト週次結果 `FACTION_WEEKLY_QUEST_RESULT` は `week_key` ごとに1件だけ作成する。
 
 ## 7. 管理UI
 - `/admin/audit` で検索

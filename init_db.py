@@ -1913,6 +1913,60 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS faction_weekly_quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            quest_key TEXT NOT NULL,
+            quest_name TEXT NOT NULL,
+            description TEXT,
+            quest_type TEXT NOT NULL,
+            target_value INTEGER NOT NULL,
+            current_value INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            reward_facility_material INTEGER NOT NULL DEFAULT 0,
+            reward_title_key TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            completed_at TEXT,
+            finalized_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(week_key, faction_key, quest_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_quest_participants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT NOT NULL,
+            quest_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            contribution_value INTEGER NOT NULL DEFAULT 0,
+            reward_claimed INTEGER NOT NULL DEFAULT 0,
+            reward_claimed_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            UNIQUE(quest_id, user_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS faction_weekly_quest_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            faction_key TEXT,
+            quest_id INTEGER,
+            action TEXT NOT NULL,
+            payload_json TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS faction_weekly_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3477,6 +3531,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_items_faction ON faction_shop_items(faction_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_shop_purchases_user ON user_faction_shop_purchases(user_id, purchased_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_equipped_faction_shop_items_user ON user_equipped_faction_shop_items(user_id, slot_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_quests_week_faction ON faction_weekly_quests(week_key, faction_key, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_quest_participants_user ON faction_weekly_quest_participants(user_id, week_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_weekly_quest_logs_week ON faction_weekly_quest_logs(week_key, action)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_claims_user_week ON faction_weekly_claims(user_id, week_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_missions_week_active ON faction_weekly_missions(week_key, is_active)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_faction_mission_progress_week ON faction_weekly_mission_progress(week_key, faction_key)")

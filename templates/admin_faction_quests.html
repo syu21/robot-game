@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>陣営クエスト管理</h1>
+
+{% if message %}<div class="notice">{{ message }}</div>{% endif %}
+
+<div class="card">
+  <form method="get" action="{{ url_for('admin_faction_quests') }}" class="inline-form">
+    <label>週 <input type="text" name="week_key" value="{{ week_key }}" placeholder="2026-W25" /></label>
+    <button type="submit">表示</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_quests_generate') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">週次クエスト生成</button>
+  </form>
+  <form method="post" action="{{ url_for('admin_faction_quests_finalize') }}" class="inline-form">
+    <input type="hidden" name="week_key" value="{{ week_key }}" />
+    <button type="submit">達成クエストを確定</button>
+  </form>
+  <p class="upgrade-cost">陣営クエストは今週の研究目標です。本編ステータスには影響しません。</p>
+</div>
+
+{% for faction_key, quests in grouped.items() %}
+<section class="panel">
+  <h2>{{ faction_labels.get(faction_key, faction_key) }}</h2>
+  <div class="showcase-grid">
+    {% for quest in quests %}
+    <div class="card {% if quest['status'] in ['completed', 'finalized'] %}active-card{% endif %}">
+      <div><b>{{ quest['quest_name'] }}</b> <span class="weekly-fit-badge">{{ quest['status'] }}</span></div>
+      <div class="upgrade-cost">{{ quest['description'] }}</div>
+      <progress value="{{ quest['progress_percent'] }}" max="100"></progress>
+      <div class="robot-part">{{ quest['current_value'] }} / {{ quest['target_value'] }}</div>
+      <div class="upgrade-cost">参加者: {{ quest['participant_count'] }} / 報酬: {{ quest['reward_coins'] }}コイン、施設資材 +{{ quest['reward_facility_material'] }}</div>
+      {% if quest['status'] != 'cancelled' %}
+      <form method="post" action="{{ url_for('admin_faction_quests_cancel') }}" class="inline-form">
+        <input type="hidden" name="quest_id" value="{{ quest['id'] }}" />
+        <button type="submit">キャンセル</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">クエスト未生成</div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
