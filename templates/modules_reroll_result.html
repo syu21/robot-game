@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>再調整完了！</h1>
+  <div class="card">
+    <div class="stat-label">対象</div>
+    <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+    <div class="robot-time">消費コイン: {{ cost_coins }}</div>
+    <div class="robot-time">残りコイン: {{ coins_after }}</div>
+  </div>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">変更前</div>
+      {% if before_chips %}
+      <div class="module-stat-chips">
+        {% for chip in before_chips %}
+        <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="robot-time">補正なし</div>
+      {% endif %}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">変更後</div>
+      {% if after_chips %}
+      <div class="module-stat-chips">
+        {% for chip in after_chips %}
+        <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="robot-time">補正なし</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card">
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_reroll_confirm', module_instance_id=module['instance_id']) }}">もう一度再調整</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">モジュール一覧へ</a></p>
+  </div>
+</div>
+{% endblock %}

@@ -115,6 +115,7 @@
   - `/modules/synthesis` で研究モジュール2個 + コインからランダム性能の合成産モジュールを生成できる
   - `/modules` でモジュール図鑑、図鑑率、所持数、初入手履歴、入手方法、買取価格を確認できる
   - 所持モジュールは保護でき、保護中でも選択候補には出るが合成素材/NPC買取には使えない
+  - `/modules` から保護されていない所持モジュールをコイン消費で再調整できる
 - 余った研究モジュールは確認画面を挟んでNPC買取でき、prototypeは300コイン、completeは1500コイン
 - 恐竜Nシリーズ:
   - `dino_tyranno / dino_raptor / dino_ptera / dino_parasa / dino_tricera / dino_ankylo / dino_spino` のN 28パーツを一般公開
@@ -518,6 +519,9 @@
 - 研究合成産は `generated_name_ja` と個体補正を優先表示し、`None合成モジュール` にならないようフォールバックする。
 - `/modules/synthesis` は素材候補不足時に必要条件と入手方法を案内する。
 - 合成結果画面から「このモジュールを次の出撃で使う」「このモジュールを保護する」を実行できる。
+- `/modules/reroll/confirm/<id>` で確認画面を挟み、`/modules/reroll` で補正ステータスと補正値だけを再抽選する。
+- モジュール再調整は保護中不可、コイン不足不可。module id、user_id、rarity、保護状態、選択状態は維持する。
+- 再調整コストは prototype=100、complete=300、refined=800、anomaly=1500 コイン相当。監査は `audit.module.reroll`。
 - active module 使用時、出撃結果に「今回の作戦」カードを表示し、使用モジュール・補正・勝敗コメント・簡易メトリクスを出す。
 - 研究合成結果とモジュール使用結果は `/comms/personal` に個人ログとして残す。世界ログ公開は未実施。
 

@@ -146,11 +146,13 @@
 - `audit.module.synthesis.result`
 - `audit.module.strategy.apply`
 - `audit.module.strategy.result`
+- `audit.module.reroll`
 
 補足:
 - `audit.module.strategy.apply` は出撃開始時に active module の実効補正を適用した記録。
 - `audit.module.strategy.result` は出撃終了時に active module 使用結果を記録する。
 - `audit.module.synthesis.result` と `audit.module.strategy.result` は `/comms/personal` の個人ログ表示対象。
+- `audit.module.reroll` はモジュール再調整時に記録する。payload は `user_id`, `module_id`, `rarity`, `cost`, `before_stats`, `after_stats`, `coins_before`, `coins_after` を含める。
 - `MODULE_SYNTHESIS_RESULT` / `MODULE_STRATEGY_RESULT` は将来の公開イベント候補だが、現時点では世界ログ公開に使わない。
 
 ### 4.9 陣営内表彰

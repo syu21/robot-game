@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>モジュール再調整</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+  <div class="card">
+    <div class="stat-label">対象</div>
+    <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
+    <div class="module-card-meta">
+      <span class="module-badge">{{ module['type_label'] }}</span>
+      {% if module['is_locked'] %}<span class="module-badge locked">保護中</span>{% endif %}
+      {% if is_active_selected %}<span class="module-badge active">使用中</span>{% endif %}
+    </div>
+    {% if module['stat_chips'] %}
+    <div class="module-stat-chips">
+      {% for chip in module['stat_chips'] %}
+      <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="robot-time">現在: {{ module['effect_text'] }}</div>
+    {% endif %}
+    {% if is_active_selected %}
+    <div class="robot-time">次の出撃に使う予定のモジュールです。再調整後の補正で使用されます。</div>
+    {% endif %}
+    <div class="upgrade-cost">消費コイン: {{ cost_coins }}</div>
+    <div class="robot-time">所持コイン: {{ coins_before }}</div>
+    <div class="robot-time">再調整後の内容は実行後に決まります。現在の補正は失われ、元に戻せません。</div>
+    <form method="post" action="{{ url_for('modules_reroll') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
+      <input type="hidden" name="reroll_token" value="{{ reroll_token }}" />
+      <button type="submit">再調整する</button>
+    </form>
+  </div>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">やめる</a></p>
+</div>
+{% endblock %}

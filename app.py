@@ -2,6 +2,7 @@ import os
 import hashlib
 import random
 import re
+import secrets
 import shutil
 import sqlite3
 import traceback
@@ -270,6 +271,18 @@ RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
     "normal": "研究成功",
     "great": "研究大成功",
     "anomaly": "異常反応",
+}
+RESEARCH_MODULE_REROLL_RULES = {
+    "N": {"cost": 100, "slots": 1, "min": 1, "max": 3},
+    "R": {"cost": 300, "slots": 2, "min": 2, "max": 5},
+    "SR": {"cost": 800, "slots": 2, "min": 4, "max": 8},
+    "SSR": {"cost": 1500, "slots": 3, "min": 6, "max": 12},
+    "prototype": {"cost": 100, "slots": 1, "min": 1, "max": 3},
+    "complete": {"cost": 300, "slots": 2, "min": 2, "max": 5},
+    "synth": {"cost": 300, "slots": 2, "min": 2, "max": 5},
+    "normal": {"cost": 300, "slots": 2, "min": 2, "max": 5},
+    "refined": {"cost": 800, "slots": 2, "min": 4, "max": 8},
+    "anomaly": {"cost": 1500, "slots": 3, "min": 6, "max": 12},
 }
 RESEARCH_MODULE_RARITY_LABELS = {
     "prototype": "試作型",
@@ -15036,6 +15049,169 @@ def _research_module_instance_row(db, module_instance_id, user_id=None):
         params,
     ).fetchone()
     return _research_module_view(row)
+
+
+def _research_module_bonus_dict(module):
+    return {
+        "hp_bonus": int((module or {}).get("hp_bonus") or 0),
+        "atk_bonus": int((module or {}).get("atk_bonus") or 0),
+        "def_bonus": int((module or {}).get("def_bonus") or 0),
+        "spd_bonus": int((module or {}).get("spd_bonus") or 0),
+        "acc_bonus": int((module or {}).get("acc_bonus") or 0),
+        "cri_bonus": int((module or {}).get("cri_bonus") or 0),
+    }
+
+
+def _research_module_reroll_rule(module):
+    rarity = str((module or {}).get("rarity") or "").strip()
+    rule = RESEARCH_MODULE_REROLL_RULES.get(rarity)
+    if rule:
+        return {**rule, "rarity_key": rarity}
+    return None
+
+
+def _roll_research_module_reroll_bonuses(module, *, rng=None):
+    rule = _research_module_reroll_rule(module)
+    if not rule:
+        raise ValueError("unsupported module rarity")
+    roller = rng or random
+    stat_keys = ("hp", "atk", "def", "spd", "acc", "cri")
+    slots = min(len(stat_keys), max(1, int(rule["slots"])))
+    picked = roller.sample(stat_keys, slots)
+    bonuses = {f"{key}_bonus": 0 for key in stat_keys}
+    for stat_key in picked:
+        bonuses[f"{stat_key}_bonus"] = int(roller.randint(int(rule["min"]), int(rule["max"])))
+    return bonuses
+
+
+def _annotate_research_module_reroll_status(modules, user):
+    if isinstance(user, dict):
+        coins = int(user.get("coins") or 0)
+    elif user and "coins" in user.keys():
+        coins = int(user["coins"] or 0)
+    else:
+        coins = 0
+    for module in modules:
+        rule = _research_module_reroll_rule(module)
+        cost = int(rule["cost"]) if rule else 0
+        module["reroll_cost"] = cost
+        module["can_reroll"] = bool(rule) and int(module.get("is_locked") or 0) == 0 and coins >= cost
+        if not rule:
+            module["reroll_status_label"] = "再調整対象外"
+        elif int(module.get("is_locked") or 0) != 0:
+            module["reroll_status_label"] = "保護中"
+        elif coins < cost:
+            module["reroll_status_label"] = f"コイン不足（{cost}）"
+        else:
+            module["reroll_status_label"] = f"再調整 {cost}コイン"
+    return modules
+
+
+def _module_reroll_token_key(module_instance_id):
+    return f"module_reroll_token:{int(module_instance_id)}"
+
+
+def _validate_research_module_reroll_target(db, user_id, module_instance_id):
+    module = _research_module_instance_row(db, int(module_instance_id), int(user_id))
+    if not module:
+        return None, "再調整できないモジュールです"
+    if str(module.get("status") or "") != "inventory" or module.get("sold_at"):
+        return None, "所持中のモジュールだけ再調整できます"
+    if int(module.get("is_locked") or 0) != 0:
+        return None, "保護中のモジュールは再調整できません"
+    rule = _research_module_reroll_rule(module)
+    if not rule:
+        return None, "このモジュールは再調整できません"
+    return module, ""
+
+
+def execute_research_module_reroll(db, user_id, module_instance_id, *, request_id=None, ip=None, rng=None):
+    module, error = _validate_research_module_reroll_target(db, user_id, module_instance_id)
+    if error:
+        return {"ok": False, "reason": error}
+    user = db.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
+    coins_before = int(user["coins"] or 0) if user else 0
+    rule = _research_module_reroll_rule(module)
+    cost = int(rule["cost"])
+    if coins_before < cost:
+        return {"ok": False, "reason": f"コインが足りません。必要: {cost} / 所持: {coins_before}"}
+    before_stats = _research_module_bonus_dict(module)
+    after_stats = _roll_research_module_reroll_bonuses(module, rng=rng)
+    coins_after = coins_before - cost
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        UPDATE user_research_modules
+        SET hp_bonus = ?, atk_bonus = ?, def_bonus = ?, spd_bonus = ?, acc_bonus = ?, cri_bonus = ?, updated_at = ?
+        WHERE id = ?
+          AND user_id = ?
+          AND status = 'inventory'
+          AND COALESCE(is_locked, 0) = 0
+        """,
+        (
+            int(after_stats["hp_bonus"]),
+            int(after_stats["atk_bonus"]),
+            int(after_stats["def_bonus"]),
+            int(after_stats["spd_bonus"]),
+            int(after_stats["acc_bonus"]),
+            int(after_stats["cri_bonus"]),
+            now_ts,
+            int(module_instance_id),
+            int(user_id),
+        ),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "再調整に失敗しました。もう一度確認してください。"}
+    db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, int(user_id)))
+    payload = {
+        "user_id": int(user_id),
+        "module_id": int(module_instance_id),
+        "module_instance_id": int(module_instance_id),
+        "module_key": module["module_key"],
+        "module_name": module["name_ja"],
+        "rarity": module["rarity"],
+        "cost": cost,
+        "before_stats": before_stats,
+        "after_stats": after_stats,
+        "coins_before": coins_before,
+        "coins_after": coins_after,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_REROLL"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_reroll",
+        entity_type="research_module",
+        entity_id=int(module_instance_id),
+        delta_coins=-cost,
+        payload=payload,
+        ip=ip,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COIN_DELTA"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_reroll",
+        entity_type="research_module",
+        entity_id=int(module_instance_id),
+        delta_coins=-cost,
+        payload={**payload, "source": "module_reroll", "spend": cost},
+        ip=ip,
+    )
+    db.commit()
+    after_module = _research_module_instance_row(db, int(module_instance_id), int(user_id))
+    return {
+        "ok": True,
+        "module": after_module,
+        "before_stats": before_stats,
+        "after_stats": after_stats,
+        "cost": cost,
+        "coins_before": coins_before,
+        "coins_after": coins_after,
+    }
 
 
 def _research_module_synthesis_materials(db, user_id):
@@ -35473,6 +35649,74 @@ def modules_synthesis_create():
     )
 
 
+@app.route("/modules/reroll/confirm/<int:module_instance_id>")
+@login_required
+def modules_reroll_confirm(module_instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    module, error = _validate_research_module_reroll_target(db, user_id, module_instance_id)
+    if error:
+        session["message"] = error
+        return redirect(url_for("modules"))
+    rule = _research_module_reroll_rule(module)
+    cost = int(rule["cost"])
+    if int(user["coins"] or 0) < cost:
+        session["message"] = f"コインが足りません。必要: {cost} / 所持: {int(user['coins'] or 0)}"
+        return redirect(url_for("modules"))
+    token = secrets.token_urlsafe(24)
+    session[_module_reroll_token_key(module_instance_id)] = token
+    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    return render_template(
+        "modules_reroll_confirm.html",
+        user=user,
+        module=module,
+        cost_coins=cost,
+        coins_before=int(user["coins"] or 0),
+        is_active_selected=(active_id == int(module_instance_id)),
+        reroll_token=token,
+    )
+
+
+@app.route("/modules/reroll", methods=["POST"])
+@login_required
+def modules_reroll():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        module_instance_id = int((request.form.get("module_instance_id") or "").strip())
+    except ValueError:
+        session["message"] = "研究モジュールの指定が不正です"
+        return redirect(url_for("modules"))
+    token_key = _module_reroll_token_key(module_instance_id)
+    expected_token = session.pop(token_key, None)
+    submitted_token = (request.form.get("reroll_token") or "").strip()
+    if not expected_token or submitted_token != expected_token:
+        session["message"] = "再調整の確認が期限切れです。もう一度確認してください。"
+        return redirect(url_for("modules"))
+    result = execute_research_module_reroll(
+        db,
+        user_id,
+        module_instance_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if not result.get("ok"):
+        session["message"] = result.get("reason") or "再調整できませんでした"
+        return redirect(url_for("modules"))
+    return render_template(
+        "modules_reroll_result.html",
+        user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
+        module=result["module"],
+        before_stats=result["before_stats"],
+        after_stats=result["after_stats"],
+        before_chips=_research_module_stat_chips(result["before_stats"]),
+        after_chips=_research_module_stat_chips(result["after_stats"]),
+        cost_coins=int(result["cost"]),
+        coins_after=int(result["coins_after"]),
+    )
+
+
 @app.route("/modules")
 @login_required
 def modules():
@@ -35485,6 +35729,7 @@ def modules():
     module_options = _user_research_module_options(db, user_id)
     active_module = _active_research_module_for_user(db, user_id, user_row=user)
     module_options = _annotate_research_module_material_status(module_options, active_module)
+    module_options = _annotate_research_module_reroll_status(module_options, user)
     material_candidate_count = sum(1 for item in module_options if item.get("is_synthesis_material"))
     combine_candidates = _research_module_combine_candidates(db, user_id)
     catalog_summary = _research_module_catalog_summary(db, user_id)

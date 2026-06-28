@@ -709,6 +709,113 @@ class ResearchModuleTests(unittest.TestCase):
             status = db.execute("SELECT status FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()["status"]
             self.assertEqual(status, "inventory")
 
+    def test_modules_page_shows_reroll_action(self):
+        self._grant_module(self.user_id, "sniper_prototype", count=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 100 WHERE id = ?", (self.user_id,))
+            db.commit()
+        html = self._client().get("/modules").get_data(as_text=True)
+        self.assertIn("再調整", html)
+        self.assertIn("/modules/reroll/confirm/", html)
+
+    def test_reroll_rejects_locked_and_insufficient_coins(self):
+        locked_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        poor_id = self._grant_module(self.user_id, "heavy_complete", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET is_locked = 1 WHERE id = ?", (locked_id,))
+            db.execute("UPDATE users SET coins = 100 WHERE id = ?", (self.user_id,))
+            db.commit()
+        locked_resp = self._client().get(f"/modules/reroll/confirm/{locked_id}", follow_redirects=True)
+        self.assertIn("保護中のモジュールは再調整できません", locked_resp.get_data(as_text=True))
+        poor_resp = self._client().get(f"/modules/reroll/confirm/{poor_id}", follow_redirects=True)
+        self.assertIn("コインが足りません", poor_resp.get_data(as_text=True))
+
+    def test_reroll_spends_coins_changes_stats_and_keeps_identity_flags(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 500, active_research_module_instance_id = ? WHERE id = ?", (module_id, self.user_id))
+            before = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            db.commit()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            with mock.patch.object(game_app.random, "sample", return_value=["atk"]), \
+                 mock.patch.object(game_app.random, "randint", return_value=3):
+                result = game_app.execute_research_module_reroll(db, self.user_id, module_id, request_id="reroll-test", ip="127.0.0.1")
+            self.assertTrue(result["ok"])
+            after = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            user = db.execute("SELECT coins, active_research_module_instance_id FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["coins"]), 400)
+            self.assertEqual(int(user["active_research_module_instance_id"]), module_id)
+            self.assertEqual(int(after["id"]), module_id)
+            self.assertEqual(int(after["user_id"]), self.user_id)
+            self.assertEqual(after["module_key"], before["module_key"])
+            self.assertEqual(int(after["is_locked"] or 0), int(before["is_locked"] or 0))
+            self.assertEqual(int(after["atk_bonus"] or 0), 3)
+            for key in ("hp_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"):
+                self.assertEqual(int(after[key] or 0), 0)
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            payload = json.loads(event["payload_json"] or "{}")
+            self.assertEqual(payload["module_id"], module_id)
+            self.assertEqual(payload["cost"], 100)
+            self.assertEqual(payload["coins_before"], 500)
+            self.assertEqual(payload["coins_after"], 400)
+            self.assertIn("before_stats", payload)
+            self.assertIn("after_stats", payload)
+
+    def test_reroll_roll_bounds_by_rarity(self):
+        cases = [
+            ("sniper_prototype", 1, 1, 3),
+            ("sniper_complete", 2, 2, 5),
+        ]
+        for module_key, slots, min_value, max_value in cases:
+            module_id = self._grant_module(self.user_id, module_key, count=1)[0]
+            with game_app.app.app_context():
+                db = game_app.get_db()
+                module = game_app._research_module_instance_row(db, module_id, self.user_id)
+                bonuses = game_app._roll_research_module_reroll_bonuses(module)
+            nonzero = [int(value or 0) for value in bonuses.values() if int(value or 0) > 0]
+            self.assertEqual(len(nonzero), slots)
+            self.assertTrue(all(min_value <= value <= max_value for value in nonzero))
+
+        synth_id = self._grant_module(self.user_id, "synthesized_module", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET synthesis_grade = 'refined' WHERE id = ?", (synth_id,))
+            module = game_app._research_module_instance_row(db, synth_id, self.user_id)
+            bonuses = game_app._roll_research_module_reroll_bonuses(module)
+        nonzero = [int(value or 0) for value in bonuses.values() if int(value or 0) > 0]
+        self.assertEqual(len(nonzero), 2)
+        self.assertTrue(all(4 <= value <= 8 for value in nonzero))
+
+    def test_reroll_post_uses_confirmation_token_once(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 500 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = self._client()
+        confirm = client.get(f"/modules/reroll/confirm/{module_id}")
+        self.assertEqual(confirm.status_code, 200)
+        with client.session_transaction() as session:
+            token = session[f"module_reroll_token:{module_id}"]
+        first = client.post("/modules/reroll", data={"module_instance_id": module_id, "reroll_token": token})
+        second = client.post("/modules/reroll", data={"module_instance_id": module_id, "reroll_token": token}, follow_redirects=True)
+        self.assertEqual(first.status_code, 200)
+        self.assertIn("再調整の確認が期限切れです", second.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            coins = int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"])
+            events = int(db.execute("SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?", (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"])).fetchone()["c"])
+            self.assertEqual(coins, 400)
+            self.assertEqual(events, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
