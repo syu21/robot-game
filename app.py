@@ -292,6 +292,27 @@ RESEARCH_MODULE_RARITY_LABELS = {
     "refined": "改良型",
     "anomaly": "異常型",
 }
+FACTORY_FACILITY_DEFS = (
+    {
+        "facility_key": "scrap_collector",
+        "facility_name": "スクラップ回収機",
+        "description": "探索で出る余剰スクラップを工場ポイントへ変換します。",
+    },
+    {
+        "facility_key": "energy_reactor",
+        "facility_name": "エネルギー炉",
+        "description": "基地内の余剰エネルギーを工場ポイントとして蓄積します。",
+    },
+    {
+        "facility_key": "research_terminal",
+        "facility_name": "研究端末",
+        "description": "観測データを整理し、工場ポイントを生産します。",
+    },
+)
+FACTORY_POINT_RATE_BY_LEVEL = {1: 5, 2: 8, 3: 12, 4: 17, 5: 23}
+FACTORY_UPGRADE_COST_BY_LEVEL = {1: 500, 2: 1500, 3: 4000, 4: 9000}
+FACTORY_MAX_LEVEL = 5
+FACTORY_STORAGE_CAP_HOURS = 12
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10408,6 +10429,21 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_facilities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            facility_key TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1,
+            last_claimed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, facility_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
@@ -10484,6 +10520,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
     if "research_module_pity" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
+    if "factory_points" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN factory_points INTEGER NOT NULL DEFAULT 0")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -15212,6 +15250,234 @@ def execute_research_module_reroll(db, user_id, module_instance_id, *, request_i
         "coins_before": coins_before,
         "coins_after": coins_after,
     }
+
+
+def _factory_facility_def(facility_key):
+    key = str(facility_key or "").strip()
+    return next((item for item in FACTORY_FACILITY_DEFS if item["facility_key"] == key), None)
+
+
+def _factory_rate_for_level(level):
+    return int(FACTORY_POINT_RATE_BY_LEVEL.get(max(1, min(int(level or 1), FACTORY_MAX_LEVEL)), 0) or 0)
+
+
+def _factory_upgrade_cost_for_level(level):
+    return int(FACTORY_UPGRADE_COST_BY_LEVEL.get(int(level or 0), 0) or 0)
+
+
+def _factory_pending_points(row, now_ts=None):
+    if not row:
+        return 0
+    current_ts = int(now_ts or time.time())
+    last_ts = int(row["last_claimed_at"] or current_ts)
+    elapsed = max(0, current_ts - last_ts)
+    capped = min(elapsed, int(FACTORY_STORAGE_CAP_HOURS) * 3600)
+    rate = _factory_rate_for_level(int(row["level"] or 1))
+    return int((capped * rate) // 3600)
+
+
+def ensure_user_factory_facilities(db, user_id, *, request_id=None, ip=None):
+    uid = int(user_id)
+    now_ts = int(time.time())
+    created = []
+    for facility in FACTORY_FACILITY_DEFS:
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO user_factory_facilities
+            (user_id, facility_key, level, last_claimed_at, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?, ?)
+            """,
+            (uid, facility["facility_key"], now_ts, now_ts, now_ts),
+        )
+        if int(cur.rowcount or 0) > 0:
+            created.append(facility["facility_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTORY_ENSURE_DEFAULTS"],
+            user_id=uid,
+            request_id=request_id,
+            action_key="factory_ensure_defaults",
+            entity_type="factory",
+            delta_count=len(created),
+            payload={"user_id": uid, "created_facilities": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_facilities": created}
+
+
+def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_user_factory_facilities(db, uid)
+    current_ts = int(now_ts or time.time())
+    rows = db.execute(
+        """
+        SELECT *
+        FROM user_factory_facilities
+        WHERE user_id = ?
+        ORDER BY CASE facility_key
+            WHEN 'scrap_collector' THEN 1
+            WHEN 'energy_reactor' THEN 2
+            WHEN 'research_terminal' THEN 3
+            ELSE 9
+        END, id ASC
+        """,
+        (uid,),
+    ).fetchall()
+    facilities = []
+    for row in rows:
+        facility_def = _factory_facility_def(row["facility_key"]) or {}
+        level = max(1, min(int(row["level"] or 1), FACTORY_MAX_LEVEL))
+        pending = _factory_pending_points(row, current_ts)
+        next_level = level + 1 if level < FACTORY_MAX_LEVEL else None
+        upgrade_cost = _factory_upgrade_cost_for_level(level)
+        facilities.append(
+            {
+                "id": int(row["id"]),
+                "facility_key": row["facility_key"],
+                "facility_name": facility_def.get("facility_name", row["facility_key"]),
+                "description": facility_def.get("description", ""),
+                "level": level,
+                "rate_per_hour": _factory_rate_for_level(level),
+                "pending_points": pending,
+                "can_claim": pending > 0,
+                "next_level": next_level,
+                "next_rate_per_hour": _factory_rate_for_level(next_level) if next_level else None,
+                "upgrade_cost": upgrade_cost,
+                "can_upgrade": bool(next_level and upgrade_cost > 0),
+                "last_claimed_at": int(row["last_claimed_at"] or 0),
+            }
+        )
+    user = db.execute("SELECT factory_points, coins FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    total_pending = sum(int(item["pending_points"] or 0) for item in facilities)
+    return {
+        "factory_points": int(user["factory_points"] or 0) if user and "factory_points" in user.keys() else 0,
+        "coins": int(user["coins"] or 0) if user else 0,
+        "facilities": facilities,
+        "total_pending_points": int(total_pending),
+        "has_claimable": total_pending > 0,
+    }
+
+
+def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(facility_key or "").strip()
+    if not _factory_facility_def(key):
+        return {"ok": False, "reason": "工場施設の指定が不正です。"}
+    ensure_user_factory_facilities(db, uid, request_id=request_id, ip=ip)
+    now_ts = int(time.time())
+    row = db.execute(
+        "SELECT * FROM user_factory_facilities WHERE user_id = ? AND facility_key = ? LIMIT 1",
+        (uid, key),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "工場施設が見つかりません。"}
+    gained = _factory_pending_points(row, now_ts)
+    if gained <= 0:
+        return {"ok": False, "reason": "まだ回収できる工場ポイントがありません。"}
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    before_points = int(user["factory_points"] or 0) if user else 0
+    after_points = before_points + gained
+    db.execute(
+        "UPDATE user_factory_facilities SET last_claimed_at = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+        (now_ts, now_ts, int(row["id"]), uid),
+    )
+    db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (after_points, uid))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_CLAIM"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_claim",
+        entity_type="factory_facility",
+        entity_id=int(row["id"]),
+        delta_count=gained,
+        payload={
+            "user_id": uid,
+            "facility_key": key,
+            "level_before": int(row["level"] or 1),
+            "level_after": int(row["level"] or 1),
+            "points_gained": gained,
+            "factory_points_before": before_points,
+            "factory_points_after": after_points,
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "points_gained": gained, "factory_points_after": after_points}
+
+
+def upgrade_factory_facility(db, user_id, facility_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(facility_key or "").strip()
+    if not _factory_facility_def(key):
+        return {"ok": False, "reason": "工場施設の指定が不正です。"}
+    ensure_user_factory_facilities(db, uid, request_id=request_id, ip=ip)
+    row = db.execute(
+        "SELECT * FROM user_factory_facilities WHERE user_id = ? AND facility_key = ? LIMIT 1",
+        (uid, key),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "工場施設が見つかりません。"}
+    level_before = int(row["level"] or 1)
+    if level_before >= FACTORY_MAX_LEVEL:
+        return {"ok": False, "reason": "この施設は最大Lvです。"}
+    cost = _factory_upgrade_cost_for_level(level_before)
+    user = db.execute("SELECT coins FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    coins_before = int(user["coins"] or 0) if user else 0
+    if coins_before < cost:
+        return {"ok": False, "reason": f"コインが足りません。必要: {cost} / 所持: {coins_before}"}
+    now_ts = int(time.time())
+    level_after = level_before + 1
+    coins_after = coins_before - cost
+    cur = db.execute(
+        """
+        UPDATE user_factory_facilities
+        SET level = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND level = ?
+        """,
+        (level_after, now_ts, int(row["id"]), uid, level_before),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "強化に失敗しました。もう一度確認してください。"}
+    db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, uid))
+    payload = {
+        "user_id": uid,
+        "facility_key": key,
+        "level_before": level_before,
+        "level_after": level_after,
+        "cost": cost,
+        "coins_before": coins_before,
+        "coins_after": coins_after,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_UPGRADE"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_upgrade",
+        entity_type="factory_facility",
+        entity_id=int(row["id"]),
+        delta_coins=-cost,
+        payload=payload,
+        ip=ip,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COIN_DELTA"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_upgrade",
+        entity_type="factory_facility",
+        entity_id=int(row["id"]),
+        delta_coins=-cost,
+        payload={**payload, "source": "factory_upgrade", "spend": cost},
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "level_after": level_after, "coins_after": coins_after, "cost": cost}
 
 
 def _research_module_synthesis_materials(db, user_id):
@@ -36337,6 +36603,76 @@ def tower_ranking():
     )
 
 
+@app.route("/factory")
+@login_required
+def factory():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_user_factory_facilities(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    factory_view = get_user_factory_view(db, user_id, ensure=False)
+    return render_template(
+        "factory.html",
+        user=user,
+        message=session.pop("message", None),
+        factory=factory_view,
+        max_storage_hours=int(FACTORY_STORAGE_CAP_HOURS),
+        max_level=int(FACTORY_MAX_LEVEL),
+    )
+
+
+@app.route("/factory/claim", methods=["POST"])
+@login_required
+def factory_claim():
+    db = get_db()
+    user_id = int(session["user_id"])
+    facility_key = (request.form.get("facility_key") or "").strip()
+    result = claim_factory_facility_points(
+        db,
+        user_id,
+        facility_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"工場ポイント +{int(result.get('points_gained') or 0)} を回収しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "回収できませんでした。"
+    return redirect(url_for("factory"))
+
+
+@app.route("/factory/upgrade", methods=["POST"])
+@login_required
+def factory_upgrade():
+    db = get_db()
+    user_id = int(session["user_id"])
+    facility_key = (request.form.get("facility_key") or "").strip()
+    result = upgrade_factory_facility(
+        db,
+        user_id,
+        facility_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"工場施設をLv{int(result.get('level_after') or 0)}に強化しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "強化できませんでした。"
+    return redirect(url_for("factory"))
+
+
 @app.route("/admin/tower")
 @login_required
 def admin_tower():
@@ -36897,6 +37233,7 @@ def home():
     home_lab_level = lab_level_view(user)
     home_insect_research = _home_insect_research_view(db, week_key)
     home_dinosaur_campaign = _home_dinosaur_campaign_view(db, week_key)
+    factory_home_summary = get_user_factory_view(db, int(user["id"]))
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -37069,6 +37406,7 @@ def home():
             home_lab_level=home_lab_level,
             home_insect_research=home_insect_research,
             home_dinosaur_campaign=home_dinosaur_campaign,
+            factory_home_summary=factory_home_summary,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,

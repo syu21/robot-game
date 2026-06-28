@@ -325,6 +325,20 @@
 - [ ] 世界ログにはまだ流れない
 - [ ] `audit.module.strategy.apply` / `audit.module.strategy.result` が残る
 
+## ロボ工場
+- [ ] `/factory` が開ける
+- [ ] 初回アクセスで3施設が作成される
+- [ ] `/home` のアクション欄に「ロボ工場」が表示される
+- [ ] 時間経過に応じて工場ポイントが蓄積する
+- [ ] 最大蓄積は12時間分で止まる
+- [ ] 回収で `users.factory_points` が増える
+- [ ] 回収後 `last_claimed_at` が更新される
+- [ ] 強化で coins が減り level が上がる
+- [ ] コイン不足では強化できない
+- [ ] Lv5以上は強化できない
+- [ ] `audit.factory.claim` / `audit.factory.upgrade` / `audit.coin.delta` が残る
+- [ ] 工場ポイントが本編戦闘、強化、進化に使われていない
+
 ## 10. 公開運用
 - [ ] `MAINTENANCE_MODE=partial` で閲覧は残り、更新系POSTだけがサーバー側で止まる
 - [ ] `MAINTENANCE_MODE=partial` 中に全ページ上部へメンテ告知帯が出る

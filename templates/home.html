@@ -1112,6 +1112,10 @@
           <div class="action-title">所持パーツ</div>
           <div class="action-desc">所持 {{ part_inventory_count }}/{{ limits['part_inventory'] }}{% if part_storage_count|default(0)|int > 0 %} | 保管 {{ part_storage_count }}{% endif %}</div>
         </a>
+        <a class="action-card {% if factory_home_summary and factory_home_summary['has_claimable'] %}is-highlight{% endif %}" href="{{ url_for('factory') }}">
+          <div class="action-title">ロボ工場</div>
+          <div class="action-desc">{% if factory_home_summary and factory_home_summary['has_claimable'] %}回収できます: {{ factory_home_summary['total_pending_points'] }}pt{% else %}資源を回収する{% endif %}</div>
+        </a>
         {% if show_market_menu %}
         <a class="action-card" href="{{ url_for('market') }}"><div class="action-title">廃品市場</div><div class="action-desc">余剰パーツを売って補填を買う</div></a>
         {% endif %}

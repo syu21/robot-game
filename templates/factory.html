@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>ロボ工場</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の工場ポイント</div>
+    <div class="stat-value">{{ factory['factory_points'] }}pt</div>
+    <div class="robot-time">各施設は最大{{ max_storage_hours }}時間分まで蓄積します。</div>
+    {% if factory['total_pending_points'] > 0 %}
+    <div class="upgrade-cost">回収可能: {{ factory['total_pending_points'] }}pt</div>
+    {% else %}
+    <div class="robot-time">まだ回収できる資源はありません。</div>
+    {% endif %}
+  </div>
+
+  <div class="module-card-grid">
+    {% for facility in factory['facilities'] %}
+    <div class="module-card {% if facility['can_claim'] %}is-highlight{% endif %}">
+      <div class="module-card-title">{{ facility['facility_name'] }} Lv{{ facility['level'] }}</div>
+      <div class="robot-time">{{ facility['description'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">生産 {{ facility['rate_per_hour'] }}pt/時</span>
+        {% if facility['can_claim'] %}
+        <span class="module-badge ok">回収できます</span>
+        {% else %}
+        <span class="module-badge muted">蓄積中</span>
+        {% endif %}
+      </div>
+      <div class="upgrade-cost">たまった資源: {{ facility['pending_points'] }}pt</div>
+      <form method="post" action="{{ url_for('factory_claim') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="facility_key" value="{{ facility['facility_key'] }}" />
+        <button type="submit" {% if not facility['can_claim'] %}disabled{% endif %}>回収する</button>
+      </form>
+      {% if facility['can_upgrade'] %}
+      <div class="robot-time">次Lv: {{ facility['next_rate_per_hour'] }}pt/時</div>
+      <form method="post" action="{{ url_for('factory_upgrade') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="facility_key" value="{{ facility['facility_key'] }}" />
+        <button type="submit" class="btn-secondary" {% if factory['coins'] < facility['upgrade_cost'] %}disabled{% endif %}>強化する {{ facility['upgrade_cost'] }}コイン</button>
+      </form>
+      {% if factory['coins'] < facility['upgrade_cost'] %}
+      <div class="robot-time">コイン不足: 所持 {{ factory['coins'] }}コイン</div>
+      {% endif %}
+      {% else %}
+      <div class="robot-time">最大Lvです。</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% endblock %}

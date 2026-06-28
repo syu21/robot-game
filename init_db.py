@@ -784,6 +784,7 @@ def main():
             research_boost_charges INTEGER NOT NULL DEFAULT 0,
             research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1,
             research_module_pity INTEGER NOT NULL DEFAULT 0,
+            factory_points INTEGER NOT NULL DEFAULT 0,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -830,6 +831,21 @@ def main():
             UNIQUE(referred_user_id),
             FOREIGN KEY (referrer_user_id) REFERENCES users(id),
             FOREIGN KEY (referred_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_facilities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            facility_key TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1,
+            last_claimed_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, facility_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
     )
@@ -2862,6 +2878,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1")
     if "research_module_pity" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
+    if "factory_points" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN factory_points INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
