@@ -313,6 +313,53 @@ FACTORY_POINT_RATE_BY_LEVEL = {1: 5, 2: 8, 3: 12, 4: 17, 5: 23}
 FACTORY_UPGRADE_COST_BY_LEVEL = {1: 500, 2: 1500, 3: 4000, 4: 9000}
 FACTORY_MAX_LEVEL = 5
 FACTORY_STORAGE_CAP_HOURS = 12
+FACTORY_PRIZE_DEFS = (
+    {
+        "prize_key": "factory_title_foreman",
+        "name_ja": "工場主任",
+        "description": "工場を動かし始めた研究員の証。",
+        "prize_type": "title",
+        "cost_points": 300,
+        "grant_key": "factory_foreman",
+        "sort_order": 10,
+    },
+    {
+        "prize_key": "factory_decor_scrap_badge",
+        "name_ja": "スクラップバッジ",
+        "description": "スクラップ回収機の管理者バッジ。",
+        "prize_type": "decor",
+        "cost_points": 800,
+        "grant_key": "factory_scrap_badge",
+        "sort_order": 20,
+    },
+    {
+        "prize_key": "factory_decor_energy_badge",
+        "name_ja": "エネルギー炉バッジ",
+        "description": "エネルギー炉を見守る整備員バッジ。",
+        "prize_type": "decor",
+        "cost_points": 1200,
+        "grant_key": "factory_energy_badge",
+        "sort_order": 30,
+    },
+    {
+        "prize_key": "factory_title_research_plate",
+        "name_ja": "研究員プレート",
+        "description": "研究端末に記録された工場研究員プレート。",
+        "prize_type": "title",
+        "cost_points": 1500,
+        "grant_key": "factory_research_plate",
+        "sort_order": 40,
+    },
+    {
+        "prize_key": "factory_skin_blue_lab",
+        "name_ja": "工場背景：青い研究区画",
+        "description": "将来の工場背景として使える青い研究区画スキン。",
+        "prize_type": "factory_skin",
+        "cost_points": 3000,
+        "grant_key": "factory_skin_blue_lab",
+        "sort_order": 50,
+    },
+)
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10444,6 +10491,36 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS factory_prizes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prize_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            prize_type TEXT NOT NULL,
+            cost_points INTEGER NOT NULL DEFAULT 0,
+            grant_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_prize_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            prize_key TEXT NOT NULL,
+            claimed_at INTEGER NOT NULL,
+            UNIQUE(user_id, prize_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (prize_key) REFERENCES factory_prizes(prize_key)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
@@ -13244,6 +13321,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robots_user_created ON user_mini_robots(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_robot_created ON mini_robot_logs(mini_robot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_user_created ON mini_robot_logs(user_id, created_at DESC)")
@@ -15265,6 +15344,14 @@ def _factory_upgrade_cost_for_level(level):
     return int(FACTORY_UPGRADE_COST_BY_LEVEL.get(int(level or 0), 0) or 0)
 
 
+def _factory_prize_type_label(prize_type):
+    return {
+        "title": "称号",
+        "decor": "DECOR",
+        "factory_skin": "工場スキン",
+    }.get(str(prize_type or ""), str(prize_type or "景品"))
+
+
 def _factory_pending_points(row, now_ts=None):
     if not row:
         return 0
@@ -15304,6 +15391,173 @@ def ensure_user_factory_facilities(db, user_id, *, request_id=None, ip=None):
             ip=ip,
         )
     return {"created_count": len(created), "created_facilities": created}
+
+
+def ensure_factory_prizes(db, *, user_id=None, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["prize_key"]
+        for row in db.execute("SELECT prize_key FROM factory_prizes").fetchall()
+    }
+    created = []
+    for prize in FACTORY_PRIZE_DEFS:
+        db.execute(
+            """
+            INSERT INTO factory_prizes (
+                prize_key, name_ja, description, prize_type, cost_points,
+                grant_key, is_active, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(prize_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                prize_type = excluded.prize_type,
+                cost_points = excluded.cost_points,
+                grant_key = excluded.grant_key,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                prize["prize_key"],
+                prize["name_ja"],
+                prize["description"],
+                prize["prize_type"],
+                int(prize["cost_points"]),
+                prize["grant_key"],
+                int(prize["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if prize["prize_key"] not in existing_keys:
+            created.append(prize["prize_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTORY_PRIZE_ENSURE_DEFAULTS"],
+            user_id=int(user_id) if user_id else None,
+            request_id=request_id,
+            action_key="factory_prize_ensure_defaults",
+            entity_type="factory_prize",
+            delta_count=len(created),
+            payload={"created_prizes": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_prizes": created}
+
+
+def get_factory_prize_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_factory_prizes(db, user_id=uid)
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    factory_points = int(user["factory_points"] or 0) if user else 0
+    rows = db.execute(
+        """
+        SELECT fp.*,
+               CASE WHEN ufpc.id IS NULL THEN 0 ELSE 1 END AS is_claimed
+        FROM factory_prizes fp
+        LEFT JOIN user_factory_prize_claims ufpc
+          ON ufpc.prize_key = fp.prize_key
+         AND ufpc.user_id = ?
+        WHERE fp.is_active = 1
+        ORDER BY fp.sort_order ASC, fp.id ASC
+        """,
+        (uid,),
+    ).fetchall()
+    prizes = []
+    for row in rows:
+        cost = int(row["cost_points"] or 0)
+        claimed = bool(int(row["is_claimed"] or 0))
+        can_claim = (not claimed) and factory_points >= cost
+        if claimed:
+            status_label = "交換済み"
+        elif can_claim:
+            status_label = "交換可能"
+        else:
+            status_label = "ポイント不足"
+        prizes.append(
+            {
+                "id": int(row["id"]),
+                "prize_key": row["prize_key"],
+                "name_ja": row["name_ja"],
+                "description": row["description"] or "",
+                "prize_type": row["prize_type"],
+                "prize_type_label": _factory_prize_type_label(row["prize_type"]),
+                "cost_points": cost,
+                "grant_key": row["grant_key"],
+                "is_claimed": claimed,
+                "can_claim": can_claim,
+                "status_label": status_label,
+            }
+        )
+    return {"factory_points": factory_points, "prizes": prizes}
+
+
+def claim_factory_prize(db, user_id, prize_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(prize_key or "").strip()
+    if not key:
+        return {"ok": False, "reason": "景品の指定が不正です。"}
+    ensure_factory_prizes(db, user_id=uid, request_id=request_id, ip=ip)
+    prize = db.execute(
+        "SELECT * FROM factory_prizes WHERE prize_key = ? AND is_active = 1 LIMIT 1",
+        (key,),
+    ).fetchone()
+    if not prize:
+        return {"ok": False, "reason": "交換できる景品が見つかりません。"}
+    existing = db.execute(
+        "SELECT id FROM user_factory_prize_claims WHERE user_id = ? AND prize_key = ? LIMIT 1",
+        (uid, key),
+    ).fetchone()
+    if existing:
+        return {"ok": False, "reason": "この景品は交換済みです。", "duplicate_reason": "already_claimed"}
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    before_points = int(user["factory_points"] or 0) if user else 0
+    cost = int(prize["cost_points"] or 0)
+    if before_points < cost:
+        return {"ok": False, "reason": f"工場ポイントが足りません。必要: {cost} / 所持: {before_points}"}
+    now_ts = int(time.time())
+    after_points = before_points - cost
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO user_factory_prize_claims (user_id, prize_key, claimed_at)
+        VALUES (?, ?, ?)
+        """,
+        (uid, key, now_ts),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "この景品は交換済みです。", "duplicate_reason": "already_claimed"}
+    db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (after_points, uid))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_PRIZE_CLAIM"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_prize_claim",
+        entity_type="factory_prize",
+        entity_id=int(prize["id"]),
+        delta_count=-cost,
+        payload={
+            "user_id": uid,
+            "prize_key": key,
+            "prize_type": prize["prize_type"],
+            "cost_points": cost,
+            "factory_points_before": before_points,
+            "factory_points_after": after_points,
+            "grant_key": prize["grant_key"],
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "prize_key": key,
+        "name_ja": prize["name_ja"],
+        "cost_points": cost,
+        "factory_points_after": after_points,
+    }
 
 
 def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
@@ -36671,6 +36925,52 @@ def factory_upgrade():
         db.rollback()
         session["message"] = result.get("reason") or "強化できませんでした。"
     return redirect(url_for("factory"))
+
+
+@app.route("/factory/prizes")
+@login_required
+def factory_prizes():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_factory_prizes(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    prize_view = get_factory_prize_view(db, user_id, ensure=False)
+    return render_template(
+        "factory_prizes.html",
+        user=user,
+        message=session.pop("message", None),
+        prizes=prize_view,
+    )
+
+
+@app.route("/factory/prizes/claim", methods=["POST"])
+@login_required
+def factory_prize_claim():
+    db = get_db()
+    user_id = int(session["user_id"])
+    prize_key = (request.form.get("prize_key") or "").strip()
+    result = claim_factory_prize(
+        db,
+        user_id,
+        prize_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"{result.get('name_ja') or '景品'}を交換しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "交換できませんでした。"
+    return redirect(url_for("factory_prizes"))
 
 
 @app.route("/admin/tower")

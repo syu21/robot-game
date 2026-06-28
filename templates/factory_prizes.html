@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>工場交換所</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の工場ポイント</div>
+    <div class="stat-value">{{ prizes['factory_points'] }}pt</div>
+    <div class="robot-time">交換報酬は本編戦力には影響しません。</div>
+  </div>
+
+  <div class="module-card-grid">
+    {% for prize in prizes['prizes'] %}
+    <div class="module-card {% if prize['can_claim'] %}is-highlight{% endif %}">
+      <div class="module-card-title">{{ prize['name_ja'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">{{ prize['prize_type_label'] }}</span>
+        <span class="module-badge">{{ prize['cost_points'] }}pt</span>
+        {% if prize['is_claimed'] %}
+        <span class="module-badge ok">交換済み</span>
+        {% elif prize['can_claim'] %}
+        <span class="module-badge ok">交換可能</span>
+        {% else %}
+        <span class="module-badge muted">ポイント不足</span>
+        {% endif %}
+      </div>
+      <div class="robot-time">{{ prize['description'] }}</div>
+      {% if prize['is_claimed'] %}
+      <button type="button" class="btn-secondary" disabled>交換済み</button>
+      {% else %}
+      <form method="post" action="{{ url_for('factory_prize_claim') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="prize_key" value="{{ prize['prize_key'] }}" />
+        <button type="submit" {% if not prize['can_claim'] %}disabled{% endif %}>交換する</button>
+      </form>
+      {% if not prize['can_claim'] %}
+      <div class="robot-time">必要 {{ prize['cost_points'] }}pt / 所持 {{ prizes['factory_points'] }}pt</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="card">現在交換できる景品はありません。</div>
+    {% endfor %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ戻る</a></p>
+</div>
+{% endblock %}

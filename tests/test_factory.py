@@ -145,6 +145,80 @@ class FactoryTests(unittest.TestCase):
         self.assertIn("ロボ工場", html)
         self.assertIn("/factory", html)
 
+    def test_factory_prizes_initial_access_seeds_prizes(self):
+        html = self._client().get("/factory/prizes").get_data(as_text=True)
+        self.assertIn("工場交換所", html)
+        self.assertIn("工場主任", html)
+        self.assertIn("スクラップバッジ", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = int(db.execute("SELECT COUNT(*) AS c FROM factory_prizes").fetchone()["c"])
+            self.assertEqual(count, 5)
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE event_type = ? ORDER BY id DESC LIMIT 1",
+                (game_app.AUDIT_EVENT_TYPES["FACTORY_PRIZE_ENSURE_DEFAULTS"],),
+            ).fetchone()
+            self.assertIsNotNone(event)
+
+    def test_factory_prize_claim_spends_points_records_claim_and_audit(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_prizes(db, user_id=self.user_id)
+            db.execute("UPDATE users SET factory_points = 1000 WHERE id = ?", (self.user_id,))
+            result = game_app.claim_factory_prize(db, self.user_id, "factory_title_foreman", request_id="factory-prize")
+            self.assertTrue(result["ok"])
+            points = int(db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()["factory_points"])
+            self.assertEqual(points, 700)
+            claim = db.execute(
+                "SELECT id FROM user_factory_prize_claims WHERE user_id = ? AND prize_key = ?",
+                (self.user_id, "factory_title_foreman"),
+            ).fetchone()
+            self.assertIsNotNone(claim)
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["FACTORY_PRIZE_CLAIM"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            payload = json.loads(event["payload_json"] or "{}")
+            self.assertEqual(payload["prize_key"], "factory_title_foreman")
+            self.assertEqual(payload["factory_points_before"], 1000)
+            self.assertEqual(payload["factory_points_after"], 700)
+
+    def test_factory_prize_claim_rejects_duplicate_and_insufficient_points(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_prizes(db, user_id=self.user_id)
+            db.execute("UPDATE users SET factory_points = 300 WHERE id = ?", (self.user_id,))
+            first = game_app.claim_factory_prize(db, self.user_id, "factory_title_foreman")
+            self.assertTrue(first["ok"])
+            second = game_app.claim_factory_prize(db, self.user_id, "factory_title_foreman")
+            self.assertFalse(second["ok"])
+            self.assertIn("交換済み", second["reason"])
+            points = int(db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()["factory_points"])
+            self.assertEqual(points, 0)
+            poor = game_app.claim_factory_prize(db, self.user_id, "factory_decor_scrap_badge")
+            self.assertFalse(poor["ok"])
+            self.assertIn("足りません", poor["reason"])
+            count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM user_factory_prize_claims WHERE user_id = ?",
+                    (self.user_id,),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(count, 1)
+
+    def test_factory_prizes_hides_inactive_items_and_factory_links_exchange(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_prizes(db, user_id=self.user_id)
+            db.execute("UPDATE factory_prizes SET is_active = 0 WHERE prize_key = ?", ("factory_skin_blue_lab",))
+            db.commit()
+        client = self._client()
+        factory_html = client.get("/factory").get_data(as_text=True)
+        self.assertIn("/factory/prizes", factory_html)
+        prizes_html = client.get("/factory/prizes").get_data(as_text=True)
+        self.assertNotIn("工場背景：青い研究区画", prizes_html)
+
 
 if __name__ == "__main__":
     unittest.main()

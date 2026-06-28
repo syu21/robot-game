@@ -159,12 +159,16 @@
 - `audit.factory.ensure_defaults`
 - `audit.factory.claim`
 - `audit.factory.upgrade`
+- `audit.factory.prize.ensure_defaults`
+- `audit.factory.prize.claim`
 - `audit.coin.delta`
 
 補足:
 - `audit.factory.ensure_defaults` はユーザーの工場施設3件を初期作成した記録。
 - `audit.factory.claim` は施設から工場ポイントを回収した記録。payload は `user_id`, `facility_key`, `level_before`, `level_after`, `points_gained`, `factory_points_before`, `factory_points_after` を含める。
 - `audit.factory.upgrade` は施設強化時に記録する。payload は `user_id`, `facility_key`, `level_before`, `level_after`, `cost`, `coins_before`, `coins_after` を含める。
+- `audit.factory.prize.ensure_defaults` は工場交換所の初期景品を投入した記録。
+- `audit.factory.prize.claim` は工場景品交換時に記録する。payload は `user_id`, `prize_key`, `prize_type`, `cost_points`, `factory_points_before`, `factory_points_after`, `grant_key` を含める。
 - 工場ポイントは独立ポイントであり、本編戦闘、強化、進化には使わない。
 
 ### 4.9 陣営内表彰

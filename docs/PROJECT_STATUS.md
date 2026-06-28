@@ -655,12 +655,21 @@
 
 ## ロボ工場 v1
 - `/factory` に放置施設「ロボ工場」を追加する。
-- `users.factory_points` に独立ポイントを保存する。v1では本編戦力、強化、進化には使わない。
+- `users.factory_points` に独立ポイントを保存する。本編戦力、強化、進化には使わない。
 - `user_factory_facilities` にユーザー別の施設Lvと最終回収時刻を保存する。
 - 施設は `scrap_collector`、`energy_reactor`、`research_terminal` の3種類。
 - 各施設はLv1〜5で時間経過により工場ポイントを生産し、最大12時間分まで蓄積する。
 - 強化は既存コインを消費し、Lv5で上限。監査は `audit.factory.ensure_defaults` / `audit.factory.claim` / `audit.factory.upgrade`。
 - `/home` のアクション欄に「ロボ工場」導線を表示し、回収可能なときは回収可能ポイントを見せる。
+
+## ロボ工場 v2
+- `/factory/prizes` に「工場交換所」を追加する。
+- `factory_prizes` に交換景品、`user_factory_prize_claims` にユーザー別の交換履歴を保存する。
+- 景品は `title` / `decor` / `factory_skin` の表示・所持記録のみで、すべて1回限定。
+- `/factory` から「工場交換所へ」導線を表示する。
+- 交換時は `users.factory_points` を減算し、同一トランザクションで claim を作成する。
+- 監査は `audit.factory.prize.ensure_defaults` / `audit.factory.prize.claim`。
+- 工場交換所の報酬は本編ステータス、通常出撃、ボス戦、強化、進化、ドロップには影響しない。
 
 ## 体験モード
 - `/trial/start` から未ログインのまま `お試しプレイ中` として開始できる。

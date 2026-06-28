@@ -851,6 +851,36 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS factory_prizes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prize_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            prize_type TEXT NOT NULL,
+            cost_points INTEGER NOT NULL DEFAULT 0,
+            grant_key TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_prize_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            prize_key TEXT NOT NULL,
+            claimed_at INTEGER NOT NULL,
+            UNIQUE(user_id, prize_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (prize_key) REFERENCES factory_prizes(prize_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS release_flags (
             key TEXT PRIMARY KEY,
             is_public INTEGER NOT NULL DEFAULT 0,
@@ -3508,6 +3538,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
     cur.execute(

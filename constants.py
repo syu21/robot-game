@@ -184,6 +184,8 @@ AUDIT_EVENT_TYPES = {
     "FACTORY_ENSURE_DEFAULTS": "audit.factory.ensure_defaults",
     "FACTORY_CLAIM": "audit.factory.claim",
     "FACTORY_UPGRADE": "audit.factory.upgrade",
+    "FACTORY_PRIZE_ENSURE_DEFAULTS": "audit.factory.prize.ensure_defaults",
+    "FACTORY_PRIZE_CLAIM": "audit.factory.prize.claim",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",

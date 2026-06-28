@@ -338,6 +338,17 @@
 - [ ] Lv5以上は強化できない
 - [ ] `audit.factory.claim` / `audit.factory.upgrade` / `audit.coin.delta` が残る
 - [ ] 工場ポイントが本編戦闘、強化、進化に使われていない
+- [ ] `/factory/prizes` が開ける
+- [ ] `/factory` に「工場交換所へ」導線が表示される
+- [ ] 初回アクセスで工場交換所の景品が投入される
+- [ ] 工場ポイントが足りると景品を交換できる
+- [ ] 交換で `users.factory_points` が減る
+- [ ] `user_factory_prize_claims` に交換履歴が残る
+- [ ] 交換済み景品は再交換できない
+- [ ] 工場ポイント不足では交換できない
+- [ ] inactive 景品は表示されない
+- [ ] `audit.factory.prize.claim` が残る
+- [ ] 工場交換所の報酬が本編戦闘、強化、進化、ドロップに影響しない
 
 ## 10. 公開運用
 - [ ] `MAINTENANCE_MODE=partial` で閲覧は残り、更新系POSTだけがサーバー側で止まる

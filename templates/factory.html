@@ -10,6 +10,7 @@
     <div class="stat-label">現在の工場ポイント</div>
     <div class="stat-value">{{ factory['factory_points'] }}pt</div>
     <div class="robot-time">各施設は最大{{ max_storage_hours }}時間分まで蓄積します。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory_prizes') }}">工場交換所へ</a></p>
     {% if factory['total_pending_points'] > 0 %}
     <div class="upgrade-cost">回収可能: {{ factory['total_pending_points'] }}pt</div>
     {% else %}
