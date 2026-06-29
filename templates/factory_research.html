@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>世界研究</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の工場ポイント</div>
+    <div class="stat-value">{{ research['factory_points'] }}pt</div>
+    <div class="robot-time">研究報酬はDECOR、称号、背景などの見た目要素のみです。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ戻る</a></p>
+  </div>
+
+  <div class="module-card-grid">
+    {% for project in research['projects'] %}
+    <div class="module-card {% if not project['is_completed'] %}is-highlight{% endif %}">
+      <div class="module-card-title">{{ project['name_ja'] }}</div>
+      <div class="robot-time">{{ project['description'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">{{ project['current_points'] }} / {{ project['required_points'] }}pt</span>
+        <span class="module-badge">{{ project['progress_percent'] }}%</span>
+        {% if project['is_completed'] %}
+        <span class="module-badge ok">完成</span>
+        {% else %}
+        <span class="module-badge muted">あと {{ project['remaining_points'] }}pt</span>
+        {% endif %}
+      </div>
+      <div class="upgrade-cost">{{ project['progress_bar'] }}</div>
+      <div class="upgrade-cost">報酬: {{ project['reward_label'] }}</div>
+      {% if project['is_completed'] %}
+      <button type="button" class="btn-secondary" disabled>完成済み</button>
+      {% else %}
+      <form method="post" action="{{ url_for('factory_research_donate') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="research_key" value="{{ project['research_key'] }}" />
+        {% for amount in research['donation_presets'] %}
+        <button type="submit" name="amount" value="{{ amount }}" {% if research['factory_points'] < amount %}disabled{% endif %}>{{ amount }}pt</button>
+        {% endfor %}
+      </form>
+      <form method="post" action="{{ url_for('factory_research_donate') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="research_key" value="{{ project['research_key'] }}" />
+        <input type="number" name="custom_amount" min="1" max="{{ research['factory_points'] }}" placeholder="自由入力" />
+        <button type="submit" {% if research['factory_points'] <= 0 %}disabled{% endif %}>寄付する</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="module-card-grid">
+    <div class="card">
+      <h2>今週の研究貢献</h2>
+      {% for row in research['rankings']['weekly'] %}
+      <div class="robot-time">{{ row['rank'] }}位 {{ row['display_label'] }} {{ row['points'] }}pt</div>
+      {% else %}
+      <div class="robot-time">まだ貢献はありません。</div>
+      {% endfor %}
+    </div>
+    <div class="card">
+      <h2>累計研究ポイント</h2>
+      {% for row in research['rankings']['total'] %}
+      <div class="robot-time">{{ row['rank'] }}位 {{ row['display_label'] }} {{ row['points'] }}pt</div>
+      {% else %}
+      <div class="robot-time">まだ貢献はありません。</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

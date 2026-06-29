@@ -1116,6 +1116,16 @@
           <div class="action-title">ロボ工場</div>
           <div class="action-desc">{% if factory_home_summary and factory_home_summary['has_claimable'] %}回収できます: {{ factory_home_summary['total_pending_points'] }}pt{% else %}資源を回収する{% endif %}</div>
         </a>
+        <a class="action-card" href="{{ url_for('factory_research') }}">
+          <div class="action-title">世界研究</div>
+          <div class="action-desc">
+            {% if factory_research_home_summary and factory_research_home_summary['active_project'] %}
+              {{ factory_research_home_summary['label'] }} {{ factory_research_home_summary['progress_percent'] }}%<br>{{ factory_research_home_summary['active_project']['progress_bar'] }}<br>研究に参加
+            {% else %}
+              研究に参加
+            {% endif %}
+          </div>
+        </a>
         {% if show_market_menu %}
         <a class="action-card" href="{{ url_for('market') }}"><div class="action-title">廃品市場</div><div class="action-desc">余剰パーツを売って補填を買う</div></a>
         {% endif %}

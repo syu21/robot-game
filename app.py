@@ -313,6 +313,7 @@ FACTORY_POINT_RATE_BY_LEVEL = {1: 5, 2: 8, 3: 12, 4: 17, 5: 23}
 FACTORY_UPGRADE_COST_BY_LEVEL = {1: 500, 2: 1500, 3: 4000, 4: 9000}
 FACTORY_MAX_LEVEL = 5
 FACTORY_STORAGE_CAP_HOURS = 12
+FACTORY_RESEARCH_COMPLETE_EVENT_TYPE = AUDIT_EVENT_TYPES["FACTORY_RESEARCH_COMPLETE"]
 FACTORY_PRIZE_DEFS = (
     {
         "prize_key": "factory_title_foreman",
@@ -358,6 +359,35 @@ FACTORY_PRIZE_DEFS = (
         "cost_points": 3000,
         "grant_key": "factory_skin_blue_lab",
         "sort_order": 50,
+    },
+)
+FACTORY_RESEARCH_DEFS = (
+    {
+        "research_key": "energy_research",
+        "name_ja": "エネルギー研究",
+        "description": "工場エネルギーを安定化し、世界中の工場背景技術を進めます。",
+        "required_points": 50000,
+        "reward_key": "factory_world_background",
+        "reward_label": "全員に工場背景",
+        "sort_order": 10,
+    },
+    {
+        "research_key": "paint_research",
+        "name_ja": "塗装技術",
+        "description": "外装塗装の研究を進め、新しいDECORの実装準備をします。",
+        "required_points": 20000,
+        "reward_key": "factory_new_decor",
+        "reward_label": "新DECOR追加",
+        "sort_order": 20,
+    },
+    {
+        "research_key": "communication_research",
+        "name_ja": "通信技術",
+        "description": "研究員同士の通信基盤を拡張し、チャット称号の追加を目指します。",
+        "required_points": 30000,
+        "reward_key": "factory_chat_title",
+        "reward_label": "チャット称号追加",
+        "sort_order": 30,
     },
 )
 RESEARCH_MODULE_FAMILY_LABELS = {
@@ -10521,6 +10551,40 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS world_research_projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            required_points INTEGER NOT NULL,
+            current_points INTEGER NOT NULL DEFAULT 0,
+            reward_key TEXT,
+            reward_label TEXT,
+            is_completed INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            research_key TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            week_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            request_id TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (research_key) REFERENCES world_research_projects(research_key)
+        )
+        """
+    )
     cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     added_research_boost_charges = "research_boost_charges" not in cols
     if "is_admin" not in cols:
@@ -13323,6 +13387,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robots_user_created ON user_mini_robots(user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_robot_created ON mini_robot_logs(mini_robot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_mini_robot_logs_user_created ON mini_robot_logs(user_id, created_at DESC)")
@@ -15557,6 +15624,273 @@ def claim_factory_prize(db, user_id, prize_key, *, request_id=None, ip=None):
         "name_ja": prize["name_ja"],
         "cost_points": cost,
         "factory_points_after": after_points,
+    }
+
+
+def ensure_factory_research_projects(db, *, user_id=None, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["research_key"]
+        for row in db.execute("SELECT research_key FROM world_research_projects").fetchall()
+    }
+    created = []
+    for item in FACTORY_RESEARCH_DEFS:
+        db.execute(
+            """
+            INSERT INTO world_research_projects (
+                research_key, name_ja, description, required_points, current_points,
+                reward_key, reward_label, is_completed, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 0, ?, ?, 0, ?, ?, ?)
+            ON CONFLICT(research_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                required_points = excluded.required_points,
+                reward_key = excluded.reward_key,
+                reward_label = excluded.reward_label,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["research_key"],
+                item["name_ja"],
+                item["description"],
+                int(item["required_points"]),
+                item["reward_key"],
+                item["reward_label"],
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["research_key"] not in existing_keys:
+            created.append(item["research_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTORY_RESEARCH_ENSURE_DEFAULTS"],
+            user_id=int(user_id) if user_id else None,
+            request_id=request_id,
+            action_key="factory_research_ensure_defaults",
+            entity_type="world_research_project",
+            delta_count=len(created),
+            payload={"created_research_projects": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_research_projects": created}
+
+
+def _factory_research_project_view(row):
+    required = max(1, int(row["required_points"] or 1))
+    current = max(0, int(row["current_points"] or 0))
+    percent = min(100, int((current * 100) // required))
+    filled = min(10, max(0, int(round(percent / 10))))
+    return {
+        "id": int(row["id"]),
+        "research_key": row["research_key"],
+        "name_ja": row["name_ja"],
+        "description": row["description"] or "",
+        "required_points": required,
+        "current_points": current,
+        "remaining_points": max(0, required - current),
+        "progress_percent": percent,
+        "progress_bar": "█" * filled + "░" * (10 - filled),
+        "reward_key": row["reward_key"],
+        "reward_label": row["reward_label"] or "見た目報酬",
+        "is_completed": bool(int(row["is_completed"] or 0)),
+        "completed_at": int(row["completed_at"] or 0) if row["completed_at"] else None,
+    }
+
+
+def _factory_research_project_rows(db):
+    return db.execute(
+        """
+        SELECT *
+        FROM world_research_projects
+        ORDER BY is_completed ASC, sort_order ASC, id ASC
+        """
+    ).fetchall()
+
+
+def factory_research_summary(db, *, ensure=True):
+    if ensure:
+        ensure_factory_research_projects(db)
+    rows = _factory_research_project_rows(db)
+    projects = [_factory_research_project_view(row) for row in rows]
+    active = next((item for item in projects if not item["is_completed"]), projects[0] if projects else None)
+    if not active:
+        return {"active_project": None, "progress_percent": 0, "label": "世界研究", "desc": "研究テーマ準備中"}
+    return {
+        "active_project": active,
+        "progress_percent": active["progress_percent"],
+        "label": active["name_ja"],
+        "desc": f"{active['progress_percent']}% / あと {100 - active['progress_percent']}%",
+    }
+
+
+def factory_research_rankings(db, *, week_key=None, limit=3):
+    wk = str(week_key or _world_week_key())
+    weekly = db.execute(
+        """
+        SELECT u.id, u.username, u.display_name, SUM(urc.points) AS points
+        FROM user_research_contributions urc
+        JOIN users u ON u.id = urc.user_id
+        WHERE urc.week_key = ?
+        GROUP BY u.id
+        ORDER BY points DESC, u.id ASC
+        LIMIT ?
+        """,
+        (wk, int(limit)),
+    ).fetchall()
+    total = db.execute(
+        """
+        SELECT u.id, u.username, u.display_name, SUM(urc.points) AS points
+        FROM user_research_contributions urc
+        JOIN users u ON u.id = urc.user_id
+        GROUP BY u.id
+        ORDER BY points DESC, u.id ASC
+        LIMIT ?
+        """,
+        (int(limit),),
+    ).fetchall()
+
+    def _rows(rows):
+        decorated = _decorate_user_rows(db, rows, user_key="id")
+        return [
+            {
+                "rank": index,
+                "user_id": int(row["id"]),
+                "username": row["username"],
+                "display_label": row.get("display_username") or row.get("display_name") or row.get("username") or f"User#{int(row['id'])}",
+                "points": int(row["points"] or 0),
+            }
+            for index, row in enumerate(decorated, start=1)
+        ]
+
+    return {"week_key": wk, "weekly": _rows(weekly), "total": _rows(total)}
+
+
+def get_factory_research_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_factory_research_projects(db, user_id=uid)
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    projects = [_factory_research_project_view(row) for row in _factory_research_project_rows(db)]
+    return {
+        "factory_points": int(user["factory_points"] or 0) if user else 0,
+        "projects": projects,
+        "rankings": factory_research_rankings(db, limit=3),
+        "donation_presets": (100, 500, 1000),
+    }
+
+
+def donate_factory_research_points(db, user_id, research_key, amount, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(research_key or "").strip()
+    try:
+        donate_points = int(amount)
+    except (TypeError, ValueError):
+        donate_points = 0
+    if donate_points <= 0:
+        return {"ok": False, "reason": "寄付ポイントは1以上で指定してください。"}
+    ensure_factory_research_projects(db, user_id=uid, request_id=request_id, ip=ip)
+    project = db.execute(
+        "SELECT * FROM world_research_projects WHERE research_key = ? LIMIT 1",
+        (key,),
+    ).fetchone()
+    if not project:
+        return {"ok": False, "reason": "研究テーマが見つかりません。"}
+    if int(project["is_completed"] or 0) == 1:
+        return {"ok": False, "reason": "この研究は完了済みです。"}
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    points_before = int(user["factory_points"] or 0) if user else 0
+    if points_before < donate_points:
+        return {"ok": False, "reason": f"工場ポイントが足りません。必要: {donate_points} / 所持: {points_before}"}
+    now_ts = int(time.time())
+    week_key = _world_week_key()
+    current_before = int(project["current_points"] or 0)
+    current_after = current_before + donate_points
+    points_after = points_before - donate_points
+    db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (points_after, uid))
+    db.execute(
+        """
+        UPDATE world_research_projects
+        SET current_points = ?, updated_at = ?
+        WHERE id = ? AND is_completed = 0
+        """,
+        (current_after, now_ts, int(project["id"])),
+    )
+    db.execute(
+        """
+        INSERT INTO user_research_contributions
+        (user_id, research_key, points, week_key, created_at, request_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (uid, key, donate_points, week_key, now_ts, request_id),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_RESEARCH_DONATE"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_research_donate",
+        entity_type="world_research_project",
+        entity_id=int(project["id"]),
+        delta_count=donate_points,
+        payload={
+            "user_id": uid,
+            "research_key": key,
+            "amount": donate_points,
+            "factory_points_before": points_before,
+            "factory_points_after": points_after,
+            "current_points_before": current_before,
+            "current_points_after": current_after,
+            "required_points": int(project["required_points"] or 0),
+            "week_key": week_key,
+        },
+        ip=ip,
+    )
+    completed = False
+    if current_after >= int(project["required_points"] or 0):
+        cur = db.execute(
+            """
+            UPDATE world_research_projects
+            SET is_completed = 1, completed_at = ?, updated_at = ?
+            WHERE id = ? AND is_completed = 0
+            """,
+            (now_ts, now_ts, int(project["id"])),
+        )
+        completed = int(cur.rowcount or 0) == 1
+        if completed:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["FACTORY_RESEARCH_COMPLETE"],
+                user_id=None,
+                request_id=request_id,
+                action_key="factory_research_complete",
+                entity_type="world_research_project",
+                entity_id=int(project["id"]),
+                delta_count=current_after,
+                payload={
+                    "research_key": key,
+                    "name_ja": project["name_ja"],
+                    "reward_key": project["reward_key"],
+                    "reward_label": project["reward_label"],
+                    "required_points": int(project["required_points"] or 0),
+                    "current_points": current_after,
+                    "completed_by_user_id": uid,
+                    "week_key": week_key,
+                },
+                ip=ip,
+            )
+    db.commit()
+    return {
+        "ok": True,
+        "research_key": key,
+        "amount": donate_points,
+        "factory_points_after": points_after,
+        "current_points_after": current_after,
+        "completed": completed,
     }
 
 
@@ -29707,9 +30041,9 @@ FEED_EVENT_TYPES = {
     "fuse": {"audit.fuse"},
     "build": {"audit.build.confirm"},
     "lab": set(LAB_WORLD_EVENT_TYPES),
-    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_WEEKLY_QUEST_COMPLETED_EVENT_TYPE, FACTION_WEEKLY_QUEST_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
+    "weekly": {"week_rollover", "admin_world_reroll", "admin_world_reset_counters", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_WEEKLY_QUEST_COMPLETED_EVENT_TYPE, FACTION_WEEKLY_QUEST_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, FACTORY_RESEARCH_COMPLETE_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES},
 }
-FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_WEEKLY_QUEST_COMPLETED_EVENT_TYPE, FACTION_WEEKLY_QUEST_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
+FEED_WEEKLY_PUBLIC_EVENTS = {"week_rollover", "weekly_drop_promoted", "daily_title_posted", "FACTION_WAR_RESULT", FACTION_WEEKLY_REPORT_EVENT_TYPE, FACTION_MISSION_RESULT_EVENT_TYPE, FACTION_GUARDIAN_RESULT_EVENT_TYPE, FACTION_GUARDIAN_DUEL_RESULT_EVENT_TYPE, FACTION_FACILITY_LEVEL_UP_EVENT_TYPE, FACTION_TERRITORY_RESULT_EVENT_TYPE, FACTION_TITLE_GRANT_RESULT_EVENT_TYPE, FACTION_WEEKLY_EVENT_STARTED_EVENT_TYPE, FACTION_WEEKLY_EVENT_FINALIZED_EVENT_TYPE, FACTION_WEEKLY_QUEST_COMPLETED_EVENT_TYPE, FACTION_WEEKLY_QUEST_RESULT_EVENT_TYPE, FACTION_STRATEGY_FINALIZED_EVENT_TYPE, FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE, FACTORY_RESEARCH_COMPLETE_EVENT_TYPE, "RESEARCH_UNLOCK", "CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET", "STYLE_RANK_UP", "STYLE_MASTER", AUDIT_EVENT_TYPES["LAB_LEVEL_MILESTONE"], *TOWER_WORLD_EVENT_TYPES}
 FEED_WEEKLY_ADMIN_EVENTS = {"admin_world_reroll", "admin_world_reset_counters"}
 WORLD_LOG_SYSTEM_EVENT_TYPES = {
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
@@ -29728,6 +30062,7 @@ WORLD_LOG_SYSTEM_EVENT_TYPES = {
     FACTION_WEEKLY_QUEST_RESULT_EVENT_TYPE,
     FACTION_STRATEGY_FINALIZED_EVENT_TYPE,
     FACTION_REPRESENTATIVE_MATCH_RESULT_EVENT_TYPE,
+    FACTORY_RESEARCH_COMPLETE_EVENT_TYPE,
     "daily_title_posted",
     "RESEARCH_UNLOCK",
     "CHAMPION_SELECTED",
@@ -30231,6 +30566,15 @@ def _feed_card_from_event(db, row):
         if counts:
             card["meta_lines"].append(" / ".join(f"{FACTION_LABELS.get(k, k)} {v}件" for k, v in counts.items()))
         card["link_url"] = url_for("world_view")
+    elif event_type == FACTORY_RESEARCH_COMPLETE_EVENT_TYPE:
+        name = str(payload.get("name_ja") or "世界研究").strip() or "世界研究"
+        reward_label = str(payload.get("reward_label") or "見た目報酬").strip() or "見た目報酬"
+        current_points = int(payload.get("current_points") or 0)
+        card["headline"] = "世界研究 完成"
+        card["accent"] = "weekly"
+        card["text"] = f"{name}が完成！"
+        card["meta_lines"] = [f"報酬: {reward_label}", f"到達研究pt: {current_points}pt", "強さには影響しない見た目報酬です。"]
+        card["link_url"] = url_for("factory_research")
     elif event_type == FACTION_STRATEGY_FINALIZED_EVENT_TYPE:
         strategies = payload.get("strategies") if isinstance(payload.get("strategies"), list) else []
         card["headline"] = "陣営作戦"
@@ -36973,6 +37317,55 @@ def factory_prize_claim():
     return redirect(url_for("factory_prizes"))
 
 
+@app.route("/factory/research")
+@login_required
+def factory_research():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_factory_research_projects(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    research_view = get_factory_research_view(db, user_id, ensure=False)
+    return render_template(
+        "factory_research.html",
+        user=user,
+        message=session.pop("message", None),
+        research=research_view,
+    )
+
+
+@app.route("/factory/research/donate", methods=["POST"])
+@login_required
+def factory_research_donate():
+    db = get_db()
+    user_id = int(session["user_id"])
+    research_key = (request.form.get("research_key") or "").strip()
+    amount_raw = (request.form.get("custom_amount") or "").strip() or (request.form.get("amount") or "").strip()
+    result = donate_factory_research_points(
+        db,
+        user_id,
+        research_key,
+        amount_raw,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        suffix = " 研究が完成しました。" if result.get("completed") else ""
+        session["message"] = f"世界研究へ {int(result.get('amount') or 0)}pt 寄付しました。{suffix}".strip()
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "寄付できませんでした。"
+    return redirect(url_for("factory_research"))
+
+
 @app.route("/admin/tower")
 @login_required
 def admin_tower():
@@ -37534,6 +37927,7 @@ def home():
     home_insect_research = _home_insect_research_view(db, week_key)
     home_dinosaur_campaign = _home_dinosaur_campaign_view(db, week_key)
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
+    factory_research_home_summary = factory_research_summary(db)
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -37707,6 +38101,7 @@ def home():
             home_insect_research=home_insect_research,
             home_dinosaur_campaign=home_dinosaur_campaign,
             factory_home_summary=factory_home_summary,
+            factory_research_home_summary=factory_research_home_summary,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,

@@ -219,6 +219,97 @@ class FactoryTests(unittest.TestCase):
         prizes_html = client.get("/factory/prizes").get_data(as_text=True)
         self.assertNotIn("工場背景：青い研究区画", prizes_html)
 
+    def test_factory_research_initial_access_seeds_projects(self):
+        html = self._client().get("/factory/research").get_data(as_text=True)
+        self.assertIn("世界研究", html)
+        self.assertIn("エネルギー研究", html)
+        self.assertIn("塗装技術", html)
+        self.assertIn("通信技術", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = int(db.execute("SELECT COUNT(*) AS c FROM world_research_projects").fetchone()["c"])
+            self.assertEqual(count, 3)
+            event = db.execute(
+                "SELECT id FROM world_events_log WHERE event_type = ? ORDER BY id DESC LIMIT 1",
+                (game_app.AUDIT_EVENT_TYPES["FACTORY_RESEARCH_ENSURE_DEFAULTS"],),
+            ).fetchone()
+            self.assertIsNotNone(event)
+
+    def test_factory_research_donate_spends_points_adds_progress_and_audit(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_research_projects(db, user_id=self.user_id)
+            db.execute("UPDATE users SET factory_points = 1200 WHERE id = ?", (self.user_id,))
+            result = game_app.donate_factory_research_points(db, self.user_id, "energy_research", 500, request_id="research-donate")
+            self.assertTrue(result["ok"])
+            self.assertFalse(result["completed"])
+            points = int(db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()["factory_points"])
+            self.assertEqual(points, 700)
+            project = db.execute("SELECT current_points FROM world_research_projects WHERE research_key = ?", ("energy_research",)).fetchone()
+            self.assertEqual(int(project["current_points"]), 500)
+            contrib = db.execute(
+                "SELECT points FROM user_research_contributions WHERE user_id = ? AND research_key = ?",
+                (self.user_id, "energy_research"),
+            ).fetchone()
+            self.assertEqual(int(contrib["points"]), 500)
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["FACTORY_RESEARCH_DONATE"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            payload = json.loads(event["payload_json"] or "{}")
+            self.assertEqual(payload["amount"], 500)
+            self.assertEqual(payload["factory_points_before"], 1200)
+            self.assertEqual(payload["factory_points_after"], 700)
+
+    def test_factory_research_rejects_insufficient_points(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_research_projects(db, user_id=self.user_id)
+            db.execute("UPDATE users SET factory_points = 99 WHERE id = ?", (self.user_id,))
+            result = game_app.donate_factory_research_points(db, self.user_id, "paint_research", 100)
+            self.assertFalse(result["ok"])
+            self.assertIn("足りません", result["reason"])
+            points = int(db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()["factory_points"])
+            self.assertEqual(points, 99)
+
+    def test_factory_research_completion_logs_once(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_research_projects(db, user_id=self.user_id)
+            db.execute("UPDATE users SET factory_points = 1000 WHERE id = ?", (self.user_id,))
+            db.execute("UPDATE world_research_projects SET current_points = 49950 WHERE research_key = ?", ("energy_research",))
+            result = game_app.donate_factory_research_points(db, self.user_id, "energy_research", 100, request_id="research-complete")
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["completed"])
+            project = db.execute("SELECT is_completed FROM world_research_projects WHERE research_key = ?", ("energy_research",)).fetchone()
+            self.assertEqual(int(project["is_completed"]), 1)
+            complete_count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ?",
+                    (game_app.AUDIT_EVENT_TYPES["FACTORY_RESEARCH_COMPLETE"],),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(complete_count, 1)
+            second = game_app.donate_factory_research_points(db, self.user_id, "energy_research", 100)
+            self.assertFalse(second["ok"])
+            self.assertIn("完了済み", second["reason"])
+            complete_count_after = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ?",
+                    (game_app.AUDIT_EVENT_TYPES["FACTORY_RESEARCH_COMPLETE"],),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(complete_count_after, 1)
+
+    def test_factory_research_links_from_factory_and_home(self):
+        client = self._client()
+        factory_html = client.get("/factory").get_data(as_text=True)
+        self.assertIn("/factory/research", factory_html)
+        home_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("世界研究", home_html)
+        self.assertIn("/factory/research", home_html)
+
 
 if __name__ == "__main__":
     unittest.main()

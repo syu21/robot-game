@@ -881,6 +881,40 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS world_research_projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            required_points INTEGER NOT NULL,
+            current_points INTEGER NOT NULL DEFAULT 0,
+            reward_key TEXT,
+            reward_label TEXT,
+            is_completed INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            research_key TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            week_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            request_id TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (research_key) REFERENCES world_research_projects(research_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS release_flags (
             key TEXT PRIMARY KEY,
             is_public INTEGER NOT NULL DEFAULT 0,
@@ -3540,6 +3574,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
     cur.execute(
