@@ -11,6 +11,18 @@
 </div>
 {% else %}
 {% include '_presence_bar.html' %}
+{% if factory_base_home and factory_base_home['equipped'] %}
+<section class="card trial-home-banner">
+  <div><span class="weekly-fit-badge">MY BASE</span></div>
+  <h1>{{ factory_base_home['equipped'].get('background', {}).get('name_ja', '通常研究所') }}</h1>
+  <div class="upgrade-cost">
+    {% for key, item in factory_base_home['equipped'].items() %}
+      {{ item['type_label'] }}: {{ item['name_ja'] }}{% if not loop.last %} / {% endif %}
+    {% endfor %}
+  </div>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a></p>
+</section>
+{% endif %}
 {% if trial_mode %}
 <section class="card trial-home-banner">
   <div><span class="weekly-fit-badge">お試しプレイ中</span></div>

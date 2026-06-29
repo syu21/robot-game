@@ -310,6 +310,90 @@ class FactoryTests(unittest.TestCase):
         self.assertIn("世界研究", home_html)
         self.assertIn("/factory/research", home_html)
 
+    def test_factory_customize_initial_access_grants_defaults(self):
+        html = self._client().get("/factory/customize").get_data(as_text=True)
+        self.assertIn("基地カスタマイズ", html)
+        self.assertIn("通常研究所", html)
+        self.assertIn("鉄床", html)
+        self.assertIn("小型モニター", html)
+        self.assertIn("工具箱", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            cosmetic_count = int(db.execute("SELECT COUNT(*) AS c FROM factory_cosmetics").fetchone()["c"])
+            owned_count = int(db.execute("SELECT COUNT(*) AS c FROM user_factory_cosmetics WHERE user_id = ?", (self.user_id,)).fetchone()["c"])
+            self.assertEqual(cosmetic_count, 4)
+            self.assertEqual(owned_count, 4)
+            user = db.execute(
+                """
+                SELECT equipped_factory_background, equipped_factory_floor,
+                       equipped_factory_facility, equipped_factory_decoration
+                FROM users
+                WHERE id = ?
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(user["equipped_factory_background"], "factory_bg_default_lab")
+            self.assertEqual(user["equipped_factory_floor"], "factory_floor_iron")
+            self.assertEqual(user["equipped_factory_facility"], "factory_facility_small_monitor")
+            self.assertEqual(user["equipped_factory_decoration"], "factory_decoration_toolbox")
+
+    def test_factory_customize_equip_owned_item_and_audit(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_cosmetics(db, self.user_id)
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO factory_cosmetics
+                (cosmetic_key, cosmetic_type, name_ja, description, image_path, is_default, is_active, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, 1, 99, ?, ?)
+                """,
+                ("factory_bg_space_base", "background", "宇宙基地", "宇宙基地風の背景。", "", now, now),
+            )
+            db.execute(
+                "INSERT INTO user_factory_cosmetics (user_id, cosmetic_key, unlocked_at) VALUES (?, ?, ?)",
+                (self.user_id, "factory_bg_space_base", now),
+            )
+            result = game_app.equip_factory_cosmetic(db, self.user_id, "factory_bg_space_base", request_id="cosmetic-equip")
+            self.assertTrue(result["ok"])
+            user = db.execute("SELECT equipped_factory_background FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(user["equipped_factory_background"], "factory_bg_space_base")
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["FACTORY_COSMETIC_EQUIP"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            payload = json.loads(event["payload_json"] or "{}")
+            self.assertEqual(payload["cosmetic_key"], "factory_bg_space_base")
+            self.assertEqual(payload["cosmetic_type"], "background")
+
+    def test_factory_customize_rejects_unowned_item(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_factory_cosmetics(db, self.user_id)
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO factory_cosmetics
+                (cosmetic_key, cosmetic_type, name_ja, description, image_path, is_default, is_active, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, 1, 100, ?, ?)
+                """,
+                ("factory_floor_energy", "floor", "エネルギー床", "光る床。", "", now, now),
+            )
+            result = game_app.equip_factory_cosmetic(db, self.user_id, "factory_floor_energy")
+            self.assertFalse(result["ok"])
+            self.assertIn("未所持", result["reason"])
+            user = db.execute("SELECT equipped_factory_floor FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(user["equipped_factory_floor"], "factory_floor_iron")
+
+    def test_factory_customize_links_from_factory_and_home(self):
+        client = self._client()
+        factory_html = client.get("/factory").get_data(as_text=True)
+        self.assertIn("/factory/customize", factory_html)
+        home_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("MY BASE", home_html)
+        self.assertIn("/factory/customize", home_html)
+
 
 if __name__ == "__main__":
     unittest.main()

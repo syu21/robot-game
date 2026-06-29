@@ -785,6 +785,10 @@ def main():
             research_boost_auto_use_enabled INTEGER NOT NULL DEFAULT 1,
             research_module_pity INTEGER NOT NULL DEFAULT 0,
             factory_points INTEGER NOT NULL DEFAULT 0,
+            equipped_factory_background TEXT,
+            equipped_factory_floor TEXT,
+            equipped_factory_facility TEXT,
+            equipped_factory_decoration TEXT,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -876,6 +880,36 @@ def main():
             UNIQUE(user_id, prize_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (prize_key) REFERENCES factory_prizes(prize_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS factory_cosmetics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cosmetic_key TEXT UNIQUE NOT NULL,
+            cosmetic_type TEXT NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            image_path TEXT,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_cosmetics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            cosmetic_key TEXT NOT NULL,
+            unlocked_at INTEGER NOT NULL,
+            UNIQUE(user_id, cosmetic_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (cosmetic_key) REFERENCES factory_cosmetics(cosmetic_key)
         )
         """
     )
@@ -2944,6 +2978,14 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
     if "factory_points" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN factory_points INTEGER NOT NULL DEFAULT 0")
+    for column_name in (
+        "equipped_factory_background",
+        "equipped_factory_floor",
+        "equipped_factory_facility",
+        "equipped_factory_decoration",
+    ):
+        if column_name not in users_cols:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -3574,6 +3616,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")

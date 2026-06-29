@@ -390,6 +390,56 @@ FACTORY_RESEARCH_DEFS = (
         "sort_order": 30,
     },
 )
+FACTORY_COSMETIC_TYPE_LABELS = {
+    "background": "背景",
+    "floor": "床",
+    "facility": "設備",
+    "decoration": "装飾",
+}
+FACTORY_COSMETIC_EQUIP_COLUMNS = {
+    "background": "equipped_factory_background",
+    "floor": "equipped_factory_floor",
+    "facility": "equipped_factory_facility",
+    "decoration": "equipped_factory_decoration",
+}
+FACTORY_COSMETIC_DEFS = (
+    {
+        "cosmetic_key": "factory_bg_default_lab",
+        "cosmetic_type": "background",
+        "name_ja": "通常研究所",
+        "description": "標準の研究所背景。",
+        "image_path": "",
+        "is_default": 1,
+        "sort_order": 10,
+    },
+    {
+        "cosmetic_key": "factory_floor_iron",
+        "cosmetic_type": "floor",
+        "name_ja": "鉄床",
+        "description": "工場らしい無骨な鉄床。",
+        "image_path": "",
+        "is_default": 1,
+        "sort_order": 20,
+    },
+    {
+        "cosmetic_key": "factory_facility_small_monitor",
+        "cosmetic_type": "facility",
+        "name_ja": "小型モニター",
+        "description": "基地の状態を表示する小型モニター。",
+        "image_path": "",
+        "is_default": 1,
+        "sort_order": 30,
+    },
+    {
+        "cosmetic_key": "factory_decoration_toolbox",
+        "cosmetic_type": "decoration",
+        "name_ja": "工具箱",
+        "description": "整備に使う基本工具箱。",
+        "image_path": "",
+        "is_default": 1,
+        "sort_order": 40,
+    },
+)
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10553,6 +10603,36 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS factory_cosmetics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cosmetic_key TEXT UNIQUE NOT NULL,
+            cosmetic_type TEXT NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            image_path TEXT,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_factory_cosmetics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            cosmetic_key TEXT NOT NULL,
+            unlocked_at INTEGER NOT NULL,
+            UNIQUE(user_id, cosmetic_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (cosmetic_key) REFERENCES factory_cosmetics(cosmetic_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -10663,6 +10743,9 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN research_module_pity INTEGER NOT NULL DEFAULT 0")
     if "factory_points" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN factory_points INTEGER NOT NULL DEFAULT 0")
+    for column_name in FACTORY_COSMETIC_EQUIP_COLUMNS.values():
+        if column_name not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -13387,6 +13470,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -15625,6 +15710,238 @@ def claim_factory_prize(db, user_id, prize_key, *, request_id=None, ip=None):
         "cost_points": cost,
         "factory_points_after": after_points,
     }
+
+
+def _factory_cosmetic_default_key(cosmetic_type):
+    ctype = str(cosmetic_type or "").strip()
+    item = next((row for row in FACTORY_COSMETIC_DEFS if row["cosmetic_type"] == ctype and int(row["is_default"]) == 1), None)
+    return item["cosmetic_key"] if item else None
+
+
+def _factory_cosmetic_column(cosmetic_type):
+    return FACTORY_COSMETIC_EQUIP_COLUMNS.get(str(cosmetic_type or "").strip())
+
+
+def ensure_factory_cosmetics(db, user_id=None, *, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["cosmetic_key"]
+        for row in db.execute("SELECT cosmetic_key FROM factory_cosmetics").fetchall()
+    }
+    created = []
+    for item in FACTORY_COSMETIC_DEFS:
+        db.execute(
+            """
+            INSERT INTO factory_cosmetics (
+                cosmetic_key, cosmetic_type, name_ja, description, image_path,
+                is_default, is_active, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(cosmetic_key) DO UPDATE SET
+                cosmetic_type = excluded.cosmetic_type,
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                image_path = excluded.image_path,
+                is_default = excluded.is_default,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["cosmetic_key"],
+                item["cosmetic_type"],
+                item["name_ja"],
+                item["description"],
+                item["image_path"],
+                int(item["is_default"]),
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["cosmetic_key"] not in existing_keys:
+            created.append(item["cosmetic_key"])
+    unlocked = []
+    uid = int(user_id or 0)
+    if uid > 0:
+        for item in FACTORY_COSMETIC_DEFS:
+            if int(item["is_default"]) != 1:
+                continue
+            cur = db.execute(
+                """
+                INSERT OR IGNORE INTO user_factory_cosmetics (user_id, cosmetic_key, unlocked_at)
+                VALUES (?, ?, ?)
+                """,
+                (uid, item["cosmetic_key"], now_ts),
+            )
+            if int(cur.rowcount or 0) > 0:
+                unlocked.append(item["cosmetic_key"])
+            column_name = _factory_cosmetic_column(item["cosmetic_type"])
+            if column_name:
+                db.execute(
+                    f"""
+                    UPDATE users
+                    SET {column_name} = COALESCE(NULLIF({column_name}, ''), ?)
+                    WHERE id = ?
+                    """,
+                    (item["cosmetic_key"], uid),
+                )
+    if created or unlocked:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTORY_COSMETIC_ENSURE_DEFAULTS"],
+            user_id=uid if uid > 0 else None,
+            request_id=request_id,
+            action_key="factory_cosmetic_ensure_defaults",
+            entity_type="factory_cosmetic",
+            delta_count=len(created) + len(unlocked),
+            payload={"created_cosmetics": created, "unlocked_defaults": unlocked},
+            ip=ip,
+        )
+    if unlocked and uid > 0:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["FACTORY_COSMETIC_UNLOCK"],
+            user_id=uid,
+            request_id=request_id,
+            action_key="factory_cosmetic_unlock_default",
+            entity_type="factory_cosmetic",
+            delta_count=len(unlocked),
+            payload={"user_id": uid, "unlocked_cosmetics": unlocked, "source": "default"},
+            ip=ip,
+        )
+    return {"created_count": len(created), "unlocked_count": len(unlocked)}
+
+
+def get_factory_cosmetic_loadout(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_factory_cosmetics(db, uid)
+    user = db.execute(
+        """
+        SELECT equipped_factory_background, equipped_factory_floor,
+               equipped_factory_facility, equipped_factory_decoration
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (uid,),
+    ).fetchone()
+    equipped_keys = {}
+    for ctype, column_name in FACTORY_COSMETIC_EQUIP_COLUMNS.items():
+        key = str((user[column_name] if user and column_name in user.keys() else "") or "").strip()
+        equipped_keys[ctype] = key or _factory_cosmetic_default_key(ctype)
+    if not any(equipped_keys.values()):
+        return {"equipped_keys": equipped_keys, "equipped": {}}
+    rows = db.execute(
+        f"""
+        SELECT *
+        FROM factory_cosmetics
+        WHERE cosmetic_key IN ({",".join(["?"] * len(equipped_keys))})
+        """,
+        tuple(equipped_keys.values()),
+    ).fetchall()
+    by_key = {row["cosmetic_key"]: dict(row) for row in rows}
+    equipped = {}
+    for ctype, key in equipped_keys.items():
+        row = by_key.get(key)
+        if row:
+            equipped[ctype] = {
+                "cosmetic_key": row["cosmetic_key"],
+                "cosmetic_type": row["cosmetic_type"],
+                "type_label": FACTORY_COSMETIC_TYPE_LABELS.get(ctype, ctype),
+                "name_ja": row["name_ja"],
+                "description": row["description"] or "",
+                "image_path": row["image_path"] or "",
+            }
+    return {"equipped_keys": equipped_keys, "equipped": equipped}
+
+
+def get_factory_customize_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_factory_cosmetics(db, uid)
+    loadout = get_factory_cosmetic_loadout(db, uid, ensure=False)
+    rows = db.execute(
+        """
+        SELECT fc.*,
+               CASE WHEN ufc.id IS NULL THEN 0 ELSE 1 END AS is_owned
+        FROM factory_cosmetics fc
+        LEFT JOIN user_factory_cosmetics ufc
+          ON ufc.cosmetic_key = fc.cosmetic_key
+         AND ufc.user_id = ?
+        WHERE fc.is_active = 1
+        ORDER BY fc.cosmetic_type ASC, fc.sort_order ASC, fc.id ASC
+        """,
+        (uid,),
+    ).fetchall()
+    categories = []
+    for ctype, type_label in FACTORY_COSMETIC_TYPE_LABELS.items():
+        equipped_key = loadout["equipped_keys"].get(ctype)
+        items = []
+        for row in rows:
+            if row["cosmetic_type"] != ctype:
+                continue
+            items.append(
+                {
+                    "cosmetic_key": row["cosmetic_key"],
+                    "cosmetic_type": row["cosmetic_type"],
+                    "name_ja": row["name_ja"],
+                    "description": row["description"] or "",
+                    "image_path": row["image_path"] or "",
+                    "is_owned": bool(int(row["is_owned"] or 0)),
+                    "is_equipped": str(row["cosmetic_key"]) == str(equipped_key),
+                }
+            )
+        categories.append({"cosmetic_type": ctype, "type_label": type_label, "items": items})
+    return {"categories": categories, "loadout": loadout}
+
+
+def equip_factory_cosmetic(db, user_id, cosmetic_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(cosmetic_key or "").strip()
+    if not key:
+        return {"ok": False, "reason": "カスタマイズ項目の指定が不正です。"}
+    ensure_factory_cosmetics(db, uid, request_id=request_id, ip=ip)
+    row = db.execute(
+        """
+        SELECT fc.*
+        FROM factory_cosmetics fc
+        JOIN user_factory_cosmetics ufc
+          ON ufc.cosmetic_key = fc.cosmetic_key
+         AND ufc.user_id = ?
+        WHERE fc.cosmetic_key = ?
+          AND fc.is_active = 1
+        LIMIT 1
+        """,
+        (uid, key),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "未所持、または利用できないカスタマイズ項目です。"}
+    ctype = str(row["cosmetic_type"] or "").strip()
+    column_name = _factory_cosmetic_column(ctype)
+    if not column_name:
+        return {"ok": False, "reason": "カスタマイズ種別が不正です。"}
+    before = get_factory_cosmetic_loadout(db, uid, ensure=False)["equipped_keys"].get(ctype)
+    db.execute(f"UPDATE users SET {column_name} = ? WHERE id = ?", (key, uid))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_COSMETIC_EQUIP"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="factory_cosmetic_equip",
+        entity_type="factory_cosmetic",
+        entity_id=int(row["id"]),
+        payload={
+            "user_id": uid,
+            "cosmetic_key": key,
+            "cosmetic_type": ctype,
+            "before_key": before,
+            "after_key": key,
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "cosmetic_key": key, "cosmetic_type": ctype, "name_ja": row["name_ja"]}
 
 
 def ensure_factory_research_projects(db, *, user_id=None, request_id=None, ip=None):
@@ -37366,6 +37683,51 @@ def factory_research_donate():
     return redirect(url_for("factory_research"))
 
 
+@app.route("/factory/customize")
+@login_required
+def factory_customize():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_factory_cosmetics(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "factory_customize.html",
+        user=user,
+        message=session.pop("message", None),
+        customize=get_factory_customize_view(db, user_id, ensure=False),
+    )
+
+
+@app.route("/factory/customize/equip", methods=["POST"])
+@login_required
+def factory_customize_equip():
+    db = get_db()
+    user_id = int(session["user_id"])
+    cosmetic_key = (request.form.get("cosmetic_key") or "").strip()
+    result = equip_factory_cosmetic(
+        db,
+        user_id,
+        cosmetic_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"{result.get('name_ja') or '基地パーツ'}を適用しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "適用できませんでした。"
+    return redirect(url_for("factory_customize"))
+
+
 @app.route("/admin/tower")
 @login_required
 def admin_tower():
@@ -37928,6 +38290,7 @@ def home():
     home_dinosaur_campaign = _home_dinosaur_campaign_view(db, week_key)
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
     factory_research_home_summary = factory_research_summary(db)
+    factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -38102,6 +38465,7 @@ def home():
             home_dinosaur_campaign=home_dinosaur_campaign,
             factory_home_summary=factory_home_summary,
             factory_research_home_summary=factory_research_home_summary,
+            factory_base_home=factory_base_home,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,

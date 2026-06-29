@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>基地カスタマイズ</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の基地</div>
+    {% for key, item in customize['loadout']['equipped'].items() %}
+    <div class="robot-time">{{ item['type_label'] }}: {{ item['name_ja'] }}</div>
+    {% endfor %}
+    <div class="upgrade-cost">見た目だけのカスタマイズです。戦力には影響しません。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ戻る</a></p>
+  </div>
+
+  {% for category in customize['categories'] %}
+  <h2>{{ category['type_label'] }}</h2>
+  <div class="module-card-grid">
+    {% for item in category['items'] %}
+    <div class="module-card {% if item['is_equipped'] %}is-highlight{% endif %}">
+      <div class="module-card-title">{{ item['name_ja'] }}</div>
+      <div class="robot-time">{{ item['description'] }}</div>
+      <div class="module-card-meta">
+        {% if item['is_equipped'] %}
+        <span class="module-badge ok">適用中</span>
+        {% elif item['is_owned'] %}
+        <span class="module-badge">所持</span>
+        {% else %}
+        <span class="module-badge muted">未所持</span>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('factory_customize_equip') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="cosmetic_key" value="{{ item['cosmetic_key'] }}" />
+        <button type="submit" {% if (not item['is_owned']) or item['is_equipped'] %}disabled{% endif %}>適用</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="card">このカテゴリの項目はまだありません。</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
