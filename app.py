@@ -440,6 +440,38 @@ FACTORY_COSMETIC_DEFS = (
         "sort_order": 40,
     },
 )
+DRONE_DEFS = (
+    {
+        "drone_key": "scout_drone",
+        "name_ja": "偵察ドローン",
+        "description": "出撃後の個人ログに偵察メモが出ることがあります。",
+        "effect_type": "scout_note",
+        "base_effect_value": 0,
+        "image_path": "",
+        "sort_order": 10,
+    },
+    {
+        "drone_key": "collector_drone",
+        "name_ja": "回収ドローン",
+        "description": "ロボ工場の回収時に工場ポイントが少し増えます。",
+        "effect_type": "factory_claim_bonus",
+        "base_effect_value": 1,
+        "image_path": "",
+        "sort_order": 20,
+    },
+    {
+        "drone_key": "maintenance_drone",
+        "name_ja": "整備ドローン",
+        "description": "ロボ工場の最大蓄積時間を延ばします。",
+        "effect_type": "factory_storage_bonus",
+        "base_effect_value": 1,
+        "image_path": "",
+        "sort_order": 30,
+    },
+)
+DRONE_MAX_LEVEL = 5
+DRONE_UPGRADE_COST_BY_LEVEL = {1: 300, 2: 800, 3: 1600, 4: 3000}
+DRONE_MAINTENANCE_CAP_BONUS_HOURS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10633,6 +10665,38 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS drone_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            drone_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            effect_type TEXT NOT NULL,
+            base_effect_value INTEGER NOT NULL DEFAULT 0,
+            image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_drones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            drone_key TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1,
+            unlocked_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, drone_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (drone_key) REFERENCES drone_masters(drone_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -10746,6 +10810,8 @@ def ensure_schema(db):
     for column_name in FACTORY_COSMETIC_EQUIP_COLUMNS.values():
         if column_name not in cols:
             db.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
+    if "active_drone_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN active_drone_key TEXT")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -13472,6 +13538,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_drone_masters_active_sort ON drone_masters(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_drones_user ON user_drones(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -15504,13 +15572,14 @@ def _factory_prize_type_label(prize_type):
     }.get(str(prize_type or ""), str(prize_type or "景品"))
 
 
-def _factory_pending_points(row, now_ts=None):
+def _factory_pending_points(row, now_ts=None, storage_cap_hours=None):
     if not row:
         return 0
     current_ts = int(now_ts or time.time())
     last_ts = int(row["last_claimed_at"] or current_ts)
     elapsed = max(0, current_ts - last_ts)
-    capped = min(elapsed, int(FACTORY_STORAGE_CAP_HOURS) * 3600)
+    cap_hours = int(storage_cap_hours if storage_cap_hours is not None else FACTORY_STORAGE_CAP_HOURS)
+    capped = min(elapsed, max(1, cap_hours) * 3600)
     rate = _factory_rate_for_level(int(row["level"] or 1))
     return int((capped * rate) // 3600)
 
@@ -15944,6 +16013,337 @@ def equip_factory_cosmetic(db, user_id, cosmetic_key, *, request_id=None, ip=Non
     return {"ok": True, "cosmetic_key": key, "cosmetic_type": ctype, "name_ja": row["name_ja"]}
 
 
+def _drone_def(drone_key):
+    key = str(drone_key or "").strip()
+    return next((item for item in DRONE_DEFS if item["drone_key"] == key), None)
+
+
+def _drone_upgrade_cost(level):
+    return int(DRONE_UPGRADE_COST_BY_LEVEL.get(int(level or 0), 0) or 0)
+
+
+def _drone_collector_bonus_percent(level):
+    return max(1, min(int(level or 1), DRONE_MAX_LEVEL))
+
+
+def _drone_maintenance_bonus_hours(level):
+    return int(DRONE_MAINTENANCE_CAP_BONUS_HOURS.get(max(1, min(int(level or 1), DRONE_MAX_LEVEL)), 0) or 0)
+
+
+def _drone_effect_label(effect_type, level):
+    lvl = max(1, min(int(level or 1), DRONE_MAX_LEVEL))
+    if effect_type == "factory_claim_bonus":
+        return f"工場回収 +{_drone_collector_bonus_percent(lvl)}%"
+    if effect_type == "factory_storage_bonus":
+        return f"工場蓄積上限 +{_drone_maintenance_bonus_hours(lvl)}時間"
+    if effect_type == "scout_note":
+        return "出撃後の個人ログに偵察メモが出ることがあります"
+    return "戦闘ステータスには影響しません"
+
+
+def ensure_drones(db, user_id=None, *, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["drone_key"]
+        for row in db.execute("SELECT drone_key FROM drone_masters").fetchall()
+    }
+    created = []
+    for item in DRONE_DEFS:
+        db.execute(
+            """
+            INSERT INTO drone_masters (
+                drone_key, name_ja, description, effect_type, base_effect_value,
+                image_path, is_active, sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(drone_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                effect_type = excluded.effect_type,
+                base_effect_value = excluded.base_effect_value,
+                image_path = excluded.image_path,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["drone_key"],
+                item["name_ja"],
+                item["description"],
+                item["effect_type"],
+                int(item["base_effect_value"]),
+                item["image_path"],
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["drone_key"] not in existing_keys:
+            created.append(item["drone_key"])
+
+    unlocked = []
+    uid = int(user_id or 0)
+    if uid > 0:
+        for item in DRONE_DEFS:
+            cur = db.execute(
+                """
+                INSERT OR IGNORE INTO user_drones (user_id, drone_key, level, unlocked_at, updated_at)
+                VALUES (?, ?, 1, ?, ?)
+                """,
+                (uid, item["drone_key"], now_ts, now_ts),
+            )
+            if int(cur.rowcount or 0) > 0:
+                unlocked.append(item["drone_key"])
+        default_key = DRONE_DEFS[0]["drone_key"] if DRONE_DEFS else None
+        if default_key:
+            db.execute(
+                """
+                UPDATE users
+                SET active_drone_key = COALESCE(NULLIF(active_drone_key, ''), ?)
+                WHERE id = ?
+                """,
+                (default_key, uid),
+            )
+
+    if created or unlocked:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["DRONE_ENSURE_DEFAULTS"],
+            user_id=uid if uid > 0 else None,
+            request_id=request_id,
+            action_key="drone_ensure_defaults",
+            entity_type="drone",
+            delta_count=len(created) + len(unlocked),
+            payload={"created_drones": created, "unlocked_defaults": unlocked},
+            ip=ip,
+        )
+    if unlocked and uid > 0:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["DRONE_UNLOCK"],
+            user_id=uid,
+            request_id=request_id,
+            action_key="drone_unlock_default",
+            entity_type="drone",
+            delta_count=len(unlocked),
+            payload={"user_id": uid, "unlocked_drones": unlocked, "source": "default"},
+            ip=ip,
+        )
+    return {"created_count": len(created), "unlocked_count": len(unlocked)}
+
+
+def get_active_drone(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_drones(db, uid)
+    row = db.execute(
+        """
+        SELECT dm.*, ud.level
+        FROM users u
+        JOIN user_drones ud
+          ON ud.user_id = u.id
+         AND ud.drone_key = u.active_drone_key
+        JOIN drone_masters dm
+          ON dm.drone_key = ud.drone_key
+        WHERE u.id = ?
+          AND dm.is_active = 1
+        LIMIT 1
+        """,
+        (uid,),
+    ).fetchone()
+    if not row:
+        return None
+    level = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
+    return {
+        "drone_key": row["drone_key"],
+        "name_ja": row["name_ja"],
+        "description": row["description"] or "",
+        "effect_type": row["effect_type"],
+        "level": level,
+        "effect_label": _drone_effect_label(row["effect_type"], level),
+    }
+
+
+def get_drone_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_drones(db, uid)
+    user = db.execute("SELECT factory_points, active_drone_key FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    factory_points = int(user["factory_points"] or 0) if user else 0
+    active_key = str((user["active_drone_key"] if user else "") or "")
+    rows = db.execute(
+        """
+        SELECT dm.*,
+               ud.level,
+               CASE WHEN ud.id IS NULL THEN 0 ELSE 1 END AS is_owned
+        FROM drone_masters dm
+        LEFT JOIN user_drones ud
+          ON ud.drone_key = dm.drone_key
+         AND ud.user_id = ?
+        WHERE dm.is_active = 1
+        ORDER BY dm.sort_order ASC, dm.id ASC
+        """,
+        (uid,),
+    ).fetchall()
+    drones = []
+    for row in rows:
+        level = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
+        next_level = level + 1 if level < DRONE_MAX_LEVEL else None
+        upgrade_cost = _drone_upgrade_cost(level)
+        is_owned = bool(int(row["is_owned"] or 0))
+        drones.append(
+            {
+                "drone_key": row["drone_key"],
+                "name_ja": row["name_ja"],
+                "description": row["description"] or "",
+                "effect_type": row["effect_type"],
+                "level": level,
+                "is_owned": is_owned,
+                "is_selected": str(row["drone_key"]) == active_key,
+                "effect_label": _drone_effect_label(row["effect_type"], level),
+                "next_effect_label": _drone_effect_label(row["effect_type"], next_level) if next_level else "",
+                "upgrade_cost": upgrade_cost,
+                "can_upgrade": bool(is_owned and next_level and factory_points >= upgrade_cost),
+                "is_max_level": level >= DRONE_MAX_LEVEL,
+            }
+        )
+    active = next((item for item in drones if item["is_selected"]), None)
+    return {"factory_points": factory_points, "active_drone": active, "drones": drones}
+
+
+def equip_drone(db, user_id, drone_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(drone_key or "").strip()
+    if not key:
+        return {"ok": False, "reason": "ドローンの指定が不正です。"}
+    ensure_drones(db, uid, request_id=request_id, ip=ip)
+    row = db.execute(
+        """
+        SELECT dm.*
+        FROM drone_masters dm
+        JOIN user_drones ud
+          ON ud.drone_key = dm.drone_key
+         AND ud.user_id = ?
+        WHERE dm.drone_key = ?
+          AND dm.is_active = 1
+        LIMIT 1
+        """,
+        (uid, key),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "未所持、または利用できないドローンです。"}
+    before = db.execute("SELECT active_drone_key FROM users WHERE id = ?", (uid,)).fetchone()
+    before_key = str((before["active_drone_key"] if before else "") or "")
+    db.execute("UPDATE users SET active_drone_key = ? WHERE id = ?", (key, uid))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["DRONE_EQUIP"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="drone_equip",
+        entity_type="drone",
+        entity_id=int(row["id"]),
+        payload={"user_id": uid, "drone_key": key, "before_key": before_key, "after_key": key},
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "drone_key": key, "name_ja": row["name_ja"]}
+
+
+def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(drone_key or "").strip()
+    if not key:
+        return {"ok": False, "reason": "ドローンの指定が不正です。"}
+    ensure_drones(db, uid, request_id=request_id, ip=ip)
+    row = db.execute(
+        """
+        SELECT dm.*, ud.id AS user_drone_id, ud.level
+        FROM drone_masters dm
+        JOIN user_drones ud
+          ON ud.drone_key = dm.drone_key
+         AND ud.user_id = ?
+        WHERE dm.drone_key = ?
+          AND dm.is_active = 1
+        LIMIT 1
+        """,
+        (uid, key),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "未所持、または利用できないドローンです。"}
+    level_before = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
+    if level_before >= DRONE_MAX_LEVEL:
+        return {"ok": False, "reason": "このドローンは最大Lvです。"}
+    cost = _drone_upgrade_cost(level_before)
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    points_before = int(user["factory_points"] or 0) if user else 0
+    if points_before < cost:
+        return {"ok": False, "reason": f"工場ポイントが足りません。必要: {cost} / 所持: {points_before}"}
+    now_ts = int(time.time())
+    level_after = level_before + 1
+    points_after = points_before - cost
+    cur = db.execute(
+        """
+        UPDATE user_drones
+        SET level = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND level = ?
+        """,
+        (level_after, now_ts, int(row["user_drone_id"]), uid, level_before),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "強化に失敗しました。もう一度確認してください。"}
+    db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (points_after, uid))
+    payload = {
+        "user_id": uid,
+        "drone_key": key,
+        "level_before": level_before,
+        "level_after": level_after,
+        "cost_points": cost,
+        "factory_points_before": points_before,
+        "factory_points_after": points_after,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["DRONE_UPGRADE"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="drone_upgrade",
+        entity_type="drone",
+        entity_id=int(row["id"]),
+        delta_count=-cost,
+        payload=payload,
+        ip=ip,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_POINTS_DELTA"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="drone_upgrade",
+        entity_type="drone",
+        entity_id=int(row["id"]),
+        delta_count=-cost,
+        payload={**payload, "source": "drone_upgrade"},
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "drone_key": key, "name_ja": row["name_ja"], "level_after": level_after, "factory_points_after": points_after}
+
+
+def _factory_storage_cap_hours_for_user(db, user_id):
+    active = get_active_drone(db, user_id, ensure=False)
+    if active and active["effect_type"] == "factory_storage_bonus":
+        return int(FACTORY_STORAGE_CAP_HOURS) + _drone_maintenance_bonus_hours(active["level"])
+    return int(FACTORY_STORAGE_CAP_HOURS)
+
+
+def _factory_collector_bonus_percent_for_user(db, user_id):
+    active = get_active_drone(db, user_id, ensure=False)
+    if active and active["effect_type"] == "factory_claim_bonus":
+        return _drone_collector_bonus_percent(active["level"])
+    return 0
+
+
 def ensure_factory_research_projects(db, *, user_id=None, request_id=None, ip=None):
     now_ts = int(time.time())
     existing_keys = {
@@ -16215,7 +16615,10 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
     uid = int(user_id)
     if ensure:
         ensure_user_factory_facilities(db, uid)
+        ensure_drones(db, uid)
     current_ts = int(now_ts or time.time())
+    storage_cap_hours = _factory_storage_cap_hours_for_user(db, uid)
+    collector_bonus_percent = _factory_collector_bonus_percent_for_user(db, uid)
     rows = db.execute(
         """
         SELECT *
@@ -16234,7 +16637,9 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
     for row in rows:
         facility_def = _factory_facility_def(row["facility_key"]) or {}
         level = max(1, min(int(row["level"] or 1), FACTORY_MAX_LEVEL))
-        pending = _factory_pending_points(row, current_ts)
+        base_pending = _factory_pending_points(row, current_ts, storage_cap_hours=storage_cap_hours)
+        bonus_points = int((base_pending * collector_bonus_percent) // 100)
+        pending = base_pending + bonus_points
         next_level = level + 1 if level < FACTORY_MAX_LEVEL else None
         upgrade_cost = _factory_upgrade_cost_for_level(level)
         facilities.append(
@@ -16245,6 +16650,8 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
                 "description": facility_def.get("description", ""),
                 "level": level,
                 "rate_per_hour": _factory_rate_for_level(level),
+                "base_pending_points": base_pending,
+                "bonus_points": bonus_points,
                 "pending_points": pending,
                 "can_claim": pending > 0,
                 "next_level": next_level,
@@ -16262,6 +16669,8 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
         "facilities": facilities,
         "total_pending_points": int(total_pending),
         "has_claimable": total_pending > 0,
+        "storage_cap_hours": storage_cap_hours,
+        "collector_bonus_percent": collector_bonus_percent,
     }
 
 
@@ -16271,6 +16680,7 @@ def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None,
     if not _factory_facility_def(key):
         return {"ok": False, "reason": "工場施設の指定が不正です。"}
     ensure_user_factory_facilities(db, uid, request_id=request_id, ip=ip)
+    ensure_drones(db, uid, request_id=request_id, ip=ip)
     now_ts = int(time.time())
     row = db.execute(
         "SELECT * FROM user_factory_facilities WHERE user_id = ? AND facility_key = ? LIMIT 1",
@@ -16278,8 +16688,12 @@ def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None,
     ).fetchone()
     if not row:
         return {"ok": False, "reason": "工場施設が見つかりません。"}
-    gained = _factory_pending_points(row, now_ts)
-    if gained <= 0:
+    storage_cap_hours = _factory_storage_cap_hours_for_user(db, uid)
+    collector_bonus_percent = _factory_collector_bonus_percent_for_user(db, uid)
+    base_gained = _factory_pending_points(row, now_ts, storage_cap_hours=storage_cap_hours)
+    bonus_gained = int((base_gained * collector_bonus_percent) // 100)
+    gained = base_gained + bonus_gained
+    if base_gained <= 0:
         return {"ok": False, "reason": "まだ回収できる工場ポイントがありません。"}
     user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
     before_points = int(user["factory_points"] or 0) if user else 0
@@ -16304,13 +16718,17 @@ def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None,
             "level_before": int(row["level"] or 1),
             "level_after": int(row["level"] or 1),
             "points_gained": gained,
+            "base_points_gained": base_gained,
+            "bonus_points_gained": bonus_gained,
+            "collector_bonus_percent": collector_bonus_percent,
+            "storage_cap_hours": storage_cap_hours,
             "factory_points_before": before_points,
             "factory_points_after": after_points,
         },
         ip=ip,
     )
     db.commit()
-    return {"ok": True, "points_gained": gained, "factory_points_after": after_points}
+    return {"ok": True, "points_gained": gained, "factory_points_after": after_points, "bonus_points_gained": bonus_gained}
 
 
 def upgrade_factory_facility(db, user_id, facility_key, *, request_id=None, ip=None):
@@ -37533,6 +37951,12 @@ def factory():
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
+    ensure_drones(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
     db.commit()
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     factory_view = get_user_factory_view(db, user_id, ensure=False)
@@ -37541,7 +37965,7 @@ def factory():
         user=user,
         message=session.pop("message", None),
         factory=factory_view,
-        max_storage_hours=int(FACTORY_STORAGE_CAP_HOURS),
+        max_storage_hours=int(factory_view.get("storage_cap_hours") or FACTORY_STORAGE_CAP_HOURS),
         max_level=int(FACTORY_MAX_LEVEL),
     )
 
@@ -37726,6 +38150,73 @@ def factory_customize_equip():
         db.rollback()
         session["message"] = result.get("reason") or "適用できませんでした。"
     return redirect(url_for("factory_customize"))
+
+
+@app.route("/drone")
+@login_required
+def drone_lab():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_drones(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "drone.html",
+        user=user,
+        message=session.pop("message", None),
+        drone_view=get_drone_view(db, user_id, ensure=False),
+        max_level=DRONE_MAX_LEVEL,
+    )
+
+
+@app.route("/drone/equip", methods=["POST"])
+@login_required
+def drone_equip():
+    db = get_db()
+    user_id = int(session["user_id"])
+    drone_key = (request.form.get("drone_key") or "").strip()
+    result = equip_drone(
+        db,
+        user_id,
+        drone_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"{result.get('name_ja') or 'ドローン'}を選択しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "選択できませんでした。"
+    return redirect(url_for("drone_lab"))
+
+
+@app.route("/drone/upgrade", methods=["POST"])
+@login_required
+def drone_upgrade():
+    db = get_db()
+    user_id = int(session["user_id"])
+    drone_key = (request.form.get("drone_key") or "").strip()
+    result = upgrade_drone(
+        db,
+        user_id,
+        drone_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"{result.get('name_ja') or 'ドローン'}をLv{int(result.get('level_after') or 0)}に強化しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "強化できませんでした。"
+    return redirect(url_for("drone_lab"))
 
 
 @app.route("/admin/tower")
@@ -38291,6 +38782,7 @@ def home():
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
     factory_research_home_summary = factory_research_summary(db)
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
+    drone_home_summary = get_active_drone(db, int(user["id"]))
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -38466,6 +38958,7 @@ def home():
             factory_home_summary=factory_home_summary,
             factory_research_home_summary=factory_research_home_summary,
             factory_base_home=factory_base_home,
+            drone_home_summary=drone_home_summary,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,

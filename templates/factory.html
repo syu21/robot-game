@@ -13,6 +13,10 @@
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_prizes') }}">工場交換所へ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_research') }}">世界研究へ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズへ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('drone_lab') }}">ドローン研究所へ</a></p>
+    {% if factory['collector_bonus_percent'] %}
+    <div class="upgrade-cost">回収ドローン補助: +{{ factory['collector_bonus_percent'] }}%</div>
+    {% endif %}
     {% if factory['total_pending_points'] > 0 %}
     <div class="upgrade-cost">回収可能: {{ factory['total_pending_points'] }}pt</div>
     {% else %}
@@ -34,6 +38,9 @@
         {% endif %}
       </div>
       <div class="upgrade-cost">たまった資源: {{ facility['pending_points'] }}pt</div>
+      {% if facility['bonus_points'] %}
+      <div class="robot-time">内訳: 基本 {{ facility['base_pending_points'] }}pt + ドローン {{ facility['bonus_points'] }}pt</div>
+      {% endif %}
       <form method="post" action="{{ url_for('factory_claim') }}" class="inline-form inline-form-top">
         <input type="hidden" name="facility_key" value="{{ facility['facility_key'] }}" />
         <button type="submit" {% if not facility['can_claim'] %}disabled{% endif %}>回収する</button>

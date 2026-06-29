@@ -394,6 +394,133 @@ class FactoryTests(unittest.TestCase):
         self.assertIn("MY BASE", home_html)
         self.assertIn("/factory/customize", home_html)
 
+    def test_drone_initial_access_grants_three_drones(self):
+        html = self._client().get("/drone").get_data(as_text=True)
+        self.assertIn("ドローン研究所", html)
+        self.assertIn("偵察ドローン", html)
+        self.assertIn("回収ドローン", html)
+        self.assertIn("整備ドローン", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            master_count = int(db.execute("SELECT COUNT(*) AS c FROM drone_masters").fetchone()["c"])
+            owned_count = int(db.execute("SELECT COUNT(*) AS c FROM user_drones WHERE user_id = ?", (self.user_id,)).fetchone()["c"])
+            user = db.execute("SELECT active_drone_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(master_count, 3)
+            self.assertEqual(owned_count, 3)
+            self.assertEqual(user["active_drone_key"], "scout_drone")
+
+    def test_drone_equip_owned_drone_and_audit(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_drones(db, self.user_id)
+            result = game_app.equip_drone(db, self.user_id, "collector_drone", request_id="drone-equip")
+            self.assertTrue(result["ok"])
+            user = db.execute("SELECT active_drone_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(user["active_drone_key"], "collector_drone")
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["DRONE_EQUIP"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+            payload = json.loads(event["payload_json"] or "{}")
+            self.assertEqual(payload["drone_key"], "collector_drone")
+
+    def test_drone_rejects_unowned_and_inactive_equip(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_drones(db, self.user_id)
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO drone_masters
+                (drone_key, name_ja, description, effect_type, base_effect_value, image_path, is_active, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 0, '', 1, 99, ?, ?)
+                """,
+                ("event_drone", "イベントドローン", "未所持テスト", "scout_note", now, now),
+            )
+            unowned = game_app.equip_drone(db, self.user_id, "event_drone")
+            self.assertFalse(unowned["ok"])
+            self.assertIn("未所持", unowned["reason"])
+            db.execute("UPDATE drone_masters SET is_active = 0 WHERE drone_key = ?", ("collector_drone",))
+            inactive = game_app.equip_drone(db, self.user_id, "collector_drone")
+            self.assertFalse(inactive["ok"])
+
+    def test_drone_upgrade_spends_factory_points_and_audits(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_drones(db, self.user_id)
+            db.execute("UPDATE users SET factory_points = 500 WHERE id = ?", (self.user_id,))
+            result = game_app.upgrade_drone(db, self.user_id, "collector_drone", request_id="drone-upgrade")
+            self.assertTrue(result["ok"])
+            row = db.execute("SELECT level FROM user_drones WHERE user_id = ? AND drone_key = ?", (self.user_id, "collector_drone")).fetchone()
+            user = db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(row["level"]), 2)
+            self.assertEqual(int(user["factory_points"]), 200)
+            for event_type in (game_app.AUDIT_EVENT_TYPES["DRONE_UPGRADE"], game_app.AUDIT_EVENT_TYPES["FACTORY_POINTS_DELTA"]):
+                self.assertIsNotNone(
+                    db.execute(
+                        "SELECT id FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                        (self.user_id, event_type),
+                    ).fetchone()
+                )
+
+    def test_drone_upgrade_rejects_insufficient_points_and_max_level(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_drones(db, self.user_id)
+            db.execute("UPDATE users SET factory_points = 299 WHERE id = ?", (self.user_id,))
+            poor = game_app.upgrade_drone(db, self.user_id, "collector_drone")
+            self.assertFalse(poor["ok"])
+            self.assertIn("足りません", poor["reason"])
+            db.execute("UPDATE user_drones SET level = 5 WHERE user_id = ? AND drone_key = ?", (self.user_id, "collector_drone"))
+            maxed = game_app.upgrade_drone(db, self.user_id, "collector_drone")
+            self.assertFalse(maxed["ok"])
+            self.assertIn("最大Lv", maxed["reason"])
+
+    def test_collector_drone_adds_factory_claim_bonus(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_user_factory_facilities(db, self.user_id)
+            game_app.ensure_drones(db, self.user_id)
+            db.execute("UPDATE users SET factory_points = 0, active_drone_key = ? WHERE id = ?", ("collector_drone", self.user_id))
+            db.execute("UPDATE user_drones SET level = 3 WHERE user_id = ? AND drone_key = ?", (self.user_id, "collector_drone"))
+            db.execute(
+                "UPDATE user_factory_facilities SET last_claimed_at = ? WHERE user_id = ? AND facility_key = 'scrap_collector'",
+                (int(time.time()) - 20 * 3600, self.user_id),
+            )
+            result = game_app.claim_factory_facility_points(db, self.user_id, "scrap_collector")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["points_gained"], 61)
+            self.assertEqual(result["bonus_points_gained"], 1)
+            user = db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["factory_points"]), 61)
+
+    def test_maintenance_drone_extends_factory_storage_cap(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_user_factory_facilities(db, self.user_id)
+            game_app.ensure_drones(db, self.user_id)
+            db.execute("UPDATE users SET active_drone_key = ? WHERE id = ?", ("maintenance_drone", self.user_id))
+            db.execute("UPDATE user_drones SET level = 5 WHERE user_id = ? AND drone_key = ?", (self.user_id, "maintenance_drone"))
+            db.execute(
+                "UPDATE user_factory_facilities SET last_claimed_at = ? WHERE user_id = ? AND facility_key = 'scrap_collector'",
+                (int(time.time()) - 20 * 3600, self.user_id),
+            )
+            view = game_app.get_user_factory_view(db, self.user_id, ensure=False)
+            self.assertEqual(view["storage_cap_hours"], 15)
+            scrap = next(item for item in view["facilities"] if item["facility_key"] == "scrap_collector")
+            self.assertEqual(scrap["pending_points"], 75)
+
+    def test_drone_links_and_no_combat_stat_effect_types(self):
+        client = self._client()
+        factory_html = client.get("/factory").get_data(as_text=True)
+        self.assertIn("/drone", factory_html)
+        home_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("ドローン研究所", home_html)
+        self.assertIn("/drone", home_html)
+        combat_stats = {"hp", "atk", "def", "spd", "acc", "cri"}
+        self.assertTrue(all(item["effect_type"] not in combat_stats for item in game_app.DRONE_DEFS))
+
 
 if __name__ == "__main__":
     unittest.main()

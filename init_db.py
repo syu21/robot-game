@@ -789,6 +789,7 @@ def main():
             equipped_factory_floor TEXT,
             equipped_factory_facility TEXT,
             equipped_factory_decoration TEXT,
+            active_drone_key TEXT,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -910,6 +911,38 @@ def main():
             UNIQUE(user_id, cosmetic_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (cosmetic_key) REFERENCES factory_cosmetics(cosmetic_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS drone_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            drone_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            effect_type TEXT NOT NULL,
+            base_effect_value INTEGER NOT NULL DEFAULT 0,
+            image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_drones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            drone_key TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 1,
+            unlocked_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, drone_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (drone_key) REFERENCES drone_masters(drone_key)
         )
         """
     )
@@ -2986,6 +3019,8 @@ def main():
     ):
         if column_name not in users_cols:
             cur.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
+    if "active_drone_key" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN active_drone_key TEXT")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -3618,6 +3653,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_drone_masters_active_sort ON drone_masters(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_drones_user ON user_drones(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
