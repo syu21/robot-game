@@ -16,6 +16,10 @@
     <div class="robot-time">選択中の相棒ロボはありません。</div>
     {% endif %}
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('companion_dispatch') }}">相棒ロボ派遣</a></p>
+    {% if dispatch_summary and dispatch_summary['current_dispatch'] %}
+    <div class="upgrade-cost">{{ dispatch_summary['status_label'] }}</div>
+    {% endif %}
   </div>
 
   <div class="module-card-grid">

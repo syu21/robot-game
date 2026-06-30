@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>相棒ロボ派遣</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の工場ポイント</div>
+    <div class="stat-value">{{ dispatch_view['factory_points'] }}pt</div>
+    {% if dispatch_view['active_companion'] %}
+    <div class="robot-time">相棒: {{ dispatch_view['active_companion']['name_ja'] }} Lv{{ dispatch_view['active_companion']['level'] }}</div>
+    <div class="upgrade-cost">{{ dispatch_view['active_companion']['effect_label'] }}</div>
+    {% else %}
+    <div class="robot-time">派遣できる相棒ロボがいません。</div>
+    {% endif %}
+  </div>
+
+  {% if dispatch_view['current_dispatch'] %}
+  {% set current = dispatch_view['current_dispatch'] %}
+  <div class="card">
+    <h2>{{ current['dispatch_name_ja'] }}</h2>
+    <div class="robot-time">{{ current['companion_name_ja'] }} が担当中</div>
+    {% if current['is_completed'] %}
+    <div class="upgrade-cost">帰還済み</div>
+    <div class="robot-time">報酬: 工場ポイント {{ current['reward_factory_points'] }}pt</div>
+    <form method="post" action="{{ url_for('companion_dispatch_claim') }}" class="inline-form inline-form-top">
+      <button type="submit">受け取る</button>
+    </form>
+    {% else %}
+    <div class="upgrade-cost">派遣中 {{ current['remaining_label'] }}</div>
+    <div class="robot-time">報酬予定: 工場ポイント {{ current['reward_factory_points'] }}pt</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="module-card-grid">
+    {% for course in dispatch_view['dispatches'] %}
+    <div class="module-card">
+      <div class="module-card-title">{{ course['name_ja'] }}</div>
+      <div class="robot-time">{{ course['description'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">{{ course['duration_label'] }}</span>
+        <span class="module-badge">報酬 {{ course['min_factory_points'] }}〜{{ course['max_factory_points'] }}pt</span>
+      </div>
+      <form method="post" action="{{ url_for('companion_dispatch_start') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="dispatch_key" value="{{ course['dispatch_key'] }}" />
+        <button type="submit" {% if not dispatch_view['can_start'] %}disabled{% endif %}>派遣する</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ戻る</a></p>
+</div>
+{% endblock %}

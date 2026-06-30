@@ -14,6 +14,9 @@
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_research') }}">世界研究へ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズへ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ</a></p>
+    {% if companion_dispatch and companion_dispatch['current_dispatch'] %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('companion_dispatch') }}">{{ companion_dispatch['status_label'] }}</a></p>
+    {% endif %}
     {% if factory['collector_bonus_percent'] %}
     <div class="upgrade-cost">相棒ロボ補助: 工場回収 +{{ factory['collector_bonus_percent'] }}%</div>
     {% endif %}

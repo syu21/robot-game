@@ -1130,7 +1130,7 @@
         </a>
         <a class="action-card" href="{{ url_for('companion_lab') }}">
           <div class="action-title">相棒ロボ研究所</div>
-          <div class="action-desc">{% if companion_home_summary %}選択中: {{ companion_home_summary['name_ja'] }} Lv{{ companion_home_summary['level'] }}<br>{{ companion_home_summary['effect_label'] }}{% else %}小さな相棒を育てる{% endif %}</div>
+          <div class="action-desc">{% if companion_home_summary %}選択中: {{ companion_home_summary['name_ja'] }} Lv{{ companion_home_summary['level'] }}<br>{% if companion_dispatch_home_summary and companion_dispatch_home_summary['current_dispatch'] %}{{ companion_dispatch_home_summary['status_label'] }}{% else %}{{ companion_home_summary['effect_label'] }}{% endif %}{% else %}小さな相棒を育てる{% endif %}</div>
         </a>
         <a class="action-card" href="{{ url_for('factory_research') }}">
           <div class="action-title">世界研究</div>

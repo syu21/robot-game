@@ -950,6 +950,43 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS companion_dispatch_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispatch_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            duration_minutes INTEGER NOT NULL,
+            min_factory_points INTEGER NOT NULL,
+            max_factory_points INTEGER NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_companion_dispatches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            companion_key TEXT NOT NULL,
+            dispatch_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            started_at INTEGER NOT NULL,
+            completes_at INTEGER NOT NULL,
+            claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
+            FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -3662,6 +3699,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_robot_masters_active_sort ON companion_robot_masters(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")

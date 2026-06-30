@@ -478,6 +478,35 @@ COMPANION_DEFS = (
 COMPANION_MAX_LEVEL = 5
 COMPANION_UPGRADE_COST_BY_LEVEL = {1: 300, 2: 800, 3: 1600, 4: 3000}
 COMPANION_MAINTENANCE_CAP_BONUS_HOURS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
+COMPANION_DISPATCH_DEFS = (
+    {
+        "dispatch_key": "short_patrol",
+        "name_ja": "短時間パトロール",
+        "description": "近場を巡回して小さな資源記録を持ち帰ります。",
+        "duration_minutes": 60,
+        "min_factory_points": 20,
+        "max_factory_points": 40,
+        "sort_order": 10,
+    },
+    {
+        "dispatch_key": "scrap_search",
+        "name_ja": "スクラップ探索",
+        "description": "周辺のスクラップ反応を探して工場資源を集めます。",
+        "duration_minutes": 240,
+        "min_factory_points": 80,
+        "max_factory_points": 160,
+        "sort_order": 20,
+    },
+    {
+        "dispatch_key": "night_observation",
+        "name_ja": "夜間観測",
+        "description": "長めの観測任務。将来の見た目報酬の記録にも使います。",
+        "duration_minutes": 480,
+        "min_factory_points": 180,
+        "max_factory_points": 320,
+        "sort_order": 30,
+    },
+)
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10705,6 +10734,43 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS companion_dispatch_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispatch_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            duration_minutes INTEGER NOT NULL,
+            min_factory_points INTEGER NOT NULL,
+            max_factory_points INTEGER NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_companion_dispatches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            companion_key TEXT NOT NULL,
+            dispatch_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            started_at INTEGER NOT NULL,
+            completes_at INTEGER NOT NULL,
+            claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
+            FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -13553,6 +13619,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_companion_robot_masters_active_sort ON companion_robot_masters(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -16054,6 +16122,16 @@ def _companion_effect_label(effect_type, level):
     return "戦闘ステータスには影響しません"
 
 
+def _companion_dispatch_time_label(seconds):
+    remain = max(0, int(seconds or 0))
+    minutes = (remain + 59) // 60
+    if minutes >= 60:
+        hours = minutes // 60
+        rest = minutes % 60
+        return f"あと{hours}時間{rest}分" if rest else f"あと{hours}時間"
+    return f"あと{minutes}分"
+
+
 def _companion_source_is_available(db, row):
     if not row:
         return False
@@ -16274,6 +16352,9 @@ def equip_companion(db, user_id, companion_key, *, request_id=None, ip=None):
     ).fetchone()
     if not row or not _companion_source_is_available(db, row):
         return {"ok": False, "reason": "未所持、または利用できない相棒ロボです。"}
+    current_dispatch = get_active_companion_dispatch(db, uid, refresh=True)
+    if current_dispatch:
+        return {"ok": False, "reason": "相棒ロボが派遣中、または帰還待ちです。報酬を受け取ってから変更してください。"}
     before = db.execute("SELECT active_companion_key FROM users WHERE id = ?", (uid,)).fetchone()
     before_key = str((before["active_companion_key"] if before else "") or "")
     db.execute("UPDATE users SET active_companion_key = ? WHERE id = ?", (key, uid))
@@ -16322,6 +16403,9 @@ def upgrade_companion(db, user_id, companion_key, *, request_id=None, ip=None):
     ).fetchone()
     if not row or not _companion_source_is_available(db, row):
         return {"ok": False, "reason": "未所持、または利用できない相棒ロボです。"}
+    current_dispatch = _companion_dispatch_active_for_key(db, uid, key)
+    if current_dispatch:
+        return {"ok": False, "reason": "この相棒ロボは派遣中、または帰還待ちです。報酬を受け取ってから強化してください。"}
     level_before = max(1, min(int(row["level"] or 1), COMPANION_MAX_LEVEL))
     if level_before >= COMPANION_MAX_LEVEL:
         return {"ok": False, "reason": "この相棒ロボは最大Lvです。"}
@@ -16384,6 +16468,329 @@ def upgrade_companion(db, user_id, companion_key, *, request_id=None, ip=None):
     )
     db.commit()
     return {"ok": True, "companion_key": key, "name_ja": row["name_ja"], "level_after": level_after, "factory_points_after": points_after}
+
+
+def ensure_companion_dispatch_masters(db, *, user_id=None, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["dispatch_key"]
+        for row in db.execute("SELECT dispatch_key FROM companion_dispatch_masters").fetchall()
+    }
+    created = []
+    for item in COMPANION_DISPATCH_DEFS:
+        db.execute(
+            """
+            INSERT INTO companion_dispatch_masters (
+                dispatch_key, name_ja, description, duration_minutes,
+                min_factory_points, max_factory_points, is_active,
+                sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(dispatch_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                duration_minutes = excluded.duration_minutes,
+                min_factory_points = excluded.min_factory_points,
+                max_factory_points = excluded.max_factory_points,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["dispatch_key"],
+                item["name_ja"],
+                item["description"],
+                int(item["duration_minutes"]),
+                int(item["min_factory_points"]),
+                int(item["max_factory_points"]),
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["dispatch_key"] not in existing_keys:
+            created.append(item["dispatch_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["COMPANION_DISPATCH_ENSURE_DEFAULTS"],
+            user_id=int(user_id) if user_id else None,
+            request_id=request_id,
+            action_key="companion_dispatch_ensure_defaults",
+            entity_type="companion_dispatch",
+            delta_count=len(created),
+            payload={"created_dispatches": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_dispatches": created}
+
+
+def _refresh_companion_dispatches(db, user_id=None, *, now_ts=None):
+    current_ts = int(now_ts or time.time())
+    if user_id:
+        db.execute(
+            """
+            UPDATE user_companion_dispatches
+            SET status = 'completed', updated_at = ?
+            WHERE user_id = ?
+              AND status = 'active'
+              AND completes_at <= ?
+            """,
+            (current_ts, int(user_id), current_ts),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE user_companion_dispatches
+            SET status = 'completed', updated_at = ?
+            WHERE status = 'active'
+              AND completes_at <= ?
+            """,
+            (current_ts, current_ts),
+        )
+
+
+def get_active_companion_dispatch(db, user_id, *, refresh=True, now_ts=None):
+    uid = int(user_id)
+    current_ts = int(now_ts or time.time())
+    if refresh:
+        _refresh_companion_dispatches(db, uid, now_ts=current_ts)
+    row = db.execute(
+        """
+        SELECT ucd.*, cdm.name_ja AS dispatch_name_ja, cdm.description AS dispatch_description,
+               cdm.duration_minutes, cdm.min_factory_points, cdm.max_factory_points,
+               crm.name_ja AS companion_name_ja
+        FROM user_companion_dispatches ucd
+        JOIN companion_dispatch_masters cdm ON cdm.dispatch_key = ucd.dispatch_key
+        JOIN companion_robot_masters crm ON crm.companion_key = ucd.companion_key
+        WHERE ucd.user_id = ?
+          AND ucd.status IN ('active', 'completed')
+        ORDER BY ucd.id DESC
+        LIMIT 1
+        """,
+        (uid,),
+    ).fetchone()
+    if not row:
+        return None
+    completes_at = int(row["completes_at"] or 0)
+    status = str(row["status"] or "active")
+    remaining_seconds = max(0, completes_at - current_ts)
+    return {
+        "id": int(row["id"]),
+        "dispatch_id": int(row["id"]),
+        "user_id": uid,
+        "companion_key": row["companion_key"],
+        "companion_name_ja": row["companion_name_ja"],
+        "dispatch_key": row["dispatch_key"],
+        "dispatch_name_ja": row["dispatch_name_ja"],
+        "dispatch_description": row["dispatch_description"] or "",
+        "status": status,
+        "is_active": status == "active",
+        "is_completed": status == "completed",
+        "reward_factory_points": int(row["reward_factory_points"] or 0),
+        "started_at": int(row["started_at"] or 0),
+        "completes_at": completes_at,
+        "claimed_at": int(row["claimed_at"] or 0) if row["claimed_at"] else None,
+        "remaining_seconds": remaining_seconds,
+        "remaining_label": _companion_dispatch_time_label(remaining_seconds),
+    }
+
+
+def _companion_dispatch_options(db):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM companion_dispatch_masters
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, id ASC
+        """
+    ).fetchall()
+    return [
+        {
+            "dispatch_key": row["dispatch_key"],
+            "name_ja": row["name_ja"],
+            "description": row["description"] or "",
+            "duration_minutes": int(row["duration_minutes"] or 0),
+            "duration_label": f"{int(row['duration_minutes'] or 0) // 60}時間" if int(row["duration_minutes"] or 0) >= 60 else f"{int(row['duration_minutes'] or 0)}分",
+            "min_factory_points": int(row["min_factory_points"] or 0),
+            "max_factory_points": int(row["max_factory_points"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def get_companion_dispatch_view(db, user_id, *, ensure=True, now_ts=None):
+    uid = int(user_id)
+    if ensure:
+        ensure_companions(db, uid)
+        ensure_companion_dispatch_masters(db, user_id=uid)
+    current = get_active_companion_dispatch(db, uid, refresh=True, now_ts=now_ts)
+    active_companion = get_active_companion(db, uid, ensure=False)
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    return {
+        "factory_points": int(user["factory_points"] or 0) if user else 0,
+        "active_companion": active_companion,
+        "current_dispatch": current,
+        "dispatches": _companion_dispatch_options(db),
+        "can_start": bool(active_companion and not current),
+    }
+
+
+def companion_dispatch_summary(db, user_id, *, ensure=True, now_ts=None):
+    uid = int(user_id)
+    if ensure:
+        ensure_companion_dispatch_masters(db, user_id=uid)
+    current = get_active_companion_dispatch(db, uid, refresh=True, now_ts=now_ts)
+    if not current:
+        return {"current_dispatch": None, "status_label": "派遣なし", "is_active": False, "is_completed": False}
+    if current["is_completed"]:
+        return {**current, "current_dispatch": current, "status_label": "相棒ロボ帰還済み"}
+    return {**current, "current_dispatch": current, "status_label": f"相棒ロボ派遣中 {current['remaining_label']}"}
+
+
+def _companion_dispatch_active_for_key(db, user_id, companion_key):
+    key = str(companion_key or "").strip()
+    if not key:
+        return None
+    current = get_active_companion_dispatch(db, int(user_id), refresh=True)
+    if current and current["companion_key"] == key:
+        return current
+    return None
+
+
+def start_companion_dispatch(db, user_id, dispatch_key, *, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(dispatch_key or "").strip()
+    ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
+    current = get_active_companion_dispatch(db, uid, refresh=True)
+    if current:
+        return {"ok": False, "reason": "相棒ロボは派遣中です。帰還後に受け取ってください。"}
+    active = get_active_companion(db, uid, ensure=False)
+    if not active:
+        return {"ok": False, "reason": "派遣できる相棒ロボがいません。"}
+    owned = db.execute(
+        """
+        SELECT ud.id
+        FROM user_companion_robots ud
+        JOIN companion_robot_masters crm ON crm.companion_key = ud.companion_key
+        WHERE ud.user_id = ?
+          AND ud.companion_key = ?
+          AND crm.is_active = 1
+        LIMIT 1
+        """,
+        (uid, active["companion_key"]),
+    ).fetchone()
+    if not owned:
+        return {"ok": False, "reason": "未所持、または利用できない相棒ロボです。"}
+    course = db.execute(
+        "SELECT * FROM companion_dispatch_masters WHERE dispatch_key = ? AND is_active = 1 LIMIT 1",
+        (key,),
+    ).fetchone()
+    if not course:
+        return {"ok": False, "reason": "派遣コースが見つかりません。"}
+    now_ts = int(time.time())
+    reward = random.randint(int(course["min_factory_points"] or 0), int(course["max_factory_points"] or 0))
+    completes_at = now_ts + int(course["duration_minutes"] or 0) * 60
+    cur = db.execute(
+        """
+        INSERT INTO user_companion_dispatches (
+            user_id, companion_key, dispatch_key, status, reward_factory_points,
+            started_at, completes_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)
+        """,
+        (uid, active["companion_key"], key, reward, now_ts, completes_at, now_ts, now_ts),
+    )
+    dispatch_id = int(cur.lastrowid)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COMPANION_DISPATCH_START"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="companion_dispatch_start",
+        entity_type="companion_dispatch",
+        entity_id=dispatch_id,
+        payload={
+            "user_id": uid,
+            "companion_key": active["companion_key"],
+            "dispatch_key": key,
+            "dispatch_id": dispatch_id,
+            "reward_factory_points": reward,
+            "started_at": now_ts,
+            "completes_at": completes_at,
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "dispatch_id": dispatch_id, "dispatch_key": key, "name_ja": course["name_ja"], "completes_at": completes_at}
+
+
+def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
+    uid = int(user_id)
+    ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
+    current = get_active_companion_dispatch(db, uid, refresh=True)
+    if not current:
+        return {"ok": False, "reason": "受け取れる派遣はありません。"}
+    if current["status"] == "active":
+        return {"ok": False, "reason": "相棒ロボはまだ派遣中です。"}
+    if current["status"] != "completed":
+        return {"ok": False, "reason": "受け取り済み、または無効な派遣です。"}
+    user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    before_points = int(user["factory_points"] or 0) if user else 0
+    reward = int(current["reward_factory_points"] or 0)
+    after_points = before_points + reward
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        UPDATE user_companion_dispatches
+        SET status = 'claimed', claimed_at = ?, updated_at = ?
+        WHERE id = ?
+          AND user_id = ?
+          AND status = 'completed'
+        """,
+        (now_ts, now_ts, int(current["id"]), uid),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "この派遣報酬は受け取り済みです。"}
+    db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (after_points, uid))
+    payload = {
+        "user_id": uid,
+        "companion_key": current["companion_key"],
+        "dispatch_key": current["dispatch_key"],
+        "dispatch_id": int(current["id"]),
+        "reward_factory_points": reward,
+        "started_at": int(current["started_at"] or 0),
+        "completes_at": int(current["completes_at"] or 0),
+        "claimed_at": now_ts,
+        "factory_points_before": before_points,
+        "factory_points_after": after_points,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["COMPANION_DISPATCH_CLAIM"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="companion_dispatch_claim",
+        entity_type="companion_dispatch",
+        entity_id=int(current["id"]),
+        delta_count=reward,
+        payload=payload,
+        ip=ip,
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["FACTORY_POINTS_DELTA"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="companion_dispatch_claim",
+        entity_type="companion_dispatch",
+        entity_id=int(current["id"]),
+        delta_count=reward,
+        payload={**payload, "source": "companion_dispatch_claim"},
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "reward_factory_points": reward, "factory_points_after": after_points}
 
 
 def _factory_storage_cap_hours_for_user(db, user_id):
@@ -38021,6 +38428,7 @@ def factory():
         user=user,
         message=session.pop("message", None),
         factory=factory_view,
+        companion_dispatch=companion_dispatch_summary(db, user_id),
         max_storage_hours=int(factory_view.get("storage_cap_hours") or FACTORY_STORAGE_CAP_HOURS),
         max_level=int(FACTORY_MAX_LEVEL),
     )
@@ -38229,6 +38637,7 @@ def companion_lab():
         user=user,
         message=session.pop("message", None),
         companion_view=get_companion_view(db, user_id, ensure=False),
+        dispatch_summary=companion_dispatch_summary(db, user_id),
         max_level=COMPANION_MAX_LEVEL,
     )
 
@@ -38273,6 +38682,71 @@ def companion_upgrade():
         db.rollback()
         session["message"] = result.get("reason") or "強化できませんでした。"
     return redirect(url_for("companion_lab"))
+
+
+@app.route("/companion/dispatch")
+@login_required
+def companion_dispatch():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_companion_dispatch_masters(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    _refresh_companion_dispatches(db, user_id)
+    db.commit()
+    return render_template(
+        "companion_dispatch.html",
+        user=user,
+        message=session.pop("message", None),
+        dispatch_view=get_companion_dispatch_view(db, user_id, ensure=False),
+    )
+
+
+@app.route("/companion/dispatch/start", methods=["POST"])
+@login_required
+def companion_dispatch_start():
+    db = get_db()
+    user_id = int(session["user_id"])
+    dispatch_key = (request.form.get("dispatch_key") or "").strip()
+    result = start_companion_dispatch(
+        db,
+        user_id,
+        dispatch_key,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"{result.get('name_ja') or '派遣'}へ出発しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "派遣を開始できませんでした。"
+    return redirect(url_for("companion_dispatch"))
+
+
+@app.route("/companion/dispatch/claim", methods=["POST"])
+@login_required
+def companion_dispatch_claim():
+    db = get_db()
+    user_id = int(session["user_id"])
+    result = claim_companion_dispatch(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = f"派遣報酬 {int(result.get('reward_factory_points') or 0)}pt を受け取りました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("reason") or "派遣報酬を受け取れませんでした。"
+    return redirect(url_for("companion_dispatch"))
 
 
 @app.route("/admin/tower")
@@ -38839,6 +39313,7 @@ def home():
     factory_research_home_summary = factory_research_summary(db)
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     companion_home_summary = get_active_companion(db, int(user["id"]))
+    companion_dispatch_home_summary = companion_dispatch_summary(db, int(user["id"]))
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -39015,6 +39490,7 @@ def home():
             factory_research_home_summary=factory_research_home_summary,
             factory_base_home=factory_base_home,
             companion_home_summary=companion_home_summary,
+            companion_dispatch_home_summary=companion_dispatch_home_summary,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
