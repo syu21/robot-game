@@ -52,7 +52,12 @@
           </div>
         </div>
       </td>
-      <td>{{ render_user_name_badged_html(r, r.get('display_username') or r['username']) }}</td>
+      <td>
+        {{ render_user_name_badged_html(r, r.get('display_username') or r['username']) }}
+        {% if r.get('user_id') %}
+        <div class="robot-time"><a href="{{ url_for('base_visit', user_id=r['user_id']) }}">基地を見る</a></div>
+        {% endif %}
+      </td>
       {% else %}
       <td>
         <div class="ranking-user-cell user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
@@ -60,6 +65,7 @@
           <div class="user-signal-meta">
             {{ render_user_name_badged_html(r, r.get('display_username') or r['username']) }}
             <div class="user-signal-sub">{{ r.get('presence_label', '探索待機中') }}</div>
+            <div class="user-signal-sub"><a href="{{ url_for('base_visit', user_id=r['id']) }}">基地を見る</a></div>
           </div>
         </div>
       </td>

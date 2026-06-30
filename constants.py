@@ -200,6 +200,8 @@ AUDIT_EVENT_TYPES = {
     "COMPANION_DISPATCH_ENSURE_DEFAULTS": "audit.companion.dispatch.ensure_defaults",
     "COMPANION_DISPATCH_START": "audit.companion.dispatch.start",
     "COMPANION_DISPATCH_CLAIM": "audit.companion.dispatch.claim",
+    "BASE_VIEW": "audit.base.view",
+    "BASE_LIKE": "audit.base.like",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",

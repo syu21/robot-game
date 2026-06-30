@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if message %}
+<div class="card">{{ message }}</div>
+{% endif %}
+
+{% if not base.get('exists') %}
+<div class="card">
+  <h1>基地が見つかりません</h1>
+  <p>この研究基地は表示できません。</p>
+  <p class="link"><a href="{{ url_for('ranking') }}">ランキングへ</a></p>
+</div>
+{% else %}
+<div class="card trial-home-banner">
+  <div><span class="weekly-fit-badge">BASE VISIT</span></div>
+  <h1>{{ base['display_name'] }} の研究基地</h1>
+  <div class="upgrade-cost">
+    {% for key, item in base['cosmetics']['equipped'].items() %}
+      {{ item['type_label'] }}: {{ item['name_ja'] }}{% if not loop.last %} / {% endif %}
+    {% else %}
+      通常研究所
+    {% endfor %}
+  </div>
+  <div class="home-inline-actions">
+    <p class="link"><a class="battle-home-link" href="{{ url_for('showcase') }}">ロボ展示を見る</a></p>
+    {% if base['is_self'] %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a></p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="robot-grid">
+  <div class="robot-card">
+    <div class="robot-id">出撃ロボ</div>
+    {% if base['robot']['image_url'] %}
+    <img class="robot-thumb robo-anim robo-anim-idle" src="{{ base['robot']['image_url'] }}" alt="{{ base['robot']['name'] }}" loading="lazy" />
+    {% else %}
+    <div class="robot-thumb empty">no image</div>
+    {% endif %}
+    <div><b>{{ base['robot']['name'] }}</b></div>
+    {% if base['robot'].get('id') %}
+    <p class="link"><a href="{{ url_for('robot_detail', instance_id=base['robot']['id']) }}">個別ページ</a></p>
+    {% endif %}
+  </div>
+
+  <div class="robot-card">
+    <div class="robot-id">相棒ロボ</div>
+    {% if base['companion'] %}
+    {% if base['companion'].get('image_path') %}
+    <img class="robot-thumb" src="{{ url_for('static', filename=base['companion']['image_path']) }}" alt="{{ base['companion']['name_ja'] }}" loading="lazy" />
+    {% endif %}
+    <div><b>{{ base['companion']['name_ja'] }} Lv{{ base['companion']['level'] }}</b></div>
+    <div class="robot-part">{{ base['companion']['effect_label'] }}</div>
+    {% if base['dispatch'] and base['dispatch'].get('status_label') %}
+    <div class="home-explore-status">{{ base['dispatch']['status_label'] }}</div>
+    {% endif %}
+    {% else %}
+    <div class="robot-thumb empty">no companion</div>
+    <div>相棒ロボ未設定</div>
+    {% endif %}
+  </div>
+
+  <div class="robot-card">
+    <div class="robot-id">工場概要</div>
+    <div class="robot-part">工場ポイント: {{ base['factory']['factory_points'] }}pt</div>
+    {% for facility in base['factory']['facilities'] %}
+    <div class="robot-part">{{ facility['facility_name'] }} Lv{{ facility['level'] }} / {{ facility['rate_per_hour'] }}pt/時</div>
+    {% else %}
+    <div class="robot-part">工場施設なし</div>
+    {% endfor %}
+  </div>
+
+  <div class="robot-card">
+    <div class="robot-id">いいね</div>
+    <div><b>{{ base['like_count'] }}</b></div>
+    {% if base['is_self'] %}
+    <button type="button" disabled>自分の基地</button>
+    {% elif base['liked_by_me'] %}
+    <button type="button" disabled>いいね済み</button>
+    {% elif base['can_like'] %}
+    <form method="post" action="{{ url_for('base_like', user_id=base['base_user_id']) }}">
+      <button type="submit">いいね</button>
+    </form>
+    {% else %}
+    <button type="button" disabled>いいね不可</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>基地カスタマイズ</h2>
+  <div class="robot-grid">
+    {% for key, item in base['cosmetics']['equipped'].items() %}
+    <div class="robot-card">
+      <div class="robot-id">{{ item['type_label'] }}</div>
+      <div><b>{{ item['name_ja'] }}</b></div>
+      <div class="robot-part">{{ item['description'] }}</div>
+    </div>
+    {% else %}
+    <div class="robot-card">通常研究所</div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>ロボ展示</h2>
+  <div class="robot-grid">
+    {% for row in base['showcase_rows'] %}
+    <div class="robot-card">
+      <div class="robot-id">SLOT {{ row['slot_no'] }}</div>
+      {% if row.get('image_url') %}
+      <img class="robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['name'] }}" loading="lazy" />
+      {% else %}
+      <div class="robot-thumb empty">no image</div>
+      {% endif %}
+      <div>{{ row['name'] }}</div>
+      <p class="link"><a href="{{ url_for('robot_detail', instance_id=row['robot_instance_id']) }}">詳細を見る</a></p>
+    </div>
+    {% else %}
+    <div class="robot-card">展示ロボはまだありません。</div>
+    {% endfor %}
+  </div>
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a> | <a href="{{ url_for('ranking') }}">ランキングへ</a></p>
+{% endif %}
+{% endblock %}

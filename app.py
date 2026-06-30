@@ -10771,6 +10771,19 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_base_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            base_user_id INTEGER NOT NULL,
+            liked_by_user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(base_user_id, liked_by_user_id),
+            FOREIGN KEY (base_user_id) REFERENCES users(id),
+            FOREIGN KEY (liked_by_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -13621,6 +13634,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -17135,6 +17150,152 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
         "storage_cap_hours": storage_cap_hours,
         "collector_bonus_percent": collector_bonus_percent,
     }
+
+
+def _base_visit_user(db, user_id):
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    if uid <= 0:
+        return None
+    user = db.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+    if not user:
+        return None
+    if "is_banned" in user.keys() and int(user["is_banned"] or 0) == 1:
+        return None
+    return user
+
+
+def _base_like_state(db, base_user_id, viewer_user_id=None):
+    base_uid = int(base_user_id)
+    count = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM user_base_likes WHERE base_user_id = ?",
+            (base_uid,),
+        ).fetchone()["c"]
+        or 0
+    )
+    liked_by_me = False
+    if viewer_user_id:
+        liked_by_me = bool(
+            db.execute(
+                """
+                SELECT 1
+                FROM user_base_likes
+                WHERE base_user_id = ? AND liked_by_user_id = ?
+                LIMIT 1
+                """,
+                (base_uid, int(viewer_user_id)),
+            ).fetchone()
+        )
+    return {"like_count": count, "liked_by_me": liked_by_me}
+
+
+def _base_robot_view(db, user_id):
+    robot = _get_active_robot(db, user_id) or _select_main_robot(db, user_id)
+    if not robot:
+        return {
+            "exists": False,
+            "name": "未設定",
+            "image_url": url_for("static", filename="assets/placeholder_player.png"),
+        }
+    image_url = robot["image_url"] if "image_url" in robot.keys() and robot["image_url"] else None
+    if not image_url:
+        image_url = _composed_image_url(robot["composed_image_path"], robot["updated_at"]) if robot["composed_image_path"] else None
+    return {
+        "exists": True,
+        "id": int(robot["id"]),
+        "name": robot["name"] or f"Robot#{int(robot['id'])}",
+        "image_url": image_url or url_for("static", filename="assets/placeholder_player.png"),
+    }
+
+
+def get_base_visit_view(db, base_user_id, *, viewer_user_id=None, ensure=True):
+    base_user = _base_visit_user(db, base_user_id)
+    if not base_user:
+        return {"exists": False, "base_user_id": int(base_user_id or 0)}
+    uid = int(base_user["id"])
+    viewer_uid = int(viewer_user_id) if viewer_user_id else None
+    display_name = _display_username_for_user_row(db, base_user)
+    cosmetics = get_factory_cosmetic_loadout(db, uid, ensure=ensure)
+    companion = get_active_companion(db, uid, ensure=ensure)
+    dispatch = companion_dispatch_summary(db, uid, ensure=ensure)
+    factory = get_user_factory_view(db, uid, ensure=ensure)
+    showcase_rows = _showcase_rows(db, uid)
+    like_state = _base_like_state(db, uid, viewer_uid)
+    factory_summary = [
+        {
+            "facility_key": row["facility_key"],
+            "facility_name": row["facility_name"],
+            "level": int(row["level"]),
+            "rate_per_hour": int(row["rate_per_hour"]),
+        }
+        for row in factory.get("facilities", [])
+    ]
+    return {
+        "exists": True,
+        "base_user_id": uid,
+        "username": base_user["username"],
+        "display_name": display_name,
+        "robot": _base_robot_view(db, uid),
+        "cosmetics": cosmetics,
+        "companion": companion,
+        "dispatch": dispatch,
+        "factory": {
+            "factory_points": int(factory.get("factory_points") or 0),
+            "facilities": factory_summary,
+        },
+        "showcase_rows": [row for row in showcase_rows if row.get("robot_instance_id")][:3],
+        "like_count": int(like_state["like_count"]),
+        "liked_by_me": bool(like_state["liked_by_me"]),
+        "is_self": bool(viewer_uid and viewer_uid == uid),
+        "can_like": bool(viewer_uid and viewer_uid != uid and not like_state["liked_by_me"]),
+    }
+
+
+def like_base(db, base_user_id, liked_by_user_id, *, request_id=None, ip=None):
+    base_user = _base_visit_user(db, base_user_id)
+    if not base_user:
+        return {"ok": False, "reason": "基地が見つかりません。"}
+    viewer = _base_visit_user(db, liked_by_user_id)
+    if not viewer:
+        return {"ok": False, "reason": "ログインユーザーを確認できません。"}
+    base_uid = int(base_user["id"])
+    viewer_uid = int(viewer["id"])
+    if base_uid == viewer_uid:
+        return {"ok": False, "reason": "自分の基地にはいいねできません。"}
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO user_base_likes (base_user_id, liked_by_user_id, created_at)
+        VALUES (?, ?, ?)
+        """,
+        (base_uid, viewer_uid, now_ts),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "この基地はいいね済みです。"}
+    like_count_after = _base_like_state(db, base_uid, viewer_uid)["like_count"]
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BASE_LIKE"],
+        user_id=viewer_uid,
+        request_id=request_id,
+        action_key="base_like",
+        entity_type="user_base",
+        entity_id=base_uid,
+        delta_count=1,
+        payload={
+            "viewer_user_id": viewer_uid,
+            "base_user_id": base_uid,
+            "liked_by_user_id": viewer_uid,
+            "like_count_after": int(like_count_after),
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "like_count_after": int(like_count_after)}
 
 
 def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None, ip=None):
@@ -38747,6 +38908,49 @@ def companion_dispatch_claim():
         db.rollback()
         session["message"] = result.get("reason") or "派遣報酬を受け取れませんでした。"
     return redirect(url_for("companion_dispatch"))
+
+
+@app.route("/base/<int:user_id>")
+@login_required
+def base_visit(user_id):
+    db = get_db()
+    viewer_user_id = int(session["user_id"])
+    base = get_base_visit_view(db, user_id, viewer_user_id=viewer_user_id)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BASE_VIEW"],
+        user_id=viewer_user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="base_view",
+        entity_type="user_base",
+        entity_id=int(user_id),
+        payload={
+            "viewer_user_id": viewer_user_id,
+            "base_user_id": int(user_id),
+            "exists": bool(base.get("exists")),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template("base_visit.html", base=base, message=session.pop("message", None))
+
+
+@app.route("/base/<int:user_id>/like", methods=["POST"])
+@login_required
+def base_like(user_id):
+    db = get_db()
+    result = like_base(
+        db,
+        user_id,
+        int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        session["message"] = "基地にいいねしました。"
+    else:
+        session["message"] = result.get("reason") or "いいねできませんでした。"
+    return redirect(url_for("base_visit", user_id=user_id))
 
 
 @app.route("/admin/tower")

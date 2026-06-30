@@ -254,6 +254,7 @@
         <div class="user-signal-meta">
           {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
           <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+          <div class="user-signal-sub"><a href="{{ url_for('base_visit', user_id=row['user_id']) }}">基地を見る</a></div>
         </div>
       </div>
       {% if row['profile'] and row['profile']['signature_label'] %}
@@ -262,7 +263,11 @@
       {% if row['profile'] and row['profile']['focus_line'] %}
       <div class="robot-part">{{ row['profile']['focus_line'] }}</div>
       {% endif %}
-      <div class="link"><a href="{{ url_for('robot_detail', instance_id=row['robot_id']) }}">詳細を見る</a></div>
+      <div class="link">
+        <a href="{{ url_for('robot_detail', instance_id=row['robot_id']) }}">詳細を見る</a>
+        |
+        <a href="{{ url_for('base_visit', user_id=row['user_id']) }}">基地を見る</a>
+      </div>
     </div>
     {% else %}
     <div class="card">まだ話題ロボはありません。</div>

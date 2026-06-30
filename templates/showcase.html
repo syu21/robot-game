@@ -47,7 +47,10 @@
     {% for r in public_rows %}
       <div class="robot-card">
         <div class="robot-id">{{ r['name'] }}</div>
-        <div class="robot-part">オーナー: {{ r['username'] }}</div>
+        <div class="robot-part">
+          オーナー: {{ r['username'] }}
+          | <a href="{{ url_for('base_visit', user_id=r['user_id']) }}">基地を見る</a>
+        </div>
         <div class="robot-part">フレーム: {{ r['frame_label'] }}</div>
         {% if r.get('insect_research') and r['insect_research'].get('is_insect') %}
         <div class="robot-part">

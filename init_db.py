@@ -987,6 +987,19 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_base_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            base_user_id INTEGER NOT NULL,
+            liked_by_user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(base_user_id, liked_by_user_id),
+            FOREIGN KEY (base_user_id) REFERENCES users(id),
+            FOREIGN KEY (liked_by_user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS world_research_projects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             research_key TEXT UNIQUE NOT NULL,
@@ -3701,6 +3714,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")

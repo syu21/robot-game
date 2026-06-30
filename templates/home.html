@@ -20,7 +20,11 @@
       {{ item['type_label'] }}: {{ item['name_ja'] }}{% if not loop.last %} / {% endif %}
     {% endfor %}
   </div>
-  <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a></p>
+  <p class="link">
+    <a class="battle-home-link" href="{{ url_for('base_visit', user_id=user['id']) }}">自分の基地を見る</a>
+    |
+    <a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a>
+  </p>
 </section>
 {% endif %}
 {% if trial_mode %}
