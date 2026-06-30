@@ -440,38 +440,44 @@ FACTORY_COSMETIC_DEFS = (
         "sort_order": 40,
     },
 )
-DRONE_DEFS = (
+COMPANION_DEFS = (
     {
-        "drone_key": "scout_drone",
-        "name_ja": "偵察ドローン",
-        "description": "出撃後の個人ログに偵察メモが出ることがあります。",
-        "effect_type": "scout_note",
+        "companion_key": "scout_petbot",
+        "name_ja": "偵察ペットロボ",
+        "description": "周辺データを記録する実験室生まれの小型ロボ。",
+        "effect_type": "scout_log",
         "base_effect_value": 0,
+        "source_type": "default",
+        "source_id": None,
         "image_path": "",
         "sort_order": 10,
     },
     {
-        "drone_key": "collector_drone",
-        "name_ja": "回収ドローン",
-        "description": "ロボ工場の回収時に工場ポイントが少し増えます。",
+        "companion_key": "collector_petbot",
+        "name_ja": "回収ペットロボ",
+        "description": "工場ポイントの回収を少しだけ手伝うペットロボ。",
         "effect_type": "factory_claim_bonus",
         "base_effect_value": 1,
+        "source_type": "default",
+        "source_id": None,
         "image_path": "",
         "sort_order": 20,
     },
     {
-        "drone_key": "maintenance_drone",
-        "name_ja": "整備ドローン",
-        "description": "ロボ工場の最大蓄積時間を延ばします。",
-        "effect_type": "factory_storage_bonus",
+        "companion_key": "maintenance_petbot",
+        "name_ja": "整備ペットロボ",
+        "description": "工場設備の稼働上限を少しだけ伸ばすペットロボ。",
+        "effect_type": "factory_cap_bonus",
         "base_effect_value": 1,
+        "source_type": "default",
+        "source_id": None,
         "image_path": "",
         "sort_order": 30,
     },
 )
-DRONE_MAX_LEVEL = 5
-DRONE_UPGRADE_COST_BY_LEVEL = {1: 300, 2: 800, 3: 1600, 4: 3000}
-DRONE_MAINTENANCE_CAP_BONUS_HOURS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
+COMPANION_MAX_LEVEL = 5
+COMPANION_UPGRADE_COST_BY_LEVEL = {1: 300, 2: 800, 3: 1600, 4: 3000}
+COMPANION_MAINTENANCE_CAP_BONUS_HOURS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10665,13 +10671,15 @@ def ensure_schema(db):
     )
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS drone_masters (
+        CREATE TABLE IF NOT EXISTS companion_robot_masters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            drone_key TEXT UNIQUE NOT NULL,
+            companion_key TEXT UNIQUE NOT NULL,
             name_ja TEXT NOT NULL,
             description TEXT,
             effect_type TEXT NOT NULL,
             base_effect_value INTEGER NOT NULL DEFAULT 0,
+            source_type TEXT NOT NULL DEFAULT 'default',
+            source_id INTEGER,
             image_path TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             sort_order INTEGER NOT NULL DEFAULT 0,
@@ -10682,16 +10690,16 @@ def ensure_schema(db):
     )
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS user_drones (
+        CREATE TABLE IF NOT EXISTS user_companion_robots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            drone_key TEXT NOT NULL,
+            companion_key TEXT NOT NULL,
             level INTEGER NOT NULL DEFAULT 1,
             unlocked_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            UNIQUE(user_id, drone_key),
+            UNIQUE(user_id, companion_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (drone_key) REFERENCES drone_masters(drone_key)
+            FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key)
         )
         """
     )
@@ -10810,8 +10818,13 @@ def ensure_schema(db):
     for column_name in FACTORY_COSMETIC_EQUIP_COLUMNS.values():
         if column_name not in cols:
             db.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
-    if "active_drone_key" not in cols:
-        db.execute("ALTER TABLE users ADD COLUMN active_drone_key TEXT")
+    if "active_companion_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN active_companion_key TEXT")
+    companion_master_cols = {row["name"] for row in db.execute("PRAGMA table_info(companion_robot_masters)").fetchall()}
+    if "source_type" not in companion_master_cols:
+        db.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_type TEXT NOT NULL DEFAULT 'default'")
+    if "source_id" not in companion_master_cols:
+        db.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_id INTEGER")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -13538,8 +13551,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_drone_masters_active_sort ON drone_masters(is_active, sort_order)")
-    db.execute("CREATE INDEX IF NOT EXISTS idx_user_drones_user ON user_drones(user_id, updated_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_companion_robot_masters_active_sort ON companion_robot_masters(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -16013,92 +16026,114 @@ def equip_factory_cosmetic(db, user_id, cosmetic_key, *, request_id=None, ip=Non
     return {"ok": True, "cosmetic_key": key, "cosmetic_type": ctype, "name_ja": row["name_ja"]}
 
 
-def _drone_def(drone_key):
-    key = str(drone_key or "").strip()
-    return next((item for item in DRONE_DEFS if item["drone_key"] == key), None)
+def _companion_def(companion_key):
+    key = str(companion_key or "").strip()
+    return next((item for item in COMPANION_DEFS if item["companion_key"] == key), None)
 
 
-def _drone_upgrade_cost(level):
-    return int(DRONE_UPGRADE_COST_BY_LEVEL.get(int(level or 0), 0) or 0)
+def _companion_upgrade_cost(level):
+    return int(COMPANION_UPGRADE_COST_BY_LEVEL.get(int(level or 0), 0) or 0)
 
 
-def _drone_collector_bonus_percent(level):
-    return max(1, min(int(level or 1), DRONE_MAX_LEVEL))
+def _companion_collector_bonus_percent(level):
+    return max(1, min(int(level or 1), COMPANION_MAX_LEVEL))
 
 
-def _drone_maintenance_bonus_hours(level):
-    return int(DRONE_MAINTENANCE_CAP_BONUS_HOURS.get(max(1, min(int(level or 1), DRONE_MAX_LEVEL)), 0) or 0)
+def _companion_maintenance_bonus_hours(level):
+    return int(COMPANION_MAINTENANCE_CAP_BONUS_HOURS.get(max(1, min(int(level or 1), COMPANION_MAX_LEVEL)), 0) or 0)
 
 
-def _drone_effect_label(effect_type, level):
-    lvl = max(1, min(int(level or 1), DRONE_MAX_LEVEL))
+def _companion_effect_label(effect_type, level):
+    lvl = max(1, min(int(level or 1), COMPANION_MAX_LEVEL))
     if effect_type == "factory_claim_bonus":
-        return f"工場回収 +{_drone_collector_bonus_percent(lvl)}%"
-    if effect_type == "factory_storage_bonus":
-        return f"工場蓄積上限 +{_drone_maintenance_bonus_hours(lvl)}時間"
-    if effect_type == "scout_note":
+        return f"工場回収 +{_companion_collector_bonus_percent(lvl)}%"
+    if effect_type == "factory_cap_bonus":
+        return f"工場蓄積上限 +{_companion_maintenance_bonus_hours(lvl)}時間"
+    if effect_type == "scout_log":
         return "出撃後の個人ログに偵察メモが出ることがあります"
     return "戦闘ステータスには影響しません"
 
 
-def ensure_drones(db, user_id=None, *, request_id=None, ip=None):
+def _companion_source_is_available(db, row):
+    if not row:
+        return False
+    source_type = str(row["source_type"] or "default").strip()
+    if source_type in ("default", "lab_pet"):
+        return True
+    if source_type == "lab_submission":
+        source_id = int(row["source_id"] or 0)
+        if source_id <= 0:
+            return False
+        approved = db.execute(
+            "SELECT id FROM lab_robot_submissions WHERE id = ? AND status = 'approved' LIMIT 1",
+            (source_id,),
+        ).fetchone()
+        return bool(approved)
+    return False
+
+
+def ensure_companions(db, user_id=None, *, request_id=None, ip=None):
     now_ts = int(time.time())
     existing_keys = {
-        row["drone_key"]
-        for row in db.execute("SELECT drone_key FROM drone_masters").fetchall()
+        row["companion_key"]
+        for row in db.execute("SELECT companion_key FROM companion_robot_masters").fetchall()
     }
     created = []
-    for item in DRONE_DEFS:
+    for item in COMPANION_DEFS:
         db.execute(
             """
-            INSERT INTO drone_masters (
-                drone_key, name_ja, description, effect_type, base_effect_value,
-                image_path, is_active, sort_order, created_at, updated_at
+            INSERT INTO companion_robot_masters (
+                companion_key, name_ja, description, effect_type, base_effect_value,
+                source_type, source_id, image_path, is_active, sort_order, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-            ON CONFLICT(drone_key) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(companion_key) DO UPDATE SET
                 name_ja = excluded.name_ja,
                 description = excluded.description,
                 effect_type = excluded.effect_type,
                 base_effect_value = excluded.base_effect_value,
+                source_type = excluded.source_type,
+                source_id = excluded.source_id,
                 image_path = excluded.image_path,
                 sort_order = excluded.sort_order,
                 updated_at = excluded.updated_at
             """,
             (
-                item["drone_key"],
+                item["companion_key"],
                 item["name_ja"],
                 item["description"],
                 item["effect_type"],
                 int(item["base_effect_value"]),
+                item["source_type"],
+                item["source_id"],
                 item["image_path"],
                 int(item["sort_order"]),
                 now_ts,
                 now_ts,
             ),
         )
-        if item["drone_key"] not in existing_keys:
-            created.append(item["drone_key"])
+        if item["companion_key"] not in existing_keys:
+            created.append(item["companion_key"])
 
     unlocked = []
     uid = int(user_id or 0)
     if uid > 0:
-        for item in DRONE_DEFS:
+        for item in COMPANION_DEFS:
             cur = db.execute(
                 """
-                INSERT OR IGNORE INTO user_drones (user_id, drone_key, level, unlocked_at, updated_at)
+                INSERT OR IGNORE INTO user_companion_robots (user_id, companion_key, level, unlocked_at, updated_at)
                 VALUES (?, ?, 1, ?, ?)
                 """,
-                (uid, item["drone_key"], now_ts, now_ts),
+                (uid, item["companion_key"], now_ts, now_ts),
             )
             if int(cur.rowcount or 0) > 0:
-                unlocked.append(item["drone_key"])
-        default_key = DRONE_DEFS[0]["drone_key"] if DRONE_DEFS else None
+                unlocked.append(item["companion_key"])
+        default_key = "collector_petbot"
         if default_key:
             db.execute(
                 """
                 UPDATE users
-                SET active_drone_key = COALESCE(NULLIF(active_drone_key, ''), ?)
+                SET active_companion_key = COALESCE(NULLIF(active_companion_key, ''), ?)
                 WHERE id = ?
                 """,
                 (default_key, uid),
@@ -16107,173 +16142,190 @@ def ensure_drones(db, user_id=None, *, request_id=None, ip=None):
     if created or unlocked:
         audit_log(
             db,
-            AUDIT_EVENT_TYPES["DRONE_ENSURE_DEFAULTS"],
+            AUDIT_EVENT_TYPES["COMPANION_ENSURE_DEFAULTS"],
             user_id=uid if uid > 0 else None,
             request_id=request_id,
-            action_key="drone_ensure_defaults",
-            entity_type="drone",
+            action_key="companion_ensure_defaults",
+            entity_type="companion_robot",
             delta_count=len(created) + len(unlocked),
-            payload={"created_drones": created, "unlocked_defaults": unlocked},
+            payload={"created_companions": created, "unlocked_defaults": unlocked},
             ip=ip,
         )
     if unlocked and uid > 0:
         audit_log(
             db,
-            AUDIT_EVENT_TYPES["DRONE_UNLOCK"],
+            AUDIT_EVENT_TYPES["COMPANION_UNLOCK"],
             user_id=uid,
             request_id=request_id,
-            action_key="drone_unlock_default",
-            entity_type="drone",
+            action_key="companion_unlock_default",
+            entity_type="companion_robot",
             delta_count=len(unlocked),
-            payload={"user_id": uid, "unlocked_drones": unlocked, "source": "default"},
+            payload={"user_id": uid, "unlocked_companions": unlocked, "source": "default"},
             ip=ip,
         )
     return {"created_count": len(created), "unlocked_count": len(unlocked)}
 
 
-def get_active_drone(db, user_id, *, ensure=True):
+def get_active_companion(db, user_id, *, ensure=True):
     uid = int(user_id)
     if ensure:
-        ensure_drones(db, uid)
+        ensure_companions(db, uid)
     row = db.execute(
         """
         SELECT dm.*, ud.level
         FROM users u
-        JOIN user_drones ud
+        JOIN user_companion_robots ud
           ON ud.user_id = u.id
-         AND ud.drone_key = u.active_drone_key
-        JOIN drone_masters dm
-          ON dm.drone_key = ud.drone_key
+         AND ud.companion_key = u.active_companion_key
+        JOIN companion_robot_masters dm
+          ON dm.companion_key = ud.companion_key
         WHERE u.id = ?
           AND dm.is_active = 1
         LIMIT 1
         """,
         (uid,),
     ).fetchone()
-    if not row:
+    if not row or not _companion_source_is_available(db, row):
         return None
-    level = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
+    level = max(1, min(int(row["level"] or 1), COMPANION_MAX_LEVEL))
     return {
-        "drone_key": row["drone_key"],
+        "companion_key": row["companion_key"],
         "name_ja": row["name_ja"],
         "description": row["description"] or "",
         "effect_type": row["effect_type"],
+        "source_type": row["source_type"] or "default",
+        "source_id": int(row["source_id"] or 0) if row["source_id"] else None,
+        "image_path": row["image_path"] or "",
         "level": level,
-        "effect_label": _drone_effect_label(row["effect_type"], level),
+        "effect_label": _companion_effect_label(row["effect_type"], level),
     }
 
 
-def get_drone_view(db, user_id, *, ensure=True):
+def get_companion_view(db, user_id, *, ensure=True):
     uid = int(user_id)
     if ensure:
-        ensure_drones(db, uid)
-    user = db.execute("SELECT factory_points, active_drone_key FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
+        ensure_companions(db, uid)
+    user = db.execute("SELECT factory_points, active_companion_key FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
     factory_points = int(user["factory_points"] or 0) if user else 0
-    active_key = str((user["active_drone_key"] if user else "") or "")
+    active_key = str((user["active_companion_key"] if user else "") or "")
     rows = db.execute(
         """
         SELECT dm.*,
                ud.level,
                CASE WHEN ud.id IS NULL THEN 0 ELSE 1 END AS is_owned
-        FROM drone_masters dm
-        LEFT JOIN user_drones ud
-          ON ud.drone_key = dm.drone_key
+        FROM companion_robot_masters dm
+        LEFT JOIN user_companion_robots ud
+          ON ud.companion_key = dm.companion_key
          AND ud.user_id = ?
         WHERE dm.is_active = 1
         ORDER BY dm.sort_order ASC, dm.id ASC
         """,
         (uid,),
     ).fetchall()
-    drones = []
+    companions = []
     for row in rows:
-        level = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
-        next_level = level + 1 if level < DRONE_MAX_LEVEL else None
-        upgrade_cost = _drone_upgrade_cost(level)
+        if not _companion_source_is_available(db, row):
+            continue
+        level = max(1, min(int(row["level"] or 1), COMPANION_MAX_LEVEL))
+        next_level = level + 1 if level < COMPANION_MAX_LEVEL else None
+        upgrade_cost = _companion_upgrade_cost(level)
         is_owned = bool(int(row["is_owned"] or 0))
-        drones.append(
+        companions.append(
             {
-                "drone_key": row["drone_key"],
+                "companion_key": row["companion_key"],
                 "name_ja": row["name_ja"],
                 "description": row["description"] or "",
                 "effect_type": row["effect_type"],
+                "source_type": row["source_type"] or "default",
+                "source_id": int(row["source_id"] or 0) if row["source_id"] else None,
+                "image_path": row["image_path"] or "",
                 "level": level,
                 "is_owned": is_owned,
-                "is_selected": str(row["drone_key"]) == active_key,
-                "effect_label": _drone_effect_label(row["effect_type"], level),
-                "next_effect_label": _drone_effect_label(row["effect_type"], next_level) if next_level else "",
+                "is_selected": str(row["companion_key"]) == active_key,
+                "effect_label": _companion_effect_label(row["effect_type"], level),
+                "next_effect_label": _companion_effect_label(row["effect_type"], next_level) if next_level else "",
                 "upgrade_cost": upgrade_cost,
                 "can_upgrade": bool(is_owned and next_level and factory_points >= upgrade_cost),
-                "is_max_level": level >= DRONE_MAX_LEVEL,
+                "is_max_level": level >= COMPANION_MAX_LEVEL,
             }
         )
-    active = next((item for item in drones if item["is_selected"]), None)
-    return {"factory_points": factory_points, "active_drone": active, "drones": drones}
+    active = next((item for item in companions if item["is_selected"]), None)
+    return {"factory_points": factory_points, "active_companion": active, "companions": companions}
 
 
-def equip_drone(db, user_id, drone_key, *, request_id=None, ip=None):
+def equip_companion(db, user_id, companion_key, *, request_id=None, ip=None):
     uid = int(user_id)
-    key = str(drone_key or "").strip()
+    key = str(companion_key or "").strip()
     if not key:
-        return {"ok": False, "reason": "ドローンの指定が不正です。"}
-    ensure_drones(db, uid, request_id=request_id, ip=ip)
+        return {"ok": False, "reason": "相棒ロボの指定が不正です。"}
+    ensure_companions(db, uid, request_id=request_id, ip=ip)
     row = db.execute(
         """
         SELECT dm.*
-        FROM drone_masters dm
-        JOIN user_drones ud
-          ON ud.drone_key = dm.drone_key
+        FROM companion_robot_masters dm
+        JOIN user_companion_robots ud
+          ON ud.companion_key = dm.companion_key
          AND ud.user_id = ?
-        WHERE dm.drone_key = ?
+        WHERE dm.companion_key = ?
           AND dm.is_active = 1
         LIMIT 1
         """,
         (uid, key),
     ).fetchone()
-    if not row:
-        return {"ok": False, "reason": "未所持、または利用できないドローンです。"}
-    before = db.execute("SELECT active_drone_key FROM users WHERE id = ?", (uid,)).fetchone()
-    before_key = str((before["active_drone_key"] if before else "") or "")
-    db.execute("UPDATE users SET active_drone_key = ? WHERE id = ?", (key, uid))
+    if not row or not _companion_source_is_available(db, row):
+        return {"ok": False, "reason": "未所持、または利用できない相棒ロボです。"}
+    before = db.execute("SELECT active_companion_key FROM users WHERE id = ?", (uid,)).fetchone()
+    before_key = str((before["active_companion_key"] if before else "") or "")
+    db.execute("UPDATE users SET active_companion_key = ? WHERE id = ?", (key, uid))
     audit_log(
         db,
-        AUDIT_EVENT_TYPES["DRONE_EQUIP"],
+        AUDIT_EVENT_TYPES["COMPANION_EQUIP"],
         user_id=uid,
         request_id=request_id,
-        action_key="drone_equip",
-        entity_type="drone",
+        action_key="companion_equip",
+        entity_type="companion_robot",
         entity_id=int(row["id"]),
-        payload={"user_id": uid, "drone_key": key, "before_key": before_key, "after_key": key},
+        payload={
+            "user_id": uid,
+            "companion_key": key,
+            "source_type": row["source_type"] or "default",
+            "source_id": int(row["source_id"] or 0) if row["source_id"] else None,
+            "effect_type": row["effect_type"],
+            "active_companion_key": key,
+            "before_key": before_key,
+            "after_key": key,
+        },
         ip=ip,
     )
     db.commit()
-    return {"ok": True, "drone_key": key, "name_ja": row["name_ja"]}
+    return {"ok": True, "companion_key": key, "name_ja": row["name_ja"]}
 
 
-def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
+def upgrade_companion(db, user_id, companion_key, *, request_id=None, ip=None):
     uid = int(user_id)
-    key = str(drone_key or "").strip()
+    key = str(companion_key or "").strip()
     if not key:
-        return {"ok": False, "reason": "ドローンの指定が不正です。"}
-    ensure_drones(db, uid, request_id=request_id, ip=ip)
+        return {"ok": False, "reason": "相棒ロボの指定が不正です。"}
+    ensure_companions(db, uid, request_id=request_id, ip=ip)
     row = db.execute(
         """
-        SELECT dm.*, ud.id AS user_drone_id, ud.level
-        FROM drone_masters dm
-        JOIN user_drones ud
-          ON ud.drone_key = dm.drone_key
+        SELECT dm.*, ud.id AS user_companion_id, ud.level
+        FROM companion_robot_masters dm
+        JOIN user_companion_robots ud
+          ON ud.companion_key = dm.companion_key
          AND ud.user_id = ?
-        WHERE dm.drone_key = ?
+        WHERE dm.companion_key = ?
           AND dm.is_active = 1
         LIMIT 1
         """,
         (uid, key),
     ).fetchone()
-    if not row:
-        return {"ok": False, "reason": "未所持、または利用できないドローンです。"}
-    level_before = max(1, min(int(row["level"] or 1), DRONE_MAX_LEVEL))
-    if level_before >= DRONE_MAX_LEVEL:
-        return {"ok": False, "reason": "このドローンは最大Lvです。"}
-    cost = _drone_upgrade_cost(level_before)
+    if not row or not _companion_source_is_available(db, row):
+        return {"ok": False, "reason": "未所持、または利用できない相棒ロボです。"}
+    level_before = max(1, min(int(row["level"] or 1), COMPANION_MAX_LEVEL))
+    if level_before >= COMPANION_MAX_LEVEL:
+        return {"ok": False, "reason": "この相棒ロボは最大Lvです。"}
+    cost = _companion_upgrade_cost(level_before)
     user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
     points_before = int(user["factory_points"] or 0) if user else 0
     if points_before < cost:
@@ -16283,11 +16335,11 @@ def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
     points_after = points_before - cost
     cur = db.execute(
         """
-        UPDATE user_drones
+        UPDATE user_companion_robots
         SET level = ?, updated_at = ?
         WHERE id = ? AND user_id = ? AND level = ?
         """,
-        (level_after, now_ts, int(row["user_drone_id"]), uid, level_before),
+        (level_after, now_ts, int(row["user_companion_id"]), uid, level_before),
     )
     if int(cur.rowcount or 0) != 1:
         db.rollback()
@@ -16295,7 +16347,11 @@ def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
     db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (points_after, uid))
     payload = {
         "user_id": uid,
-        "drone_key": key,
+        "companion_key": key,
+        "source_type": row["source_type"] or "default",
+        "source_id": int(row["source_id"] or 0) if row["source_id"] else None,
+        "effect_type": row["effect_type"],
+        "active_companion_key": key,
         "level_before": level_before,
         "level_after": level_after,
         "cost_points": cost,
@@ -16304,11 +16360,11 @@ def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
     }
     audit_log(
         db,
-        AUDIT_EVENT_TYPES["DRONE_UPGRADE"],
+        AUDIT_EVENT_TYPES["COMPANION_UPGRADE"],
         user_id=uid,
         request_id=request_id,
-        action_key="drone_upgrade",
-        entity_type="drone",
+        action_key="companion_upgrade",
+        entity_type="companion_robot",
         entity_id=int(row["id"]),
         delta_count=-cost,
         payload=payload,
@@ -16319,28 +16375,28 @@ def upgrade_drone(db, user_id, drone_key, *, request_id=None, ip=None):
         AUDIT_EVENT_TYPES["FACTORY_POINTS_DELTA"],
         user_id=uid,
         request_id=request_id,
-        action_key="drone_upgrade",
-        entity_type="drone",
+        action_key="companion_upgrade",
+        entity_type="companion_robot",
         entity_id=int(row["id"]),
         delta_count=-cost,
-        payload={**payload, "source": "drone_upgrade"},
+        payload={**payload, "source": "companion_upgrade"},
         ip=ip,
     )
     db.commit()
-    return {"ok": True, "drone_key": key, "name_ja": row["name_ja"], "level_after": level_after, "factory_points_after": points_after}
+    return {"ok": True, "companion_key": key, "name_ja": row["name_ja"], "level_after": level_after, "factory_points_after": points_after}
 
 
 def _factory_storage_cap_hours_for_user(db, user_id):
-    active = get_active_drone(db, user_id, ensure=False)
-    if active and active["effect_type"] == "factory_storage_bonus":
-        return int(FACTORY_STORAGE_CAP_HOURS) + _drone_maintenance_bonus_hours(active["level"])
+    active = get_active_companion(db, user_id, ensure=False)
+    if active and active["effect_type"] == "factory_cap_bonus":
+        return int(FACTORY_STORAGE_CAP_HOURS) + _companion_maintenance_bonus_hours(active["level"])
     return int(FACTORY_STORAGE_CAP_HOURS)
 
 
 def _factory_collector_bonus_percent_for_user(db, user_id):
-    active = get_active_drone(db, user_id, ensure=False)
+    active = get_active_companion(db, user_id, ensure=False)
     if active and active["effect_type"] == "factory_claim_bonus":
-        return _drone_collector_bonus_percent(active["level"])
+        return _companion_collector_bonus_percent(active["level"])
     return 0
 
 
@@ -16615,7 +16671,7 @@ def get_user_factory_view(db, user_id, *, now_ts=None, ensure=True):
     uid = int(user_id)
     if ensure:
         ensure_user_factory_facilities(db, uid)
-        ensure_drones(db, uid)
+        ensure_companions(db, uid)
     current_ts = int(now_ts or time.time())
     storage_cap_hours = _factory_storage_cap_hours_for_user(db, uid)
     collector_bonus_percent = _factory_collector_bonus_percent_for_user(db, uid)
@@ -16680,7 +16736,7 @@ def claim_factory_facility_points(db, user_id, facility_key, *, request_id=None,
     if not _factory_facility_def(key):
         return {"ok": False, "reason": "工場施設の指定が不正です。"}
     ensure_user_factory_facilities(db, uid, request_id=request_id, ip=ip)
-    ensure_drones(db, uid, request_id=request_id, ip=ip)
+    ensure_companions(db, uid, request_id=request_id, ip=ip)
     now_ts = int(time.time())
     row = db.execute(
         "SELECT * FROM user_factory_facilities WHERE user_id = ? AND facility_key = ? LIMIT 1",
@@ -37951,7 +38007,7 @@ def factory():
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
-    ensure_drones(
+    ensure_companions(
         db,
         user_id,
         request_id=getattr(g, "request_id", None),
@@ -38152,16 +38208,16 @@ def factory_customize_equip():
     return redirect(url_for("factory_customize"))
 
 
-@app.route("/drone")
+@app.route("/companion")
 @login_required
-def drone_lab():
+def companion_lab():
     db = get_db()
     user_id = int(session["user_id"])
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if not user:
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
-    ensure_drones(
+    ensure_companions(
         db,
         user_id,
         request_id=getattr(g, "request_id", None),
@@ -38169,54 +38225,54 @@ def drone_lab():
     )
     db.commit()
     return render_template(
-        "drone.html",
+        "companion.html",
         user=user,
         message=session.pop("message", None),
-        drone_view=get_drone_view(db, user_id, ensure=False),
-        max_level=DRONE_MAX_LEVEL,
+        companion_view=get_companion_view(db, user_id, ensure=False),
+        max_level=COMPANION_MAX_LEVEL,
     )
 
 
-@app.route("/drone/equip", methods=["POST"])
+@app.route("/companion/equip", methods=["POST"])
 @login_required
-def drone_equip():
+def companion_equip():
     db = get_db()
     user_id = int(session["user_id"])
-    drone_key = (request.form.get("drone_key") or "").strip()
-    result = equip_drone(
+    companion_key = (request.form.get("companion_key") or "").strip()
+    result = equip_companion(
         db,
         user_id,
-        drone_key,
+        companion_key,
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
     if result.get("ok"):
-        session["message"] = f"{result.get('name_ja') or 'ドローン'}を選択しました。"
+        session["message"] = f"{result.get('name_ja') or '相棒ロボ'}を選択しました。"
     else:
         db.rollback()
         session["message"] = result.get("reason") or "選択できませんでした。"
-    return redirect(url_for("drone_lab"))
+    return redirect(url_for("companion_lab"))
 
 
-@app.route("/drone/upgrade", methods=["POST"])
+@app.route("/companion/upgrade", methods=["POST"])
 @login_required
-def drone_upgrade():
+def companion_upgrade():
     db = get_db()
     user_id = int(session["user_id"])
-    drone_key = (request.form.get("drone_key") or "").strip()
-    result = upgrade_drone(
+    companion_key = (request.form.get("companion_key") or "").strip()
+    result = upgrade_companion(
         db,
         user_id,
-        drone_key,
+        companion_key,
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
     if result.get("ok"):
-        session["message"] = f"{result.get('name_ja') or 'ドローン'}をLv{int(result.get('level_after') or 0)}に強化しました。"
+        session["message"] = f"{result.get('name_ja') or '相棒ロボ'}をLv{int(result.get('level_after') or 0)}に強化しました。"
     else:
         db.rollback()
         session["message"] = result.get("reason") or "強化できませんでした。"
-    return redirect(url_for("drone_lab"))
+    return redirect(url_for("companion_lab"))
 
 
 @app.route("/admin/tower")
@@ -38782,7 +38838,7 @@ def home():
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
     factory_research_home_summary = factory_research_summary(db)
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
-    drone_home_summary = get_active_drone(db, int(user["id"]))
+    companion_home_summary = get_active_companion(db, int(user["id"]))
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -38958,7 +39014,7 @@ def home():
             factory_home_summary=factory_home_summary,
             factory_research_home_summary=factory_research_home_summary,
             factory_base_home=factory_base_home,
-            drone_home_summary=drone_home_summary,
+            companion_home_summary=companion_home_summary,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,

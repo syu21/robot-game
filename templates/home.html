@@ -1128,9 +1128,9 @@
           <div class="action-title">ロボ工場</div>
           <div class="action-desc">{% if factory_home_summary and factory_home_summary['has_claimable'] %}回収できます: {{ factory_home_summary['total_pending_points'] }}pt{% else %}資源を回収する{% endif %}</div>
         </a>
-        <a class="action-card" href="{{ url_for('drone_lab') }}">
-          <div class="action-title">ドローン研究所</div>
-          <div class="action-desc">{% if drone_home_summary %}選択中: {{ drone_home_summary['name_ja'] }} Lv{{ drone_home_summary['level'] }}<br>{{ drone_home_summary['effect_label'] }}{% else %}小さな相棒を育てる{% endif %}</div>
+        <a class="action-card" href="{{ url_for('companion_lab') }}">
+          <div class="action-title">相棒ロボ研究所</div>
+          <div class="action-desc">{% if companion_home_summary %}選択中: {{ companion_home_summary['name_ja'] }} Lv{{ companion_home_summary['level'] }}<br>{{ companion_home_summary['effect_label'] }}{% else %}小さな相棒を育てる{% endif %}</div>
         </a>
         <a class="action-card" href="{{ url_for('factory_research') }}">
           <div class="action-title">世界研究</div>

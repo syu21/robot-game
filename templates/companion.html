@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>相棒ロボ研究所</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="stat-label">現在の工場ポイント</div>
+    <div class="stat-value">{{ companion_view['factory_points'] }}pt</div>
+    {% if companion_view['active_companion'] %}
+    <div class="robot-time">選択中: {{ companion_view['active_companion']['name_ja'] }} Lv{{ companion_view['active_companion']['level'] }}</div>
+    <div class="upgrade-cost">{{ companion_view['active_companion']['effect_label'] }}</div>
+    {% else %}
+    <div class="robot-time">選択中の相棒ロボはありません。</div>
+    {% endif %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ</a></p>
+  </div>
+
+  <div class="module-card-grid">
+    {% for companion in companion_view['companions'] %}
+    <div class="module-card {% if companion['is_selected'] %}is-highlight{% endif %}">
+      <div class="module-card-title">{{ companion['name_ja'] }} Lv{{ companion['level'] }}</div>
+      {% if companion['image_path'] %}
+      <img class="robot-img" src="{{ url_for('static', filename=companion['image_path']) }}" alt="{{ companion['name_ja'] }}">
+      {% endif %}
+      <div class="robot-time">{{ companion['description'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">{{ companion['effect_label'] }}</span>
+        {% if companion['is_selected'] %}
+        <span class="module-badge ok">選択中</span>
+        {% endif %}
+      </div>
+
+      <form method="post" action="{{ url_for('companion_equip') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="companion_key" value="{{ companion['companion_key'] }}" />
+        <button type="submit" {% if companion['is_selected'] or not companion['is_owned'] %}disabled{% endif %}>選択する</button>
+      </form>
+
+      {% if companion['is_max_level'] %}
+      <div class="robot-time">最大Lvです。</div>
+      <button type="button" class="btn-secondary" disabled>LvMAX</button>
+      {% else %}
+      <div class="robot-time">次Lv: {{ companion['next_effect_label'] }}</div>
+      <form method="post" action="{{ url_for('companion_upgrade') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="companion_key" value="{{ companion['companion_key'] }}" />
+        <button type="submit" class="btn-secondary" {% if not companion['can_upgrade'] %}disabled{% endif %}>強化する {{ companion['upgrade_cost'] }}pt</button>
+      </form>
+      {% if companion_view['factory_points'] < companion['upgrade_cost'] %}
+      <div class="robot-time">ポイント不足: 所持 {{ companion_view['factory_points'] }}pt</div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
+</div>
+{% endblock %}

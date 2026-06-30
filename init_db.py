@@ -789,7 +789,7 @@ def main():
             equipped_factory_floor TEXT,
             equipped_factory_facility TEXT,
             equipped_factory_decoration TEXT,
-            active_drone_key TEXT,
+            active_companion_key TEXT,
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
@@ -916,13 +916,15 @@ def main():
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS drone_masters (
+        CREATE TABLE IF NOT EXISTS companion_robot_masters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            drone_key TEXT UNIQUE NOT NULL,
+            companion_key TEXT UNIQUE NOT NULL,
             name_ja TEXT NOT NULL,
             description TEXT,
             effect_type TEXT NOT NULL,
             base_effect_value INTEGER NOT NULL DEFAULT 0,
+            source_type TEXT NOT NULL DEFAULT 'default',
+            source_id INTEGER,
             image_path TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             sort_order INTEGER NOT NULL DEFAULT 0,
@@ -933,16 +935,16 @@ def main():
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS user_drones (
+        CREATE TABLE IF NOT EXISTS user_companion_robots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            drone_key TEXT NOT NULL,
+            companion_key TEXT NOT NULL,
             level INTEGER NOT NULL DEFAULT 1,
             unlocked_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            UNIQUE(user_id, drone_key),
+            UNIQUE(user_id, companion_key),
             FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (drone_key) REFERENCES drone_masters(drone_key)
+            FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key)
         )
         """
     )
@@ -3019,8 +3021,13 @@ def main():
     ):
         if column_name not in users_cols:
             cur.execute(f"ALTER TABLE users ADD COLUMN {column_name} TEXT")
-    if "active_drone_key" not in users_cols:
-        cur.execute("ALTER TABLE users ADD COLUMN active_drone_key TEXT")
+    if "active_companion_key" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN active_companion_key TEXT")
+    companion_master_cols = {row[1] for row in cur.execute("PRAGMA table_info(companion_robot_masters)").fetchall()}
+    if "source_type" not in companion_master_cols:
+        cur.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_type TEXT NOT NULL DEFAULT 'default'")
+    if "source_id" not in companion_master_cols:
+        cur.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_id INTEGER")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -3653,8 +3660,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_cosmetics_user ON user_factory_cosmetics(user_id, unlocked_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_drone_masters_active_sort ON drone_masters(is_active, sort_order)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_drones_user ON user_drones(user_id, updated_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_robot_masters_active_sort ON companion_robot_masters(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
