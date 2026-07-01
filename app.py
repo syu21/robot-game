@@ -478,6 +478,49 @@ COMPANION_DEFS = (
 COMPANION_MAX_LEVEL = 5
 COMPANION_UPGRADE_COST_BY_LEVEL = {1: 300, 2: 800, 3: 1600, 4: 3000}
 COMPANION_MAINTENANCE_CAP_BONUS_HOURS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3}
+COMPANION_DISPATCH_EVENT_DEFS = {
+    "none": {
+        "event_type": "none",
+        "label": "通常帰還",
+        "message": "通常報酬のみを持ち帰りました。",
+        "bonus_percent": 0,
+    },
+    "great_success": {
+        "event_type": "great_success",
+        "label": "大成功！",
+        "message": "相棒ロボが貴重な資源を発見しました！",
+        "bonus_percent": 100,
+    },
+    "scrap_found": {
+        "event_type": "scrap_found",
+        "label": "スクラップ発見",
+        "message": "相棒ロボが使えるスクラップを見つけました。",
+        "bonus_percent": 20,
+    },
+    "rare_photo": {
+        "event_type": "rare_photo",
+        "label": "珍しい写真",
+        "message": "相棒ロボが珍しい風景を撮影しました。",
+        "bonus_percent": 0,
+    },
+}
+COMPANION_DISPATCH_JOURNALS = (
+    ("old_hangar", "古い格納庫を調査しました。"),
+    ("parts_yard", "部品置き場を巡回しました。"),
+    ("lab_clear", "研究所周辺は今日も異常ありません。"),
+    ("wild_tracks", "野生ロボの足跡を発見しました。"),
+    ("rust_bridge", "錆びた連絡橋の安全を確認しました。"),
+    ("quiet_factory", "静かな廃工場で資源反応を記録しました。"),
+    ("signal_noise", "遠くの通信ノイズを観測しました。"),
+    ("scrap_marker", "スクラップ山に目印を残しました。"),
+    ("coolant_pipe", "冷却パイプの漏れを見つけました。"),
+    ("battery_case", "古いバッテリーケースを調べました。"),
+    ("roof_patrol", "研究所の屋上を巡回しました。"),
+    ("gate_check", "基地ゲートの周辺を確認しました。"),
+    ("tiny_signal", "小さな救難信号の残響を拾いました。"),
+    ("dust_map", "粉じんの流れから地形を記録しました。"),
+    ("night_lights", "夜間灯の下で周辺データを集めました。"),
+)
 COMPANION_DISPATCH_DEFS = (
     {
         "dispatch_key": "short_patrol",
@@ -10724,6 +10767,9 @@ def ensure_schema(db):
             user_id INTEGER NOT NULL,
             companion_key TEXT NOT NULL,
             level INTEGER NOT NULL DEFAULT 1,
+            experience INTEGER NOT NULL DEFAULT 0,
+            dispatch_count INTEGER NOT NULL DEFAULT 0,
+            factory_points_collected INTEGER NOT NULL DEFAULT 0,
             unlocked_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             UNIQUE(user_id, companion_key),
@@ -10758,6 +10804,13 @@ def ensure_schema(db):
             dispatch_key TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            base_reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            event_type TEXT NOT NULL DEFAULT 'none',
+            event_label TEXT,
+            event_message TEXT,
+            event_bonus_points INTEGER NOT NULL DEFAULT 0,
+            journal_key TEXT,
+            journal_text TEXT,
             started_at INTEGER NOT NULL,
             completes_at INTEGER NOT NULL,
             claimed_at INTEGER,
@@ -10904,6 +10957,28 @@ def ensure_schema(db):
         db.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_type TEXT NOT NULL DEFAULT 'default'")
     if "source_id" not in companion_master_cols:
         db.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_id INTEGER")
+    user_companion_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_companion_robots)").fetchall()}
+    if "experience" not in user_companion_cols:
+        db.execute("ALTER TABLE user_companion_robots ADD COLUMN experience INTEGER NOT NULL DEFAULT 0")
+    if "dispatch_count" not in user_companion_cols:
+        db.execute("ALTER TABLE user_companion_robots ADD COLUMN dispatch_count INTEGER NOT NULL DEFAULT 0")
+    if "factory_points_collected" not in user_companion_cols:
+        db.execute("ALTER TABLE user_companion_robots ADD COLUMN factory_points_collected INTEGER NOT NULL DEFAULT 0")
+    companion_dispatch_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_companion_dispatches)").fetchall()}
+    if "base_reward_factory_points" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN base_reward_factory_points INTEGER NOT NULL DEFAULT 0")
+    if "event_type" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_type TEXT NOT NULL DEFAULT 'none'")
+    if "event_label" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_label TEXT")
+    if "event_message" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_message TEXT")
+    if "event_bonus_points" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_bonus_points INTEGER NOT NULL DEFAULT 0")
+    if "journal_key" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
+    if "journal_text" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_text TEXT")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -16304,7 +16379,7 @@ def get_companion_view(db, user_id, *, ensure=True):
     rows = db.execute(
         """
         SELECT dm.*,
-               ud.level,
+               ud.level, ud.experience, ud.dispatch_count, ud.factory_points_collected,
                CASE WHEN ud.id IS NULL THEN 0 ELSE 1 END AS is_owned
         FROM companion_robot_masters dm
         LEFT JOIN user_companion_robots ud
@@ -16333,6 +16408,9 @@ def get_companion_view(db, user_id, *, ensure=True):
                 "source_id": int(row["source_id"] or 0) if row["source_id"] else None,
                 "image_path": row["image_path"] or "",
                 "level": level,
+                "experience": int(row["experience"] or 0) if "experience" in row.keys() else 0,
+                "dispatch_count": int(row["dispatch_count"] or 0) if "dispatch_count" in row.keys() else 0,
+                "factory_points_collected": int(row["factory_points_collected"] or 0) if "factory_points_collected" in row.keys() else 0,
                 "is_owned": is_owned,
                 "is_selected": str(row["companion_key"]) == active_key,
                 "effect_label": _companion_effect_label(row["effect_type"], level),
@@ -16343,7 +16421,32 @@ def get_companion_view(db, user_id, *, ensure=True):
             }
         )
     active = next((item for item in companions if item["is_selected"]), None)
-    return {"factory_points": factory_points, "active_companion": active, "companions": companions}
+    totals = db.execute(
+        """
+        SELECT
+            COALESCE(SUM(dispatch_count), 0) AS dispatch_count,
+            COALESCE(SUM(factory_points_collected), 0) AS factory_points_collected
+        FROM user_companion_robots
+        WHERE user_id = ?
+        """,
+        (uid,),
+    ).fetchone()
+    best = db.execute(
+        """
+        SELECT MAX(COALESCE(base_reward_factory_points, reward_factory_points, 0) + COALESCE(event_bonus_points, 0)) AS best_points
+        FROM user_companion_dispatches
+        WHERE user_id = ? AND status = 'claimed'
+        """,
+        (uid,),
+    ).fetchone()
+    dispatch_total = int(totals["dispatch_count"] or 0) if totals else 0
+    album = {
+        "dispatch_count": dispatch_total,
+        "return_rate": "100%" if dispatch_total > 0 else "0%",
+        "factory_points_collected": int(totals["factory_points_collected"] or 0) if totals else 0,
+        "best_points": int(best["best_points"] or 0) if best else 0,
+    }
+    return {"factory_points": factory_points, "active_companion": active, "companions": companions, "album": album}
 
 
 def equip_companion(db, user_id, companion_key, *, request_id=None, ip=None):
@@ -16539,6 +16642,42 @@ def ensure_companion_dispatch_masters(db, *, user_id=None, request_id=None, ip=N
     return {"created_count": len(created), "created_dispatches": created}
 
 
+def _companion_dispatch_event_view(event_type, base_points):
+    key = str(event_type or "none").strip() or "none"
+    event = COMPANION_DISPATCH_EVENT_DEFS.get(key) or COMPANION_DISPATCH_EVENT_DEFS["none"]
+    bonus = int((int(base_points or 0) * int(event["bonus_percent"] or 0)) // 100)
+    return {
+        "event_type": event["event_type"],
+        "event_label": event["label"],
+        "event_message": event["message"],
+        "event_bonus_points": bonus,
+    }
+
+
+def _roll_companion_dispatch_event(dispatch_id, user_id, dispatch_key, base_points, *, event_type_override=None):
+    if event_type_override:
+        return _companion_dispatch_event_view(event_type_override, base_points)
+    seed = int(dispatch_id or 0) * 37 + int(user_id or 0) * 17 + sum(ord(ch) for ch in str(dispatch_key or ""))
+    roll = seed % 100 + 1
+    if roll <= 5:
+        return _companion_dispatch_event_view("great_success", base_points)
+    if roll <= 15:
+        return _companion_dispatch_event_view("scrap_found", base_points)
+    if roll <= 18:
+        return _companion_dispatch_event_view("rare_photo", base_points)
+    return _companion_dispatch_event_view("none", base_points)
+
+
+def _companion_dispatch_journal_for_key(journal_key):
+    key = str(journal_key or "").strip()
+    if key:
+        for item_key, text in COMPANION_DISPATCH_JOURNALS:
+            if item_key == key:
+                return {"journal_key": item_key, "journal_text": text}
+    item_key, text = random.choice(COMPANION_DISPATCH_JOURNALS)
+    return {"journal_key": item_key, "journal_text": text}
+
+
 def _refresh_companion_dispatches(db, user_id=None, *, now_ts=None):
     current_ts = int(now_ts or time.time())
     if user_id:
@@ -16602,6 +16741,13 @@ def get_active_companion_dispatch(db, user_id, *, refresh=True, now_ts=None):
         "is_active": status == "active",
         "is_completed": status == "completed",
         "reward_factory_points": int(row["reward_factory_points"] or 0),
+        "base_reward_factory_points": int(row["base_reward_factory_points"] or 0) if "base_reward_factory_points" in row.keys() else int(row["reward_factory_points"] or 0),
+        "event_type": row["event_type"] if "event_type" in row.keys() and row["event_type"] else "none",
+        "event_label": row["event_label"] if "event_label" in row.keys() and row["event_label"] else "通常帰還",
+        "event_message": row["event_message"] if "event_message" in row.keys() and row["event_message"] else "",
+        "event_bonus_points": int(row["event_bonus_points"] or 0) if "event_bonus_points" in row.keys() else 0,
+        "journal_key": row["journal_key"] if "journal_key" in row.keys() and row["journal_key"] else "",
+        "journal_text": row["journal_text"] if "journal_text" in row.keys() and row["journal_text"] else "",
         "started_at": int(row["started_at"] or 0),
         "completes_at": completes_at,
         "claimed_at": int(row["claimed_at"] or 0) if row["claimed_at"] else None,
@@ -16672,7 +16818,16 @@ def _companion_dispatch_active_for_key(db, user_id, companion_key):
     return None
 
 
-def start_companion_dispatch(db, user_id, dispatch_key, *, request_id=None, ip=None):
+def start_companion_dispatch(
+    db,
+    user_id,
+    dispatch_key,
+    *,
+    request_id=None,
+    ip=None,
+    event_type_override=None,
+    journal_key_override=None,
+):
     uid = int(user_id)
     key = str(dispatch_key or "").strip()
     ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
@@ -16709,13 +16864,39 @@ def start_companion_dispatch(db, user_id, dispatch_key, *, request_id=None, ip=N
         """
         INSERT INTO user_companion_dispatches (
             user_id, companion_key, dispatch_key, status, reward_factory_points,
-            started_at, completes_at, created_at, updated_at
+            base_reward_factory_points, started_at, completes_at, created_at, updated_at
         )
-        VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)
         """,
-        (uid, active["companion_key"], key, reward, now_ts, completes_at, now_ts, now_ts),
+        (uid, active["companion_key"], key, reward, reward, now_ts, completes_at, now_ts, now_ts),
     )
     dispatch_id = int(cur.lastrowid)
+    event = _roll_companion_dispatch_event(
+        dispatch_id,
+        uid,
+        key,
+        reward,
+        event_type_override=event_type_override,
+    )
+    journal = _companion_dispatch_journal_for_key(journal_key_override)
+    db.execute(
+        """
+        UPDATE user_companion_dispatches
+        SET event_type = ?, event_label = ?, event_message = ?, event_bonus_points = ?,
+            journal_key = ?, journal_text = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            event["event_type"],
+            event["event_label"],
+            event["event_message"],
+            int(event["event_bonus_points"]),
+            journal["journal_key"],
+            journal["journal_text"],
+            now_ts,
+            dispatch_id,
+        ),
+    )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["COMPANION_DISPATCH_START"],
@@ -16730,6 +16911,10 @@ def start_companion_dispatch(db, user_id, dispatch_key, *, request_id=None, ip=N
             "dispatch_key": key,
             "dispatch_id": dispatch_id,
             "reward_factory_points": reward,
+            "base_reward_factory_points": reward,
+            "event_type": event["event_type"],
+            "event_bonus_points": int(event["event_bonus_points"]),
+            "journal_key": journal["journal_key"],
             "started_at": now_ts,
             "completes_at": completes_at,
         },
@@ -16751,7 +16936,9 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         return {"ok": False, "reason": "受け取り済み、または無効な派遣です。"}
     user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
     before_points = int(user["factory_points"] or 0) if user else 0
-    reward = int(current["reward_factory_points"] or 0)
+    base_reward = int(current["base_reward_factory_points"] or current["reward_factory_points"] or 0)
+    bonus_points = int(current["event_bonus_points"] or 0)
+    reward = base_reward + bonus_points
     after_points = before_points + reward
     now_ts = int(time.time())
     cur = db.execute(
@@ -16768,12 +16955,29 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         db.rollback()
         return {"ok": False, "reason": "この派遣報酬は受け取り済みです。"}
     db.execute("UPDATE users SET factory_points = ? WHERE id = ?", (after_points, uid))
+    db.execute(
+        """
+        UPDATE user_companion_robots
+        SET experience = COALESCE(experience, 0) + 1,
+            dispatch_count = COALESCE(dispatch_count, 0) + 1,
+            factory_points_collected = COALESCE(factory_points_collected, 0) + ?,
+            updated_at = ?
+        WHERE user_id = ? AND companion_key = ?
+        """,
+        (reward, now_ts, uid, current["companion_key"]),
+    )
     payload = {
         "user_id": uid,
         "companion_key": current["companion_key"],
         "dispatch_key": current["dispatch_key"],
         "dispatch_id": int(current["id"]),
         "reward_factory_points": reward,
+        "base_reward_factory_points": base_reward,
+        "event_type": current["event_type"],
+        "event_label": current["event_label"],
+        "event_bonus_points": bonus_points,
+        "journal_key": current["journal_key"],
+        "journal_text": current["journal_text"],
         "started_at": int(current["started_at"] or 0),
         "completes_at": int(current["completes_at"] or 0),
         "claimed_at": now_ts,
@@ -16794,6 +16998,24 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
     )
     audit_log(
         db,
+        AUDIT_EVENT_TYPES["COMPANION_DISPATCH_EVENT"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="companion_dispatch_event",
+        entity_type="companion_dispatch",
+        entity_id=int(current["id"]),
+        delta_count=bonus_points,
+        payload={
+            "user_id": uid,
+            "dispatch_key": current["dispatch_key"],
+            "event_type": current["event_type"],
+            "bonus_points": bonus_points,
+            "journal_key": current["journal_key"],
+        },
+        ip=ip,
+    )
+    audit_log(
+        db,
         AUDIT_EVENT_TYPES["FACTORY_POINTS_DELTA"],
         user_id=uid,
         request_id=request_id,
@@ -16805,7 +17027,18 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         ip=ip,
     )
     db.commit()
-    return {"ok": True, "reward_factory_points": reward, "factory_points_after": after_points}
+    return {
+        "ok": True,
+        "reward_factory_points": reward,
+        "base_reward_factory_points": base_reward,
+        "event_type": current["event_type"],
+        "event_label": current["event_label"],
+        "event_message": current["event_message"],
+        "event_bonus_points": bonus_points,
+        "journal_key": current["journal_key"],
+        "journal_text": current["journal_text"],
+        "factory_points_after": after_points,
+    }
 
 
 def _factory_storage_cap_hours_for_user(db, user_id):
@@ -38866,6 +39099,7 @@ def companion_dispatch():
         "companion_dispatch.html",
         user=user,
         message=session.pop("message", None),
+        last_result=session.pop("companion_dispatch_last_result", None),
         dispatch_view=get_companion_dispatch_view(db, user_id, ensure=False),
     )
 
@@ -38904,6 +39138,7 @@ def companion_dispatch_claim():
     )
     if result.get("ok"):
         session["message"] = f"派遣報酬 {int(result.get('reward_factory_points') or 0)}pt を受け取りました。"
+        session["companion_dispatch_last_result"] = result
     else:
         db.rollback()
         session["message"] = result.get("reason") or "派遣報酬を受け取れませんでした。"

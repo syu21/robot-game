@@ -940,6 +940,9 @@ def main():
             user_id INTEGER NOT NULL,
             companion_key TEXT NOT NULL,
             level INTEGER NOT NULL DEFAULT 1,
+            experience INTEGER NOT NULL DEFAULT 0,
+            dispatch_count INTEGER NOT NULL DEFAULT 0,
+            factory_points_collected INTEGER NOT NULL DEFAULT 0,
             unlocked_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             UNIQUE(user_id, companion_key),
@@ -974,6 +977,13 @@ def main():
             dispatch_key TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            base_reward_factory_points INTEGER NOT NULL DEFAULT 0,
+            event_type TEXT NOT NULL DEFAULT 'none',
+            event_label TEXT,
+            event_message TEXT,
+            event_bonus_points INTEGER NOT NULL DEFAULT 0,
+            journal_key TEXT,
+            journal_text TEXT,
             started_at INTEGER NOT NULL,
             completes_at INTEGER NOT NULL,
             claimed_at INTEGER,
@@ -3078,6 +3088,28 @@ def main():
         cur.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_type TEXT NOT NULL DEFAULT 'default'")
     if "source_id" not in companion_master_cols:
         cur.execute("ALTER TABLE companion_robot_masters ADD COLUMN source_id INTEGER")
+    user_companion_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_companion_robots)").fetchall()}
+    if "experience" not in user_companion_cols:
+        cur.execute("ALTER TABLE user_companion_robots ADD COLUMN experience INTEGER NOT NULL DEFAULT 0")
+    if "dispatch_count" not in user_companion_cols:
+        cur.execute("ALTER TABLE user_companion_robots ADD COLUMN dispatch_count INTEGER NOT NULL DEFAULT 0")
+    if "factory_points_collected" not in user_companion_cols:
+        cur.execute("ALTER TABLE user_companion_robots ADD COLUMN factory_points_collected INTEGER NOT NULL DEFAULT 0")
+    companion_dispatch_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_companion_dispatches)").fetchall()}
+    if "base_reward_factory_points" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN base_reward_factory_points INTEGER NOT NULL DEFAULT 0")
+    if "event_type" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_type TEXT NOT NULL DEFAULT 'none'")
+    if "event_label" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_label TEXT")
+    if "event_message" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_message TEXT")
+    if "event_bonus_points" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_bonus_points INTEGER NOT NULL DEFAULT 0")
+    if "journal_key" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
+    if "journal_text" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_text TEXT")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:

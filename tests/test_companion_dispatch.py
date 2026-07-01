@@ -113,6 +113,79 @@ class CompanionDispatchTests(unittest.TestCase):
             upgrade = game_app.upgrade_companion(db, self.user_id, "collector_petbot")
             self.assertFalse(upgrade["ok"])
 
+    def test_dispatch_event_is_fixed_at_start_and_claim_updates_album_stats(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_companions(db, self.user_id)
+            start = game_app.start_companion_dispatch(
+                db,
+                self.user_id,
+                "short_patrol",
+                event_type_override="great_success",
+                journal_key_override="old_hangar",
+            )
+            self.assertTrue(start["ok"])
+            dispatch = db.execute(
+                "SELECT * FROM user_companion_dispatches WHERE id = ?",
+                (int(start["dispatch_id"]),),
+            ).fetchone()
+            base_reward = int(dispatch["base_reward_factory_points"])
+            self.assertEqual(dispatch["event_type"], "great_success")
+            self.assertEqual(int(dispatch["event_bonus_points"]), base_reward)
+            self.assertEqual(dispatch["journal_key"], "old_hangar")
+
+            db.execute(
+                "UPDATE user_companion_dispatches SET completes_at = ? WHERE id = ?",
+                (int(time.time()) - 1, int(start["dispatch_id"])),
+            )
+            claim = game_app.claim_companion_dispatch(db, self.user_id, request_id="dispatch-event")
+            self.assertTrue(claim["ok"])
+            self.assertEqual(claim["event_type"], "great_success")
+            self.assertEqual(claim["event_bonus_points"], base_reward)
+            self.assertEqual(claim["reward_factory_points"], base_reward * 2)
+            self.assertIn("古い格納庫", claim["journal_text"])
+
+            user = db.execute("SELECT factory_points FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["factory_points"]), base_reward * 2)
+            companion = db.execute(
+                """
+                SELECT experience, dispatch_count, factory_points_collected
+                FROM user_companion_robots
+                WHERE user_id = ? AND companion_key = 'collector_petbot'
+                """,
+                (self.user_id,),
+            ).fetchone()
+            self.assertEqual(int(companion["experience"]), 1)
+            self.assertEqual(int(companion["dispatch_count"]), 1)
+            self.assertEqual(int(companion["factory_points_collected"]), base_reward * 2)
+
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["COMPANION_DISPATCH_EVENT"]),
+            ).fetchone()
+            self.assertIsNotNone(event)
+
+    def test_dispatch_claim_page_shows_result_event_and_journal(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app.ensure_companions(db, self.user_id)
+            start = game_app.start_companion_dispatch(
+                db,
+                self.user_id,
+                "short_patrol",
+                event_type_override="scrap_found",
+                journal_key_override="parts_yard",
+            )
+            db.execute(
+                "UPDATE user_companion_dispatches SET completes_at = ? WHERE id = ?",
+                (int(time.time()) - 1, int(start["dispatch_id"])),
+            )
+            db.commit()
+        html = self._client().post("/companion/dispatch/claim", follow_redirects=True).get_data(as_text=True)
+        self.assertIn("相棒ロボ帰還", html)
+        self.assertIn("スクラップ発見", html)
+        self.assertIn("部品置き場を巡回しました", html)
+
 
 if __name__ == "__main__":
     unittest.main()

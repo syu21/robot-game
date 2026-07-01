@@ -6,6 +6,25 @@
   <div class="flash">{{ message }}</div>
   {% endif %}
 
+  {% if last_result %}
+  <div class="card trial-home-banner">
+    <div><span class="weekly-fit-badge">相棒ロボ帰還！</span></div>
+    <h2>{{ last_result['event_label'] }}</h2>
+    <div class="stat-label">工場ポイント</div>
+    <div class="stat-value">+{{ last_result['base_reward_factory_points'] }}pt</div>
+    {% if last_result['event_bonus_points'] > 0 %}
+    <div class="home-explore-status">{{ last_result['event_label'] }} +{{ last_result['event_bonus_points'] }}pt</div>
+    {% elif last_result['event_type'] != 'none' %}
+    <div class="home-explore-status">{{ last_result['event_label'] }}</div>
+    {% endif %}
+    {% if last_result['event_message'] %}
+    <div class="upgrade-cost">{{ last_result['event_message'] }}</div>
+    {% endif %}
+    <h3>日誌</h3>
+    <div class="robot-time">「{{ last_result['journal_text'] }}」</div>
+  </div>
+  {% endif %}
+
   <div class="card">
     <div class="stat-label">現在の工場ポイント</div>
     <div class="stat-value">{{ dispatch_view['factory_points'] }}pt</div>
@@ -24,13 +43,21 @@
     <div class="robot-time">{{ current['companion_name_ja'] }} が担当中</div>
     {% if current['is_completed'] %}
     <div class="upgrade-cost">帰還済み</div>
-    <div class="robot-time">報酬: 工場ポイント {{ current['reward_factory_points'] }}pt</div>
+    <div class="robot-time">報酬: 工場ポイント {{ current['base_reward_factory_points'] }}pt</div>
+    {% if current['event_bonus_points'] > 0 %}
+    <div class="upgrade-cost">{{ current['event_label'] }} +{{ current['event_bonus_points'] }}pt</div>
+    {% elif current['event_type'] != 'none' %}
+    <div class="upgrade-cost">{{ current['event_label'] }}</div>
+    {% endif %}
+    {% if current['journal_text'] %}
+    <div class="robot-time">日誌: {{ current['journal_text'] }}</div>
+    {% endif %}
     <form method="post" action="{{ url_for('companion_dispatch_claim') }}" class="inline-form inline-form-top">
       <button type="submit">受け取る</button>
     </form>
     {% else %}
     <div class="upgrade-cost">派遣中 {{ current['remaining_label'] }}</div>
-    <div class="robot-time">報酬予定: 工場ポイント {{ current['reward_factory_points'] }}pt</div>
+    <div class="robot-time">報酬予定: 工場ポイント {{ current['base_reward_factory_points'] }}pt</div>
     {% endif %}
   </div>
   {% else %}

@@ -22,6 +22,28 @@
     {% endif %}
   </div>
 
+  <div class="card">
+    <h2>相棒との記録</h2>
+    <div class="robot-grid">
+      <div class="robot-card">
+        <div class="robot-id">派遣回数</div>
+        <div class="stat-value">{{ companion_view['album']['dispatch_count'] }}回</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">帰還率</div>
+        <div class="stat-value">{{ companion_view['album']['return_rate'] }}</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">累計回収</div>
+        <div class="stat-value">{{ companion_view['album']['factory_points_collected'] }}pt</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">最高回収</div>
+        <div class="stat-value">{{ companion_view['album']['best_points'] }}pt</div>
+      </div>
+    </div>
+  </div>
+
   <div class="module-card-grid">
     {% for companion in companion_view['companions'] %}
     <div class="module-card {% if companion['is_selected'] %}is-highlight{% endif %}">
@@ -32,10 +54,13 @@
       <div class="robot-time">{{ companion['description'] }}</div>
       <div class="module-card-meta">
         <span class="module-badge">{{ companion['effect_label'] }}</span>
+        <span class="module-badge">派遣 {{ companion['dispatch_count'] }}回</span>
+        <span class="module-badge">EXP {{ companion['experience'] }}</span>
         {% if companion['is_selected'] %}
         <span class="module-badge ok">選択中</span>
         {% endif %}
       </div>
+      <div class="robot-time">累計回収: {{ companion['factory_points_collected'] }}pt</div>
 
       <form method="post" action="{{ url_for('companion_equip') }}" class="inline-form inline-form-top">
         <input type="hidden" name="companion_key" value="{{ companion['companion_key'] }}" />
