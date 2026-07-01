@@ -521,6 +521,44 @@ COMPANION_DISPATCH_JOURNALS = (
     ("dust_map", "粉じんの流れから地形を記録しました。"),
     ("night_lights", "夜間灯の下で周辺データを集めました。"),
 )
+COMPANION_ALBUM_PHOTO_DUPLICATE_COMPENSATION_POINTS = 30
+COMPANION_ALBUM_PHOTO_DEFS = (
+    {
+        "photo_key": "old_hangar",
+        "name_ja": "古い格納庫",
+        "description": "相棒ロボが見つけた、使われなくなった格納庫。",
+        "image_path": "",
+        "sort_order": 10,
+    },
+    {
+        "photo_key": "scrap_mountain",
+        "name_ja": "スクラップの山",
+        "description": "まだ使えそうな部品が眠っている。",
+        "image_path": "",
+        "sort_order": 20,
+    },
+    {
+        "photo_key": "neon_corridor",
+        "name_ja": "ネオン通路",
+        "description": "夜間観測中に記録された発光する通路。",
+        "image_path": "",
+        "sort_order": 30,
+    },
+    {
+        "photo_key": "wild_robot_tracks",
+        "name_ja": "野生ロボの足跡",
+        "description": "どこかへ向かったロボの痕跡。",
+        "image_path": "",
+        "sort_order": 40,
+    },
+    {
+        "photo_key": "silent_observatory",
+        "name_ja": "静かな観測所",
+        "description": "誰もいない観測施設の記録。",
+        "image_path": "",
+        "sort_order": 50,
+    },
+)
 COMPANION_DISPATCH_DEFS = (
     {
         "dispatch_key": "short_patrol",
@@ -10809,6 +10847,7 @@ def ensure_schema(db):
             event_label TEXT,
             event_message TEXT,
             event_bonus_points INTEGER NOT NULL DEFAULT 0,
+            event_photo_key TEXT,
             journal_key TEXT,
             journal_text TEXT,
             started_at INTEGER NOT NULL,
@@ -10819,6 +10858,35 @@ def ensure_schema(db):
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
             FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS companion_album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            photo_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_companion_album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            photo_key TEXT NOT NULL,
+            unlocked_at INTEGER NOT NULL,
+            source_dispatch_id INTEGER,
+            UNIQUE(user_id, photo_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (photo_key) REFERENCES companion_album_photos(photo_key)
         )
         """
     )
@@ -10975,6 +11043,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_message TEXT")
     if "event_bonus_points" not in companion_dispatch_cols:
         db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_bonus_points INTEGER NOT NULL DEFAULT 0")
+    if "event_photo_key" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_photo_key TEXT")
     if "journal_key" not in companion_dispatch_cols:
         db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
     if "journal_text" not in companion_dispatch_cols:
@@ -13709,6 +13779,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_companion_album_photos_active_sort ON companion_album_photos(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
@@ -16642,6 +16714,170 @@ def ensure_companion_dispatch_masters(db, *, user_id=None, request_id=None, ip=N
     return {"created_count": len(created), "created_dispatches": created}
 
 
+def ensure_companion_album_photos(db, *, user_id=None, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["photo_key"]
+        for row in db.execute("SELECT photo_key FROM companion_album_photos").fetchall()
+    }
+    created = []
+    for item in COMPANION_ALBUM_PHOTO_DEFS:
+        db.execute(
+            """
+            INSERT INTO companion_album_photos (
+                photo_key, name_ja, description, image_path, is_active,
+                sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(photo_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                image_path = excluded.image_path,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["photo_key"],
+                item["name_ja"],
+                item["description"],
+                item["image_path"],
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["photo_key"] not in existing_keys:
+            created.append(item["photo_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["COMPANION_ALBUM_PHOTO_ENSURE_DEFAULTS"],
+            user_id=int(user_id) if user_id else None,
+            request_id=request_id,
+            action_key="companion_album_photo_ensure_defaults",
+            entity_type="companion_album_photo",
+            delta_count=len(created),
+            payload={"created_photos": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_photos": created}
+
+
+def _companion_album_active_photo_rows(db):
+    return db.execute(
+        """
+        SELECT *
+        FROM companion_album_photos
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, id ASC
+        """
+    ).fetchall()
+
+
+def _select_companion_album_photo_for_dispatch(db, user_id, dispatch_id):
+    rows = _companion_album_active_photo_rows(db)
+    if not rows:
+        return {"photo_key": "", "duplicate": False, "compensation_points": 0}
+    owned = {
+        row["photo_key"]
+        for row in db.execute(
+            "SELECT photo_key FROM user_companion_album_photos WHERE user_id = ?",
+            (int(user_id),),
+        ).fetchall()
+    }
+    candidates = [row for row in rows if row["photo_key"] not in owned]
+    if candidates:
+        index = int(dispatch_id or 0) % len(candidates)
+        return {
+            "photo_key": candidates[index]["photo_key"],
+            "duplicate": False,
+            "compensation_points": 0,
+        }
+    index = int(dispatch_id or 0) % len(rows)
+    return {
+        "photo_key": rows[index]["photo_key"],
+        "duplicate": True,
+        "compensation_points": int(COMPANION_ALBUM_PHOTO_DUPLICATE_COMPENSATION_POINTS),
+    }
+
+
+def _companion_album_photo_map(db):
+    return {row["photo_key"]: dict(row) for row in _companion_album_active_photo_rows(db)}
+
+
+def companion_album_summary(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_companion_album_photos(db, user_id=uid)
+    totals = db.execute(
+        """
+        SELECT
+            COALESCE(COUNT(*), 0) AS dispatch_count,
+            COALESCE(SUM(base_reward_factory_points + event_bonus_points), 0) AS factory_points_collected,
+            COALESCE(MAX(base_reward_factory_points + event_bonus_points), 0) AS best_points,
+            COALESCE(SUM(CASE WHEN event_type = 'great_success' THEN 1 ELSE 0 END), 0) AS great_success_count,
+            COALESCE(SUM(CASE WHEN event_type = 'scrap_found' THEN 1 ELSE 0 END), 0) AS scrap_found_count,
+            COALESCE(SUM(CASE WHEN event_type = 'rare_photo' THEN 1 ELSE 0 END), 0) AS rare_photo_count
+        FROM user_companion_dispatches
+        WHERE user_id = ? AND status = 'claimed'
+        """,
+        (uid,),
+    ).fetchone()
+    photo_total = int(db.execute("SELECT COUNT(*) AS c FROM companion_album_photos WHERE is_active = 1").fetchone()["c"] or 0)
+    photo_owned = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM user_companion_album_photos ucap
+            JOIN companion_album_photos cap ON cap.photo_key = ucap.photo_key AND cap.is_active = 1
+            WHERE ucap.user_id = ?
+            """,
+            (uid,),
+        ).fetchone()["c"]
+        or 0
+    )
+    return {
+        "dispatch_count": int(totals["dispatch_count"] or 0),
+        "factory_points_collected": int(totals["factory_points_collected"] or 0),
+        "best_points": int(totals["best_points"] or 0),
+        "great_success_count": int(totals["great_success_count"] or 0),
+        "scrap_found_count": int(totals["scrap_found_count"] or 0),
+        "rare_photo_count": int(totals["rare_photo_count"] or 0),
+        "photo_owned": photo_owned,
+        "photo_total": photo_total,
+    }
+
+
+def get_companion_album_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_companions(db, uid)
+        ensure_companion_album_photos(db, user_id=uid)
+    rows = _companion_album_active_photo_rows(db)
+    owned_rows = {
+        row["photo_key"]: row
+        for row in db.execute(
+            "SELECT * FROM user_companion_album_photos WHERE user_id = ?",
+            (uid,),
+        ).fetchall()
+    }
+    photos = []
+    for row in rows:
+        owned = owned_rows.get(row["photo_key"])
+        photos.append(
+            {
+                "photo_key": row["photo_key"],
+                "name_ja": row["name_ja"] if owned else "？？？",
+                "description": row["description"] if owned else "未発見",
+                "image_path": row["image_path"] or "",
+                "is_owned": bool(owned),
+                "unlocked_at": int(owned["unlocked_at"] or 0) if owned else None,
+                "source_dispatch_id": int(owned["source_dispatch_id"] or 0) if owned and owned["source_dispatch_id"] else None,
+            }
+        )
+    return {"summary": companion_album_summary(db, uid, ensure=False), "photos": photos}
+
+
 def _companion_dispatch_event_view(event_type, base_points):
     key = str(event_type or "none").strip() or "none"
     event = COMPANION_DISPATCH_EVENT_DEFS.get(key) or COMPANION_DISPATCH_EVENT_DEFS["none"]
@@ -16746,6 +16982,7 @@ def get_active_companion_dispatch(db, user_id, *, refresh=True, now_ts=None):
         "event_label": row["event_label"] if "event_label" in row.keys() and row["event_label"] else "通常帰還",
         "event_message": row["event_message"] if "event_message" in row.keys() and row["event_message"] else "",
         "event_bonus_points": int(row["event_bonus_points"] or 0) if "event_bonus_points" in row.keys() else 0,
+        "event_photo_key": row["event_photo_key"] if "event_photo_key" in row.keys() and row["event_photo_key"] else "",
         "journal_key": row["journal_key"] if "journal_key" in row.keys() and row["journal_key"] else "",
         "journal_text": row["journal_text"] if "journal_text" in row.keys() and row["journal_text"] else "",
         "started_at": int(row["started_at"] or 0),
@@ -16831,6 +17068,7 @@ def start_companion_dispatch(
     uid = int(user_id)
     key = str(dispatch_key or "").strip()
     ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
+    ensure_companion_album_photos(db, user_id=uid, request_id=request_id, ip=ip)
     current = get_active_companion_dispatch(db, uid, refresh=True)
     if current:
         return {"ok": False, "reason": "相棒ロボは派遣中です。帰還後に受け取ってください。"}
@@ -16878,12 +17116,16 @@ def start_companion_dispatch(
         reward,
         event_type_override=event_type_override,
     )
+    photo_result = {"photo_key": "", "duplicate": False, "compensation_points": 0}
+    if event["event_type"] == "rare_photo":
+        photo_result = _select_companion_album_photo_for_dispatch(db, uid, dispatch_id)
+        event["event_bonus_points"] = int(event["event_bonus_points"]) + int(photo_result["compensation_points"])
     journal = _companion_dispatch_journal_for_key(journal_key_override)
     db.execute(
         """
         UPDATE user_companion_dispatches
         SET event_type = ?, event_label = ?, event_message = ?, event_bonus_points = ?,
-            journal_key = ?, journal_text = ?, updated_at = ?
+            event_photo_key = ?, journal_key = ?, journal_text = ?, updated_at = ?
         WHERE id = ?
         """,
         (
@@ -16891,6 +17133,7 @@ def start_companion_dispatch(
             event["event_label"],
             event["event_message"],
             int(event["event_bonus_points"]),
+            photo_result["photo_key"],
             journal["journal_key"],
             journal["journal_text"],
             now_ts,
@@ -16914,6 +17157,8 @@ def start_companion_dispatch(
             "base_reward_factory_points": reward,
             "event_type": event["event_type"],
             "event_bonus_points": int(event["event_bonus_points"]),
+            "event_photo_key": photo_result["photo_key"],
+            "event_photo_duplicate": bool(photo_result["duplicate"]),
             "journal_key": journal["journal_key"],
             "started_at": now_ts,
             "completes_at": completes_at,
@@ -16927,6 +17172,7 @@ def start_companion_dispatch(
 def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
     uid = int(user_id)
     ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
+    ensure_companion_album_photos(db, user_id=uid, request_id=request_id, ip=ip)
     current = get_active_companion_dispatch(db, uid, refresh=True)
     if not current:
         return {"ok": False, "reason": "受け取れる派遣はありません。"}
@@ -16941,6 +17187,9 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
     reward = base_reward + bonus_points
     after_points = before_points + reward
     now_ts = int(time.time())
+    unlocked_photo = None
+    photo_duplicate = False
+    photo_compensation_points = 0
     cur = db.execute(
         """
         UPDATE user_companion_dispatches
@@ -16966,6 +17215,45 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         """,
         (reward, now_ts, uid, current["companion_key"]),
     )
+    if current["event_type"] == "rare_photo" and current.get("event_photo_key"):
+        photo_map = _companion_album_photo_map(db)
+        photo = photo_map.get(current["event_photo_key"])
+        if photo:
+            photo_cur = db.execute(
+                """
+                INSERT OR IGNORE INTO user_companion_album_photos
+                (user_id, photo_key, unlocked_at, source_dispatch_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (uid, current["event_photo_key"], now_ts, int(current["id"])),
+            )
+            photo_duplicate = int(photo_cur.rowcount or 0) != 1
+            photo_compensation_points = bonus_points if photo_duplicate else 0
+            if not photo_duplicate:
+                unlocked_photo = {
+                    "photo_key": photo["photo_key"],
+                    "name_ja": photo["name_ja"],
+                    "description": photo["description"] or "",
+                }
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["COMPANION_ALBUM_PHOTO_UNLOCK"],
+                user_id=uid,
+                request_id=request_id,
+                action_key="companion_album_photo_unlock",
+                entity_type="companion_album_photo",
+                entity_id=int(photo["id"]),
+                delta_count=0 if photo_duplicate else 1,
+                payload={
+                    "user_id": uid,
+                    "photo_key": current["event_photo_key"],
+                    "dispatch_id": int(current["id"]),
+                    "event_type": current["event_type"],
+                    "duplicate": bool(photo_duplicate),
+                    "compensation_points": int(photo_compensation_points),
+                },
+                ip=ip,
+            )
     payload = {
         "user_id": uid,
         "companion_key": current["companion_key"],
@@ -16976,6 +17264,10 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         "event_type": current["event_type"],
         "event_label": current["event_label"],
         "event_bonus_points": bonus_points,
+        "event_photo_key": current.get("event_photo_key") or "",
+        "unlocked_photo": unlocked_photo,
+        "photo_duplicate": bool(photo_duplicate),
+        "photo_compensation_points": int(photo_compensation_points),
         "journal_key": current["journal_key"],
         "journal_text": current["journal_text"],
         "started_at": int(current["started_at"] or 0),
@@ -17008,10 +17300,11 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         payload={
             "user_id": uid,
             "dispatch_key": current["dispatch_key"],
-            "event_type": current["event_type"],
-            "bonus_points": bonus_points,
-            "journal_key": current["journal_key"],
-        },
+        "event_type": current["event_type"],
+        "bonus_points": bonus_points,
+        "journal_key": current["journal_key"],
+        "event_photo_key": current.get("event_photo_key") or "",
+    },
         ip=ip,
     )
     audit_log(
@@ -17035,6 +17328,10 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         "event_label": current["event_label"],
         "event_message": current["event_message"],
         "event_bonus_points": bonus_points,
+        "event_photo_key": current.get("event_photo_key") or "",
+        "unlocked_photo": unlocked_photo,
+        "photo_duplicate": bool(photo_duplicate),
+        "photo_compensation_points": int(photo_compensation_points),
         "journal_key": current["journal_key"],
         "journal_text": current["journal_text"],
         "factory_points_after": after_points,
@@ -39033,6 +39330,29 @@ def companion_lab():
         companion_view=get_companion_view(db, user_id, ensure=False),
         dispatch_summary=companion_dispatch_summary(db, user_id),
         max_level=COMPANION_MAX_LEVEL,
+    )
+
+
+@app.route("/companion/album")
+@login_required
+def companion_album():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_companion_album_photos(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "companion_album.html",
+        user=user,
+        album=get_companion_album_view(db, user_id, ensure=False),
     )
 
 

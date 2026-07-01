@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>相棒アルバム</h1>
+
+  <div class="card">
+    <h2>相棒との記録</h2>
+    <div class="robot-grid">
+      <div class="robot-card">
+        <div class="robot-id">総派遣回数</div>
+        <div class="stat-value">{{ album['summary']['dispatch_count'] }}回</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">累計回収</div>
+        <div class="stat-value">{{ album['summary']['factory_points_collected'] }}pt</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">最高回収</div>
+        <div class="stat-value">{{ album['summary']['best_points'] }}pt</div>
+      </div>
+      <div class="robot-card">
+        <div class="robot-id">写真</div>
+        <div class="stat-value">{{ album['summary']['photo_owned'] }} / {{ album['summary']['photo_total'] }}</div>
+      </div>
+    </div>
+    <div class="module-card-meta">
+      <span class="module-badge">大成功 {{ album['summary']['great_success_count'] }}回</span>
+      <span class="module-badge">スクラップ発見 {{ album['summary']['scrap_found_count'] }}回</span>
+      <span class="module-badge">珍しい写真 {{ album['summary']['rare_photo_count'] }}回</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>写真コレクション</h2>
+    <div class="module-card-grid">
+      {% for photo in album['photos'] %}
+      <div class="module-card {% if photo['is_owned'] %}is-highlight{% endif %}">
+        <div class="module-card-title">{{ photo['name_ja'] }}</div>
+        <div class="robot-time">{{ photo['description'] }}</div>
+        {% if photo['is_owned'] %}
+        <div class="module-card-meta">
+          <span class="module-badge ok">発見済み</span>
+          <span class="module-badge">入手 {{ photo['unlocked_at'] }}</span>
+        </div>
+        {% else %}
+        <div class="module-card-meta">
+          <span class="module-badge">未発見</span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p class="link">
+    <a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ戻る</a>
+    |
+    <a class="battle-home-link" href="{{ url_for('companion_dispatch') }}">相棒ロボ派遣へ</a>
+  </p>
+</div>
+{% endblock %}

@@ -201,6 +201,8 @@ AUDIT_EVENT_TYPES = {
     "COMPANION_DISPATCH_START": "audit.companion.dispatch.start",
     "COMPANION_DISPATCH_CLAIM": "audit.companion.dispatch.claim",
     "COMPANION_DISPATCH_EVENT": "audit.companion.dispatch.event",
+    "COMPANION_ALBUM_PHOTO_ENSURE_DEFAULTS": "audit.companion.album.photo.ensure_defaults",
+    "COMPANION_ALBUM_PHOTO_UNLOCK": "audit.companion.album.photo.unlock",
     "BASE_VIEW": "audit.base.view",
     "BASE_LIKE": "audit.base.like",
     "INVENTORY_DELTA": "audit.inventory.delta",

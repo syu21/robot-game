@@ -982,6 +982,7 @@ def main():
             event_label TEXT,
             event_message TEXT,
             event_bonus_points INTEGER NOT NULL DEFAULT 0,
+            event_photo_key TEXT,
             journal_key TEXT,
             journal_text TEXT,
             started_at INTEGER NOT NULL,
@@ -992,6 +993,35 @@ def main():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
             FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS companion_album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            photo_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_companion_album_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            photo_key TEXT NOT NULL,
+            unlocked_at INTEGER NOT NULL,
+            source_dispatch_id INTEGER,
+            UNIQUE(user_id, photo_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (photo_key) REFERENCES companion_album_photos(photo_key)
         )
         """
     )
@@ -3106,6 +3136,8 @@ def main():
         cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_message TEXT")
     if "event_bonus_points" not in companion_dispatch_cols:
         cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_bonus_points INTEGER NOT NULL DEFAULT 0")
+    if "event_photo_key" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN event_photo_key TEXT")
     if "journal_key" not in companion_dispatch_cols:
         cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
     if "journal_text" not in companion_dispatch_cols:
@@ -3746,6 +3778,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_album_photos_active_sort ON companion_album_photos(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")

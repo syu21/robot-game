@@ -20,8 +20,14 @@
     {% if last_result['event_message'] %}
     <div class="upgrade-cost">{{ last_result['event_message'] }}</div>
     {% endif %}
+    {% if last_result.get('unlocked_photo') %}
+    <div class="home-explore-status">珍しい写真を記録しました：{{ last_result['unlocked_photo']['name_ja'] }}</div>
+    {% elif last_result.get('photo_duplicate') %}
+    <div class="home-explore-status">写真は記録済みでした。補填 +{{ last_result['photo_compensation_points'] }}pt</div>
+    {% endif %}
     <h3>日誌</h3>
     <div class="robot-time">「{{ last_result['journal_text'] }}」</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('companion_album') }}">アルバムを見る</a></p>
   </div>
   {% endif %}
 
@@ -79,6 +85,10 @@
   </div>
   {% endif %}
 
-  <p class="link"><a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ戻る</a></p>
+  <p class="link">
+    <a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ戻る</a>
+    |
+    <a class="battle-home-link" href="{{ url_for('companion_album') }}">相棒アルバム</a>
+  </p>
 </div>
 {% endblock %}
