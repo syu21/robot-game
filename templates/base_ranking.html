@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>基地いいねランキング</h1>
+
+<div class="card">
+  <div class="robot-part">対象週: {{ ranking['week_key'] }}</div>
+  <p class="link">
+    {% if ranking['viewer_user_id'] %}
+    <a href="{{ url_for('base_visit', user_id=ranking['viewer_user_id']) }}">自分の基地を見る</a>
+    |
+    {% endif %}
+    <a href="{{ url_for('ranking') }}">通常ランキングへ</a>
+    |
+    <a href="{{ url_for('home') }}">基地へ</a>
+  </p>
+</div>
+
+{% for section in ranking['sections'] %}
+<section class="card">
+  <h2>{{ section['title'] }}</h2>
+  <div class="robot-part">{{ section['description'] }}</div>
+  {% if section['rows'] %}
+  <table>
+    <tr>
+      <th>順位</th>
+      <th>基地</th>
+      <th>相棒ロボ</th>
+      <th>いいね</th>
+      <th>写真</th>
+      <th></th>
+    </tr>
+    {% for row in section['rows'] %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>
+        <div class="ranking-robot-cell">
+          <img class="ranking-robot-thumb{% if loop.index <= 5 %} robo-anim robo-anim-idle{% endif %}" src="{{ row['robot_image_url'] }}" alt="{{ row['display_name'] }} robot" loading="lazy" />
+          <div>
+            <div><b>{{ row['display_name'] }}</b></div>
+            <div class="robot-part">{{ row['robot']['name'] }}</div>
+          </div>
+        </div>
+      </td>
+      <td>{{ row['companion_name'] }}</td>
+      <td>{{ row['like_count'] }}</td>
+      <td>{{ row['photo_owned'] }} / {{ row['photo_total'] }}</td>
+      <td><a class="battle-home-link" href="{{ url_for('base_visit', user_id=row['user_id']) }}">基地を見る</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>まだ基地いいねはありません。</p>
+  <p>気になる基地を見つけていいねしてみよう。</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

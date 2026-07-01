@@ -205,6 +205,7 @@ AUDIT_EVENT_TYPES = {
     "COMPANION_ALBUM_PHOTO_UNLOCK": "audit.companion.album.photo.unlock",
     "BASE_VIEW": "audit.base.view",
     "BASE_LIKE": "audit.base.like",
+    "BASE_RANKING_VIEW": "audit.base.ranking.view",
     "INVENTORY_DELTA": "audit.inventory.delta",
     "PART_AUTO_SELL": "audit.part.auto_sell",
     "PART_OVERFLOW_CLEANUP_SELL": "audit.part.overflow_cleanup_sell",

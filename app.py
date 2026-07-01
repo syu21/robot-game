@@ -17791,6 +17791,95 @@ def get_base_visit_view(db, base_user_id, *, viewer_user_id=None, ensure=True):
     }
 
 
+def _base_ranking_week_start_ts(now_ts=None):
+    week_key = _world_week_key(now_ts)
+    week_start, _ = _world_week_bounds(week_key)
+    return int(week_start.timestamp()), week_key
+
+
+def _base_ranking_rows(db, *, since_ts=None, limit=10):
+    params = []
+    where = "WHERE COALESCE(u.is_banned, 0) = 0"
+    if since_ts is not None:
+        where += " AND ubl.created_at >= ?"
+        params.append(int(since_ts))
+    params.append(int(limit))
+    rows = db.execute(
+        f"""
+        SELECT u.*, COUNT(ubl.id) AS like_count
+        FROM user_base_likes ubl
+        JOIN users u ON u.id = ubl.base_user_id
+        {where}
+        GROUP BY u.id
+        ORDER BY like_count DESC, u.id ASC
+        LIMIT ?
+        """,
+        tuple(params),
+    ).fetchall()
+    ranking_rows = []
+    for row in rows:
+        uid = int(row["id"])
+        companion = get_active_companion(db, uid, ensure=False)
+        album = companion_album_summary(db, uid, ensure=False)
+        robot = _base_robot_view(db, uid)
+        ranking_rows.append(
+            {
+                "user_id": uid,
+                "username": row["username"],
+                "display_name": _display_username_for_user_row(db, row),
+                "robot": robot,
+                "robot_image_url": robot.get("image_url") or url_for("static", filename="assets/placeholder_player.png"),
+                "companion_name": companion.get("name_ja") if companion else "相棒未設定",
+                "like_count": int(row["like_count"] or 0),
+                "photo_owned": int(album.get("photo_owned") or 0),
+                "photo_total": int(album.get("photo_total") or 0),
+            }
+        )
+    return ranking_rows
+
+
+def get_base_ranking_view(db, *, viewer_user_id=None, limit=10, request_id=None, ip=None):
+    viewer_uid = int(viewer_user_id) if viewer_user_id else None
+    ensure_companion_album_photos(db, user_id=viewer_uid)
+    week_start_ts, week_key = _base_ranking_week_start_ts()
+    weekly_rows = _base_ranking_rows(db, since_ts=week_start_ts, limit=limit)
+    total_rows = _base_ranking_rows(db, limit=limit)
+    for ranking_type, rows in (("weekly", weekly_rows), ("total", total_rows)):
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["BASE_RANKING_VIEW"],
+            user_id=viewer_uid,
+            request_id=request_id,
+            action_key="base_ranking_view",
+            entity_type="base_ranking",
+            entity_id=None,
+            payload={
+                "viewer_user_id": viewer_uid,
+                "ranking_type": ranking_type,
+                "result_count": len(rows),
+            },
+            ip=ip,
+        )
+    return {
+        "viewer_user_id": viewer_uid,
+        "week_key": week_key,
+        "sections": [
+            {
+                "key": "weekly",
+                "title": "今週の話題基地",
+                "description": "今週いいねされた基地のランキングです。",
+                "rows": weekly_rows,
+            },
+            {
+                "key": "total",
+                "title": "累計人気基地",
+                "description": "これまでの基地いいね累計ランキングです。",
+                "rows": total_rows,
+            },
+        ],
+    }
+
+
 def like_base(db, base_user_id, liked_by_user_id, *, request_id=None, ip=None):
     base_user = _base_visit_user(db, base_user_id)
     if not base_user:
@@ -39494,6 +39583,20 @@ def base_visit(user_id):
     )
     db.commit()
     return render_template("base_visit.html", base=base, message=session.pop("message", None))
+
+
+@app.route("/base/ranking")
+def base_ranking():
+    db = get_db()
+    viewer_user_id = int(session["user_id"]) if session.get("user_id") else None
+    ranking_view = get_base_ranking_view(
+        db,
+        viewer_user_id=viewer_user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template("base_ranking.html", ranking=ranking_view)
 
 
 @app.route("/base/<int:user_id>/like", methods=["POST"])
