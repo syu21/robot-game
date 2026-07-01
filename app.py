@@ -17752,6 +17752,7 @@ def get_base_visit_view(db, base_user_id, *, viewer_user_id=None, ensure=True):
     companion = get_active_companion(db, uid, ensure=ensure)
     dispatch = companion_dispatch_summary(db, uid, ensure=ensure)
     factory = get_user_factory_view(db, uid, ensure=ensure)
+    album_summary = companion_album_summary(db, uid, ensure=ensure)
     showcase_rows = _showcase_rows(db, uid)
     like_state = _base_like_state(db, uid, viewer_uid)
     factory_summary = [
@@ -17772,6 +17773,12 @@ def get_base_visit_view(db, base_user_id, *, viewer_user_id=None, ensure=True):
         "cosmetics": cosmetics,
         "companion": companion,
         "dispatch": dispatch,
+        "album": {
+            "photo_owned": int(album_summary.get("photo_owned") or 0),
+            "photo_total": int(album_summary.get("photo_total") or 0),
+            "dispatch_count": int(album_summary.get("dispatch_count") or 0),
+            "factory_points_collected": int(album_summary.get("factory_points_collected") or 0),
+        },
         "factory": {
             "factory_points": int(factory.get("factory_points") or 0),
             "facilities": factory_summary,
@@ -39466,10 +39473,9 @@ def companion_dispatch_claim():
 
 
 @app.route("/base/<int:user_id>")
-@login_required
 def base_visit(user_id):
     db = get_db()
-    viewer_user_id = int(session["user_id"])
+    viewer_user_id = int(session["user_id"]) if session.get("user_id") else None
     base = get_base_visit_view(db, user_id, viewer_user_id=viewer_user_id)
     audit_log(
         db,

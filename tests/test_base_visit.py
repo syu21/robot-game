@@ -46,11 +46,16 @@ class BaseVisitTests(unittest.TestCase):
             session["username"] = username
         return client
 
+    def _anon_client(self):
+        return game_app.app.test_client()
+
     def test_base_visit_shows_other_user_base(self):
         html = self._client().get(f"/base/{self.base_user_id}").get_data(as_text=True)
         self.assertIn("base_user の研究基地", html)
         self.assertIn("通常研究所", html)
         self.assertIn("回収ペットロボ", html)
+        self.assertIn("相棒アルバム概要", html)
+        self.assertIn("0 / 5", html)
         self.assertIn("工場概要", html)
         self.assertIn("いいね", html)
         with game_app.app.app_context():
@@ -70,6 +75,36 @@ class BaseVisitTests(unittest.TestCase):
     def test_missing_user_shows_not_found_message(self):
         html = self._client().get("/base/999999").get_data(as_text=True)
         self.assertIn("基地が見つかりません", html)
+
+    def test_anonymous_user_can_view_base_but_not_like_directly(self):
+        html = self._anon_client().get(f"/base/{self.base_user_id}").get_data(as_text=True)
+        self.assertIn("base_user の研究基地", html)
+        self.assertIn("ログインでいいね", html)
+        response = self._anon_client().post(f"/base/{self.base_user_id}/like")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers.get("Location", ""))
+
+    def test_album_summary_is_visible_on_base(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            start = game_app.start_companion_dispatch(
+                db,
+                self.base_user_id,
+                "short_patrol",
+                event_type_override="rare_photo",
+                journal_key_override="old_hangar",
+            )
+            db.execute(
+                "UPDATE user_companion_dispatches SET completes_at = ? WHERE id = ?",
+                (int(time.time()) - 1, int(start["dispatch_id"])),
+            )
+            claim = game_app.claim_companion_dispatch(db, self.base_user_id)
+            self.assertTrue(claim["ok"])
+        html = self._client().get(f"/base/{self.base_user_id}").get_data(as_text=True)
+        self.assertIn("相棒アルバム概要", html)
+        self.assertIn("1 / 5", html)
+        self.assertIn("総派遣回数", html)
+        self.assertIn("累計回収", html)
 
     def test_dispatch_status_is_visible(self):
         with game_app.app.app_context():

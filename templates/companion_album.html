@@ -56,6 +56,8 @@
     <a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ戻る</a>
     |
     <a class="battle-home-link" href="{{ url_for('companion_dispatch') }}">相棒ロボ派遣へ</a>
+    |
+    <a class="battle-home-link" href="{{ url_for('base_visit', user_id=user['id']) }}">自分の基地を見る</a>
   </p>
 </div>
 {% endblock %}

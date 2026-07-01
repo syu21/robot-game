@@ -82,8 +82,26 @@
       <button type="submit">いいね</button>
     </form>
     {% else %}
-    <button type="button" disabled>いいね不可</button>
+    <a class="battle-home-link" href="{{ url_for('login', next=request.path) }}">ログインでいいね</a>
     {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>相棒アルバム概要</h2>
+  <div class="robot-grid">
+    <div class="robot-card">
+      <div class="robot-id">写真</div>
+      <div><b>{{ base['album']['photo_owned'] }} / {{ base['album']['photo_total'] }}</b></div>
+    </div>
+    <div class="robot-card">
+      <div class="robot-id">総派遣回数</div>
+      <div><b>{{ base['album']['dispatch_count'] }}回</b></div>
+    </div>
+    <div class="robot-card">
+      <div class="robot-id">累計回収</div>
+      <div><b>{{ base['album']['factory_points_collected'] }}pt</b></div>
+    </div>
   </div>
 </div>
 
