@@ -1,12 +1,19 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="panel">
-  <h1>再調整完了！</h1>
+  <h1>配分再調整候補</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
   <div class="card">
     <div class="stat-label">対象</div>
     <div class="stat-value stat-small">{{ module['name_ja'] }}</div>
     <div class="robot-time">消費コイン: {{ cost_coins }}</div>
     <div class="robot-time">残りコイン: {{ coins_after }}</div>
+    {% if candidate %}
+    <div class="robot-time">候補状態: {{ candidate['status'] }}{% if candidate['is_expired'] %} / 期限切れ{% endif %}</div>
+    <div class="robot-time">合計: {{ candidate['before_total'] }} → {{ candidate['candidate_total'] }}（差分 {{ candidate['total_delta'] }}）</div>
+    {% endif %}
   </div>
   <div class="stat-grid">
     <div class="stat-card">
@@ -22,7 +29,7 @@
       {% endif %}
     </div>
     <div class="stat-card">
-      <div class="stat-label">変更後</div>
+      <div class="stat-label">候補補正</div>
       {% if after_chips %}
       <div class="module-stat-chips">
         {% for chip in after_chips %}
@@ -35,7 +42,17 @@
     </div>
   </div>
   <div class="card">
-    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_reroll_confirm', module_instance_id=module['instance_id']) }}">もう一度再調整</a></p>
+    {% if candidate and candidate['status'] == 'pending' and not candidate['is_expired'] %}
+    <form method="post" action="{{ url_for('modules_reroll_accept', candidate_id=candidate['id']) }}" class="inline-form inline-form-top">
+      <button type="submit">採用する</button>
+    </form>
+    <form method="post" action="{{ url_for('modules_reroll_reject', candidate_id=candidate['id']) }}" class="inline-form inline-form-top">
+      <button type="submit">今のままにする</button>
+    </form>
+    {% else %}
+    <div class="robot-time">この候補は採用できません。</div>
+    {% endif %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_reroll_confirm', module_instance_id=module['instance_id']) }}">もう一度候補を生成</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">モジュール一覧へ</a></p>
   </div>
 </div>

@@ -1280,6 +1280,25 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_reroll_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_id INTEGER NOT NULL,
+            before_stats_json TEXT NOT NULL,
+            candidate_stats_json TEXT NOT NULL,
+            cost_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            request_id TEXT,
+            decided_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_id) REFERENCES user_research_modules(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_research_module_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3685,6 +3704,23 @@ def main():
         cur.execute("ALTER TABLE world_events_log ADD COLUMN delta_coins INTEGER")
     if "delta_count" not in wel_cols:
         cur.execute("ALTER TABLE world_events_log ADD COLUMN delta_count INTEGER")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_reroll_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_id INTEGER NOT NULL,
+            before_stats_json TEXT NOT NULL,
+            candidate_stats_json TEXT NOT NULL,
+            cost_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            request_id TEXT,
+            decided_at INTEGER
+        )
+        """
+    )
     mini_robot_cols = {row[1] for row in cur.execute("PRAGMA table_info(user_mini_robots)").fetchall()}
     mini_robot_column_defs = {
         "personality_key": "personality_key TEXT DEFAULT NULL",
@@ -3770,6 +3806,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_reroll_candidates_user_module_status ON module_reroll_candidates(user_id, module_id, status, expires_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")

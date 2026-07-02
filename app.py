@@ -10741,6 +10741,25 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_reroll_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_id INTEGER NOT NULL,
+            before_stats_json TEXT NOT NULL,
+            candidate_stats_json TEXT NOT NULL,
+            cost_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            request_id TEXT,
+            decided_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_id) REFERENCES user_research_modules(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_research_module_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -13724,6 +13743,23 @@ def ensure_schema(db):
         db.execute("ALTER TABLE world_events_log ADD COLUMN delta_count INTEGER")
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_reroll_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            module_id INTEGER NOT NULL,
+            before_stats_json TEXT NOT NULL,
+            candidate_stats_json TEXT NOT NULL,
+            cost_coins INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            request_id TEXT,
+            decided_at INTEGER
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS battle_result_cache (
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
@@ -13820,6 +13856,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_reroll_candidates_user_module_status ON module_reroll_candidates(user_id, module_id, status, expires_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")
@@ -15691,6 +15728,10 @@ def _research_module_bonus_dict(module):
     }
 
 
+def _research_module_stats_total(stats):
+    return sum(max(0, int((stats or {}).get(key) or 0)) for key in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"))
+
+
 def _research_module_reroll_rule(module):
     rarity = str((module or {}).get("rarity") or "").strip()
     rule = RESEARCH_MODULE_REROLL_RULES.get(rarity)
@@ -15706,11 +15747,100 @@ def _roll_research_module_reroll_bonuses(module, *, rng=None):
     roller = rng or random
     stat_keys = ("hp", "atk", "def", "spd", "acc", "cri")
     slots = min(len(stat_keys), max(1, int(rule["slots"])))
+    before_total = _research_module_stats_total(_research_module_bonus_dict(module))
+    if before_total > 0:
+        target_min = max(1, int(round(before_total * 0.95)))
+        target_max = max(target_min, int(round(before_total * 1.05)))
+        target_total = int(roller.randint(target_min, target_max))
+        slots = min(slots, target_total, len(stat_keys))
+        picked = roller.sample(stat_keys, slots)
+        bonuses = {f"{key}_bonus": 0 for key in stat_keys}
+        if slots == 1:
+            bonuses[f"{picked[0]}_bonus"] = target_total
+            return bonuses
+        cuts = sorted(roller.sample(range(1, target_total), slots - 1))
+        values = []
+        previous = 0
+        for cut in cuts + [target_total]:
+            values.append(cut - previous)
+            previous = cut
+        roller.shuffle(values)
+        for stat_key, value in zip(picked, values):
+            bonuses[f"{stat_key}_bonus"] = int(value)
+        return bonuses
     picked = roller.sample(stat_keys, slots)
     bonuses = {f"{key}_bonus": 0 for key in stat_keys}
     for stat_key in picked:
         bonuses[f"{stat_key}_bonus"] = int(roller.randint(int(rule["min"]), int(rule["max"])))
     return bonuses
+
+
+def _module_reroll_candidate_payload(before_stats, candidate_stats):
+    before_total = _research_module_stats_total(before_stats)
+    candidate_total = _research_module_stats_total(candidate_stats)
+    ratio = (float(candidate_total) / float(before_total)) if before_total > 0 else 0.0
+    return {
+        "before_total": int(before_total),
+        "candidate_total": int(candidate_total),
+        "total_delta": int(candidate_total - before_total),
+        "total_ratio": ratio,
+    }
+
+
+def _expire_module_reroll_candidates(db, *, user_id=None, module_id=None, now_ts=None, request_id=None, ip=None):
+    now_value = int(now_ts or time.time())
+    where = ["status = 'pending'", "expires_at <= ?"]
+    params = [now_value]
+    if user_id is not None:
+        where.append("user_id = ?")
+        params.append(int(user_id))
+    if module_id is not None:
+        where.append("module_id = ?")
+        params.append(int(module_id))
+    rows = db.execute(
+        f"SELECT * FROM module_reroll_candidates WHERE {' AND '.join(where)}",
+        tuple(params),
+    ).fetchall()
+    for row in rows:
+        db.execute(
+            "UPDATE module_reroll_candidates SET status = 'expired', decided_at = ? WHERE id = ? AND status = 'pending'",
+            (now_value, int(row["id"])),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_REROLL_EXPIRE"],
+            user_id=int(row["user_id"]),
+            request_id=request_id,
+            action_key="module_reroll_expire",
+            entity_type="module_reroll_candidate",
+            entity_id=int(row["id"]),
+            payload={
+                "user_id": int(row["user_id"]),
+                "module_id": int(row["module_id"]),
+                "candidate_id": int(row["id"]),
+                "status": "expired",
+            },
+            ip=ip,
+        )
+    return len(rows)
+
+
+def _pending_module_reroll_candidate(db, user_id, module_id, *, now_ts=None):
+    now_value = int(now_ts or time.time())
+    _expire_module_reroll_candidates(db, user_id=user_id, module_id=module_id, now_ts=now_value)
+    return db.execute(
+        """
+        SELECT *
+        FROM module_reroll_candidates
+        WHERE user_id = ?
+          AND module_id = ?
+          AND status = 'pending'
+          AND expires_at > ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (int(user_id), int(module_id), now_value),
+    ).fetchone()
 
 
 def _annotate_research_module_reroll_status(modules, user):
@@ -15732,7 +15862,7 @@ def _annotate_research_module_reroll_status(modules, user):
         elif coins < cost:
             module["reroll_status_label"] = f"コイン不足（{cost}）"
         else:
-            module["reroll_status_label"] = f"再調整 {cost}コイン"
+            module["reroll_status_label"] = f"配分再調整 {cost}コイン"
     return modules
 
 
@@ -15758,6 +15888,13 @@ def execute_research_module_reroll(db, user_id, module_instance_id, *, request_i
     module, error = _validate_research_module_reroll_target(db, user_id, module_instance_id)
     if error:
         return {"ok": False, "reason": error}
+    pending = _pending_module_reroll_candidate(db, user_id, module_instance_id)
+    if pending:
+        return {
+            "ok": False,
+            "reason": "未決定の配分再調整候補があります。先に採用するか、今のままにしてください。",
+            "pending_candidate_id": int(pending["id"]),
+        }
     user = db.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (int(user_id),)).fetchone()
     coins_before = int(user["coins"] or 0) if user else 0
     rule = _research_module_reroll_rule(module)
@@ -15765,34 +15902,31 @@ def execute_research_module_reroll(db, user_id, module_instance_id, *, request_i
     if coins_before < cost:
         return {"ok": False, "reason": f"コインが足りません。必要: {cost} / 所持: {coins_before}"}
     before_stats = _research_module_bonus_dict(module)
-    after_stats = _roll_research_module_reroll_bonuses(module, rng=rng)
+    candidate_stats = _roll_research_module_reroll_bonuses(module, rng=rng)
     coins_after = coins_before - cost
     now_ts = int(time.time())
+    db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, int(user_id)))
     cur = db.execute(
         """
-        UPDATE user_research_modules
-        SET hp_bonus = ?, atk_bonus = ?, def_bonus = ?, spd_bonus = ?, acc_bonus = ?, cri_bonus = ?, updated_at = ?
-        WHERE id = ?
-          AND user_id = ?
-          AND status = 'inventory'
-          AND COALESCE(is_locked, 0) = 0
+        INSERT INTO module_reroll_candidates (
+            user_id, module_id, before_stats_json, candidate_stats_json,
+            cost_coins, status, created_at, expires_at, request_id
+        )
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
         """,
         (
-            int(after_stats["hp_bonus"]),
-            int(after_stats["atk_bonus"]),
-            int(after_stats["def_bonus"]),
-            int(after_stats["spd_bonus"]),
-            int(after_stats["acc_bonus"]),
-            int(after_stats["cri_bonus"]),
-            now_ts,
-            int(module_instance_id),
             int(user_id),
+            int(module_instance_id),
+            json.dumps(before_stats, ensure_ascii=False, sort_keys=True),
+            json.dumps(candidate_stats, ensure_ascii=False, sort_keys=True),
+            cost,
+            now_ts,
+            now_ts + 86400,
+            request_id,
         ),
     )
-    if int(cur.rowcount or 0) != 1:
-        db.rollback()
-        return {"ok": False, "reason": "再調整に失敗しました。もう一度確認してください。"}
-    db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, int(user_id)))
+    candidate_id = int(cur.lastrowid)
+    totals = _module_reroll_candidate_payload(before_stats, candidate_stats)
     payload = {
         "user_id": int(user_id),
         "module_id": int(module_instance_id),
@@ -15801,19 +15935,23 @@ def execute_research_module_reroll(db, user_id, module_instance_id, *, request_i
         "module_name": module["name_ja"],
         "rarity": module["rarity"],
         "cost": cost,
+        "candidate_id": candidate_id,
+        "status": "pending",
         "before_stats": before_stats,
-        "after_stats": after_stats,
+        "candidate_stats": candidate_stats,
+        "after_stats": candidate_stats,
+        **totals,
         "coins_before": coins_before,
         "coins_after": coins_after,
     }
     audit_log(
         db,
-        AUDIT_EVENT_TYPES["MODULE_REROLL"],
+        AUDIT_EVENT_TYPES["MODULE_REROLL_CANDIDATE_CREATE"],
         user_id=int(user_id),
         request_id=request_id,
-        action_key="module_reroll",
-        entity_type="research_module",
-        entity_id=int(module_instance_id),
+        action_key="module_reroll_candidate_create",
+        entity_type="module_reroll_candidate",
+        entity_id=candidate_id,
         delta_coins=-cost,
         payload=payload,
         ip=ip,
@@ -15824,23 +15962,279 @@ def execute_research_module_reroll(db, user_id, module_instance_id, *, request_i
         user_id=int(user_id),
         request_id=request_id,
         action_key="module_reroll",
-        entity_type="research_module",
-        entity_id=int(module_instance_id),
+        entity_type="module_reroll_candidate",
+        entity_id=candidate_id,
         delta_coins=-cost,
         payload={**payload, "source": "module_reroll", "spend": cost},
         ip=ip,
     )
     db.commit()
-    after_module = _research_module_instance_row(db, int(module_instance_id), int(user_id))
     return {
         "ok": True,
-        "module": after_module,
+        "module": module,
+        "candidate_id": candidate_id,
         "before_stats": before_stats,
-        "after_stats": after_stats,
+        "candidate_stats": candidate_stats,
+        "after_stats": candidate_stats,
+        **totals,
         "cost": cost,
         "coins_before": coins_before,
         "coins_after": coins_after,
+        "expires_at": now_ts + 86400,
     }
+
+
+def _module_reroll_candidate_row(db, candidate_id, user_id=None):
+    where = ["id = ?"]
+    params = [int(candidate_id)]
+    if user_id is not None:
+        where.append("user_id = ?")
+        params.append(int(user_id))
+    return db.execute(
+        f"SELECT * FROM module_reroll_candidates WHERE {' AND '.join(where)} LIMIT 1",
+        tuple(params),
+    ).fetchone()
+
+
+def module_reroll_candidate_view(db, candidate_id, user_id=None):
+    row = _module_reroll_candidate_row(db, candidate_id, user_id)
+    if not row:
+        return None
+    module = _research_module_instance_row(db, int(row["module_id"]), int(row["user_id"]))
+    before_stats = json.loads(row["before_stats_json"] or "{}")
+    candidate_stats = json.loads(row["candidate_stats_json"] or "{}")
+    totals = _module_reroll_candidate_payload(before_stats, candidate_stats)
+    return {
+        "id": int(row["id"]),
+        "user_id": int(row["user_id"]),
+        "module_id": int(row["module_id"]),
+        "module": module,
+        "before_stats": before_stats,
+        "candidate_stats": candidate_stats,
+        "before_chips": _research_module_stat_chips(before_stats),
+        "candidate_chips": _research_module_stat_chips(candidate_stats),
+        "cost_coins": int(row["cost_coins"] or 0),
+        "status": row["status"],
+        "created_at": int(row["created_at"] or 0),
+        "expires_at": int(row["expires_at"] or 0),
+        "is_expired": int(row["expires_at"] or 0) <= int(time.time()),
+        **totals,
+    }
+
+
+def accept_module_reroll_candidate(db, user_id, candidate_id, *, request_id=None, ip=None):
+    row = _module_reroll_candidate_row(db, candidate_id, user_id)
+    if not row:
+        return {"ok": False, "reason": "配分再調整候補が見つかりません。"}
+    now_ts = int(time.time())
+    if row["status"] != "pending":
+        return {"ok": False, "reason": "この候補は処理済みです。"}
+    if int(row["expires_at"] or 0) <= now_ts:
+        _expire_module_reroll_candidates(db, user_id=user_id, module_id=int(row["module_id"]), now_ts=now_ts, request_id=request_id, ip=ip)
+        db.commit()
+        return {"ok": False, "reason": "この候補は期限切れです。"}
+    module, error = _validate_research_module_reroll_target(db, user_id, int(row["module_id"]))
+    if error:
+        return {"ok": False, "reason": error}
+    before_stats = json.loads(row["before_stats_json"] or "{}")
+    candidate_stats = json.loads(row["candidate_stats_json"] or "{}")
+    current_stats = _research_module_bonus_dict(module)
+    cur = db.execute(
+        """
+        UPDATE user_research_modules
+        SET hp_bonus = ?, atk_bonus = ?, def_bonus = ?, spd_bonus = ?, acc_bonus = ?, cri_bonus = ?, updated_at = ?
+        WHERE id = ?
+          AND user_id = ?
+          AND status = 'inventory'
+          AND COALESCE(is_locked, 0) = 0
+        """,
+        (
+            int(candidate_stats.get("hp_bonus") or 0),
+            int(candidate_stats.get("atk_bonus") or 0),
+            int(candidate_stats.get("def_bonus") or 0),
+            int(candidate_stats.get("spd_bonus") or 0),
+            int(candidate_stats.get("acc_bonus") or 0),
+            int(candidate_stats.get("cri_bonus") or 0),
+            now_ts,
+            int(row["module_id"]),
+            int(user_id),
+        ),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "候補を採用できませんでした。"}
+    db.execute("UPDATE module_reroll_candidates SET status = 'accepted', decided_at = ? WHERE id = ? AND status = 'pending'", (now_ts, int(candidate_id)))
+    payload = {
+        "user_id": int(user_id),
+        "module_id": int(row["module_id"]),
+        "candidate_id": int(candidate_id),
+        "status": "accepted",
+        "before_stats": before_stats,
+        "current_stats_before_accept": current_stats,
+        "candidate_stats": candidate_stats,
+        **_module_reroll_candidate_payload(before_stats, candidate_stats),
+    }
+    audit_log(db, AUDIT_EVENT_TYPES["MODULE_REROLL_ACCEPT"], user_id=int(user_id), request_id=request_id, action_key="module_reroll_accept", entity_type="module_reroll_candidate", entity_id=int(candidate_id), payload=payload, ip=ip)
+    db.commit()
+    return {"ok": True, "module_id": int(row["module_id"])}
+
+
+def reject_module_reroll_candidate(db, user_id, candidate_id, *, request_id=None, ip=None):
+    row = _module_reroll_candidate_row(db, candidate_id, user_id)
+    if not row:
+        return {"ok": False, "reason": "配分再調整候補が見つかりません。"}
+    if row["status"] != "pending":
+        return {"ok": False, "reason": "この候補は処理済みです。"}
+    now_ts = int(time.time())
+    status = "expired" if int(row["expires_at"] or 0) <= now_ts else "rejected"
+    db.execute("UPDATE module_reroll_candidates SET status = ?, decided_at = ? WHERE id = ? AND status = 'pending'", (status, now_ts, int(candidate_id)))
+    payload = {
+        "user_id": int(user_id),
+        "module_id": int(row["module_id"]),
+        "candidate_id": int(candidate_id),
+        "status": status,
+        "before_stats": json.loads(row["before_stats_json"] or "{}"),
+        "candidate_stats": json.loads(row["candidate_stats_json"] or "{}"),
+    }
+    event_type = AUDIT_EVENT_TYPES["MODULE_REROLL_EXPIRE" if status == "expired" else "MODULE_REROLL_REJECT"]
+    audit_log(db, event_type, user_id=int(user_id), request_id=request_id, action_key=f"module_reroll_{status}", entity_type="module_reroll_candidate", entity_id=int(candidate_id), payload=payload, ip=ip)
+    db.commit()
+    return {"ok": True, "module_id": int(row["module_id"]), "status": status}
+
+
+def _module_reroll_audit_rows(db, *, limit=100):
+    rows = db.execute(
+        """
+        SELECT wel.*, u.username, u.display_name
+        FROM world_events_log wel
+        LEFT JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+        ORDER BY wel.id DESC
+        LIMIT ?
+        """,
+        (AUDIT_EVENT_TYPES["MODULE_REROLL"], max(1, min(300, int(limit or 100)))),
+    ).fetchall()
+    restored_source_ids = {
+        int(row["source_event_id"])
+        for row in db.execute(
+            """
+            SELECT json_extract(payload_json, '$.source_event_id') AS source_event_id
+            FROM world_events_log
+            WHERE event_type = ?
+              AND json_extract(payload_json, '$.source_event_id') IS NOT NULL
+            """,
+            (AUDIT_EVENT_TYPES["MODULE_REROLL_RESTORE"],),
+        ).fetchall()
+        if row["source_event_id"] is not None
+    }
+    out = []
+    for row in rows:
+        payload = json.loads(row["payload_json"] or "{}")
+        before_stats = payload.get("before_stats") or {}
+        after_stats = payload.get("after_stats") or payload.get("candidate_stats") or {}
+        before_total = _research_module_stats_total(before_stats)
+        after_total = _research_module_stats_total(after_stats)
+        ratio = (float(after_total) / float(before_total)) if before_total > 0 else 0.0
+        out.append(
+            {
+                "id": int(row["id"]),
+                "created_at": row["created_at"],
+                "user_id": int(row["user_id"] or payload.get("user_id") or 0),
+                "username": row["display_name"] or row["username"] or "-",
+                "module_id": int(payload.get("module_id") or payload.get("module_instance_id") or 0),
+                "rarity": payload.get("rarity") or "",
+                "before_stats": before_stats,
+                "after_stats": after_stats,
+                "before_total": before_total,
+                "after_total": after_total,
+                "total_delta": after_total - before_total,
+                "is_large_drop": bool(before_total > 0 and ratio < 0.5),
+                "cost": int(payload.get("cost") or 0),
+                "coins_before": int(payload.get("coins_before") or 0),
+                "coins_after": int(payload.get("coins_after") or 0),
+                "request_id": row["request_id"] or payload.get("request_id") or "",
+                "restored": int(row["id"]) in restored_source_ids,
+            }
+        )
+    return out
+
+
+def restore_module_reroll_from_audit(db, *, admin_user_id, event_id, reason="", request_id=None, ip=None):
+    if not _is_admin_user(admin_user_id):
+        return {"ok": False, "reason": "管理者権限が必要です。"}
+    event = db.execute(
+        "SELECT * FROM world_events_log WHERE id = ? AND event_type = ? LIMIT 1",
+        (int(event_id), AUDIT_EVENT_TYPES["MODULE_REROLL"]),
+    ).fetchone()
+    if not event:
+        return {"ok": False, "reason": "再調整履歴が見つかりません。"}
+    already = db.execute(
+        """
+        SELECT id
+        FROM world_events_log
+        WHERE event_type = ?
+          AND CAST(json_extract(payload_json, '$.source_event_id') AS INTEGER) = ?
+        LIMIT 1
+        """,
+        (AUDIT_EVENT_TYPES["MODULE_REROLL_RESTORE"], int(event_id)),
+    ).fetchone()
+    if already:
+        return {"ok": False, "reason": "この履歴は復旧済みです。"}
+    payload = json.loads(event["payload_json"] or "{}")
+    target_user_id = int(payload.get("user_id") or event["user_id"] or 0)
+    module_id = int(payload.get("module_id") or payload.get("module_instance_id") or 0)
+    before_stats = payload.get("before_stats") or {}
+    if target_user_id <= 0 or module_id <= 0 or not before_stats:
+        return {"ok": False, "reason": "復旧に必要な情報が不足しています。"}
+    module = _research_module_instance_row(db, module_id, target_user_id)
+    if not module:
+        return {"ok": False, "reason": "対象モジュールが見つかりません。"}
+    current_stats = _research_module_bonus_dict(module)
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        UPDATE user_research_modules
+        SET hp_bonus = ?, atk_bonus = ?, def_bonus = ?, spd_bonus = ?, acc_bonus = ?, cri_bonus = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (
+            int(before_stats.get("hp_bonus") or 0),
+            int(before_stats.get("atk_bonus") or 0),
+            int(before_stats.get("def_bonus") or 0),
+            int(before_stats.get("spd_bonus") or 0),
+            int(before_stats.get("acc_bonus") or 0),
+            int(before_stats.get("cri_bonus") or 0),
+            now_ts,
+            module_id,
+            target_user_id,
+        ),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "復旧に失敗しました。"}
+    restored_at = now_str()
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_REROLL_RESTORE"],
+        user_id=int(admin_user_id),
+        request_id=request_id,
+        action_key="module_reroll_restore",
+        entity_type="research_module",
+        entity_id=module_id,
+        payload={
+            "admin_user_id": int(admin_user_id),
+            "target_user_id": target_user_id,
+            "module_id": module_id,
+            "source_event_id": int(event_id),
+            "restored_stats": before_stats,
+            "current_stats_before_restore": current_stats,
+            "restored_at": restored_at,
+            "reason": reason or "モジュール再調整v1の仕様説明不足による今回限りの復旧",
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "module_id": module_id, "target_user_id": target_user_id}
 
 
 def _factory_facility_def(facility_key):
@@ -38557,6 +38951,10 @@ def modules_reroll_confirm(module_instance_id):
     if error:
         session["message"] = error
         return redirect(url_for("modules"))
+    pending = _pending_module_reroll_candidate(db, user_id, module_instance_id)
+    if pending:
+        session["message"] = "未決定の配分再調整候補があります。先に採用するか、今のままにしてください。"
+        return redirect(url_for("modules_reroll_candidate", candidate_id=int(pending["id"])))
     rule = _research_module_reroll_rule(module)
     cost = int(rule["cost"])
     if int(user["coins"] or 0) < cost:
@@ -38601,18 +38999,77 @@ def modules_reroll():
     )
     if not result.get("ok"):
         session["message"] = result.get("reason") or "再調整できませんでした"
+        if result.get("pending_candidate_id"):
+            return redirect(url_for("modules_reroll_candidate", candidate_id=int(result["pending_candidate_id"])))
+        return redirect(url_for("modules"))
+    candidate = module_reroll_candidate_view(db, int(result["candidate_id"]), user_id)
+    return render_template(
+        "modules_reroll_result.html",
+        user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
+        candidate=candidate,
+        module=candidate["module"],
+        before_stats=candidate["before_stats"],
+        after_stats=candidate["candidate_stats"],
+        before_chips=candidate["before_chips"],
+        after_chips=candidate["candidate_chips"],
+        cost_coins=int(candidate["cost_coins"]),
+        coins_after=int(result["coins_after"]),
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/modules/reroll/candidate/<int:candidate_id>")
+@login_required
+def modules_reroll_candidate(candidate_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    candidate = module_reroll_candidate_view(db, candidate_id, user_id)
+    if not candidate:
+        session["message"] = "配分再調整候補が見つかりません。"
         return redirect(url_for("modules"))
     return render_template(
         "modules_reroll_result.html",
         user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
-        module=result["module"],
-        before_stats=result["before_stats"],
-        after_stats=result["after_stats"],
-        before_chips=_research_module_stat_chips(result["before_stats"]),
-        after_chips=_research_module_stat_chips(result["after_stats"]),
-        cost_coins=int(result["cost"]),
-        coins_after=int(result["coins_after"]),
+        candidate=candidate,
+        module=candidate["module"],
+        before_stats=candidate["before_stats"],
+        after_stats=candidate["candidate_stats"],
+        before_chips=candidate["before_chips"],
+        after_chips=candidate["candidate_chips"],
+        cost_coins=int(candidate["cost_coins"]),
+        coins_after=int(db.execute("SELECT coins FROM users WHERE id = ?", (user_id,)).fetchone()["coins"] or 0),
+        message=session.pop("message", None),
     )
+
+
+@app.route("/modules/reroll/candidate/<int:candidate_id>/accept", methods=["POST"])
+@login_required
+def modules_reroll_accept(candidate_id):
+    db = get_db()
+    result = accept_module_reroll_candidate(
+        db,
+        int(session["user_id"]),
+        candidate_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    session["message"] = "配分再調整候補を採用しました。" if result.get("ok") else result.get("reason") or "候補を採用できませんでした。"
+    return redirect(url_for("modules"))
+
+
+@app.route("/modules/reroll/candidate/<int:candidate_id>/reject", methods=["POST"])
+@login_required
+def modules_reroll_reject(candidate_id):
+    db = get_db()
+    result = reject_module_reroll_candidate(
+        db,
+        int(session["user_id"]),
+        candidate_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    session["message"] = "現在の補正を維持しました。" if result.get("ok") else result.get("reason") or "候補を破棄できませんでした。"
+    return redirect(url_for("modules"))
 
 
 @app.route("/modules")
@@ -44134,6 +44591,38 @@ def admin_comms_message_delete(message_id):
     )
     session["message"] = "通信を削除しました。" if result.get("ok") else result.get("reason") or "通信を削除できませんでした。"
     return redirect(next_url)
+
+
+@app.route("/admin/modules/reroll-audit")
+@login_required
+def admin_modules_reroll_audit():
+    if not _is_admin_user(session["user_id"]):
+        abort(403)
+    db = get_db()
+    return render_template(
+        "admin_modules_reroll_audit.html",
+        rows=_module_reroll_audit_rows(db, limit=150),
+        message=session.pop("message", None),
+        default_reason="モジュール再調整v1の仕様説明不足による今回限りの復旧",
+    )
+
+
+@app.route("/admin/modules/reroll-audit/<int:event_id>/restore", methods=["POST"])
+@login_required
+def admin_modules_reroll_restore(event_id):
+    if not _is_admin_user(session["user_id"]):
+        abort(403)
+    db = get_db()
+    result = restore_module_reroll_from_audit(
+        db,
+        admin_user_id=int(session["user_id"]),
+        event_id=event_id,
+        reason=(request.form.get("reason") or "").strip(),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    session["message"] = "再調整前の補正へ復旧しました。" if result.get("ok") else result.get("reason") or "復旧できませんでした。"
+    return redirect(url_for("admin_modules_reroll_audit"))
 
 
 def _admin_faction_comms_rows(db, *, faction_key="", user_id="", keyword="", include_deleted=False, limit=100):

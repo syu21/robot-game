@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="panel">
-  <h1>モジュール再調整</h1>
+  <h1>モジュール配分再調整</h1>
   {% if message %}
   <div class="flash">{{ message }}</div>
   {% endif %}
@@ -27,11 +27,12 @@
     {% endif %}
     <div class="upgrade-cost">消費コイン: {{ cost_coins }}</div>
     <div class="robot-time">所持コイン: {{ coins_before }}</div>
-    <div class="robot-time">再調整後の内容は実行後に決まります。現在の補正は失われ、元に戻せません。</div>
+    <div class="robot-time">現在の補正合計を大きく保ったまま、補正先の能力を再抽選します。結果を見てから採用するか選べます。</div>
+    <div class="robot-time">コインは候補生成時に消費されます。候補を採用しなければ現在の補正は維持されます。候補は24時間で期限切れになります。</div>
     <form method="post" action="{{ url_for('modules_reroll') }}" class="inline-form inline-form-top">
       <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
       <input type="hidden" name="reroll_token" value="{{ reroll_token }}" />
-      <button type="submit">再調整する</button>
+      <button type="submit">候補を生成する</button>
     </form>
   </div>
   <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">やめる</a></p>

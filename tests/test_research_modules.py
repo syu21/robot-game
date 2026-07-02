@@ -732,33 +732,38 @@ class ResearchModuleTests(unittest.TestCase):
         poor_resp = self._client().get(f"/modules/reroll/confirm/{poor_id}", follow_redirects=True)
         self.assertIn("コインが足りません", poor_resp.get_data(as_text=True))
 
-    def test_reroll_spends_coins_changes_stats_and_keeps_identity_flags(self):
+    def test_reroll_candidate_spends_coins_without_changing_module_until_accept(self):
         module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
         with game_app.app.app_context():
             db = game_app.get_db()
+            db.execute(
+                """
+                UPDATE user_research_modules
+                SET hp_bonus = 0, atk_bonus = 40, def_bonus = 36, spd_bonus = 0, acc_bonus = 0, cri_bonus = 0
+                WHERE id = ?
+                """,
+                (module_id,),
+            )
             db.execute("UPDATE users SET coins = 500, active_research_module_instance_id = ? WHERE id = ?", (module_id, self.user_id))
             before = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
             db.commit()
         with game_app.app.app_context():
             db = game_app.get_db()
-            with mock.patch.object(game_app.random, "sample", return_value=["atk"]), \
-                 mock.patch.object(game_app.random, "randint", return_value=3):
-                result = game_app.execute_research_module_reroll(db, self.user_id, module_id, request_id="reroll-test", ip="127.0.0.1")
+            result = game_app.execute_research_module_reroll(db, self.user_id, module_id, request_id="reroll-test", ip="127.0.0.1")
             self.assertTrue(result["ok"])
-            after = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            after_create = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
             user = db.execute("SELECT coins, active_research_module_instance_id FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertEqual(int(user["coins"]), 400)
             self.assertEqual(int(user["active_research_module_instance_id"]), module_id)
-            self.assertEqual(int(after["id"]), module_id)
-            self.assertEqual(int(after["user_id"]), self.user_id)
-            self.assertEqual(after["module_key"], before["module_key"])
-            self.assertEqual(int(after["is_locked"] or 0), int(before["is_locked"] or 0))
-            self.assertEqual(int(after["atk_bonus"] or 0), 3)
-            for key in ("hp_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"):
-                self.assertEqual(int(after[key] or 0), 0)
+            self.assertEqual(int(after_create["atk_bonus"] or 0), int(before["atk_bonus"] or 0))
+            self.assertEqual(int(after_create["def_bonus"] or 0), int(before["def_bonus"] or 0))
+            self.assertEqual(result["before_total"], 76)
+            self.assertGreaterEqual(result["candidate_total"], round(76 * 0.95))
+            self.assertLessEqual(result["candidate_total"], round(76 * 1.05))
+            self.assertGreaterEqual(max(result["candidate_stats"].values()), 10)
             event = db.execute(
                 "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
-                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"]),
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL_CANDIDATE_CREATE"]),
             ).fetchone()
             self.assertIsNotNone(event)
             payload = json.loads(event["payload_json"] or "{}")
@@ -766,8 +771,43 @@ class ResearchModuleTests(unittest.TestCase):
             self.assertEqual(payload["cost"], 100)
             self.assertEqual(payload["coins_before"], 500)
             self.assertEqual(payload["coins_after"], 400)
-            self.assertIn("before_stats", payload)
-            self.assertIn("after_stats", payload)
+            self.assertIn("candidate_stats", payload)
+
+            accept = game_app.accept_module_reroll_candidate(db, self.user_id, result["candidate_id"])
+            self.assertTrue(accept["ok"])
+            after_accept = db.execute("SELECT * FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            accepted_total = sum(int(after_accept[key] or 0) for key in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"))
+            self.assertEqual(accepted_total, result["candidate_total"])
+            accept_event = db.execute(
+                "SELECT id FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL_ACCEPT"]),
+            ).fetchone()
+            self.assertIsNotNone(accept_event)
+
+    def test_reroll_reject_keeps_current_stats_and_pending_blocks_regeneration(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET atk_bonus = 30, def_bonus = 40 WHERE id = ?", (module_id,))
+            db.execute("UPDATE users SET coins = 500 WHERE id = ?", (self.user_id,))
+            db.commit()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            first = game_app.execute_research_module_reroll(db, self.user_id, module_id)
+            self.assertTrue(first["ok"])
+            second = game_app.execute_research_module_reroll(db, self.user_id, module_id)
+            self.assertFalse(second["ok"])
+            self.assertIn("未決定", second["reason"])
+            reject = game_app.reject_module_reroll_candidate(db, self.user_id, first["candidate_id"])
+            self.assertTrue(reject["ok"])
+            after = db.execute("SELECT atk_bonus, def_bonus FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            self.assertEqual(int(after["atk_bonus"] or 0), 30)
+            self.assertEqual(int(after["def_bonus"] or 0), 40)
+            reject_event = db.execute(
+                "SELECT id FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL_REJECT"]),
+            ).fetchone()
+            self.assertIsNotNone(reject_event)
 
     def test_reroll_roll_bounds_by_rarity(self):
         cases = [
@@ -778,6 +818,10 @@ class ResearchModuleTests(unittest.TestCase):
             module_id = self._grant_module(self.user_id, module_key, count=1)[0]
             with game_app.app.app_context():
                 db = game_app.get_db()
+                db.execute(
+                    "UPDATE user_research_modules SET hp_bonus = 0, atk_bonus = 0, def_bonus = 0, spd_bonus = 0, acc_bonus = 0, cri_bonus = 0 WHERE id = ?",
+                    (module_id,),
+                )
                 module = game_app._research_module_instance_row(db, module_id, self.user_id)
                 bonuses = game_app._roll_research_module_reroll_bonuses(module)
             nonzero = [int(value or 0) for value in bonuses.values() if int(value or 0) > 0]
@@ -787,12 +831,76 @@ class ResearchModuleTests(unittest.TestCase):
         synth_id = self._grant_module(self.user_id, "synthesized_module", count=1)[0]
         with game_app.app.app_context():
             db = game_app.get_db()
-            db.execute("UPDATE user_research_modules SET synthesis_grade = 'refined' WHERE id = ?", (synth_id,))
+            db.execute(
+                "UPDATE user_research_modules SET synthesis_grade = 'refined', hp_bonus = 0, atk_bonus = 0, def_bonus = 0, spd_bonus = 0, acc_bonus = 0, cri_bonus = 0 WHERE id = ?",
+                (synth_id,),
+            )
             module = game_app._research_module_instance_row(db, synth_id, self.user_id)
             bonuses = game_app._roll_research_module_reroll_bonuses(module)
         nonzero = [int(value or 0) for value in bonuses.values() if int(value or 0) > 0]
         self.assertEqual(len(nonzero), 2)
         self.assertTrue(all(4 <= value <= 8 for value in nonzero))
+
+    def test_reroll_expired_candidate_cannot_be_accepted(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET atk_bonus = 30 WHERE id = ?", (module_id,))
+            db.execute("UPDATE users SET coins = 500 WHERE id = ?", (self.user_id,))
+            result = game_app.execute_research_module_reroll(db, self.user_id, module_id)
+            self.assertTrue(result["ok"])
+            db.execute("UPDATE module_reroll_candidates SET expires_at = ? WHERE id = ?", (int(time.time()) - 1, result["candidate_id"]))
+            db.commit()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            accepted = game_app.accept_module_reroll_candidate(db, self.user_id, result["candidate_id"])
+            self.assertFalse(accepted["ok"])
+            self.assertIn("期限切れ", accepted["reason"])
+
+    def test_admin_can_view_and_restore_legacy_reroll_audit(self):
+        module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        before_stats = {"hp_bonus": 0, "atk_bonus": 40, "def_bonus": 36, "spd_bonus": 0, "acc_bonus": 0, "cri_bonus": 0}
+        after_stats = {"hp_bonus": 0, "atk_bonus": 8, "def_bonus": 0, "spd_bonus": 0, "acc_bonus": 0, "cri_bonus": 0}
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE user_research_modules SET atk_bonus = 8, def_bonus = 0 WHERE id = ?", (module_id,))
+            game_app.audit_log(
+                db,
+                game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"],
+                user_id=self.user_id,
+                request_id="legacy-reroll",
+                action_key="module_reroll",
+                entity_type="research_module",
+                entity_id=module_id,
+                payload={
+                    "user_id": self.user_id,
+                    "module_id": module_id,
+                    "rarity": "prototype",
+                    "cost": 100,
+                    "before_stats": before_stats,
+                    "after_stats": after_stats,
+                    "coins_before": 500,
+                    "coins_after": 400,
+                },
+            )
+            db.commit()
+        client = self._client()
+        html = client.get("/admin/modules/reroll-audit").get_data(as_text=True)
+        self.assertIn("大幅低下", html)
+        self.assertIn("before_statsへ復旧", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            event_id = int(db.execute("SELECT id FROM world_events_log WHERE event_type = ? ORDER BY id DESC LIMIT 1", (game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"],)).fetchone()["id"])
+        resp = client.post(f"/admin/modules/reroll-audit/{event_id}/restore", follow_redirects=True)
+        self.assertIn("復旧しました", resp.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT atk_bonus, def_bonus FROM user_research_modules WHERE id = ?", (module_id,)).fetchone()
+            self.assertEqual(int(row["atk_bonus"] or 0), 40)
+            self.assertEqual(int(row["def_bonus"] or 0), 36)
+            restore_event = db.execute("SELECT id FROM world_events_log WHERE event_type = ? ORDER BY id DESC LIMIT 1", (game_app.AUDIT_EVENT_TYPES["MODULE_REROLL_RESTORE"],)).fetchone()
+            self.assertIsNotNone(restore_event)
+
 
     def test_reroll_post_uses_confirmation_token_once(self):
         module_id = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
@@ -812,7 +920,7 @@ class ResearchModuleTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             coins = int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"])
-            events = int(db.execute("SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?", (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL"])).fetchone()["c"])
+            events = int(db.execute("SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?", (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_REROLL_CANDIDATE_CREATE"])).fetchone()["c"])
             self.assertEqual(coins, 400)
             self.assertEqual(events, 1)
 

@@ -82,7 +82,7 @@
           <button type="submit" class="btn-secondary">{{ '保護を外す' if module['is_locked'] else '保護する' }}</button>
         </form>
         {% if module['can_reroll'] %}
-        <p class="link"><a class="battle-home-link" href="{{ url_for('modules_reroll_confirm', module_instance_id=module['instance_id']) }}">再調整</a></p>
+        <p class="link"><a class="battle-home-link" href="{{ url_for('modules_reroll_confirm', module_instance_id=module['instance_id']) }}">配分再調整</a></p>
         {% else %}
         <div class="robot-time">{{ module['reroll_status_label'] }}</div>
         {% endif %}

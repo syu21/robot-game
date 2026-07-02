@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>モジュール再調整履歴</h1>
+{% if message %}
+<div class="card">{{ message }}</div>
+{% endif %}
+
+<div class="card">
+  <p>旧仕様の <code>audit.module.reroll</code> を確認し、必要な場合だけ before_stats へ復旧します。</p>
+  <p>コインは返却しません。復旧は二重実行できません。</p>
+</div>
+
+{% if rows %}
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>日時</th>
+        <th>ユーザー</th>
+        <th>module_id</th>
+        <th>rarity</th>
+        <th>合計</th>
+        <th>before_stats</th>
+        <th>after_stats</th>
+        <th>cost</th>
+        <th>request_id</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row['created_at'] }}</td>
+        <td>#{{ row['user_id'] }} {{ row['username'] }}</td>
+        <td>{{ row['module_id'] }}</td>
+        <td>{{ row['rarity'] }}</td>
+        <td>
+          {{ row['before_total'] }} → {{ row['after_total'] }}（{{ row['total_delta'] }}）
+          {% if row['is_large_drop'] %}<span class="module-badge locked">大幅低下</span>{% endif %}
+        </td>
+        <td><code>{{ row['before_stats'] }}</code></td>
+        <td><code>{{ row['after_stats'] }}</code></td>
+        <td>{{ row['cost'] }} / {{ row['coins_before'] }}→{{ row['coins_after'] }}</td>
+        <td>{{ row['request_id'] or '-' }}</td>
+        <td>
+          {% if row['restored'] %}
+          復旧済み
+          {% elif row['module_id'] %}
+          <form method="post" action="{{ url_for('admin_modules_reroll_restore', event_id=row['id']) }}" class="inline-form">
+            <input type="hidden" name="reason" value="{{ default_reason }}" />
+            <button type="submit">before_statsへ復旧</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">再調整履歴はありません。</div>
+{% endif %}
+
+<p class="link"><a href="{{ url_for('admin') }}">管理者メニューへ</a></p>
+{% endblock %}
