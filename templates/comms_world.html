@@ -12,6 +12,9 @@
     <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
     <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
   </nav>
+  {% if message %}
+  <div class="card">{{ message }}</div>
+  {% endif %}
   <div class="comms-toolbar">
     <div class="comms-toolbar-stack">
       <div class="comms-toolbar-copy">{{ world_settings['max_chars'] }}文字まで / 連投CT {{ world_settings['cooldown_seconds'] }}秒 / {{ auto_refresh_seconds }}秒ごと自動更新</div>
@@ -72,6 +75,12 @@
           <div class="feed-time">{{ item['time_jst'] }} JST</div>
         </div>
         <div class="comms-message-body">{{ item['message'] }}</div>
+        {% if can_manage_comms %}
+        <form method="post" action="{{ url_for('admin_comms_message_delete', message_id=item['id']) }}" class="inline-form">
+          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}" />
+          <button type="submit">削除</button>
+        </form>
+        {% endif %}
       </article>
     {% endif %}
   {% else %}

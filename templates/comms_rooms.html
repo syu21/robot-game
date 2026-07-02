@@ -12,6 +12,9 @@
     <a class="battle-home-link" href="{{ url_for('comms_faction') }}">陣営通信</a>
     <a class="battle-home-link" href="{{ url_for('comms_personal') }}">個人ログ</a>
   </nav>
+  {% if message %}
+  <div class="card">{{ message }}</div>
+  {% endif %}
 
   <div class="comms-room-tabs">
     {% for room in room_defs %}
@@ -55,6 +58,12 @@
         <div class="feed-time">{{ item['time_jst'] }} JST</div>
       </div>
       <div class="comms-message-body">{{ item['message'] }}</div>
+      {% if can_manage_comms %}
+      <form method="post" action="{{ url_for('admin_comms_message_delete', message_id=item['id']) }}" class="inline-form">
+        <input type="hidden" name="next" value="{{ url_for('comms_rooms', room=selected_room_key) }}" />
+        <button type="submit">削除</button>
+      </form>
+      {% endif %}
     </article>
     {% else %}
     <div class="card comms-empty-card">

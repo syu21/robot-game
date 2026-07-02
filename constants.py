@@ -329,6 +329,7 @@ AUDIT_EVENT_TYPES = {
     "ADMIN_USER_UNPROTECT_LOGIN": "audit.admin.user.unprotect_login",
     "ADMIN_USER_RENAME": "audit.admin.user.rename",
     "ADMIN_USER_DELETE": "audit.admin.user.delete",
+    "ADMIN_CHAT_DELETE": "audit.admin.chat.delete",
     "ADMIN_RELEASE_TOGGLE": "audit.admin.release.toggle",
     "LAB_SUBMISSION_CREATE": "audit.lab.submission.create",
     "LAB_SUBMISSION_APPROVE": "audit.lab.submission.approve",

@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+import json
 
 import app as game_app
 import init_db
@@ -45,13 +46,14 @@ class AdminFactionCommsTests(unittest.TestCase):
         return user_id
 
     def _insert_message(self, db, user_id, username, room_key, message):
-        db.execute(
+        cur = db.execute(
             """
             INSERT INTO chat_messages (user_id, username, room_key, message, created_at, deleted_at)
             VALUES (?, ?, ?, ?, ?, NULL)
             """,
             (int(user_id), username, room_key, message, game_app.now_str()),
         )
+        return int(cur.lastrowid)
 
     def _client(self, user_id, username):
         client = game_app.app.test_client()
@@ -81,6 +83,51 @@ class AdminFactionCommsTests(unittest.TestCase):
         html = self._client(self.admin_id, "comms_admin").get("/admin/comms/factions?keyword=ignis").get_data(as_text=True)
         self.assertIn("ignis note", html)
         self.assertNotIn("aurix note", html)
+
+    def test_admin_can_soft_delete_comms_message(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            message_id = self._insert_message(db, self.user_id, "comms_user", "faction_aurix", "delete me")
+            db.commit()
+        resp = self._client(self.admin_id, "comms_admin").post(
+            f"/admin/comms/messages/{message_id}/delete",
+            data={"next": "/admin/comms/factions?include_deleted=1"},
+            follow_redirects=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("通信を削除しました", html)
+        self.assertIn("削除済み", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT deleted_at FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+            self.assertTrue(row["deleted_at"])
+            audit_row = db.execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.admin_id, game_app.AUDIT_EVENT_TYPES["ADMIN_CHAT_DELETE"]),
+            ).fetchone()
+            self.assertIsNotNone(audit_row)
+            payload = json.loads(audit_row["payload_json"] or "{}")
+            self.assertEqual(payload.get("message_id"), message_id)
+            self.assertEqual(payload.get("room_key"), "faction_aurix")
+
+    def test_non_admin_cannot_delete_comms_message(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            message_id = self._insert_message(db, self.user_id, "comms_user", "faction_aurix", "do not delete")
+            db.commit()
+        resp = self._client(self.user_id, "comms_user").post(f"/admin/comms/messages/{message_id}/delete")
+        self.assertEqual(resp.status_code, 403)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT deleted_at FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+            self.assertIsNone(row["deleted_at"])
 
 
 if __name__ == "__main__":

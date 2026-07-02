@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>陣営通信確認</h1>
+{% if message %}
+<div class="card">{{ message }}</div>
+{% endif %}
 
 <div class="card">
   <form method="get">
@@ -38,6 +41,7 @@
           <th>user_id</th>
           <th>投稿内容</th>
           <th>状態</th>
+          <th>操作</th>
         </tr>
       </thead>
       <tbody>
@@ -49,6 +53,16 @@
           <td>{{ row['user_id'] or '-' }}</td>
           <td>{{ row['message'] }}</td>
           <td>{% if row['is_deleted'] %}削除済み{% else %}表示中{% endif %}</td>
+          <td>
+            {% if not row['is_deleted'] %}
+            <form method="post" action="{{ url_for('admin_comms_message_delete', message_id=row['id']) }}" class="inline-form">
+              <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}" />
+              <button type="submit">削除</button>
+            </form>
+            {% else %}
+            -
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

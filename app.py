@@ -7605,6 +7605,55 @@ def _submit_chat_message(db, *, user_id, username, room_key, surface):
     return redirect(redirect_target)
 
 
+def admin_delete_chat_message(db, *, admin_user_id, message_id, request_id=None, ip=None):
+    if not _is_admin_user(admin_user_id):
+        return {"ok": False, "reason": "管理者権限が必要です。"}
+    row = db.execute(
+        """
+        SELECT id, user_id, username, room_key, message, created_at, deleted_at
+        FROM chat_messages
+        WHERE id = ?
+        LIMIT 1
+        """,
+        (int(message_id),),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "通信が見つかりません。"}
+    if row["deleted_at"]:
+        return {"ok": False, "reason": "この通信は削除済みです。"}
+    deleted_at = now_str()
+    cur = db.execute(
+        "UPDATE chat_messages SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+        (deleted_at, int(message_id)),
+    )
+    if int(cur.rowcount or 0) != 1:
+        db.rollback()
+        return {"ok": False, "reason": "通信を削除できませんでした。"}
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ADMIN_CHAT_DELETE"],
+        user_id=int(admin_user_id),
+        request_id=request_id,
+        action_key="admin_chat_delete",
+        entity_type="chat_message",
+        entity_id=int(message_id),
+        delta_count=-1,
+        payload={
+            "admin_user_id": int(admin_user_id),
+            "message_id": int(message_id),
+            "message_user_id": int(row["user_id"]) if row["user_id"] is not None else None,
+            "room_key": row["room_key"] or COMM_WORLD_ROOM_KEY,
+            "username": row["username"] or "",
+            "preview": str(row["message"] or "")[:80],
+            "created_at": row["created_at"] or "",
+            "deleted_at": deleted_at,
+        },
+        ip=ip,
+    )
+    db.commit()
+    return {"ok": True, "room_key": row["room_key"] or COMM_WORLD_ROOM_KEY}
+
+
 def _home_chat_messages(db, limit=50):
     fetch_limit = max(int(limit) * 4, int(limit))
     rows = db.execute(
@@ -43928,6 +43977,7 @@ def comms_world():
             active_user_count,
             window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
         ),
+        can_manage_comms=bool(int(user["is_admin"] or 0) == 1),
         message=session.pop("message", None),
     )
 
@@ -43936,7 +43986,7 @@ def comms_world():
 @login_required
 def comms_rooms():
     db = get_db()
-    user = db.execute("SELECT id FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     if not user:
         return redirect(url_for("login"))
     selected_room_key = _chat_normalize_room_key(request.values.get("room"), allow_world=False) or COMM_ROOM_DEFS[0]["key"]
@@ -43970,6 +44020,7 @@ def comms_rooms():
             room_activity_counts_by_key.get(selected_room_key, 0),
             window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
         ),
+        can_manage_comms=bool(int(user["is_admin"] or 0) == 1),
         message=session.pop("message", None),
     )
 
@@ -44067,6 +44118,24 @@ def comms_personal():
     )
 
 
+@app.route("/admin/comms/messages/<int:message_id>/delete", methods=["POST"])
+@login_required
+def admin_comms_message_delete(message_id):
+    if not _is_admin_user(session["user_id"]):
+        abort(403)
+    db = get_db()
+    next_url = _relative_redirect_target(request.form.get("next"), url_for("comms"))
+    result = admin_delete_chat_message(
+        db,
+        admin_user_id=int(session["user_id"]),
+        message_id=int(message_id),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    session["message"] = "通信を削除しました。" if result.get("ok") else result.get("reason") or "通信を削除できませんでした。"
+    return redirect(next_url)
+
+
 def _admin_faction_comms_rows(db, *, faction_key="", user_id="", keyword="", include_deleted=False, limit=100):
     where = ["COALESCE(cm.room_key, '') LIKE 'faction_%'"]
     params = []
@@ -44154,6 +44223,7 @@ def admin_comms_factions():
             "keyword": keyword,
             "include_deleted": include_deleted,
         },
+        message=session.pop("message", None),
     )
 
 
