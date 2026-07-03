@@ -43,10 +43,12 @@
   </div>
   <div class="card">
     {% if candidate and candidate['status'] == 'pending' and not candidate['is_expired'] %}
-    <form method="post" action="{{ url_for('modules_reroll_accept', candidate_id=candidate['id']) }}" class="inline-form inline-form-top">
+    <form method="post" action="/modules/reroll/accept" class="inline-form inline-form-top">
+      <input type="hidden" name="candidate_id" value="{{ candidate['id'] }}" />
       <button type="submit">採用する</button>
     </form>
-    <form method="post" action="{{ url_for('modules_reroll_reject', candidate_id=candidate['id']) }}" class="inline-form inline-form-top">
+    <form method="post" action="/modules/reroll/reject" class="inline-form inline-form-top">
+      <input type="hidden" name="candidate_id" value="{{ candidate['id'] }}" />
       <button type="submit">今のままにする</button>
     </form>
     {% else %}

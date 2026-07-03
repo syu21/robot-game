@@ -23,13 +23,14 @@
     <div class="robot-time">現在: {{ module['effect_text'] }}</div>
     {% endif %}
     {% if is_active_selected %}
-    <div class="robot-time">次の出撃に使う予定のモジュールです。再調整後の補正で使用されます。</div>
+    <div class="robot-time">次の出撃に使う予定のモジュールです。候補を採用すると、その補正で使用されます。</div>
     {% endif %}
+    <div class="robot-time">現在合計: {{ current_total }}</div>
     <div class="upgrade-cost">消費コイン: {{ cost_coins }}</div>
     <div class="robot-time">所持コイン: {{ coins_before }}</div>
     <div class="robot-time">現在の補正合計を大きく保ったまま、補正先の能力を再抽選します。結果を見てから採用するか選べます。</div>
     <div class="robot-time">コインは候補生成時に消費されます。候補を採用しなければ現在の補正は維持されます。候補は24時間で期限切れになります。</div>
-    <form method="post" action="{{ url_for('modules_reroll') }}" class="inline-form inline-form-top">
+    <form method="post" action="/modules/reroll/create" class="inline-form inline-form-top">
       <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
       <input type="hidden" name="reroll_token" value="{{ reroll_token }}" />
       <button type="submit">候補を生成する</button>

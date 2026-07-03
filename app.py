@@ -38967,6 +38967,7 @@ def modules_reroll_confirm(module_instance_id):
         "modules_reroll_confirm.html",
         user=user,
         module=module,
+        current_total=_research_module_stats_total(_research_module_bonus_dict(module)),
         cost_coins=cost,
         coins_before=int(user["coins"] or 0),
         is_active_selected=(active_id == int(module_instance_id)),
@@ -38975,6 +38976,7 @@ def modules_reroll_confirm(module_instance_id):
 
 
 @app.route("/modules/reroll", methods=["POST"])
+@app.route("/modules/reroll/create", methods=["POST"])
 @login_required
 def modules_reroll():
     db = get_db()
@@ -39019,6 +39021,7 @@ def modules_reroll():
 
 
 @app.route("/modules/reroll/candidate/<int:candidate_id>")
+@app.route("/modules/reroll/result/<int:candidate_id>")
 @login_required
 def modules_reroll_candidate(candidate_id):
     db = get_db()
@@ -39042,10 +39045,17 @@ def modules_reroll_candidate(candidate_id):
     )
 
 
+@app.route("/modules/reroll/accept", methods=["POST"])
 @app.route("/modules/reroll/candidate/<int:candidate_id>/accept", methods=["POST"])
 @login_required
-def modules_reroll_accept(candidate_id):
+def modules_reroll_accept(candidate_id=None):
     db = get_db()
+    if candidate_id is None:
+        try:
+            candidate_id = int((request.form.get("candidate_id") or "").strip())
+        except ValueError:
+            session["message"] = "配分再調整候補の指定が不正です。"
+            return redirect(url_for("modules"))
     result = accept_module_reroll_candidate(
         db,
         int(session["user_id"]),
@@ -39057,10 +39067,17 @@ def modules_reroll_accept(candidate_id):
     return redirect(url_for("modules"))
 
 
+@app.route("/modules/reroll/reject", methods=["POST"])
 @app.route("/modules/reroll/candidate/<int:candidate_id>/reject", methods=["POST"])
 @login_required
-def modules_reroll_reject(candidate_id):
+def modules_reroll_reject(candidate_id=None):
     db = get_db()
+    if candidate_id is None:
+        try:
+            candidate_id = int((request.form.get("candidate_id") or "").strip())
+        except ValueError:
+            session["message"] = "配分再調整候補の指定が不正です。"
+            return redirect(url_for("modules"))
     result = reject_module_reroll_candidate(
         db,
         int(session["user_id"]),
