@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>工場素材</h1>
+  <div class="card">
+    <div class="robot-time">相棒ロボ派遣で集めた素材です。戦闘ステータスやcoinsには影響しません。</div>
+  </div>
+
+  <div class="module-card-grid">
+    {% for material in materials %}
+    <div class="module-card">
+      <div class="module-card-title">{{ material['name_ja'] }}</div>
+      <div class="robot-time">{{ material['description'] }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge">{{ material['rarity'] }}</span>
+        <span class="module-badge">所持 {{ material['quantity'] }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ戻る</a></p>
+</div>
+{% endblock %}

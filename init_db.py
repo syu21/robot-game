@@ -985,6 +985,7 @@ def main():
             event_photo_key TEXT,
             journal_key TEXT,
             journal_text TEXT,
+            material_rewards_json TEXT,
             started_at INTEGER NOT NULL,
             completes_at INTEGER NOT NULL,
             claimed_at INTEGER,
@@ -993,6 +994,35 @@ def main():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
             FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            rarity TEXT NOT NULL DEFAULT 'N',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_material_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            material_key TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, material_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (material_key) REFERENCES material_masters(material_key)
         )
         """
     )
@@ -3161,6 +3191,8 @@ def main():
         cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
     if "journal_text" not in companion_dispatch_cols:
         cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_text TEXT")
+    if "material_rewards_json" not in companion_dispatch_cols:
+        cur.execute("ALTER TABLE user_companion_dispatches ADD COLUMN material_rewards_json TEXT")
     if "home_beginner_mission_hidden" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0")
     if "home_next_action_collapsed" not in users_cols:
@@ -3815,6 +3847,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_material_masters_active_sort ON material_masters(is_active, sort_order)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_material_inventory_user ON user_material_inventory(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_companion_album_photos_active_sort ON companion_album_photos(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")

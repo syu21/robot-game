@@ -14,6 +14,17 @@
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_research') }}">世界研究へ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズへ</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('companion_lab') }}">相棒ロボ研究所へ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('factory_materials') }}">工場素材一覧へ</a></p>
+    {% if material_summary %}
+    <div class="robot-time">
+      素材:
+      {% for material in material_summary %}
+      {{ material['name_ja'] }} {{ material['quantity'] }}{% if not loop.last %} / {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="robot-time">素材はまだありません。</div>
+    {% endif %}
     {% if companion_dispatch and companion_dispatch['current_dispatch'] %}
     <p class="link"><a class="battle-home-link" href="{{ url_for('companion_dispatch') }}">{{ companion_dispatch['status_label'] }}</a></p>
     {% endif %}

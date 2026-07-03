@@ -588,6 +588,53 @@ COMPANION_DISPATCH_DEFS = (
         "sort_order": 30,
     },
 )
+MATERIAL_DEFS = (
+    {
+        "material_key": "scrap",
+        "name_ja": "スクラップ",
+        "description": "壊れた機械から回収した基本素材",
+        "rarity": "N",
+        "sort_order": 10,
+    },
+    {
+        "material_key": "circuit_board",
+        "name_ja": "電子基板",
+        "description": "相棒ロボの整備や研究に使える素材",
+        "rarity": "R",
+        "sort_order": 20,
+    },
+    {
+        "material_key": "coolant",
+        "name_ja": "冷却液",
+        "description": "工場設備の安定稼働に使える素材",
+        "rarity": "R",
+        "sort_order": 30,
+    },
+    {
+        "material_key": "ai_chip",
+        "name_ja": "AIチップ",
+        "description": "高度な相棒研究に使える希少素材",
+        "rarity": "SR",
+        "sort_order": 40,
+    },
+)
+COMPANION_DISPATCH_MATERIAL_REWARD_RULES = {
+    "short_patrol": (
+        {"material_key": "scrap", "min": 1, "max": 3, "chance": 100},
+        {"material_key": "circuit_board", "min": 1, "max": 1, "chance": 20},
+    ),
+    "scrap_search": (
+        {"material_key": "scrap", "min": 4, "max": 10, "chance": 100},
+        {"material_key": "circuit_board", "min": 1, "max": 3, "chance": 100},
+        {"material_key": "coolant", "min": 1, "max": 1, "chance": 20},
+    ),
+    "night_observation": (
+        {"material_key": "scrap", "min": 8, "max": 16, "chance": 100},
+        {"material_key": "circuit_board", "min": 2, "max": 5, "chance": 100},
+        {"material_key": "coolant", "min": 1, "max": 3, "chance": 100},
+        {"material_key": "ai_chip", "min": 1, "max": 1, "chance": 10},
+    ),
+}
 RESEARCH_MODULE_FAMILY_LABELS = {
     "analysis": "解析",
     "assault": "強襲",
@@ -10918,6 +10965,7 @@ def ensure_schema(db):
             event_photo_key TEXT,
             journal_key TEXT,
             journal_text TEXT,
+            material_rewards_json TEXT,
             started_at INTEGER NOT NULL,
             completes_at INTEGER NOT NULL,
             claimed_at INTEGER,
@@ -10926,6 +10974,35 @@ def ensure_schema(db):
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (companion_key) REFERENCES companion_robot_masters(companion_key),
             FOREIGN KEY (dispatch_key) REFERENCES companion_dispatch_masters(dispatch_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS material_masters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_key TEXT UNIQUE NOT NULL,
+            name_ja TEXT NOT NULL,
+            description TEXT,
+            rarity TEXT NOT NULL DEFAULT 'N',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_material_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            material_key TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, material_key),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (material_key) REFERENCES material_masters(material_key)
         )
         """
     )
@@ -11117,6 +11194,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_key TEXT")
     if "journal_text" not in companion_dispatch_cols:
         db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN journal_text TEXT")
+    if "material_rewards_json" not in companion_dispatch_cols:
+        db.execute("ALTER TABLE user_companion_dispatches ADD COLUMN material_rewards_json TEXT")
     if "evolution_core_progress" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN evolution_core_progress INTEGER NOT NULL DEFAULT 0")
     if "home_beginner_mission_hidden" not in cols:
@@ -13865,6 +13944,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_robots_user ON user_companion_robots(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_companion_dispatch_masters_active_sort ON companion_dispatch_masters(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_dispatches_user_status ON user_companion_dispatches(user_id, status, completes_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_material_masters_active_sort ON material_masters(is_active, sort_order)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_material_inventory_user ON user_material_inventory(user_id, updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_companion_album_photos_active_sort ON companion_album_photos(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
@@ -17157,6 +17238,232 @@ def ensure_companion_dispatch_masters(db, *, user_id=None, request_id=None, ip=N
     return {"created_count": len(created), "created_dispatches": created}
 
 
+def ensure_material_masters(db, *, user_id=None, request_id=None, ip=None):
+    now_ts = int(time.time())
+    existing_keys = {
+        row["material_key"]
+        for row in db.execute("SELECT material_key FROM material_masters").fetchall()
+    }
+    created = []
+    for item in MATERIAL_DEFS:
+        db.execute(
+            """
+            INSERT INTO material_masters (
+                material_key, name_ja, description, rarity, is_active,
+                sort_order, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ON CONFLICT(material_key) DO UPDATE SET
+                name_ja = excluded.name_ja,
+                description = excluded.description,
+                rarity = excluded.rarity,
+                sort_order = excluded.sort_order,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["material_key"],
+                item["name_ja"],
+                item["description"],
+                item["rarity"],
+                int(item["sort_order"]),
+                now_ts,
+                now_ts,
+            ),
+        )
+        if item["material_key"] not in existing_keys:
+            created.append(item["material_key"])
+    if created:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MATERIAL_ENSURE_DEFAULTS"],
+            user_id=int(user_id) if user_id else None,
+            request_id=request_id,
+            action_key="material_ensure_defaults",
+            entity_type="material",
+            delta_count=len(created),
+            payload={"created_materials": created},
+            ip=ip,
+        )
+    return {"created_count": len(created), "created_materials": created}
+
+
+def _active_material_map(db):
+    return {
+        row["material_key"]: dict(row)
+        for row in db.execute(
+            """
+            SELECT *
+            FROM material_masters
+            WHERE is_active = 1
+            ORDER BY sort_order ASC, id ASC
+            """
+        ).fetchall()
+    }
+
+
+def _parse_dispatch_material_rewards(raw_value):
+    if not raw_value:
+        return []
+    try:
+        rows = json.loads(raw_value)
+    except (TypeError, ValueError):
+        return []
+    rewards = []
+    for row in rows if isinstance(rows, list) else []:
+        key = str((row or {}).get("material_key") or "").strip()
+        quantity = int((row or {}).get("quantity") or 0)
+        if key and quantity > 0:
+            rewards.append({"material_key": key, "quantity": quantity})
+    return rewards
+
+
+def _dispatch_material_reward_view(db, raw_value):
+    material_map = _active_material_map(db)
+    rewards = []
+    for item in _parse_dispatch_material_rewards(raw_value):
+        material = material_map.get(item["material_key"])
+        if not material:
+            continue
+        rewards.append(
+            {
+                "material_key": item["material_key"],
+                "quantity": int(item["quantity"]),
+                "name_ja": material["name_ja"],
+                "description": material["description"] or "",
+                "rarity": material["rarity"] or "N",
+            }
+        )
+    return rewards
+
+
+def _roll_dispatch_material_rewards(db, user_id, dispatch_id, dispatch_key):
+    active_keys = set(_active_material_map(db).keys())
+    seed = int(dispatch_id or 0) * 101 + int(user_id or 0) * 53 + sum(ord(ch) for ch in str(dispatch_key or ""))
+    rng = random.Random(seed)
+    rewards = []
+    for rule in COMPANION_DISPATCH_MATERIAL_REWARD_RULES.get(str(dispatch_key or ""), ()):
+        material_key = str(rule["material_key"])
+        if material_key not in active_keys:
+            continue
+        chance = int(rule.get("chance") or 0)
+        if chance < 100 and rng.randint(1, 100) > chance:
+            continue
+        rewards.append(
+            {
+                "material_key": material_key,
+                "quantity": rng.randint(int(rule["min"]), int(rule["max"])),
+            }
+        )
+    return rewards
+
+
+def _material_reward_hint_for_dispatch(dispatch_key):
+    material_labels = {item["material_key"]: item["name_ja"] for item in MATERIAL_DEFS}
+    parts = []
+    for rule in COMPANION_DISPATCH_MATERIAL_REWARD_RULES.get(str(dispatch_key or ""), ()):
+        label = material_labels.get(rule["material_key"], rule["material_key"])
+        qty = f"{int(rule['min'])}" if int(rule["min"]) == int(rule["max"]) else f"{int(rule['min'])}〜{int(rule['max'])}"
+        prefix = "低確率 " if int(rule.get("chance") or 0) < 100 else ""
+        parts.append(f"{prefix}{label} {qty}")
+    return " / ".join(parts)
+
+
+def get_user_material_inventory_view(db, user_id, *, ensure=True):
+    uid = int(user_id)
+    if ensure:
+        ensure_material_masters(db, user_id=uid)
+    rows = db.execute(
+        """
+        SELECT mm.*, COALESCE(umi.quantity, 0) AS quantity, umi.updated_at AS inventory_updated_at
+        FROM material_masters mm
+        LEFT JOIN user_material_inventory umi
+          ON umi.material_key = mm.material_key
+         AND umi.user_id = ?
+        WHERE mm.is_active = 1
+        ORDER BY mm.sort_order ASC, mm.id ASC
+        """,
+        (uid,),
+    ).fetchall()
+    return [
+        {
+            "material_key": row["material_key"],
+            "name_ja": row["name_ja"],
+            "description": row["description"] or "",
+            "rarity": row["rarity"] or "N",
+            "quantity": int(row["quantity"] or 0),
+            "updated_at": int(row["inventory_updated_at"] or 0) if row["inventory_updated_at"] else None,
+        }
+        for row in rows
+    ]
+
+
+def material_inventory_summary(db, user_id, *, limit=4):
+    rows = [row for row in get_user_material_inventory_view(db, user_id, ensure=True) if int(row["quantity"]) > 0]
+    return rows[: int(limit)]
+
+
+def grant_user_material(db, user_id, material_key, quantity, *, source, source_id=None, request_id=None, ip=None):
+    uid = int(user_id)
+    key = str(material_key or "").strip()
+    qty = int(quantity or 0)
+    if not key or qty <= 0:
+        return None
+    material = db.execute(
+        "SELECT * FROM material_masters WHERE material_key = ? AND is_active = 1 LIMIT 1",
+        (key,),
+    ).fetchone()
+    if not material:
+        return None
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO user_material_inventory (user_id, material_key, quantity, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, material_key) DO UPDATE SET
+            quantity = user_material_inventory.quantity + excluded.quantity,
+            updated_at = excluded.updated_at
+        """,
+        (uid, key, qty, now_ts),
+    )
+    row = db.execute(
+        """
+        SELECT quantity
+        FROM user_material_inventory
+        WHERE user_id = ? AND material_key = ?
+        LIMIT 1
+        """,
+        (uid, key),
+    ).fetchone()
+    quantity_after = int(row["quantity"] or 0) if row else qty
+    payload = {
+        "user_id": uid,
+        "dispatch_id": int(source_id) if source_id else None,
+        "material_key": key,
+        "delta_quantity": qty,
+        "quantity_after": quantity_after,
+        "source": source,
+    }
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MATERIAL_DELTA"],
+        user_id=uid,
+        request_id=request_id,
+        action_key="material_delta",
+        entity_type="material",
+        entity_id=int(material["id"]),
+        delta_count=qty,
+        payload=payload,
+        ip=ip,
+    )
+    return {
+        "material_key": key,
+        "name_ja": material["name_ja"],
+        "rarity": material["rarity"] or "N",
+        "quantity": qty,
+        "quantity_after": quantity_after,
+    }
+
+
 def ensure_companion_album_photos(db, *, user_id=None, request_id=None, ip=None):
     now_ts = int(time.time())
     existing_keys = {
@@ -17428,6 +17735,7 @@ def get_active_companion_dispatch(db, user_id, *, refresh=True, now_ts=None):
         "event_photo_key": row["event_photo_key"] if "event_photo_key" in row.keys() and row["event_photo_key"] else "",
         "journal_key": row["journal_key"] if "journal_key" in row.keys() and row["journal_key"] else "",
         "journal_text": row["journal_text"] if "journal_text" in row.keys() and row["journal_text"] else "",
+        "material_rewards": _dispatch_material_reward_view(db, row["material_rewards_json"]) if "material_rewards_json" in row.keys() else [],
         "started_at": int(row["started_at"] or 0),
         "completes_at": completes_at,
         "claimed_at": int(row["claimed_at"] or 0) if row["claimed_at"] else None,
@@ -17454,6 +17762,7 @@ def _companion_dispatch_options(db):
             "duration_label": f"{int(row['duration_minutes'] or 0) // 60}時間" if int(row["duration_minutes"] or 0) >= 60 else f"{int(row['duration_minutes'] or 0)}分",
             "min_factory_points": int(row["min_factory_points"] or 0),
             "max_factory_points": int(row["max_factory_points"] or 0),
+            "material_reward_hint": _material_reward_hint_for_dispatch(row["dispatch_key"]),
         }
         for row in rows
     ]
@@ -17464,6 +17773,7 @@ def get_companion_dispatch_view(db, user_id, *, ensure=True, now_ts=None):
     if ensure:
         ensure_companions(db, uid)
         ensure_companion_dispatch_masters(db, user_id=uid)
+        ensure_material_masters(db, user_id=uid)
     current = get_active_companion_dispatch(db, uid, refresh=True, now_ts=now_ts)
     active_companion = get_active_companion(db, uid, ensure=False)
     user = db.execute("SELECT factory_points FROM users WHERE id = ? LIMIT 1", (uid,)).fetchone()
@@ -17512,6 +17822,7 @@ def start_companion_dispatch(
     key = str(dispatch_key or "").strip()
     ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
     ensure_companion_album_photos(db, user_id=uid, request_id=request_id, ip=ip)
+    ensure_material_masters(db, user_id=uid, request_id=request_id, ip=ip)
     current = get_active_companion_dispatch(db, uid, refresh=True)
     if current:
         return {"ok": False, "reason": "相棒ロボは派遣中です。帰還後に受け取ってください。"}
@@ -17564,11 +17875,12 @@ def start_companion_dispatch(
         photo_result = _select_companion_album_photo_for_dispatch(db, uid, dispatch_id)
         event["event_bonus_points"] = int(event["event_bonus_points"]) + int(photo_result["compensation_points"])
     journal = _companion_dispatch_journal_for_key(journal_key_override)
+    material_rewards = _roll_dispatch_material_rewards(db, uid, dispatch_id, key)
     db.execute(
         """
         UPDATE user_companion_dispatches
         SET event_type = ?, event_label = ?, event_message = ?, event_bonus_points = ?,
-            event_photo_key = ?, journal_key = ?, journal_text = ?, updated_at = ?
+            event_photo_key = ?, journal_key = ?, journal_text = ?, material_rewards_json = ?, updated_at = ?
         WHERE id = ?
         """,
         (
@@ -17579,6 +17891,7 @@ def start_companion_dispatch(
             photo_result["photo_key"],
             journal["journal_key"],
             journal["journal_text"],
+            json.dumps(material_rewards, ensure_ascii=False, sort_keys=True),
             now_ts,
             dispatch_id,
         ),
@@ -17603,6 +17916,7 @@ def start_companion_dispatch(
             "event_photo_key": photo_result["photo_key"],
             "event_photo_duplicate": bool(photo_result["duplicate"]),
             "journal_key": journal["journal_key"],
+            "material_rewards": material_rewards,
             "started_at": now_ts,
             "completes_at": completes_at,
         },
@@ -17616,6 +17930,7 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
     uid = int(user_id)
     ensure_companion_dispatch_masters(db, user_id=uid, request_id=request_id, ip=ip)
     ensure_companion_album_photos(db, user_id=uid, request_id=request_id, ip=ip)
+    ensure_material_masters(db, user_id=uid, request_id=request_id, ip=ip)
     current = get_active_companion_dispatch(db, uid, refresh=True)
     if not current:
         return {"ok": False, "reason": "受け取れる派遣はありません。"}
@@ -17633,6 +17948,8 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
     unlocked_photo = None
     photo_duplicate = False
     photo_compensation_points = 0
+    material_rewards = list(current.get("material_rewards") or [])
+    granted_materials = []
     cur = db.execute(
         """
         UPDATE user_companion_dispatches
@@ -17697,6 +18014,39 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
                 },
                 ip=ip,
             )
+    for material_reward in material_rewards:
+        granted = grant_user_material(
+            db,
+            uid,
+            material_reward["material_key"],
+            int(material_reward["quantity"]),
+            source="companion_dispatch_claim",
+            source_id=int(current["id"]),
+            request_id=request_id,
+            ip=ip,
+        )
+        if granted:
+            granted_materials.append(granted)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["COMPANION_DISPATCH_MATERIAL_REWARD"],
+                user_id=uid,
+                request_id=request_id,
+                action_key="companion_dispatch_material_reward",
+                entity_type="companion_dispatch",
+                entity_id=int(current["id"]),
+                delta_count=int(granted["quantity"]),
+                payload={
+                    "user_id": uid,
+                    "dispatch_id": int(current["id"]),
+                    "dispatch_key": current["dispatch_key"],
+                    "material_key": granted["material_key"],
+                    "delta_quantity": int(granted["quantity"]),
+                    "quantity_after": int(granted["quantity_after"]),
+                    "source": "companion_dispatch_claim",
+                },
+                ip=ip,
+            )
     payload = {
         "user_id": uid,
         "companion_key": current["companion_key"],
@@ -17711,6 +18061,7 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         "unlocked_photo": unlocked_photo,
         "photo_duplicate": bool(photo_duplicate),
         "photo_compensation_points": int(photo_compensation_points),
+        "material_rewards": granted_materials,
         "journal_key": current["journal_key"],
         "journal_text": current["journal_text"],
         "started_at": int(current["started_at"] or 0),
@@ -17775,6 +18126,7 @@ def claim_companion_dispatch(db, user_id, *, request_id=None, ip=None):
         "unlocked_photo": unlocked_photo,
         "photo_duplicate": bool(photo_duplicate),
         "photo_compensation_points": int(photo_compensation_points),
+        "material_rewards": granted_materials,
         "journal_key": current["journal_key"],
         "journal_text": current["journal_text"],
         "factory_points_after": after_points,
@@ -39730,6 +40082,12 @@ def factory():
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
+    ensure_material_masters(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
     db.commit()
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     factory_view = get_user_factory_view(db, user_id, ensure=False)
@@ -39738,9 +40096,33 @@ def factory():
         user=user,
         message=session.pop("message", None),
         factory=factory_view,
+        material_summary=material_inventory_summary(db, user_id),
         companion_dispatch=companion_dispatch_summary(db, user_id),
         max_storage_hours=int(factory_view.get("storage_cap_hours") or FACTORY_STORAGE_CAP_HOURS),
         max_level=int(FACTORY_MAX_LEVEL),
+    )
+
+
+@app.route("/factory/materials")
+@login_required
+def factory_materials():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    ensure_material_masters(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "factory_materials.html",
+        user=user,
+        materials=get_user_material_inventory_view(db, user_id, ensure=False),
     )
 
 
@@ -40027,6 +40409,12 @@ def companion_dispatch():
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
     ensure_companion_dispatch_masters(
+        db,
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    ensure_material_masters(
         db,
         user_id=user_id,
         request_id=getattr(g, "request_id", None),

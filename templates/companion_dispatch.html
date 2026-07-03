@@ -25,6 +25,14 @@
     {% elif last_result.get('photo_duplicate') %}
     <div class="home-explore-status">写真は記録済みでした。補填 +{{ last_result['photo_compensation_points'] }}pt</div>
     {% endif %}
+    {% if last_result.get('material_rewards') %}
+    <h3>獲得素材</h3>
+    <div class="module-card-meta">
+      {% for material in last_result['material_rewards'] %}
+      <span class="module-badge">{{ material['name_ja'] }} +{{ material['quantity'] }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
     <h3>日誌</h3>
     <div class="robot-time">「{{ last_result['journal_text'] }}」</div>
     <p class="link"><a class="battle-home-link" href="{{ url_for('companion_album') }}">アルバムを見る</a></p>
@@ -58,12 +66,26 @@
     {% if current['journal_text'] %}
     <div class="robot-time">日誌: {{ current['journal_text'] }}</div>
     {% endif %}
+    {% if current.get('material_rewards') %}
+    <div class="module-card-meta">
+      {% for material in current['material_rewards'] %}
+      <span class="module-badge">{{ material['name_ja'] }} +{{ material['quantity'] }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
     <form method="post" action="{{ url_for('companion_dispatch_claim') }}" class="inline-form inline-form-top">
       <button type="submit">受け取る</button>
     </form>
     {% else %}
     <div class="upgrade-cost">派遣中 {{ current['remaining_label'] }}</div>
     <div class="robot-time">報酬予定: 工場ポイント {{ current['base_reward_factory_points'] }}pt</div>
+    {% if current.get('material_rewards') %}
+    <div class="module-card-meta">
+      {% for material in current['material_rewards'] %}
+      <span class="module-badge">{{ material['name_ja'] }} +{{ material['quantity'] }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% endif %}
   </div>
   {% else %}
@@ -76,6 +98,9 @@
         <span class="module-badge">{{ course['duration_label'] }}</span>
         <span class="module-badge">報酬 {{ course['min_factory_points'] }}〜{{ course['max_factory_points'] }}pt</span>
       </div>
+      {% if course['material_reward_hint'] %}
+      <div class="robot-time">素材目安: {{ course['material_reward_hint'] }}</div>
+      {% endif %}
       <form method="post" action="{{ url_for('companion_dispatch_start') }}" class="inline-form inline-form-top">
         <input type="hidden" name="dispatch_key" value="{{ course['dispatch_key'] }}" />
         <button type="submit" {% if not dispatch_view['can_start'] %}disabled{% endif %}>派遣する</button>
