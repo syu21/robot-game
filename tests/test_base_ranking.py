@@ -97,6 +97,14 @@ class BaseRankingTests(unittest.TestCase):
         self.assertIn("2", html)
         self.assertIn("0 / 5", html)
 
+    def test_navigation_links_point_to_base_ranking(self):
+        html = self._client(user_id=self.viewer_id).get("/base/999999").get_data(as_text=True)
+        self.assertIn("話題の基地へ", html)
+        self.assertIn('/base/ranking', html)
+        ranking_html = self._client(user_id=self.viewer_id).get("/ranking").get_data(as_text=True)
+        self.assertIn("基地いいね", ranking_html)
+        self.assertIn('/base/ranking', ranking_html)
+
     def test_banned_users_are_excluded(self):
         self._seed_likes()
         html = self._client().get("/base/ranking").get_data(as_text=True)

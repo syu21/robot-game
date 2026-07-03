@@ -8,7 +8,7 @@
 <div class="card">
   <h1>基地が見つかりません</h1>
   <p>この研究基地は表示できません。</p>
-  <p class="link"><a href="{{ url_for('base_ranking') }}">基地ランキングへ</a></p>
+  <p class="link"><a href="{{ url_for('base_ranking') }}">話題の基地へ</a></p>
 </div>
 {% else %}
 <div class="card trial-home-banner">
@@ -140,6 +140,6 @@
   </div>
 </div>
 
-<p class="link"><a href="{{ url_for('home') }}">基地へ</a> | <a href="{{ url_for('base_ranking') }}">基地ランキングへ</a> | <a href="{{ url_for('ranking') }}">ランキングへ</a></p>
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a> | <a href="{{ url_for('base_ranking') }}">話題の基地へ</a> | <a href="{{ url_for('ranking') }}">ランキングへ</a></p>
 {% endif %}
 {% endblock %}
