@@ -1248,6 +1248,18 @@ def main():
             l_arm_offset_y INTEGER NOT NULL DEFAULT 0,
             legs_offset_x INTEGER NOT NULL DEFAULT 0,
             legs_offset_y INTEGER NOT NULL DEFAULT 0,
+            head_scale_percent INTEGER NOT NULL DEFAULT 100,
+            r_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            l_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            legs_scale_percent INTEGER NOT NULL DEFAULT 100,
+            head_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            r_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            l_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            legs_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            head_flip_x INTEGER NOT NULL DEFAULT 0,
+            r_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            l_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            legs_flip_x INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
@@ -1381,8 +1393,43 @@ def main():
             r_arm_key TEXT NOT NULL,
             l_arm_key TEXT NOT NULL,
             legs_key TEXT NOT NULL,
+            head_offset_x INTEGER NOT NULL DEFAULT 0,
+            head_offset_y INTEGER NOT NULL DEFAULT 0,
+            r_arm_offset_x INTEGER NOT NULL DEFAULT 0,
+            r_arm_offset_y INTEGER NOT NULL DEFAULT 0,
+            l_arm_offset_x INTEGER NOT NULL DEFAULT 0,
+            l_arm_offset_y INTEGER NOT NULL DEFAULT 0,
+            legs_offset_x INTEGER NOT NULL DEFAULT 0,
+            legs_offset_y INTEGER NOT NULL DEFAULT 0,
+            head_scale_percent INTEGER NOT NULL DEFAULT 100,
+            r_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            l_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
+            legs_scale_percent INTEGER NOT NULL DEFAULT 100,
+            head_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            r_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            l_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            legs_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            head_flip_x INTEGER NOT NULL DEFAULT 0,
+            r_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            l_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            legs_flip_x INTEGER NOT NULL DEFAULT 0,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_blueprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            blueprint_code TEXT UNIQUE NOT NULL,
+            blueprint_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
     )
@@ -2791,6 +2838,35 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS robot_contests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            theme_key TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by_user_id INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_contest_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contest_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(contest_id, robot_instance_id),
+            FOREIGN KEY (contest_id) REFERENCES robot_contests(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_submission_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             submission_id INTEGER NOT NULL,
@@ -3661,10 +3737,26 @@ def main():
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN legs_part_instance_id INTEGER")
     if "decor_asset_id" not in rip_cols:
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
+    for offset_col in (
+        "head_offset_x", "head_offset_y",
+        "r_arm_offset_x", "r_arm_offset_y",
+        "l_arm_offset_x", "l_arm_offset_y",
+        "legs_offset_x", "legs_offset_y",
+    ):
+        if offset_col not in rip_cols:
+            cur.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {offset_col} INTEGER NOT NULL DEFAULT 0")
     for scale_col in ("head_scale_percent", "r_arm_scale_percent", "l_arm_scale_percent", "legs_scale_percent"):
         if scale_col not in rip_cols:
             cur.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {scale_col} INTEGER NOT NULL DEFAULT 100")
         cur.execute(f"UPDATE robot_instance_parts SET {scale_col} = 100 WHERE {scale_col} IS NULL")
+    for rotate_col in ("head_rotate_degrees", "r_arm_rotate_degrees", "l_arm_rotate_degrees", "legs_rotate_degrees"):
+        if rotate_col not in rip_cols:
+            cur.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {rotate_col} INTEGER NOT NULL DEFAULT 0")
+        cur.execute(f"UPDATE robot_instance_parts SET {rotate_col} = 0 WHERE {rotate_col} IS NULL")
+    for flip_col in ("head_flip_x", "r_arm_flip_x", "l_arm_flip_x", "legs_flip_x"):
+        if flip_col not in rip_cols:
+            cur.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {flip_col} INTEGER NOT NULL DEFAULT 0")
+        cur.execute(f"UPDATE robot_instance_parts SET {flip_col} = 0 WHERE {flip_col} IS NULL")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_instance_decors (
@@ -3853,6 +3945,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_blueprints_code ON robot_blueprints(blueprint_code)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_contests_active ON robot_contests(is_active, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_contest_entries_contest ON robot_contest_entries(contest_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")

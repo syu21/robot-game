@@ -723,6 +723,10 @@ BUILD_PART_SCALE_MIN = 70
 BUILD_PART_SCALE_MAX = 130
 BUILD_PART_SCALE_DEFAULT = 100
 BUILD_PART_SCALE_STEP = 5
+BUILD_PART_ROTATE_MIN = -30
+BUILD_PART_ROTATE_MAX = 30
+BUILD_PART_ROTATE_DEFAULT = 0
+BUILD_PART_ROTATE_STEP = 5
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
@@ -8170,6 +8174,37 @@ def _showcase_query_rows(db, *, user_id, sort_key, limit=80):
     return out
 
 
+def _popular_robot_rows(db, *, limit=10, now_ts=None):
+    week_start, week_end = _world_week_bounds(_world_week_key(now_ts))
+    rows = db.execute(
+        """
+        SELECT
+            ri.id, ri.user_id, ri.name, ri.composed_image_path, ri.icon_32_path,
+            ri.updated_at, u.username, COUNT(sv.id) AS like_count
+        FROM showcase_votes sv
+        JOIN robot_instances ri ON ri.id = sv.robot_id
+        JOIN users u ON u.id = ri.user_id
+        WHERE sv.vote_type = 'like'
+          AND sv.created_at >= ?
+          AND sv.created_at < ?
+          AND ri.status = 'active'
+          AND COALESCE(ri.is_public, 1) = 1
+          AND COALESCE(u.is_banned, 0) = 0
+        GROUP BY ri.id
+        ORDER BY like_count DESC, ri.updated_at DESC, ri.id DESC
+        LIMIT ?
+        """,
+        (int(week_start.timestamp()), int(week_end.timestamp()), int(limit)),
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["display_name"] = _display_username_for_user_row(db, row)
+        item["image_url"] = _composed_image_url(item.get("composed_image_path"), item.get("updated_at"))
+        result.append(item)
+    return result
+
+
 def _ranking_rows_from_event_log(db, *, event_type, limit=50, start_ts=None, end_ts=None):
     where = ["event_type = ?", "user_id IS NOT NULL"]
     params = [str(event_type)]
@@ -11605,8 +11640,31 @@ def ensure_schema(db):
             r_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
             l_arm_scale_percent INTEGER NOT NULL DEFAULT 100,
             legs_scale_percent INTEGER NOT NULL DEFAULT 100,
+            head_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            r_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            l_arm_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            legs_rotate_degrees INTEGER NOT NULL DEFAULT 0,
+            head_flip_x INTEGER NOT NULL DEFAULT 0,
+            r_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            l_arm_flip_x INTEGER NOT NULL DEFAULT 0,
+            legs_flip_x INTEGER NOT NULL DEFAULT 0,
             decor_asset_id INTEGER,
             FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_blueprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            robot_instance_id INTEGER UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            blueprint_code TEXT UNIQUE NOT NULL,
+            blueprint_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
     )
@@ -13003,6 +13061,35 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS robot_contests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            theme_key TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_by_user_id INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS robot_contest_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contest_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(contest_id, robot_instance_id),
+            FOREIGN KEY (contest_id) REFERENCES robot_contests(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS lab_submission_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             submission_id INTEGER NOT NULL,
@@ -13547,6 +13634,18 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_builds ADD COLUMN legs_offset_x INTEGER NOT NULL DEFAULT 0")
     if "legs_offset_y" not in rb_cols:
         db.execute("ALTER TABLE robot_builds ADD COLUMN legs_offset_y INTEGER NOT NULL DEFAULT 0")
+    for scale_col in ("head_scale_percent", "r_arm_scale_percent", "l_arm_scale_percent", "legs_scale_percent"):
+        if scale_col not in rb_cols:
+            db.execute(f"ALTER TABLE robot_builds ADD COLUMN {scale_col} INTEGER NOT NULL DEFAULT 100")
+        db.execute(f"UPDATE robot_builds SET {scale_col} = 100 WHERE {scale_col} IS NULL")
+    for rotate_col in ("head_rotate_degrees", "r_arm_rotate_degrees", "l_arm_rotate_degrees", "legs_rotate_degrees"):
+        if rotate_col not in rb_cols:
+            db.execute(f"ALTER TABLE robot_builds ADD COLUMN {rotate_col} INTEGER NOT NULL DEFAULT 0")
+        db.execute(f"UPDATE robot_builds SET {rotate_col} = 0 WHERE {rotate_col} IS NULL")
+    for flip_col in ("head_flip_x", "r_arm_flip_x", "l_arm_flip_x", "legs_flip_x"):
+        if flip_col not in rb_cols:
+            db.execute(f"ALTER TABLE robot_builds ADD COLUMN {flip_col} INTEGER NOT NULL DEFAULT 0")
+        db.execute(f"UPDATE robot_builds SET {flip_col} = 0 WHERE {flip_col} IS NULL")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS robot_bases_key_uq ON robot_bases(key)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS robot_parts_key_uq ON robot_parts(key)")
     bb_cols = {row["name"] for row in db.execute("PRAGMA table_info(base_bodies)").fetchall()}
@@ -13692,6 +13791,14 @@ def ensure_schema(db):
         if scale_col not in rip_cols:
             db.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {scale_col} INTEGER NOT NULL DEFAULT 100")
         db.execute(f"UPDATE robot_instance_parts SET {scale_col} = 100 WHERE {scale_col} IS NULL")
+    for rotate_col in ("head_rotate_degrees", "r_arm_rotate_degrees", "l_arm_rotate_degrees", "legs_rotate_degrees"):
+        if rotate_col not in rip_cols:
+            db.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {rotate_col} INTEGER NOT NULL DEFAULT 0")
+        db.execute(f"UPDATE robot_instance_parts SET {rotate_col} = 0 WHERE {rotate_col} IS NULL")
+    for flip_col in ("head_flip_x", "r_arm_flip_x", "l_arm_flip_x", "legs_flip_x"):
+        if flip_col not in rip_cols:
+            db.execute(f"ALTER TABLE robot_instance_parts ADD COLUMN {flip_col} INTEGER NOT NULL DEFAULT 0")
+        db.execute(f"UPDATE robot_instance_parts SET {flip_col} = 0 WHERE {flip_col} IS NULL")
     if "decor_asset_id" not in rip_cols:
         db.execute("ALTER TABLE robot_instance_parts ADD COLUMN decor_asset_id INTEGER")
     db.execute(
@@ -13950,6 +14057,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_companion_album_photos_user ON user_companion_album_photos(user_id, unlocked_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_base ON user_base_likes(base_user_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_base_likes_liker ON user_base_likes(liked_by_user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_blueprints_code ON robot_blueprints(blueprint_code)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_contests_active ON robot_contests(is_active, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_contest_entries_contest ON robot_contest_entries(contest_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
@@ -15004,9 +15114,11 @@ def _create_robot_instance(
             l_arm_offset_x, l_arm_offset_y,
             legs_offset_x, legs_offset_y,
             head_scale_percent, r_arm_scale_percent, l_arm_scale_percent, legs_scale_percent,
+            head_rotate_degrees, r_arm_rotate_degrees, l_arm_rotate_degrees, legs_rotate_degrees,
+            head_flip_x, r_arm_flip_x, l_arm_flip_x, legs_flip_x,
             decor_asset_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             instance_id,
@@ -15026,6 +15138,14 @@ def _create_robot_instance(
             _normalize_build_scale_percent(offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
             _normalize_build_scale_percent(offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
             _normalize_build_scale_percent(offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("head_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("r_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("l_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("legs_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_flip_x(offsets.get("head_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("r_arm_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("l_arm_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("legs_flip_x", 0)),
             decor_asset_id,
         ),
     )
@@ -20191,12 +20311,33 @@ def _build_scale_field_name(slot):
     return f"{slot}_scale_percent"
 
 
+def _build_rotate_field_name(slot):
+    return f"{slot}_rotate_degrees"
+
+
+def _build_flip_field_name(slot):
+    return f"{slot}_flip_x"
+
+
 def _normalize_build_scale_percent(raw):
     try:
         val = int(str(raw or "").strip())
     except (TypeError, ValueError):
         val = BUILD_PART_SCALE_DEFAULT
     return int(_clamp(val, BUILD_PART_SCALE_MIN, BUILD_PART_SCALE_MAX))
+
+
+def _normalize_build_rotate_degrees(raw):
+    try:
+        val = int(str(raw or "").strip())
+    except (TypeError, ValueError):
+        val = BUILD_PART_ROTATE_DEFAULT
+    return int(_clamp(val, BUILD_PART_ROTATE_MIN, BUILD_PART_ROTATE_MAX))
+
+
+def _normalize_build_flip_x(raw):
+    value = str(raw or "").strip().lower()
+    return 1 if value in {"1", "true", "on", "yes"} else 0
 
 
 def _build_offset_payload_from_values(values):
@@ -20224,6 +20365,22 @@ def _build_offset_payload_from_values(values):
             except Exception:
                 raw_scale = ""
         payload[scale_field] = _normalize_build_scale_percent(raw_scale)
+        rotate_field = _build_rotate_field_name(slot)
+        raw_rotate = ""
+        if values is not None:
+            try:
+                raw_rotate = values.get(rotate_field, "")
+            except Exception:
+                raw_rotate = ""
+        payload[rotate_field] = _normalize_build_rotate_degrees(raw_rotate)
+        flip_field = _build_flip_field_name(slot)
+        raw_flip = ""
+        if values is not None:
+            try:
+                raw_flip = values.get(flip_field, "")
+            except Exception:
+                raw_flip = ""
+        payload[flip_field] = _normalize_build_flip_x(raw_flip)
     return payload
 
 
@@ -20241,7 +20398,72 @@ def _robot_instance_part_offsets(parts_row):
             if scale_field in row_keys
             else BUILD_PART_SCALE_DEFAULT
         )
+        rotate_field = _build_rotate_field_name(slot)
+        payload[rotate_field] = (
+            _normalize_build_rotate_degrees(parts_row[rotate_field])
+            if rotate_field in row_keys
+            else BUILD_PART_ROTATE_DEFAULT
+        )
+        flip_field = _build_flip_field_name(slot)
+        payload[flip_field] = (
+            _normalize_build_flip_x(parts_row[flip_field])
+            if flip_field in row_keys
+            else 0
+        )
     return payload
+
+
+def _robot_blueprint_payload(robot_row, parts_row):
+    offsets = _robot_instance_part_offsets(parts_row)
+    return {
+        "version": 1,
+        "robot_id": int(robot_row["id"]),
+        "robot_name": robot_row["name"],
+        "frame_type": _normalize_frame_type(robot_row.get("frame_type") if isinstance(robot_row, dict) else robot_row["frame_type"] if "frame_type" in robot_row.keys() else "normal"),
+        "is_mixed_frame": bool(int((robot_row.get("is_mixed_frame") if isinstance(robot_row, dict) else robot_row["is_mixed_frame"] if "is_mixed_frame" in robot_row.keys() else 0) or 0)),
+        "parts": {
+            "head": parts_row["head_key"],
+            "r_arm": parts_row["r_arm_key"],
+            "l_arm": parts_row["l_arm_key"],
+            "legs": parts_row["legs_key"],
+            "decor_asset_id": int(parts_row["decor_asset_id"] or 0) if "decor_asset_id" in parts_row.keys() and parts_row["decor_asset_id"] else None,
+        },
+        "visual": offsets,
+    }
+
+
+def _robot_blueprint_code(robot_id, payload):
+    source = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    digest = hashlib.sha1(f"{int(robot_id)}:{source}".encode("utf-8")).hexdigest()[:8].upper()
+    return f"RB-{digest}"
+
+
+def ensure_robot_blueprint(db, robot_row, parts_row):
+    robot = dict(robot_row)
+    payload = _robot_blueprint_payload(robot, parts_row)
+    code = _robot_blueprint_code(int(robot["id"]), payload)
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO robot_blueprints (
+            robot_instance_id, user_id, blueprint_code, blueprint_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(robot_instance_id) DO UPDATE SET
+            blueprint_code = excluded.blueprint_code,
+            blueprint_json = excluded.blueprint_json,
+            updated_at = excluded.updated_at
+        """,
+        (
+            int(robot["id"]),
+            int(robot["user_id"]),
+            code,
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            now_ts,
+            now_ts,
+        ),
+    )
+    return {"blueprint_code": code, "payload": payload}
 
 
 def _seed_enemies(db):
@@ -20547,24 +20769,32 @@ def _compose_instance_image(db, instance_row, parts_row):
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
             "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("head_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("head_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
             "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("r_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("r_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
             "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("l_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("l_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
             "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("legs_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("legs_flip_x", 0),
         },
         out_path,
         decor_layers,
@@ -20621,24 +20851,32 @@ def _compose_instance_assets_no_commit(db, instance_id, parts_row):
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
             "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("head_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("head_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
             "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("r_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("r_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
             "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("l_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("l_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
             "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("legs_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("legs_flip_x", 0),
         },
         out_path,
         decor_layers,
@@ -35240,7 +35478,16 @@ def compose_robot(head_layer, r_arm_layer, l_arm_layer, legs_layer, out_path, de
                 resample_lanczos = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
                 scaled_size = max(1, int(round(CANVAS_SIZE * scale_percent / 100)))
                 img = img.resize((scaled_size, scaled_size), resample_lanczos)
-            canvas.paste(img, (layer["x"], layer["y"]), img)
+            if _normalize_build_flip_x(layer.get("flip_x")):
+                flip_left_right = getattr(getattr(Image, "Transpose", Image), "FLIP_LEFT_RIGHT", Image.FLIP_LEFT_RIGHT)
+                img = img.transpose(flip_left_right)
+            rotate_degrees = _normalize_build_rotate_degrees(layer.get("rotate_degrees", BUILD_PART_ROTATE_DEFAULT))
+            if rotate_degrees:
+                resample_bicubic = getattr(getattr(Image, "Resampling", Image), "BICUBIC", Image.BICUBIC)
+                img = img.rotate(-rotate_degrees, resample=resample_bicubic, expand=True)
+            x = int(layer["x"]) - max(0, (img.size[0] - CANVAS_SIZE) // 2)
+            y = int(layer["y"]) - max(0, (img.size[1] - CANVAS_SIZE) // 2)
+            canvas.paste(img, (x, y), img)
         base = Image.alpha_composite(base, canvas)
     base.save(out_path, format="PNG")
     return out_path
@@ -35262,24 +35509,32 @@ def _compose_build_image(db, build_id, head_key, r_arm_key, l_arm_key, legs_key,
             "x": head["offset_x"] + offsets.get("head_offset_x", 0),
             "y": head["offset_y"] + offsets.get("head_offset_y", 0),
             "scale_percent": offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("head_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("head_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(r_arm)),
             "x": r_arm["offset_x"] + offsets.get("r_arm_offset_x", 0),
             "y": r_arm["offset_y"] + offsets.get("r_arm_offset_y", 0),
             "scale_percent": offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("r_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("r_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(l_arm)),
             "x": l_arm["offset_x"] + offsets.get("l_arm_offset_x", 0),
             "y": l_arm["offset_y"] + offsets.get("l_arm_offset_y", 0),
             "scale_percent": offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("l_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("l_arm_flip_x", 0),
         },
         {
             "path": _static_abs(_part_image_rel(legs)),
             "x": legs["offset_x"] + offsets.get("legs_offset_x", 0),
             "y": legs["offset_y"] + offsets.get("legs_offset_y", 0),
             "scale_percent": offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT),
+            "rotate_degrees": offsets.get("legs_rotate_degrees", BUILD_PART_ROTATE_DEFAULT),
+            "flip_x": offsets.get("legs_flip_x", 0),
         },
         out_path,
         None,
@@ -48756,6 +49011,13 @@ def robot_detail(instance_id):
             rip.l_arm_key,
             rip.legs_key,
             rip.decor_asset_id,
+            rip.head_offset_x, rip.head_offset_y,
+            rip.r_arm_offset_x, rip.r_arm_offset_y,
+            rip.l_arm_offset_x, rip.l_arm_offset_y,
+            rip.legs_offset_x, rip.legs_offset_y,
+            rip.head_scale_percent, rip.r_arm_scale_percent, rip.l_arm_scale_percent, rip.legs_scale_percent,
+            rip.head_rotate_degrees, rip.r_arm_rotate_degrees, rip.l_arm_rotate_degrees, rip.legs_rotate_degrees,
+            rip.head_flip_x, rip.r_arm_flip_x, rip.l_arm_flip_x, rip.legs_flip_x,
             u.username AS owner_name,
             u.max_unlocked_layer AS owner_max_unlocked_layer
         FROM robot_instances ri
@@ -48860,6 +49122,7 @@ def robot_detail(instance_id):
         _slot_line("脚部", robot.get("legs_key")),
         {"slot_label": "装飾", "part_name": (robot.get("decor_name") or "なし"), "part_key": None},
     ]
+    blueprint = ensure_robot_blueprint(db, robot, robot)
     weekly_env = _world_current_environment(db)
     weekly_element = weekly_env["element"] if weekly_env else None
     weekly_fit = _robot_weekly_fit(db, int(robot["id"]), weekly_element) if weekly_element else False
@@ -48895,6 +49158,7 @@ def robot_detail(instance_id):
     return render_template(
         "robot_detail.html",
         robot=robot,
+        blueprint=blueprint,
         robot_composition=robot_composition,
         history=history,
         titles=titles,
@@ -50053,6 +50317,9 @@ def build():
         build_scale_min=BUILD_PART_SCALE_MIN,
         build_scale_max=BUILD_PART_SCALE_MAX,
         build_scale_step=BUILD_PART_SCALE_STEP,
+        build_rotate_min=BUILD_PART_ROTATE_MIN,
+        build_rotate_max=BUILD_PART_ROTATE_MAX,
+        build_rotate_step=BUILD_PART_ROTATE_STEP,
         boss_alert_active=boss_alert_hint["boss_alert_active"],
         boss_type=boss_alert_hint["boss_type"],
         recommended_build=boss_alert_hint["recommended_build"],
@@ -50503,6 +50770,144 @@ def showcase():
         sort_options=tuple(SHOWCASE_SORT_OPTIONS),
         sort_defs=SHOWCASE_SORT_DEFS,
     )
+
+
+@app.route("/robots/popular")
+def popular_robots():
+    db = get_db()
+    viewer = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone() if session.get("user_id") else None
+    week_key = _world_week_key()
+    return render_template(
+        "popular_robots.html",
+        user=viewer,
+        week_key=week_key,
+        rows=_popular_robot_rows(db, limit=10),
+    )
+
+
+def _active_robot_contests(db):
+    return db.execute(
+        """
+        SELECT *
+        FROM robot_contests
+        WHERE is_active = 1
+        ORDER BY created_at DESC, id DESC
+        """
+    ).fetchall()
+
+
+@app.route("/robots/contests")
+def robot_contests():
+    db = get_db()
+    viewer_id = int(session["user_id"]) if session.get("user_id") else None
+    contests = []
+    for contest in _active_robot_contests(db):
+        entries = db.execute(
+            """
+            SELECT rce.*, ri.name, ri.composed_image_path, ri.updated_at, u.username
+            FROM robot_contest_entries rce
+            JOIN robot_instances ri ON ri.id = rce.robot_instance_id
+            JOIN users u ON u.id = rce.user_id
+            WHERE rce.contest_id = ?
+              AND ri.status = 'active'
+              AND COALESCE(ri.is_public, 1) = 1
+              AND COALESCE(u.is_banned, 0) = 0
+            ORDER BY rce.created_at DESC, rce.id DESC
+            LIMIT 30
+            """,
+            (int(contest["id"]),),
+        ).fetchall()
+        contests.append(
+            {
+                **dict(contest),
+                "entries": [
+                    {
+                        **dict(row),
+                        "display_name": _display_username_for_user_row(db, row),
+                        "image_url": _composed_image_url(row["composed_image_path"], row["updated_at"]),
+                    }
+                    for row in entries
+                ],
+            }
+        )
+    my_robots = []
+    if viewer_id:
+        my_robots = db.execute(
+            """
+            SELECT id, name
+            FROM robot_instances
+            WHERE user_id = ? AND status = 'active' AND COALESCE(is_public, 1) = 1
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (viewer_id,),
+        ).fetchall()
+    return render_template(
+        "robot_contests.html",
+        contests=contests,
+        my_robots=my_robots,
+        is_admin=bool(viewer_id and _is_admin_user(viewer_id)),
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/robots/contests/create", methods=["POST"])
+@login_required
+def robot_contest_create():
+    db = get_db()
+    if not _is_admin_user(int(session["user_id"])):
+        abort(403)
+    title = (request.form.get("title") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    if not title:
+        session["message"] = "テーマ名を入力してください。"
+        return redirect(url_for("robot_contests"))
+    theme_key = re.sub(r"[^a-z0-9_]+", "_", title.lower()).strip("_")[:40] or uuid.uuid4().hex[:8]
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO robot_contests (theme_key, title, description, is_active, created_by_user_id, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(theme_key) DO UPDATE SET
+            title = excluded.title,
+            description = excluded.description,
+            is_active = 1,
+            updated_at = excluded.updated_at
+        """,
+        (theme_key, title, description, int(session["user_id"]), now_ts, now_ts),
+    )
+    db.commit()
+    session["message"] = "ロボコンテストのテーマを作成しました。"
+    return redirect(url_for("robot_contests"))
+
+
+@app.route("/robots/contests/submit", methods=["POST"])
+@login_required
+def robot_contest_submit():
+    db = get_db()
+    user_id = int(session["user_id"])
+    contest_id = int(request.form.get("contest_id") or 0)
+    robot_id = int(request.form.get("robot_instance_id") or 0)
+    contest = db.execute("SELECT id FROM robot_contests WHERE id = ? AND is_active = 1", (contest_id,)).fetchone()
+    robot = db.execute(
+        """
+        SELECT id FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active' AND COALESCE(is_public, 1) = 1
+        """,
+        (robot_id, user_id),
+    ).fetchone()
+    if not contest or not robot:
+        session["message"] = "投稿できるテーマまたはロボが見つかりません。"
+        return redirect(url_for("robot_contests"))
+    db.execute(
+        """
+        INSERT OR IGNORE INTO robot_contest_entries (contest_id, robot_instance_id, user_id, created_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (contest_id, robot_id, user_id, int(time.time())),
+    )
+    db.commit()
+    session["message"] = "ロボをコンテストへ投稿しました。"
+    return redirect(url_for("robot_contests"))
 
 
 @app.route("/showcase/set", methods=["POST"])

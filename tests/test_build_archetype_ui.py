@@ -103,6 +103,8 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn('name="r_arm_offset_y"', build_html)
         self.assertIn('name="head_scale_percent"', build_html)
         self.assertIn('name="legs_scale_percent"', build_html)
+        self.assertIn('name="head_rotate_degrees"', build_html)
+        self.assertIn('name="legs_flip_x"', build_html)
         self.assertIn("リセット", build_html)
         self.assertNotIn('style="', build_html)
         self.assertNotIn('type="application/json"', build_html)

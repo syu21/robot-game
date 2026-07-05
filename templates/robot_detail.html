@@ -73,8 +73,18 @@
     <form method="post" action="{{ url_for('robot_share', instance_id=robot['id']) }}">
       <button type="submit">全体チャットへ共有</button>
     </form>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('share_robot_public', robot_instance_id=robot['id']) }}">画像を共有</a></p>
   {% endif %}
 </div>
+
+{% if blueprint %}
+<div class="card">
+  <h2>設計図</h2>
+  <div class="robot-part">設計番号: <b>{{ blueprint['blueprint_code'] }}</b></div>
+  <div class="robot-time">構成・位置・大きさ・回転・反転を記録した閲覧用コードです。戦力には影響しません。</div>
+  <pre class="code-block">{{ blueprint['payload'] | tojson(indent=2) }}</pre>
+</div>
+{% endif %}
 
 <div class="card">
   <h2>思想</h2>

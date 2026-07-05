@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>ロボコンテスト</h1>
+
+{% if message %}
+<div class="card">{{ message }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="robot-time">テーマに合うロボを投稿する見た目コンテンツです。戦力・報酬・coinsには影響しません。</div>
+  <p class="link"><a href="{{ url_for('popular_robots') }}">今週の人気ロボへ</a> | <a href="{{ url_for('showcase') }}">ロボ展示へ</a></p>
+</div>
+
+{% if is_admin %}
+<div class="card">
+  <h2>管理者: テーマ作成</h2>
+  <form method="post" action="{{ url_for('robot_contest_create') }}" class="post-form">
+    <input type="text" name="title" maxlength="80" placeholder="例: 青い研究基地に似合うロボ" required />
+    <textarea name="description" rows="3" maxlength="300" placeholder="テーマ説明"></textarea>
+    <button type="submit">テーマを作成</button>
+  </form>
+</div>
+{% endif %}
+
+{% for contest in contests %}
+<section class="card">
+  <h2>{{ contest['title'] }}</h2>
+  <div class="robot-time">{{ contest['description'] or '説明なし' }}</div>
+  {% if my_robots %}
+  <form method="post" action="{{ url_for('robot_contest_submit') }}" class="inline-form inline-form-top">
+    <input type="hidden" name="contest_id" value="{{ contest['id'] }}" />
+    <select name="robot_instance_id">
+      {% for robot in my_robots %}
+      <option value="{{ robot['id'] }}">#{{ robot['id'] }} {{ robot['name'] }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">このテーマへ投稿</button>
+  </form>
+  {% endif %}
+  <div class="robot-grid">
+    {% for entry in contest['entries'] %}
+    <div class="robot-card">
+      <div class="robot-id">{{ entry['name'] }}</div>
+      <div class="robot-part">投稿者: {{ entry['display_name'] }}</div>
+      {% if entry.get('image_url') %}
+      <img class="robot-thumb" src="{{ entry['image_url'] }}" alt="{{ entry['name'] }}" loading="lazy" />
+      {% else %}
+      <div class="robot-thumb empty">no image</div>
+      {% endif %}
+      <p class="link"><a href="{{ url_for('robot_detail', instance_id=entry['robot_instance_id']) }}">個別ページ</a></p>
+    </div>
+    {% else %}
+    <div class="robot-card">まだ投稿ロボはありません。</div>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="card">開催中のロボコンテストはありません。</div>
+{% endfor %}
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}

@@ -1,6 +1,6 @@
 # 編成・強化・進化仕様
 
-最終更新日: 2026-05-18
+最終更新日: 2026-07-05
 
 ## 1. 範囲
 - 所持パーツ一覧: `/parts`
@@ -59,11 +59,15 @@
 ### 3.3 合成画像
 - 画像サイズ: 128x128 PNG
 - レイヤー順: `LEGS -> HEAD -> RIGHT_ARM -> LEFT_ARM -> DECORATION`
-- オフセット: `robot_parts.offset_x/y` を使用
+- 基本位置: `robot_parts.offset_x/y` を使用
+- 編成確定時に、各部位ごとの `x / y / scale / rotate / flip_x` を `robot_instance_parts` に保存する
+- 見た目調整は合成画像にのみ反映し、ステータス・報酬・ドロップ率には影響しない
+- 保存後は `composed_image_path / icon_32_path` を再生成し、ホーム・ランキング・展示・通信の小ロボ画像にも同じ見た目を使う
 
 ### 3.4 保存
 - `robot_instances` + `robot_instance_parts` に保存
 - 保存枠超過時は保存ブロック
+- 保存済みロボは `/robots` から確認し、`users.active_robot_id` を出撃機体として切り替える
 
 ### 3.5 小型ユーザー機体アイコン
 - `robot_instances.icon_32_path` に 32x32 の小型機体画像を保持する
@@ -73,14 +77,20 @@
 - `DECORATION` を積んでいる場合は、本体を隠さない範囲で小さく残す
 - 用途は `/ranking`, `/home`, `/world`, `/records`, `/comms/world`, `/comms/rooms` のユーザー表示
 
-### 3.6 機体整備
+### 3.6 設計図
+- `robot_blueprints` に、パーツ構成と `x / y / scale / rotate / flip_x` を JSON として保存する
+- 表示用の短い `blueprint_code` を発行する
+- 初期版は `/robots/<id>` で閲覧のみ
+- コピー・再現機能は後続対応
+
+### 3.7 機体整備
 - 編成済みロボを壊さずに `HEAD / RIGHT_ARM / LEFT_ARM / LEGS / DECOR` を1部位ずつ差し替える
 - 前面文言は `機体整備` に統一する
 - 候補ごとに `総合値差分 / 6ステ差分 / 注目能力 / 思想変化` を確認してから確定できる
 - 確定時は `robot_instance_parts` 更新後に `composed_image_path / icon_32_path` を再生成する
 - 監査は `audit.robot.maintenance` を使う
 
-### 3.7 ロボ分解
+### 3.8 ロボ分解
 - 分解で戻る対象は、既存分解仕様に従って `HEAD / RIGHT_ARM / LEFT_ARM / LEGS / DECORATION` のうち実際に所持パーツへ戻す個体とする
 - 実行前に `現在の所持パーツ数 + 分解で戻るパーツ数` を計算する
 - 上記が所持上限を超える場合は分解不可とし、`robot_instances / robot_instance_parts / part_instances` を変更しない

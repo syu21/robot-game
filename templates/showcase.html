@@ -4,6 +4,10 @@
 <h1>ロボ展示</h1>
 
 <div class="card">
+  <p class="link"><a href="{{ url_for('popular_robots') }}">今週の人気ロボ</a> | <a href="{{ url_for('robot_contests') }}">ロボコンテスト</a></p>
+</div>
+
+<div class="card">
   <h2>自分の展示設定</h2>
   <div>現在枠: {{ limits['showcase_slots'] }} / 3</div>
   <form method="post" action="{{ url_for('showcase_buy_slot') }}">

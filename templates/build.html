@@ -260,6 +260,34 @@
               />
               <output id="{{ control['slot'] }}_scale_percent_value" for="{{ control['slot'] }}_scale_percent">{{ selected_offsets[control['slot'] ~ '_scale_percent'] }}%</output>
             </label>
+            <label class="build-offset-row" for="{{ control['slot'] }}_rotate_degrees">
+              <span>回転</span>
+              <input
+                type="range"
+                id="{{ control['slot'] }}_rotate_degrees"
+                name="{{ control['slot'] }}_rotate_degrees"
+                min="{{ build_rotate_min }}"
+                max="{{ build_rotate_max }}"
+                step="{{ build_rotate_step }}"
+                value="{{ selected_offsets[control['slot'] ~ '_rotate_degrees'] }}"
+                data-offset-slot="{{ control['slot'] }}"
+                data-rotate-control="1"
+              />
+              <output id="{{ control['slot'] }}_rotate_degrees_value" for="{{ control['slot'] }}_rotate_degrees">{{ selected_offsets[control['slot'] ~ '_rotate_degrees'] }}deg</output>
+            </label>
+            <label class="build-offset-row" for="{{ control['slot'] }}_flip_x">
+              <span>反転</span>
+              <input
+                type="checkbox"
+                id="{{ control['slot'] }}_flip_x"
+                name="{{ control['slot'] }}_flip_x"
+                value="1"
+                data-offset-slot="{{ control['slot'] }}"
+                data-flip-control="1"
+                {% if selected_offsets[control['slot'] ~ '_flip_x'] %}checked{% endif %}
+              />
+              <span>左右反転</span>
+            </label>
           </div>
           {% endfor %}
         </div>

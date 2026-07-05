@@ -275,6 +275,12 @@ class FrameTypeSystemTests(unittest.TestCase):
                 "r_arm_scale_percent": "200",
                 "l_arm_scale_percent": "abc",
                 "legs_scale_percent": "115",
+                "head_rotate_degrees": "-45",
+                "r_arm_rotate_degrees": "45",
+                "l_arm_rotate_degrees": "abc",
+                "legs_rotate_degrees": "15",
+                "head_flip_x": "1",
+                "legs_flip_x": "on",
                 **{key: str(value) for key, value in normal_ids.items()},
             },
             follow_redirects=False,
@@ -285,6 +291,8 @@ class FrameTypeSystemTests(unittest.TestCase):
             row = db.execute(
                 """
                 SELECT head_scale_percent, r_arm_scale_percent, l_arm_scale_percent, legs_scale_percent,
+                       head_rotate_degrees, r_arm_rotate_degrees, l_arm_rotate_degrees, legs_rotate_degrees,
+                       head_flip_x, r_arm_flip_x, l_arm_flip_x, legs_flip_x,
                        composed_image_path, icon_32_path
                 FROM robot_instances ri
                 JOIN robot_instance_parts rip ON rip.robot_instance_id = ri.id
@@ -299,6 +307,14 @@ class FrameTypeSystemTests(unittest.TestCase):
             self.assertEqual(int(row["r_arm_scale_percent"]), 130)
             self.assertEqual(int(row["l_arm_scale_percent"]), 100)
             self.assertEqual(int(row["legs_scale_percent"]), 115)
+            self.assertEqual(int(row["head_rotate_degrees"]), -30)
+            self.assertEqual(int(row["r_arm_rotate_degrees"]), 30)
+            self.assertEqual(int(row["l_arm_rotate_degrees"]), 0)
+            self.assertEqual(int(row["legs_rotate_degrees"]), 15)
+            self.assertEqual(int(row["head_flip_x"]), 1)
+            self.assertEqual(int(row["r_arm_flip_x"]), 0)
+            self.assertEqual(int(row["l_arm_flip_x"]), 0)
+            self.assertEqual(int(row["legs_flip_x"]), 1)
             self.assertTrue(row["composed_image_path"])
             self.assertTrue(row["icon_32_path"])
 

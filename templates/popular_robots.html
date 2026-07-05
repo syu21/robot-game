@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>今週の人気ロボ</h1>
+
+<div class="card">
+  <div class="robot-part">対象週: {{ week_key }}</div>
+  <div class="robot-time">展示いいねを基準にした見た目人気ランキングです。戦力・報酬・coinsには影響しません。</div>
+  <p class="link"><a href="{{ url_for('showcase') }}">ロボ展示へ</a> | <a href="{{ url_for('robot_contests') }}">ロボコンテストへ</a></p>
+</div>
+
+<div class="robot-grid">
+  {% for row in rows %}
+  <div class="robot-card">
+    <div class="robot-id">#{{ loop.index }} {{ row['name'] }}</div>
+    <div class="robot-part">オーナー: {{ row['display_name'] }}</div>
+    <div class="robot-part">今週いいね: {{ row['like_count'] }}</div>
+    {% if row.get('image_url') %}
+    <img class="robot-thumb" src="{{ row['image_url'] }}" alt="{{ row['name'] }}" loading="lazy" />
+    {% else %}
+    <div class="robot-thumb empty">no image</div>
+    {% endif %}
+    <p class="link"><a href="{{ url_for('robot_detail', instance_id=row['id']) }}">個別ページ</a></p>
+  </div>
+  {% else %}
+  <div class="card">今週の人気ロボはまだありません。</div>
+  {% endfor %}
+</div>
+
+<p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+{% endblock %}
