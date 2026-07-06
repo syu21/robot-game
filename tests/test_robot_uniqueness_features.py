@@ -69,8 +69,45 @@ class RobotUniquenessFeatureTests(unittest.TestCase):
         self.assertIn("画像を共有", html)
         self.assertIn("設計図", html)
         self.assertIn("設計番号:", html)
+        self.assertIn("人気ロボに投稿する", html)
+        self.assertIn("コンテストを見る", html)
         self.assertIn("head_rotate_degrees", html)
         self.assertIn("head_flip_x", html)
+
+    def test_home_customize_cta_logs_click(self):
+        client = self._client(self.admin_id)
+        html = client.get("/home").get_data(as_text=True)
+        self.assertIn("ロボ調整", html)
+        self.assertIn("パーツの位置・大きさ・回転・反転を調整して、自分だけのロボにできます", html)
+        self.assertIn("ロボを調整する", html)
+
+        response = client.post(
+            "/robots/customize/start",
+            data={"robot_id": str(self.robot_id)},
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/build", response.headers["Location"])
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.admin_id, game_app.AUDIT_EVENT_TYPES["ROBOT_CUSTOMIZE_CTA_CLICK"]),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(count, 1)
+
+    def test_robots_build_result_card_shows_next_actions(self):
+        response = self._client(self.admin_id).get(f"/robots?build_result_id={self.robot_id}")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("ロボ完成", html)
+        self.assertIn("設計番号:", html)
+        self.assertIn("ロボ詳細を見る", html)
+        self.assertIn("画像を共有する", html)
+        self.assertIn("人気ロボに投稿する", html)
+        self.assertIn("コンテストを見る", html)
 
     def test_popular_robots_uses_weekly_showcase_likes(self):
         response = self._client().get("/robots/popular")
@@ -99,6 +136,15 @@ class RobotUniquenessFeatureTests(unittest.TestCase):
         html = submit.get_data(as_text=True)
         self.assertIn("UniqueBot", html)
         self.assertIn("ロボをコンテストへ投稿しました。", html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.admin_id, game_app.AUDIT_EVENT_TYPES["ROBOT_CONTEST_SUBMIT"]),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(count, 1)
 
 
 if __name__ == "__main__":

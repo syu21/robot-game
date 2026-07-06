@@ -228,6 +228,8 @@ AUDIT_EVENT_TYPES = {
     "ROBOT_DECOMPOSE_BLOCKED": "audit.robot.decompose.blocked",
     "ROBOT_RENAME": "audit.robot.rename",
     "ROBOT_MAINTENANCE": "audit.robot.maintenance",
+    "ROBOT_CUSTOMIZE_CTA_CLICK": "audit.robot.customize.cta_click",
+    "ROBOT_CONTEST_SUBMIT": "audit.robot.contest.submit",
     "CHAMPION_SELECT": "audit.champion.select",
     "CHAMPION_CHALLENGE": "audit.champion.challenge",
     "CHAMPION_DEFEAT": "audit.champion.defeat",

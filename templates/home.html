@@ -535,6 +535,16 @@
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">完成型へ合成</a></p>
             {% endif %}
           </div>
+          {% if robot_customize_cta %}
+          <div class="card">
+            <h2>ロボ調整</h2>
+            <div class="robot-time">{{ robot_customize_cta['text'] }}</div>
+            <form method="post" action="{{ url_for('robot_customize_start') }}" class="inline-form inline-form-top">
+              <input type="hidden" name="robot_id" value="{{ robot_customize_cta['robot_id'] }}" />
+              <button type="submit">ロボを調整する</button>
+            </form>
+          </div>
+          {% endif %}
           <details class="home-robot-details">
             <summary>詳細を見る</summary>
           <div class="main-robot-meta-grid">

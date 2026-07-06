@@ -61,20 +61,11 @@
         <button type="submit">{% if robot['is_public'] %}展示を非公開{% else %}展示を公開{% endif %}</button>
       </form>
       {% endif %}
-      {% if can_maintain %}
-      <p class="link"><a class="battle-home-link" href="{{ url_for('robot_maintenance', instance_id=robot['id']) }}">機体整備</a></p>
-      {% endif %}
     </div>
     {% if robot.get('image_url') %}
       <img class="robot-thumb" src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
     {% endif %}
   </div>
-  {% if can_share %}
-    <form method="post" action="{{ url_for('robot_share', instance_id=robot['id']) }}">
-      <button type="submit">全体チャットへ共有</button>
-    </form>
-    <p class="link"><a class="battle-home-link" href="{{ url_for('share_robot_public', robot_instance_id=robot['id']) }}">画像を共有</a></p>
-  {% endif %}
 </div>
 
 {% if blueprint %}
@@ -83,6 +74,40 @@
   <div class="robot-part">設計番号: <b>{{ blueprint['blueprint_code'] }}</b></div>
   <div class="robot-time">構成・位置・大きさ・回転・反転を記録した閲覧用コードです。戦力には影響しません。</div>
   <pre class="code-block">{{ blueprint['payload'] | tojson(indent=2) }}</pre>
+</div>
+{% endif %}
+
+{% if can_share %}
+<div class="card">
+  <h2>公開・共有</h2>
+  {% if blueprint %}
+  <div class="robot-part">設計番号: <b>{{ blueprint['blueprint_code'] }}</b></div>
+  {% endif %}
+  <div class="home-inline-actions">
+    {% if can_maintain %}
+    <a class="battle-home-link" href="{{ url_for('robot_maintenance', instance_id=robot['id']) }}">機体整備</a>
+    {% endif %}
+    <a class="battle-home-link" href="{{ url_for('share_robot_public', robot_instance_id=robot['id']) }}">共有ページを見る</a>
+    <form method="post" action="{{ url_for('robot_share', instance_id=robot['id']) }}" class="inline-form">
+      <button type="submit">画像を共有する</button>
+    </form>
+    <form method="post" action="{{ url_for('robot_showcase_post', instance_id=robot['id']) }}" class="inline-form">
+      <button type="submit">人気ロボに投稿する</button>
+    </form>
+    <a class="battle-home-link" href="{{ url_for('showcase') }}">ロボ展示を見る</a>
+    <a class="battle-home-link" href="{{ url_for('robot_contests') }}">コンテストを見る</a>
+  </div>
+  {% if robot_detail_contests %}
+  <form method="post" action="{{ url_for('robot_contest_submit') }}" class="inline-form inline-form-top">
+    <select name="contest_id">
+      {% for contest in robot_detail_contests %}
+      <option value="{{ contest['id'] }}">{{ contest['title'] }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="robot_instance_id" value="{{ robot['id'] }}" />
+    <button type="submit">コンテストへ投稿</button>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 

@@ -12,6 +12,41 @@
 </div>
 {% endif %}
 
+{% if build_result %}
+<div class="card">
+  <h2>ロボ完成</h2>
+  <div class="robot-part">{{ build_result['robot']['name'] or '無名ロボ' }}</div>
+  {% if build_result['robot'].get('image_url') %}
+    <img class="robot-thumb" src="{{ build_result['robot']['image_url'] }}" alt="{{ build_result['robot']['name'] }}" loading="lazy" />
+  {% endif %}
+  {% if build_result.get('blueprint') %}
+  <div class="robot-part">設計番号: <b>{{ build_result['blueprint']['blueprint_code'] }}</b></div>
+  {% endif %}
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=build_result['robot']['id']) }}">ロボ詳細を見る</a>
+    <form method="post" action="{{ url_for('robot_share', instance_id=build_result['robot']['id']) }}" class="inline-form">
+      <button type="submit">画像を共有する</button>
+    </form>
+    <form method="post" action="{{ url_for('robot_showcase_post', instance_id=build_result['robot']['id']) }}" class="inline-form">
+      <input type="hidden" name="next" value="robots" />
+      <button type="submit">人気ロボに投稿する</button>
+    </form>
+    <a class="battle-home-link" href="{{ url_for('robot_contests') }}">コンテストを見る</a>
+  </div>
+  {% if build_result.get('contests') %}
+  <form method="post" action="{{ url_for('robot_contest_submit') }}" class="inline-form inline-form-top">
+    <select name="contest_id">
+      {% for contest in build_result['contests'] %}
+      <option value="{{ contest['id'] }}">{{ contest['title'] }}</option>
+      {% endfor %}
+    </select>
+    <input type="hidden" name="robot_instance_id" value="{{ build_result['robot']['id'] }}" />
+    <button type="submit">コンテストへ投稿</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
   <h2>完成ロボ</h2>
   <div class="upgrade-cost">作ったロボはここに保存されます。出撃に使うロボはあとから選べます。</div>

@@ -20999,6 +20999,57 @@ def _showcase_rows(db, user_id):
     return out
 
 
+def _set_robot_showcase_slot(db, user_id, robot_id):
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if not user:
+        return None
+    limits = _effective_limits(db, user)
+    _ensure_showcase_slots(db, int(user_id), limits["showcase_slots"])
+    existing = db.execute(
+        """
+        SELECT slot_no
+        FROM user_showcase
+        WHERE user_id = ? AND robot_instance_id = ?
+        ORDER BY slot_no ASC
+        LIMIT 1
+        """,
+        (int(user_id), int(robot_id)),
+    ).fetchone()
+    if existing:
+        db.execute("UPDATE robot_instances SET is_public = 1, updated_at = ? WHERE id = ?", (int(time.time()), int(robot_id)))
+        return int(existing["slot_no"])
+    target = db.execute(
+        """
+        SELECT slot_no
+        FROM user_showcase
+        WHERE user_id = ? AND robot_instance_id IS NULL
+        ORDER BY slot_no ASC
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if not target:
+        target = db.execute(
+            """
+            SELECT slot_no
+            FROM user_showcase
+            WHERE user_id = ?
+            ORDER BY slot_no ASC
+            LIMIT 1
+            """,
+            (int(user_id),),
+        ).fetchone()
+    if not target:
+        return None
+    slot_no = int(target["slot_no"])
+    db.execute(
+        "UPDATE user_showcase SET robot_instance_id = ? WHERE user_id = ? AND slot_no = ?",
+        (int(robot_id), int(user_id), slot_no),
+    )
+    db.execute("UPDATE robot_instances SET is_public = 1, updated_at = ? WHERE id = ?", (int(time.time()), int(robot_id)))
+    return slot_no
+
+
 def _evaluate_milestones(db, user):
     milestones = db.execute(
         "SELECT * FROM robot_milestones WHERE active = 1 ORDER BY threshold_value ASC"
@@ -41348,6 +41399,24 @@ def home():
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     companion_home_summary = get_active_companion(db, int(user["id"]))
     companion_dispatch_home_summary = companion_dispatch_summary(db, int(user["id"]))
+    robot_customize_cta = None
+    if main_robot:
+        cta_seen = db.execute(
+            """
+            SELECT 1
+            FROM world_events_log
+            WHERE user_id = ? AND event_type = ?
+            LIMIT 1
+            """,
+            (int(user["id"]), AUDIT_EVENT_TYPES["ROBOT_CUSTOMIZE_CTA_CLICK"]),
+        ).fetchone()
+        robot_updated_at = int(main_robot.get("updated_at") or main_robot.get("created_at") or 0)
+        recently_built = bool(robot_updated_at and (int(now) - robot_updated_at) <= 7 * 86400)
+        if (not cta_seen) or recently_built:
+            robot_customize_cta = {
+                "robot_id": int(main_robot["id"]),
+                "text": "パーツの位置・大きさ・回転・反転を調整して、自分だけのロボにできます",
+            }
     layer1_first_clear_card = None
     if (
         "layer1_first_clear_reward_claimed" in user.keys()
@@ -41525,6 +41594,7 @@ def home():
             factory_base_home=factory_base_home,
             companion_home_summary=companion_home_summary,
             companion_dispatch_home_summary=companion_dispatch_home_summary,
+            robot_customize_cta=robot_customize_cta,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
             debug_comment=HOME_DEBUG_COMMENT,
@@ -41571,6 +41641,53 @@ def home():
             error_text="ホーム画面の描画に失敗しました。",
             traceback_text="",
         ), 500
+
+
+@app.route("/robots/customize/start", methods=["POST"])
+@login_required
+def robot_customize_start():
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot_id_raw = (request.form.get("robot_id") or "").strip()
+    robot_id = int(robot_id_raw) if robot_id_raw.isdigit() else 0
+    robot = None
+    if robot_id:
+        robot = db.execute(
+            """
+            SELECT id
+            FROM robot_instances
+            WHERE id = ? AND user_id = ? AND status = 'active'
+            """,
+            (int(robot_id), user_id),
+        ).fetchone()
+    if not robot:
+        user = db.execute("SELECT active_robot_id FROM users WHERE id = ?", (user_id,)).fetchone()
+        active_robot_id = int(user["active_robot_id"] or 0) if user and user["active_robot_id"] else 0
+        if active_robot_id:
+            robot = db.execute(
+                """
+                SELECT id
+                FROM robot_instances
+                WHERE id = ? AND user_id = ? AND status = 'active'
+                """,
+                (active_robot_id, user_id),
+            ).fetchone()
+    payload = {"robot_instance_id": int(robot["id"]) if robot else None}
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_CUSTOMIZE_CTA_CLICK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_customize_cta_click",
+        entity_type="robot_instance" if robot else "page",
+        entity_id=(int(robot["id"]) if robot else None),
+        payload=payload,
+        ip=request.remote_addr,
+    )
+    db.commit()
+    if robot:
+        return redirect(url_for("build", mode="modify", base_robot_id=int(robot["id"])))
+    return redirect(url_for("build"))
 
 
 @app.route("/home/intro-modal/dismiss", methods=["POST"])
@@ -48982,10 +49099,33 @@ def robots():
     overflow = max(0, used_all - limits["robot_slots"])
     message = session.pop("message", None)
     decompose_blocked = bool(session.pop("robot_decompose_blocked", None))
+    build_result = None
+    build_result_id_raw = (request.args.get("build_result_id") or "").strip()
+    if build_result_id_raw.isdigit():
+        result_row = db.execute(
+            """
+            SELECT ri.*, rip.*
+            FROM robot_instances ri
+            JOIN robot_instance_parts rip ON rip.robot_instance_id = ri.id
+            WHERE ri.id = ? AND ri.user_id = ? AND ri.status = 'active'
+            """,
+            (int(build_result_id_raw), int(user["id"])),
+        ).fetchone()
+        if result_row:
+            result_robot = dict(result_row)
+            result_robot = _refresh_robot_instance_render_assets(db, result_robot, log_label="robots_build_result") or result_robot
+            blueprint = ensure_robot_blueprint(db, result_robot, result_robot)
+            db.commit()
+            build_result = {
+                "robot": result_robot,
+                "blueprint": blueprint,
+                "contests": _active_robot_contests(db),
+            }
     return render_template(
         "robots.html",
         instances=instances,
         message=message,
+        build_result=build_result,
         decompose_blocked=decompose_blocked,
         limits=limits,
         active_robot_id=user["active_robot_id"],
@@ -49123,6 +49263,7 @@ def robot_detail(instance_id):
         {"slot_label": "装飾", "part_name": (robot.get("decor_name") or "なし"), "part_key": None},
     ]
     blueprint = ensure_robot_blueprint(db, robot, robot)
+    robot_detail_contests = _active_robot_contests(db) if int(robot["user_id"]) == user_id else []
     weekly_env = _world_current_environment(db)
     weekly_element = weekly_env["element"] if weekly_env else None
     weekly_fit = _robot_weekly_fit(db, int(robot["id"]), weekly_element) if weekly_element else False
@@ -49159,6 +49300,7 @@ def robot_detail(instance_id):
         "robot_detail.html",
         robot=robot,
         blueprint=blueprint,
+        robot_detail_contests=robot_detail_contests,
         robot_composition=robot_composition,
         history=history,
         titles=titles,
@@ -49740,6 +49882,34 @@ def robot_share(instance_id):
     db.commit()
     session["message"] = "全体チャットへ共有しました。"
     return redirect(url_for("robot_detail", instance_id=int(row["id"])))
+
+
+@app.route("/robots/<int:instance_id>/showcase_post", methods=["POST"])
+@login_required
+def robot_showcase_post(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    row = db.execute(
+        """
+        SELECT id
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        """,
+        (int(instance_id), user_id),
+    ).fetchone()
+    if not row:
+        session["message"] = "展示投稿できるロボが見つかりません。"
+        return redirect(url_for("robots"))
+    slot_no = _set_robot_showcase_slot(db, user_id, int(instance_id))
+    db.commit()
+    if slot_no:
+        session["message"] = f"ロボ展示のSLOT {slot_no}に投稿しました。"
+    else:
+        session["message"] = "展示枠を確認できませんでした。"
+    next_url = (request.form.get("next") or "").strip()
+    if next_url == "robots":
+        return redirect(url_for("robots", build_result_id=int(instance_id)))
+    return redirect(url_for("robot_detail", instance_id=int(instance_id)))
 
 
 @app.route("/robots/<int:instance_id>/toggle_public", methods=["POST"])
@@ -50673,7 +50843,7 @@ def build_confirm():
         session["message"] = str(exc)
         return _build_redirect()
     session["message"] = "機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。"
-    return redirect(url_for("robots"))
+    return redirect(url_for("robots", build_result_id=int(instance_id)))
 
 
 @app.route("/robots/<int:instance_id>/rename", methods=["POST"])
@@ -50898,15 +51068,30 @@ def robot_contest_submit():
     if not contest or not robot:
         session["message"] = "投稿できるテーマまたはロボが見つかりません。"
         return redirect(url_for("robot_contests"))
-    db.execute(
+    cur = db.execute(
         """
         INSERT OR IGNORE INTO robot_contest_entries (contest_id, robot_instance_id, user_id, created_at)
         VALUES (?, ?, ?, ?)
         """,
         (contest_id, robot_id, user_id, int(time.time())),
     )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_CONTEST_SUBMIT"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_contest_submit",
+        entity_type="robot_contest",
+        entity_id=int(contest_id),
+        payload={
+            "contest_id": int(contest_id),
+            "robot_instance_id": int(robot_id),
+            "duplicate": bool(getattr(cur, "rowcount", 0) == 0),
+        },
+        ip=request.remote_addr,
+    )
     db.commit()
-    session["message"] = "ロボをコンテストへ投稿しました。"
+    session["message"] = "このロボはすでに投稿済みです。" if getattr(cur, "rowcount", 0) == 0 else "ロボをコンテストへ投稿しました。"
     return redirect(url_for("robot_contests"))
 
 
