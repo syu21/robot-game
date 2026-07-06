@@ -13068,6 +13068,7 @@ def ensure_schema(db):
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_by_user_id INTEGER,
+            ends_at INTEGER,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )
@@ -14039,6 +14040,9 @@ def ensure_schema(db):
         """,
         (now_ts,),
     )
+    robot_contest_cols = {row["name"] for row in db.execute("PRAGMA table_info(robot_contests)").fetchall()}
+    if "ends_at" not in robot_contest_cols:
+        db.execute("ALTER TABLE robot_contests ADD COLUMN ends_at INTEGER")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
@@ -41399,6 +41403,7 @@ def home():
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     companion_home_summary = get_active_companion(db, int(user["id"]))
     companion_dispatch_home_summary = companion_dispatch_summary(db, int(user["id"]))
+    home_robot_contest_card = _home_robot_contest_card(db)
     robot_customize_cta = None
     if main_robot:
         cta_seen = db.execute(
@@ -41594,6 +41599,7 @@ def home():
             factory_base_home=factory_base_home,
             companion_home_summary=companion_home_summary,
             companion_dispatch_home_summary=companion_dispatch_home_summary,
+            home_robot_contest_card=home_robot_contest_card,
             robot_customize_cta=robot_customize_cta,
             recent_robot_presence=recent_robot_presence,
             debug_snapshot=debug_snapshot,
@@ -50955,15 +50961,85 @@ def popular_robots():
     )
 
 
+DEFAULT_ROBOT_CONTEST_THEME_KEY = "first_robolabo_freecraft_cup"
+DEFAULT_ROBOT_CONTEST_TITLE = "第1回 ロボらぼ自由工作杯"
+DEFAULT_ROBOT_CONTEST_DESCRIPTION = (
+    "通常・虫・恐竜パーツを自由に組み合わせて、自分だけのロボを作ろう。"
+    "強さではなく見た目と発想で楽しむコンテストです。"
+)
+
+
+def ensure_default_robot_contest(db, *, created_by_user_id=None, now_ts=None):
+    now_ts = int(now_ts or time.time())
+    ends_at = int((datetime.fromtimestamp(now_ts, JST) + timedelta(days=7)).timestamp())
+    db.execute(
+        """
+        INSERT INTO robot_contests (
+            theme_key, title, description, is_active, created_by_user_id, ends_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+        ON CONFLICT(theme_key) DO UPDATE SET
+            title = excluded.title,
+            description = excluded.description,
+            is_active = 1,
+            ends_at = COALESCE(robot_contests.ends_at, excluded.ends_at),
+            updated_at = excluded.updated_at
+        """,
+        (
+            DEFAULT_ROBOT_CONTEST_THEME_KEY,
+            DEFAULT_ROBOT_CONTEST_TITLE,
+            DEFAULT_ROBOT_CONTEST_DESCRIPTION,
+            int(created_by_user_id) if created_by_user_id else None,
+            ends_at,
+            now_ts,
+            now_ts,
+        ),
+    )
+    return db.execute(
+        "SELECT * FROM robot_contests WHERE theme_key = ?",
+        (DEFAULT_ROBOT_CONTEST_THEME_KEY,),
+    ).fetchone()
+
+
+def _robot_contest_entry_count(db, contest_id):
+    row = db.execute(
+        "SELECT COUNT(*) AS c FROM robot_contest_entries WHERE contest_id = ?",
+        (int(contest_id),),
+    ).fetchone()
+    return int(row["c"] or 0) if row else 0
+
+
+def _contest_view_payload(db, contest):
+    item = dict(contest)
+    item["entry_count"] = _robot_contest_entry_count(db, int(item["id"]))
+    item["ends_at_label"] = datetime.fromtimestamp(int(item["ends_at"]), JST).strftime("%Y-%m-%d") if item.get("ends_at") else "未設定"
+    desc = str(item.get("description") or "").strip()
+    item["short_description"] = desc[:90] + ("..." if len(desc) > 90 else "")
+    return item
+
+
 def _active_robot_contests(db):
     return db.execute(
         """
         SELECT *
         FROM robot_contests
         WHERE is_active = 1
-        ORDER BY created_at DESC, id DESC
+        ORDER BY COALESCE(ends_at, 9999999999) ASC, created_at DESC, id DESC
         """
     ).fetchall()
+
+
+def _home_robot_contest_card(db):
+    row = db.execute(
+        """
+        SELECT *
+        FROM robot_contests
+        WHERE is_active = 1
+        ORDER BY COALESCE(ends_at, 9999999999) ASC, created_at DESC, id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return _contest_view_payload(db, row) if row else None
 
 
 @app.route("/robots/contests")
@@ -50987,9 +51063,10 @@ def robot_contests():
             """,
             (int(contest["id"]),),
         ).fetchall()
+        contest_view = _contest_view_payload(db, contest)
         contests.append(
             {
-                **dict(contest),
+                **contest_view,
                 "entries": [
                     {
                         **dict(row),
@@ -51011,6 +51088,20 @@ def robot_contests():
             """,
             (viewer_id,),
         ).fetchall()
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_CONTEST_VIEW"],
+        user_id=viewer_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_contest_view",
+        entity_type="page",
+        payload={
+            "active_contest_count": len(contests),
+            "has_my_robots": bool(my_robots),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
     return render_template(
         "robot_contests.html",
         contests=contests,
@@ -51033,20 +51124,34 @@ def robot_contest_create():
         return redirect(url_for("robot_contests"))
     theme_key = re.sub(r"[^a-z0-9_]+", "_", title.lower()).strip("_")[:40] or uuid.uuid4().hex[:8]
     now_ts = int(time.time())
+    ends_at = int((datetime.fromtimestamp(now_ts, JST) + timedelta(days=7)).timestamp())
     db.execute(
         """
-        INSERT INTO robot_contests (theme_key, title, description, is_active, created_by_user_id, created_at, updated_at)
-        VALUES (?, ?, ?, 1, ?, ?, ?)
+        INSERT INTO robot_contests (theme_key, title, description, is_active, created_by_user_id, ends_at, created_at, updated_at)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
         ON CONFLICT(theme_key) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
             is_active = 1,
+            ends_at = excluded.ends_at,
             updated_at = excluded.updated_at
         """,
-        (theme_key, title, description, int(session["user_id"]), now_ts, now_ts),
+        (theme_key, title, description, int(session["user_id"]), ends_at, now_ts, now_ts),
     )
     db.commit()
     session["message"] = "ロボコンテストのテーマを作成しました。"
+    return redirect(url_for("robot_contests"))
+
+
+@app.route("/robots/contests/create_default", methods=["POST"])
+@login_required
+def robot_contest_create_default():
+    db = get_db()
+    if not _is_admin_user(int(session["user_id"])):
+        abort(403)
+    ensure_default_robot_contest(db, created_by_user_id=int(session["user_id"]))
+    db.commit()
+    session["message"] = "初回コンテストテンプレを作成しました。"
     return redirect(url_for("robot_contests"))
 
 

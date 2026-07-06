@@ -2845,6 +2845,7 @@ def main():
             description TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_by_user_id INTEGER,
+            ends_at INTEGER,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         )
@@ -3927,6 +3928,9 @@ def main():
         """,
         (now_ts,),
     )
+    robot_contest_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_contests)").fetchall()}
+    if "ends_at" not in robot_contest_cols:
+        cur.execute("ALTER TABLE robot_contests ADD COLUMN ends_at INTEGER")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")

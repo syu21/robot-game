@@ -117,6 +117,33 @@ class RobotUniquenessFeatureTests(unittest.TestCase):
         self.assertIn("UniqueBot", html)
         self.assertIn("今週いいね: 1", html)
 
+    def test_default_contest_template_and_home_card(self):
+        client = self._client(self.admin_id)
+        response = client.post("/robots/contests/create_default", follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("第1回 ロボらぼ自由工作杯", html)
+        self.assertIn("通常・虫・恐竜パーツを自由に組み合わせて", html)
+        self.assertIn("終了日:", html)
+        self.assertIn("最初の投稿者になろう", html)
+        self.assertIn("投稿する", html)
+
+        home_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("開催中コンテスト", home_html)
+        self.assertIn("第1回 ロボらぼ自由工作杯", home_html)
+        self.assertIn("投稿数: 0", home_html)
+        self.assertIn("コンテストを見る", home_html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            count = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.admin_id, game_app.AUDIT_EVENT_TYPES["ROBOT_CONTEST_VIEW"]),
+                ).fetchone()["c"]
+            )
+            self.assertGreaterEqual(count, 1)
+
     def test_admin_can_create_contest_and_submit_robot(self):
         client = self._client(self.admin_id)
         create = client.post(

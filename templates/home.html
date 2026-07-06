@@ -545,6 +545,15 @@
             </form>
           </div>
           {% endif %}
+          {% if home_robot_contest_card %}
+          <div class="card">
+            <h2>開催中コンテスト</h2>
+            <div class="robot-part"><b>{{ home_robot_contest_card['title'] }}</b></div>
+            <div class="robot-time">{{ home_robot_contest_card['short_description'] }}</div>
+            <div class="robot-part">投稿数: {{ home_robot_contest_card['entry_count'] }} / 終了日: {{ home_robot_contest_card['ends_at_label'] }}</div>
+            <p class="link"><a class="battle-home-link" href="{{ url_for('robot_contests') }}">コンテストを見る</a></p>
+          </div>
+          {% endif %}
           <details class="home-robot-details">
             <summary>詳細を見る</summary>
           <div class="main-robot-meta-grid">
