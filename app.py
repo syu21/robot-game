@@ -201,6 +201,13 @@ from services.tower import (
     get_user_tower_record,
     run_tower_battle,
 )
+from services.achievements import (
+    ensure_achievement_defaults,
+    get_equipped_profile_rewards,
+    get_user_achievements,
+    grant_achievement,
+    equip_profile_reward,
+)
 from services.stats import (
     STATS,
     WEIGHT_TEMPLATES,
@@ -12739,6 +12746,7 @@ def ensure_schema(db):
         )
         """
     )
+    ensure_achievement_defaults(db)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS battle_result_cache (
@@ -38054,6 +38062,19 @@ def stripe_webhook():
             },
             ip=request.remote_addr,
         )
+        grant_achievement(
+            db,
+            user_id,
+            "supporter",
+            source_event_type=grant_event_types["success"],
+            payload={
+                "product_key": product["product_key"],
+                "grant_type": product["grant_type"],
+                "payment_order_id": int(order["id"]),
+            },
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
     else:
         _update_payment_order(
             db,
@@ -40216,6 +40237,15 @@ def tower_start():
             flash("挑戦を開始できませんでした。少し待ってからもう一度お試しください。", "error")
         db.rollback()
         return redirect(url_for("tower"))
+    grant_achievement(
+        db,
+        int(user["id"]),
+        "tower_challenger",
+        source_event_type=AUDIT_EVENT_TYPES["TOWER_RUN_START"],
+        payload={"run_id": int(result["run_id"]), "robot_ids": clean_ids},
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
     db.commit()
     return redirect(url_for("tower_result", run_id=int(result["run_id"])))
 
@@ -40872,6 +40902,50 @@ def admin_tower():
     )
 
 
+@app.route("/achievements", methods=["GET"])
+@login_required
+def achievements_view():
+    db = get_db()
+    user_id = int(session["user_id"])
+    rows = get_user_achievements(db, user_id)
+    equipped = get_equipped_profile_rewards(db, user_id)
+    categories = []
+    for row in rows:
+        item = dict(row)
+        item["unlocked_at_label"] = _format_jst_ts(item.get("unlocked_at"))
+        if not categories or categories[-1]["category"] != item["category"]:
+            categories.append({"category": item["category"], "items": []})
+        categories[-1]["items"].append(item)
+    db.commit()
+    return render_template(
+        "achievements.html",
+        categories=categories,
+        equipped=equipped,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/achievements/equip", methods=["POST"])
+@login_required
+def achievements_equip():
+    db = get_db()
+    result = equip_profile_reward(
+        db,
+        int(session["user_id"]),
+        request.form.get("reward_type"),
+        request.form.get("achievement_key"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        db.commit()
+        session["message"] = "研究実績の表示を更新しました。"
+    else:
+        db.rollback()
+        session["message"] = result.get("message") or "研究実績を表示できませんでした。"
+    return redirect(url_for("achievements_view"))
+
+
 @app.route("/home")
 @login_required
 def home():
@@ -41403,6 +41477,7 @@ def home():
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     companion_home_summary = get_active_companion(db, int(user["id"]))
     companion_dispatch_home_summary = companion_dispatch_summary(db, int(user["id"]))
+    profile_rewards = get_equipped_profile_rewards(db, int(user["id"]))
     home_robot_contest_card = _home_robot_contest_card(db)
     robot_customize_cta = None
     if main_robot:
@@ -41599,6 +41674,7 @@ def home():
             factory_base_home=factory_base_home,
             companion_home_summary=companion_home_summary,
             companion_dispatch_home_summary=companion_dispatch_home_summary,
+            profile_rewards=profile_rewards,
             home_robot_contest_card=home_robot_contest_card,
             robot_customize_cta=robot_customize_cta,
             recent_robot_presence=recent_robot_presence,
@@ -46483,6 +46559,15 @@ def explore():
         },
         ip=request.remote_addr,
     )
+    grant_achievement(
+        db,
+        user_id,
+        "first_explore",
+        source_event_type=AUDIT_EVENT_TYPES["EXPLORE_START"],
+        payload={"area_key": area_key},
+        request_id=request_id,
+        ip=request.remote_addr,
+    )
 
     weekly_env = _world_current_environment(db)
     weekly_mode = _normalize_world_mode(weekly_env["mode"]) if weekly_env else "安定"
@@ -48019,6 +48104,25 @@ def explore():
         world_bonus_notes.append("陣営バフ発動: 勝利コイン+1")
         bonus_events["faction_bonus_coin"] = 1
     if final_outcome == "win":
+        grant_achievement(
+            db,
+            user_id,
+            "first_win",
+            source_event_type=AUDIT_EVENT_TYPES["EXPLORE_END"],
+            payload={"area_key": area_key, "battle_id": battle_id},
+            request_id=request_id,
+            ip=request.remote_addr,
+        )
+        if area_key == "layer_1" and area_boss_active:
+            grant_achievement(
+                db,
+                user_id,
+                "layer1_clear",
+                source_event_type=AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                payload={"area_key": area_key, "battle_id": battle_id},
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
         add_faction_points(
             db,
             user_id,
@@ -50800,6 +50904,15 @@ def build_confirm():
                     "scores": style_state.get("scores"),
                 },
             },
+            ip=request.remote_addr,
+        )
+        grant_achievement(
+            db,
+            int(user["id"]),
+            "first_build",
+            source_event_type=AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+            payload={"robot_instance_id": int(instance_id), "robot_name": robot_name},
+            request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
         add_faction_points(
@@ -55454,6 +55567,15 @@ def evolve_parts():
                 },
                 ip=request.remote_addr,
             )
+            grant_achievement(
+                db,
+                user_id,
+                "first_evolve",
+                source_event_type=AUDIT_EVENT_TYPES["PART_EVOLVE"],
+                payload={"source_part_instance_id": int(source_row["id"]), "created_id": int(created_id)},
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
             add_faction_points(
                 db,
                 user_id,
@@ -56725,6 +56847,15 @@ def parts_strengthen():
                             request_id=request_id,
                             ip=request.remote_addr,
                         )
+                        grant_achievement(
+                            db,
+                            user_id,
+                            "first_strengthen",
+                            source_event_type=AUDIT_EVENT_TYPES["FUSE_BATCH_EXECUTE"],
+                            payload={"mode": "warehouse_batch", "fuse_count": int(execute_plan.get("fuse_count") or 0)},
+                            request_id=request_id,
+                            ip=request.remote_addr,
+                        )
                         db.commit()
                         flash(
                             f"{int(execute_plan.get('group_count') or 0)}種類を整理しました。"
@@ -56901,6 +57032,15 @@ def parts_strengthen():
                     _tutorial_layer1_mark_fuse_success(
                         db,
                         user_id,
+                        request_id=request_id,
+                        ip=request.remote_addr,
+                    )
+                    grant_achievement(
+                        db,
+                        user_id,
+                        "first_strengthen",
+                        source_event_type=AUDIT_EVENT_TYPES["FUSE"],
+                        payload={"mode": mode, "part_instance_id": result.get("created_id")},
                         request_id=request_id,
                         ip=request.remote_addr,
                     )

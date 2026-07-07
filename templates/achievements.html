@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="card achievements-hero">
+  <h1>研究実績</h1>
+  <p>出撃・育成・イベントで手に入る、研究員としての記録です。戦力には影響しません。</p>
+  {% if message %}
+  <div class="notice">{{ message }}</div>
+  {% endif %}
+  <p class="link"><a href="{{ url_for('home') }}">ホームへ戻る</a></p>
+</section>
+
+{% for group in categories %}
+<section class="panel achievement-category">
+  <h2>{{ group.category }}</h2>
+  <div class="achievement-grid">
+    {% for item in group['items'] %}
+    <article class="achievement-card {% if item.is_unlocked %}is-unlocked{% else %}is-locked{% endif %}">
+      <div class="achievement-icon">{{ item.badge_icon or '◇' }}</div>
+      <div class="achievement-body">
+        <h3>{{ item.name_ja }}</h3>
+        <p>{{ item.description_ja }}</p>
+        <div class="upgrade-cost">
+          {% if item.is_unlocked %}
+            獲得: {{ item.unlocked_at_label }}
+          {% else %}
+            未獲得
+          {% endif %}
+        </div>
+        {% if item.is_unlocked %}
+        <div class="achievement-actions">
+          <form method="post" action="{{ url_for('achievements_equip') }}">
+            <input type="hidden" name="achievement_key" value="{{ item.key }}">
+            <input type="hidden" name="reward_type" value="title">
+            <button type="submit" {% if equipped.equipped_title_key == item.key %}disabled{% endif %}>
+              {% if equipped.equipped_title_key == item.key %}称号表示中{% else %}称号に表示{% endif %}
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('achievements_equip') }}">
+            <input type="hidden" name="achievement_key" value="{{ item.key }}">
+            <input type="hidden" name="reward_type" value="badge">
+            <button type="submit" {% if equipped.equipped_badge_key == item.key %}disabled{% endif %}>
+              {% if equipped.equipped_badge_key == item.key %}バッジ表示中{% else %}バッジに表示{% endif %}
+            </button>
+          </form>
+          {% if item.frame_key %}
+          <form method="post" action="{{ url_for('achievements_equip') }}">
+            <input type="hidden" name="achievement_key" value="{{ item.key }}">
+            <input type="hidden" name="reward_type" value="frame">
+            <button type="submit" {% if equipped.equipped_frame_key == item.key %}disabled{% endif %}>
+              {% if equipped.equipped_frame_key == item.key %}フレーム表示中{% else %}フレームに表示{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

@@ -15530,6 +15530,55 @@ button.robo-fixed-nav-item {
   font-weight: 750;
   color: #1e293b;
 }
+.achievement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.achievement-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+}
+.achievement-card.is-locked {
+  opacity: 0.55;
+}
+.achievement-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+.achievement-body h3 {
+  margin: 0 0 4px;
+}
+.achievement-body p {
+  margin: 0 0 8px;
+}
+.achievement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.achievement-profile-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: #475569;
+}
+.achievement-profile-line span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+}
+.achievement-frame--supporter-glow {
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.18), 0 0 24px rgba(56, 189, 248, 0.16);
+}
 @media (max-width: 560px) {
   .module-card-grid {
     grid-template-columns: 1fr;

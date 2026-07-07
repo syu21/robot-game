@@ -14,6 +14,7 @@ from series_catalog import (
 )
 from services.robot_titles import ensure_robot_title_system
 from services.tower import ensure_tower_schema
+from services.achievements import ensure_achievement_defaults
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -1777,6 +1778,7 @@ def main():
         )
         """
     )
+    ensure_achievement_defaults(conn)
     ensure_tower_schema(conn)
     cur.execute(
         """

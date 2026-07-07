@@ -464,7 +464,7 @@
 {% endif %}
 <div class="home-layout-grid priority-core">
   <div class="home-main-stack">
-    <section class="panel home-current-robot">
+    <section class="panel home-current-robot {% if profile_rewards and profile_rewards.frame_key %}achievement-frame achievement-frame--{{ profile_rewards.frame_key|replace('_', '-') }}{% endif %}">
       <h1>出撃機体</h1>
       {% if main_robot %}
         <div class="main-robot-layout">
@@ -494,6 +494,13 @@
                 {% endif %}
                 {% if idle_line %}
                 <div class="robot-idle-line">{{ idle_line }}</div>
+                {% endif %}
+                {% if profile_rewards and (profile_rewards.title or profile_rewards.badge or profile_rewards.frame) %}
+                <div class="achievement-profile-line">
+                  {% if profile_rewards.title %}<span>称号: {{ profile_rewards.title.name_ja }}</span>{% endif %}
+                  {% if profile_rewards.badge %}<span>{{ profile_rewards.badge.badge_icon }} {{ profile_rewards.badge.name_ja }}</span>{% endif %}
+                  {% if profile_rewards.frame %}<span>フレーム: {{ profile_rewards.frame.name_ja }}</span>{% endif %}
+                </div>
                 {% endif %}
                 <div class="robot-overview-meta">
                   {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'silent' %}
@@ -1284,6 +1291,7 @@
         {% endif %}
         <a class="action-card home-nav-card" href="{{ url_for('showcase') }}"><div class="action-title">ロボ展示</div><div class="action-desc">看板ロボを展示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('records_view') }}"><div class="action-title">記録庫</div><div class="action-desc">初達成と今週の記録</div></a>
+        <a class="action-card home-nav-card" href="{{ url_for('achievements_view') }}"><div class="action-title">研究実績</div><div class="action-desc">称号とバッジを表示</div></a>
         <a class="action-card home-nav-card" href="{{ url_for('collab') }}">
           <div class="action-title">コラボ</div>
           <div class="action-desc">

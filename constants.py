@@ -268,6 +268,8 @@ AUDIT_EVENT_TYPES = {
     "TOWER_RUN_START": "audit.tower.run.start",
     "TOWER_BATTLE": "audit.tower.battle",
     "TOWER_RUN_COMPLETE": "audit.tower.run.complete",
+    "ACHIEVEMENT_GRANT": "audit.achievement.grant",
+    "ACHIEVEMENT_EQUIP": "audit.achievement.equip",
     "TOWER_RUN_FAILED": "audit.tower.run.failed",
     "TOWER_RUN_ABANDON": "audit.tower.run.abandon",
     "TOWER_RECORD_UPDATE": "audit.tower.record.update",
