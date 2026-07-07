@@ -3957,8 +3957,14 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_research_projects_sort ON world_research_projects(is_completed, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_week_points ON user_research_contributions(week_key, points)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_contrib_user_created ON user_research_contributions(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_event_created_user ON world_events_log(event_type, created_at, user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_user_event_created ON world_events_log(user_id, event_type, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_user_status_updated ON robot_instances(user_id, status, updated_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_public_status_updated ON robot_instances(status, is_public, updated_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_type_created_robot ON showcase_votes(vote_type, created_at, robot_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_deleted_id ON chat_messages(room_key, deleted_at, id DESC)")
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_online_delivery_queue_status_created ON portal_online_delivery_queue(status, created_at)"
     )

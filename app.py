@@ -13,7 +13,7 @@ import json
 import uuid
 import math
 from importlib import import_module
-from collections import Counter
+from collections import Counter, deque
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
@@ -878,6 +878,13 @@ STRIPE_PRICE_ID_EXPLORE_BOOST_14D = (
 PORTAL_ONLINE_WINDOW_MINUTES = int(os.getenv("PORTAL_ONLINE_WINDOW_MINUTES", "5"))
 PORTAL_ONLINE_TIMEOUT_SECONDS = float(os.getenv("PORTAL_ONLINE_TIMEOUT_SECONDS", "5"))
 LAST_SEEN_TOUCH_INTERVAL_SECONDS = int(os.getenv("LAST_SEEN_TOUCH_INTERVAL_SECONDS", "60"))
+PRESENCE_TOUCH_INTERVAL_SECONDS = max(10, int(os.getenv("PRESENCE_TOUCH_INTERVAL_SECONDS", "30")))
+COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS = max(
+    30,
+    int(os.getenv("COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS", "60")),
+)
+PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "1200")))
+PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
 USER_PRESENCE_ACTIVE_WINDOW_MINUTES = max(
     1,
     int(os.getenv("USER_PRESENCE_ACTIVE_WINDOW_MINUTES", str(PORTAL_ONLINE_WINDOW_MINUTES))),
@@ -14054,6 +14061,11 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_event_created_user ON world_events_log(event_type, created_at, user_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_user_event_created ON world_events_log(user_id, event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_user_status_updated ON robot_instances(user_id, status, updated_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_public_status_updated ON robot_instances(status, is_public, updated_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_type_created_robot ON showcase_votes(vote_type, created_at, robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_reroll_candidates_user_module_status ON module_reroll_candidates(user_id, module_id, status, expires_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
@@ -14081,6 +14093,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_mini_robot_profiles_active ON user_mini_robot_profiles(active_mini_robot_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_deleted_id ON chat_messages(room_key, deleted_at, id DESC)")
     lab_submission_cols = {row["name"] for row in db.execute("PRAGMA table_info(lab_robot_submissions)").fetchall()}
     lab_submission_column_defs = {
         "reject_reason_key": "reject_reason_key TEXT",
@@ -23613,13 +23626,9 @@ def _user_primary_icon_rel(db, user_id, *, default_rel=DEFAULT_AVATAR_REL):
     row = _active_robot_icon_row(db, user_id)
     if not row:
         return default_rel
-    data = _refresh_robot_instance_render_assets(db, row, log_label="user_icon", preserve_updated_at=True) or dict(row)
-    icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
+    icon_rel = _safe_static_rel(row["icon_32_path"]) if row["icon_32_path"] else None
     if icon_rel and os.path.exists(_static_abs(icon_rel)):
         return icon_rel
-    composed_rel = _safe_static_rel(data.get("composed_image_path")) if data.get("composed_image_path") else None
-    if composed_rel:
-        return _ensure_robot_instance_badge(db, int(data["id"]), composed_rel)
     return default_rel
 
 
@@ -23688,13 +23697,6 @@ def _user_visuals(db, user_id, cache):
 def _presence_entry_view_model(db, entry):
     item = dict(entry or {})
     robot_icon_rel = _safe_static_rel(item.get("robot_icon_32_path")) if item.get("robot_icon_32_path") else None
-    composed_rel = _safe_static_rel(item.get("robot_composed_image_path")) if item.get("robot_composed_image_path") else None
-    if not robot_icon_rel and composed_rel and item.get("active_robot_id"):
-        try:
-            robot_icon_rel = _ensure_robot_instance_badge(db, int(item["active_robot_id"]), composed_rel)
-        except Exception:
-            app.logger.warning("presence.badge_fallback_failed user_id=%s", item.get("user_id"), exc_info=True)
-            robot_icon_rel = None
     if not robot_icon_rel:
         robot_icon_rel = DEFAULT_BADGE_REL
     avatar_rel = _safe_static_rel(item.get("avatar_path")) if item.get("avatar_path") else None
@@ -23739,13 +23741,6 @@ def _home_robot_presence_entry_view_model(db, entry):
     item = dict(entry or {})
     robot_id = int(item.get("robot_id") or 0)
     robot_icon_rel = _safe_static_rel(item.get("icon_path") or item.get("robot_icon_32_path")) if (item.get("icon_path") or item.get("robot_icon_32_path")) else None
-    composed_rel = _safe_static_rel(item.get("composed_image_path") or item.get("robot_composed_image_path")) if (item.get("composed_image_path") or item.get("robot_composed_image_path")) else None
-    if not robot_icon_rel and composed_rel and robot_id > 0:
-        try:
-            robot_icon_rel = _ensure_robot_instance_badge(db, robot_id, composed_rel)
-        except Exception:
-            app.logger.warning("home_robot_presence.badge_fallback_failed robot_id=%s", robot_id, exc_info=True)
-            robot_icon_rel = None
     if not robot_icon_rel:
         robot_icon_rel = DEFAULT_BADGE_REL
     avatar_rel = _safe_static_rel(item.get("avatar_path")) if item.get("avatar_path") else None
@@ -36621,6 +36616,11 @@ def apply_safe_mode():
 
 
 @app.before_request
+def start_perf_timer():
+    g.perf_started_at = time.perf_counter()
+
+
+@app.before_request
 def assign_request_id():
     g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
 
@@ -36768,6 +36768,13 @@ def touch_user_presence():
     user_id = session.get("user_id")
     if not user_id:
         return None
+    now = _now_ts()
+    try:
+        last_touch_at = int(session.get("_presence_touch_at") or 0)
+    except (TypeError, ValueError):
+        last_touch_at = 0
+    if now - last_touch_at < int(PRESENCE_TOUCH_INTERVAL_SECONDS):
+        return None
     try:
         db = get_db()
         user = db.execute(
@@ -36786,6 +36793,7 @@ def touch_user_presence():
             robot_instance_id=(int(user["active_robot_id"]) if user["active_robot_id"] else None),
         )
         db.commit()
+        session["_presence_touch_at"] = now
     except Exception:
         app.logger.exception("presence.touch_failed user_id=%s path=%s", user_id, request.path)
     return None
@@ -36825,6 +36833,44 @@ def auto_close_faction_war_weekly():
 
 
 @app.after_request
+def log_slow_request(response):
+    started_at = getattr(g, "perf_started_at", None)
+    if not started_at:
+        return response
+    elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+    response.headers["X-Robolabo-Elapsed-Ms"] = str(elapsed_ms)
+    path = request.path or ""
+    if (
+        elapsed_ms >= int(PERF_SLOW_REQUEST_MS)
+        and request.endpoint != "static"
+        and not path.startswith("/static/")
+        and not path.startswith("/healthz")
+    ):
+        event = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "method": request.method,
+            "path": path,
+            "endpoint": request.endpoint,
+            "status": int(response.status_code),
+            "elapsed_ms": elapsed_ms,
+            "user_id": session.get("user_id"),
+            "request_id": getattr(g, "request_id", None),
+        }
+        PERF_RECENT_EVENTS.appendleft(event)
+        app.logger.warning(
+            "perf.slow_request method=%s path=%s endpoint=%s status=%s elapsed_ms=%s user_id=%s request_id=%s",
+            event["method"],
+            event["path"],
+            event["endpoint"],
+            event["status"],
+            event["elapsed_ms"],
+            event["user_id"],
+            event["request_id"],
+        )
+    return response
+
+
+@app.after_request
 def add_security_headers(response):
     is_admin_path = request.path.startswith("/admin/")
     # Temporary: /build preview still relies on inline style/CSS variable updates.
@@ -36848,6 +36894,21 @@ def add_security_headers(response):
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
     return response
+
+
+@app.route("/admin/perf")
+@login_required
+def admin_perf():
+    user_id = int(session.get("user_id") or 0)
+    if not _is_admin_user(user_id):
+        abort(403)
+    return jsonify(
+        {
+            "ok": True,
+            "slow_request_threshold_ms": int(PERF_SLOW_REQUEST_MS),
+            "recent_slow_requests": list(PERF_RECENT_EVENTS),
+        }
+    )
 
 
 @app.errorhandler(404)
@@ -40990,16 +41051,6 @@ def home():
     part_inventory_status = _part_inventory_status_payload(db, int(user["id"]), user)
     limits = _effective_limits(db, user)
     _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
-    showcase_rows = _showcase_rows(db, user["id"])
-    for row in showcase_rows:
-        if row["robot_instance_id"] and not row["composed_image_path"]:
-            inst = {"id": row["robot_instance_id"]}
-            parts = db.execute(
-                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
-                (row["robot_instance_id"],),
-            ).fetchone()
-            if parts:
-                _compose_instance_image(db, inst, parts)
     showcase_rows = _showcase_rows(db, user["id"])
     milestones = _evaluate_milestones(db, user)
     active_robot = _get_active_robot(db, user["id"])
@@ -45264,17 +45315,34 @@ def comms_world():
             room_key=COMM_WORLD_ROOM_KEY,
             surface="comms_world",
         )
-    audit_log(
-        db,
-        EVENT_WORLD_VIEW,
-        user_id=int(user["id"]),
-        request_id=getattr(g, "request_id", None),
-        action_key="daily_research.world_view",
-        entity_type="page",
-        payload={"task_date": get_day_key()},
-        ip=request.remote_addr,
-    )
-    db.commit()
+    now_ts = _now_ts()
+    recent_view = db.execute(
+        """
+        SELECT id
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at >= ?
+        LIMIT 1
+        """,
+        (
+            int(user["id"]),
+            EVENT_WORLD_VIEW,
+            now_ts - int(COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS),
+        ),
+    ).fetchone()
+    if not recent_view:
+        audit_log(
+            db,
+            EVENT_WORLD_VIEW,
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="daily_research.world_view",
+            entity_type="page",
+            payload={"task_date": get_day_key()},
+            ip=request.remote_addr,
+        )
+        db.commit()
     items = _world_timeline_items(
         db,
         limit=COMM_WORLD_TIMELINE_LIMIT,
