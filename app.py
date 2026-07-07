@@ -4269,6 +4269,28 @@ def _now_ts():
     return int(time.time())
 
 
+def _home_section_log(section_key, started_at, *, extra=None):
+    elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+    if extra:
+        app.logger.warning(
+            "home.section.%s elapsed_ms=%s path=%s request_id=%s %s",
+            section_key,
+            elapsed_ms,
+            (request.path if has_request_context() else ""),
+            (getattr(g, "request_id", None) if has_request_context() else None),
+            extra,
+        )
+    else:
+        app.logger.warning(
+            "home.section.%s elapsed_ms=%s path=%s request_id=%s",
+            section_key,
+            elapsed_ms,
+            (request.path if has_request_context() else ""),
+            (getattr(g, "request_id", None) if has_request_context() else None),
+        )
+    return elapsed_ms
+
+
 def _research_part_type_for_stage(stage):
     idx = int(stage) - 1
     if 0 <= idx < len(RESEARCH_UNLOCK_ORDER):
@@ -41011,6 +41033,7 @@ def achievements_equip():
 @app.route("/home")
 @login_required
 def home():
+    home_started_at = time.perf_counter()
     if _is_trial_session():
         return _render_trial_home()
     if HOME_OK_MODE:
@@ -41038,6 +41061,8 @@ def home():
         db.execute("UPDATE users SET home_axis_hint_seen = 1 WHERE id = ?", (user["id"],))
         db.commit()
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    _home_section_log("bootstrap", home_started_at)
+    section_started_at = time.perf_counter()
     robot_count = db.execute(
         "SELECT COUNT(*) AS c FROM user_robots WHERE user_id = ?", (session["user_id"],)
     ).fetchone()["c"]
@@ -41051,6 +41076,8 @@ def home():
     part_storage_count = int(part_storage.get("legacy_storage_count") or part_storage["storage_count"])
     part_inventory_status = _part_inventory_status_payload(db, int(user["id"]), user)
     limits = _effective_limits(db, user)
+    _home_section_log("inventory", section_started_at)
+    section_started_at = time.perf_counter()
     home_light_initial = bool(
         HOME_INITIAL_LIGHT_MODE
         and str(request.args.get("full") or "") != "1"
@@ -41063,6 +41090,8 @@ def home():
         _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
         showcase_rows = _showcase_rows(db, user["id"])
         milestones = _evaluate_milestones(db, user)
+    _home_section_log("showcase", section_started_at, extra=f"light={int(home_light_initial)}")
+    section_started_at = time.perf_counter()
     if home_light_initial:
         active_robot = None
         if user["active_robot_id"]:
@@ -41094,6 +41123,7 @@ def home():
     else:
         active_robot = _get_active_robot(db, user["id"])
         main_robot = active_robot if active_robot else _select_main_robot(db, user["id"])
+    _home_section_log("robot.fetch", section_started_at, extra=f"light={int(home_light_initial)}")
     app.logger.info(
         "home.main_robot_render user_id=%s robot_id=%s image_url=%s composed_path=%s updated_at=%s active_robot_id=%s",
         user["id"],
@@ -41103,6 +41133,7 @@ def home():
         (main_robot.get("updated_at") if main_robot else None),
         user["active_robot_id"],
     )
+    section_started_at = time.perf_counter()
     main_robot_stats = None if home_light_initial else (_compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None)
     research_module_options = [] if home_light_initial else (_user_research_module_options(db, int(user["id"])) if main_robot else [])
     active_research_module = None if home_light_initial else (_active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None)
@@ -41121,10 +41152,12 @@ def home():
         disabled_reason="自由編成の混成ロボはセットボーナスなし" if (main_robot_stats or {}).get("is_mixed_frame") else None,
     ) if not home_light_initial else None
     style_achievements = [] if home_light_initial else _style_achievements_progress(main_robot)
+    _home_section_log("robot.stats", section_started_at, extra=f"light={int(home_light_initial)}")
     idle_line = None
     if main_robot:
         idle_line = get_idle_line(main_robot["personality"], main_robot["name"])
     if home_light_initial:
+        section_started_at = time.perf_counter()
         now = _now_ts()
         explore_ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
         ct_remain, _ = _explore_remaining_seconds_for_user(db, user, user["id"], now_ts=now)
@@ -41141,6 +41174,8 @@ def home():
             ct_text = "出撃可能！"
             ct_button_text = "出撃する"
             ct_status_text = ""
+        _home_section_log("ct", section_started_at)
+        section_started_at = time.perf_counter()
         unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
         saved_explore_area_key = _saved_explore_area_key(user, unlocked_explore_areas, db=db)
         selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas, db=db)
@@ -41173,6 +41208,8 @@ def home():
         release_cap = _release_layer_cap_for_viewer(db, user_row=user)
         if int(new_layer_badge or 0) > int(release_cap):
             new_layer_badge = None
+        _home_section_log("areas", section_started_at)
+        section_started_at = time.perf_counter()
         total_explores = int(
             db.execute(
                 "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
@@ -41218,6 +41255,8 @@ def home():
             and (boss_alert_status or (next_action_card and next_action_card.get("force_open")))
         )
         show_next_action_card = bool(next_action_card) and (not home_next_action_collapsed or home_next_action_force_open)
+        _home_section_log("next_action", section_started_at)
+        section_started_at = time.perf_counter()
         explore_submission_id = _issue_explore_submission_id()
         message = session.pop("message", None)
         if not message and str(request.args.get("module_equipped") or "") == "1":
@@ -41234,6 +41273,8 @@ def home():
             profile_rewards = get_equipped_profile_rewards(db, int(user["id"]))
         except Exception:
             profile_rewards = None
+        _home_section_log("light_misc", section_started_at)
+        section_started_at = time.perf_counter()
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -41249,7 +41290,9 @@ def home():
             ip=request.remote_addr,
         )
         db.commit()
-        return render_template(
+        _home_section_log("audit_commit", section_started_at)
+        section_started_at = time.perf_counter()
+        rendered = render_template(
             "home.html",
             user=user,
             robot_count=robot_count,
@@ -41429,7 +41472,11 @@ def home():
             layer1_first_clear_card=None,
             home_fragments_enabled=True,
         )
+        _home_section_log("render", section_started_at)
+        _home_section_log("total", home_started_at)
+        return rendered
     week_key = _world_week_key()
+    section_started_at = time.perf_counter()
     weekly_env = _world_current_environment(db)
     weekly_recommendation = (
         _humanize_stat_text(_world_recommendation(weekly_env["element"], _normalize_world_mode(weekly_env["mode"])))
@@ -41445,6 +41492,8 @@ def home():
     )
     weekly_trends = _world_weekly_trends(db, week_key, limit=3)
     weekly_hot_areas = _world_hot_area_rows(db, week_key, limit=3, user_row=user)
+    _home_section_log("world", section_started_at)
+    section_started_at = time.perf_counter()
     weekly_faction_key = _element_to_faction(weekly_env["element"]) if weekly_env else "aurix"
     user_faction = _normalize_faction_key(user["faction"] if "faction" in user.keys() else None)
     faction_unlock_counts = _faction_unlock_counts(db, user["id"])
@@ -41478,6 +41527,8 @@ def home():
         prev_faction_result = _faction_week_result(db, prev_week_key)
     faction_buff_winner = _faction_effective_winner_for_week(db, week_key)
     faction_buff_active = bool(user_faction and faction_buff_winner and user_faction == faction_buff_winner)
+    _home_section_log("faction", section_started_at)
+    section_started_at = time.perf_counter()
     weekly_mvp = _weekly_mvp_snapshot(db, week_key)
     weekly_champion_snapshot = _ensure_current_weekly_champion_snapshot(
         db,
@@ -41498,6 +41549,8 @@ def home():
     layer4_warning_status = get_layer4_warning_status_for_user(db, int(user["id"]))
     weekly_featured_robot = get_weekly_featured_robot(db=db)
     weekly_research_highlights = get_weekly_research_highlights(db=db)
+    _home_section_log("mvp", section_started_at)
+    section_started_at = time.perf_counter()
     faction_status = {
         "is_joined": bool(user_faction),
         "faction": user_faction,
@@ -41518,6 +41571,8 @@ def home():
     boss_alert_status = _home_boss_alert_status(db, user["id"])
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
     recent_drop_items = _recent_drop_items(db, user["id"], limit=5)
+    _home_section_log("research", section_started_at)
+    section_started_at = time.perf_counter()
     research_boost_visible = _lab_small_boost_feature_open(db, user_row=user, user_id=int(user["id"]))
     if research_boost_visible and int(user["is_admin"] or 0) != 1:
         daily_boost_result = _grant_lab_small_boost_if_available(
@@ -41564,6 +41619,8 @@ def home():
         if research_boost_visible
         else None
     )
+    _home_section_log("boost", section_started_at)
+    section_started_at = time.perf_counter()
     recent_robot_presence = _home_robot_presence_summary_view(
         db,
         limit=HOME_ROBOT_PRESENCE_LIMIT,
@@ -41617,6 +41674,8 @@ def home():
         int(user["id"]),
         limit=HOME_COMM_PREVIEW_LIMIT,
     )
+    _home_section_log("comms", section_started_at)
+    section_started_at = time.perf_counter()
     home_ranking_rows, home_ranking_metric = _ranking_rows(
         db,
         "weekly_explores",
@@ -41647,6 +41706,8 @@ def home():
             )
     home_ranking_rows = _decorate_user_rows(db, home_ranking_rows, user_key="id")
     home_ranking_url = url_for("ranking", metric="weekly_explores")
+    _home_section_log("ranking", section_started_at)
+    section_started_at = time.perf_counter()
     upgrade_cost = max(10, user["click_power"] * 10)
     message = session.pop("message", None)
     if not message and str(request.args.get("module_equipped") or "") == "1":
@@ -41716,6 +41777,8 @@ def home():
         faction_status=faction_status,
         total_explores=total_explores,
     )
+    _home_section_log("next_action_full", section_started_at)
+    section_started_at = time.perf_counter()
     layer1_boss_defeated = _has_fixed_boss_defeat_in_area(db, user["id"], "layer_1")
     beginner_mission_available = (user["is_admin"] != 1) and (not layer1_boss_defeated)
     beginner_mission_hidden = (
@@ -41865,6 +41928,8 @@ def home():
         )
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     home_lab_level = lab_level_view(user)
+    _home_section_log("achievement", section_started_at)
+    section_started_at = time.perf_counter()
     home_insect_research = _home_insect_research_view(db, week_key)
     home_dinosaur_campaign = _home_dinosaur_campaign_view(db, week_key)
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
@@ -41872,6 +41937,8 @@ def home():
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
     companion_home_summary = get_active_companion(db, int(user["id"]))
     companion_dispatch_home_summary = companion_dispatch_summary(db, int(user["id"]))
+    _home_section_log("factory", section_started_at)
+    section_started_at = time.perf_counter()
     profile_rewards = get_equipped_profile_rewards(db, int(user["id"]))
     home_robot_contest_card = _home_robot_contest_card(db)
     robot_customize_cta = None
@@ -41905,6 +41972,8 @@ def home():
             "reward_line": f"初突破報酬 +{int(LAYER1_FIRST_CLEAR_REWARD_COINS)}コイン / 第1層突破エンブレム",
         }
         db.execute("UPDATE users SET layer1_first_clear_home_seen = 1 WHERE id = ?", (int(user["id"]),))
+    _home_section_log("profile_contest", section_started_at)
+    section_started_at = time.perf_counter()
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -41920,8 +41989,10 @@ def home():
         ip=request.remote_addr,
     )
     db.commit()
+    _home_section_log("audit_commit", section_started_at)
     try:
-        return render_template(
+        section_started_at = time.perf_counter()
+        rendered = render_template(
             "home.html",
             user=user,
             robot_count=robot_count,
@@ -42105,6 +42176,9 @@ def home():
             daily_research_area_key=daily_research_area_key,
             layer1_first_clear_card=layer1_first_clear_card,
         )
+        _home_section_log("render", section_started_at)
+        _home_section_log("total", home_started_at)
+        return rendered
     except Exception as exc:
         app.logger.exception("home rendering failed")
         if app.debug:
@@ -42123,23 +42197,29 @@ def home():
 @app.route("/home/fragments/ranking")
 @login_required
 def home_fragment_ranking():
+    started_at = time.perf_counter()
     db = get_db()
     week_key = _world_week_key()
     rows, metric = _ranking_rows(db, "weekly_explores", limit=5, week_key=week_key)
     rows = _decorate_user_rows(db, rows, user_key="id")
     highlights = get_weekly_research_highlights(db=db)[:3]
-    return render_template(
+    _home_section_log("ranking", started_at, extra="fragment=1")
+    render_started_at = time.perf_counter()
+    rendered = render_template(
         "_home_fragment_ranking.html",
         home_ranking_rows=rows,
         home_ranking_metric=metric,
         home_ranking_url=url_for("ranking", metric="weekly_explores"),
         weekly_research_highlights=highlights,
     )
+    _home_section_log("ranking.render", render_started_at, extra="fragment=1")
+    return rendered
 
 
 @app.route("/home/fragments/mvp")
 @login_required
 def home_fragment_mvp():
+    started_at = time.perf_counter()
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
     week_key = _world_week_key()
@@ -42154,24 +42234,31 @@ def home_fragment_mvp():
             snapshot,
             viewer_user_id=int(session["user_id"]),
         ) if snapshot else None
-    return render_template(
+    _home_section_log("mvp", started_at, extra="fragment=1")
+    render_started_at = time.perf_counter()
+    rendered = render_template(
         "_home_fragment_mvp.html",
         weekly_mvp=weekly_mvp,
         weekly_featured_robot=weekly_featured_robot,
         show_weekly_champion=show_weekly_champion,
         weekly_champion=weekly_champion,
     )
+    _home_section_log("mvp.render", render_started_at, extra="fragment=1")
+    return rendered
 
 
 @app.route("/home/fragments/comms")
 @login_required
 def home_fragment_comms():
+    started_at = time.perf_counter()
     db = get_db()
     user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
     is_admin = bool(user and int(user["is_admin"] or 0) == 1)
     items = _home_world_timeline_items(db, limit=5, is_admin=is_admin)
     active_user_count = count_active_users(db, window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES)
-    return render_template(
+    _home_section_log("comms", started_at, extra="fragment=1")
+    render_started_at = time.perf_counter()
+    rendered = render_template(
         "_home_fragment_comms.html",
         home_comm_world_items=items,
         home_active_user_line=_active_users_summary_line(
@@ -42180,6 +42267,8 @@ def home_fragment_comms():
         ),
         home_comm_world_settings=_chat_room_settings(COMM_WORLD_ROOM_KEY),
     )
+    _home_section_log("comms.render", render_started_at, extra="fragment=1")
+    return rendered
 
 
 @app.route("/home/fragments/world-log")
@@ -42191,10 +42280,15 @@ def home_fragment_world_log():
 @app.route("/home/fragments/showcase")
 @login_required
 def home_fragment_showcase():
+    started_at = time.perf_counter()
     db = get_db()
     user_id = int(session["user_id"])
     rows = _showcase_rows(db, user_id)[:3]
-    return render_template("_home_fragment_showcase.html", showcase_rows=rows)
+    _home_section_log("showcase", started_at, extra="fragment=1")
+    render_started_at = time.perf_counter()
+    rendered = render_template("_home_fragment_showcase.html", showcase_rows=rows)
+    _home_section_log("showcase.render", render_started_at, extra="fragment=1")
+    return rendered
 
 
 @app.route("/robots/customize/start", methods=["POST"])
