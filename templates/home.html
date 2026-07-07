@@ -628,6 +628,14 @@
         </div>
       {% endif %}
     </section>
+    {% if home_fragments_enabled %}
+    <section class="panel home-mvp-panel home-spotlight-panel" data-home-fragment-url="{{ url_for('home_fragment_mvp') }}">
+      <div class="world-env-card"><b>注目ロボ</b><div class="upgrade-cost">読み込み中...</div></div>
+    </section>
+    <section class="panel home-mini-log-panel home-comms-panel" data-home-fragment-url="{{ url_for('home_fragment_comms') }}">
+      <div class="world-env-card"><b>通信</b><div class="upgrade-cost">読み込み中...</div></div>
+    </section>
+    {% else %}
     {% if not trial_mode %}
     <section class="panel home-mvp-panel home-spotlight-panel">
       <div class="world-env-card mvp-hero-card">
@@ -991,6 +999,7 @@
       </div>
     </section>
     {% endif %}
+    {% endif %}
   </div>
 
   <div class="home-right-stack home-social-stack">
@@ -1205,7 +1214,7 @@
       {% endif %}
   </section>
 
-    {% if not trial_mode %}
+    {% if not trial_mode and not home_fragments_enabled %}
     <section class="panel home-weekly-panel">
     {% if weekly_env %}
       <div class="world-env-card">
@@ -1305,6 +1314,14 @@
       </div>
     </section>
     {% endif %}
+    {% if home_fragments_enabled %}
+    <section class="panel home-ranking-panel" data-home-fragment-url="{{ url_for('home_fragment_ranking') }}">
+      <div class="world-env-card"><b>今週のランキング</b><div class="upgrade-cost">読み込み中...</div></div>
+    </section>
+    <section class="panel home-ranking-panel" data-home-fragment-url="{{ url_for('home_fragment_showcase') }}">
+      <div class="world-env-card"><b>ロボ展示</b><div class="upgrade-cost">読み込み中...</div></div>
+    </section>
+    {% else %}
     {% if not trial_mode %}
     <section class="panel home-ranking-panel">
       <div class="world-env-card">
@@ -1347,6 +1364,7 @@
         <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
       </div>
     </section>
+    {% endif %}
     {% endif %}
     {% if not trial_mode %}
     <section id="home-visibility-controls" class="panel home-visibility-panel">
@@ -1395,5 +1413,27 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='home_page_v4.js') }}?v={{ app_version }}-dailyresearch1"></script>
+{% if home_fragments_enabled %}
+<script>
+(() => {
+  const targets = Array.from(document.querySelectorAll('[data-home-fragment-url]'));
+  for (const target of targets) {
+    const url = target.getAttribute('data-home-fragment-url');
+    if (!url) continue;
+    fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then((html) => {
+        target.innerHTML = html;
+      })
+      .catch(() => {
+        target.innerHTML = '<div class="world-env-card"><b>読み込み失敗</b><div class="upgrade-cost">時間をおいて再読み込みしてください。</div></div>';
+      });
+  }
+})();
+</script>
+{% endif %}
 <script src="{{ url_for('static', filename='home_comms_tabs.js') }}?v={{ app_version }}-csp1"></script>
 {% endblock %}

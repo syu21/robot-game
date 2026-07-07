@@ -885,6 +885,7 @@ COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS = max(
 )
 PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "1200")))
 PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
+HOME_INITIAL_LIGHT_MODE = os.getenv("HOME_INITIAL_LIGHT_MODE", "1") == "1"
 USER_PRESENCE_ACTIVE_WINDOW_MINUTES = max(
     1,
     int(os.getenv("USER_PRESENCE_ACTIVE_WINDOW_MINUTES", str(PORTAL_ONLINE_WINDOW_MINUTES))),
@@ -41050,11 +41051,49 @@ def home():
     part_storage_count = int(part_storage.get("legacy_storage_count") or part_storage["storage_count"])
     part_inventory_status = _part_inventory_status_payload(db, int(user["id"]), user)
     limits = _effective_limits(db, user)
-    _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
-    showcase_rows = _showcase_rows(db, user["id"])
-    milestones = _evaluate_milestones(db, user)
-    active_robot = _get_active_robot(db, user["id"])
-    main_robot = active_robot if active_robot else _select_main_robot(db, user["id"])
+    home_light_initial = bool(
+        HOME_INITIAL_LIGHT_MODE
+        and str(request.args.get("full") or "") != "1"
+        and not app.config.get("TESTING")
+    )
+    if home_light_initial:
+        showcase_rows = []
+        milestones = []
+    else:
+        _ensure_showcase_slots(db, user["id"], limits["showcase_slots"])
+        showcase_rows = _showcase_rows(db, user["id"])
+        milestones = _evaluate_milestones(db, user)
+    if home_light_initial:
+        active_robot = None
+        if user["active_robot_id"]:
+            active_robot = db.execute(
+                """
+                SELECT *
+                FROM robot_instances
+                WHERE id = ? AND user_id = ? AND status = 'active'
+                LIMIT 1
+                """,
+                (int(user["active_robot_id"]), int(user["id"])),
+            ).fetchone()
+        main_robot = active_robot or db.execute(
+            """
+            SELECT *
+            FROM robot_instances
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (int(user["id"]),),
+        ).fetchone()
+        if main_robot:
+            main_robot = dict(main_robot)
+            main_robot["image_url"] = _composed_image_url(
+                main_robot.get("composed_image_path"),
+                main_robot.get("updated_at"),
+            )
+    else:
+        active_robot = _get_active_robot(db, user["id"])
+        main_robot = active_robot if active_robot else _select_main_robot(db, user["id"])
     app.logger.info(
         "home.main_robot_render user_id=%s robot_id=%s image_url=%s composed_path=%s updated_at=%s active_robot_id=%s",
         user["id"],
@@ -41064,27 +41103,332 @@ def home():
         (main_robot.get("updated_at") if main_robot else None),
         user["active_robot_id"],
     )
-    main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
-    research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
-    active_research_module = _active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None
-    research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
+    main_robot_stats = None if home_light_initial else (_compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None)
+    research_module_options = [] if home_light_initial else (_user_research_module_options(db, int(user["id"])) if main_robot else [])
+    active_research_module = None if home_light_initial else (_active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None)
+    research_module_combine_candidates = [] if home_light_initial else (_research_module_combine_candidates(db, int(user["id"])) if main_robot else [])
     research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
-    main_robot_profile = _robot_profile_view(main_robot_stats)
+    main_robot_profile = None if home_light_initial else _robot_profile_view(main_robot_stats)
     main_robot_style_state = (
         _robot_style_state_for_view(db, int(main_robot["id"]), stat_obj=main_robot_stats)
-        if main_robot and main_robot_stats
+        if (not home_light_initial) and main_robot and main_robot_stats
         else None
     )
     main_robot_set_bonus_view = _set_bonus_view_for_loadout(
         (main_robot_stats or {}).get("parts"),
         (main_robot_stats or {}).get("set_bonus"),
         disabled_reason="自由編成の混成ロボはセットボーナスなし" if (main_robot_stats or {}).get("is_mixed_frame") else None,
-    )
-    style_achievements = _style_achievements_progress(main_robot)
+    ) if not home_light_initial else None
+    style_achievements = [] if home_light_initial else _style_achievements_progress(main_robot)
     idle_line = None
     if main_robot:
         idle_line = get_idle_line(main_robot["personality"], main_robot["name"])
+    if home_light_initial:
+        now = _now_ts()
+        explore_ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
+        ct_remain, _ = _explore_remaining_seconds_for_user(db, user, user["id"], now_ts=now)
+        ct_ready_at = int(now + max(0, int(ct_remain)))
+        if int(user["is_admin"] or 0) == 1:
+            ct_text = "出撃可能！"
+            ct_button_text = "出撃する"
+            ct_status_text = ""
+        elif int(ct_remain) > 0:
+            ct_text = f"出撃まであと{int(ct_remain)}秒！"
+            ct_button_text = f"あと{int(ct_remain)}秒"
+            ct_status_text = f"あと{int(ct_remain)}秒"
+        else:
+            ct_text = "出撃可能！"
+            ct_button_text = "出撃する"
+            ct_status_text = ""
+        unlocked_explore_areas = [a for a in EXPLORE_AREAS if _is_area_unlocked(user, a["key"], db=db)]
+        saved_explore_area_key = _saved_explore_area_key(user, unlocked_explore_areas, db=db)
+        selected_explore_area_key = _default_explore_area_key(user, unlocked_explore_areas, db=db)
+        home_area_cards = []
+        for area_row in unlocked_explore_areas:
+            area_info = EXPLORE_AREA_MAP_INFO.get(area_row["key"]) or {}
+            area_desc = area_info.get("desc") or []
+            home_area_cards.append(
+                {
+                    "key": area_row["key"],
+                    "label": area_row["label"],
+                    "desc_line": str(area_desc[0]) if len(area_desc) >= 1 else "",
+                    "recommend_line": str(area_desc[1]) if len(area_desc) >= 2 else "",
+                    "warning_line": str(area_desc[2]) if len(area_desc) >= 3 else "",
+                    "growth_tendency_label": _area_growth_tendency_label(area_row["key"]),
+                    "tendency_line": _area_growth_tendency_line(area_row["key"], context="home"),
+                }
+            )
+        selected_explore_tendency_line = next(
+            (
+                str(card.get("tendency_line") or "")
+                for card in home_area_cards
+                if str(card.get("key") or "") == str(selected_explore_area_key or "")
+            ),
+            "",
+        )
+        locked_layer_lines = _locked_layer_lines(user, db=db)
+        max_unlocked_layer = _visible_user_max_unlocked_layer(user, db=db)
+        new_layer_badge = session.pop("home_new_layer_badge", None)
+        release_cap = _release_layer_cap_for_viewer(db, user_row=user)
+        if int(new_layer_badge or 0) > int(release_cap):
+            new_layer_badge = None
+        total_explores = int(
+            db.execute(
+                "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                (int(user["id"]), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+            ).fetchone()["c"]
+            or 0
+        )
+        boss_alert_status = _home_boss_alert_status(db, user["id"])
+        boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
+        faction_status = {
+            "is_joined": bool(_normalize_faction_key(user["faction"] if "faction" in user.keys() else None)),
+            "faction": _normalize_faction_key(user["faction"] if "faction" in user.keys() else None),
+            "counts": {},
+            "can_choose": False,
+        }
+        next_action_card = _home_next_action_card(
+            db,
+            user,
+            boss_alert_status,
+            max_unlocked_layer,
+            new_layer_badge,
+            None,
+            faction_status=faction_status,
+            total_explores=total_explores,
+        )
+        home_primary_explore_cta = _build_home_primary_explore_cta(
+            has_any_robot=has_any_robot,
+            is_admin=bool(user["is_admin"] == 1),
+            ct_remain=int(ct_remain or 0),
+            total_explores=int(total_explores or 0),
+            available_areas=unlocked_explore_areas,
+            selected_area_key=selected_explore_area_key,
+            saved_area_key=saved_explore_area_key,
+            next_action_card=next_action_card,
+        )
+        home_next_action_collapsed = (
+            int(user["home_next_action_collapsed"] or 0) == 1
+            if "home_next_action_collapsed" in user.keys()
+            else False
+        )
+        home_next_action_force_open = bool(
+            home_next_action_collapsed
+            and (boss_alert_status or (next_action_card and next_action_card.get("force_open")))
+        )
+        show_next_action_card = bool(next_action_card) and (not home_next_action_collapsed or home_next_action_force_open)
+        explore_submission_id = _issue_explore_submission_id()
+        message = session.pop("message", None)
+        if not message and str(request.args.get("module_equipped") or "") == "1":
+            message = "次の出撃用モジュールに設定しました。出撃時だけ効果が発動します。"
+        slot_display_used = min(instance_count, limits["robot_slots"])
+        slot_overflow = max(0, instance_count - limits["robot_slots"])
+        home_summary_line = "パーツを集めて自分だけのロボを組み立て、ボスを倒して次の層へ進む探索ゲームです。"
+        strengthen_candidate_count = get_strengthen_candidate_count(db, int(user["id"]))
+        show_lab_menu = _release_open_for_viewer(db, "lab", user_row=user)
+        show_market_menu = _market_can_access(db, user)
+        is_main_admin = _is_main_admin_user_row(user)
+        profile_rewards = None
+        try:
+            profile_rewards = get_equipped_profile_rewards(db, int(user["id"]))
+        except Exception:
+            profile_rewards = None
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["HOME_VIEW"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="home_view",
+            entity_type="page",
+            payload={
+                "has_any_robot": bool(has_any_robot),
+                "total_explores": int(total_explores or 0),
+                "light": True,
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        return render_template(
+            "home.html",
+            user=user,
+            robot_count=robot_count,
+            posts=[],
+            upgrade_cost=max(10, user["click_power"] * 10),
+            message=message,
+            combo=session.get("combo", 0),
+            is_admin=user["is_admin"] == 1,
+            is_main_admin=is_main_admin,
+            has_admin_decor_endpoint=("admin_decor" in app.view_functions),
+            limits=limits,
+            instance_count=instance_count,
+            has_any_robot=has_any_robot,
+            part_count=part_inventory_count,
+            part_inventory_count=part_inventory_count,
+            part_inventory_status=part_inventory_status,
+            part_storage_count=part_storage_count,
+            strengthen_candidate_count=strengthen_candidate_count,
+            milestones=[],
+            showcase_rows=[],
+            main_robot=main_robot,
+            main_robot_stats=main_robot_stats,
+            research_module_options=[],
+            active_research_module=None,
+            research_module_combine_candidates=[],
+            research_module_pity=0,
+            research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
+            main_robot_style=main_robot_style,
+            main_robot_profile=main_robot_profile,
+            main_robot_style_state=main_robot_style_state,
+            main_robot_set_bonus_view=main_robot_set_bonus_view,
+            style_achievements=[],
+            idle_line=idle_line,
+            ct_text=ct_text,
+            ct_button_text=ct_button_text,
+            ct_status_text=ct_status_text,
+            ct_remain=int(ct_remain),
+            ct_ready_at=int(ct_ready_at),
+            personality_labels=PERSONALITY_LABELS,
+            explore_areas=unlocked_explore_areas,
+            home_primary_explore_cta=home_primary_explore_cta,
+            home_return_explore_cta=None,
+            selected_explore_area_key=selected_explore_area_key,
+            selected_explore_tendency_line=selected_explore_tendency_line,
+            home_area_cards=home_area_cards,
+            stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,
+            locked_layer_lines=locked_layer_lines,
+            max_unlocked_layer=max_unlocked_layer,
+            new_layer_badge=(int(new_layer_badge) if new_layer_badge else None),
+            show_axis_hint=show_axis_hint,
+            home_ranking_rows=[],
+            home_ranking_metric={"title": "今週のランキング"},
+            home_ranking_url=url_for("ranking", metric="weekly_explores"),
+            slot_display_used=slot_display_used,
+            slot_overflow=slot_overflow,
+            weekly_env=None,
+            weekly_env_effect_lines=[],
+            weekly_recommendation="",
+            weekly_kills_total=0,
+            weekly_kills_attr=0,
+            weekly_trends=[],
+            weekly_hot_areas=[],
+            faction_emblems=FACTION_EMBLEMS,
+            faction_labels=FACTION_LABELS,
+            weekly_faction_key="aurix",
+            user_faction=faction_status["faction"],
+            faction_status=faction_status,
+            faction_unlock_progress_line="",
+            faction_unlock_progress_rows=[],
+            faction_member_counts={},
+            faction_recommended=None,
+            faction_week_scores={},
+            faction_score_rows=[],
+            faction_detail_rows=[],
+            faction_user_contribution={},
+            faction_user_rank=None,
+            faction_leader_gap=0,
+            prev_week_key="",
+            prev_faction_result=None,
+            faction_buff_winner=None,
+            faction_buff_active=False,
+            weekly_mvp=None,
+            weekly_champion=None,
+            show_weekly_champion=False,
+            show_tower_entry=False,
+            tower_is_public=False,
+            layer4_frontier_users=[],
+            layer4_warning_status=[],
+            weekly_featured_robot=None,
+            weekly_research_highlights=[],
+            research_summary=None,
+            research_unlock_banner=None,
+            first_win_banner=None,
+            total_explores=total_explores,
+            collab_unlock_progress=None,
+            home_beginner_focus=bool((user["is_admin"] != 1) and total_explores < 3),
+            home_summary_line=home_summary_line,
+            home_beginner_hint="最初は「出撃」と「ロボを組み立てる」だけ見ればOKです。",
+            beginner_mission_available=False,
+            show_beginner_mission=False,
+            beginner_mission_text="",
+            beginner_mission_cta_label="",
+            beginner_mission_is_post=False,
+            beginner_mission_cta_url=url_for("build"),
+            show_next_action_card=show_next_action_card,
+            home_next_action_collapsed=home_next_action_collapsed,
+            home_next_action_force_open=home_next_action_force_open,
+            home_daily_research_collapsed=True,
+            show_home_visibility_controls=bool(session.get("fixed_nav_hidden")),
+            show_intro_modal=False,
+            show_display_name_setup=bool(session.get("needs_display_name_setup")),
+            display_name_setup_prefill=_display_username_for_user_row(db, user),
+            show_starter_robot_name_setup=False,
+            starter_robot_name_prefill=STARTER_ROBOT_DEFAULT_NAME,
+            starter_robot_instance_id=(int(main_robot["id"]) if main_robot else None),
+            intro_npc_image="images/ui/robonavi.png",
+            main_robot_weekly_fit=False,
+            today_progress={"is_empty": True},
+            today_progress_cards=[],
+            boss_pity_status=None,
+            boss_alert_status=boss_alert_status,
+            boss_goal_hint=_boss_goal_hint(db, int(user["id"]), boss_alert_status=boss_alert_status, max_unlocked_layer=max_unlocked_layer),
+            boss_unlock_guide_lines=_boss_unlock_guide_lines(db, user, compact=True),
+            boss_alert_active=boss_alert_hint["boss_alert_active"],
+            boss_type=boss_alert_hint["boss_type"],
+            recommended_build=boss_alert_hint["recommended_build"],
+            recommended_text=boss_alert_hint["recommended_text"],
+            show_lab_menu=show_lab_menu,
+            show_market_menu=show_market_menu,
+            recent_drop_items=[],
+            newbie_boost=None,
+            research_boost=None,
+            research_boost_x_share=None,
+            boss_medal_summary=None,
+            home_lab_level=lab_level_view(user),
+            home_insect_research=None,
+            home_dinosaur_campaign=None,
+            factory_home_summary=None,
+            factory_research_home_summary=None,
+            factory_base_home=None,
+            companion_home_summary=None,
+            companion_dispatch_home_summary=None,
+            profile_rewards=profile_rewards,
+            home_robot_contest_card=None,
+            robot_customize_cta=None,
+            recent_robot_presence={"cards": [], "count": 0},
+            debug_snapshot={"user_id": user["id"], "light": True},
+            debug_comment=HOME_DEBUG_COMMENT,
+            explore_submission_id=explore_submission_id,
+            invite_code=(user["invite_code"] or "") if "invite_code" in user.keys() else "",
+            invite_link="",
+            referral_counts={"completed": 0, "pending": 0},
+            has_evolution_core=False,
+            evolution_core_status=None,
+            show_evolution_actions=False,
+            next_action_card=next_action_card,
+            home_comm_room_defs=COMM_ROOM_DEFS,
+            home_comm_initial_tab="world",
+            home_comm_initial_room_key=COMM_ROOM_DEFS[0]["key"],
+            home_active_user_line="",
+            home_comm_world_settings=_chat_room_settings(COMM_WORLD_ROOM_KEY),
+            home_comm_room_settings_by_key={room["key"]: _chat_room_settings(room["key"]) for room in COMM_ROOM_DEFS},
+            home_comm_room_activity_counts_by_key={},
+            home_comm_room_activity_lines_by_key={},
+            home_comm_world_items=[],
+            home_comm_room_items_by_key={room["key"]: [] for room in COMM_ROOM_DEFS},
+            home_comm_personal_items=[],
+            show_daily_research_modal=False,
+            daily_research_available=False,
+            claimed_research_rewards=[],
+            yesterday_report=None,
+            daily_task=None,
+            daily_research_task_line=None,
+            daily_research_card=None,
+            daily_research_explore_action=url_for("explore"),
+            daily_research_area_key=saved_explore_area_key or selected_explore_area_key or "layer_1",
+            layer1_first_clear_card=None,
+            home_fragments_enabled=True,
+        )
     week_key = _world_week_key()
     weekly_env = _world_current_environment(db)
     weekly_recommendation = (
@@ -41774,6 +42118,83 @@ def home():
             error_text="ホーム画面の描画に失敗しました。",
             traceback_text="",
         ), 500
+
+
+@app.route("/home/fragments/ranking")
+@login_required
+def home_fragment_ranking():
+    db = get_db()
+    week_key = _world_week_key()
+    rows, metric = _ranking_rows(db, "weekly_explores", limit=5, week_key=week_key)
+    rows = _decorate_user_rows(db, rows, user_key="id")
+    highlights = get_weekly_research_highlights(db=db)[:3]
+    return render_template(
+        "_home_fragment_ranking.html",
+        home_ranking_rows=rows,
+        home_ranking_metric=metric,
+        home_ranking_url=url_for("ranking", metric="weekly_explores"),
+        weekly_research_highlights=highlights,
+    )
+
+
+@app.route("/home/fragments/mvp")
+@login_required
+def home_fragment_mvp():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    week_key = _world_week_key()
+    weekly_mvp = _weekly_mvp_snapshot(db, week_key)
+    weekly_featured_robot = get_weekly_featured_robot(db=db)
+    show_weekly_champion = bool(user and _release_open_for_viewer(db, "weekly_champion", user_row=user))
+    weekly_champion = None
+    if show_weekly_champion:
+        snapshot = get_weekly_champion_snapshot(db, week_key)
+        weekly_champion = _weekly_champion_view_model(
+            db,
+            snapshot,
+            viewer_user_id=int(session["user_id"]),
+        ) if snapshot else None
+    return render_template(
+        "_home_fragment_mvp.html",
+        weekly_mvp=weekly_mvp,
+        weekly_featured_robot=weekly_featured_robot,
+        show_weekly_champion=show_weekly_champion,
+        weekly_champion=weekly_champion,
+    )
+
+
+@app.route("/home/fragments/comms")
+@login_required
+def home_fragment_comms():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    is_admin = bool(user and int(user["is_admin"] or 0) == 1)
+    items = _home_world_timeline_items(db, limit=5, is_admin=is_admin)
+    active_user_count = count_active_users(db, window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES)
+    return render_template(
+        "_home_fragment_comms.html",
+        home_comm_world_items=items,
+        home_active_user_line=_active_users_summary_line(
+            active_user_count,
+            window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES,
+        ),
+        home_comm_world_settings=_chat_room_settings(COMM_WORLD_ROOM_KEY),
+    )
+
+
+@app.route("/home/fragments/world-log")
+@login_required
+def home_fragment_world_log():
+    return home_fragment_comms()
+
+
+@app.route("/home/fragments/showcase")
+@login_required
+def home_fragment_showcase():
+    db = get_db()
+    user_id = int(session["user_id"])
+    rows = _showcase_rows(db, user_id)[:3]
+    return render_template("_home_fragment_showcase.html", showcase_rows=rows)
 
 
 @app.route("/robots/customize/start", methods=["POST"])

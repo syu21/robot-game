@@ -1,0 +1,39 @@
+{% from '_user_chip.html' import render_user_chip %}
+<div class="world-env-card">
+  {% if weekly_research_highlights %}
+  <div class="home-research-highlights-card">
+    <div><b>今週の研究成果</b></div>
+    <div class="home-research-highlight-grid">
+      {% for item in weekly_research_highlights %}
+      <div class="home-research-highlight-item">
+        <div class="upgrade-cost">{{ item['label'] }}</div>
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(item, 'research', (item.get('display_username') or item['username']) ~ ' robot') }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name-line">{{ render_user_name_badged_html(item, item.get('display_username') or item['username']) }}</div>
+            <div class="user-signal-sub">{{ item['metric_value'] }}{{ item['suffix'] }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div><b>今週のランキング</b></div>
+  <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
+  {% for row in home_ranking_rows %}
+  <div class="home-ranking-row{% if loop.index <= 3 %} is-podium{% endif %}">
+    <div class="presence-user-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+      {{ render_user_chip(row, 'ranking', (row.get('display_username') or row['username']) ~ ' robot', 'lazy', loop.index <= 3) }}
+      <div class="user-signal-meta">
+        <div class="user-signal-name-line"><span class="user-name-inline-note">{{ loop.index }}位</span>{{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}</div>
+        <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+      </div>
+    </div>
+    <span class="weekly-fit-badge">{{ row['metric_value'] }}回</span>
+  </div>
+  {% else %}
+  <div class="robot-part">まだランキングデータがありません。</div>
+  {% endfor %}
+  <div class="link"><a href="{{ home_ranking_url }}">ランキングを見る</a></div>
+</div>

@@ -1,0 +1,52 @@
+{% from '_user_chip.html' import render_user_chip %}
+<div class="world-env-card mvp-hero-card">
+  <div><b>注目ロボ</b></div>
+  {% if weekly_featured_robot %}
+  <div class="home-research-spotlight-card">
+    <div class="home-research-card-head">
+      <div>
+        <div><b>今週の研究機体</b></div>
+        <div class="upgrade-cost">今週、特に動きがあった研究機体です。</div>
+      </div>
+      <span class="weekly-fit-badge">研究機体</span>
+    </div>
+    <div class="presence-user-line user-signal user-signal-hero">
+      {{ render_user_chip(weekly_featured_robot, 'featured', weekly_featured_robot.get('display_username', weekly_featured_robot['username']) ~ ' robot', 'lazy', true) }}
+      <div class="user-signal-meta">
+        <div class="user-signal-name-line">{{ render_user_name_badged_html(weekly_featured_robot, weekly_featured_robot.get('display_username') or weekly_featured_robot['username']) }}</div>
+        <div class="presence-mini-label">{{ weekly_featured_robot.get('presence_label', '探索待機中') }}</div>
+      </div>
+    </div>
+    <div class="home-featured-robot-row">
+      {% if weekly_featured_robot.get('robot_image_url') %}
+      <img class="robot-thumb home-featured-robot-thumb robo-anim robo-anim-focus" src="{{ weekly_featured_robot['robot_image_url'] }}" alt="{{ weekly_featured_robot['robot_name'] }}" loading="lazy" decoding="async" />
+      {% endif %}
+      <div>
+        <div><b>{{ weekly_featured_robot['robot_name'] }}</b></div>
+        <div class="upgrade-cost">思想: {{ weekly_featured_robot.get('signature_label', '研究機体') }}</div>
+        {% if weekly_featured_robot.get('focus_line') %}
+        <div class="upgrade-cost">注目能力: {{ weekly_featured_robot['focus_line'] }}</div>
+        {% endif %}
+        <div class="robot-time">{{ weekly_featured_robot['comment'] }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <details class="home-spotlight-tab" open>
+    <summary>今週のMVP</summary>
+    {% if weekly_mvp %}
+    <div class="presence-user-line user-signal user-signal-hero is-podium">
+      {{ render_user_chip(weekly_mvp, 'mvp', weekly_mvp['username'] ~ ' robot', 'lazy', true) }}
+      <div class="user-signal-meta">
+        <div class="user-signal-name-line">{{ render_user_name_badged_html(weekly_mvp, weekly_mvp['username']) }}<span class="user-name-inline-note">（勝利 {{ weekly_mvp['wins'] }}）</span></div>
+        <div class="presence-mini-label">{{ weekly_mvp.get('presence_label', '探索待機中') }}</div>
+      </div>
+    </div>
+    {% if weekly_mvp['robot_name'] %}<div>{{ weekly_mvp['robot_name'] }}</div>{% endif %}
+    {% if weekly_mvp['robot_image_url'] %}<img class="robot-thumb robo-anim robo-anim-focus" src="{{ weekly_mvp['robot_image_url'] }}" alt="mvp robot" loading="lazy" decoding="async" />{% endif %}
+    {% if weekly_mvp['robot_id'] %}<div class="link"><a href="{{ url_for('robot_detail', instance_id=weekly_mvp['robot_id']) }}">詳細を見る</a></div>{% endif %}
+    {% else %}
+    <div>まだ集計対象がありません。</div>
+    {% endif %}
+  </details>
+</div>
