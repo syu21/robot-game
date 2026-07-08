@@ -895,6 +895,7 @@ MAINTENANCE_STATE_CACHE_LOCK = threading.Lock()
 CLIENT_ERROR_LOG_CACHE = {}
 CLIENT_ERROR_LOG_CACHE_LOCK = threading.Lock()
 CLIENT_ERROR_LOG_INTERVAL_SECONDS = max(5, int(os.getenv("CLIENT_ERROR_LOG_INTERVAL_SECONDS", "60")))
+HOME_SQL_SLOW_MS = max(10, int(os.getenv("HOME_SQL_SLOW_MS", "80")))
 HOME_CACHE_RANKING_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_RANKING_TTL_SECONDS", "60")))
 HOME_CACHE_MVP_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_MVP_TTL_SECONDS", "60")))
 HOME_CACHE_COMMS_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_COMMS_TTL_SECONDS", "20")))
@@ -3241,18 +3242,6 @@ def _maintenance_state_row(db):
         LIMIT 1
         """
     ).fetchone()
-    if not row:
-        _seed_maintenance_state(db)
-        row = db.execute(
-            """
-            SELECT ms.mode, ms.updated_at, ms.updated_by_user_id,
-                   u.username, u.display_name, u.is_admin
-            FROM maintenance_state ms
-            LEFT JOIN users u ON u.id = ms.updated_by_user_id
-            WHERE ms.id = 1
-            LIMIT 1
-            """
-        ).fetchone()
     mode = _normalize_maintenance_mode(row["mode"] if row else "off")
     updated_by_label = ""
     if row and row["updated_by_user_id"]:
@@ -3313,6 +3302,19 @@ def _maintenance_control_view(db):
 
 def _maintenance_banner_text():
     return "現在アップデート中です。一部機能を停止しています。閲覧は可能ですが、出撃・育成・購入などの操作は一時停止中です。"
+
+
+def _skip_db_before_request():
+    endpoint = request.endpoint or ""
+    path = request.path or ""
+    return bool(
+        endpoint == "static"
+        or endpoint == "client_error_js"
+        or endpoint == ""
+        or path.startswith("/static/")
+        or path == "/client-error/js"
+        or path.startswith("/healthz")
+    )
 
 
 def _maintenance_is_admin_viewer():
@@ -4336,6 +4338,28 @@ def _ttl_cache_get_or_set(cache_key, ttl_seconds, builder):
     if cached is not HOME_TTL_CACHE_MISS:
         return cached, True
     return _ttl_cache_set(cache_key, builder(), ttl_seconds), False
+
+
+class TimedSQLiteConnection(sqlite3.Connection):
+    def execute(self, sql, parameters=(), /):
+        started_at = time.perf_counter()
+        try:
+            return super().execute(sql, parameters)
+        finally:
+            elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+            if (
+                elapsed_ms >= int(HOME_SQL_SLOW_MS)
+                and has_request_context()
+                and (request.path or "") == "/home"
+            ):
+                compact_sql = " ".join(str(sql or "").split())[:240]
+                app.logger.warning(
+                    "home.sql.slow elapsed_ms=%s path=%s request_id=%s sql=%s",
+                    elapsed_ms,
+                    request.path,
+                    getattr(g, "request_id", None),
+                    compact_sql,
+                )
 
 
 def _home_cache_scope_key():
@@ -14476,24 +14500,8 @@ def _migrate_robot_builds(db):
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
+        g.db = sqlite3.connect(DB_PATH, factory=TimedSQLiteConnection)
         g.db.row_factory = sqlite3.Row
-        bootstrap_key = str(DB_PATH)
-        if bootstrap_key not in DB_BOOTSTRAP_READY_KEYS:
-            with DB_BOOTSTRAP_LOCK:
-                if bootstrap_key not in DB_BOOTSTRAP_READY_KEYS:
-                    ensure_schema(g.db)
-                    ensure_tower_schema(g.db)
-                    _ensure_dirs()
-                    _ensure_default_images()
-                    _check_static_health()
-                    _seed_robot_parts(g.db)
-                    _seed_robot_assets_v2(g.db)
-                    if _repair_legacy_starter_part_rows(g.db) > 0:
-                        g.db.commit()
-                    _seed_milestones(g.db)
-                    _ensure_main_admin_account_ready(g.db)
-                    DB_BOOTSTRAP_READY_KEYS.add(bootstrap_key)
         if not PART_OFFSET_CACHE:
             refresh_part_offset_cache(g.db)
     return g.db
@@ -36738,7 +36746,7 @@ def enforce_trial_mode_scope():
 
 @app.before_request
 def enforce_banned_user_logout():
-    if request.endpoint == "static" or request.path.startswith("/static/"):
+    if _skip_db_before_request():
         return None
     user_id = session.get("user_id")
     if not user_id:
@@ -36763,9 +36771,9 @@ def enforce_banned_user_logout():
 
 @app.before_request
 def enforce_maintenance_mode():
-    if _is_trial_session() or request.endpoint in {"trial_start", "trial_finish", "trial_end"}:
+    if _skip_db_before_request():
         return None
-    if request.endpoint == "client_error_js" or request.path == "/client-error/js":
+    if _is_trial_session() or request.endpoint in {"trial_start", "trial_finish", "trial_end"}:
         return None
     mode = _maintenance_mode()
     if mode == "off":
@@ -36791,9 +36799,7 @@ def enforce_maintenance_mode():
 
 @app.before_request
 def touch_user_last_seen():
-    if request.endpoint == "static" or request.path.startswith("/static/"):
-        return None
-    if request.endpoint == "client_error_js" or request.path == "/client-error/js":
+    if _skip_db_before_request():
         return None
     user_id = session.get("user_id")
     if not user_id:
@@ -36815,11 +36821,9 @@ def touch_user_last_seen():
 def _presence_context_for_request():
     path = request.path or ""
     if (
-        request.endpoint == "static"
-        or path.startswith("/static/")
+        _skip_db_before_request()
         or path.startswith("/api/")
         or path.startswith("/admin")
-        or path.startswith("/healthz")
     ):
         return None
     method = request.method.upper()
@@ -36899,7 +36903,7 @@ def touch_user_presence():
 
 @app.before_request
 def enforce_release_gates():
-    if request.endpoint == "static" or request.path.startswith("/static/"):
+    if _skip_db_before_request():
         return None
     if not request.path.startswith("/lab"):
         return None
@@ -36917,7 +36921,7 @@ def enforce_release_gates():
 
 @app.before_request
 def auto_close_faction_war_weekly():
-    if request.endpoint in {"static"}:
+    if _skip_db_before_request():
         return None
     if _is_trial_session() or request.endpoint in {"trial_start", "trial_finish", "trial_end"}:
         return None
@@ -37011,7 +37015,12 @@ def admin_perf():
 
 @app.errorhandler(404)
 def handle_404(err):
-    return render_template("404.html"), 404
+    return Response(
+        "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><title>404 Not Found</title></head>"
+        "<body><main><h1>404 Not Found</h1><p>ページが見つかりません。</p></main></body></html>",
+        status=404,
+        content_type="text/html; charset=utf-8",
+    )
 
 
 @app.errorhandler(500)
@@ -38312,115 +38321,6 @@ def changelog():
 
 @app.route("/client-error/js", methods=["POST"])
 def client_error_js():
-    payload = request.get_json(silent=True) or {}
-    if not isinstance(payload, dict):
-        payload = {"raw": str(payload)}
-    safe_payload = {
-        "page_name": str(payload.get("page_name") or payload.get("pageName") or "")[:80],
-        "pathname": str(payload.get("pathname") or "")[:300],
-        "full_url": str(payload.get("full_url") or payload.get("url") or request.url)[:600],
-        "message": str(payload.get("message") or "")[:800],
-        "source": str(payload.get("source") or "")[:400],
-        "line": int(payload.get("line") or 0),
-        "column": int(payload.get("column") or 0),
-        "stack": str(payload.get("stack") or "")[:2000],
-        "url": str(payload.get("url") or request.path)[:500],
-        "user_agent": str(payload.get("userAgent") or request.headers.get("User-Agent") or "")[:600],
-        "kind": str(payload.get("kind") or "window.onerror")[:80],
-        "step": str(payload.get("step") or "")[:160],
-        "last_step": str(payload.get("last_step") or payload.get("lastStep") or "")[:160],
-        "body_class": str(payload.get("body_class") or payload.get("bodyClass") or "")[:300],
-        "body_id": str(payload.get("body_id") or payload.get("bodyId") or "")[:120],
-        "page_template": str(payload.get("page_template") or payload.get("pageTemplate") or "")[:120],
-        "ready_state": str(payload.get("ready_state") or payload.get("readyState") or "")[:40],
-        "important_dom_state": payload.get("important_dom_state") if isinstance(payload.get("important_dom_state"), dict) else {},
-        "loaded_scripts": payload.get("loaded_scripts") if isinstance(payload.get("loaded_scripts"), list) else [],
-        "request_id": str(payload.get("requestId") or getattr(g, "request_id", ""))[:120],
-        "user_id": int(session.get("user_id")) if session.get("user_id") else None,
-    }
-    throttle_key = (
-        safe_payload["user_id"] or 0,
-        safe_payload["kind"],
-        safe_payload["pathname"] or request.path,
-        safe_payload["message"][:180],
-        safe_payload["source"][:120],
-        safe_payload["line"],
-        safe_payload["column"],
-    )
-    now_mono = time.monotonic()
-    with CLIENT_ERROR_LOG_CACHE_LOCK:
-        last_logged_at = float(CLIENT_ERROR_LOG_CACHE.get(throttle_key) or 0)
-        if now_mono - last_logged_at < CLIENT_ERROR_LOG_INTERVAL_SECONDS:
-            return ("", 204)
-        CLIENT_ERROR_LOG_CACHE[throttle_key] = now_mono
-        if len(CLIENT_ERROR_LOG_CACHE) > 512:
-            cutoff = now_mono - (CLIENT_ERROR_LOG_INTERVAL_SECONDS * 2)
-            for key, logged_at in list(CLIENT_ERROR_LOG_CACHE.items()):
-                if float(logged_at or 0) < cutoff:
-                    CLIENT_ERROR_LOG_CACHE.pop(key, None)
-    log_msg = (
-        "[client-js] page=%s kind=%s step=%s user=%s path=%s msg=%s "
-        "src=%s:%s:%s last_step=%s body_class=%s body_id=%s template=%s ready=%s dom=%s scripts=%s"
-    )
-    log_args = (
-        safe_payload["page_name"] or "-",
-        safe_payload["kind"],
-        safe_payload["step"] or "-",
-        safe_payload["user_id"] if safe_payload["user_id"] is not None else "-",
-        safe_payload["pathname"] or request.path,
-        safe_payload["message"][:180],
-        safe_payload["source"][:120],
-        safe_payload["line"],
-        safe_payload["column"],
-        safe_payload["last_step"] or "-",
-        safe_payload["body_class"][:140],
-        safe_payload["body_id"][:80],
-        safe_payload["page_template"][:80],
-        safe_payload["ready_state"] or "-",
-        json.dumps(safe_payload["important_dom_state"], ensure_ascii=False)[:240],
-        ",".join(str(x) for x in safe_payload["loaded_scripts"][:10])[:260],
-    )
-    kind = safe_payload["kind"]
-    error_kinds = {"window.onerror", "unhandledrejection", "caught_exception"}
-    is_known_home_page_syntax_cache = (
-        kind == "window.onerror"
-        and "invalid or unexpected token" in (safe_payload["message"] or "").lower()
-        and "home_page_v2.js" in (safe_payload["source"] or "").lower()
-        and safe_payload["line"] == 163
-        and safe_payload["column"] == 20
-    )
-    if kind == "overlay-scan":
-        extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
-        app.logger.warning(log_msg, *log_args)
-        app.logger.warning(
-            "[client-js-overlay] tag=%s id=%s class=%s rect=%s zIndex=%s backgroundColor=%s",
-            str(extra.get("tag") or ""),
-            str(extra.get("id") or ""),
-            str(extra.get("className") or ""),
-            json.dumps(extra.get("rect") or {}, ensure_ascii=False),
-            str(extra.get("zIndex") or ""),
-            str(extra.get("backgroundColor") or ""),
-        )
-    elif is_known_home_page_syntax_cache:
-        app.logger.warning(
-            "[client-js-known] page=%s kind=%s msg=%s src=%s:%s:%s (treat_as_cache_or_legacy)",
-            safe_payload["page_name"] or "-",
-            safe_payload["kind"],
-            safe_payload["message"][:180],
-            safe_payload["source"][:120],
-            safe_payload["line"],
-            safe_payload["column"],
-        )
-        if safe_payload["stack"]:
-            app.logger.warning("[client-js-known-stack] %s", safe_payload["stack"][:1800])
-    elif kind in error_kinds:
-        app.logger.error(log_msg, *log_args)
-        if safe_payload["stack"]:
-            app.logger.error("[client-js-stack] %s", safe_payload["stack"][:1800])
-    elif kind == "init_step":
-        app.logger.info(log_msg, *log_args)
-    else:
-        app.logger.warning(log_msg, *log_args)
     return ("", 204)
 
 
@@ -60224,6 +60124,35 @@ def admin_parts_purge_quick(part_id):
         db.rollback()
         session["message"] = f"開発用クイック削除に失敗しました: {exc}"
     return redirect(url_for("admin_parts", show_inactive=1))
+
+
+def _startup_database_bootstrap():
+    bootstrap_key = str(DB_PATH)
+    if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
+        return
+    with DB_BOOTSTRAP_LOCK:
+        if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
+            return
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+        try:
+            ensure_schema(db)
+            ensure_tower_schema(db)
+            _ensure_dirs()
+            _ensure_default_images()
+            _check_static_health()
+            _seed_robot_parts(db)
+            _seed_robot_assets_v2(db)
+            _repair_legacy_starter_part_rows(db)
+            _seed_milestones(db)
+            _ensure_main_admin_account_ready(db)
+            db.commit()
+            DB_BOOTSTRAP_READY_KEYS.add(bootstrap_key)
+        finally:
+            db.close()
+
+
+_startup_database_bootstrap()
 
 
 if __name__ == "__main__":

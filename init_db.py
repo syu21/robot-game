@@ -738,8 +738,18 @@ def generate_part_display_name_ja(part_key, rarity=None, element=None, part_type
     return f"{part_element_titles_ja[element_norm]}{part_type_titles_ja[part_type_norm]}{suffix}"
 
 
+def _run_loaded_app_schema_migrations(conn):
+    import sys
+
+    game_app = sys.modules.get("app")
+    ensure = getattr(game_app, "ensure_schema", None) if game_app is not None else None
+    if callable(ensure):
+        ensure(conn)
+
+
 def main():
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
     cur.execute(
@@ -1743,6 +1753,25 @@ def main():
             user_id INTEGER,
             username TEXT,
             created_at TEXT
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_auth_identities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            provider_user_id TEXT NOT NULL,
+            email TEXT,
+            display_name TEXT,
+            avatar_url TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(provider, provider_user_id),
+            UNIQUE(user_id, provider),
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         """
     )
@@ -4321,6 +4350,7 @@ def main():
             items,
         )
 
+    _run_loaded_app_schema_migrations(conn)
     conn.commit()
     conn.close()
     print("DB initialized at", DB_PATH)
