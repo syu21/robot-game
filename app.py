@@ -890,6 +890,11 @@ HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
 DB_BOOTSTRAP_LOCK = threading.Lock()
 DB_BOOTSTRAP_READY_KEYS = set()
+MAINTENANCE_STATE_CACHE = {"expires_at": 0, "mode": "off"}
+MAINTENANCE_STATE_CACHE_LOCK = threading.Lock()
+CLIENT_ERROR_LOG_CACHE = {}
+CLIENT_ERROR_LOG_CACHE_LOCK = threading.Lock()
+CLIENT_ERROR_LOG_INTERVAL_SECONDS = max(5, int(os.getenv("CLIENT_ERROR_LOG_INTERVAL_SECONDS", "60")))
 HOME_CACHE_RANKING_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_RANKING_TTL_SECONDS", "60")))
 HOME_CACHE_MVP_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_MVP_TTL_SECONDS", "60")))
 HOME_CACHE_COMMS_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_COMMS_TTL_SECONDS", "20")))
@@ -3226,7 +3231,6 @@ def _seed_maintenance_state(db):
 
 
 def _maintenance_state_row(db):
-    _seed_maintenance_state(db)
     row = db.execute(
         """
         SELECT ms.mode, ms.updated_at, ms.updated_by_user_id,
@@ -3237,6 +3241,18 @@ def _maintenance_state_row(db):
         LIMIT 1
         """
     ).fetchone()
+    if not row:
+        _seed_maintenance_state(db)
+        row = db.execute(
+            """
+            SELECT ms.mode, ms.updated_at, ms.updated_by_user_id,
+                   u.username, u.display_name, u.is_admin
+            FROM maintenance_state ms
+            LEFT JOIN users u ON u.id = ms.updated_by_user_id
+            WHERE ms.id = 1
+            LIMIT 1
+            """
+        ).fetchone()
     mode = _normalize_maintenance_mode(row["mode"] if row else "off")
     updated_by_label = ""
     if row and row["updated_by_user_id"]:
@@ -3261,8 +3277,16 @@ def _maintenance_mode(db=None):
     if db is None:
         if not has_request_context():
             return "off"
+        now_ts = time.time()
+        if float(MAINTENANCE_STATE_CACHE.get("expires_at") or 0) > now_ts:
+            return str(MAINTENANCE_STATE_CACHE.get("mode") or "off")
         db = get_db()
-    return _maintenance_state_row(db)["mode"]
+    mode = _maintenance_state_row(db)["mode"]
+    if has_request_context():
+        with MAINTENANCE_STATE_CACHE_LOCK:
+            MAINTENANCE_STATE_CACHE["mode"] = mode
+            MAINTENANCE_STATE_CACHE["expires_at"] = time.time() + 5
+    return mode
 
 
 def _is_maintenance_mode():
@@ -36603,7 +36627,10 @@ def inject_fixed_nav_pref():
 
 @app.context_processor
 def inject_app_meta():
-    maintenance_mode = "off" if _is_trial_session() else _maintenance_mode()
+    try:
+        maintenance_mode = "off" if _is_trial_session() else _maintenance_mode()
+    except Exception:
+        maintenance_mode = "off"
     return {
         "app_version": APP_VERSION,
         "support_email": SUPPORT_EMAIL,
@@ -36738,6 +36765,8 @@ def enforce_banned_user_logout():
 def enforce_maintenance_mode():
     if _is_trial_session() or request.endpoint in {"trial_start", "trial_finish", "trial_end"}:
         return None
+    if request.endpoint == "client_error_js" or request.path == "/client-error/js":
+        return None
     mode = _maintenance_mode()
     if mode == "off":
         return None
@@ -36763,6 +36792,8 @@ def enforce_maintenance_mode():
 @app.before_request
 def touch_user_last_seen():
     if request.endpoint == "static" or request.path.startswith("/static/"):
+        return None
+    if request.endpoint == "client_error_js" or request.path == "/client-error/js":
         return None
     user_id = session.get("user_id")
     if not user_id:
@@ -38307,6 +38338,26 @@ def client_error_js():
         "request_id": str(payload.get("requestId") or getattr(g, "request_id", ""))[:120],
         "user_id": int(session.get("user_id")) if session.get("user_id") else None,
     }
+    throttle_key = (
+        safe_payload["user_id"] or 0,
+        safe_payload["kind"],
+        safe_payload["pathname"] or request.path,
+        safe_payload["message"][:180],
+        safe_payload["source"][:120],
+        safe_payload["line"],
+        safe_payload["column"],
+    )
+    now_mono = time.monotonic()
+    with CLIENT_ERROR_LOG_CACHE_LOCK:
+        last_logged_at = float(CLIENT_ERROR_LOG_CACHE.get(throttle_key) or 0)
+        if now_mono - last_logged_at < CLIENT_ERROR_LOG_INTERVAL_SECONDS:
+            return ("", 204)
+        CLIENT_ERROR_LOG_CACHE[throttle_key] = now_mono
+        if len(CLIENT_ERROR_LOG_CACHE) > 512:
+            cutoff = now_mono - (CLIENT_ERROR_LOG_INTERVAL_SECONDS * 2)
+            for key, logged_at in list(CLIENT_ERROR_LOG_CACHE.items()):
+                if float(logged_at or 0) < cutoff:
+                    CLIENT_ERROR_LOG_CACHE.pop(key, None)
     log_msg = (
         "[client-js] page=%s kind=%s step=%s user=%s path=%s msg=%s "
         "src=%s:%s:%s last_step=%s body_class=%s body_id=%s template=%s ready=%s dom=%s scripts=%s"
