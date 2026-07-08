@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import traceback
 import time
+import threading
 import csv
 import io
 import json
@@ -887,6 +888,8 @@ PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "1200")))
 PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
 HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
+DB_BOOTSTRAP_LOCK = threading.Lock()
+DB_BOOTSTRAP_READY_KEYS = set()
 HOME_CACHE_RANKING_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_RANKING_TTL_SECONDS", "60")))
 HOME_CACHE_MVP_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_MVP_TTL_SECONDS", "60")))
 HOME_CACHE_COMMS_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_COMMS_TTL_SECONDS", "20")))
@@ -14451,17 +14454,22 @@ def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DB_PATH)
         g.db.row_factory = sqlite3.Row
-        ensure_schema(g.db)
-        ensure_tower_schema(g.db)
-        _ensure_dirs()
-        _ensure_default_images()
-        _check_static_health()
-        _seed_robot_parts(g.db)
-        _seed_robot_assets_v2(g.db)
-        if _repair_legacy_starter_part_rows(g.db) > 0:
-            g.db.commit()
-        _seed_milestones(g.db)
-        _ensure_main_admin_account_ready(g.db)
+        bootstrap_key = str(DB_PATH)
+        if bootstrap_key not in DB_BOOTSTRAP_READY_KEYS:
+            with DB_BOOTSTRAP_LOCK:
+                if bootstrap_key not in DB_BOOTSTRAP_READY_KEYS:
+                    ensure_schema(g.db)
+                    ensure_tower_schema(g.db)
+                    _ensure_dirs()
+                    _ensure_default_images()
+                    _check_static_health()
+                    _seed_robot_parts(g.db)
+                    _seed_robot_assets_v2(g.db)
+                    if _repair_legacy_starter_part_rows(g.db) > 0:
+                        g.db.commit()
+                    _seed_milestones(g.db)
+                    _ensure_main_admin_account_ready(g.db)
+                    DB_BOOTSTRAP_READY_KEYS.add(bootstrap_key)
         if not PART_OFFSET_CACHE:
             refresh_part_offset_cache(g.db)
     return g.db
