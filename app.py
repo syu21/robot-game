@@ -60129,4 +60129,310 @@ def admin_parts_align():
                 "key": row["key"],
                 "image_url": url_for("static", filename=f"robot_assets/{row['image_path']}"),
                 "offset_x": int(row["offset_x"] or 0),
-                "
+                "offset_y": int(row["offset_y"] or 0),
+            }
+        else:
+            preview_layers[slot] = None
+
+    options = {
+        "HEAD": [r for r in rows if r["part_type"] == "HEAD"],
+        "RIGHT_ARM": [r for r in rows if r["part_type"] == "RIGHT_ARM"],
+        "LEFT_ARM": [r for r in rows if r["part_type"] == "LEFT_ARM"],
+        "LEGS": [r for r in rows if r["part_type"] == "LEGS"],
+    }
+    part_meta = {}
+    for r in rows:
+        part_meta[r["key"]] = {
+            "part_type": r["part_type"],
+            "offset_x": int(r["offset_x"] or 0),
+            "offset_y": int(r["offset_y"] or 0),
+            "image_url": (url_for("static", filename=f"robot_assets/{r['image_path']}") if r["image_path"] else ""),
+        }
+
+    return render_template(
+        "admin_parts_align.html",
+        selected_part=selected_part,
+        preview_layers=preview_layers,
+        options=options,
+        rows=rows,
+        part_meta=part_meta,
+        base_head_key=base_head_key,
+        base_r_arm_key=base_r_arm_key,
+        base_l_arm_key=base_l_arm_key,
+        base_legs_key=base_legs_key,
+    )
+
+
+@app.route("/admin/parts/<int:part_id>/toggle_active", methods=["POST"])
+@login_required
+def admin_parts_toggle_active(part_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT id, is_active FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not row:
+        session["message"] = "対象パーツが見つかりません。"
+        return redirect(url_for("admin_parts"))
+    next_state = 0 if row["is_active"] == 1 else 1
+    db.execute("UPDATE robot_parts SET is_active = ? WHERE id = ?", (next_state, part_id))
+    db.commit()
+    session["message"] = "パーツ状態を更新しました。"
+    return redirect(url_for("admin_parts", show_inactive=1))
+
+
+@app.route("/admin/decor", methods=["GET", "POST"])
+@login_required
+def admin_decor():
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    message = None
+    if request.method == "POST":
+        key = _clean_key(request.form.get("key"))
+        name_ja = (request.form.get("name_ja") or "").strip()
+        file = request.files.get("image")
+        existing = db.execute("SELECT id, image_path FROM robot_decor_assets WHERE key = ?", (key,)).fetchone() if key else None
+        if not key:
+            message = "keyを入力してください。"
+        elif not name_ja:
+            message = "表示名を入力してください。"
+        elif not file or not file.filename:
+            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
+            db.execute(
+                """
+                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
+                VALUES (?, ?, ?, 1, ?)
+                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
+                """,
+                (key, name_ja, rel_path, int(time.time())),
+            )
+            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
+            db.commit()
+            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
+        else:
+            ok, err, warns = _validate_decor_png_soft(file)
+            if not ok:
+                message = err
+            else:
+                rel_path = f"decor/{key}.png"
+                _save_static_png(file, rel_path)
+                db.execute(
+                    """
+                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
+                    VALUES (?, ?, ?, 1, ?)
+                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
+                    """,
+                    (key, name_ja, rel_path, int(time.time())),
+                )
+                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
+                db.commit()
+                message = "装飾アセットを保存しました。"
+                if warns:
+                    message += " " + " / ".join(warns)
+    rows = db.execute(
+        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
+    ).fetchall()
+    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
+    return render_template("admin_decor.html", rows=rows, message=message)
+
+
+@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
+@login_required
+def admin_decor_toggle_active(decor_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
+    if not row:
+        session["message"] = "対象装飾が見つかりません。"
+        return redirect(url_for("admin_decor"))
+    next_state = 0 if int(row["is_active"]) == 1 else 1
+    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
+    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
+    db.commit()
+    session["message"] = "装飾の有効状態を更新しました。"
+    return redirect(url_for("admin_decor"))
+
+
+@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
+@login_required
+def admin_parts_delete(part_id):
+    db = get_db()
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+
+    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
+        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not part:
+        session["message"] = "対象パーツが見つかりません。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+
+    key = part["key"]
+    ref_counts = {
+        "inventory": db.execute(
+            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
+            (key,),
+        ).fetchone()["c"],
+        "instances": db.execute(
+            """
+            SELECT COUNT(*) AS c FROM robot_instance_parts
+            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
+            """,
+            (key, key, key, key),
+        ).fetchone()["c"],
+        "builds": db.execute(
+            """
+            SELECT COUNT(*) AS c FROM robot_builds
+            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
+            """,
+            (key, key, key, key),
+        ).fetchone()["c"],
+        "milestones": db.execute(
+            """
+            SELECT COUNT(*) AS c FROM robot_milestones
+            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
+            """,
+            (key, key, key, key),
+        ).fetchone()["c"],
+    }
+    if any(v > 0 for v in ref_counts.values()):
+        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
+        message = (
+            "使用中のため削除不可です。"
+            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
+            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
+        )
+        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
+
+    image_path = part["image_path"]
+    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
+    db.commit()
+
+    # Shared path guard: remove file only when no remaining row references this path.
+    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
+    if remain == 0 and image_path:
+        abs_path = _asset_abs(image_path)
+        if os.path.exists(abs_path):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+
+    session["message"] = "パーツを完全削除しました。"
+    return redirect(url_for("admin_parts", show_inactive=1))
+
+
+@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
+@login_required
+def admin_parts_purge_confirm(part_id):
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    db = get_db()
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    part_key = part["key"] if part else None
+    counts = _part_purge_counts(db, part_key)
+    return render_template(
+        "admin_part_purge_confirm.html",
+        part=part,
+        part_id=part_id,
+        counts=counts,
+    )
+
+
+@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
+@login_required
+def admin_parts_purge(part_id):
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    db = get_db()
+    typed_part_id = request.form.get("typed_part_id", "").strip()
+    confirm_word = request.form.get("confirm_word", "").strip()
+    acknowledged = request.form.get("acknowledged") == "1"
+
+    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
+        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
+        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
+
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not part:
+        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+
+    try:
+        result = _purge_part_with_dependencies(db, part)
+        session["message"] = (
+            "危険一括削除を実行しました。"
+            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
+            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
+        )
+        return redirect(url_for("admin_parts", show_inactive=1))
+    except Exception as exc:
+        db.rollback()
+        session["message"] = f"危険一括削除に失敗しました: {exc}"
+        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
+
+
+@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
+@login_required
+def admin_parts_purge_quick(part_id):
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    if not DEV_MODE:
+        session["message"] = "開発環境のみ利用できます。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+    db = get_db()
+    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
+    if not part:
+        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
+        return redirect(url_for("admin_parts", show_inactive=1))
+    try:
+        result = _purge_part_with_dependencies(db, part)
+        session["message"] = (
+            "開発用クイック削除を実行しました。"
+            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
+            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
+        )
+    except Exception as exc:
+        db.rollback()
+        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
+    return redirect(url_for("admin_parts", show_inactive=1))
+
+
+def _startup_database_bootstrap():
+    bootstrap_key = str(DB_PATH)
+    if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
+        return
+    with DB_BOOTSTRAP_LOCK:
+        if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
+            return
+        db = sqlite3.connect(DB_PATH)
+        db.row_factory = sqlite3.Row
+        try:
+            ensure_schema(db)
+            ensure_tower_schema(db)
+            _ensure_dirs()
+            _ensure_default_images()
+            _check_static_health()
+            _seed_robot_parts(db)
+            _seed_robot_assets_v2(db)
+            _repair_legacy_starter_part_rows(db)
+            _seed_milestones(db)
+            _ensure_main_admin_account_ready(db)
+            db.commit()
+            DB_BOOTSTRAP_READY_KEYS.add(bootstrap_key)
+        finally:
+            db.close()
+
+
+_startup_database_bootstrap()
+
+
+if __name__ == "__main__":
+    app.run(
+        host="127.0.0.1",
+        port=int(os.environ.get("PORT", "5050")),
+        debug=True,
+    )
