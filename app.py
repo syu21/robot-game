@@ -4823,6 +4823,9 @@ def _save_maintenance_mode(db, mode, *, actor_user_id):
         """,
         (normalized, now_ts, int(actor_user_id)),
     )
+    with MAINTENANCE_STATE_CACHE_LOCK:
+        MAINTENANCE_STATE_CACHE["mode"] = normalized
+        MAINTENANCE_STATE_CACHE["expires_at"] = time.time() + 5
     return now_ts
 
 
@@ -10413,10 +10416,7 @@ def _refresh_battle_result_summary(db, user_id, user_row, summary):
     refreshed["reward_front"] = reward_front
     part_inventory_status = _part_inventory_status_payload(db, user_id, user_row)
     refreshed["part_inventory_status"] = part_inventory_status
-    refreshed["show_market_after_battle"] = bool(
-        _market_can_access(db, user_row)
-        and _should_show_market_after_battle(part_inventory_status, reward_front)
-    )
+    refreshed["show_market_after_battle"] = bool(_market_can_access(db, user_row))
     refreshed["next_explore_submission_id"] = _issue_explore_submission_id()
 
     remain, _ = _explore_remaining_seconds_for_user(db, user_row, user_id)
@@ -15955,13 +15955,18 @@ def _research_module_catalog_summary(db, user_id):
     registered = int(
         db.execute(
             """
-            SELECT COUNT(*) AS c
-            FROM user_research_module_catalog c
-            JOIN research_modules rm ON rm.module_key = c.module_key
-            WHERE c.user_id = ?
-              AND rm.is_active = 1
+            SELECT COUNT(DISTINCT rm.module_key) AS c
+            FROM research_modules rm
+            LEFT JOIN user_research_module_catalog c
+              ON c.module_key = rm.module_key
+             AND c.user_id = ?
+            LEFT JOIN user_research_modules urm
+              ON urm.module_key = rm.module_key
+             AND urm.user_id = ?
+            WHERE rm.is_active = 1
+              AND (c.first_obtained_at IS NOT NULL OR urm.id IS NOT NULL)
             """,
-            (int(user_id),),
+            (int(user_id), int(user_id)),
         ).fetchone()["c"] or 0
     )
     percent = int((registered * 100) // total) if total > 0 else 0
@@ -15993,7 +15998,7 @@ def _research_module_catalog_rows(db, user_id):
     for row in rows:
         item = _research_module_view(row)
         item["owned_count"] = int(row["owned_count"] or 0)
-        item["is_registered"] = row["first_obtained_at"] is not None
+        item["is_registered"] = row["first_obtained_at"] is not None or item["owned_count"] > 0
         item["first_obtained_at"] = row["first_obtained_at"]
         result.append(item)
     return result
@@ -23525,6 +23530,29 @@ def _render_matches_placeholder_image(rel_path):
     return False
 
 
+def _replace_robot_enemy_placeholder_render(rel_path):
+    rel = _safe_static_rel(rel_path)
+    if not rel or not _render_matches_placeholder_image(rel):
+        return False
+    target_abs = _static_abs(rel)
+    try:
+        os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+        img = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle((28, 42, 100, 104), radius=12, fill=(82, 96, 112, 255))
+        draw.rounded_rectangle((42, 20, 86, 58), radius=10, fill=(130, 150, 170, 255))
+        draw.rectangle((18, 58, 38, 94), fill=(96, 120, 146, 255))
+        draw.rectangle((90, 58, 110, 94), fill=(96, 120, 146, 255))
+        draw.rectangle((44, 102, 58, 124), fill=(70, 86, 104, 255))
+        draw.rectangle((70, 102, 84, 124), fill=(70, 86, 104, 255))
+        draw.ellipse((52, 34, 60, 42), fill=(230, 246, 255, 255))
+        draw.ellipse((68, 34, 76, 42), fill=(230, 246, 255, 255))
+        img.save(target_abs, format="PNG")
+        return True
+    except OSError:
+        return False
+
+
 def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_render", preserve_updated_at=False):
     if not robot_row:
         return None
@@ -23560,6 +23588,8 @@ def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_ren
                     icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
                     icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
                     composed_placeholder = bool(composed_rel and _render_matches_placeholder_image(composed_rel))
+                    if composed_placeholder and _replace_robot_enemy_placeholder_render(composed_rel):
+                        composed_placeholder = False
                     if preserve_updated_at and original_updated_at > 0:
                         db.execute(
                             "UPDATE robot_instances SET updated_at = ? WHERE id = ?",
@@ -49070,10 +49100,7 @@ def explore():
         drop_items=drop_items,
     )
     summary["part_inventory_status"] = _part_inventory_status_payload(db, user_id, user)
-    summary["show_market_after_battle"] = bool(
-        _market_can_access(db, user)
-        and _should_show_market_after_battle(summary["part_inventory_status"], summary["reward_front"])
-    )
+    summary["show_market_after_battle"] = bool(_market_can_access(db, user))
     summary["next_explore_submission_id"] = _issue_explore_submission_id()
     if area_boss_reward and area_boss_reward.get("decor_name"):
         summary["boss_reward_display"] = {
