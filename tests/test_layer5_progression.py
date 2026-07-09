@@ -152,6 +152,24 @@ class Layer5ProgressionTests(unittest.TestCase):
         expected = {
             "layer_5_labyrinth": ({"fast", "heavy"}, {"lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"}),
             "layer_5_pinnacle": ({"unstable", "berserk"}, {"pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"}),
+            "layer_5_reboot": (
+                {"heavy"},
+                {
+                    "deep_layer_5_reboot_fort_ironbulk",
+                    "deep_layer_5_reboot_fort_platehound",
+                    "deep_layer_5_reboot_fort_bastion_eye",
+                    "deep_layer_5_reboot_enemy_insect_kabuto",
+                },
+            ),
+            "layer_5_overdrive": (
+                {"fast"},
+                {
+                    "deep_layer_5_overdrive_haze_mirage_mite",
+                    "deep_layer_5_overdrive_haze_fog_lancer",
+                    "deep_layer_5_overdrive_haze_glint_drone",
+                    "deep_layer_5_overdrive_enemy_insect_bee",
+                },
+            ),
         }
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -169,7 +187,35 @@ class Layer5ProgressionTests(unittest.TestCase):
             db = game_app.get_db()
             self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_labyrinth")["key"], "boss_5_labyrinth_nyx_array")
             self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_pinnacle")["key"], "boss_5_pinnacle_ignition_king")
-            self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_final")["key"], "boss_5_final_omega_frame")
+            self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_reboot")["key"], "deep_boss_layer_5_reboot_boss_4_forge_elguard")
+            self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_overdrive")["key"], "deep_boss_layer_5_overdrive_boss_4_haze_mirage")
+            self.assertEqual(game_app._pick_boss_enemy_for_area(db, "layer_5_final")["key"], "deep_boss_layer_5_final_boss_4_final_ark_zero")
+
+    def test_deep_layer_enemy_stats_exceed_layer4_sources(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            pairs = (
+                ("fort_ironbulk", "deep_layer_5_reboot_fort_ironbulk"),
+                ("haze_mirage_mite", "deep_layer_5_overdrive_haze_mirage_mite"),
+                ("burst_coreling", "deep_layer_5_final_burst_coreling"),
+                ("deep_layer_5_reboot_fort_ironbulk", "deep_layer_6_rebuild_deep_layer_5_reboot_fort_ironbulk"),
+            )
+            for base_key, deep_key in pairs:
+                base = db.execute("SELECT hp, atk, def, spd, acc, cri FROM enemies WHERE key = ?", (base_key,)).fetchone()
+                deep = db.execute("SELECT hp, atk, def, spd, acc, cri FROM enemies WHERE key = ?", (deep_key,)).fetchone()
+                self.assertIsNotNone(base)
+                self.assertIsNotNone(deep)
+                self.assertGreater(int(deep["hp"]), int(base["hp"]))
+                self.assertGreater(int(deep["atk"]), int(base["atk"]))
+
+    def test_deep_layer_enemy_pools_do_not_mix_into_lower_layers(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            low_keys = set()
+            for area_key in ("layer_1", "layer_2", "layer_3", "layer_4_forge", "layer_4_haze", "layer_4_burst"):
+                for _ in range(16):
+                    low_keys.add(str(game_app._pick_enemy_for_area(db, area_key, weekly_env=self._stable_weekly_env())["key"]))
+            self.assertFalse(any(key.startswith("deep_layer_5") or key.startswith("deep_layer_6") for key in low_keys))
 
     def test_layer5_area_requires_unlock_then_allows_explore(self):
         client = self._new_client()
@@ -215,63 +261,4 @@ class Layer5ProgressionTests(unittest.TestCase):
             db.commit()
         self._activate_boss_alert("layer_5_labyrinth", "boss_5_labyrinth_nyx_array")
         client = self._new_client()
-        with mock.patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), mock.patch.object(
-            game_app, "resolve_attack", side_effect=self._resolve_for_win
-        ):
-            resp = client.post("/explore", data={"area_key": "layer_5_labyrinth", "boss_enter": "1"}, follow_redirects=True)
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("観測群冠", resp.get_data(as_text=True))
-
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            decor_count = db.execute(
-                """
-                SELECT COUNT(*) AS c
-                FROM user_decor_inventory udi
-                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
-                WHERE udi.user_id = ? AND rda.key = 'nyx_array_crest_001'
-                """,
-                (self.user_id,),
-            ).fetchone()["c"]
-            self.assertEqual(int(decor_count), 1)
-
-        self._activate_boss_alert("layer_5_labyrinth", "boss_5_labyrinth_nyx_array")
-        with mock.patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), mock.patch.object(
-            game_app, "resolve_attack", side_effect=self._resolve_for_win
-        ):
-            client.post("/explore", data={"area_key": "layer_5_labyrinth", "boss_enter": "1"}, follow_redirects=True)
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            decor_count = db.execute(
-                """
-                SELECT COUNT(*) AS c
-                FROM user_decor_inventory udi
-                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
-                WHERE udi.user_id = ? AND rda.key = 'nyx_array_crest_001'
-                """,
-                (self.user_id,),
-            ).fetchone()["c"]
-            self.assertEqual(int(decor_count), 1)
-
-    def test_layer5_drop_audit_payload_keeps_growth_tendency(self):
-        payload = game_app._drop_audit_payload(
-            "layer_5_labyrinth",
-            1,
-            {
-                "drop_type": "parts_1",
-                "part_type": "LEGS",
-                "part_key": self.legs_part_key,
-                "rarity": "N",
-                "plus": 0,
-                "growth_tendency_key": "labyrinth",
-                "growth_tendency_label": "観測育成",
-            },
-        )
-        self.assertEqual(payload.get("area_key"), "layer_5_labyrinth")
-        self.assertEqual(int(payload.get("battle_no") or 0), 1)
-        self.assertEqual(payload.get("growth_tendency_key"), "labyrinth")
-        self.assertEqual(payload.get("growth_tendency_label"), "観測育成")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        with mock.patch.object(game_app, "_world_current_environment", retur

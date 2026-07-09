@@ -1054,6 +1054,22 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "map_line": "背水と爆発を磨き、記録を取りにいく",
         "weight_bias": {"atk": 0.14, "cri": 0.14, "spd": 0.08, "acc": 0.02, "hp": -0.06, "def": -0.08},
     },
+    "layer_5_reboot": {
+        "key": "deep_reboot",
+        "label": "再起動育成",
+        "short_label": "耐久・防御強化",
+        "home_line": "育成傾向: 耐久・防御をさらに伸ばす",
+        "map_line": "第4層要塞系を上回る深層変異体",
+        "weight_bias": {"hp": 0.22, "def": 0.20, "atk": 0.08, "acc": 0.04, "spd": -0.08, "cri": -0.06},
+    },
+    "layer_5_overdrive": {
+        "key": "deep_overdrive",
+        "label": "過負荷育成",
+        "short_label": "速度・命中強化",
+        "home_line": "育成傾向: 速度・命中をさらに伸ばす",
+        "map_line": "第4層霧界系を上回る深層変異体",
+        "weight_bias": {"spd": 0.20, "acc": 0.18, "atk": 0.08, "hp": 0.04, "def": -0.04, "cri": 0.02},
+    },
     "layer_5_final": {
         "key": "omega",
         "label": "完成試験",
@@ -1061,6 +1077,30 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "home_line": "育成傾向: 第5層最終試験",
         "map_line": "ニクスとイグニッションを越えた先にある総決算",
         "weight_bias": {"hp": 0.06, "atk": 0.06, "def": 0.06, "acc": 0.06, "spd": 0.04, "cri": 0.04},
+    },
+    "layer_6_rebuild": {
+        "key": "deep_rebuild",
+        "label": "改修育成",
+        "short_label": "耐久・防御深層",
+        "home_line": "育成傾向: 耐久・防御の深層強化",
+        "map_line": "第5層再起動系をさらに改修した深層変異体",
+        "weight_bias": {"hp": 0.24, "def": 0.22, "atk": 0.10, "acc": 0.04, "spd": -0.08, "cri": -0.04},
+    },
+    "layer_6_core": {
+        "key": "deep_core",
+        "label": "炉心育成",
+        "short_label": "速度・命中深層",
+        "home_line": "育成傾向: 速度・命中の深層強化",
+        "map_line": "第5層過負荷系をさらに強化した深層変異体",
+        "weight_bias": {"spd": 0.22, "acc": 0.20, "atk": 0.10, "hp": 0.04, "def": -0.02, "cri": 0.04},
+    },
+    "layer_6_final": {
+        "key": "omega_core",
+        "label": "中枢試験",
+        "short_label": "深層総合試験",
+        "home_line": "育成傾向: 第6層最終試験",
+        "map_line": "第6層の総合力を問う中枢試験",
+        "weight_bias": {"hp": 0.10, "atk": 0.10, "def": 0.10, "acc": 0.10, "spd": 0.08, "cri": 0.08},
     },
 }
 ENEMY_TENDENCY_TAGS = {
@@ -2001,9 +2041,14 @@ EXPLORE_AREAS = [
     {"key": "layer_4_final", "label": "第四層最終試験: 審判域ゼロ", "layer": 4},
     {"key": "layer_5_labyrinth", "label": "第五層: 観測圏ラビリンス", "layer": 5},
     {"key": "layer_5_pinnacle", "label": "第五層: 競覇圏ピナクル", "layer": 5},
+    {"key": "layer_5_reboot", "label": "第五層: 再起動区画", "layer": 5},
+    {"key": "layer_5_overdrive", "label": "第五層: 過負荷回廊", "layer": 5},
     {"key": "layer_5_final", "label": "第五層最終試験: 完成域オメガ", "layer": 5},
+    {"key": "layer_6_rebuild", "label": "第六層: 改修深域", "layer": 6},
+    {"key": "layer_6_core", "label": "第六層: 中核炉心", "layer": 6},
+    {"key": "layer_6_final", "label": "第六層最終試験: オメガ中枢", "layer": 6},
 ]
-MAX_UNLOCKABLE_LAYER = 5
+MAX_UNLOCKABLE_LAYER = 6
 RELEASE_FLAG_DEFS = (
     {
         "key": "lab",
@@ -2078,6 +2123,7 @@ HOME_PRIMARY_AREA_BY_LAYER = {
     3: "layer_3",
     4: "layer_4_forge",
     5: "layer_5_labyrinth",
+    6: "layer_6_rebuild",
 }
 LAYER_BOSS_KEY_BY_LAYER = {
     1: "boss_aurix_guardian",
@@ -2086,9 +2132,12 @@ LAYER_BOSS_KEY_BY_LAYER = {
 }
 LAYER4_SUBAREA_KEYS = ("layer_4_forge", "layer_4_haze", "layer_4_burst")
 LAYER4_FINAL_AREA_KEY = "layer_4_final"
-LAYER5_SUBAREA_KEYS = ("layer_5_labyrinth", "layer_5_pinnacle")
+LAYER5_LEGACY_SUBAREA_KEYS = ("layer_5_labyrinth", "layer_5_pinnacle")
+LAYER5_SUBAREA_KEYS = ("layer_5_reboot", "layer_5_overdrive")
 LAYER5_FINAL_AREA_KEY = "layer_5_final"
-SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
+LAYER6_SUBAREA_KEYS = ("layer_6_rebuild", "layer_6_core")
+LAYER6_FINAL_AREA_KEY = "layer_6_final"
+SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY, LAYER6_FINAL_AREA_KEY}
 LAYER4_WARNING_TARGET_AREAS = set(LAYER4_SUBAREA_KEYS)
 LAYER4_WARNING_MAX_COUNT = 75
 LAYER4_WARNING_BOSS_ADVICE = {
@@ -2170,6 +2219,31 @@ STAGE_MODIFIERS_BY_AREA = {
         "player_mult": {"atk": 1.02, "def": 1.02, "acc": 1.02},
         "enemy_mult": {"atk": 1.14, "def": 1.12, "acc": 1.10, "spd": 1.08, "cri": 1.08, "hp": 1.14},
     },
+    "layer_5_reboot": {
+        "tendency": "再起動深度",
+        "player_mult": {"atk": 1.00, "def": 1.04, "acc": 1.02},
+        "enemy_mult": {"atk": 1.10, "def": 1.12, "acc": 1.06, "spd": 1.04, "cri": 1.04, "hp": 1.12},
+    },
+    "layer_5_overdrive": {
+        "tendency": "過負荷深度",
+        "player_mult": {"atk": 1.04, "def": 0.98, "acc": 1.04},
+        "enemy_mult": {"atk": 1.16, "def": 1.06, "acc": 1.10, "spd": 1.10, "cri": 1.08, "hp": 1.10},
+    },
+    "layer_6_rebuild": {
+        "tendency": "改修深度",
+        "player_mult": {"atk": 1.02, "def": 1.04, "acc": 1.04},
+        "enemy_mult": {"atk": 1.18, "def": 1.16, "acc": 1.10, "spd": 1.08, "cri": 1.08, "hp": 1.18},
+    },
+    "layer_6_core": {
+        "tendency": "炉心深度",
+        "player_mult": {"atk": 1.05, "def": 1.00, "acc": 1.05},
+        "enemy_mult": {"atk": 1.22, "def": 1.12, "acc": 1.14, "spd": 1.12, "cri": 1.12, "hp": 1.16},
+    },
+    "layer_6_final": {
+        "tendency": "中枢試験",
+        "player_mult": {"atk": 1.04, "def": 1.04, "acc": 1.04},
+        "enemy_mult": {"atk": 1.26, "def": 1.18, "acc": 1.16, "spd": 1.14, "cri": 1.14, "hp": 1.22},
+    },
 }
 EXPLORE_AREA_TIERS = {
     "layer_1": (1,),
@@ -2183,7 +2257,12 @@ EXPLORE_AREA_TIERS = {
     "layer_4_final": (4,),
     "layer_5_labyrinth": (5,),
     "layer_5_pinnacle": (5,),
+    "layer_5_reboot": (5,),
+    "layer_5_overdrive": (5,),
     "layer_5_final": (5,),
+    "layer_6_rebuild": (6,),
+    "layer_6_core": (6,),
+    "layer_6_final": (6,),
 }
 EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_1": {1: 1.0},
@@ -2197,7 +2276,12 @@ EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_4_final": {4: 1.0},
     "layer_5_labyrinth": {5: 1.0},
     "layer_5_pinnacle": {5: 1.0},
+    "layer_5_reboot": {5: 1.0},
+    "layer_5_overdrive": {5: 1.0},
     "layer_5_final": {5: 1.0},
+    "layer_6_rebuild": {6: 1.0},
+    "layer_6_core": {6: 1.0},
+    "layer_6_final": {6: 1.0},
 }
 EXPLORE_AREA_ENEMY_KEYS = {
     "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"),
@@ -2205,6 +2289,42 @@ EXPLORE_AREA_ENEMY_KEYS = {
     "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"),
     "layer_5_labyrinth": ("lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"),
     "layer_5_pinnacle": ("pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"),
+    "layer_5_reboot": (
+        "deep_layer_5_reboot_fort_ironbulk",
+        "deep_layer_5_reboot_fort_platehound",
+        "deep_layer_5_reboot_fort_bastion_eye",
+        "deep_layer_5_reboot_enemy_insect_kabuto",
+    ),
+    "layer_5_overdrive": (
+        "deep_layer_5_overdrive_haze_mirage_mite",
+        "deep_layer_5_overdrive_haze_fog_lancer",
+        "deep_layer_5_overdrive_haze_glint_drone",
+        "deep_layer_5_overdrive_enemy_insect_bee",
+    ),
+    "layer_5_final": (
+        "deep_layer_5_final_burst_coreling",
+        "deep_layer_5_final_burst_shockfang",
+        "deep_layer_5_final_burst_ruptgear",
+        "deep_layer_5_final_enemy_insect_scorpion",
+    ),
+    "layer_6_rebuild": (
+        "deep_layer_6_rebuild_deep_layer_5_reboot_fort_ironbulk",
+        "deep_layer_6_rebuild_deep_layer_5_reboot_fort_platehound",
+        "deep_layer_6_rebuild_deep_layer_5_reboot_fort_bastion_eye",
+        "deep_layer_6_rebuild_deep_layer_5_reboot_enemy_insect_kabuto",
+    ),
+    "layer_6_core": (
+        "deep_layer_6_core_deep_layer_5_overdrive_haze_mirage_mite",
+        "deep_layer_6_core_deep_layer_5_overdrive_haze_fog_lancer",
+        "deep_layer_6_core_deep_layer_5_overdrive_haze_glint_drone",
+        "deep_layer_6_core_deep_layer_5_overdrive_enemy_insect_bee",
+    ),
+    "layer_6_final": (
+        "deep_layer_6_final_deep_layer_5_final_burst_coreling",
+        "deep_layer_6_final_deep_layer_5_final_burst_shockfang",
+        "deep_layer_6_final_deep_layer_5_final_burst_ruptgear",
+        "deep_layer_6_final_deep_layer_5_final_enemy_insect_scorpion",
+    ),
 }
 EXPLORE_AREA_ENEMY_WEIGHT_OVERRIDES = {
     "layer_1": {
@@ -2496,7 +2616,12 @@ AREA_BOSS_KEYS = (
     "layer_4_final",
     "layer_5_labyrinth",
     "layer_5_pinnacle",
+    "layer_5_reboot",
+    "layer_5_overdrive",
     "layer_5_final",
+    "layer_6_rebuild",
+    "layer_6_core",
+    "layer_6_final",
 )
 AREA_BOSS_ALERT_AREAS = (
     "layer_1",
@@ -2510,7 +2635,12 @@ AREA_BOSS_ALERT_AREAS = (
     "layer_4_final",
     "layer_5_labyrinth",
     "layer_5_pinnacle",
+    "layer_5_reboot",
+    "layer_5_overdrive",
     "layer_5_final",
+    "layer_6_rebuild",
+    "layer_6_core",
+    "layer_6_final",
 )
 AREA_BOSS_SPAWN_RATES = {
     "layer_1": 0.005,
@@ -2524,7 +2654,12 @@ AREA_BOSS_SPAWN_RATES = {
     "layer_4_final": 1.0,
     "layer_5_labyrinth": 0.005,
     "layer_5_pinnacle": 0.005,
+    "layer_5_reboot": 0.005,
+    "layer_5_overdrive": 0.005,
     "layer_5_final": 1.0,
+    "layer_6_rebuild": 0.005,
+    "layer_6_core": 0.005,
+    "layer_6_final": 1.0,
 }
 AREA_BOSS_PITY_MISSES = {
     # UIには出さず、第1〜3層のみ内部でソフト天井を使う。
@@ -2538,7 +2673,12 @@ AREA_BOSS_PITY_MISSES = {
     "layer_4_final": 1,
     "layer_5_labyrinth": 1_000_000,
     "layer_5_pinnacle": 1_000_000,
+    "layer_5_reboot": 1_000_000,
+    "layer_5_overdrive": 1_000_000,
     "layer_5_final": 1,
+    "layer_6_rebuild": 1_000_000,
+    "layer_6_core": 1_000_000,
+    "layer_6_final": 1,
 }
 AREA_BOSS_SOFT_PITY_STARTS = {
     "layer_1": 45,
@@ -2566,7 +2706,13 @@ AREA_BOSS_LABELS = {
     "layer_5": "第五層",
     "layer_5_labyrinth": "第五層: 観測圏ラビリンス",
     "layer_5_pinnacle": "第五層: 競覇圏ピナクル",
+    "layer_5_reboot": "第五層: 再起動区画",
+    "layer_5_overdrive": "第五層: 過負荷回廊",
     "layer_5_final": "第五層最終試験",
+    "layer_6": "第六層",
+    "layer_6_rebuild": "第六層: 改修深域",
+    "layer_6_core": "第六層: 中核炉心",
+    "layer_6_final": "第六層最終試験",
 }
 LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED = int(os.getenv("LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED", "40"))
 LAYER2_FAMILY_AREA_KEYS = ("layer_2", "layer_2_mist", "layer_2_rush")
@@ -2591,7 +2737,12 @@ AREA_BOSS_DECOR_REWARD_KEYS = {
     "layer_4_final": ["judge_halo_001"],
     "layer_5_labyrinth": ["nyx_array_crest_001"],
     "layer_5_pinnacle": ["ignition_crown_001"],
+    "layer_5_reboot": [],
+    "layer_5_overdrive": [],
     "layer_5_final": ["omega_frame_halo_001"],
+    "layer_6_rebuild": [],
+    "layer_6_core": [],
+    "layer_6_final": [],
 }
 AREA_BOSS_TYPE_BY_KEY = {
     "boss_ignis_reaver": "TANK",
@@ -2604,6 +2755,29 @@ AREA_BOSS_TYPE_BY_KEY = {
     "boss_5_labyrinth_nyx_array": "EVADE",
     "boss_5_pinnacle_ignition_king": "GLASS_CANNON",
     "boss_5_final_omega_frame": "TACTICAL",
+    "deep_boss_layer_5_reboot_boss_4_forge_elguard": "TANK",
+    "deep_boss_layer_5_overdrive_boss_4_haze_mirage": "EVADE",
+    "deep_boss_layer_5_final_boss_4_final_ark_zero": "TACTICAL",
+    "deep_boss_layer_6_rebuild_deep_boss_layer_5_reboot_boss_4_forge_elguard": "TANK",
+    "deep_boss_layer_6_core_deep_boss_layer_5_overdrive_boss_4_haze_mirage": "EVADE",
+    "deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero": "TACTICAL",
+}
+FIXED_BOSS_KEY_BY_AREA = {
+    "layer_1": "boss_aurix_guardian",
+    "layer_2": "boss_ventra_sentinel",
+    "layer_3": "boss_ignis_reaver",
+    "layer_4_forge": "boss_4_forge_elguard",
+    "layer_4_haze": "boss_4_haze_mirage",
+    "layer_4_burst": "boss_4_burst_volterio",
+    "layer_4_final": "boss_4_final_ark_zero",
+    "layer_5_labyrinth": "boss_5_labyrinth_nyx_array",
+    "layer_5_pinnacle": "boss_5_pinnacle_ignition_king",
+    "layer_5_reboot": "deep_boss_layer_5_reboot_boss_4_forge_elguard",
+    "layer_5_overdrive": "deep_boss_layer_5_overdrive_boss_4_haze_mirage",
+    "layer_5_final": "deep_boss_layer_5_final_boss_4_final_ark_zero",
+    "layer_6_rebuild": "deep_boss_layer_6_rebuild_deep_boss_layer_5_reboot_boss_4_forge_elguard",
+    "layer_6_core": "deep_boss_layer_6_core_deep_boss_layer_5_overdrive_boss_4_haze_mirage",
+    "layer_6_final": "deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero",
 }
 AREA_BOSS_TYPE_PROFILES = {
     "TANK": {
@@ -4705,7 +4879,7 @@ def _release_feature_for_area(area_key):
     key = str(area_key or "").strip()
     if key in {*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY}:
         return "layer4"
-    if key in {*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY}:
+    if key in {*LAYER5_LEGACY_SUBAREA_KEYS, *LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY, *LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY}:
         return "layer5"
     return None
 
@@ -4970,7 +5144,16 @@ def _layer5_trial_bosses_cleared(db, user_id):
     uid = int(user_id or 0)
     if uid <= 0:
         return False
-    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_SUBAREA_KEYS)
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_SUBAREA_KEYS) or all(
+        _has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_LEGACY_SUBAREA_KEYS
+    )
+
+
+def _layer6_trial_bosses_cleared(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return False
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER6_SUBAREA_KEYS)
 
 
 def _special_area_unlock_reason(area_key):
@@ -4979,6 +5162,8 @@ def _special_area_unlock_reason(area_key):
         return "第4層3ボス撃破で解放"
     if key == LAYER5_FINAL_AREA_KEY:
         return "第5層2ボス撃破で解放"
+    if key == LAYER6_FINAL_AREA_KEY:
+        return "第6層2ボス撃破で解放"
     layer = _area_layer(key)
     if layer <= 1:
         return "未解放"
@@ -4993,6 +5178,8 @@ def _is_special_area_unlocked(db, user_id, area_key):
         return _layer4_trial_bosses_cleared(db, user_id)
     if key == LAYER5_FINAL_AREA_KEY:
         return _layer5_trial_bosses_cleared(db, user_id)
+    if key == LAYER6_FINAL_AREA_KEY:
+        return _layer6_trial_bosses_cleared(db, user_id)
     return True
 
 
@@ -6115,7 +6302,7 @@ def _battle_timeout_judgement(*, player_hp, player_hp_max, enemy_hp, enemy_hp_ma
 
 
 def should_disable_turn_limit(area_key):
-    return _area_layer(str(area_key or "").strip()) >= 4
+    return _area_layer(str(area_key or "").strip()) >= 5
 
 
 def get_battle_turn_limit(area_key, is_boss=False):
@@ -9286,6 +9473,19 @@ def _enemy_trait_desc(trait):
     return ENEMY_TRAIT_DEFS[key]["desc"]
 
 
+def _enemy_deep_variant_class(enemy):
+    key = str((enemy or {}).get("key") or "").strip()
+    if not key.startswith("deep_"):
+        return None
+    if "overdrive" in key or "final" in key:
+        return "deep-overdrive"
+    if "core" in key:
+        return "deep-core"
+    if "rebuild" in key or "reboot" in key:
+        return "deep-reboot"
+    return "deep-mutant"
+
+
 def _damage_noise_range_for_build_type(build_type):
     if build_type == "BURST":
         return (0.80, 1.25)
@@ -9668,6 +9868,11 @@ def _pick_boss_enemy_for_area(db, area_key, weekly_env=None, rng=None):
     ).fetchall()
     if not rows:
         return None
+    fixed_key = str(FIXED_BOSS_KEY_BY_AREA.get(boss_area_key) or "").strip()
+    if fixed_key:
+        for row in rows:
+            if str(row["key"] or "").strip() == fixed_key:
+                return row
     if not weekly_env:
         return roller.choice(rows)
     env_element = (weekly_env.get("element") or "").upper()
@@ -9745,12 +9950,16 @@ def _maybe_unlock_next_layer(db, user_id, user_row, area_key, enemy_row):
     if current_layer != max_layer or max_layer >= MAX_UNLOCKABLE_LAYER:
         return None
     enemy_key = ((enemy_row.get("key") if isinstance(enemy_row, dict) else enemy_row["key"]) or "").strip()
-    expected_boss_key = None
+    expected_boss_keys = set()
     if area_key == LAYER4_FINAL_AREA_KEY:
-        expected_boss_key = "boss_4_final_ark_zero"
+        expected_boss_keys.add("boss_4_final_ark_zero")
+    elif area_key == LAYER5_FINAL_AREA_KEY:
+        expected_boss_keys.update({"deep_boss_layer_5_final_boss_4_final_ark_zero", "boss_5_final_omega_frame"})
     else:
         expected_boss_key = LAYER_BOSS_KEY_BY_LAYER.get(current_layer)
-    if not expected_boss_key or enemy_key != expected_boss_key:
+        if expected_boss_key:
+            expected_boss_keys.add(expected_boss_key)
+    if not expected_boss_keys or enemy_key not in expected_boss_keys:
         return None
     if current_layer == 2:
         layer2_sorties = _count_user_explore_end_in_areas(db, user_id, LAYER2_FAMILY_AREA_KEYS)
@@ -32675,6 +32884,7 @@ def _record_showcase_highlights(db, user_id):
                 "title": title,
                 "robot_id": int(row["id"]),
                 "robot_name": row["name"],
+                "user_id": int(row["user_id"]),
                 "username": row["username"],
                 "display_username": row.get("display_username") or row["username"],
                 "profile": row.get("profile"),
@@ -33141,6 +33351,16 @@ def _home_next_action_card(
             "cta_url": url_for("explore"),
             "is_post": True,
             "area_key": LAYER5_FINAL_AREA_KEY,
+            "boss_enter": False,
+        }
+    if current_layer == 5:
+        return {
+            "title": "Next Action",
+            "desc": f"{_layer_label(current_layer)}を周回",
+            "cta_label": "出撃",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": area_key,
             "boss_enter": False,
         }
     if current_layer < MAX_UNLOCKABLE_LAYER:
@@ -46916,6 +47136,7 @@ def explore():
     last_enemy_trait_label = None
     last_enemy_trait_desc = None
     last_enemy_variant_label = None
+    legacy_layer5_final_admin_boss = bool(user_is_main_admin and boss_enter_requested and area_key == LAYER5_FINAL_AREA_KEY)
     if tutorial_layer1_forced_boss:
         area_boss_active = True
         total_fights = 1
@@ -47052,6 +47273,22 @@ def explore():
             area_boss_active = True
             total_fights = 1
             area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
+            if legacy_layer5_final_admin_boss:
+                legacy_row = db.execute(
+                    """
+                    SELECT *
+                    FROM enemies
+                    WHERE is_active = 1
+                      AND COALESCE(is_boss, 0) = 1
+                      AND key = ?
+                    LIMIT 1
+                    """,
+                    ("boss_5_final_omega_frame",),
+                ).fetchone()
+                if legacy_row:
+                    area_boss_enemy = dict(legacy_row)
+                    area_boss_enemy["_boss_kind"] = "fixed"
+                    area_boss_enemy["_alert_enemy_id"] = int(legacy_row["id"])
             if area_boss_enemy is None:
                 session["message"] = "この探索先には挑戦可能なボスがいません。"
                 db.commit()
@@ -47419,6 +47656,8 @@ def explore():
         )
         last_enemy_trait_label = enemy_trait_label
         last_enemy_trait_desc = enemy_trait_desc
+        if isinstance(enemy, dict) and _enemy_deep_variant_class(enemy) and not str(enemy.get("_variant_label") or "").strip():
+            enemy["_variant_label"] = "深層変異体"
         enemy_variant_label = (enemy.get("_variant_label") or "").strip() if isinstance(enemy, dict) else ""
         last_enemy_variant_label = enemy_variant_label or None
         enemy_variant_line = f"個体識別：{enemy_variant_label}" if enemy_variant_label else None
@@ -48971,6 +49210,14 @@ def explore():
         battle_kind_label = "第4層ボス警報"
     elif _area_layer(area_key) == 4:
         battle_kind_label = "第4層 出撃試験"
+    elif area_boss_active and area_key == LAYER5_FINAL_AREA_KEY:
+        battle_kind_label = "第5層 最終試験"
+    elif area_boss_active and area_key == LAYER6_FINAL_AREA_KEY:
+        battle_kind_label = "第6層 最終試験"
+    elif area_boss_active and _area_layer(area_key) >= 5:
+        battle_kind_label = f"第{_area_layer(area_key)}層 深層ボス警報"
+    elif _area_layer(area_key) >= 5:
+        battle_kind_label = f"第{_area_layer(area_key)}層 深層出撃"
     elif area_boss_active:
         battle_kind_label = "ボス警報"
     else:
@@ -49039,6 +49286,7 @@ def explore():
         "reason_line": reason_line,
         "enemy_tendency_tag": (None if area_boss_active else last_enemy_tendency_tag),
         "enemy_variant_label": last_enemy_variant_label,
+        "enemy_variant_class": _enemy_deep_variant_class(last_enemy if isinstance(last_enemy, dict) else dict(last_enemy or {})),
         "enemy_trait_label": last_enemy_trait_label,
         "enemy_trait_desc": last_enemy_trait_desc,
         "stage_modifier_line": stage_modifier_line,
@@ -59881,310 +60129,4 @@ def admin_parts_align():
                 "key": row["key"],
                 "image_url": url_for("static", filename=f"robot_assets/{row['image_path']}"),
                 "offset_x": int(row["offset_x"] or 0),
-                "offset_y": int(row["offset_y"] or 0),
-            }
-        else:
-            preview_layers[slot] = None
-
-    options = {
-        "HEAD": [r for r in rows if r["part_type"] == "HEAD"],
-        "RIGHT_ARM": [r for r in rows if r["part_type"] == "RIGHT_ARM"],
-        "LEFT_ARM": [r for r in rows if r["part_type"] == "LEFT_ARM"],
-        "LEGS": [r for r in rows if r["part_type"] == "LEGS"],
-    }
-    part_meta = {}
-    for r in rows:
-        part_meta[r["key"]] = {
-            "part_type": r["part_type"],
-            "offset_x": int(r["offset_x"] or 0),
-            "offset_y": int(r["offset_y"] or 0),
-            "image_url": (url_for("static", filename=f"robot_assets/{r['image_path']}") if r["image_path"] else ""),
-        }
-
-    return render_template(
-        "admin_parts_align.html",
-        selected_part=selected_part,
-        preview_layers=preview_layers,
-        options=options,
-        rows=rows,
-        part_meta=part_meta,
-        base_head_key=base_head_key,
-        base_r_arm_key=base_r_arm_key,
-        base_l_arm_key=base_l_arm_key,
-        base_legs_key=base_legs_key,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_parts_toggle_active(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not row:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts"))
-    next_state = 0 if row["is_active"] == 1 else 1
-    db.execute("UPDATE robot_parts SET is_active = ? WHERE id = ?", (next_state, part_id))
-    db.commit()
-    session["message"] = "パーツ状態を更新しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/decor", methods=["GET", "POST"])
-@login_required
-def admin_decor():
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    message = None
-    if request.method == "POST":
-        key = _clean_key(request.form.get("key"))
-        name_ja = (request.form.get("name_ja") or "").strip()
-        file = request.files.get("image")
-        existing = db.execute("SELECT id, image_path FROM robot_decor_assets WHERE key = ?", (key,)).fetchone() if key else None
-        if not key:
-            message = "keyを入力してください。"
-        elif not name_ja:
-            message = "表示名を入力してください。"
-        elif not file or not file.filename:
-            rel_path = existing["image_path"] if existing and existing["image_path"] else DECOR_PLACEHOLDER_REL
-            db.execute(
-                """
-                INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                VALUES (?, ?, ?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                """,
-                (key, name_ja, rel_path, int(time.time())),
-            )
-            db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-            db.commit()
-            message = "装飾アセットを保存しました。画像未指定のためプレースホルダを使用します。"
-        else:
-            ok, err, warns = _validate_decor_png_soft(file)
-            if not ok:
-                message = err
-            else:
-                rel_path = f"decor/{key}.png"
-                _save_static_png(file, rel_path)
-                db.execute(
-                    """
-                    INSERT INTO robot_decor_assets (key, name_ja, image_path, is_active, created_at)
-                    VALUES (?, ?, ?, 1, ?)
-                    ON CONFLICT(key) DO UPDATE SET name_ja = excluded.name_ja, image_path = excluded.image_path, is_active = 1
-                    """,
-                    (key, name_ja, rel_path, int(time.time())),
-                )
-                db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-                db.commit()
-                message = "装飾アセットを保存しました。"
-                if warns:
-                    message += " " + " / ".join(warns)
-    rows = db.execute(
-        "SELECT * FROM robot_decor_assets ORDER BY id DESC LIMIT 300"
-    ).fetchall()
-    rows = [{**dict(r), "display_image_path": _decor_image_rel(r["image_path"], r["key"])} for r in rows]
-    return render_template("admin_decor.html", rows=rows, message=message)
-
-
-@app.route("/admin/decor/<int:decor_id>/toggle_active", methods=["POST"])
-@login_required
-def admin_decor_toggle_active(decor_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    row = db.execute("SELECT id, is_active FROM robot_decor_assets WHERE id = ?", (decor_id,)).fetchone()
-    if not row:
-        session["message"] = "対象装飾が見つかりません。"
-        return redirect(url_for("admin_decor"))
-    next_state = 0 if int(row["is_active"]) == 1 else 1
-    db.execute("UPDATE robot_decor_assets SET is_active = ? WHERE id = ?", (next_state, decor_id))
-    db.execute("UPDATE robot_instances SET composed_image_path = NULL")
-    db.commit()
-    session["message"] = "装飾の有効状態を更新しました。"
-    return redirect(url_for("admin_decor"))
-
-
-@app.route("/admin/parts/<int:part_id>/delete", methods=["POST"])
-@login_required
-def admin_parts_delete(part_id):
-    db = get_db()
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-
-    if request.form.get("confirm_delete") != "1" or request.form.get("danger_word", "") != "DELETE":
-        session["message"] = "完全削除にはチェックと DELETE 入力が必要です。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツが見つかりません。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    key = part["key"]
-    ref_counts = {
-        "inventory": db.execute(
-            "SELECT COUNT(*) AS c FROM user_parts_inventory WHERE part_key = ?",
-            (key,),
-        ).fetchone()["c"],
-        "instances": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_instance_parts
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "builds": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_builds
-            WHERE head_key = ? OR r_arm_key = ? OR l_arm_key = ? OR legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-        "milestones": db.execute(
-            """
-            SELECT COUNT(*) AS c FROM robot_milestones
-            WHERE reward_head_key = ? OR reward_r_arm_key = ? OR reward_l_arm_key = ? OR reward_legs_key = ?
-            """,
-            (key, key, key, key),
-        ).fetchone()["c"],
-    }
-    if any(v > 0 for v in ref_counts.values()):
-        rows = db.execute("SELECT * FROM robot_parts ORDER BY id DESC LIMIT 200").fetchall()
-        message = (
-            "使用中のため削除不可です。"
-            f" 在庫:{ref_counts['inventory']} / 所有ロボ:{ref_counts['instances']} /"
-            f" 設計:{ref_counts['builds']} / 報酬:{ref_counts['milestones']}"
-        )
-        return render_template("admin_parts.html", rows=rows, message=message, show_inactive=True), 409
-
-    image_path = part["image_path"]
-    db.execute("DELETE FROM robot_parts WHERE id = ?", (part_id,))
-    db.commit()
-
-    # Shared path guard: remove file only when no remaining row references this path.
-    remain = db.execute("SELECT COUNT(*) AS c FROM robot_parts WHERE image_path = ?", (image_path,)).fetchone()["c"]
-    if remain == 0 and image_path:
-        abs_path = _asset_abs(image_path)
-        if os.path.exists(abs_path):
-            try:
-                os.remove(abs_path)
-            except OSError:
-                pass
-
-    session["message"] = "パーツを完全削除しました。"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_confirm", methods=["GET"])
-@login_required
-def admin_parts_purge_confirm(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    part_key = part["key"] if part else None
-    counts = _part_purge_counts(db, part_key)
-    return render_template(
-        "admin_part_purge_confirm.html",
-        part=part,
-        part_id=part_id,
-        counts=counts,
-    )
-
-
-@app.route("/admin/parts/<int:part_id>/purge", methods=["POST"])
-@login_required
-def admin_parts_purge(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    db = get_db()
-    typed_part_id = request.form.get("typed_part_id", "").strip()
-    confirm_word = request.form.get("confirm_word", "").strip()
-    acknowledged = request.form.get("acknowledged") == "1"
-
-    if typed_part_id != str(part_id) or confirm_word != "I UNDERSTAND" or not acknowledged:
-        session["message"] = "確認入力が一致しません。part_id 手入力と I UNDERSTAND が必要です。"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "危険一括削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-        return redirect(url_for("admin_parts", show_inactive=1))
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"危険一括削除に失敗しました: {exc}"
-        return redirect(url_for("admin_parts_purge_confirm", part_id=part_id))
-
-
-@app.route("/admin/parts/<int:part_id>/purge_quick", methods=["POST"])
-@login_required
-def admin_parts_purge_quick(part_id):
-    if not _is_admin_user(session["user_id"]):
-        return abort(403)
-    if not DEV_MODE:
-        session["message"] = "開発環境のみ利用できます。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    db = get_db()
-    part = db.execute("SELECT * FROM robot_parts WHERE id = ?", (part_id,)).fetchone()
-    if not part:
-        session["message"] = "対象パーツは既に存在しません。削除件数 0 件。"
-        return redirect(url_for("admin_parts", show_inactive=1))
-    try:
-        result = _purge_part_with_dependencies(db, part)
-        session["message"] = (
-            "開発用クイック削除を実行しました。"
-            f" 個体:{result['part_instances']} / 在庫:{result['inventory']} / 所有ロボ:{result['instances']} / 設計:{result['builds']} /"
-            f" 報酬:{result['milestones']} / 旧所持:{result['legacy_user_robots']} / パーツ本体:{result['part']}"
-        )
-    except Exception as exc:
-        db.rollback()
-        session["message"] = f"開発用クイック削除に失敗しました: {exc}"
-    return redirect(url_for("admin_parts", show_inactive=1))
-
-
-def _startup_database_bootstrap():
-    bootstrap_key = str(DB_PATH)
-    if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
-        return
-    with DB_BOOTSTRAP_LOCK:
-        if bootstrap_key in DB_BOOTSTRAP_READY_KEYS:
-            return
-        db = sqlite3.connect(DB_PATH)
-        db.row_factory = sqlite3.Row
-        try:
-            ensure_schema(db)
-            ensure_tower_schema(db)
-            _ensure_dirs()
-            _ensure_default_images()
-            _check_static_health()
-            _seed_robot_parts(db)
-            _seed_robot_assets_v2(db)
-            _repair_legacy_starter_part_rows(db)
-            _seed_milestones(db)
-            _ensure_main_admin_account_ready(db)
-            db.commit()
-            DB_BOOTSTRAP_READY_KEYS.add(bootstrap_key)
-        finally:
-            db.close()
-
-
-_startup_database_bootstrap()
-
-
-if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=int(os.environ.get("PORT", "5050")),
-        debug=True,
-    )
+                "

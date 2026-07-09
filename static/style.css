@@ -15579,11 +15579,8 @@ button.robo-fixed-nav-item {
   border-color: rgba(56, 189, 248, 0.55);
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.18), 0 0 24px rgba(56, 189, 248, 0.16);
 }
-@media (max-width: 560px) {
-  .module-card-grid {
-    grid-template-columns: 1fr;
-  }
-  .module-card {
-    padding: 12px;
-  }
+.enemy-variant-deep-reboot {
+  filter: hue-rotate(115deg) saturate(1.2) brightness(1.04);
 }
+.enemy-variant-deep-overdrive {
+  fi

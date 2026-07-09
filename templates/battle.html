@@ -296,13 +296,16 @@
     {% if summary.get('enemy_image_url') %}
     <div class="card enemy-card">
       <div class="enemy-sprite-frame battle-enemy-thumb-frame">
-        <img class="battle-enemy-thumb battle-enemy-image" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
+        <img class="battle-enemy-thumb battle-enemy-image{% if summary.get('enemy_variant_class') %} enemy-variant-{{ summary.get('enemy_variant_class') }}{% endif %}" src="{{ summary['enemy_image_url'] }}" alt="{{ summary.get('enemy_name', 'enemy') }}" loading="lazy" />
       </div>
       <div>
         <div>
           <b>{{ summary.get('enemy_name', enemy_name) }}</b>
           {% if summary.get('is_area_boss') %}
             <span class="weekly-fit-badge boss-badge-strong">BOSS</span>
+          {% endif %}
+          {% if summary.get('enemy_variant_label') %}
+            <span class="weekly-fit-badge deep-mutant-badge">{{ summary.get('enemy_variant_label') }}</span>
           {% endif %}
         </div>
         {% if summary.get('enemy_faction_label') or summary.get('enemy_tier') %}
@@ -403,7 +406,7 @@
 
             <div class="battle-side enemy">
               <div class="battle-side-top">
-                <img class="battle-avatar battle-enemy-image" src="{{ enemy_img }}" alt="enemy" loading="lazy" />
+                <img class="battle-avatar battle-enemy-image{% if summary.get('enemy_variant_class') %} enemy-variant-{{ summary.get('enemy_variant_class') }}{% endif %}" src="{{ enemy_img }}" alt="enemy" loading="lazy" />
                 <div class="battle-name">{{ enemy_name }}</div>
               </div>
               <div class="hp-line">
@@ -505,14 +508,3 @@
 {% else %}
   <div class="card">
     <p>探索結果がありません。行動メニューから探索してください。</p>
-  </div>
-{% endif %}
-{% if not (explore_mode and summary) %}
-<p class="link"><a href="{{ url_for('home') }}">基地へ戻る</a></p>
-{% endif %}
-</div>
-{% endblock %}
-{% block scripts %}
-<script src="{{ url_for('static', filename='battle_page_v2.js', v=app_version) }}"></script>
-<script src="{{ url_for('static', filename='battle_cinematic_v1.js', v=app_version ~ '-fix1') }}"></script>
-{% endblock %}

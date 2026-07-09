@@ -184,15 +184,25 @@ class ExplorationTurnCapTests(unittest.TestCase):
             "layer_4_haze",
             "layer_4_burst",
             "layer_4_final",
+        ):
+            self.assertEqual(game_app.get_battle_turn_limit(area_key), game_app.EXPLORE_MAX_TURNS)
+            self.assertEqual(game_app.get_battle_turn_limit(area_key, is_boss=True), game_app.EXPLORE_MAX_TURNS)
+
+        for area_key in (
             "layer_5_labyrinth",
             "layer_5_pinnacle",
+            "layer_5_reboot",
+            "layer_5_overdrive",
             "layer_5_final",
+            "layer_6_rebuild",
+            "layer_6_core",
+            "layer_6_final",
             "layer_6_future",
         ):
             self.assertIsNone(game_app.get_battle_turn_limit(area_key))
             self.assertIsNone(game_app.get_battle_turn_limit(area_key, is_boss=True))
 
-    def test_layer4_normal_enemy_has_no_eight_turn_cap(self):
+    def test_layer4_normal_enemy_uses_eight_turn_cap(self):
         def no_damage(*args, **kwargs):
             return 0, False, {"miss": True, "base_damage": 0}
 
@@ -210,12 +220,12 @@ class ExplorationTurnCapTests(unittest.TestCase):
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertFalse(payload["is_area_boss"])
-                self.assertEqual(payload["max_turn"], 12)
-                self.assertIn("ターン上限: なし", payload["turn_limit_label"])
-                self.assertIn("試験継続不能", payload["timeout_decision_line"])
+                self.assertEqual(payload["max_turn"], game_app.EXPLORE_MAX_TURNS)
+                self.assertIn("ターン上限: 8ターン", payload["turn_limit_label"])
+                self.assertIn("8ターン終了", payload["timeout_decision_line"])
 
-    def test_layer4_boss_battle_continues_past_eight_turns(self):
-        self._install_test_boss(area_key="layer_4_forge", hp=10)
+    def test_layer5_boss_battle_continues_past_eight_turns(self):
+        self._install_test_boss(area_key="layer_5_reboot", hp=10)
 
         def player_chip_damage(att_atk, *_args, **_kwargs):
             if int(att_atk) >= 5:
@@ -230,15 +240,15 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     session["user_id"] = self.user_id
                     session["username"] = "turn_cap_tester"
 
-                resp = client.post("/explore", data={"area_key": "layer_4_forge", "boss_enter": "1"}, follow_redirects=True)
+                resp = client.post("/explore", data={"area_key": "layer_5_reboot", "boss_enter": "1"}, follow_redirects=True)
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertTrue(payload["is_area_boss"])
                 self.assertGreater(payload["max_turn"], game_app.EXPLORE_MAX_TURNS)
                 self.assertIn("ターン上限: なし", payload["turn_limit_label"])
 
-    def test_layer4_hard_cap_ends_without_500(self):
-        self._install_test_boss(area_key="layer_4_forge", hp=9999)
+    def test_layer5_hard_cap_ends_without_500(self):
+        self._install_test_boss(area_key="layer_5_reboot", hp=9999)
 
         def no_damage(*args, **kwargs):
             return 0, False, {"miss": True, "base_damage": 0}
@@ -251,7 +261,7 @@ class ExplorationTurnCapTests(unittest.TestCase):
                     session["user_id"] = self.user_id
                     session["username"] = "turn_cap_tester"
 
-                resp = client.post("/explore", data={"area_key": "layer_4_forge", "boss_enter": "1"}, follow_redirects=True)
+                resp = client.post("/explore", data={"area_key": "layer_5_reboot", "boss_enter": "1"}, follow_redirects=True)
                 self.assertEqual(resp.status_code, 200)
                 payload = json.loads(resp.get_data(as_text=True))
                 self.assertTrue(payload["is_area_boss"])
