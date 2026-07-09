@@ -2287,15 +2287,41 @@ EXPLORE_AREA_ENEMY_KEYS = {
     "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"),
     "layer_4_haze": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone", "enemy_insect_bee"),
     "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"),
-    "layer_5_labyrinth": ("lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"),
-    "layer_5_pinnacle": ("pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"),
+    "layer_5_labyrinth": (
+        "lab_guardian_veil",
+        "lab_bulwark_node",
+        "lab_trace_hound",
+        "lab_fault_keeper",
+        "deep_layer_5_reboot_fort_ironbulk",
+        "deep_layer_5_reboot_fort_platehound",
+        "deep_layer_5_reboot_fort_bastion_eye",
+        "deep_layer_5_reboot_enemy_insect_kabuto",
+    ),
+    "layer_5_pinnacle": (
+        "pin_flare_beast",
+        "pin_rupture_eye",
+        "pin_scorch_fang",
+        "pin_crash_gear",
+        "deep_layer_5_overdrive_haze_mirage_mite",
+        "deep_layer_5_overdrive_haze_fog_lancer",
+        "deep_layer_5_overdrive_haze_glint_drone",
+        "deep_layer_5_overdrive_enemy_insect_bee",
+    ),
     "layer_5_reboot": (
+        "lab_guardian_veil",
+        "lab_bulwark_node",
+        "lab_trace_hound",
+        "lab_fault_keeper",
         "deep_layer_5_reboot_fort_ironbulk",
         "deep_layer_5_reboot_fort_platehound",
         "deep_layer_5_reboot_fort_bastion_eye",
         "deep_layer_5_reboot_enemy_insect_kabuto",
     ),
     "layer_5_overdrive": (
+        "pin_flare_beast",
+        "pin_rupture_eye",
+        "pin_scorch_fang",
+        "pin_crash_gear",
         "deep_layer_5_overdrive_haze_mirage_mite",
         "deep_layer_5_overdrive_haze_fog_lancer",
         "deep_layer_5_overdrive_haze_glint_drone",
@@ -6302,7 +6328,7 @@ def _battle_timeout_judgement(*, player_hp, player_hp_max, enemy_hp, enemy_hp_ma
 
 
 def should_disable_turn_limit(area_key):
-    return _area_layer(str(area_key or "").strip()) >= 5
+    return _area_layer(str(area_key or "").strip()) >= 4
 
 
 def get_battle_turn_limit(area_key, is_boss=False):

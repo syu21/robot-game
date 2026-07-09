@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 import app as game_app
+from balance_config import ENEMY_SEED_STATS
 import init_db
 
 
@@ -150,11 +151,39 @@ class Layer5ProgressionTests(unittest.TestCase):
 
     def test_layer5_enemy_pools_match_area_traits(self):
         expected = {
-            "layer_5_labyrinth": ({"fast", "heavy"}, {"lab_guardian_veil", "lab_bulwark_node", "lab_trace_hound", "lab_fault_keeper"}),
-            "layer_5_pinnacle": ({"unstable", "berserk"}, {"pin_flare_beast", "pin_rupture_eye", "pin_scorch_fang", "pin_crash_gear"}),
-            "layer_5_reboot": (
-                {"heavy"},
+            "layer_5_labyrinth": (
+                {"fast", "heavy"},
                 {
+                    "lab_guardian_veil",
+                    "lab_bulwark_node",
+                    "lab_trace_hound",
+                    "lab_fault_keeper",
+                    "deep_layer_5_reboot_fort_ironbulk",
+                    "deep_layer_5_reboot_fort_platehound",
+                    "deep_layer_5_reboot_fort_bastion_eye",
+                    "deep_layer_5_reboot_enemy_insect_kabuto",
+                },
+            ),
+            "layer_5_pinnacle": (
+                {"fast", "unstable", "berserk"},
+                {
+                    "pin_flare_beast",
+                    "pin_rupture_eye",
+                    "pin_scorch_fang",
+                    "pin_crash_gear",
+                    "deep_layer_5_overdrive_haze_mirage_mite",
+                    "deep_layer_5_overdrive_haze_fog_lancer",
+                    "deep_layer_5_overdrive_haze_glint_drone",
+                    "deep_layer_5_overdrive_enemy_insect_bee",
+                },
+            ),
+            "layer_5_reboot": (
+                {"fast", "heavy"},
+                {
+                    "lab_guardian_veil",
+                    "lab_bulwark_node",
+                    "lab_trace_hound",
+                    "lab_fault_keeper",
                     "deep_layer_5_reboot_fort_ironbulk",
                     "deep_layer_5_reboot_fort_platehound",
                     "deep_layer_5_reboot_fort_bastion_eye",
@@ -162,8 +191,12 @@ class Layer5ProgressionTests(unittest.TestCase):
                 },
             ),
             "layer_5_overdrive": (
-                {"fast"},
+                {"fast", "unstable", "berserk"},
                 {
+                    "pin_flare_beast",
+                    "pin_rupture_eye",
+                    "pin_scorch_fang",
+                    "pin_crash_gear",
                     "deep_layer_5_overdrive_haze_mirage_mite",
                     "deep_layer_5_overdrive_haze_fog_lancer",
                     "deep_layer_5_overdrive_haze_glint_drone",
@@ -181,6 +214,133 @@ class Layer5ProgressionTests(unittest.TestCase):
                     self.assertIn(str(enemy["key"]), keys)
                     self.assertIn(str(enemy.get("trait") or ""), traits)
                 self.assertTrue(seen)
+
+    def test_original_layer5_enemy_definitions_remain_active(self):
+        original_normal_keys = {
+            "lab_guardian_veil",
+            "lab_bulwark_node",
+            "lab_trace_hound",
+            "lab_fault_keeper",
+            "pin_flare_beast",
+            "pin_rupture_eye",
+            "pin_scorch_fang",
+            "pin_crash_gear",
+        }
+        original_boss_keys = {
+            "boss_5_labyrinth_nyx_array": "layer_5_labyrinth",
+            "boss_5_pinnacle_ignition_king": "layer_5_pinnacle",
+            "boss_5_final_omega_frame": "layer_5_final",
+        }
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for key in sorted(original_normal_keys):
+                seed = ENEMY_SEED_STATS[key]
+                row = db.execute(
+                    "SELECT key, image_path, is_active, is_boss, boss_area_key FROM enemies WHERE key = ?",
+                    (key,),
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["key"], key)
+                self.assertEqual(row["image_path"], seed["image_path"])
+                self.assertEqual(int(row["is_active"]), 1)
+                self.assertEqual(int(row["is_boss"] or 0), 0)
+                self.assertIsNone(row["boss_area_key"])
+
+            for key, boss_area_key in original_boss_keys.items():
+                seed = ENEMY_SEED_STATS[key]
+                row = db.execute(
+                    "SELECT key, image_path, is_active, is_boss, boss_area_key FROM enemies WHERE key = ?",
+                    (key,),
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["key"], key)
+                self.assertEqual(row["image_path"], seed["image_path"])
+                self.assertEqual(int(row["is_active"]), 1)
+                self.assertEqual(int(row["is_boss"] or 0), 1)
+                self.assertEqual(row["boss_area_key"], boss_area_key)
+
+    def test_layer5_original_and_deep_keys_do_not_collide(self):
+        original_keys = {
+            "lab_guardian_veil",
+            "lab_bulwark_node",
+            "lab_trace_hound",
+            "lab_fault_keeper",
+            "pin_flare_beast",
+            "pin_rupture_eye",
+            "pin_scorch_fang",
+            "pin_crash_gear",
+            "boss_5_labyrinth_nyx_array",
+            "boss_5_pinnacle_ignition_king",
+            "boss_5_final_omega_frame",
+        }
+        deep_keys = {key for key in ENEMY_SEED_STATS if key.startswith(("deep_layer_5_", "deep_boss_layer_5_"))}
+        self.assertTrue(deep_keys)
+        self.assertTrue(original_keys.isdisjoint(deep_keys))
+
+    def test_layer5_enemy_candidate_sets_include_original_and_deep_variants(self):
+        original_keys = {
+            "lab_guardian_veil",
+            "lab_bulwark_node",
+            "lab_trace_hound",
+            "lab_fault_keeper",
+            "pin_flare_beast",
+            "pin_rupture_eye",
+            "pin_scorch_fang",
+            "pin_crash_gear",
+        }
+        deep_keys = {key for key in ENEMY_SEED_STATS if key.startswith("deep_layer_5_")}
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for area_key in ("layer_5_labyrinth", "layer_5_pinnacle", "layer_5_reboot", "layer_5_overdrive"):
+                allowed = set(game_app.EXPLORE_AREA_ENEMY_KEYS[area_key])
+                self.assertTrue(allowed & original_keys)
+                self.assertTrue(allowed & deep_keys)
+                placeholders = ",".join(["?"] * len(allowed))
+                count = db.execute(
+                    f"""
+                    SELECT COUNT(*) AS c
+                    FROM enemies
+                    WHERE is_active = 1
+                      AND COALESCE(is_boss, 0) = 0
+                      AND key IN ({placeholders})
+                    """,
+                    tuple(allowed),
+                ).fetchone()["c"]
+                self.assertGreater(int(count), 0)
+
+    def test_layer5_boss_candidate_sets_include_original_and_deep_variants(self):
+        original_boss_keys = {
+            "boss_5_labyrinth_nyx_array",
+            "boss_5_pinnacle_ignition_king",
+            "boss_5_final_omega_frame",
+        }
+        deep_boss_keys = {key for key in ENEMY_SEED_STATS if key.startswith("deep_boss_layer_5_")}
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            seen_boss_keys = set()
+            for area_key in (
+                "layer_5_labyrinth",
+                "layer_5_pinnacle",
+                "layer_5_reboot",
+                "layer_5_overdrive",
+                "layer_5_final",
+            ):
+                boss = game_app._pick_boss_enemy_for_area(db, area_key, weekly_env=self._stable_weekly_env())
+                self.assertIsNotNone(boss)
+                rows = db.execute(
+                    """
+                    SELECT key
+                    FROM enemies
+                    WHERE is_active = 1
+                      AND COALESCE(is_boss, 0) = 1
+                      AND boss_area_key = ?
+                    """,
+                    (area_key,),
+                ).fetchall()
+                self.assertTrue(rows)
+                seen_boss_keys.update(str(row["key"]) for row in rows)
+            self.assertTrue(seen_boss_keys & original_boss_keys)
+            self.assertTrue(seen_boss_keys & deep_boss_keys)
 
     def test_layer5_bosses_are_area_specific(self):
         with game_app.app.app_context():
@@ -261,4 +421,63 @@ class Layer5ProgressionTests(unittest.TestCase):
             db.commit()
         self._activate_boss_alert("layer_5_labyrinth", "boss_5_labyrinth_nyx_array")
         client = self._new_client()
-        with mock.patch.object(game_app, "_world_current_environment", retur
+        with mock.patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), mock.patch.object(
+            game_app, "resolve_attack", side_effect=self._resolve_for_win
+        ):
+            resp = client.post("/explore", data={"area_key": "layer_5_labyrinth", "boss_enter": "1"}, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("観測群冠", resp.get_data(as_text=True))
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            decor_count = db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM user_decor_inventory udi
+                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+                WHERE udi.user_id = ? AND rda.key = 'nyx_array_crest_001'
+                """,
+                (self.user_id,),
+            ).fetchone()["c"]
+            self.assertEqual(int(decor_count), 1)
+
+        self._activate_boss_alert("layer_5_labyrinth", "boss_5_labyrinth_nyx_array")
+        with mock.patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), mock.patch.object(
+            game_app, "resolve_attack", side_effect=self._resolve_for_win
+        ):
+            client.post("/explore", data={"area_key": "layer_5_labyrinth", "boss_enter": "1"}, follow_redirects=True)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            decor_count = db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM user_decor_inventory udi
+                JOIN robot_decor_assets rda ON rda.id = udi.decor_asset_id
+                WHERE udi.user_id = ? AND rda.key = 'nyx_array_crest_001'
+                """,
+                (self.user_id,),
+            ).fetchone()["c"]
+            self.assertEqual(int(decor_count), 1)
+
+    def test_layer5_drop_audit_payload_keeps_growth_tendency(self):
+        payload = game_app._drop_audit_payload(
+            "layer_5_labyrinth",
+            1,
+            {
+                "drop_type": "parts_1",
+                "part_type": "LEGS",
+                "part_key": self.legs_part_key,
+                "rarity": "N",
+                "plus": 0,
+                "growth_tendency_key": "labyrinth",
+                "growth_tendency_label": "観測育成",
+            },
+        )
+        self.assertEqual(payload.get("area_key"), "layer_5_labyrinth")
+        self.assertEqual(int(payload.get("battle_no") or 0), 1)
+        self.assertEqual(payload.get("growth_tendency_key"), "labyrinth")
+        self.assertEqual(payload.get("growth_tendency_label"), "観測育成")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -15583,4 +15583,23 @@ button.robo-fixed-nav-item {
   filter: hue-rotate(115deg) saturate(1.2) brightness(1.04);
 }
 .enemy-variant-deep-overdrive {
-  fi
+  filter: hue-rotate(320deg) saturate(1.38) contrast(1.08);
+}
+.enemy-variant-deep-core {
+  filter: hue-rotate(185deg) saturate(1.28) brightness(1.08);
+}
+.enemy-variant-deep-mutant {
+  filter: hue-rotate(250deg) saturate(1.25) contrast(1.06);
+}
+.deep-mutant-badge {
+  border-color: rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.12);
+}
+@media (max-width: 560px) {
+  .module-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .module-card {
+    padding: 12px;
+  }
+}
