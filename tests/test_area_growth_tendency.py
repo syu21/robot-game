@@ -153,27 +153,27 @@ class AreaGrowthTendencyTests(unittest.TestCase):
     def test_layer5_area_biases_are_distinct(self):
         with game_app.app.app_context(), mock.patch("services.stats.random.uniform", return_value=0.0):
             db = game_app.get_db()
-            labyrinth_id = game_app._create_part_instance_from_master(
+            reboot_id = game_app._create_part_instance_from_master(
                 db,
                 self.user_id,
                 self.right_arm_part,
-                area_key="layer_5_labyrinth",
+                area_key="layer_5_reboot",
             )
-            pinnacle_id = game_app._create_part_instance_from_master(
+            overdrive_id = game_app._create_part_instance_from_master(
                 db,
                 self.user_id,
                 self.right_arm_part,
-                area_key="layer_5_pinnacle",
+                area_key="layer_5_overdrive",
             )
             db.commit()
-            labyrinth = db.execute("SELECT * FROM part_instances WHERE id = ?", (int(labyrinth_id),)).fetchone()
-            pinnacle = db.execute("SELECT * FROM part_instances WHERE id = ?", (int(pinnacle_id),)).fetchone()
+            reboot = db.execute("SELECT * FROM part_instances WHERE id = ?", (int(reboot_id),)).fetchone()
+            overdrive = db.execute("SELECT * FROM part_instances WHERE id = ?", (int(overdrive_id),)).fetchone()
 
-        self.assertGreater(float(labyrinth["w_hp"]), float(pinnacle["w_hp"]))
-        self.assertGreater(float(labyrinth["w_def"]), float(pinnacle["w_def"]))
-        self.assertGreater(float(labyrinth["w_acc"]), float(pinnacle["w_acc"]))
-        self.assertGreater(float(pinnacle["w_atk"]), float(labyrinth["w_atk"]))
-        self.assertGreater(float(pinnacle["w_cri"]), float(labyrinth["w_cri"]))
+        self.assertGreater(float(reboot["w_hp"]), float(overdrive["w_hp"]))
+        self.assertGreater(float(reboot["w_def"]), float(overdrive["w_def"]))
+        self.assertGreater(float(overdrive["w_spd"]), float(reboot["w_spd"]))
+        self.assertGreater(float(overdrive["w_acc"]), float(reboot["w_acc"]))
+        self.assertGreater(float(overdrive["w_cri"]), float(reboot["w_cri"]))
 
     def test_add_part_drop_returns_layer5_growth_tendency_metadata(self):
         with game_app.app.app_context():
@@ -186,13 +186,13 @@ class AreaGrowthTendencyTests(unittest.TestCase):
                 rarity=self.legs_part["rarity"],
                 plus=0,
                 as_instance=True,
-                area_key="layer_5_labyrinth",
+                area_key="layer_5_reboot",
             )
             db.commit()
 
         self.assertIsNotNone(result)
-        self.assertEqual(result["growth_tendency_key"], "labyrinth")
-        self.assertEqual(result["growth_tendency_label"], "観測育成")
+        self.assertEqual(result["growth_tendency_key"], "deep_reboot")
+        self.assertEqual(result["growth_tendency_label"], "再起動育成")
         self.assertIsNotNone(result["part_instance_id"])
 
     def test_all_explore_areas_have_growth_tendency_definitions(self):

@@ -408,7 +408,7 @@ class HomeNextActionTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn(">出撃<", html)
-        self.assertIn('name="area_key" value="layer_5_labyrinth"', html)
+        self.assertIn('name="area_key" value="layer_5_reboot"', html)
 
     def test_home_next_action_prioritizes_layer4_final_when_unlocked(self):
         self._create_active_robot()
@@ -1210,3 +1210,4 @@ class HomeNextActionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+   

@@ -253,7 +253,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "is_active": 1,
     },
 )
-RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "market", "series_system", "insect_r_parts", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "layer6", "layer7", "market", "series_system", "insect_r_parts", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -3746,7 +3746,10 @@ def main():
           AND boss_area_key NOT IN (
                 'layer_1', 'layer_2', 'layer_3',
                 'layer_4_forge', 'layer_4_haze', 'layer_4_burst', 'layer_4_final',
-                'layer_5_labyrinth', 'layer_5_pinnacle', 'layer_5_final'
+                'layer_5_reboot', 'layer_5_overdrive', 'layer_5_final',
+                'layer_6_rebuild', 'layer_6_core', 'layer_6_final',
+                'layer_7_echo', 'layer_7_chaos', 'layer_7_final',
+                'reserved_future_labyrinth', 'reserved_future_pinnacle', 'reserved_future_omega'
           )
         """
     )

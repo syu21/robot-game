@@ -132,7 +132,7 @@ class MainAdminBootstrapTests(unittest.TestCase):
             db = game_app.get_db()
             db.execute(
                 "UPDATE enemies SET hp = 1, atk = 1, def = 1, spd = 1, acc = 1, cri = 1 WHERE key = ?",
-                ("boss_5_final_omega_frame",),
+                ("deep_boss_layer_5_final_boss_4_final_ark_zero",),
             )
             db.commit()
         with patch.object(game_app, "_world_current_environment", return_value=self._stable_weekly_env()), patch.object(
@@ -146,8 +146,7 @@ class MainAdminBootstrapTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.get_data(as_text=True)
         self.assertNotIn("有効なボス警報がありません", body)
-        self.assertIn("終機オメガフレーム", body)
+        self.assertIn("深層機巧審判アーク=ゼロ", body)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__m

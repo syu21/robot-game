@@ -1038,22 +1038,6 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "map_line": "3ボス突破後に挑む、第4層の卒業試験",
         "weight_bias": {"hp": 0.08, "atk": 0.08, "def": 0.08, "acc": 0.08, "spd": 0.04, "cri": 0.04},
     },
-    "layer_5_labyrinth": {
-        "key": "labyrinth",
-        "label": "観測育成",
-        "short_label": "耐久・命中・安定寄り",
-        "home_line": "育成傾向: 耐久・命中・安定寄り",
-        "map_line": "事故を減らし、安定して勝ち切る型を仕上げる",
-        "weight_bias": {"hp": 0.12, "def": 0.12, "acc": 0.12, "spd": 0.04, "atk": 0.02, "cri": -0.06},
-    },
-    "layer_5_pinnacle": {
-        "key": "pinnacle",
-        "label": "競覇育成",
-        "short_label": "攻撃・会心・速攻寄り",
-        "home_line": "育成傾向: 攻撃・会心・速攻寄り",
-        "map_line": "背水と爆発を磨き、記録を取りにいく",
-        "weight_bias": {"atk": 0.14, "cri": 0.14, "spd": 0.08, "acc": 0.02, "hp": -0.06, "def": -0.08},
-    },
     "layer_5_reboot": {
         "key": "deep_reboot",
         "label": "再起動育成",
@@ -1071,11 +1055,11 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "weight_bias": {"spd": 0.20, "acc": 0.18, "atk": 0.08, "hp": 0.04, "def": -0.04, "cri": 0.02},
     },
     "layer_5_final": {
-        "key": "omega",
-        "label": "完成試験",
+        "key": "deep_reboot_core",
+        "label": "再起動中枢",
         "short_label": "思想完成試験",
         "home_line": "育成傾向: 第5層最終試験",
-        "map_line": "ニクスとイグニッションを越えた先にある総決算",
+        "map_line": "第5層派生群を越えた先にある再起動中枢",
         "weight_bias": {"hp": 0.06, "atk": 0.06, "def": 0.06, "acc": 0.06, "spd": 0.04, "cri": 0.04},
     },
     "layer_6_rebuild": {
@@ -1101,6 +1085,30 @@ AREA_GROWTH_TENDENCY_DEFS = {
         "home_line": "育成傾向: 第6層最終試験",
         "map_line": "第6層の総合力を問う中枢試験",
         "weight_bias": {"hp": 0.10, "atk": 0.10, "def": 0.10, "acc": 0.10, "spd": 0.08, "cri": 0.08},
+    },
+    "layer_7_echo": {
+        "key": "deep_echo",
+        "label": "残響育成",
+        "short_label": "速度・命中最深層",
+        "home_line": "育成傾向: 速度・命中の最深層強化",
+        "map_line": "低層系統を再構成した第7層の深層変異体",
+        "weight_bias": {"spd": 0.22, "acc": 0.20, "def": 0.08, "atk": 0.08, "hp": 0.04, "cri": 0.02},
+    },
+    "layer_7_chaos": {
+        "key": "deep_chaos",
+        "label": "終端育成",
+        "short_label": "攻撃・会心最深層",
+        "home_line": "育成傾向: 攻撃・会心の最深層強化",
+        "map_line": "暴走系統を再構成した第7層の深層変異体",
+        "weight_bias": {"atk": 0.22, "cri": 0.20, "spd": 0.08, "acc": 0.06, "hp": 0.02, "def": -0.04},
+    },
+    "layer_7_final": {
+        "key": "deep_judgement",
+        "label": "深層審判",
+        "short_label": "最深層総合試験",
+        "home_line": "育成傾向: 第7層最終試験",
+        "map_line": "第7層の総合力を問う深層審判核",
+        "weight_bias": {"hp": 0.12, "atk": 0.12, "def": 0.12, "acc": 0.12, "spd": 0.10, "cri": 0.10},
     },
 }
 ENEMY_TENDENCY_TAGS = {
@@ -1823,9 +1831,15 @@ PART_DROP_AREA_MULTIPLIERS = {
     "layer_4_haze": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
     "layer_4_burst": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
     "layer_4_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER4", 1.00),
-    "layer_5_labyrinth": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
-    "layer_5_pinnacle": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+    "layer_5_reboot": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+    "layer_5_overdrive": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
     "layer_5_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER5", 1.00),
+    "layer_6_rebuild": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER6", 1.00),
+    "layer_6_core": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER6", 1.00),
+    "layer_6_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER6", 1.00),
+    "layer_7_echo": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER7", 1.00),
+    "layer_7_chaos": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER7", 1.00),
+    "layer_7_final": _float_env("PART_DROP_AREA_MULTIPLIER_LAYER7", 1.00),
 }
 MARKET_SLOT_KEYS = ("head", "right_arm", "left_arm", "legs", "free_1", "free_2")
 MARKET_FIXED_SLOT_PART_TYPES = {
@@ -1940,8 +1954,8 @@ DINOSAUR_DEBUT_CAMPAIGN = {
         "layer_4_forge",
         "layer_4_haze",
         "layer_4_burst",
-        "layer_5_labyrinth",
-        "layer_5_pinnacle",
+        "layer_5_reboot",
+        "layer_5_overdrive",
     ),
 }
 RANKING_METRIC_DEFS = (
@@ -2039,16 +2053,17 @@ EXPLORE_AREAS = [
     {"key": "layer_4_haze", "label": "第四層: 戦術試験ヘイズ", "layer": 4},
     {"key": "layer_4_burst", "label": "第四層: 暴走試験バースト", "layer": 4},
     {"key": "layer_4_final", "label": "第四層最終試験: 審判域ゼロ", "layer": 4},
-    {"key": "layer_5_labyrinth", "label": "第五層: 観測圏ラビリンス", "layer": 5},
-    {"key": "layer_5_pinnacle", "label": "第五層: 競覇圏ピナクル", "layer": 5},
     {"key": "layer_5_reboot", "label": "第五層: 再起動区画", "layer": 5},
     {"key": "layer_5_overdrive", "label": "第五層: 過負荷回廊", "layer": 5},
-    {"key": "layer_5_final", "label": "第五層最終試験: 完成域オメガ", "layer": 5},
+    {"key": "layer_5_final", "label": "第五層最終試験: 再起動中枢", "layer": 5},
     {"key": "layer_6_rebuild", "label": "第六層: 改修深域", "layer": 6},
     {"key": "layer_6_core", "label": "第六層: 中核炉心", "layer": 6},
-    {"key": "layer_6_final", "label": "第六層最終試験: オメガ中枢", "layer": 6},
+    {"key": "layer_6_final", "label": "第六層最終試験: 暴走制御核", "layer": 6},
+    {"key": "layer_7_echo", "label": "第七層: 深層残響域", "layer": 7},
+    {"key": "layer_7_chaos", "label": "第七層: 終端暴走域", "layer": 7},
+    {"key": "layer_7_final", "label": "第七層最終試験: 深層審判核", "layer": 7},
 ]
-MAX_UNLOCKABLE_LAYER = 6
+MAX_UNLOCKABLE_LAYER = 7
 RELEASE_FLAG_DEFS = (
     {
         "key": "lab",
@@ -2069,6 +2084,16 @@ RELEASE_FLAG_DEFS = (
         "key": "layer5",
         "label": "第5層",
         "summary": "第5層2エリアと第5層最終試験を一般公開します。",
+    },
+    {
+        "key": "layer6",
+        "label": "第6層",
+        "summary": "第6層2エリアと第6層最終試験を一般公開します。",
+    },
+    {
+        "key": "layer7",
+        "label": "第7層",
+        "summary": "第7層2エリアと第7層最終試験を一般公開します。",
     },
     {
         "key": "battle_short_replay",
@@ -2122,8 +2147,9 @@ HOME_PRIMARY_AREA_BY_LAYER = {
     2: "layer_2",
     3: "layer_3",
     4: "layer_4_forge",
-    5: "layer_5_labyrinth",
+    5: "layer_5_reboot",
     6: "layer_6_rebuild",
+    7: "layer_7_echo",
 }
 LAYER_BOSS_KEY_BY_LAYER = {
     1: "boss_aurix_guardian",
@@ -2132,12 +2158,14 @@ LAYER_BOSS_KEY_BY_LAYER = {
 }
 LAYER4_SUBAREA_KEYS = ("layer_4_forge", "layer_4_haze", "layer_4_burst")
 LAYER4_FINAL_AREA_KEY = "layer_4_final"
-LAYER5_LEGACY_SUBAREA_KEYS = ("layer_5_labyrinth", "layer_5_pinnacle")
+RESERVED_FUTURE_LAYER5_AREA_KEYS = ("reserved_future_labyrinth", "reserved_future_pinnacle", "reserved_future_omega")
 LAYER5_SUBAREA_KEYS = ("layer_5_reboot", "layer_5_overdrive")
 LAYER5_FINAL_AREA_KEY = "layer_5_final"
 LAYER6_SUBAREA_KEYS = ("layer_6_rebuild", "layer_6_core")
 LAYER6_FINAL_AREA_KEY = "layer_6_final"
-SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY, LAYER6_FINAL_AREA_KEY}
+LAYER7_SUBAREA_KEYS = ("layer_7_echo", "layer_7_chaos")
+LAYER7_FINAL_AREA_KEY = "layer_7_final"
+SPECIAL_EXPLORE_AREA_KEYS = {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY, LAYER6_FINAL_AREA_KEY, LAYER7_FINAL_AREA_KEY}
 LAYER4_WARNING_TARGET_AREAS = set(LAYER4_SUBAREA_KEYS)
 LAYER4_WARNING_MAX_COUNT = 75
 LAYER4_WARNING_BOSS_ADVICE = {
@@ -2204,18 +2232,8 @@ STAGE_MODIFIERS_BY_AREA = {
         "player_mult": {"atk": 1.00, "def": 1.00, "acc": 1.00},
         "enemy_mult": {"atk": 1.08, "def": 1.08, "acc": 1.08, "spd": 1.05, "cri": 1.05, "hp": 1.08},
     },
-    "layer_5_labyrinth": {
-        "tendency": "観測向き",
-        "player_mult": {"atk": 1.00, "def": 1.08, "acc": 1.08},
-        "enemy_mult": {"atk": 1.10, "def": 1.10, "acc": 1.08, "spd": 1.10, "cri": 1.02, "hp": 1.12},
-    },
-    "layer_5_pinnacle": {
-        "tendency": "覇走向き",
-        "player_mult": {"atk": 1.10, "def": 0.95, "acc": 1.02},
-        "enemy_mult": {"atk": 1.18, "def": 1.00, "acc": 1.04, "spd": 1.08, "cri": 1.14, "hp": 1.02},
-    },
     "layer_5_final": {
-        "tendency": "完成試験",
+        "tendency": "再起動中枢",
         "player_mult": {"atk": 1.02, "def": 1.02, "acc": 1.02},
         "enemy_mult": {"atk": 1.14, "def": 1.12, "acc": 1.10, "spd": 1.08, "cri": 1.08, "hp": 1.14},
     },
@@ -2244,6 +2262,21 @@ STAGE_MODIFIERS_BY_AREA = {
         "player_mult": {"atk": 1.04, "def": 1.04, "acc": 1.04},
         "enemy_mult": {"atk": 1.26, "def": 1.18, "acc": 1.16, "spd": 1.14, "cri": 1.14, "hp": 1.22},
     },
+    "layer_7_echo": {
+        "tendency": "残響深度",
+        "player_mult": {"atk": 1.04, "def": 1.04, "acc": 1.06},
+        "enemy_mult": {"atk": 1.30, "def": 1.18, "acc": 1.20, "spd": 1.18, "cri": 1.16, "hp": 1.24},
+    },
+    "layer_7_chaos": {
+        "tendency": "終端暴走",
+        "player_mult": {"atk": 1.06, "def": 1.02, "acc": 1.06},
+        "enemy_mult": {"atk": 1.36, "def": 1.14, "acc": 1.18, "spd": 1.20, "cri": 1.22, "hp": 1.22},
+    },
+    "layer_7_final": {
+        "tendency": "深層審判",
+        "player_mult": {"atk": 1.06, "def": 1.06, "acc": 1.06},
+        "enemy_mult": {"atk": 1.40, "def": 1.22, "acc": 1.22, "spd": 1.20, "cri": 1.22, "hp": 1.30},
+    },
 }
 EXPLORE_AREA_TIERS = {
     "layer_1": (1,),
@@ -2255,14 +2288,15 @@ EXPLORE_AREA_TIERS = {
     "layer_4_haze": (4,),
     "layer_4_burst": (4,),
     "layer_4_final": (4,),
-    "layer_5_labyrinth": (5,),
-    "layer_5_pinnacle": (5,),
     "layer_5_reboot": (5,),
     "layer_5_overdrive": (5,),
     "layer_5_final": (5,),
     "layer_6_rebuild": (6,),
     "layer_6_core": (6,),
     "layer_6_final": (6,),
+    "layer_7_echo": (7,),
+    "layer_7_chaos": (7,),
+    "layer_7_final": (7,),
 }
 EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_1": {1: 1.0},
@@ -2274,54 +2308,27 @@ EXPLORE_AREA_TIER_WEIGHTS = {
     "layer_4_haze": {4: 1.0},
     "layer_4_burst": {4: 1.0},
     "layer_4_final": {4: 1.0},
-    "layer_5_labyrinth": {5: 1.0},
-    "layer_5_pinnacle": {5: 1.0},
     "layer_5_reboot": {5: 1.0},
     "layer_5_overdrive": {5: 1.0},
     "layer_5_final": {5: 1.0},
     "layer_6_rebuild": {6: 1.0},
     "layer_6_core": {6: 1.0},
     "layer_6_final": {6: 1.0},
+    "layer_7_echo": {7: 1.0},
+    "layer_7_chaos": {7: 1.0},
+    "layer_7_final": {7: 1.0},
 }
 EXPLORE_AREA_ENEMY_KEYS = {
     "layer_4_forge": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"),
     "layer_4_haze": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone", "enemy_insect_bee"),
     "layer_4_burst": ("burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"),
-    "layer_5_labyrinth": (
-        "lab_guardian_veil",
-        "lab_bulwark_node",
-        "lab_trace_hound",
-        "lab_fault_keeper",
-        "deep_layer_5_reboot_fort_ironbulk",
-        "deep_layer_5_reboot_fort_platehound",
-        "deep_layer_5_reboot_fort_bastion_eye",
-        "deep_layer_5_reboot_enemy_insect_kabuto",
-    ),
-    "layer_5_pinnacle": (
-        "pin_flare_beast",
-        "pin_rupture_eye",
-        "pin_scorch_fang",
-        "pin_crash_gear",
-        "deep_layer_5_overdrive_haze_mirage_mite",
-        "deep_layer_5_overdrive_haze_fog_lancer",
-        "deep_layer_5_overdrive_haze_glint_drone",
-        "deep_layer_5_overdrive_enemy_insect_bee",
-    ),
     "layer_5_reboot": (
-        "lab_guardian_veil",
-        "lab_bulwark_node",
-        "lab_trace_hound",
-        "lab_fault_keeper",
         "deep_layer_5_reboot_fort_ironbulk",
         "deep_layer_5_reboot_fort_platehound",
         "deep_layer_5_reboot_fort_bastion_eye",
         "deep_layer_5_reboot_enemy_insect_kabuto",
     ),
     "layer_5_overdrive": (
-        "pin_flare_beast",
-        "pin_rupture_eye",
-        "pin_scorch_fang",
-        "pin_crash_gear",
         "deep_layer_5_overdrive_haze_mirage_mite",
         "deep_layer_5_overdrive_haze_fog_lancer",
         "deep_layer_5_overdrive_haze_glint_drone",
@@ -2350,6 +2357,24 @@ EXPLORE_AREA_ENEMY_KEYS = {
         "deep_layer_6_final_deep_layer_5_final_burst_shockfang",
         "deep_layer_6_final_deep_layer_5_final_burst_ruptgear",
         "deep_layer_6_final_deep_layer_5_final_enemy_insect_scorpion",
+    ),
+    "layer_7_echo": (
+        "deep_layer_7_echo_enemy16",
+        "deep_layer_7_echo_enemy23",
+        "deep_layer_7_echo_haze_glint_drone",
+        "deep_layer_7_echo_fort_bastion_eye",
+    ),
+    "layer_7_chaos": (
+        "deep_layer_7_chaos_burst_coreling",
+        "deep_layer_7_chaos_burst_shockfang",
+        "deep_layer_7_chaos_enemy25",
+        "deep_layer_7_chaos_enemy_insect_kuwagata",
+    ),
+    "layer_7_final": (
+        "deep_layer_7_final_fort_platehound",
+        "deep_layer_7_final_haze_fog_lancer",
+        "deep_layer_7_final_burst_ruptgear",
+        "deep_layer_7_final_enemy_insect_scorpion",
     ),
 }
 EXPLORE_AREA_ENEMY_WEIGHT_OVERRIDES = {
@@ -2533,36 +2558,6 @@ EXPLORE_DROP_PROFILE_BY_AREA = {
         },
         "exception_bias": 0.32,
     },
-    "layer_5_labyrinth": {
-        "rarity_weights": None,
-        "element_weights": {
-            "MACHINE": 1.7,
-            "STEEL": 1.5,
-            "WIND": 1.5,
-            "WATER": 1.2,
-            "ICE": 1.2,
-            "THUNDER": 1.1,
-            "ORE": 1.0,
-            "FIRE": 0.8,
-            "NORMAL": 0.8,
-        },
-        "exception_bias": 0.34,
-    },
-    "layer_5_pinnacle": {
-        "rarity_weights": None,
-        "element_weights": {
-            "FIRE": 1.9,
-            "THUNDER": 1.6,
-            "ORE": 1.3,
-            "MACHINE": 1.2,
-            "STEEL": 1.0,
-            "WIND": 0.9,
-            "ICE": 0.8,
-            "WATER": 0.8,
-            "NORMAL": 0.8,
-        },
-        "exception_bias": 0.36,
-    },
     "layer_5_final": {
         "rarity_weights": None,
         "element_weights": {
@@ -2578,6 +2573,66 @@ EXPLORE_DROP_PROFILE_BY_AREA = {
         },
         "exception_bias": 0.38,
     },
+    "layer_5_reboot": {
+        "rarity_weights": None,
+        "element_weights": {
+            "STEEL": 1.8,
+            "ORE": 1.5,
+            "MACHINE": 1.3,
+            "WIND": 1.0,
+            "THUNDER": 0.9,
+            "FIRE": 0.8,
+            "ICE": 0.8,
+            "WATER": 0.8,
+            "NORMAL": 0.7,
+        },
+        "exception_bias": 0.34,
+    },
+    "layer_5_overdrive": {
+        "rarity_weights": None,
+        "element_weights": {
+            "WIND": 1.7,
+            "MACHINE": 1.5,
+            "THUNDER": 1.3,
+            "FIRE": 1.2,
+            "ICE": 1.0,
+            "ORE": 0.9,
+            "STEEL": 0.9,
+            "WATER": 0.8,
+            "NORMAL": 0.8,
+        },
+        "exception_bias": 0.36,
+    },
+    "layer_6_rebuild": {
+        "rarity_weights": None,
+        "element_weights": {"STEEL": 1.9, "ORE": 1.6, "MACHINE": 1.4, "FIRE": 1.0, "THUNDER": 0.9, "WIND": 0.9, "ICE": 0.8, "WATER": 0.8, "NORMAL": 0.7},
+        "exception_bias": 0.40,
+    },
+    "layer_6_core": {
+        "rarity_weights": None,
+        "element_weights": {"WIND": 1.8, "MACHINE": 1.6, "THUNDER": 1.4, "FIRE": 1.1, "ORE": 1.0, "STEEL": 0.9, "ICE": 0.8, "WATER": 0.8, "NORMAL": 0.7},
+        "exception_bias": 0.42,
+    },
+    "layer_6_final": {
+        "rarity_weights": None,
+        "element_weights": {"MACHINE": 1.8, "STEEL": 1.4, "FIRE": 1.3, "THUNDER": 1.2, "WIND": 1.2, "ORE": 1.1, "ICE": 1.0, "WATER": 0.9, "NORMAL": 0.8},
+        "exception_bias": 0.44,
+    },
+    "layer_7_echo": {
+        "rarity_weights": None,
+        "element_weights": {"WIND": 1.8, "MACHINE": 1.6, "STEEL": 1.3, "THUNDER": 1.2, "ORE": 1.1, "FIRE": 1.0, "ICE": 0.9, "WATER": 0.9, "NORMAL": 0.8},
+        "exception_bias": 0.46,
+    },
+    "layer_7_chaos": {
+        "rarity_weights": None,
+        "element_weights": {"FIRE": 1.9, "THUNDER": 1.5, "ORE": 1.4, "MACHINE": 1.2, "STEEL": 1.0, "WIND": 1.0, "ICE": 0.8, "WATER": 0.8, "NORMAL": 0.8},
+        "exception_bias": 0.48,
+    },
+    "layer_7_final": {
+        "rarity_weights": None,
+        "element_weights": {"MACHINE": 1.9, "STEEL": 1.5, "FIRE": 1.4, "WIND": 1.3, "THUNDER": 1.3, "ORE": 1.2, "ICE": 1.0, "WATER": 1.0, "NORMAL": 0.9},
+        "exception_bias": 0.50,
+    },
 }
 EVOLUTION_CORE_DROP_RATE_BY_AREA = {
     "layer_1": 0.0,
@@ -2589,9 +2644,15 @@ EVOLUTION_CORE_DROP_RATE_BY_AREA = {
     "layer_4_haze": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER4", "0.018")),
     "layer_4_burst": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER4", "0.018")),
     "layer_4_final": 0.0,
-    "layer_5_labyrinth": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
-    "layer_5_pinnacle": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
+    "layer_5_reboot": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
+    "layer_5_overdrive": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER5", "0.024")),
     "layer_5_final": 0.0,
+    "layer_6_rebuild": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER6", "0.026")),
+    "layer_6_core": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER6", "0.026")),
+    "layer_6_final": 0.0,
+    "layer_7_echo": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER7", "0.028")),
+    "layer_7_chaos": float(os.getenv("EVOLUTION_CORE_DROP_RATE_LAYER7", "0.028")),
+    "layer_7_final": 0.0,
 }
 EXPLORE_AREA_UNLOCK_WINS = {
     "layer_1": 0,
@@ -2640,14 +2701,18 @@ AREA_BOSS_KEYS = (
     "layer_4_haze",
     "layer_4_burst",
     "layer_4_final",
-    "layer_5_labyrinth",
-    "layer_5_pinnacle",
     "layer_5_reboot",
     "layer_5_overdrive",
     "layer_5_final",
     "layer_6_rebuild",
     "layer_6_core",
     "layer_6_final",
+    "layer_7_echo",
+    "layer_7_chaos",
+    "layer_7_final",
+    "reserved_future_labyrinth",
+    "reserved_future_pinnacle",
+    "reserved_future_omega",
 )
 AREA_BOSS_ALERT_AREAS = (
     "layer_1",
@@ -2659,14 +2724,15 @@ AREA_BOSS_ALERT_AREAS = (
     "layer_4_haze",
     "layer_4_burst",
     "layer_4_final",
-    "layer_5_labyrinth",
-    "layer_5_pinnacle",
     "layer_5_reboot",
     "layer_5_overdrive",
     "layer_5_final",
     "layer_6_rebuild",
     "layer_6_core",
     "layer_6_final",
+    "layer_7_echo",
+    "layer_7_chaos",
+    "layer_7_final",
 )
 AREA_BOSS_SPAWN_RATES = {
     "layer_1": 0.005,
@@ -2678,14 +2744,15 @@ AREA_BOSS_SPAWN_RATES = {
     "layer_4_haze": 0.005,
     "layer_4_burst": 0.005,
     "layer_4_final": 1.0,
-    "layer_5_labyrinth": 0.005,
-    "layer_5_pinnacle": 0.005,
     "layer_5_reboot": 0.005,
     "layer_5_overdrive": 0.005,
     "layer_5_final": 1.0,
     "layer_6_rebuild": 0.005,
     "layer_6_core": 0.005,
     "layer_6_final": 1.0,
+    "layer_7_echo": 0.005,
+    "layer_7_chaos": 0.005,
+    "layer_7_final": 1.0,
 }
 AREA_BOSS_PITY_MISSES = {
     # UIには出さず、第1〜3層のみ内部でソフト天井を使う。
@@ -2697,14 +2764,15 @@ AREA_BOSS_PITY_MISSES = {
     "layer_4_haze": 1_000_000,
     "layer_4_burst": 1_000_000,
     "layer_4_final": 1,
-    "layer_5_labyrinth": 1_000_000,
-    "layer_5_pinnacle": 1_000_000,
     "layer_5_reboot": 1_000_000,
     "layer_5_overdrive": 1_000_000,
     "layer_5_final": 1,
     "layer_6_rebuild": 1_000_000,
     "layer_6_core": 1_000_000,
     "layer_6_final": 1,
+    "layer_7_echo": 1_000_000,
+    "layer_7_chaos": 1_000_000,
+    "layer_7_final": 1,
 }
 AREA_BOSS_SOFT_PITY_STARTS = {
     "layer_1": 45,
@@ -2730,15 +2798,20 @@ AREA_BOSS_LABELS = {
     "layer_4_burst": "第四層: 暴走試験バースト",
     "layer_4_final": "第四層最終試験",
     "layer_5": "第五層",
-    "layer_5_labyrinth": "第五層: 観測圏ラビリンス",
-    "layer_5_pinnacle": "第五層: 競覇圏ピナクル",
     "layer_5_reboot": "第五層: 再起動区画",
     "layer_5_overdrive": "第五層: 過負荷回廊",
-    "layer_5_final": "第五層最終試験",
+    "layer_5_final": "第五層最終試験: 再起動中枢",
     "layer_6": "第六層",
     "layer_6_rebuild": "第六層: 改修深域",
     "layer_6_core": "第六層: 中核炉心",
-    "layer_6_final": "第六層最終試験",
+    "layer_6_final": "第六層最終試験: 暴走制御核",
+    "layer_7": "第七層",
+    "layer_7_echo": "第七層: 深層残響域",
+    "layer_7_chaos": "第七層: 終端暴走域",
+    "layer_7_final": "第七層最終試験: 深層審判核",
+    "reserved_future_labyrinth": "予約: 観測圏ラビリンス",
+    "reserved_future_pinnacle": "予約: 競覇圏ピナクル",
+    "reserved_future_omega": "予約: 完成域オメガ",
 }
 LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED = int(os.getenv("LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED", "40"))
 LAYER2_FAMILY_AREA_KEYS = ("layer_2", "layer_2_mist", "layer_2_rush")
@@ -2752,6 +2825,8 @@ LAYER_UNLOCK_ICON_BY_LAYER = {
     3: "🔥",
     4: "🧪",
     5: "👑",
+    6: "◇",
+    7: "◆",
 }
 AREA_BOSS_DECOR_REWARD_KEYS = {
     "layer_1": ["boss_emblem_aurix"],
@@ -2761,14 +2836,18 @@ AREA_BOSS_DECOR_REWARD_KEYS = {
     "layer_4_haze": ["mist_scope_001"],
     "layer_4_burst": ["burst_reactor_001"],
     "layer_4_final": ["judge_halo_001"],
-    "layer_5_labyrinth": ["nyx_array_crest_001"],
-    "layer_5_pinnacle": ["ignition_crown_001"],
     "layer_5_reboot": [],
     "layer_5_overdrive": [],
-    "layer_5_final": ["omega_frame_halo_001"],
+    "layer_5_final": [],
     "layer_6_rebuild": [],
     "layer_6_core": [],
     "layer_6_final": [],
+    "layer_7_echo": [],
+    "layer_7_chaos": [],
+    "layer_7_final": [],
+    "reserved_future_labyrinth": ["nyx_array_crest_001"],
+    "reserved_future_pinnacle": ["ignition_crown_001"],
+    "reserved_future_omega": ["omega_frame_halo_001"],
 }
 AREA_BOSS_TYPE_BY_KEY = {
     "boss_ignis_reaver": "TANK",
@@ -2787,6 +2866,9 @@ AREA_BOSS_TYPE_BY_KEY = {
     "deep_boss_layer_6_rebuild_deep_boss_layer_5_reboot_boss_4_forge_elguard": "TANK",
     "deep_boss_layer_6_core_deep_boss_layer_5_overdrive_boss_4_haze_mirage": "EVADE",
     "deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero": "TACTICAL",
+    "deep_boss_layer_7_echo_boss_4_haze_mirage": "EVADE",
+    "deep_boss_layer_7_chaos_boss_4_burst_volterio": "GLASS_CANNON",
+    "deep_boss_layer_7_final_boss_4_final_ark_zero": "TACTICAL",
 }
 FIXED_BOSS_KEY_BY_AREA = {
     "layer_1": "boss_aurix_guardian",
@@ -2796,14 +2878,18 @@ FIXED_BOSS_KEY_BY_AREA = {
     "layer_4_haze": "boss_4_haze_mirage",
     "layer_4_burst": "boss_4_burst_volterio",
     "layer_4_final": "boss_4_final_ark_zero",
-    "layer_5_labyrinth": "boss_5_labyrinth_nyx_array",
-    "layer_5_pinnacle": "boss_5_pinnacle_ignition_king",
     "layer_5_reboot": "deep_boss_layer_5_reboot_boss_4_forge_elguard",
     "layer_5_overdrive": "deep_boss_layer_5_overdrive_boss_4_haze_mirage",
     "layer_5_final": "deep_boss_layer_5_final_boss_4_final_ark_zero",
     "layer_6_rebuild": "deep_boss_layer_6_rebuild_deep_boss_layer_5_reboot_boss_4_forge_elguard",
     "layer_6_core": "deep_boss_layer_6_core_deep_boss_layer_5_overdrive_boss_4_haze_mirage",
     "layer_6_final": "deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero",
+    "layer_7_echo": "deep_boss_layer_7_echo_boss_4_haze_mirage",
+    "layer_7_chaos": "deep_boss_layer_7_chaos_boss_4_burst_volterio",
+    "layer_7_final": "deep_boss_layer_7_final_boss_4_final_ark_zero",
+    "reserved_future_labyrinth": "boss_5_labyrinth_nyx_array",
+    "reserved_future_pinnacle": "boss_5_pinnacle_ignition_king",
+    "reserved_future_omega": "boss_5_final_omega_frame",
 }
 AREA_BOSS_TYPE_PROFILES = {
     "TANK": {
@@ -2912,27 +2998,11 @@ EXPLORE_AREA_MAP_INFO = {
         ],
         "recommended_archetype": "自由",
     },
-    "layer_5_labyrinth": {
-        "desc": [
-            "観測と防衛が混ざる深部。事故らない機体が強い。",
-            "推奨: 耐久・命中・バランス型 / ターン上限なし。",
-            "注意: 長期戦可。ただしMISS対策は必要。",
-        ],
-        "recommended_archetype": "sniper",
-    },
-    "layer_5_pinnacle": {
-        "desc": [
-            "記録を奪い合う競覇圏。速攻と爆発力が評価される。",
-            "推奨: 背水・爆発・速攻寄り / ターン上限なし。",
-            "注意: 上振れは強いが、崩れると一気に脆い。",
-        ],
-        "recommended_archetype": "swift",
-    },
     "layer_5_final": {
         "desc": [
-            "観測と競覇を越えた先の完成域。",
-            "推奨: 思想完成型 / ターン上限なし。",
-            "注意: ニクスとイグニッション撃破後にのみ挑戦可能。",
+            "再起動区画と過負荷回廊を越えた先の中枢試験。",
+            "推奨: 深層変異体に対応できる総合型 / ターン上限なし。",
+            "注意: 第5層2ボス撃破後にのみ挑戦可能。",
         ],
         "recommended_archetype": "自由",
     },
@@ -4056,6 +4126,8 @@ def _admin_progression_snapshot(db):
         3: "layer_3",
         4: LAYER4_FINAL_AREA_KEY,
         5: LAYER5_FINAL_AREA_KEY,
+        6: LAYER6_FINAL_AREA_KEY,
+        7: LAYER7_FINAL_AREA_KEY,
     }
 
     listed_rows = []
@@ -4108,6 +4180,26 @@ def _admin_progression_snapshot(db):
             else:
                 boss_status = "第5層最終試験未撃破"
                 boss_blocker_layer = 5
+        elif highest_layer == 6:
+            trial_clears = sum(1 for key in LAYER6_SUBAREA_KEYS if key in fixed_boss_area_keys)
+            if LAYER6_FINAL_AREA_KEY in fixed_boss_area_keys:
+                boss_status = "第6層最終試験撃破済み"
+            elif trial_clears < len(LAYER6_SUBAREA_KEYS):
+                boss_status = f"第6層試験ボス {trial_clears}/{len(LAYER6_SUBAREA_KEYS)} 撃破"
+                boss_blocker_layer = 6
+            else:
+                boss_status = "第6層最終試験未撃破"
+                boss_blocker_layer = 6
+        elif highest_layer == 7:
+            trial_clears = sum(1 for key in LAYER7_SUBAREA_KEYS if key in fixed_boss_area_keys)
+            if LAYER7_FINAL_AREA_KEY in fixed_boss_area_keys:
+                boss_status = "第7層最終試験撃破済み"
+            elif trial_clears < len(LAYER7_SUBAREA_KEYS):
+                boss_status = f"第7層試験ボス {trial_clears}/{len(LAYER7_SUBAREA_KEYS)} 撃破"
+                boss_blocker_layer = 7
+            else:
+                boss_status = "第7層最終試験未撃破"
+                boss_blocker_layer = 7
         else:
             boss_area_key = progression_boss_area_by_layer.get(highest_layer)
             has_fixed_boss_clear = bool(boss_area_key and boss_area_key in fixed_boss_area_keys)
@@ -4240,8 +4332,12 @@ def _series_drop_rate_for_area(area_key):
         return 0.15
     if key in {"layer_4_forge", "layer_4_haze", "layer_4_burst", "layer_4_final"}:
         return 0.28
-    if key in {"layer_5_labyrinth", "layer_5_pinnacle", "layer_5_final"}:
+    if key in {"layer_5_reboot", "layer_5_overdrive", "layer_5_final"}:
         return 0.38
+    if key in {"layer_6_rebuild", "layer_6_core", "layer_6_final"}:
+        return 0.42
+    if key in {"layer_7_echo", "layer_7_chaos", "layer_7_final"}:
+        return 0.45
     return 0.0
 
 
@@ -4905,8 +5001,12 @@ def _release_feature_for_area(area_key):
     key = str(area_key or "").strip()
     if key in {*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY}:
         return "layer4"
-    if key in {*LAYER5_LEGACY_SUBAREA_KEYS, *LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY, *LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY}:
+    if key in {*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY}:
         return "layer5"
+    if key in {*LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY}:
+        return "layer6"
+    if key in {*LAYER7_SUBAREA_KEYS, LAYER7_FINAL_AREA_KEY}:
+        return "layer7"
     return None
 
 
@@ -4925,8 +5025,12 @@ def _release_layer_cap_for_viewer(db, *, user_row=None, user_id=None, is_admin=N
         return MAX_UNLOCKABLE_LAYER
     if _viewer_is_admin_for_release(db, user_row=user_row, user_id=user_id, is_admin=is_admin):
         return MAX_UNLOCKABLE_LAYER
+    if _release_flag_is_public(db, "layer7"):
+        return 7
+    if _release_flag_is_public(db, "layer6"):
+        return 6
     if _release_flag_is_public(db, "layer5"):
-        return MAX_UNLOCKABLE_LAYER
+        return 5
     if _release_flag_is_public(db, "layer4"):
         return 4
     return PUBLIC_RELEASED_BASE_LAYER
@@ -4948,6 +5052,10 @@ def _event_release_feature(event_type, payload):
     if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET"} or text.startswith("audit.champion.") or text.startswith("audit.champ."):
         return "weekly_champion"
     unlocked_layer = int((payload or {}).get("unlocked_layer") or 0)
+    if unlocked_layer >= 7:
+        return "layer7"
+    if unlocked_layer >= 6:
+        return "layer6"
     if unlocked_layer >= 5:
         return "layer5"
     if unlocked_layer >= 4:
@@ -5170,9 +5278,7 @@ def _layer5_trial_bosses_cleared(db, user_id):
     uid = int(user_id or 0)
     if uid <= 0:
         return False
-    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_SUBAREA_KEYS) or all(
-        _has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_LEGACY_SUBAREA_KEYS
-    )
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER5_SUBAREA_KEYS)
 
 
 def _layer6_trial_bosses_cleared(db, user_id):
@@ -5180,6 +5286,13 @@ def _layer6_trial_bosses_cleared(db, user_id):
     if uid <= 0:
         return False
     return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER6_SUBAREA_KEYS)
+
+
+def _layer7_trial_bosses_cleared(db, user_id):
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return False
+    return all(_has_fixed_boss_defeat_in_area(db, uid, area_key) for area_key in LAYER7_SUBAREA_KEYS)
 
 
 def _special_area_unlock_reason(area_key):
@@ -5190,6 +5303,8 @@ def _special_area_unlock_reason(area_key):
         return "第5層2ボス撃破で解放"
     if key == LAYER6_FINAL_AREA_KEY:
         return "第6層2ボス撃破で解放"
+    if key == LAYER7_FINAL_AREA_KEY:
+        return "第7層2ボス撃破で解放"
     layer = _area_layer(key)
     if layer <= 1:
         return "未解放"
@@ -5206,6 +5321,8 @@ def _is_special_area_unlocked(db, user_id, area_key):
         return _layer5_trial_bosses_cleared(db, user_id)
     if key == LAYER6_FINAL_AREA_KEY:
         return _layer6_trial_bosses_cleared(db, user_id)
+    if key == LAYER7_FINAL_AREA_KEY:
+        return _layer7_trial_bosses_cleared(db, user_id)
     return True
 
 
@@ -9980,7 +10097,9 @@ def _maybe_unlock_next_layer(db, user_id, user_row, area_key, enemy_row):
     if area_key == LAYER4_FINAL_AREA_KEY:
         expected_boss_keys.add("boss_4_final_ark_zero")
     elif area_key == LAYER5_FINAL_AREA_KEY:
-        expected_boss_keys.update({"deep_boss_layer_5_final_boss_4_final_ark_zero", "boss_5_final_omega_frame"})
+        expected_boss_keys.add("deep_boss_layer_5_final_boss_4_final_ark_zero")
+    elif area_key == LAYER6_FINAL_AREA_KEY:
+        expected_boss_keys.add("deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero")
     else:
         expected_boss_key = LAYER_BOSS_KEY_BY_LAYER.get(current_layer)
         if expected_boss_key:
@@ -47162,7 +47281,6 @@ def explore():
     last_enemy_trait_label = None
     last_enemy_trait_desc = None
     last_enemy_variant_label = None
-    legacy_layer5_final_admin_boss = bool(user_is_main_admin and boss_enter_requested and area_key == LAYER5_FINAL_AREA_KEY)
     if tutorial_layer1_forced_boss:
         area_boss_active = True
         total_fights = 1
@@ -47299,22 +47417,6 @@ def explore():
             area_boss_active = True
             total_fights = 1
             area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
-            if legacy_layer5_final_admin_boss:
-                legacy_row = db.execute(
-                    """
-                    SELECT *
-                    FROM enemies
-                    WHERE is_active = 1
-                      AND COALESCE(is_boss, 0) = 1
-                      AND key = ?
-                    LIMIT 1
-                    """,
-                    ("boss_5_final_omega_frame",),
-                ).fetchone()
-                if legacy_row:
-                    area_boss_enemy = dict(legacy_row)
-                    area_boss_enemy["_boss_kind"] = "fixed"
-                    area_boss_enemy["_alert_enemy_id"] = int(legacy_row["id"])
             if area_boss_enemy is None:
                 session["message"] = "この探索先には挑戦可能なボスがいません。"
                 db.commit()
@@ -49240,6 +49342,8 @@ def explore():
         battle_kind_label = "第5層 最終試験"
     elif area_boss_active and area_key == LAYER6_FINAL_AREA_KEY:
         battle_kind_label = "第6層 最終試験"
+    elif area_boss_active and area_key == LAYER7_FINAL_AREA_KEY:
+        battle_kind_label = "第7層 最終試験"
     elif area_boss_active and _area_layer(area_key) >= 5:
         battle_kind_label = f"第{_area_layer(area_key)}層 深層ボス警報"
     elif _area_layer(area_key) >= 5:
