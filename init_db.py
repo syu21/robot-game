@@ -1328,6 +1328,11 @@ def main():
             status TEXT NOT NULL DEFAULT 'inventory',
             is_locked INTEGER NOT NULL DEFAULT 0,
             sold_at TEXT,
+            trait_key TEXT,
+            trait_value INTEGER NOT NULL DEFAULT 0,
+            trait_grade TEXT,
+            research_policy_key TEXT,
+            synthesis_generation INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id),
@@ -3398,6 +3403,11 @@ def main():
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
         "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
         "sold_at": "sold_at TEXT",
+        "trait_key": "trait_key TEXT",
+        "trait_value": "trait_value INTEGER NOT NULL DEFAULT 0",
+        "trait_grade": "trait_grade TEXT",
+        "research_policy_key": "research_policy_key TEXT",
+        "synthesis_generation": "synthesis_generation INTEGER NOT NULL DEFAULT 0",
         "hp_bonus": "hp_bonus INTEGER",
         "atk_bonus": "atk_bonus INTEGER",
         "def_bonus": "def_bonus INTEGER",
@@ -3460,6 +3470,8 @@ def main():
     cur.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     cur.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     cur.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")
+    cur.execute("UPDATE user_research_modules SET trait_value = 0 WHERE trait_value IS NULL")
+    cur.execute("UPDATE user_research_modules SET synthesis_generation = COALESCE(generation, 0) WHERE synthesis_generation IS NULL")
     cur.execute("UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0", (now_ts,))
     cur.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
     cur.execute(

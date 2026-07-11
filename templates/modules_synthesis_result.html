@@ -16,7 +16,17 @@
       {% endfor %}
     </div>
     <div class="robot-time">系統: {{ module['family_label'] }}</div>
+    <div class="robot-time">研究方針: {{ research_policy['label'] }}</div>
     <div class="robot-time">評価: {{ module['synthesis_grade_label'] }} / 評価値: {{ module['synthesis_score'] }}</div>
+    {% if module['trait_label'] %}
+    <div class="upgrade-cost">作戦特性: {{ module['trait_label'] }}</div>
+    <div class="robot-time">{{ module['trait_description'] }}</div>
+    {% else %}
+    <div class="robot-time">作戦特性: なし</div>
+    {% endif %}
+    {% if module['usage_labels'] %}
+    <div class="robot-time">研究評価: {{ module['usage_labels']|join('・') }}を重視した個体です。</div>
+    {% endif %}
     <div class="robot-time">由来: {{ module_a['name_ja'] }} + {{ module_b['name_ja'] }}</div>
     <div class="robot-time">消費コイン: {{ cost_coins }}</div>
   </div>

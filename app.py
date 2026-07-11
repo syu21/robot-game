@@ -70,6 +70,15 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.research_module_synthesis import synthesize_research_module
+from services.module_traits import (
+    POLICY_DEFS as MODULE_RESEARCH_POLICY_DEFS,
+    module_area_fit,
+    module_usage_labels,
+    normalize_policy,
+    synthesis_prediction,
+    trait_description,
+    trait_label,
+)
 from services.daily_research import (
     EVENT_BUILD_VIEW,
     EVENT_WORLD_VIEW,
@@ -11537,6 +11546,11 @@ def ensure_schema(db):
             status TEXT NOT NULL DEFAULT 'inventory',
             is_locked INTEGER NOT NULL DEFAULT 0,
             sold_at TEXT,
+            trait_key TEXT,
+            trait_value INTEGER NOT NULL DEFAULT 0,
+            trait_grade TEXT,
+            research_policy_key TEXT,
+            synthesis_generation INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id),
@@ -12050,6 +12064,11 @@ def ensure_schema(db):
         "status": "status TEXT NOT NULL DEFAULT 'inventory'",
         "is_locked": "is_locked INTEGER NOT NULL DEFAULT 0",
         "sold_at": "sold_at TEXT",
+        "trait_key": "trait_key TEXT",
+        "trait_value": "trait_value INTEGER NOT NULL DEFAULT 0",
+        "trait_grade": "trait_grade TEXT",
+        "research_policy_key": "research_policy_key TEXT",
+        "synthesis_generation": "synthesis_generation INTEGER NOT NULL DEFAULT 0",
         "hp_bonus": "hp_bonus INTEGER",
         "atk_bonus": "atk_bonus INTEGER",
         "def_bonus": "def_bonus INTEGER",
@@ -12113,6 +12132,8 @@ def ensure_schema(db):
     db.execute("UPDATE users SET research_module_pity = 0 WHERE research_module_pity IS NULL OR research_module_pity < 0")
     db.execute("UPDATE user_research_modules SET status = 'inventory' WHERE status IS NULL OR TRIM(status) = ''")
     db.execute("UPDATE user_research_modules SET is_locked = 0 WHERE is_locked IS NULL")
+    db.execute("UPDATE user_research_modules SET trait_value = 0 WHERE trait_value IS NULL")
+    db.execute("UPDATE user_research_modules SET synthesis_generation = COALESCE(generation, 0) WHERE synthesis_generation IS NULL")
     db.execute(
         "UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0",
         (research_module_now,),
@@ -16163,6 +16184,15 @@ def _research_module_view(row):
     module["stat_line"] = _research_module_stat_line(module)
     module["stat_chips"] = _research_module_stat_chips(module)
     module["effect_text"] = module["stat_line"] if module["stat_line"] else ("合成結果によって変化" if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY else "なし")
+    trait_key = str(module.get("trait_key") or "").strip()
+    module["trait_label"] = trait_label(trait_key)
+    module["trait_description"] = trait_description(trait_key, int(module.get("trait_value") or 0))
+    module["has_trait"] = bool(module["trait_label"])
+    module["usage_labels"] = module_usage_labels(module)
+    policy_key = normalize_policy(module.get("research_policy_key") or "stable")
+    module["research_policy_key"] = policy_key if module.get("research_policy_key") else ""
+    module["research_policy_label"] = MODULE_RESEARCH_POLICY_DEFS.get(policy_key, {}).get("label", "")
+    module["synthesis_generation"] = int(module.get("synthesis_generation") or module.get("generation") or 0)
     rarity_key = str(module.get("rarity") or "").strip()
     family_key = str(module.get("family") or "").strip()
     if family_key.lower() == "none":
@@ -16222,7 +16252,8 @@ def _active_research_module_for_user(db, user_id, user_row=None):
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
                rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
-               urm.generation, urm.synthesis_score, urm.generated_name_ja
+               urm.generation, urm.synthesis_score, urm.generated_name_ja,
+               urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -16250,7 +16281,8 @@ def _user_research_module_options(db, user_id):
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
                rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
-               urm.generation, urm.synthesis_score, urm.generated_name_ja
+               urm.generation, urm.synthesis_score, urm.generated_name_ja,
+               urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.user_id = ?
@@ -16277,6 +16309,11 @@ def _apply_research_module_to_stats(stats, module):
     }
     for stat_key, bonus_key in bonus_keys.items():
         result[stat_key] = max(1, int(result.get(stat_key) or 0) + int(module.get(bonus_key) or 0))
+    if str((module or {}).get("trait_key") or "") == "steady_operation":
+        value = int((module or {}).get("trait_value") or 0)
+        if value > 0:
+            target_key = max(("hp", "def", "spd", "acc", "cri"), key=lambda key: int(result.get(key) or 0))
+            result[target_key] = max(1, int(result.get(target_key) or 0) + value)
     return result
 
 
@@ -16285,6 +16322,82 @@ def _research_module_bonus_payload(module):
     for key in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus"):
         payload[key] = int((module or {}).get(key) or 0)
     return payload
+
+
+def _module_trait_state(module):
+    trait_key = str((module or {}).get("trait_key") or "").strip()
+    if not trait_key:
+        return None
+    return {
+        "module_instance_id": int((module or {}).get("instance_id") or 0),
+        "module_name": str((module or {}).get("name_ja") or "研究モジュール"),
+        "trait_key": trait_key,
+        "trait_label": trait_label(trait_key),
+        "trait_value": int((module or {}).get("trait_value") or 0),
+        "last_player_attack_missed": False,
+        "last_player_attack_critical": False,
+        "trigger_count": 0,
+        "trigger_labels": set(),
+    }
+
+
+def _module_trait_trigger(state, line):
+    if not state or not line:
+        return None
+    state["trigger_count"] = int(state.get("trigger_count") or 0) + 1
+    state.setdefault("trigger_labels", set()).add(str(line))
+    return f"［モジュール］{line}"
+
+
+def _module_before_player_attack(state, *, turn, is_boss, atk, acc):
+    if not state:
+        return int(atk), int(acc), []
+    trait_key = state.get("trait_key")
+    value = int(state.get("trait_value") or 0)
+    lines = []
+    next_atk = int(atk)
+    next_acc = int(acc)
+    if trait_key == "opening_assault" and int(turn) == 1 and value > 0:
+        next_atk += value
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：1ターン目の攻撃が上昇"))
+    elif trait_key == "precision_retry" and state.get("last_player_attack_missed") and value > 0:
+        next_acc += value
+        state["last_player_attack_missed"] = False
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：次の攻撃の命中が上昇"))
+    elif trait_key == "critical_drive" and state.get("last_player_attack_critical") and value > 0:
+        next_atk += value
+        state["last_player_attack_critical"] = False
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：会心後の攻撃が上昇"))
+    elif trait_key == "boss_analysis" and bool(is_boss) and value > 0:
+        next_acc += value
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：ボス戦の命中が上昇"))
+    elif trait_key == "steady_operation" and int(turn) == 1 and not state.get("steady_logged"):
+        state["steady_logged"] = True
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：基礎補正が安定"))
+    return max(1, next_atk), max(1, next_acc), [line for line in lines if line]
+
+
+def _module_before_enemy_attack(state, *, is_boss, player_hp, player_max_hp, defense):
+    if not state:
+        return int(defense), []
+    trait_key = state.get("trait_key")
+    value = int(state.get("trait_value") or 0)
+    lines = []
+    next_def = int(defense)
+    if trait_key == "emergency_guard" and value > 0 and int(player_hp) * 2 <= max(1, int(player_max_hp)):
+        next_def += value
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：低耐久時の防御が上昇"))
+    elif trait_key == "boss_analysis" and bool(is_boss) and value > 0:
+        next_def += value
+        lines.append(_module_trait_trigger(state, f"{state['trait_label']}：ボス戦の防御が上昇"))
+    return max(1, next_def), [line for line in lines if line]
+
+
+def _module_after_player_attack(state, *, missed, critical):
+    if not state:
+        return
+    state["last_player_attack_missed"] = bool(missed)
+    state["last_player_attack_critical"] = bool(critical)
 
 
 def _research_module_strategy_metrics(turn_logs, *, result_win=False):
@@ -16344,6 +16457,9 @@ def _research_module_strategy_card(module, turn_logs, *, result_win=False):
         "family_label": str(module_view.get("family_label") or "研究"),
         "result_type": str(module_view.get("synthesis_result_type") or ""),
         "result_label": str(module_view.get("result_label") or ""),
+        "trait_key": str(module_view.get("trait_key") or ""),
+        "trait_label": str(module_view.get("trait_label") or ""),
+        "trait_description": str(module_view.get("trait_description") or ""),
         "stat_chips": stat_chips,
         "bonuses": bonuses,
         "message": _research_module_strategy_message(module_view, metrics),
@@ -16643,7 +16759,8 @@ def _research_module_instance_row(db, module_instance_id, user_id=None):
                rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
                COALESCE(urm.generation, 0) AS generation, COALESCE(urm.synthesis_score, 0) AS synthesis_score,
-               urm.generated_name_ja
+               urm.generated_name_ja,
+               urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE {' AND '.join(where)}
@@ -19793,8 +19910,8 @@ def _research_module_synthesis_score(bonuses):
     return int(positives - negatives // 2)
 
 
-def _roll_research_module_synthesis(module_a, module_b, *, rng=None):
-    return synthesize_research_module(module_a, module_b, rng=rng)
+def _roll_research_module_synthesis(module_a, module_b, *, rng=None, research_policy_key="stable"):
+    return synthesize_research_module(module_a, module_b, rng=rng, research_policy_key=research_policy_key)
 
 
 def _ensure_user_item_row(db, user_id, item_key):
@@ -40411,7 +40528,8 @@ def modules_sell_confirm(module_instance_id):
                rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
                rm.is_active, urm.synthesis_grade, urm.synthesis_family, urm.synthesis_result_type,
                urm.origin_module_a_id, urm.origin_module_b_id, urm.generation, urm.synthesis_score,
-               urm.generated_name_ja
+               urm.generated_name_ja,
+               urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.id = ?
@@ -40540,6 +40658,7 @@ def modules_synthesis():
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
     materials = _research_module_synthesis_materials(db, user_id)
+    selected_policy_key = normalize_policy(request.args.get("policy") or "stable")
     return render_template(
         "modules_synthesis.html",
         user=user,
@@ -40548,6 +40667,8 @@ def modules_synthesis():
         material_candidate_count=sum(1 for item in materials if item.get("is_synthesis_material")),
         selected_a_id=0,
         selected_b_id=0,
+        research_policies=MODULE_RESEARCH_POLICY_DEFS,
+        selected_policy_key=selected_policy_key,
     )
 
 
@@ -40562,6 +40683,7 @@ def modules_synthesis_confirm():
     except ValueError:
         session["message"] = "素材の指定が不正です"
         return redirect(url_for("modules_synthesis"))
+    research_policy_key = normalize_policy(request.form.get("research_policy_key") or "stable")
     module_a, module_b, error = _validate_research_module_synthesis_materials(db, user_id, module_a_id, module_b_id)
     if error:
         session["message"] = error
@@ -40579,6 +40701,7 @@ def modules_synthesis_confirm():
             "origin_module_a_id": int(module_a_id),
             "origin_module_b_id": int(module_b_id),
             "cost_coins": int(cost),
+            "research_policy_key": research_policy_key,
         },
         ip=request.remote_addr,
     )
@@ -40591,6 +40714,9 @@ def modules_synthesis_confirm():
         module_b=module_b,
         cost_coins=cost,
         coins_before=int(user["coins"] or 0),
+        research_policy_key=research_policy_key,
+        research_policy=MODULE_RESEARCH_POLICY_DEFS[research_policy_key],
+        synthesis_prediction=synthesis_prediction([module_a, module_b], research_policy_key),
     )
 
 
@@ -40606,6 +40732,7 @@ def modules_synthesis_create():
     except ValueError:
         session["message"] = "素材の指定が不正です"
         return redirect(url_for("modules_synthesis"))
+    research_policy_key = normalize_policy(request.form.get("research_policy_key") or "stable")
     module_a, module_b, error = _validate_research_module_synthesis_materials(db, user_id, module_a_id, module_b_id)
     if error:
         session["message"] = error
@@ -40623,9 +40750,12 @@ def modules_synthesis_create():
             material_candidate_count=sum(1 for item in materials if item.get("is_synthesis_material")),
             selected_a_id=int(module_a_id),
             selected_b_id=int(module_b_id),
+            research_policies=MODULE_RESEARCH_POLICY_DEFS,
+            selected_policy_key=research_policy_key,
         )
-    result = _roll_research_module_synthesis(module_a, module_b)
+    result = _roll_research_module_synthesis(module_a, module_b, research_policy_key=research_policy_key)
     bonuses = result["bonuses"]
+    trait = result.get("trait") or {"trait_key": None, "trait_value": 0, "trait_grade": None}
     now_ts = int(time.time())
     consume_cur = db.execute(
         """
@@ -40646,9 +40776,10 @@ def modules_synthesis_create():
         """
         INSERT INTO user_research_modules
         (user_id, module_key, status, is_locked, hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
+         trait_key, trait_value, trait_grade, research_policy_key, synthesis_generation,
          synthesis_grade, synthesis_family, synthesis_result_type, origin_module_a_id, origin_module_b_id,
          generation, synthesis_score, generated_name_ja, created_at, updated_at)
-        VALUES (?, ?, 'inventory', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, 'inventory', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -40659,6 +40790,11 @@ def modules_synthesis_create():
             int(bonuses["spd_bonus"]),
             int(bonuses["acc_bonus"]),
             int(bonuses["cri_bonus"]),
+            trait.get("trait_key"),
+            int(trait.get("trait_value") or 0),
+            trait.get("trait_grade"),
+            research_policy_key,
+            int(result["generation"]),
             result["synthesis_grade"],
             result["synthesis_family"],
             result["result_type"],
@@ -40691,6 +40827,8 @@ def modules_synthesis_create():
         "module_name": result.get("generated_name_ja") or result.get("name_ja") or "研究合成モジュール",
         "result_type": result["result_type"],
         "result_label": result.get("result_label") or RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS.get(result["result_type"], "研究合成"),
+        "research_policy_key": research_policy_key,
+        "research_policy_label": MODULE_RESEARCH_POLICY_DEFS[research_policy_key]["label"],
         "synthesis_grade": result["synthesis_grade"],
         "synthesis_grade_label": RESEARCH_MODULE_RARITY_LABELS.get(result["synthesis_grade"], result["synthesis_grade"]),
         "synthesis_family": result["synthesis_family"],
@@ -40701,6 +40839,10 @@ def modules_synthesis_create():
         "spd_bonus": int(bonuses["spd_bonus"]),
         "acc_bonus": int(bonuses["acc_bonus"]),
         "cri_bonus": int(bonuses["cri_bonus"]),
+        "trait_key": trait.get("trait_key"),
+        "trait_label": trait_label(trait.get("trait_key")),
+        "trait_value": int(trait.get("trait_value") or 0),
+        "trait_grade": trait.get("trait_grade"),
         "synthesis_score": int(result["synthesis_score"]),
         "cost_coins": int(cost),
         "coins_before": int(coins_before),
@@ -40751,6 +40893,7 @@ def modules_synthesis_create():
         result_description=result_descriptions.get(result["result_type"], ""),
         recommendation=_recommend_areas_for_module(result_module),
         cost_coins=cost,
+        research_policy=MODULE_RESEARCH_POLICY_DEFS[research_policy_key],
     )
 
 
@@ -40915,6 +41058,34 @@ def modules():
     active_module = _active_research_module_for_user(db, user_id, user_row=user)
     module_options = _annotate_research_module_material_status(module_options, active_module)
     module_options = _annotate_research_module_reroll_status(module_options, user)
+    active_module_id = int(active_module.get("instance_id") or 0) if active_module else 0
+    filter_key = str(request.args.get("filter") or "all").strip()
+    sort_key = str(request.args.get("sort") or "new").strip()
+    def _module_matches_filter(module):
+        labels = set(module.get("usage_labels") or [])
+        if filter_key == "active":
+            return active_module_id and int(module.get("instance_id") or 0) == active_module_id
+        if filter_key == "locked":
+            return int(module.get("is_locked") or 0) != 0
+        if filter_key == "trait":
+            return bool(module.get("trait_label"))
+        if filter_key == "power":
+            return bool({"火力向け", "速攻", "爆発", "会心"} & labels)
+        if filter_key == "stable":
+            return bool({"安定", "普段使い", "安定周回"} & labels)
+        if filter_key == "durable":
+            return bool({"耐久向け", "耐久", "長期戦"} & labels)
+        if filter_key == "accuracy":
+            return bool({"命中向け", "命中", "Haze攻略"} & labels)
+        return True
+    module_options = [module for module in module_options if _module_matches_filter(module)]
+    if sort_key == "total":
+        module_options.sort(key=lambda m: sum(abs(int(m.get(k) or 0)) for k in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus")), reverse=True)
+    elif sort_key == "generation":
+        module_options.sort(key=lambda m: (int(m.get("synthesis_generation") or 0), int(m.get("instance_id") or 0)), reverse=True)
+    else:
+        sort_key = "new"
+        module_options.sort(key=lambda m: int(m.get("instance_id") or 0), reverse=True)
     material_candidate_count = sum(1 for item in module_options if item.get("is_synthesis_material"))
     combine_candidates = _research_module_combine_candidates(db, user_id)
     catalog_summary = _research_module_catalog_summary(db, user_id)
@@ -40926,6 +41097,8 @@ def modules():
         message=message,
         active_research_module=active_module,
         research_module_options=module_options,
+        module_filter_key=filter_key,
+        module_sort_key=sort_key,
         material_candidate_count=material_candidate_count,
         combine_candidates=combine_candidates,
         catalog_summary=catalog_summary,
@@ -42496,6 +42669,7 @@ def home():
         ),
         "",
     )
+    active_research_module_fit = module_area_fit(active_research_module, selected_explore_area_key)
     locked_layer_lines = _locked_layer_lines(user, db=db)
     max_unlocked_layer = _visible_user_max_unlocked_layer(user, db=db)
     new_layer_badge = session.pop("home_new_layer_badge", None)
@@ -42773,6 +42947,7 @@ def home():
             main_robot_stats=main_robot_stats,
             research_module_options=research_module_options,
             active_research_module=active_research_module,
+            active_research_module_fit=active_research_module_fit,
             research_module_combine_candidates=research_module_combine_candidates,
             research_module_pity=research_module_pity,
             research_module_pity_target=int(RESEARCH_MODULE_PITY_TARGET),
@@ -47925,6 +48100,7 @@ def explore():
     combat_mode = _normalize_combat_mode(active["combat_mode"] if active and "combat_mode" in active.keys() else "normal")
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
+    module_trait_state = _module_trait_state(active_research_module)
     all_turn_logs = []
     reward_coin = 0
     reward_exp = 0
@@ -48600,6 +48776,8 @@ def explore():
             player_berserk_line = None
             enemy_trait_trigger_line = None
             enemy_trait_triggers = []
+            module_trait_trigger_line = None
+            module_trait_triggers = []
             player_skill = random.choice(["スラッシュ", "バースト", "ドライブ"])
 
             player_first = player_spd >= enemy_spd
@@ -48610,9 +48788,17 @@ def explore():
                     berserk_bonus = _berserk_attack_bonus(build_type, player_hp, player_max_hp)
                     player_effective_atk = max(1, int(round(player_atk * (1.0 + berserk_bonus))))
                     player_berserk_line = f"背水発動 +{int(round(berserk_bonus * 100))}% {_stat_label('hp')}: {player_hp}/{player_max_hp}"
+                player_effective_atk, player_effective_acc, trait_lines = _module_before_player_attack(
+                    module_trait_state,
+                    turn=turn,
+                    is_boss=is_boss_battle,
+                    atk=player_effective_atk,
+                    acc=player_acc,
+                )
+                module_trait_triggers.extend(trait_lines)
                 player_damage, critical, player_attack_detail = _resolve_attack_logged(
                     player_effective_atk,
-                    player_acc,
+                    player_effective_acc,
                     player_cri,
                     enemy_def,
                     enemy_acc,
@@ -48634,6 +48820,7 @@ def explore():
                     player_miss_streak = (player_miss_streak + 1) if player_missed else 0
                 if force_player_hit and not player_missed:
                     player_relief_line = "救済: 連続MISSのため命中補正"
+                _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
                 raw_player_damage = int(player_damage)
                 if enemy_trait_key == "heavy" and raw_player_damage > 0:
                     reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -48653,6 +48840,14 @@ def explore():
                     crit_finisher_kills += 1
                 if enemy_hp > 0:
                     enemy_effective_atk = enemy_atk
+                    player_effective_def, trait_lines = _module_before_enemy_attack(
+                        module_trait_state,
+                        is_boss=is_boss_battle,
+                        player_hp=player_hp,
+                        player_max_hp=player_max_hp,
+                        defense=player_def,
+                    )
+                    module_trait_triggers.extend(trait_lines)
                     if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                         enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                         if not berserk_triggered:
@@ -48662,7 +48857,7 @@ def explore():
                         enemy_effective_atk,
                         enemy_acc,
                         enemy_cri,
-                        player_def,
+                        player_effective_def,
                         player_acc,
                         rng=random,
                         attacker_archetype=None,
@@ -48684,6 +48879,14 @@ def explore():
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, {}, debug=battle_debug)
             else:
                 enemy_effective_atk = enemy_atk
+                player_effective_def, trait_lines = _module_before_enemy_attack(
+                    module_trait_state,
+                    is_boss=is_boss_battle,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                    defense=player_def,
+                )
+                module_trait_triggers.extend(trait_lines)
                 if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                     enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                     if not berserk_triggered:
@@ -48693,7 +48896,7 @@ def explore():
                     enemy_effective_atk,
                     enemy_acc,
                     enemy_cri,
-                    player_def,
+                    player_effective_def,
                     player_acc,
                     rng=random,
                     attacker_archetype=None,
@@ -48717,9 +48920,17 @@ def explore():
                         berserk_bonus = _berserk_attack_bonus(build_type, player_hp, player_max_hp)
                         player_effective_atk = max(1, int(round(player_atk * (1.0 + berserk_bonus))))
                         player_berserk_line = f"背水発動 +{int(round(berserk_bonus * 100))}% {_stat_label('hp')}: {player_hp}/{player_max_hp}"
+                    player_effective_atk, player_effective_acc, trait_lines = _module_before_player_attack(
+                        module_trait_state,
+                        turn=turn,
+                        is_boss=is_boss_battle,
+                        atk=player_effective_atk,
+                        acc=player_acc,
+                    )
+                    module_trait_triggers.extend(trait_lines)
                     player_damage, critical, player_attack_detail = _resolve_attack_logged(
                         player_effective_atk,
-                        player_acc,
+                        player_effective_acc,
                         player_cri,
                         enemy_def,
                         enemy_acc,
@@ -48741,6 +48952,7 @@ def explore():
                         player_miss_streak = (player_miss_streak + 1) if player_missed else 0
                     if force_player_hit and not player_missed:
                         player_relief_line = "救済: 連続MISSのため命中補正"
+                    _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
                     raw_player_damage = int(player_damage)
                     if enemy_trait_key == "heavy" and raw_player_damage > 0:
                         reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -48767,6 +48979,8 @@ def explore():
 
             if enemy_trait_triggers:
                 enemy_trait_trigger_line = " / ".join(enemy_trait_triggers)
+            if module_trait_triggers:
+                module_trait_trigger_line = " / ".join(module_trait_triggers)
 
             battle_logs.append(
                 {
@@ -48798,6 +49012,7 @@ def explore():
                     "player_attack_note": player_attack_note,
                     "enemy_attack_note": enemy_attack_note,
                     "enemy_trait_trigger_line": enemy_trait_trigger_line,
+                    "module_trait_trigger_line": module_trait_trigger_line,
                     "player_relief_line": player_relief_line,
                     "player_berserk_line": player_berserk_line,
                 }
@@ -49720,6 +49935,7 @@ def explore():
         result_win=(final_outcome == "win"),
     )
     if module_strategy_card:
+        module_trait_trigger_count = int((module_trait_state or {}).get("trigger_count") or 0)
         strategy_payload = {
             "user_id": user_id,
             "robot_instance_id": int(active["id"]) if active else None,
@@ -49731,6 +49947,8 @@ def explore():
             "enemy_key": (last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
             "enemy_name": (last_enemy["name_ja"] if last_enemy and "name_ja" in last_enemy.keys() else None),
             "result_type": module_strategy_card.get("result_type"),
+            "module_trait_key": module_strategy_card.get("trait_key"),
+            "module_trait_trigger_count": module_trait_trigger_count,
             **module_strategy_card.get("bonuses", {}),
             **module_strategy_card.get("metrics", {}),
         }
@@ -49745,6 +49963,27 @@ def explore():
             payload=strategy_payload,
             ip=request.remote_addr,
         )
+        if module_trait_trigger_count > 0:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_TRAIT_TRIGGER"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="research_module",
+                entity_id=int(module_strategy_card.get("module_instance_id") or 0),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "module_instance_id": int(module_strategy_card.get("module_instance_id") or 0),
+                    "module_name": module_strategy_card.get("module_name"),
+                    "trait_key": module_strategy_card.get("trait_key"),
+                    "trait_label": module_strategy_card.get("trait_label"),
+                    "trigger_count": module_trait_trigger_count,
+                    "trigger_labels": sorted((module_trait_state or {}).get("trigger_labels") or []),
+                },
+                ip=request.remote_addr,
+            )
     area_turn_limit = get_battle_turn_limit(area_key, is_boss=bool(area_boss_active))
     area_turn_limit_removed = area_turn_limit is None
     area_safety_turn_cap = int(HARD_BATTLE_TURN_CAP) if area_turn_limit_removed else None
@@ -49783,6 +50022,18 @@ def explore():
                 "acc": player_acc,
                 "cri": player_cri,
             },
+            "module": (
+                {
+                    "module_instance_id": int(active_research_module.get("instance_id") or 0),
+                    "module_name": active_research_module.get("name_ja"),
+                    "module_stats": _research_module_bonus_payload(active_research_module),
+                    "module_trait_key": active_research_module.get("trait_key"),
+                    "module_trait_value": int(active_research_module.get("trait_value") or 0),
+                    "module_trait_trigger_count": int((module_trait_state or {}).get("trigger_count") or 0),
+                }
+                if active_research_module
+                else None
+            ),
             "stage_modifier": {
                 "enabled": bool(STAGE_MODIFIERS_ENABLED),
                 "summary_line": stage_modifier_line,
@@ -50212,6 +50463,18 @@ def explore():
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
         "module_strategy": module_strategy_card,
+        "module_snapshot": (
+            {
+                "module_instance_id": int(active_research_module.get("instance_id") or 0),
+                "module_name": active_research_module.get("name_ja"),
+                "module_stats": _research_module_bonus_payload(active_research_module),
+                "module_trait_key": active_research_module.get("trait_key"),
+                "module_trait_value": int(active_research_module.get("trait_value") or 0),
+                "module_trait_trigger_count": int((module_trait_state or {}).get("trigger_count") or 0),
+            }
+            if active_research_module
+            else None
+        ),
         "tutorial_layer1_result_card": tutorial_layer1_result_card,
         "tutorial_layer1_next_action": (
             {

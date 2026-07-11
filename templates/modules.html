@@ -14,6 +14,9 @@
       <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
       {% endfor %}
     </div>
+    {% if active_research_module['trait_label'] %}
+    <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>
+    {% endif %}
     {% else %}
     <div class="upgrade-cost">未設定</div>
     {% endif %}
@@ -49,6 +52,16 @@
 
   <div class="card module-section">
     <div><b>所持モジュール</b></div>
+    <div class="module-card-meta">
+      {% for key, label in [('all','すべて'),('active','選択中'),('locked','保護中'),('trait','特性あり'),('power','火力向け'),('stable','安定向け'),('durable','耐久向け'),('accuracy','命中向け')] %}
+      <a class="module-badge {{ 'active' if module_filter_key == key else 'muted' }}" href="{{ url_for('modules', filter=key, sort=module_sort_key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <div class="module-card-meta">
+      {% for key, label in [('new','新しい順'),('total','能力合計順'),('generation','世代順')] %}
+      <a class="module-badge {{ 'active' if module_sort_key == key else 'muted' }}" href="{{ url_for('modules', filter=module_filter_key, sort=key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
     {% if research_module_options %}
     <div class="module-card-grid">
       {% for module in research_module_options %}
@@ -71,6 +84,17 @@
         {% endif %}
         {% if module['module_key'] == 'synthesized_module' %}
         <div class="robot-time">由来: {{ module['family_label'] }}</div>
+        {% endif %}
+        {% if module['trait_label'] %}
+        <div class="robot-time">［{{ module['trait_label'] }}］{{ module['trait_description'] }}</div>
+        {% else %}
+        <div class="robot-time">作戦特性: なし</div>
+        {% endif %}
+        {% if module['usage_labels'] %}
+        <div class="robot-time">向いている戦い: {{ module['usage_labels']|join('・') }}</div>
+        {% endif %}
+        {% if module['synthesis_generation'] %}
+        <div class="robot-time">第{{ module['synthesis_generation'] }}世代</div>
         {% endif %}
         <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
         <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top">

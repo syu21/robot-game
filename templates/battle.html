@@ -196,6 +196,9 @@
       <span>{{ strategy.get('type_label', '研究モジュール') }}</span>
       <span>{{ strategy.get('family_label', '研究') }}</span>
     </div>
+    {% if strategy.get('trait_label') %}
+    <p class="robot-time">作戦特性: {{ strategy.get('trait_label') }} / {{ strategy.get('trait_description') }}</p>
+    {% endif %}
     <div class="module-stat-chips">
       {% for chip in strategy.get('stat_chips', []) %}
       <span class="module-stat-chip {{ chip.get('tone', '') }}">{{ chip.get('text', '') }}</span>
@@ -458,6 +461,9 @@
             {% endif %}
             {% if t.get('enemy_trait_trigger_line') %}
               <div class="battle-line drop">{{ t['enemy_trait_trigger_line'] }}</div>
+            {% endif %}
+            {% if t.get('module_trait_trigger_line') %}
+              <div class="battle-line drop">{{ t['module_trait_trigger_line'] }}</div>
             {% endif %}
             {% if t.get('player_skill') %}
               <div class="battle-skill">「{{ t['player_skill'] }}」</div>

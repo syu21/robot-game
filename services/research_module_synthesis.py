@@ -1,5 +1,7 @@
 import random
 
+from services.module_traits import normalize_policy, roll_trait
+
 
 STAT_KEYS = ("hp", "atk", "def", "spd", "acc", "cri")
 BONUS_KEYS = tuple(f"{stat}_bonus" for stat in STAT_KEYS)
@@ -84,8 +86,9 @@ def generated_name_ja(family, result_type=None):
     return name
 
 
-def synthesize_research_module(parent_a, parent_b, rng=None):
+def synthesize_research_module(parent_a, parent_b, rng=None, research_policy_key="stable"):
     roller = rng or random
+    research_policy_key = normalize_policy(research_policy_key)
     roll = float(roller.random())
     if roll < 0.05:
         result_type = "anomaly"
@@ -104,13 +107,33 @@ def synthesize_research_module(parent_a, parent_b, rng=None):
     for stat_key in STAT_KEYS:
         key = f"{stat_key}_bonus"
         base = int(round((int(_module_value(parent_a, key, 0) or 0) + int(_module_value(parent_b, key, 0) or 0)) / 2))
+        if research_policy_key == "stable":
+            jitter_min, jitter_max = (-1, 1) if result_type == "normal" else (0, 3)
+        elif research_policy_key == "output":
+            jitter_min, jitter_max = (-3, 3) if result_type == "normal" else (-2, 4)
+        elif research_policy_key == "trait":
+            jitter_min, jitter_max = (-3, 2) if result_type == "normal" else (-2, 3)
+        else:
+            jitter_min, jitter_max = (-2, 2)
         if result_type == "normal":
-            value = base + int(roller.randint(-2, 2))
+            value = base + int(roller.randint(jitter_min, jitter_max))
         elif result_type == "great":
-            value = base + int(roller.randint(-1, 4))
+            value = base + int(roller.randint(jitter_min, jitter_max))
         else:
             value = base + int(roller.randint(-2, 2))
         bonuses[key] = max(min_negative, min(max_positive, value))
+
+    if research_policy_key == "output":
+        focus_key = max(BONUS_KEYS, key=lambda stat: int(bonuses.get(stat) or 0))
+        bonuses[focus_key] = min(max_positive, int(bonuses[focus_key]) + int(roller.randint(3, 6)))
+        for key in BONUS_KEYS:
+            if key != focus_key and int(bonuses[key]) > 0 and roller.random() < 0.45:
+                bonuses[key] = max(min_negative, int(bonuses[key]) - int(roller.randint(1, 3)))
+
+    if research_policy_key == "trait":
+        for key in BONUS_KEYS:
+            if int(bonuses[key]) > 0 and roller.random() < 0.35:
+                bonuses[key] = max(min_negative, int(bonuses[key]) - 1)
 
     if result_type == "great":
         plus_keys = [key for key, value in bonuses.items() if int(value) >= 0] or list(BONUS_KEYS)
@@ -137,6 +160,7 @@ def synthesize_research_module(parent_a, parent_b, rng=None):
 
     family = synthesis_family(parent_a, parent_b)
     score = synthesis_score(bonuses)
+    trait = roll_trait([parent_a, parent_b], research_policy_key, rng=roller)
     return {
         "result_type": result_type,
         "result_label": RESULT_LABELS[result_type],
@@ -145,6 +169,8 @@ def synthesize_research_module(parent_a, parent_b, rng=None):
         "generated_name_ja": generated_name_ja(family, result_type),
         "name_ja": generated_name_ja(family, result_type),
         "bonuses": bonuses,
+        "trait": trait,
+        "research_policy_key": research_policy_key,
         "synthesis_score": score,
         "generation": max(int(_module_value(parent_a, "generation", 0) or 0), int(_module_value(parent_b, "generation", 0) or 0)) + 1,
     }

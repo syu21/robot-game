@@ -180,6 +180,7 @@ AUDIT_EVENT_TYPES = {
     "MODULE_SYNTHESIS_RESULT": "audit.module.synthesis.result",
     "MODULE_STRATEGY_APPLY": "audit.module.strategy.apply",
     "MODULE_STRATEGY_RESULT": "audit.module.strategy.result",
+    "MODULE_TRAIT_TRIGGER": "audit.module.trait.trigger",
     "MODULE_REROLL": "audit.module.reroll",
     "MODULE_REROLL_CANDIDATE_CREATE": "audit.module.reroll.candidate.create",
     "MODULE_REROLL_ACCEPT": "audit.module.reroll.accept",

@@ -30,6 +30,17 @@
         </option>
         {% endfor %}
       </select>
+      <div class="module-card-meta">
+        {% for key, policy in research_policies.items() %}
+        <label class="module-badge">
+          <input type="radio" name="research_policy_key" value="{{ key }}" {% if selected_policy_key == key %}checked{% endif %} />
+          {{ policy['label'] }}
+        </label>
+        {% endfor %}
+      </div>
+      {% for key, policy in research_policies.items() %}
+      <div class="robot-time">{{ policy['label'] }}: {{ policy['description'] }}</div>
+      {% endfor %}
       <button type="submit" {% if material_candidate_count < 2 %}disabled{% endif %}>確認へ</button>
     </form>
   </div>

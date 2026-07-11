@@ -544,6 +544,12 @@
           {% if active_research_module and active_research_module.get('stat_line') %}
           <div class="upgrade-cost">{{ active_research_module['stat_line'] }}</div>
           {% endif %}
+          {% if active_research_module and active_research_module.get('trait_label') %}
+          <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>
+          {% endif %}
+          {% if active_research_module_fit %}
+          <div class="robot-time">今回の出撃先との相性: {{ active_research_module_fit['label'] }}。{{ active_research_module_fit['message'] }}</div>
+          {% endif %}
           <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">研究モジュール一覧</a></p>

@@ -1,166 +1,70 @@
 # 研究モジュール仕様
 
-最終更新日: 2026-06-15
+## 基本
 
-## 目的
-- パーツは確実な積み上げ育成、研究モジュールはランダム要素付きの作戦チップ育成として分ける。
-- ロボ/パーツ本体ステータスは変更しない。
-- モジュール補正は従来通り、次の出撃の戦闘中だけ適用する。
+- モジュールは非消耗品。
+- 次回出撃用に1個だけ選択する。
+- ロボ個体への固定装備ではない。
+- 出撃後も所持品として残り、選択状態も維持される。
+- パーツ・DECORとは別枠。
+- 戦闘中だけ基礎補正と作戦特性を適用する。
 
-## 基本仕様
-- 選択中モジュールは `users.active_research_module_instance_id` で管理する。
-- 固定モジュールは `research_modules` の補正を使う。
-- 研究合成産は `user_research_modules` の個体補正を使う。
-- `user_research_modules` 側の補正が `NULL` の場合は `research_modules` にフォールバックする。
-- 戦闘適用時は補正後ステータスを最低1に clamp する。
+## 作戦特性
 
-## DB
-- `research_modules`
-  - 固定マスタ。
-  - `synthesized_module` は研究合成産の共通マスタ。
-- `user_research_modules`
-  - 所持個体。
-  - 研究合成産だけ個体補正を持つ。
-  - 追加列:
-    - `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
-    - `synthesis_grade`
-    - `synthesis_family`
-    - `synthesis_result_type`
-    - `origin_module_a_id`
-    - `origin_module_b_id`
-    - `generation`
-    - `synthesis_score`
+所持モジュール個体に最大1つ付く。
 
-## 入手
-- 通常戦勝利時に低確率ドロップ。
-- 研究ゲージ100到達でprototypeを保証付与。
-- 同種prototype 3個でcompleteへ合成。
-- `/modules/synthesis` で2個合成により `synthesized_module` 個体を生成。
+- `opening_assault`: 先制出力。1ターン目のみ攻撃上昇。
+- `emergency_guard`: 緊急防壁。耐久50%以下の間、防御上昇。
+- `precision_retry`: 照準再補正。MISS後の次の攻撃だけ命中上昇。
+- `critical_drive`: 臨界加速。会心後の次の攻撃だけ攻撃上昇。
+- `boss_analysis`: 対大型解析。ボス戦のみ命中と防御上昇。
+- `steady_operation`: 安定稼働。攻撃以外の得意補正へ戦闘中だけ上乗せ。
 
-## 研究合成
-- ルート:
-  - `GET /modules/synthesis`
-  - `POST /modules/synthesis/confirm`
-  - `POST /modules/synthesis`
-  - `POST /modules/synthesis/equip`
-- 素材:
-  - 本人所有
-  - `status='inventory'`
-  - `is_locked=0`
-  - 現在選択中ではない
-  - 2個は別個体
-- 費用:
-  - v1は一律500コイン
-- 成功時:
-  - 素材2個を `consumed` にする。
-  - `synthesized_module` を1個 `inventory` で生成する。
-  - `audit.coin.delta` を残す。
-- 失敗時:
-  - コイン不足、素材不正では生成しない。
-  - 素材も消費しない。
+既存モジュールには自動で特性を付けない。
 
-## 生成ロジック
-- 親2個の実効補正の平均を base にする。
-- result_type:
-  - `normal`: 70%
-  - `great`: 25%
-  - `anomaly`: 5%
-- 上限:
-  - normal: 単ステ +14
-  - great: 単ステ +18
-  - anomaly: 単ステ +24
-- anomaly は2ステ以上にマイナス補正を持つ。
-- `synthesis_score` はプラス補正合計 - マイナス補正絶対値の半分。
+## 研究方針
 
-## 表示
-- `/modules`
-  - 「研究合成」導線を主導線として表示。
-  - 既存の同種3個合成、保護、売却、図鑑は維持。
-  - `prototype` / `tier1` / `trade_policy` などの内部値は表示しない。
-  - 図鑑状態は `未発見` / `発見済み` で表示する。
-  - 効果は日本語能力名のチップで表示する。
-- `/modules/synthesis`
-  - 素材A/B選択。
-  - ロック中/選択中は選択不可理由を表示。
-  - 素材候補0件/1件時は必要条件と入手導線を表示する。
-- 結果画面:
-  - 成功 / 大成功 / 異常反応
-  - 生成モジュール名
-  - 6ステ補正
-  - 系統
-  - 評価
-  - 由来
-  - このモジュールを次の出撃で使う
-  - このモジュールを保護する
-  - おすすめ出撃先
-  - 基地へ戻って出撃する
-  - モジュール一覧へ
+研究合成では既存の2素材合成を維持し、方針を選ぶ。
 
-## 実戦導線
-- 合成結果画面の「このモジュールを次の出撃で使う」は `users.active_research_module_instance_id` を更新し、`/home?module_equipped=1` に戻す。
-- 使用設定は本人所有、`status='inventory'`、未売却のモジュールだけ許可する。
-- ロック中モジュールは素材・売却には使えないが、出撃用としては設定できる。
-- 出撃結果画面は active module がある場合だけ「今回の作戦」カードを表示する。
-- 「今回の作戦」はモジュール名、種別/評価、効果チップ、勝敗コメント、取れる範囲の戦闘メトリクスを表示する。
-- 0補正は効果チップから省略する。研究合成産で実効補正が取れない場合は「効果: 合成結果によって変化」と表示する。
-- 戦闘ログ形式は変更しない。メトリクスは既存 `turn_logs` から集計する。
+- 安定研究: 素材平均に寄せ、振れ幅を抑える。特性付与率は低め。
+- 高出力研究: 主能力を伸ばしやすい。副能力は伸びにくい。
+- 特性研究: 作戦特性が付きやすい。能力値はやや不安定。
 
-## 監査ログ
+合成前に能力傾向、特性候補、安定度を表示する。内部確率は表示しない。
+
+## 適性表示
+
+基地の選択中モジュールに、現在選んでいる出撃先との相性を表示する。
+
+- 良好
+- 標準
+- 挑戦的
+
+適性は案内のみ。隠し補正は付けない。
+
+## 図鑑
+
+既存のモジュール図鑑を維持する。所持カードには作戦特性、用途ラベル、合成世代を表示する。
+
+## 監査
+
+既存イベントに研究方針・特性情報を追加する。
+
 - `audit.module.synthesis.preview`
 - `audit.module.synthesis.create`
 - `audit.module.synthesis.consume`
 - `audit.module.synthesis.result`
 - `audit.module.strategy.apply`
 - `audit.module.strategy.result`
-- `audit.coin.delta`
+- `audit.module.trait.trigger`
 
-payload:
-- `user_id`
-- `origin_module_a_id`
-- `origin_module_b_id`
-- `result_module_id`
-- `result_type`
-- `synthesis_family`
-- `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
-- `synthesis_score`
-- `cost_coins`
-- `coins_before`
-- `coins_after`
+## 未実装
 
-`audit.module.strategy.apply` payload:
-- `user_id`
-- `robot_instance_id`
-- `module_instance_id`
-- `module_key`
-- `module_name`
-- `area_key`
-- `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
-
-`audit.module.strategy.result` payload:
-- `user_id`
-- `robot_instance_id`
-- `module_instance_id`
-- `module_name`
-- `area_key`
-- `area_label`
-- `enemy_key`
-- `enemy_name`
-- `result_win`
-- `turn_count`
-- `player_miss_count`
-- `player_crit_count`
-- `player_max_damage`
-- `player_total_damage`
-- `player_damage_taken`
-- `player_hp_remaining`
-- `hp_bonus / atk_bonus / def_bonus / spd_bonus / acc_bonus / cri_bonus`
-
-## 個人ログ
-- `audit.module.synthesis.result` は `/comms/personal` に「研究合成」ログとして表示する。
-- `audit.module.strategy.result` は `/comms/personal` に「今回の作戦」ログとして表示する。
-- 世界ログには公開しない。
-
-## 非対象 v1
-- 世界ログ公開。
-- ユーザー間取引。
-- パーツ/ロボ本体ステータス変更。
+- モジュール消費
+- 複数装備
+- 3個セット効果
+- 耐久度
+- 課金限定モジュール
+- 無限再抽選
+- 大規模ランキング
+- 複雑なスキルツリー
