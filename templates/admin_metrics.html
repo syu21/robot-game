@@ -7,6 +7,7 @@
       <h1>運用メトリクス</h1>
       <p class="admin-metrics-desc">
         人数そのものではなく、「登録して、ホームを見て、出撃して、育成して、また戻ってきたか」を追うための画面です。
+        通常プレイヤーのみ集計。管理者・テスト・集計除外ユーザーを除きます。
       </p>
     </div>
     <form method="post" class="inline-form admin-metrics-toolbar">
@@ -15,6 +16,11 @@
   </section>
 
   <section class="admin-metrics-overview-grid">
+    <article class="card admin-metrics-stat-card">
+      <div class="admin-metrics-stat-label">集計対象</div>
+      <div class="admin-metrics-stat-value">通常 {{ analytics_counts.normal }}人</div>
+      <div class="admin-metrics-stat-sub">除外 {{ analytics_counts.excluded }}人 / 管理者 {{ analytics_counts.admin }}人 / 不審候補 {{ analytics_counts.suspicious_candidates }}人</div>
+    </article>
     <article class="card admin-metrics-stat-card">
       <div class="admin-metrics-stat-label">分析期間</div>
       <div class="admin-metrics-stat-value">直近{{ behavior_snapshot.window_days }}日</div>
@@ -35,6 +41,64 @@
       <div class="admin-metrics-stat-value">D1 {{ '%.1f'|format(behavior_snapshot.d1.rate_pct) }}% / D3 {{ '%.1f'|format(behavior_snapshot.d3.rate_pct) }}%</div>
       <div class="admin-metrics-stat-sub">登録後に戻ってきたかをコホートで確認</div>
     </article>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
+        <div class="admin-metrics-section-title">新規初回体験</div>
+        <div class="admin-metrics-section-sub">直近{{ first_experience_snapshot.window_days }}日の正常新規登録を母数に、初回導線を再集計します。</div>
+      </div>
+      <form method="get" class="inline-form admin-metrics-toolbar">
+        <label>集計窓
+          <select name="funnel_days">
+            <option value="7" {% if first_experience_snapshot.window_days == 7 %}selected{% endif %}>直近7日</option>
+            <option value="14" {% if first_experience_snapshot.window_days == 14 %}selected{% endif %}>直近14日</option>
+            <option value="30" {% if first_experience_snapshot.window_days == 30 %}selected{% endif %}>直近30日</option>
+          </select>
+        </label>
+        <button type="submit">更新</button>
+      </form>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初勝利後再出撃率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_10m.numerator }}人 / {{ first_experience_snapshot.retry_10m.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.retry_10m.rate_pct) }}% / 10分以内</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">結果画面再出撃クリック率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_click.numerator }}人 / {{ first_experience_snapshot.retry_click.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.retry_click.rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第2回出撃到達率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.second_start.numerator }}人 / {{ first_experience_snapshot.second_start.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.second_start.rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第3回出撃到達率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.third_start.numerator }}人 / {{ first_experience_snapshot.third_start.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.third_start.rate_pct) }}%</div>
+      </div>
+    </div>
+    <div class="admin-metrics-bar-list">
+      {% for item in first_experience_snapshot.rows %}
+      <article class="admin-metrics-bar-row">
+        <div class="admin-metrics-bar-head">
+          <div class="admin-metrics-bar-label">{{ item.label }}</div>
+          <div class="admin-metrics-bar-meta">{{ item.count }}人</div>
+        </div>
+        <div class="admin-metrics-bar-track">
+          <div class="admin-metrics-bar-fill is-cyan" style="width: {{ '%.2f'|format(item.pct_of_registered) }}%"></div>
+        </div>
+        <div class="admin-metrics-bar-foot">
+          <span>登録者比 {{ '%.0f'|format(item.pct_of_registered) }}%</span>
+          <span>前段階比 {{ '%.0f'|format(item.pct_of_previous) }}%</span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
   </section>
 
   <section class="card admin-metrics-panel">

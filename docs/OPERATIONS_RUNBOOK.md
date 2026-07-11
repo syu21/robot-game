@@ -70,6 +70,22 @@ journalctl -u robot-game-backup.service -n 20 --no-pager
 ls -lt /home/ubuntu/robot-game/backups | head
 ```
 
+## 不正登録/集計除外確認
+
+```bash
+sqlite3 /home/ubuntu/robot-game/game.db "SELECT COUNT(*) FROM users WHERE analytics_excluded = 1;"
+sqlite3 /home/ubuntu/robot-game/game.db "SELECT event_type, COUNT(*) FROM world_events_log WHERE event_type LIKE 'audit.security.%' GROUP BY event_type;"
+sqlite3 /home/ubuntu/robot-game/game.db "SELECT id, username, analytics_excluded, analytics_excluded_reason FROM users WHERE analytics_excluded = 1 ORDER BY id DESC LIMIT 20;"
+```
+
+- 管理画面: `/admin/users`
+  - 不審登録候補を一括集計除外
+  - 個別に集計除外/集計対象へ戻す
+- 管理画面: `/admin/metrics`
+  - 通常プレイヤー指標
+  - 新規初回体験ファネル
+  - 第1層初勝利後の再出撃率
+
 ## 最低限の復旧コマンド
 
 ```bash

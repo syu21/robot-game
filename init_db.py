@@ -786,6 +786,10 @@ def main():
             banned_at TEXT,
             banned_reason TEXT,
             banned_by_user_id INTEGER,
+            analytics_excluded INTEGER NOT NULL DEFAULT 0,
+            analytics_excluded_at TEXT,
+            analytics_excluded_reason TEXT,
+            analytics_excluded_by_user_id INTEGER,
             has_seen_intro_modal INTEGER NOT NULL DEFAULT 0,
             intro_guide_closed_at TEXT,
             last_explore_area_key TEXT,
@@ -3240,6 +3244,14 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN banned_reason TEXT")
     if "banned_by_user_id" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN banned_by_user_id INTEGER")
+    if "analytics_excluded" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN analytics_excluded INTEGER NOT NULL DEFAULT 0")
+    if "analytics_excluded_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN analytics_excluded_at TEXT")
+    if "analytics_excluded_reason" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN analytics_excluded_reason TEXT")
+    if "analytics_excluded_by_user_id" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN analytics_excluded_by_user_id INTEGER")
     if "has_seen_intro_modal" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN has_seen_intro_modal INTEGER NOT NULL DEFAULT 0")
     if "intro_guide_closed_at" not in users_cols:

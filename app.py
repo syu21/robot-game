@@ -8,6 +8,7 @@ import sqlite3
 import traceback
 import time
 import threading
+import unicodedata
 import csv
 import io
 import json
@@ -3650,33 +3651,60 @@ def _jst_day_key_to_bounds(day_key):
 
 def _collect_daily_metrics(db, day_key):
     start_ts, end_ts = _jst_day_key_to_bounds(day_key)
+    user_filter = _analytics_user_filter_sql("u")
     dau_count = db.execute(
-        """
+        f"""
         SELECT COUNT(DISTINCT user_id) AS c
-        FROM world_events_log
-        WHERE user_id IS NOT NULL
-          AND created_at >= ? AND created_at < ?
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.user_id IS NOT NULL
+          AND wel.created_at >= ? AND wel.created_at < ?
+          AND {user_filter}
         """,
         (start_ts, end_ts),
     ).fetchone()["c"]
     new_users = db.execute(
-        "SELECT COUNT(*) AS c FROM users WHERE created_at >= ? AND created_at < ?",
+        f"SELECT COUNT(*) AS c FROM users u WHERE created_at >= ? AND created_at < ? AND {user_filter}",
         (start_ts, end_ts),
     ).fetchone()["c"]
     explore_count = db.execute(
-        "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ? AND created_at >= ? AND created_at < ?",
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
+          AND {user_filter}
+        """,
         (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
     ).fetchone()["c"]
     boss_encounters = db.execute(
-        "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ? AND created_at >= ? AND created_at < ?",
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
+          AND {user_filter}
+        """,
         (AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], start_ts, end_ts),
     ).fetchone()["c"]
     boss_defeats = db.execute(
-        "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ? AND created_at >= ? AND created_at < ?",
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
+          AND {user_filter}
+        """,
         (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], start_ts, end_ts),
     ).fetchone()["c"]
     fuse_count = db.execute(
-        "SELECT COUNT(*) AS c FROM world_events_log WHERE event_type = ? AND created_at >= ? AND created_at < ?",
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
+          AND {user_filter}
+        """,
         (AUDIT_EVENT_TYPES["FUSE"], start_ts, end_ts),
     ).fetchone()["c"]
     row = {
@@ -3795,14 +3823,17 @@ def _admin_behavior_events(db, since_ts):
     since_ts = int(since_ts or 0)
     since_login_text = datetime.fromtimestamp(since_ts, JST).strftime("%Y-%m-%d %H:%M:%S")
     items = []
+    user_filter = _analytics_user_filter_sql("u")
 
     login_rows = db.execute(
-        """
-        SELECT id, user_id, created_at
-        FROM login_logs
-        WHERE user_id IS NOT NULL
-          AND created_at >= ?
-        ORDER BY created_at ASC, id ASC
+        f"""
+        SELECT ll.id, ll.user_id, ll.created_at
+        FROM login_logs ll
+        JOIN users u ON u.id = ll.user_id
+        WHERE ll.user_id IS NOT NULL
+          AND ll.created_at >= ?
+          AND {user_filter}
+        ORDER BY ll.created_at ASC, ll.id ASC
         """,
         (since_login_text,),
     ).fetchall()
@@ -3821,12 +3852,14 @@ def _admin_behavior_events(db, since_ts):
     tracked_event_types = tuple(ADMIN_METRICS_WORLD_EVENT_TO_STEP.keys())
     audit_rows = db.execute(
         f"""
-        SELECT id, user_id, created_at, event_type
-        FROM world_events_log
-        WHERE user_id IS NOT NULL
-          AND created_at >= ?
-          AND event_type IN ({",".join(["?"] * len(tracked_event_types))})
-        ORDER BY created_at ASC, id ASC
+        SELECT wel.id, wel.user_id, wel.created_at, wel.event_type
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.user_id IS NOT NULL
+          AND wel.created_at >= ?
+          AND wel.event_type IN ({",".join(["?"] * len(tracked_event_types))})
+          AND {user_filter}
+        ORDER BY wel.created_at ASC, wel.id ASC
         """,
         (since_ts, *tracked_event_types),
     ).fetchall()
@@ -3927,10 +3960,11 @@ def _admin_metrics_behavior_snapshot(db, *, window_days=ADMIN_METRICS_FUNNEL_DAY
 
     new_user_since_ts = int(now_ts - (ADMIN_METRICS_NEW_USER_DAYS * 86400))
     new_user_rows = db.execute(
-        """
+        f"""
         SELECT id, created_at
-        FROM users
+        FROM users u
         WHERE created_at >= ?
+          AND {_analytics_user_filter_sql("u")}
         ORDER BY created_at DESC, id DESC
         """,
         (new_user_since_ts,),
@@ -3986,10 +4020,11 @@ def _admin_metrics_behavior_snapshot(db, *, window_days=ADMIN_METRICS_FUNNEL_DAY
 
     revisit_since_ts = int(now_ts - (ADMIN_METRICS_REVISIT_COHORT_DAYS * 86400))
     revisit_users = db.execute(
-        """
+        f"""
         SELECT id, created_at
-        FROM users
+        FROM users u
         WHERE created_at >= ?
+          AND {_analytics_user_filter_sql("u")}
         ORDER BY created_at DESC, id DESC
         """,
         (revisit_since_ts,),
@@ -4040,10 +4075,227 @@ def _admin_metrics_behavior_snapshot(db, *, window_days=ADMIN_METRICS_FUNNEL_DAY
     }
 
 
+def _admin_first_experience_snapshot(db, *, window_days=7):
+    window_days = max(7, min(30, int(window_days or 7)))
+    now_ts = _now_ts()
+    start_ts = int(now_ts - window_days * 86400)
+    today_jst = datetime.fromtimestamp(now_ts, JST).date()
+    user_filter = _analytics_user_filter_sql("u")
+    user_rows = db.execute(
+        f"""
+        SELECT id, created_at
+        FROM users u
+        WHERE u.created_at >= ?
+          AND {user_filter}
+        ORDER BY u.created_at ASC, u.id ASC
+        """,
+        (start_ts,),
+    ).fetchall()
+    user_ids = {int(row["id"]) for row in user_rows}
+    if not user_ids:
+        empty_steps = [
+            ("registered", "正常新規登録"),
+            ("home_first_view", "基地初表示"),
+            ("layer1_first_start", "第1層初出撃"),
+            ("layer1_first_complete", "第1層探索完了"),
+            ("layer1_first_win", "第1層初勝利"),
+            ("battle_result_view", "戦利品結果表示"),
+            ("retry_click", "再出撃クリック"),
+            ("second_start", "第2回出撃"),
+            ("third_start", "第3回出撃"),
+            ("part_first_drop", "初パーツ入手"),
+            ("build_first_complete", "初編成完了"),
+            ("boss_encounter", "第1層ボス遭遇"),
+            ("boss_defeat", "第1層ボス撃破"),
+            ("next_day_return", "翌日再訪"),
+        ]
+        return {
+            "window_days": window_days,
+            "registered_count": 0,
+            "rows": [
+                {"key": key, "label": label, "count": 0, "pct_of_registered": 0.0, "pct_of_previous": 0.0}
+                for key, label in empty_steps
+            ],
+            "retry_10m": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "retry_same_day": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "retry_24h": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "retry_click": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "second_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "third_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+        }
+    placeholders = ",".join("?" for _ in user_ids)
+    event_rows = db.execute(
+        f"""
+        SELECT user_id, event_type, created_at, payload_json
+        FROM world_events_log
+        WHERE user_id IN ({placeholders})
+          AND created_at >= ?
+        ORDER BY user_id ASC, created_at ASC, id ASC
+        """,
+        (*sorted(user_ids), start_ts),
+    ).fetchall()
+    events_by_user = {}
+    for row in event_rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except Exception:
+            payload = {}
+        events_by_user.setdefault(int(row["user_id"]), []).append(
+            {
+                "event_type": str(row["event_type"] or ""),
+                "created_at": int(row["created_at"] or 0),
+                "payload": payload if isinstance(payload, dict) else {},
+            }
+        )
+
+    step_users = {
+        "registered": set(user_ids),
+        "home_first_view": set(),
+        "layer1_first_start": set(),
+        "layer1_first_complete": set(),
+        "layer1_first_win": set(),
+        "battle_result_view": set(),
+        "retry_click": set(),
+        "second_start": set(),
+        "third_start": set(),
+        "part_first_drop": set(),
+        "build_first_complete": set(),
+        "boss_encounter": set(),
+        "boss_defeat": set(),
+        "next_day_return": set(),
+    }
+    first_win_ts_by_user = {}
+    first_retry_start_after_win = {}
+    first_retry_click_after_win = set()
+    for user_row in user_rows:
+        uid = int(user_row["id"])
+        created_day = _jst_date_from_ts(int(user_row["created_at"] or 0))
+        start_count = 0
+        user_days = set()
+        for event in events_by_user.get(uid, []):
+            et = event["event_type"]
+            ts = int(event["created_at"])
+            payload = event["payload"]
+            user_days.add(_jst_date_from_ts(ts))
+            area_key = str(payload.get("area_key") or "")
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
+            if et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
+                step_users["home_first_view"].add(uid)
+            if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
+                start_count += 1
+                if area_key == "layer_1":
+                    step_users["layer1_first_start"].add(uid)
+                if start_count >= 2:
+                    step_users["second_start"].add(uid)
+                if start_count >= 3:
+                    step_users["third_start"].add(uid)
+                first_win_ts = first_win_ts_by_user.get(uid)
+                if first_win_ts and ts > first_win_ts and uid not in first_retry_start_after_win:
+                    first_retry_start_after_win[uid] = ts
+            if et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1":
+                step_users["layer1_first_complete"].add(uid)
+                if win:
+                    step_users["layer1_first_win"].add(uid)
+                    first_win_ts_by_user.setdefault(uid, ts)
+            if et in {AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"]}:
+                step_users["battle_result_view"].add(uid)
+            if et == AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"]:
+                step_users["retry_click"].add(uid)
+                if first_win_ts_by_user.get(uid) and ts >= first_win_ts_by_user[uid]:
+                    first_retry_click_after_win.add(uid)
+            if et in {AUDIT_EVENT_TYPES["DROP"], AUDIT_EVENT_TYPES["ONBOARDING_PART_FIRST_DROP"]}:
+                step_users["part_first_drop"].add(uid)
+            if et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
+                step_users["build_first_complete"].add(uid)
+            if et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
+                step_users["boss_encounter"].add(uid)
+            if et == AUDIT_EVENT_TYPES["BOSS_DEFEAT"] and area_key == "layer_1":
+                step_users["boss_defeat"].add(uid)
+        if created_day + timedelta(days=1) <= today_jst and (created_day + timedelta(days=1)) in user_days:
+            step_users["next_day_return"].add(uid)
+
+    registered_count = max(1, len(user_ids))
+    step_defs = [
+        ("registered", "正常新規登録"),
+        ("home_first_view", "基地初表示"),
+        ("layer1_first_start", "第1層初出撃"),
+        ("layer1_first_complete", "第1層探索完了"),
+        ("layer1_first_win", "第1層初勝利"),
+        ("battle_result_view", "戦利品結果表示"),
+        ("retry_click", "再出撃クリック"),
+        ("second_start", "第2回出撃"),
+        ("third_start", "第3回出撃"),
+        ("part_first_drop", "初パーツ入手"),
+        ("build_first_complete", "初編成完了"),
+        ("boss_encounter", "第1層ボス遭遇"),
+        ("boss_defeat", "第1層ボス撃破"),
+        ("next_day_return", "翌日再訪"),
+    ]
+    rows = []
+    prev_count = len(user_ids)
+    for key, label in step_defs:
+        count = len(step_users.get(key, set()))
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "count": int(count),
+                "pct_of_registered": (float(count) / float(registered_count)) * 100.0,
+                "pct_of_previous": (float(count) / float(max(1, prev_count))) * 100.0,
+            }
+        )
+        prev_count = max(1, count)
+
+    first_win_users = set(first_win_ts_by_user.keys())
+
+    def _retry_metric(seconds=None, same_day=False):
+        numerator = 0
+        for uid, first_win_ts in first_win_ts_by_user.items():
+            retry_ts = first_retry_start_after_win.get(uid)
+            if not retry_ts:
+                continue
+            if same_day:
+                if _jst_date_from_ts(first_win_ts) == _jst_date_from_ts(retry_ts):
+                    numerator += 1
+            elif seconds is None or int(retry_ts) <= int(first_win_ts) + int(seconds):
+                numerator += 1
+        denominator = len(first_win_users)
+        return {
+            "numerator": int(numerator),
+            "denominator": int(denominator),
+            "rate_pct": (float(numerator) / float(max(1, denominator))) * 100.0,
+        }
+
+    return {
+        "window_days": window_days,
+        "registered_count": len(user_ids),
+        "rows": rows,
+        "retry_10m": _retry_metric(seconds=600),
+        "retry_same_day": _retry_metric(same_day=True),
+        "retry_24h": _retry_metric(seconds=86400),
+        "retry_click": {
+            "numerator": len(first_retry_click_after_win),
+            "denominator": len(first_win_users),
+            "rate_pct": (float(len(first_retry_click_after_win)) / float(max(1, len(first_win_users)))) * 100.0,
+        },
+        "second_start": {
+            "numerator": len(step_users["second_start"]),
+            "denominator": len(user_ids),
+            "rate_pct": (float(len(step_users["second_start"])) / float(registered_count)) * 100.0,
+        },
+        "third_start": {
+            "numerator": len(step_users["third_start"]),
+            "denominator": len(user_ids),
+            "rate_pct": (float(len(step_users["third_start"])) / float(registered_count)) * 100.0,
+        },
+    }
+
+
 def _admin_progression_snapshot(db):
     user_rows = db.execute(
         """
-        SELECT id, username, display_name, is_admin, is_banned, created_at, last_seen_at, max_unlocked_layer
+        SELECT id, username, display_name, is_admin, is_banned, analytics_excluded, created_at, last_seen_at, max_unlocked_layer
         FROM users
         ORDER BY is_admin ASC, id ASC
         """
@@ -4057,6 +4309,7 @@ def _admin_progression_snapshot(db):
             "display_username": _display_username_for_user_row(db, row),
             "is_admin": bool(int(row["is_admin"] or 0)),
             "is_banned": bool(int(row["is_banned"] or 0)),
+            "analytics_excluded": bool(int(row["analytics_excluded"] or 0)) if "analytics_excluded" in row.keys() else False,
             "created_at": int(row["created_at"] or 0),
             "last_seen_at": int(row["last_seen_at"] or 0),
             "max_unlocked_layer_field": _user_max_unlocked_layer(row),
@@ -4220,11 +4473,11 @@ def _admin_progression_snapshot(db):
                 boss_blocker_layer = int(highest_layer)
         item["boss_status"] = boss_status
         item["boss_blocker_layer"] = boss_blocker_layer
-        item["role_label"] = ("管理者" if item["is_admin"] else "一般")
+        item["role_label"] = ("管理者" if item["is_admin"] else ("集計除外" if item.get("analytics_excluded") else "一般"))
 
         if not item["is_banned"]:
             listed_rows.append(item)
-        if item["is_admin"] or item["is_banned"]:
+        if item["is_admin"] or item["is_banned"] or item.get("analytics_excluded") or _is_test_user_row(item):
             continue
         analysis_rows.append(item)
         stop_counts[int(highest_layer)] += 1
@@ -4465,13 +4718,16 @@ def _core_drop_observability(db, sample_size=500, days=14, user_day_limit=200):
     sample_size = max(50, min(5000, int(sample_size or 500)))
     days = max(1, min(90, int(days or 14)))
     user_day_limit = max(20, min(1000, int(user_day_limit or 200)))
+    user_filter = _analytics_user_filter_sql("u")
 
     explore_rows = db.execute(
-        """
-        SELECT id, payload_json
-        FROM world_events_log
-        WHERE event_type = ?
-        ORDER BY id DESC
+        f"""
+        SELECT wel.id, wel.payload_json
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+          AND {user_filter}
+        ORDER BY wel.id DESC
         LIMIT ?
         """,
         (AUDIT_EVENT_TYPES["EXPLORE_END"], sample_size),
@@ -4511,17 +4767,18 @@ def _core_drop_observability(db, sample_size=500, days=14, user_day_limit=200):
 
     since_ts = int(time.time()) - days * 86400
     user_day_rows = db.execute(
-        """
+        f"""
         SELECT
             date(datetime(wel.created_at, 'unixepoch', 'localtime')) AS day_key,
             wel.user_id,
             u.username,
             SUM(COALESCE(CAST(json_extract(wel.payload_json, '$.quantity') AS INTEGER), 0)) AS core_qty
         FROM world_events_log wel
-        LEFT JOIN users u ON u.id = wel.user_id
+        JOIN users u ON u.id = wel.user_id
         WHERE wel.event_type = ?
           AND wel.user_id IS NOT NULL
           AND wel.created_at >= ?
+          AND {user_filter}
         GROUP BY day_key, wel.user_id, u.username
         ORDER BY day_key DESC, core_qty DESC, wel.user_id ASC
         LIMIT ?
@@ -11641,6 +11898,14 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN banned_reason TEXT")
     if "banned_by_user_id" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN banned_by_user_id INTEGER")
+    if "analytics_excluded" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN analytics_excluded INTEGER NOT NULL DEFAULT 0")
+    if "analytics_excluded_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN analytics_excluded_at TEXT")
+    if "analytics_excluded_reason" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN analytics_excluded_reason TEXT")
+    if "analytics_excluded_by_user_id" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN analytics_excluded_by_user_id INTEGER")
     if "has_seen_intro_modal" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN has_seen_intro_modal INTEGER NOT NULL DEFAULT 0")
     if "intro_guide_closed_at" not in cols:
@@ -38894,6 +39159,293 @@ def _auth_login_reason_message(reason):
     return None
 
 
+ANALYTICS_EXCLUDE_REASON_CHOICES = (
+    ("sql_scan", "SQLスキャン"),
+    ("automated_registration", "自動登録"),
+    ("security_test", "セキュリティ試験"),
+    ("development_test", "開発テスト"),
+    ("duplicate_account", "重複アカウント"),
+    ("other", "その他"),
+)
+AUTH_RATE_LIMIT_BUCKETS = {}
+AUTH_RATE_LIMIT_LOCK = threading.Lock()
+ACCOUNT_TEXT_MAX_LENGTHS = {
+    "username": 32,
+    "display_name": 32,
+    "email": 254,
+    "login_id": 254,
+}
+SUSPICIOUS_SQL_PATTERNS = (
+    ("contains_sleep", re.compile(r"sleep\s*\(", re.IGNORECASE)),
+    ("contains_pg_sleep", re.compile(r"pg_sleep\s*\(", re.IGNORECASE)),
+    ("contains_waitfor_delay", re.compile(r"waitfor\s+delay", re.IGNORECASE)),
+    ("contains_dbms_pipe", re.compile(r"dbms_pipe", re.IGNORECASE)),
+    ("contains_receive_message", re.compile(r"receive_message", re.IGNORECASE)),
+    ("contains_select_call", re.compile(r"select\s*\(", re.IGNORECASE)),
+    ("contains_union_select", re.compile(r"union\s+select", re.IGNORECASE)),
+    ("contains_information_schema", re.compile(r"information_schema", re.IGNORECASE)),
+    ("contains_sql_comment", re.compile(r"(--|/\*|\*/)")),
+    ("contains_chr_call", re.compile(r"chr\s*\(", re.IGNORECASE)),
+    ("contains_sql_boolean_combo", re.compile(r"(['\")]\s*(or|xor)\s+[\w'\"(])|(\b(or|xor)\b\s+\d+\s*=\s*\d+)", re.IGNORECASE)),
+    ("contains_encoded_payload", re.compile(r"(?:%[0-9a-fA-F]{2}){8,}")),
+    ("contains_repeated_sql_symbols", re.compile(r"['\"`;=()]{5,}")),
+)
+AUTH_BLOCK_PATTERNS = tuple(
+    (reason, pattern)
+    for reason, pattern in SUSPICIOUS_SQL_PATTERNS
+    if reason
+    in {
+        "contains_sleep",
+        "contains_pg_sleep",
+        "contains_waitfor_delay",
+        "contains_dbms_pipe",
+        "contains_receive_message",
+        "contains_union_select",
+        "contains_information_schema",
+        "contains_sql_comment",
+        "contains_chr_call",
+        "contains_repeated_sql_symbols",
+    }
+)
+
+
+class AccountInputError(ValueError):
+    pass
+
+
+def _request_ip_hash(ip=None):
+    raw = str(ip if ip is not None else (request.remote_addr if has_request_context() else "") or "")
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def _safe_admin_text(value, *, max_len=80):
+    text = str(value or "").replace("\x00", "")
+    text = re.sub(r"[\r\n\t]+", " ", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    text = text.strip()
+    if len(text) > int(max_len):
+        return f"{text[: int(max_len)]}..."
+    return text
+
+
+def _mask_email(value):
+    email = _safe_admin_text(value, max_len=120)
+    if "@" not in email:
+        return email[:2] + "***" if len(email) > 2 else "***"
+    local, domain = email.split("@", 1)
+    prefix = local[:2] if len(local) >= 2 else local[:1]
+    return f"{prefix}***@{domain}"
+
+
+def _is_test_user_row(row):
+    username = str((row or {}).get("username") if isinstance(row, dict) else (row["username"] if row and "username" in row.keys() else "") or "")
+    display_name = str((row or {}).get("display_name") if isinstance(row, dict) else (row["display_name"] if row and "display_name" in row.keys() else "") or "")
+    lowered = f"{username} {display_name}".lower()
+    return bool(
+        username == "test_user"
+        or lowered.startswith("test_")
+        or lowered.startswith("bot_")
+        or "テスト" in display_name
+        or "dummy" in lowered
+    )
+
+
+def is_analytics_excluded_user(row):
+    if not row:
+        return True
+    keys = row.keys() if hasattr(row, "keys") else row.keys()
+    return bool(
+        ("analytics_excluded" in keys and int(row["analytics_excluded"] or 0) == 1)
+        or ("is_admin" in keys and int(row["is_admin"] or 0) == 1)
+        or _is_test_user_row(row)
+    )
+
+
+def _analytics_user_filter_sql(alias="u"):
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"COALESCE({prefix}analytics_excluded, 0) = 0 "
+        f"AND COALESCE({prefix}is_admin, 0) = 0 "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE 'test_%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE 'bot_%' "
+        f"AND COALESCE({prefix}username, '') <> 'test_user'"
+    )
+
+
+def _analytics_exclusion_counts(db):
+    rows = db.execute(
+        """
+        SELECT id, username, display_name, is_admin, is_banned, analytics_excluded
+        FROM users
+        """
+    ).fetchall()
+    normal = excluded = admin = test_candidates = suspicious = 0
+    for row in rows:
+        if int(row["is_admin"] or 0) == 1:
+            admin += 1
+        if _is_test_user_row(row):
+            test_candidates += 1
+        reasons = detect_suspicious_registration(dict(row), {})
+        if reasons:
+            suspicious += 1
+        if is_analytics_excluded_user(row):
+            excluded += 1
+        else:
+            normal += 1
+    return {
+        "total": int(len(rows)),
+        "normal": normal,
+        "excluded": excluded,
+        "admin": admin,
+        "test_candidates": test_candidates,
+        "suspicious_candidates": suspicious,
+    }
+
+
+def detect_suspicious_registration(user, recent_context=None):
+    recent_context = recent_context or {}
+    reasons = []
+    text_values = [
+        str((user or {}).get("username") or ""),
+        str((user or {}).get("display_name") or ""),
+    ]
+    combined = " ".join(text_values)
+    if "\x00" in combined:
+        reasons.append("contains_null_byte")
+    if any(ch in combined for ch in ("\n", "\r", "\t")):
+        reasons.append("contains_line_or_tab")
+    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", combined):
+        reasons.append("contains_control_char")
+    for reason, pattern in SUSPICIOUS_SQL_PATTERNS:
+        if pattern.search(combined):
+            reasons.append(reason)
+    if int(recent_context.get("same_ip_10m_count") or 0) >= 8:
+        reasons.append("rapid_multi_registration")
+    if int(recent_context.get("same_ip_distinct_usernames_10m") or 0) >= 5:
+        reasons.append("rapid_distinct_usernames")
+    if recent_context.get("no_home_or_explore_after_registration"):
+        reasons.append("no_normal_activity")
+    return sorted(set(reasons))
+
+
+def _contains_blocked_auth_payload(text):
+    value = str(text or "")
+    return any(pattern.search(value) for _, pattern in AUTH_BLOCK_PATTERNS) or bool(re.search(r"<\s*/?\s*[a-zA-Z][^>]*>", value))
+
+
+def normalize_account_text(value, *, field):
+    field_key = str(field or "").strip().lower()
+    text = unicodedata.normalize("NFKC", str(value if value is not None else ""))
+    if text != text.strip():
+        raise AccountInputError("前後の空白は使えません。")
+    text = text.strip()
+    if "\x00" in text:
+        raise AccountInputError("使えない文字が含まれています。")
+    if any(ch in text for ch in ("\n", "\r", "\t")):
+        raise AccountInputError("改行やタブは使えません。")
+    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", text):
+        raise AccountInputError("制御文字は使えません。")
+    max_len = int(ACCOUNT_TEXT_MAX_LENGTHS.get(field_key, 64))
+    if len(text) > max_len:
+        raise AccountInputError(f"{max_len}文字以内で入力してください。")
+    if field_key == "username" and len(text) < 3:
+        raise AccountInputError("ユーザー名は3文字以上で入力してください。")
+    if field_key == "display_name" and len(text) < 1:
+        raise AccountInputError("表示名を入力してください。")
+    if field_key in {"email", "login_id"} and len(text) > 254:
+        raise AccountInputError("入力が長すぎます。")
+    if _contains_blocked_auth_payload(text):
+        raise AccountInputError("入力内容を確認してください。")
+    return text
+
+
+def _auth_rate_limit_key(scope, key):
+    return (str(scope), str(key or ""))
+
+
+def _check_auth_rate_limit(scope, key, limits, *, now_ts=None):
+    now = int(now_ts or time.time())
+    rate_key = _auth_rate_limit_key(scope, key)
+    with AUTH_RATE_LIMIT_LOCK:
+        events = AUTH_RATE_LIMIT_BUCKETS.setdefault(rate_key, deque())
+        max_window = max((int(window) for window, _limit, _label in limits), default=3600)
+        while events and int(events[0]) <= now - max_window:
+            events.popleft()
+        for window, limit, label in limits:
+            count = sum(1 for ts in events if int(ts) > now - int(window))
+            if count >= int(limit):
+                return {"limited": True, "window": label, "attempt_count": int(count + 1), "limit": int(limit)}
+        events.append(now)
+    return {"limited": False}
+
+
+def _record_rate_limit(db, event_type, *, scope, key, result):
+    audit_log(
+        db,
+        event_type,
+        user_id=None,
+        request_id=getattr(g, "request_id", None),
+        action_key=scope,
+        payload={
+            "ip_hash": _request_ip_hash() if "ip" in str(scope) else None,
+            "key_hash": hashlib.sha256(str(key or "").encode("utf-8")).hexdigest()[:24] if key else None,
+            "window": result.get("window"),
+            "attempt_count": int(result.get("attempt_count") or 0),
+            "limit": int(result.get("limit") or 0),
+        },
+        ip=request.remote_addr,
+    )
+
+
+def _audit_once(db, event_type, *, user_id, request_id=None, action_key=None, entity_type=None, entity_id=None, payload=None, ip=None):
+    existing = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+        LIMIT 1
+        """,
+        (int(user_id), str(event_type)),
+    ).fetchone()
+    if existing:
+        return False
+    audit_log(
+        db,
+        event_type,
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key=action_key,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        payload=payload or {},
+        ip=ip,
+    )
+    return True
+
+
+def _csrf_token():
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        session["csrf_token"] = token
+    return token
+
+
+def _csrf_valid():
+    expected = session.get("csrf_token")
+    submitted = request.form.get("csrf_token")
+    return bool(expected and submitted and secrets.compare_digest(str(expected), str(submitted)))
+
+
+def _csrf_valid_or_unseeded():
+    if not session.get("csrf_token"):
+        return True
+    return _csrf_valid()
+
+
 def _normalize_display_name(raw_value):
     text = re.sub(r"\s+", " ", str(raw_value or "").strip())
     return text
@@ -38966,7 +39518,55 @@ def register():
     login_message = _auth_login_reason_message(request.values.get("reason"))
     db = get_db()
     if request.method == "POST":
-        username = _normalize_main_admin_username(request.form.get("username", "").strip())
+        if not _csrf_valid_or_unseeded():
+            abort(400)
+        ip_hash = _request_ip_hash()
+        rate_result = _check_auth_rate_limit(
+            "register_ip",
+            ip_hash,
+            ((60, 3, "1m"), (600, 8, "10m"), (3600, 15, "1h")),
+        )
+        if rate_result.get("limited"):
+            _record_rate_limit(
+                db,
+                AUDIT_EVENT_TYPES["SECURITY_REGISTRATION_RATE_LIMITED"],
+                scope="register_ip",
+                key=ip_hash,
+                result=rate_result,
+            )
+            db.commit()
+            return _render_auth_gateway(
+                db,
+                auth_mode="register",
+                ref_code=ref_code,
+                next_path=next_path,
+                register_error="登録が集中しています。少し時間を置いてからお試しください。",
+                login_message=login_message,
+            ), 429
+        try:
+            username = normalize_account_text(request.form.get("username", ""), field="username")
+            username = _normalize_main_admin_username(username)
+        except AccountInputError as exc:
+            error = str(exc) or "入力内容を確認してください。"
+            suspicious_reasons = detect_suspicious_registration({"username": request.form.get("username", "")}, {})
+            if suspicious_reasons:
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["SECURITY_REGISTRATION_SUSPICIOUS"],
+                    request_id=getattr(g, "request_id", None),
+                    action_key="register",
+                    payload={"suspicious_reasons": suspicious_reasons, "ip_hash": ip_hash},
+                    ip=request.remote_addr,
+                )
+                db.commit()
+            return _render_auth_gateway(
+                db,
+                auth_mode="register",
+                ref_code=ref_code,
+                next_path=next_path,
+                register_error=error,
+                login_message=login_message,
+            )
         password = request.form.get("password", "").strip()
         password_confirm = request.form.get("password_confirm", "").strip()
         if not username or not password:
@@ -39003,6 +39603,28 @@ def register():
                 _ensure_qol_entitlement(db, cur.lastrowid)
                 db.commit()
                 user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(cur.lastrowid),)).fetchone()
+                suspicious_reasons = detect_suspicious_registration(
+                    {"username": username, "display_name": user_row["display_name"] if user_row and "display_name" in user_row.keys() else ""},
+                    {},
+                )
+                if suspicious_reasons:
+                    audit_log(
+                        db,
+                        AUDIT_EVENT_TYPES["SECURITY_REGISTRATION_SUSPICIOUS"],
+                        user_id=int(cur.lastrowid),
+                        request_id=getattr(g, "request_id", None),
+                        action_key="register",
+                        entity_type="user",
+                        entity_id=int(cur.lastrowid),
+                        payload={
+                            "target_user_id": int(cur.lastrowid),
+                            "target_username": username,
+                            "suspicious_reasons": suspicious_reasons,
+                            "ip_hash": ip_hash,
+                        },
+                        ip=request.remote_addr,
+                    )
+                    db.commit()
                 if user_row:
                     _login_user_session(db, user_row)
                     session["just_registered"] = 1
@@ -39032,10 +39654,39 @@ def login():
     if request.method == "GET":
         return redirect(url_for("register", mode="login", next=next_path or None, reason=reason or None))
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        db = get_db()
+        if not _csrf_valid_or_unseeded():
+            abort(400)
+        try:
+            username = normalize_account_text(request.form.get("username", ""), field="login_id")
+        except AccountInputError:
+            username = ""
         password = request.form.get("password", "").strip()
         next_path = request.form.get("next", "").strip()
-        db = get_db()
+        ip_hash = _request_ip_hash()
+        ip_limit = _check_auth_rate_limit("login_ip", ip_hash, ((300, 20, "5m"),))
+        user_limit = _check_auth_rate_limit(
+            "login_id",
+            hashlib.sha256(username.lower().encode("utf-8")).hexdigest()[:24] if username else "",
+            ((300, 10, "5m"),),
+        )
+        if ip_limit.get("limited") or user_limit.get("limited"):
+            result = ip_limit if ip_limit.get("limited") else user_limit
+            _record_rate_limit(
+                db,
+                AUDIT_EVENT_TYPES["SECURITY_LOGIN_RATE_LIMITED"],
+                scope="login_ip" if ip_limit.get("limited") else "login_id",
+                key=ip_hash if ip_limit.get("limited") else username.lower(),
+                result=result,
+            )
+            db.commit()
+            return _render_auth_gateway(
+                db,
+                auth_mode="login",
+                next_path=next_path,
+                login_error="ログイン情報を確認してください。",
+                login_message=message,
+            ), 429
         user = _find_user_for_login(db, username)
         if user and check_password_hash(user["password_hash"], password):
             if int(user["is_banned"] or 0) == 1:
@@ -39064,7 +39715,7 @@ def login():
             if next_path and next_path.startswith("/") and not next_path.startswith("//"):
                 return redirect(next_path)
             return redirect(url_for("home"))
-        error = "ユーザー名かパスワードが違います。"
+        error = "ログイン情報を確認してください。"
     db = get_db()
     return _render_auth_gateway(
         db,
@@ -39132,7 +39783,12 @@ def admin_login():
     error = None
     next_path = request.args.get("next", "").strip()
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
+        if not _csrf_valid_or_unseeded():
+            abort(400)
+        try:
+            username = normalize_account_text(request.form.get("username", ""), field="login_id")
+        except AccountInputError:
+            username = ""
         password = request.form.get("password", "").strip()
         next_path = request.form.get("next", "").strip()
         db = get_db()
@@ -42076,6 +42732,16 @@ def home():
             "total_explores": int(total_explores or 0),
             "beginner_focus": bool(home_beginner_focus),
         },
+        ip=request.remote_addr,
+    )
+    _audit_once(
+        db,
+        AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"],
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="home_view",
+        entity_type="page",
+        payload={"source_event": AUDIT_EVENT_TYPES["HOME_VIEW"]},
         ip=request.remote_addr,
     )
     db.commit()
@@ -46908,6 +47574,11 @@ def format_ts(ts):
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(ts)))
 
 
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": _csrf_token}
+
+
 @app.route("/battle", methods=["GET", "POST"])
 @login_required
 def battle():
@@ -47060,6 +47731,9 @@ def explore():
     user_id = session["user_id"]
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
+    entry_source = (request.form.get("entry_source") or "").strip().lower()
+    if entry_source not in {"battle_retry", "home_previous_area", "home_layer1_cta", "area_select", "other"}:
+        entry_source = "other"
     explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_id = _battle_id_for_explore_submission(explore_submission_id)
     battle_debug = (request.args.get("debug") or "").strip() == "1"
@@ -47114,6 +47788,16 @@ def explore():
         ct_seconds_effective = int(ct_seconds)
     if wait > 0:
         return redirect(url_for("home"))
+    if entry_source == "battle_retry":
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore_retry",
+            payload={"area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["EXPLORE_START"],
@@ -47132,9 +47816,47 @@ def explore():
             "paid_boost": bool(_is_paid_explore_boost_active(user, now_ts=now)),
             "ct_seconds": int(ct_seconds_effective),
             "base_ct_seconds": int(ct_seconds),
+            "entry_source": entry_source,
         },
         ip=request.remote_addr,
     )
+    if area_key == "layer_1":
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_LAYER1_FIRST_START"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            payload={"area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
+    explore_start_count = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+        ).fetchone()["c"]
+        or 0
+    )
+    if explore_start_count == 2:
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_EXPLORE_SECOND_START"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            payload={"area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
+    elif explore_start_count == 3:
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_EXPLORE_THIRD_START"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            payload={"area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
     grant_achievement(
         db,
         user_id,
@@ -49185,6 +49907,40 @@ def explore():
     if final_outcome == "win":
         lab_exp_delta += 3
     dropped_parts_count_for_lab = sum(len(b.get("drops", []) or []) for b in battle_results)
+    if area_key == "layer_1":
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_LAYER1_FIRST_COMPLETE"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="enemy",
+            entity_id=(int(last_enemy["id"]) if last_enemy and "id" in last_enemy.keys() and last_enemy["id"] else None),
+            payload={"area_key": area_key, "result": final_outcome, "turn_count": len(all_turn_logs)},
+            ip=request.remote_addr,
+        )
+        if final_outcome == "win":
+            _audit_once(
+                db,
+                AUDIT_EVENT_TYPES["ONBOARDING_LAYER1_FIRST_WIN"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="enemy",
+                entity_id=(int(last_enemy["id"]) if last_enemy and "id" in last_enemy.keys() and last_enemy["id"] else None),
+                payload={"area_key": area_key, "result": "win", "turn_count": len(all_turn_logs)},
+                ip=request.remote_addr,
+            )
+    if dropped_parts_count_for_lab > 0:
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_PART_FIRST_DROP"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="drop",
+            payload={"area_key": area_key, "drop_count": int(dropped_parts_count_for_lab)},
+            ip=request.remote_addr,
+        )
     lab_exp_delta += min(int(dropped_parts_count_for_lab) * 5, 10)
     if area_boss_active:
         lab_exp_delta += 20
@@ -49583,6 +50339,22 @@ def battle_result():
     if not user:
         return redirect(url_for("login"))
     summary = _refresh_battle_result_summary(db, user_id, user, saved.get("summary") or {})
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="battle_result",
+        entity_type="battle_result",
+        entity_id=None,
+        payload={
+            "area_key": str(saved.get("area_key") or "layer_1"),
+            "battle_id": summary.get("battle_id"),
+            "outcome": summary.get("outcome"),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
     active_robot_view = _get_active_robot(db, user_id)
     return render_template(
         "battle.html",
@@ -51490,6 +52262,17 @@ def build_confirm():
                     "scores": style_state.get("scores"),
                 },
             },
+            ip=request.remote_addr,
+        )
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="build_confirm",
+            entity_type="robot_instance",
+            entity_id=instance_id,
+            payload={"robot_instance_id": int(instance_id), "robot_name": robot_name},
             ip=request.remote_addr,
         )
         grant_achievement(
@@ -58514,9 +59297,62 @@ def admin_users():
         return abort(403)
     message = None
     if request.method == "POST":
+        if not _csrf_valid_or_unseeded():
+            abort(400)
         action = (request.form.get("action") or "").strip().lower()
         target_user_id_raw = (request.form.get("target_user_id") or "").strip()
         reason = (request.form.get("reason") or "").strip()
+        if action == "bulk_suspicious_exclude":
+            exclude_reason = reason or "不審登録候補"
+            rows_for_bulk = db.execute(
+                """
+                SELECT id, username, display_name, is_admin, is_banned, analytics_excluded
+                FROM users
+                ORDER BY id ASC
+                """
+            ).fetchall()
+            changed = 0
+            for candidate in rows_for_bulk:
+                if int(candidate["analytics_excluded"] or 0) == 1 or int(candidate["is_admin"] or 0) == 1:
+                    continue
+                suspicious_reasons = detect_suspicious_registration(dict(candidate), {})
+                if not suspicious_reasons:
+                    continue
+                target_id = int(candidate["id"])
+                db.execute(
+                    """
+                    UPDATE users
+                    SET analytics_excluded = 1,
+                        analytics_excluded_at = ?,
+                        analytics_excluded_reason = ?,
+                        analytics_excluded_by_user_id = ?
+                    WHERE id = ?
+                    """,
+                    (now_str(), exclude_reason, admin_user_id, target_id),
+                )
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["ADMIN_ANALYTICS_EXCLUDE"],
+                    user_id=admin_user_id,
+                    request_id=getattr(g, "request_id", None),
+                    action_key="admin_analytics_bulk_suspicious_exclude",
+                    entity_type="user",
+                    entity_id=target_id,
+                    payload={
+                        "target_user_id": target_id,
+                        "target_username": str(candidate["username"] or ""),
+                        "actor_admin_id": admin_user_id,
+                        "reason": exclude_reason,
+                        "suspicious_reasons": suspicious_reasons,
+                        "previous_analytics_excluded": 0,
+                        "new_analytics_excluded": 1,
+                    },
+                    ip=request.remote_addr,
+                )
+                changed += 1
+            db.commit()
+            flash(f"不審登録候補を {changed} 件、集計除外にしました。", "notice")
+            return redirect(url_for("admin_users"))
         if not target_user_id_raw.isdigit():
             flash("対象ユーザーが不正です。", "error")
             return redirect(url_for("admin_users"))
@@ -58619,6 +59455,73 @@ def admin_users():
             )
             db.commit()
             message = f"ユーザー #{target_user_id} の通常ログイン保護をOFFにしました。"
+        elif action == "analytics_exclude":
+            exclude_reason = reason or "管理者操作"
+            previous = int(target["analytics_excluded"] or 0) if "analytics_excluded" in target.keys() else 0
+            db.execute(
+                """
+                UPDATE users
+                SET analytics_excluded = 1,
+                    analytics_excluded_at = ?,
+                    analytics_excluded_reason = ?,
+                    analytics_excluded_by_user_id = ?
+                WHERE id = ?
+                """,
+                (now_str(), exclude_reason, admin_user_id, target_user_id),
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ADMIN_ANALYTICS_EXCLUDE"],
+                user_id=admin_user_id,
+                request_id=getattr(g, "request_id", None),
+                action_key="admin_analytics_exclude",
+                entity_type="user",
+                entity_id=target_user_id,
+                payload={
+                    "target_user_id": target_user_id,
+                    "target_username": str(target["username"] or ""),
+                    "actor_admin_id": admin_user_id,
+                    "reason": exclude_reason,
+                    "previous_analytics_excluded": previous,
+                    "new_analytics_excluded": 1,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            message = f"ユーザー #{target_user_id} を集計除外にしました。"
+        elif action == "analytics_include":
+            previous = int(target["analytics_excluded"] or 0) if "analytics_excluded" in target.keys() else 0
+            db.execute(
+                """
+                UPDATE users
+                SET analytics_excluded = 0,
+                    analytics_excluded_at = NULL,
+                    analytics_excluded_reason = NULL,
+                    analytics_excluded_by_user_id = NULL
+                WHERE id = ?
+                """,
+                (target_user_id,),
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ADMIN_ANALYTICS_INCLUDE"],
+                user_id=admin_user_id,
+                request_id=getattr(g, "request_id", None),
+                action_key="admin_analytics_include",
+                entity_type="user",
+                entity_id=target_user_id,
+                payload={
+                    "target_user_id": target_user_id,
+                    "target_username": str(target["username"] or ""),
+                    "actor_admin_id": admin_user_id,
+                    "reason": reason or "管理者操作",
+                    "previous_analytics_excluded": previous,
+                    "new_analytics_excluded": 0,
+                },
+                ip=request.remote_addr,
+            )
+            db.commit()
+            message = f"ユーザー #{target_user_id} を集計対象へ戻しました。"
         elif action == "rename":
             old_username = str(target["username"] or "").strip()
             new_username = (request.form.get("new_username") or "").strip()
@@ -58665,7 +59568,9 @@ def admin_users():
 
     rows_raw = db.execute(
         """
-        SELECT id, username, display_name, is_admin, is_banned, is_admin_protected, created_at, banned_at, banned_reason, banned_by_user_id,
+        SELECT id, username, display_name, is_admin, is_banned, is_admin_protected,
+               analytics_excluded, analytics_excluded_at, analytics_excluded_reason, analytics_excluded_by_user_id,
+               created_at, banned_at, banned_reason, banned_by_user_id,
                lab_level, lab_total_exp, lab_rank_label
         FROM users
         ORDER BY id ASC
@@ -58688,7 +59593,7 @@ def admin_users():
         item["identity_emails"] = [
             {
                 "provider": str(identity["provider"] or "").strip(),
-                "email": str(identity["email"] or "").strip(),
+                "email": _mask_email(identity["email"]),
             }
             for identity in identities
             if str(identity["email"] or "").strip()
@@ -58698,8 +59603,31 @@ def admin_users():
             and str(item.get("display_name") or "").strip() != str(item.get("username") or "").strip()
         )
         item["is_main_admin"] = _is_main_admin_username(item.get("username"))
+        item["safe_username"] = _safe_admin_text(item.get("username"), max_len=64)
+        item["safe_display_username"] = _safe_admin_text(item.get("display_username"), max_len=64)
+        item["suspicious_reasons"] = detect_suspicious_registration(item, {})
+        item["is_test_candidate"] = _is_test_user_row(item)
+        item["analytics_badges"] = []
+        if int(item.get("analytics_excluded") or 0) == 1:
+            item["analytics_badges"].append("集計除外")
+        else:
+            item["analytics_badges"].append("通常集計対象")
+        if int(item.get("is_admin") or 0) == 1:
+            item["analytics_badges"].append("管理者")
+        if int(item.get("is_banned") or 0) == 1:
+            item["analytics_badges"].append("BAN中")
+        if item["is_test_candidate"]:
+            item["analytics_badges"].append("テスト候補")
+        if item["suspicious_reasons"]:
+            item["analytics_badges"].append("不審登録候補")
         rows.append(item)
-    return render_template("admin_users.html", rows=rows, message=message, self_user_id=admin_user_id)
+    return render_template(
+        "admin_users.html",
+        rows=rows,
+        message=message,
+        self_user_id=admin_user_id,
+        analytics_reason_choices=ANALYTICS_EXCLUDE_REASON_CHOICES,
+    )
 
 
 @app.route("/admin/payments")
@@ -58844,6 +59772,7 @@ def admin_metrics():
     db = get_db()
     sample_size = request.args.get("sample", type=int, default=500)
     core_days = request.args.get("core_days", type=int, default=14)
+    funnel_days = request.args.get("funnel_days", type=int, default=7)
     if request.method == "POST":
         _collect_recent_daily_metrics(db, days=7)
         db.commit()
@@ -58867,8 +59796,10 @@ def admin_metrics():
             """
         ).fetchall()
     core_obs = _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300)
-    behavior_snapshot = _admin_metrics_behavior_snapshot(db, window_days=ADMIN_METRICS_FUNNEL_DAYS)
+    behavior_snapshot = _admin_metrics_behavior_snapshot(db, window_days=funnel_days)
+    first_experience_snapshot = _admin_first_experience_snapshot(db, window_days=funnel_days)
     progression_snapshot = _admin_progression_snapshot(db)
+    analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
     daily_explore_max = 0.0
     for row in sorted(rows, key=lambda item: item["day_key"]):
@@ -58895,7 +59826,9 @@ def admin_metrics():
         rows=rows,
         daily_explore_rows=daily_explore_rows,
         behavior_snapshot=behavior_snapshot,
+        first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,
+        analytics_counts=analytics_counts,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),
         selected_core_days=int(core_days or 14),

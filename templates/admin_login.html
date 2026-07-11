@@ -3,6 +3,7 @@
 <div class="auth">
   <h1>管理者ログイン</h1>
   <form method="post" class="card auth-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <input type="hidden" name="next" value="{{ next_path or '' }}" />
     <label>ユーザー名</label>
     <input type="text" name="username" required />

@@ -106,11 +106,17 @@
 - [ ] BANユーザーは `/login` 不可
 - [ ] `is_admin_protected=1` は通常 `/login` 不可
 - [ ] `/admin/login` で管理者保護アカウントがログイン可能
+- [ ] `/register`, `/login`, `/admin/login`, `/admin/users` のフォームPOSTでCSRFが効く
+- [ ] 改行/制御文字/HTMLタグ風/SQL注入風の登録入力が拒否される
+- [ ] 登録/ログインの短時間連打が rate limit され、監査ログに残る
 - [ ] 既ログインBANユーザーは次リクエストでログアウト
 - [ ] `/admin/users` で自己BAN不可
 - [ ] `/admin/users` で自己完全削除不可
 - [ ] メイン管理者（username=`admin`）完全削除不可
 - [ ] 完全削除確認画面に件数サマリーが表示される
+- [ ] `/admin/users` で集計除外/集計対象復帰ができる
+- [ ] 不審登録候補の一括集計除外ができる
+- [ ] 管理者・テストユーザー・集計除外ユーザーが `/admin/metrics` の通常プレイヤー指標に混ざらない
 
 ## 6. 監査
 - [ ] 主要フローで `request_id` が埋まる
@@ -127,6 +133,20 @@
   - `audit.admin.user.protect_login`
   - `audit.admin.user.unprotect_login`
   - `audit.admin.user.delete`
+- [ ] 集計除外操作が残る
+  - `audit.admin.analytics.exclude`
+  - `audit.admin.analytics.include`
+- [ ] 認証防御ログが残る
+  - `audit.security.registration.suspicious`
+  - `audit.security.registration.rate_limited`
+  - `audit.security.login.rate_limited`
+- [ ] 初回体験ファネルログが残る
+  - `audit.onboarding.home.first_view`
+  - `audit.onboarding.layer1.first_start`
+  - `audit.onboarding.layer1.first_complete`
+  - `audit.onboarding.layer1.first_win`
+  - `audit.battle.result.view`
+  - `audit.explore.retry.click`
 
 ## 7. 共有/招待
 - [ ] ボス撃破時のみ共有ボタン表示

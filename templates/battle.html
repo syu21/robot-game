@@ -80,6 +80,7 @@
           {% if action.get('area_key') %}
           <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
           {% endif %}
+          <input type="hidden" name="entry_source" value="battle_retry" />
           {% if summary.get('next_explore_submission_id') %}
           <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
           {% endif %}
@@ -228,6 +229,7 @@
             {% if action.get('area_key') %}
             <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
             {% endif %}
+            <input type="hidden" name="entry_source" value="battle_retry" />
             {% if summary.get('next_explore_submission_id') %}
             <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
             {% endif %}
@@ -244,6 +246,7 @@
       {% else %}
       <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="{{ explore_area_key }}" />
+        <input type="hidden" name="entry_source" value="battle_retry" />
         {% if summary.get('next_explore_submission_id') %}
         <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
         {% endif %}

@@ -4,6 +4,20 @@
 {% if message %}
 <div class="notice">{{ message }}</div>
 {% endif %}
+<div class="card">
+  <form method="post" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <input type="hidden" name="action" value="bulk_suspicious_exclude" />
+    <label>除外理由
+      <select name="reason">
+        {% for value, label in analytics_reason_choices %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">不審登録候補を一括集計除外</button>
+  </form>
+</div>
 <div class="card admin-users-table-wrap">
   <table>
     <thead>
@@ -13,6 +27,7 @@
         <th>is_admin</th>
         <th>is_banned</th>
         <th>is_admin_protected</th>
+        <th>集計状態</th>
         <th>らぼLv</th>
         <th>created_at</th>
         <th>ban_info</th>
@@ -24,8 +39,8 @@
       <tr>
         <td>{{ u['id'] }}</td>
         <td>
-          <div><b>{{ u['display_username'] }}</b></div>
-          <div class="robot-time">ID: {{ u['username'] }}</div>
+          <div><b title="{{ u['display_username'] }}">{{ u['safe_display_username'] }}</b></div>
+          <div class="robot-time" title="{{ u['username'] }}">ID: {{ u['safe_username'] }}</div>
           {% for identity in u.get('identity_emails', []) %}
           <div class="robot-time">{{ identity['provider'] }} email: {{ identity['email'] }}</div>
           {% endfor %}
@@ -36,6 +51,17 @@
         <td>{{ u['is_admin'] }}</td>
         <td>{{ u['is_banned'] }}</td>
         <td>{{ u['is_admin_protected'] }}</td>
+        <td>
+          {% for badge in u['analytics_badges'] %}
+          <span class="admin-metrics-inline-note">{{ badge }}</span>
+          {% endfor %}
+          {% if u['analytics_excluded'] %}
+          <div class="robot-time">reason={{ u['analytics_excluded_reason'] or '-' }}</div>
+          {% endif %}
+          {% if u['suspicious_reasons'] %}
+          <div class="robot-time" title="{{ u['suspicious_reasons']|join(', ') }}">候補理由 {{ u['suspicious_reasons']|length }}件</div>
+          {% endif %}
+        </td>
         <td>
           <b>Lv.{{ u['lab_level'] or 1 }}</b><br/>
           {{ u['lab_rank_label'] or '見習い研究員' }}<br/>
@@ -52,33 +78,56 @@
         </td>
         <td>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="rename" />
             <input type="text" name="new_username" placeholder="新しいユーザー名" />
             <button type="submit">改名</button>
           </form>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="ban" />
             <input type="text" name="reason" placeholder="BAN理由" />
             <button type="submit" {% if u['id'] == self_user_id %}disabled{% endif %}>BAN</button>
           </form>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="unban" />
             <button type="submit">BAN解除</button>
           </form>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="protect_login" />
             <button type="submit">管理者保護ON</button>
           </form>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="unprotect_login" />
             <button type="submit" {% if u['id'] == self_user_id %}disabled{% endif %}>管理者保護OFF</button>
           </form>
           <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="analytics_exclude" />
+            <select name="reason">
+              {% for value, label in analytics_reason_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" {% if u['analytics_excluded'] %}disabled{% endif %}>集計除外</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
+            <input type="hidden" name="action" value="analytics_include" />
+            <button type="submit" {% if not u['analytics_excluded'] %}disabled{% endif %}>集計対象へ戻す</button>
+          </form>
+          <form method="post" class="admin-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <input type="hidden" name="target_user_id" value="{{ u['id'] }}" />
             <input type="hidden" name="action" value="delete" />
             <button type="submit" {% if u['id'] == self_user_id or u['is_main_admin'] %}disabled{% endif %}>完全削除</button>
