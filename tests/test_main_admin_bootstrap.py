@@ -149,4 +149,5 @@ class MainAdminBootstrapTests(unittest.TestCase):
         self.assertIn("深層機巧審判アーク=ゼロ", body)
 
 
-if __name__ == "__m
+if __name__ == "__main__":
+    unittest.main()
