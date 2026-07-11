@@ -105,4 +105,189 @@ DEEP_LAYER_VARIANT_MULTIPLIERS = {
 }
 
 DEEP_LAYER_NORMAL_BASE_KEYS = {
-    "layer_5_reboot"
+    "layer_5_reboot": ("fort_ironbulk", "fort_platehound", "fort_bastion_eye", "enemy_insect_kabuto"),
+    "layer_5_overdrive": ("haze_mirage_mite", "haze_fog_lancer", "haze_glint_drone", "enemy_insect_bee"),
+    "layer_5_final": ("burst_coreling", "burst_shockfang", "burst_ruptgear", "enemy_insect_scorpion"),
+    "layer_6_rebuild": (
+        "deep_layer_5_reboot_fort_ironbulk",
+        "deep_layer_5_reboot_fort_platehound",
+        "deep_layer_5_reboot_fort_bastion_eye",
+        "deep_layer_5_reboot_enemy_insect_kabuto",
+    ),
+    "layer_6_core": (
+        "deep_layer_5_overdrive_haze_mirage_mite",
+        "deep_layer_5_overdrive_haze_fog_lancer",
+        "deep_layer_5_overdrive_haze_glint_drone",
+        "deep_layer_5_overdrive_enemy_insect_bee",
+    ),
+    "layer_6_final": (
+        "deep_layer_5_final_burst_coreling",
+        "deep_layer_5_final_burst_shockfang",
+        "deep_layer_5_final_burst_ruptgear",
+        "deep_layer_5_final_enemy_insect_scorpion",
+    ),
+    "layer_7_echo": ("enemy16", "enemy23", "haze_glint_drone", "fort_bastion_eye"),
+    "layer_7_chaos": ("burst_coreling", "burst_shockfang", "enemy25", "enemy_insect_kuwagata"),
+    "layer_7_final": ("fort_platehound", "haze_fog_lancer", "burst_ruptgear", "enemy_insect_scorpion"),
+}
+
+DEEP_LAYER_BOSS_BASE_KEYS = {
+    "layer_5_reboot": "boss_4_forge_elguard",
+    "layer_5_overdrive": "boss_4_haze_mirage",
+    "layer_5_final": "boss_4_final_ark_zero",
+    "layer_6_rebuild": "deep_boss_layer_5_reboot_boss_4_forge_elguard",
+    "layer_6_core": "deep_boss_layer_5_overdrive_boss_4_haze_mirage",
+    "layer_6_final": "deep_boss_layer_5_final_boss_4_final_ark_zero",
+    "layer_7_echo": "boss_4_haze_mirage",
+    "layer_7_chaos": "boss_4_burst_volterio",
+    "layer_7_final": "boss_4_final_ark_zero",
+}
+
+DEEP_LAYER_NAME_PREFIX_BY_AREA = {
+    "layer_5_reboot": "再起動",
+    "layer_5_overdrive": "暴走",
+    "layer_5_final": "深層",
+    "layer_6_rebuild": "改修型",
+    "layer_6_core": "深層",
+    "layer_6_final": "オメガ",
+    "layer_7_echo": "残響型",
+    "layer_7_chaos": "終端型",
+    "layer_7_final": "審判型",
+}
+
+
+def _scaled_stat(value, multiplier):
+    return max(1, int(round(int(value or 0) * float(multiplier or 1.0))))
+
+
+def _deep_layer_seed_key(area_key, base_key, *, is_boss=False):
+    prefix = "deep_boss" if is_boss else "deep"
+    return f"{prefix}_{area_key}_{base_key}"
+
+
+def _deep_layer_role_stat_multiplier(base, stat, area_key):
+    if not str(area_key or "").startswith("layer_7_"):
+        return 1.0
+    trait = str(base.get("trait") or "").strip()
+    role_mult = {
+        "heavy": {"hp": 1.12, "def": 1.12, "spd": 0.92, "cri": 0.96},
+        "fast": {"spd": 1.12, "acc": 1.10, "hp": 0.96, "def": 0.96},
+        "berserk": {"atk": 1.14, "cri": 1.15, "def": 0.92, "acc": 0.97},
+        "unstable": {"atk": 1.10, "cri": 1.12, "hp": 0.95, "def": 0.92},
+    }.get(trait, {})
+    area_mult = {
+        "layer_7_echo": {"spd": 1.04, "acc": 1.04},
+        "layer_7_chaos": {"atk": 1.05, "cri": 1.05},
+        "layer_7_final": {"hp": 1.04, "atk": 1.04, "def": 1.04},
+    }.get(str(area_key), {})
+    return float(role_mult.get(stat, 1.0)) * float(area_mult.get(stat, 1.0))
+
+
+def _max_seed_stat_by_tier(tier, *, is_boss=False):
+    values = {}
+    for seed in ENEMY_SEED_STATS.values():
+        if int(seed.get("tier") or 0) != int(tier):
+            continue
+        if bool(seed.get("is_boss")) != bool(is_boss):
+            continue
+        for stat in ("hp", "atk", "def", "spd", "acc", "cri"):
+            values[stat] = max(int(values.get(stat) or 0), int(seed.get(stat) or 0))
+    return values
+
+
+def _deep_layer_variant_seed(base_key, area_key, multiplier, *, is_boss=False):
+    base = ENEMY_SEED_STATS[base_key]
+    prefix = DEEP_LAYER_NAME_PREFIX_BY_AREA.get(area_key, "深層")
+    layer = int(str(area_key).split("_")[1])
+    stat_values = {}
+    for stat in ("hp", "atk", "def", "spd", "acc", "cri"):
+        stat_values[stat] = _scaled_stat(base[stat], float(multiplier) * _deep_layer_role_stat_multiplier(base, stat, area_key))
+    seed = {
+        **base,
+        "name_ja": f"{prefix}{base['name_ja']}",
+        "tier": layer,
+        **stat_values,
+        "is_boss": 1 if is_boss else 0,
+        "boss_area_key": area_key if is_boss else None,
+        "trait": base.get("trait") or ("heavy" if is_boss else None),
+    }
+    if layer >= 5:
+        floor_tier = max(4, layer - 1)
+        floor_stats = _max_seed_stat_by_tier(floor_tier, is_boss=is_boss)
+        for stat, floor_value in floor_stats.items():
+            seed[stat] = max(
+                int(seed[stat]),
+                _scaled_stat(floor_value, float(multiplier) * _deep_layer_role_stat_multiplier(base, stat, area_key)),
+            )
+    return _deep_layer_seed_key(area_key, base_key, is_boss=is_boss), seed
+
+
+def _extend_deep_layer_enemy_seeds():
+    for layer, profiles in DEEP_LAYER_VARIANT_MULTIPLIERS.items():
+        del layer
+        for area_key, multiplier in profiles["normal"].items():
+            for base_key in DEEP_LAYER_NORMAL_BASE_KEYS.get(area_key, ()):
+                key, seed = _deep_layer_variant_seed(base_key, area_key, multiplier, is_boss=False)
+                ENEMY_SEED_STATS[key] = seed
+        for area_key, multiplier in profiles["boss"].items():
+            base_key = DEEP_LAYER_BOSS_BASE_KEYS.get(area_key)
+            if not base_key:
+                continue
+            key, seed = _deep_layer_variant_seed(base_key, area_key, multiplier, is_boss=True)
+            ENEMY_SEED_STATS[key] = seed
+
+
+_extend_deep_layer_enemy_seeds()
+
+COIN_REWARD_BY_TIER = {
+    1: 16,
+    2: 18,
+    3: 20,
+    4: 22,
+    5: 24,
+    6: 28,
+    7: 34,
+}
+
+DROP_TYPE_WEIGHTS_BY_TIER = {
+    1: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    2: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    3: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    4: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    5: {"coin_only": 30, "parts_1": 70, "parts_2": 0},
+    6: {"coin_only": 25, "parts_1": 75, "parts_2": 0},
+    7: {"coin_only": 22, "parts_1": 78, "parts_2": 0},
+}
+
+RARITY_WEIGHTS_BY_TIER = {
+    1: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    2: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    3: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    4: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    5: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    6: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+    7: {"N": 100, "R": 0, "SR": 0, "SSR": 0, "UR": 0},
+}
+
+PLUS_WEIGHTS_BY_TIER = {
+    1: {0: 100},
+    2: {0: 95, 1: 5},
+    3: {0: 88, 1: 10, 2: 2},
+    4: {0: 80, 1: 15, 2: 5},
+    5: {0: 68, 1: 20, 2: 9, 3: 3},
+    6: {0: 58, 1: 24, 2: 12, 3: 5, 4: 1},
+    7: {0: 50, 1: 26, 2: 14, 3: 7, 4: 3},
+}
+
+FUSE_COST_BY_PLUS = {
+    0: 1,
+    1: 2,
+    2: 3,
+    3: 4,
+    4: 6,
+    5: 8,
+    6: 10,
+    7: 12,
+    8: 15,
+    9: 20,
+}
