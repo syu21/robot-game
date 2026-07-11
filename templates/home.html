@@ -205,6 +205,16 @@
   </div>
 </div>
 {% endif %}
+{% if onboarding_first_three_progress or layer1_boss_alert %}
+<div class="notice">
+  {% if onboarding_first_three_progress %}
+  <div><b>{{ onboarding_first_three_progress['title'] }}</b> {{ onboarding_first_three_progress['line'] }}</div>
+  {% endif %}
+  {% if layer1_boss_alert %}
+  <div><b>{{ layer1_boss_alert['line'] }}</b> {{ layer1_boss_alert['desc'] }}</div>
+  {% endif %}
+</div>
+{% endif %}
 {% if daily_research_card %}
 <div class="panel daily-research-home-panel">
   <div class="card daily-research-home-card">

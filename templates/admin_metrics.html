@@ -81,6 +81,40 @@
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.third_start.numerator }}人 / {{ first_experience_snapshot.third_start.denominator }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.third_start.rate_pct) }}%</div>
       </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初回3出撃完了</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_three_complete.numerator }}人 / {{ first_experience_snapshot.first_three_complete.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.first_three_complete.rate_pct) }}%</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      {% for row in first_experience_snapshot.entry_source_rows %}
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">{{ row.label }}</div>
+        <div class="admin-metrics-note-value">{{ row.count }}人</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第1層ボス初遭遇まで</div>
+        <div class="admin-metrics-note-value">平均 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.avg_starts_to_first_encounter) }}回</div>
+        <div class="robot-time">中央値 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.median_starts_to_first_encounter) }}回</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">10回以内遭遇率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.layer1_boss.within_10_count }}人 / {{ first_experience_snapshot.layer1_boss.encounter_count }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.layer1_boss.within_10_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">遭遇ソース</div>
+        <div class="admin-metrics-note-value">保証 {{ first_experience_snapshot.layer1_boss.guarantee_users }}人 / 通常 {{ first_experience_snapshot.layer1_boss.random_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初遭遇後撃破率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.layer1_boss.defeat_after_first_encounter_count }}人 / {{ first_experience_snapshot.layer1_boss.encounter_count }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.layer1_boss.defeat_after_first_encounter_rate_pct) }}%</div>
+      </div>
     </div>
     <div class="admin-metrics-bar-list">
       {% for item in first_experience_snapshot.rows %}

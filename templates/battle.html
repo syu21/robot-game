@@ -64,6 +64,51 @@
     <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
     {% endif %}
   </div>
+  {% if summary.get('layer1_first_win_result') %}
+  <div class="card notice battle-next-card-primary">
+    <div><b>初勝利！</b></div>
+    <div class="upgrade-cost">ロボの調査が進みました。</div>
+    <div class="upgrade-cost">次の出撃では、新しいパーツや第1層ボスを発見できる可能性があります。</div>
+    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="layer_1" />
+      <input type="hidden" name="entry_source" value="battle_retry" />
+      {% if summary.get('next_explore_submission_id') %}
+      <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+      {% endif %}
+      <button type="submit" class="battle-next-cta js-explore-return-btn"
+        data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+        data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
+        data-ct-admin="{{ 1 if summary.get('explore_ct_is_admin') else 0 }}"
+        data-cta-ready-label="{{ summary.get('next_action_primary_label') or 'もう一度、第1層へ出撃' }}"
+        {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}disabled{% endif %}
+      >{{ summary.get('next_action_primary_label') or 'もう一度、第1層へ出撃' }}</button>
+    </form>
+    {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}
+    <div class="battle-return-ct js-explore-return-label">次の出撃まで あと {{ '%02d:%02d'|format((summary.get('explore_ct_remain') or 0) // 60, (summary.get('explore_ct_remain') or 0) % 60) }}</div>
+    {% endif %}
+    <div class="home-inline-actions">
+      <a class="battle-home-link" href="{{ url_for('parts') }}">入手したパーツを見る</a>
+      <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
+    </div>
+  </div>
+  {% endif %}
+  {% if summary.get('onboarding_first_three_progress') %}
+  {% set first_three = summary.get('onboarding_first_three_progress') %}
+  <div class="notice">
+    <b>{{ first_three.get('title') }}</b>
+    <span>{{ first_three.get('line') }}</span>
+    {% if first_three.get('reward_coins') %}
+    <span>報酬 +{{ first_three.get('reward_coins') }}コイン</span>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if summary.get('layer1_boss_alert') %}
+  {% set l1alert = summary.get('layer1_boss_alert') %}
+  <div class="notice boss-alert-line">
+    <b>{{ l1alert.get('line') }}</b>
+    <span>{{ l1alert.get('desc') }}</span>
+  </div>
+  {% endif %}
   {% if summary.get('tutorial_layer1_result_card') %}
   {% set t1 = summary['tutorial_layer1_result_card'] %}
   <div class="card notice">
@@ -254,21 +299,22 @@
         <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
         {% endif %}
         {% if summary.get('explore_ct_is_admin') %}
-        <button type="submit" id="explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="1" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
+        <button type="submit" id="explore-return-btn" class="js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="1" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
         {% elif (summary.get('explore_ct_remain') or 0) > 0 %}
         <button
           type="submit"
           id="explore-return-btn"
+          class="js-explore-return-btn"
           data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
           data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
           data-ct-admin="0"
-          data-cta-ready-label="もう一度出撃"
+          data-cta-ready-label="{{ summary.get('next_action_primary_label') or 'もう一度出撃' }}"
           disabled
         >{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
-        <span id="explore-return-ct-label" class="battle-return-ct">{{ summary.get('explore_ct_status_label', '') }}</span>
+        <span id="explore-return-ct-label" class="battle-return-ct js-explore-return-label">{{ summary.get('explore_ct_status_label', '') }}</span>
         {% else %}
-        <button type="submit" id="explore-return-btn" data-ct-remain="0" data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}" data-ct-admin="0" data-cta-ready-label="{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
-        <span id="explore-return-ct-label" class="battle-return-ct">{{ summary.get('explore_ct_status_label', '') }}</span>
+        <button type="submit" id="explore-return-btn" class="js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}" data-ct-admin="0" data-cta-ready-label="{{ summary.get('next_action_primary_label') or summary.get('explore_ct_button_label', 'もう一度出撃') }}">{{ summary.get('next_action_primary_label') or summary.get('explore_ct_button_label', 'もう一度出撃') }}</button>
+        <span id="explore-return-ct-label" class="battle-return-ct js-explore-return-label">{{ summary.get('explore_ct_status_label', '') }}</span>
         {% endif %}
       </form>
       {% endif %}

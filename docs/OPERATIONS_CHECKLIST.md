@@ -376,4 +376,37 @@
 - [ ] `MAINTENANCE_MODE=full` で非管理者はメンテ画面へ案内される
 - [ ] `MAINTENANCE_MODE=full` でも管理者は通常確認を続けられる
 - [ ] `/admin/release` から `通常運用 / 軽量メンテ / 全面メンテ` を切り替えられる
-- [ ] `MAINTENANCE_MODE=partial/full` を入れると、管理画面設定より
+- [ ] `MAINTENANCE_MODE=partial/full` を入れると、管理画面設定より環境変数が優先される
+- [ ] ヘッダー左上の `ロボらぼ` ロゴから、ログイン中は `/home`、未ログイン時は `/register` に戻れる
+- [ ] `GET http://127.0.0.1:8000/healthz` が `200`
+- [ ] `GET https://robolabo.site/healthz` が `200`
+- [ ] `GET /sitemap.xml` が `200` で `application/xml`
+- [ ] `https://robolabo.site/terms` が利用規約として表示される
+- [ ] `https://robolabo.site/privacy` がプライバシーポリシーとして表示される
+- [ ] `https://robolabo.site/commerce` が特定商取引法に基づく表記として表示される
+- [ ] `https://robolabo.site/contact` の Google フォーム導線が最新URLを向いている
+- [ ] favicon が配信される
+  - `GET /static/favicon.png` が `200`
+- [ ] `robot-game.service` が active
+- [ ] `robot-game-healthcheck.timer` が active
+- [ ] `robot-game-backup.timer` が active
+- [ ] `robot-game-portal-online.timer` が active
+- [ ] `.env.production` に `POCHI_PORTAL_ENDPOINT=https://games-alchemist.com` を設定済み
+- [ ] `.env.production` に `POC
+
+## 11. 研究モジュール v2
+- [ ] `python3 init_db.py` 後、`user_research_modules` に `trait_key`, `trait_value`, `trait_grade`, `research_policy_key`, `synthesis_generation` がある
+- [ ] 既存モジュールの `trait_key` はNULL、`trait_value` は0のまま
+- [ ] `/modules/synthesis` で 安定研究 / 高出力研究 / 特性研究 を選べる
+- [ ] 合成結果に作戦特性が付く場合がある
+- [ ] 基地の研究モジュール欄に出撃先との相性が表示される
+- [ ] 出撃後も選択中モジュールが消費されない
+
+## 12. 第1層 初回体験改善
+- [ ] `python3 init_db.py` 後、`users.onboarding_first_three_reward_claimed` がある
+- [ ] 第1層初勝利の結果画面に `初勝利！` と `もう一度、第1層へ出撃` が表示される
+- [ ] CT中も再出撃CTAが表示され、カウントダウン後に有効化される
+- [ ] 初回3出撃完了時にコイン100が1回だけ付与される
+- [ ] 第1層通常勝利で `第1層ボス警報` が進む
+- [ ] 10到達後の次回第1層出撃で `encounter_source=alert_guarantee` のボス遭遇になる
+- [ ] 管理者と `analytics_excluded=1` は初回3出撃表示・警報表示の対象外

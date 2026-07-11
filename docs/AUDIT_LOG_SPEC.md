@@ -437,4 +437,57 @@
   - `user_id`
   - `event_type`
   - `request_id`
-  - `after` / `befor
+  - `after` / `before`
+
+## 8. 集計除外/認証防御
+- `audit.admin.analytics.exclude`
+  - 管理者がユーザーを通常プレイヤー集計から除外した記録。
+  - payload は `target_user_id`, `target_username`, `actor_admin_id`, `reason`, `previous_analytics_excluded`, `new_analytics_excluded` を含める。
+- `audit.admin.analytics.include`
+  - 管理者がユーザーを通常プレイヤー集計へ戻した記録。
+  - payload は `target_user_id`, `target_username`, `actor_admin_id`, `previous_analytics_excluded`, `new_analytics_excluded` を含める。
+- `audit.security.registration.suspicious`
+  - 登録入力が攻撃スキャン/不審登録候補に該当した記録。
+  - payload は `suspicious_reasons`, `target_user_id`, `ip_hash` を可能な範囲で含める。
+- `audit.security.registration.rate_limited`
+- `audit.security.login.rate_limited`
+
+## 9. 初回体験ファネル
+- `audit.onboarding.home.first_view`
+- `audit.onboarding.layer1.first_start`
+- `audit.onboarding.layer1.first_complete`
+- `audit.onboarding.layer1.first_win`
+- `audit.battle.result.view`
+- `audit.explore.retry.click`
+- `audit.onboarding.explore.second_start`
+- `audit.onboarding.explore.third_start`
+- `audit.onboarding.part.first_drop`
+- `audit.onboarding.build.first_complete`
+
+## 10. 研究モジュール v2
+- `audit.module.synthesis.preview`
+  - 研究合成確認。payload に `origin_module_a_id`, `origin_module_b_id`, `research_policy_key`, `cost_coins` を含める。
+- `audit.module.synthesis.create` / `audit.module.synthesis.consume` / `audit.module.synthesis.result`
+  - 研究合成の消費・生成・結果。payload に `research_policy_key`, `research_policy_label`, `trait_key`, `trait_label`, `trait_value`, `trait_grade`, `synthesis_generation` を含める。
+- `audit.module.strategy.apply`
+  - 出撃開始時の選択中モジュール適用。payload に `module_instance_id`, `module_key`, `module_name`, 各基礎補正を含める。
+- `audit.module.strategy.result`
+  - 出撃終了時のモジュール結果。payload に `module_trait_key`, `module_trait_trigger_count` を含める。
+- `audit.module.trait.trigger`
+  - 作戦特性が発動した戦闘の集約ログ。1戦1件で `trait_key`, `trait_label`, `trigger_count`, `trigger_labels` を含める。
+
+## 11. 第1層 初回体験改善
+- `audit.onboarding.first_three_progress`
+  - 初回3出撃の進行。payload は `user_id`, `completed_explore_count`, `target`, `area_key`。
+- `audit.onboarding.first_three_complete`
+  - 初回3出撃完了。payload は `user_id`, `completed_explore_count`, `reward_coins`, `area_key`。
+- `audit.onboarding.first_three_reward`
+  - 初回3出撃報酬付与。`delta_coins=100`。
+- `audit.boss.alert.progress`
+  - 第1層通常勝利で警報値が進んだ記録。payload は `user_id`, `area_key`, `boss_key`, `before`, `after`, `threshold`, `source`。
+- `audit.boss.alert.ready`
+  - 第1層ボス警報が満了した記録。
+- `audit.boss.alert.consume`
+  - 保証遭遇で警報を消費した記録。
+- `audit.boss.encounter`
+  - 既存イベント。第1層では `encounter_source=random|alert_guarantee` を追加する。

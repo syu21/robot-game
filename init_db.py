@@ -819,6 +819,7 @@ def main():
             tutorial_layer1_updated_at INTEGER NOT NULL DEFAULT 0,
             layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0,
             layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0,
+            onboarding_first_three_reward_claimed INTEGER NOT NULL DEFAULT 0,
             lab_coin INTEGER NOT NULL DEFAULT 0,
             lab_coin_last_daily_at TEXT,
             lab_coin_converted_at INTEGER NOT NULL DEFAULT 0,
@@ -3344,6 +3345,8 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0")
     if "layer1_first_clear_home_seen" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0")
+    if "onboarding_first_three_reward_claimed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN onboarding_first_three_reward_claimed INTEGER NOT NULL DEFAULT 0")
     added_lab_coin_converted_at = "lab_coin_converted_at" not in users_cols
     if "lab_coin" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
@@ -3523,6 +3526,7 @@ def main():
     cur.execute("UPDATE users SET tutorial_layer1_updated_at = 0 WHERE tutorial_layer1_updated_at IS NULL")
     cur.execute("UPDATE users SET layer1_first_clear_reward_claimed = 0 WHERE layer1_first_clear_reward_claimed IS NULL")
     cur.execute("UPDATE users SET layer1_first_clear_home_seen = 0 WHERE layer1_first_clear_home_seen IS NULL")
+    cur.execute("UPDATE users SET onboarding_first_three_reward_claimed = 0 WHERE onboarding_first_three_reward_claimed IS NULL")
     cur.execute("UPDATE users SET is_banned = 0 WHERE is_banned IS NULL")
     cur.execute("UPDATE users SET is_admin_protected = 0 WHERE is_admin_protected IS NULL")
     cur.execute("UPDATE users SET banned_at = NULL WHERE banned_at IS NOT NULL AND TRIM(banned_at) = ''")

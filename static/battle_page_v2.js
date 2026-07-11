@@ -34,11 +34,20 @@
   };
 
   const setupExploreReturnCooldown = () => {
-    const btn = document.getElementById("explore-return-btn");
-    if (!btn) return;
+    const buttons = Array.from(document.querySelectorAll(".js-explore-return-btn"));
+    const fallback = document.getElementById("explore-return-btn");
+    if (fallback && !buttons.includes(fallback)) {
+      buttons.push(fallback);
+    }
+    if (!buttons.length) return;
+    const btn = buttons[0];
     const isAdmin = String(btn.dataset.ctAdmin || "") === "1";
     if (isAdmin) return;
-    const label = document.getElementById("explore-return-ct-label");
+    const labels = Array.from(document.querySelectorAll(".js-explore-return-label"));
+    const labelFallback = document.getElementById("explore-return-ct-label");
+    if (labelFallback && !labels.includes(labelFallback)) {
+      labels.push(labelFallback);
+    }
     const readyLabel = String(btn.dataset.ctaReadyLabel || "もう一度出撃");
     const readyAtRaw = Number(btn.dataset.ctReadyAt || 0);
     const remainRaw = Number(btn.dataset.ctRemain || 0);
@@ -55,19 +64,23 @@
 
     const render = (remain) => {
       if (remain <= 0) {
-        btn.disabled = false;
-        btn.textContent = readyLabel;
-        if (label) {
-          label.textContent = "出撃可能";
-        }
+        buttons.forEach((item) => {
+          item.disabled = false;
+          item.textContent = String(item.dataset.ctaReadyLabel || readyLabel);
+        });
+        labels.forEach((item) => {
+          item.textContent = "出撃可能";
+        });
         return true;
       }
       const remainLabel = formatRemain(remain);
-      btn.disabled = true;
-      btn.textContent = `あと ${remainLabel} で出撃可能`;
-      if (label) {
-        label.textContent = `CT中: あと ${remainLabel}`;
-      }
+      buttons.forEach((item) => {
+        item.disabled = true;
+        item.textContent = `あと ${remainLabel} で出撃可能`;
+      });
+      labels.forEach((item) => {
+        item.textContent = `次の出撃まで あと ${remainLabel}`;
+      });
       return false;
     };
 
