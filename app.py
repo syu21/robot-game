@@ -12318,7 +12318,11 @@ def ensure_schema(db):
     if "home_next_action_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_daily_research_collapsed" not in cols:
-        db.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
+        db.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1")
+    if "home_base_collapsed" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN home_base_collapsed INTEGER NOT NULL DEFAULT 1")
+    if "home_tower_collapsed" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN home_tower_collapsed INTEGER NOT NULL DEFAULT 1")
     if "starter_robot_name_pending" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN starter_robot_name_pending INTEGER NOT NULL DEFAULT 0")
     if "tutorial_layer1_state" not in cols:
@@ -12545,7 +12549,9 @@ def ensure_schema(db):
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
-    db.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
+    db.execute("UPDATE users SET home_daily_research_collapsed = 1 WHERE home_daily_research_collapsed IS NULL")
+    db.execute("UPDATE users SET home_base_collapsed = 1 WHERE home_base_collapsed IS NULL")
+    db.execute("UPDATE users SET home_tower_collapsed = 1 WHERE home_tower_collapsed IS NULL")
     db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE starter_robot_name_pending IS NULL")
     db.execute(
         """
@@ -43054,7 +43060,17 @@ def home():
     home_daily_research_collapsed = (
         int(user["home_daily_research_collapsed"] or 0) == 1
         if "home_daily_research_collapsed" in user.keys()
-        else False
+        else True
+    )
+    home_base_collapsed = (
+        int(user["home_base_collapsed"] or 0) == 1
+        if "home_base_collapsed" in user.keys()
+        else True
+    )
+    home_tower_collapsed = (
+        int(user["home_tower_collapsed"] or 0) == 1
+        if "home_tower_collapsed" in user.keys()
+        else True
     )
     home_next_action_force_open = bool(
         home_next_action_collapsed
@@ -43064,7 +43080,6 @@ def home():
     show_home_visibility_controls = bool(
         (beginner_mission_available and beginner_mission_hidden)
         or (next_action_card and home_next_action_collapsed and not home_next_action_force_open)
-        or home_daily_research_collapsed
     )
     _home_section_log("next_action", section_started_at)
     section_started_at = time.perf_counter()
@@ -43162,7 +43177,13 @@ def home():
             f"今日の研究課題：{daily_task['title']} "
             f"{min(int(daily_task['current_count'] or 0), int(daily_task['target_count'] or 1))}/{int(daily_task['target_count'] or 1)}"
         )
-    daily_research_card = None if home_daily_research_collapsed else _daily_research_task_view(daily_task)
+    daily_research_card = _daily_research_task_view(daily_task)
+    tower_home_record = get_user_tower_record(db, int(user["id"])) if show_tower_entry else None
+    tower_home_record_line = (
+        f"{int(tower_home_record['best_floor'] or 0)}階"
+        if tower_home_record and int(tower_home_record["best_floor"] or 0) > 0
+        else "記録なし"
+    )
     today_start_ts, today_end_ts = _jst_day_key_to_bounds(today_key)
     daily_lab_login_done = db.execute(
         """
@@ -43374,6 +43395,9 @@ def home():
             home_next_action_collapsed=home_next_action_collapsed,
             home_next_action_force_open=home_next_action_force_open,
             home_daily_research_collapsed=home_daily_research_collapsed,
+            home_base_collapsed=home_base_collapsed,
+            home_tower_collapsed=home_tower_collapsed,
+            tower_home_record_line=tower_home_record_line,
             show_home_visibility_controls=show_home_visibility_controls,
             show_intro_modal=show_intro_modal,
             show_display_name_setup=show_display_name_setup,
@@ -44273,6 +44297,54 @@ def home_daily_research_expand():
     db = get_db()
     db.execute(
         "UPDATE users SET home_daily_research_collapsed = 0 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/base/collapse", methods=["POST"])
+@login_required
+def home_base_collapse():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_base_collapsed = 1 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/base/expand", methods=["POST"])
+@login_required
+def home_base_expand():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_base_collapsed = 0 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/tower/collapse", methods=["POST"])
+@login_required
+def home_tower_collapse():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_tower_collapsed = 1 WHERE id = ?",
+        (int(session["user_id"]),),
+    )
+    db.commit()
+    return _safe_home_next_redirect()
+
+
+@app.route("/home/tower/expand", methods=["POST"])
+@login_required
+def home_tower_expand():
+    db = get_db()
+    db.execute(
+        "UPDATE users SET home_tower_collapsed = 0 WHERE id = ?",
         (int(session["user_id"]),),
     )
     db.commit()

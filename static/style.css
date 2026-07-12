@@ -812,6 +812,29 @@ body.lightbox-open .lightbox-overlay {
 .home-collapsible-content {
   margin-top: 10px;
 }
+.home-fold-card {
+  display: grid;
+  gap: 10px;
+}
+.home-fold-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+.home-fold-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.home-fold-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
 .home-layout-grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
@@ -6668,6 +6691,13 @@ body.home-page .locked-layer-card {
   }
   .home-main-stack {
     grid-template-columns: 1fr;
+  }
+  .home-fold-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .home-fold-actions {
+    justify-content: flex-start;
   }
   .home-nav-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

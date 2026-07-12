@@ -392,7 +392,10 @@ class FactoryTests(unittest.TestCase):
         self.assertIn("/factory/customize", factory_html)
         home_html = client.get("/home").get_data(as_text=True)
         self.assertIn("MY BASE", home_html)
-        self.assertIn("/factory/customize", home_html)
+        self.assertNotIn("/factory/customize", home_html)
+        client.post("/home/base/expand", data={"next": "/home"})
+        expanded_home_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("/factory/customize", expanded_home_html)
 
     def test_companion_initial_access_grants_three_companions(self):
         html = self._client().get("/companion").get_data(as_text=True)

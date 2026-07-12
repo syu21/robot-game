@@ -318,9 +318,9 @@ class HomeNextActionTests(unittest.TestCase):
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertEqual(html.count("daily-research-home-card"), 1)
-        self.assertIn("daily-research-home-details", html)
         self.assertIn("今日の研究テーマ", html)
-        self.assertIn("ホームから隠す", html)
+        self.assertIn("▶", html)
+        self.assertIn("開く", html)
         self.assertNotIn("達成報酬：", html)
         self.assertNotIn("研究課題報酬を受け取る", html)
         self.assertNotIn("デイリー研究レポート", html)
@@ -337,10 +337,10 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.headers.get("Location"), "/home#home-visibility-controls")
 
         html = client.get("/home").get_data(as_text=True)
-        self.assertNotIn("daily-research-home-card", html)
-        self.assertIn('id="home-visibility-controls"', html)
-        self.assertIn("表示調整", html)
-        self.assertIn("今日の研究テーマを表示", html)
+        self.assertIn("daily-research-home-card", html)
+        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("開く", html)
+        self.assertNotIn("ホームから隠す", html)
 
     def test_home_daily_research_card_can_be_restored_from_visibility_controls(self):
         self._create_active_robot()
@@ -348,7 +348,8 @@ class HomeNextActionTests(unittest.TestCase):
         client.post("/home/daily-research/collapse", data={"next": "/home"})
 
         hidden_html = client.get("/home").get_data(as_text=True)
-        self.assertNotIn("daily-research-home-card", hidden_html)
+        self.assertIn("daily-research-home-card", hidden_html)
+        self.assertIn("開く", hidden_html)
 
         resp = client.post("/home/daily-research/expand", data={"next": "/home"})
         self.assertEqual(resp.status_code, 302)
@@ -356,7 +357,36 @@ class HomeNextActionTests(unittest.TestCase):
 
         shown_html = client.get("/home").get_data(as_text=True)
         self.assertEqual(shown_html.count("daily-research-home-card"), 1)
-        self.assertNotIn("今日の研究テーマを表示", shown_html)
+        self.assertIn("ホームから隠す", shown_html)
+
+    def test_home_orders_explore_before_folded_lab_sections(self):
+        self._create_active_robot()
+        html = self._new_client().get("/home").get_data(as_text=True)
+
+        self.assertLess(html.index("NEXT ACTION"), html.index("出撃機体"))
+        self.assertLess(html.index("出撃機体"), html.index("通常研究所"))
+        self.assertLess(html.index("通常研究所"), html.index("今日の研究テーマ"))
+        self.assertLess(html.index("今日の研究テーマ"), html.index("観測塔"))
+
+    def test_home_folded_lab_sections_can_be_expanded_and_persist(self):
+        self._create_active_robot()
+        client = self._new_client()
+
+        html = client.get("/home").get_data(as_text=True)
+        self.assertIn("通常研究所", html)
+        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("観測塔", html)
+        self.assertNotIn("自分の基地を見る", html)
+        self.assertNotIn("観測塔に挑戦", html)
+
+        self.assertEqual(client.post("/home/base/expand", data={"next": "/home"}).status_code, 302)
+        self.assertEqual(client.post("/home/daily-research/expand", data={"next": "/home"}).status_code, 302)
+        self.assertEqual(client.post("/home/tower/expand", data={"next": "/home"}).status_code, 302)
+
+        expanded_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("自分の基地を見る", expanded_html)
+        self.assertIn("ホームから隠す", expanded_html)
+        self.assertIn("観測塔に挑戦", expanded_html)
 
     def test_research_daily_page_renders(self):
         self._create_active_robot()

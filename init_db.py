@@ -808,7 +808,9 @@ def main():
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
-            home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0,
+            home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1,
+            home_base_collapsed INTEGER NOT NULL DEFAULT 1,
+            home_tower_collapsed INTEGER NOT NULL DEFAULT 1,
             tutorial_layer1_state TEXT NOT NULL DEFAULT 'new',
             tutorial_layer1_normal_win_count INTEGER NOT NULL DEFAULT 0,
             tutorial_layer1_boss_seen_at INTEGER,
@@ -3324,7 +3326,11 @@ def main():
     if "home_next_action_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_daily_research_collapsed" not in users_cols:
-        cur.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1")
+    if "home_base_collapsed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN home_base_collapsed INTEGER NOT NULL DEFAULT 1")
+    if "home_tower_collapsed" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN home_tower_collapsed INTEGER NOT NULL DEFAULT 1")
     if "tutorial_layer1_state" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN tutorial_layer1_state TEXT NOT NULL DEFAULT 'new'")
     if "tutorial_layer1_normal_win_count" not in users_cols:
@@ -3560,7 +3566,9 @@ def main():
     cur.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
-    cur.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
+    cur.execute("UPDATE users SET home_daily_research_collapsed = 1 WHERE home_daily_research_collapsed IS NULL")
+    cur.execute("UPDATE users SET home_base_collapsed = 1 WHERE home_base_collapsed IS NULL")
+    cur.execute("UPDATE users SET home_tower_collapsed = 1 WHERE home_tower_collapsed IS NULL")
     cur.execute(
         """
         UPDATE users

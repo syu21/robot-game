@@ -108,9 +108,14 @@ class TowerRouteTests(unittest.TestCase):
 
         admin_html = self._client().get("/home").get_data(as_text=True)
         self.assertIn("観測塔 -ASTRAL SPIRE-", admin_html)
-        self.assertIn("/tower", admin_html)
-        self.assertIn("home-tower-cta", admin_html)
-        self.assertIn("公開準備中", admin_html)
+        self.assertIn("最高記録:", admin_html)
+        self.assertNotIn("home-tower-cta", admin_html)
+        admin_client = self._client()
+        admin_client.post("/home/tower/expand", data={"next": "/home"})
+        expanded_admin_html = admin_client.get("/home").get_data(as_text=True)
+        self.assertIn("/tower", expanded_admin_html)
+        self.assertIn("home-tower-cta", expanded_admin_html)
+        self.assertIn("公開準備中", expanded_admin_html)
 
     def test_release_public_allows_layer4_user_only(self):
         admin_client = self._client()
@@ -124,8 +129,12 @@ class TowerRouteTests(unittest.TestCase):
 
         user_html = self._client(self.user_id, "tower_user").get("/home").get_data(as_text=True)
         self.assertIn("観測塔 -ASTRAL SPIRE-", user_html)
-        self.assertIn("/tower", user_html)
-        self.assertIn("home-tower-cta", user_html)
+        self.assertNotIn("home-tower-cta", user_html)
+        user_client = self._client(self.user_id, "tower_user")
+        user_client.post("/home/tower/expand", data={"next": "/home"})
+        expanded_user_html = user_client.get("/home").get_data(as_text=True)
+        self.assertIn("/tower", expanded_user_html)
+        self.assertIn("home-tower-cta", expanded_user_html)
 
         locked_html = self._client(self.locked_user_id, "tower_locked").get("/home").get_data(as_text=True)
         self.assertNotIn("/tower", locked_html)

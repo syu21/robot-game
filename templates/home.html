@@ -11,24 +11,6 @@
 </div>
 {% else %}
 {% include '_presence_bar.html' %}
-{% if factory_base_home and factory_base_home['equipped'] %}
-<section class="card trial-home-banner">
-  <div><span class="weekly-fit-badge">MY BASE</span></div>
-  <h1>{{ factory_base_home['equipped'].get('background', {}).get('name_ja', '通常研究所') }}</h1>
-  <div class="upgrade-cost">
-    {% for key, item in factory_base_home['equipped'].items() %}
-      {{ item['type_label'] }}: {{ item['name_ja'] }}{% if not loop.last %} / {% endif %}
-    {% endfor %}
-  </div>
-  <p class="link">
-    <a class="battle-home-link" href="{{ url_for('base_visit', user_id=user['id']) }}">自分の基地を見る</a>
-    |
-    <a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a>
-    |
-    <a class="battle-home-link" href="{{ url_for('base_ranking') }}">話題の基地</a>
-  </p>
-</section>
-{% endif %}
 {% if trial_mode %}
 <section class="card trial-home-banner">
   <div><span class="weekly-fit-badge">お試しプレイ中</span></div>
@@ -213,61 +195,6 @@
   {% if layer1_boss_alert %}
   <div><b>{{ layer1_boss_alert['line'] }}</b> {{ layer1_boss_alert['desc'] }}</div>
   {% endif %}
-</div>
-{% endif %}
-{% if daily_research_card %}
-<div class="panel daily-research-home-panel">
-  <div class="card daily-research-home-card">
-    <details class="daily-research-home-details" open>
-      <summary class="home-explore-card-head">
-        <div>
-          <div class="home-explore-kicker">今日の研究テーマ</div>
-          <div><b>{{ daily_research_card['title'] }}</b></div>
-        </div>
-        <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
-      </summary>
-      <div class="daily-research-home-body">
-        {% if not daily_research_card['is_done'] %}
-        <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
-        {% endif %}
-        <div class="home-inline-actions">
-          {% if daily_research_card['cta']['is_post'] %}
-          <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
-            <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
-            <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if daily_research_card['cta']['area_key'] == 'layer_1' else 'other' }}" />
-            {% if explore_submission_id %}
-            <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-            {% endif %}
-            <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
-          </form>
-          {% else %}
-          <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
-          {% endif %}
-          <form method="post" action="{{ url_for('home_daily_research_collapse') }}" class="inline-form inline-form-top">
-            <input type="hidden" name="next" value="{{ url_for('home') }}#home-visibility-controls" />
-            <button type="submit" class="btn-secondary">ホームから隠す</button>
-          </form>
-        </div>
-      </div>
-    </details>
-  </div>
-</div>
-{% endif %}
-{% if show_tower_entry %}
-<div class="panel home-tower-panel">
-  <div class="card">
-    <div class="home-explore-card-head">
-      <div>
-        <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
-        <div><b>3機のロボで、どこまで登れるか挑戦</b></div>
-      </div>
-      {% if is_admin and not tower_is_public %}
-      <div class="home-explore-status">公開準備中</div>
-      {% endif %}
-    </div>
-    <div class="upgrade-cost">第4層まで育てたロボで記録に挑むコンテンツです。本編の進行には必須ではありません。</div>
-    <p class="link"><a class="battle-home-link home-tower-cta" href="{{ url_for('tower') }}">観測塔に挑戦</a></p>
-  </div>
 </div>
 {% endif %}
 {% if show_beginner_mission %}
@@ -653,6 +580,107 @@
         </div>
       {% endif %}
     </section>
+    {% if factory_base_home and factory_base_home['equipped'] %}
+    <section class="panel home-base-panel">
+      <div class="card home-fold-card">
+        <div class="home-fold-summary">
+          <div>
+            <div><span class="weekly-fit-badge">MY BASE</span></div>
+            <div class="home-explore-kicker">通常研究所</div>
+            <div><b>{% if home_base_collapsed %}▶{% else %}▼{% endif %} {{ factory_base_home['equipped'].get('background', {}).get('name_ja', '通常研究所') }}</b></div>
+          </div>
+          <form method="post" action="{{ url_for('home_base_expand' if home_base_collapsed else 'home_base_collapse') }}" class="inline-form inline-form-top">
+            <input type="hidden" name="next" value="{{ request.path }}#home-base-panel" />
+            <button type="submit" class="btn-secondary">{{ '開く' if home_base_collapsed else '閉じる' }}</button>
+          </form>
+        </div>
+        {% if not home_base_collapsed %}
+        <div class="home-fold-body" id="home-base-panel">
+          <div class="upgrade-cost">
+            {% for key, item in factory_base_home['equipped'].items() %}
+              {{ item['type_label'] }}: {{ item['name_ja'] }}{% if not loop.last %} / {% endif %}
+            {% endfor %}
+          </div>
+          <p class="link">
+            <a class="battle-home-link" href="{{ url_for('base_visit', user_id=user['id']) }}">自分の基地を見る</a>
+            |
+            <a class="battle-home-link" href="{{ url_for('factory_customize') }}">基地カスタマイズ</a>
+            |
+            <a class="battle-home-link" href="{{ url_for('base_ranking') }}">話題の基地</a>
+          </p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if daily_research_card %}
+    <section class="panel daily-research-home-panel">
+      <div class="card daily-research-home-card home-fold-card">
+        <div class="home-fold-summary">
+          <div>
+            <div class="home-explore-kicker">今日の研究テーマ</div>
+            <div><b>{% if home_daily_research_collapsed %}▶{% else %}▼{% endif %} {{ daily_research_card['title'] }}</b></div>
+          </div>
+          <div class="home-fold-actions">
+            <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
+            <form method="post" action="{{ url_for('home_daily_research_expand' if home_daily_research_collapsed else 'home_daily_research_collapse') }}" class="inline-form inline-form-top">
+              <input type="hidden" name="next" value="{{ request.path }}#home-daily-research-panel" />
+              <button type="submit" class="btn-secondary">{{ '開く' if home_daily_research_collapsed else 'ホームから隠す' }}</button>
+            </form>
+          </div>
+        </div>
+        {% if not home_daily_research_collapsed %}
+        <div class="daily-research-home-body home-fold-body" id="home-daily-research-panel">
+          {% if not daily_research_card['is_done'] %}
+          <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
+          {% endif %}
+          <div class="home-inline-actions">
+            {% if daily_research_card['cta']['is_post'] %}
+            <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
+              <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
+              <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if daily_research_card['cta']['area_key'] == 'layer_1' else 'other' }}" />
+              {% if explore_submission_id %}
+              <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+              {% endif %}
+              <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
+            </form>
+            {% else %}
+            <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if show_tower_entry %}
+    <section class="panel home-tower-panel">
+      <div class="card home-fold-card">
+        <div class="home-fold-summary">
+          <div>
+            <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
+            <div><b>{% if home_tower_collapsed %}▶{% else %}▼{% endif %} 観測塔</b></div>
+          </div>
+          <div class="home-fold-actions">
+            <div class="home-explore-status">最高記録: {{ tower_home_record_line }}</div>
+            <form method="post" action="{{ url_for('home_tower_expand' if home_tower_collapsed else 'home_tower_collapse') }}" class="inline-form inline-form-top">
+              <input type="hidden" name="next" value="{{ request.path }}#home-tower-panel" />
+              <button type="submit" class="btn-secondary">{{ '開く' if home_tower_collapsed else '閉じる' }}</button>
+            </form>
+          </div>
+        </div>
+        {% if not home_tower_collapsed %}
+        <div class="home-fold-body" id="home-tower-panel">
+          {% if is_admin and not tower_is_public %}
+          <div class="home-explore-status">公開準備中</div>
+          {% endif %}
+          <div class="upgrade-cost">第4層まで育てたロボで記録に挑むコンテンツです。本編の進行には必須ではありません。</div>
+          <p class="link"><a class="battle-home-link home-tower-cta" href="{{ url_for('tower') }}">観測塔に挑戦</a></p>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
     {% if not trial_mode %}
     <section class="panel home-mvp-panel home-spotlight-panel">
       <div class="world-env-card mvp-hero-card">
