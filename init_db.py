@@ -558,6 +558,7 @@ def _apply_series_part_assignments(cur):
         """
     )
     cur.execute("UPDATE robot_parts SET frame_type = 'dinosaur' WHERE COALESCE(series_key, series, '') LIKE 'dino_%'")
+    cur.execute("UPDATE robot_parts SET frame_type = 'appliance' WHERE COALESCE(series_key, series, '') = 'appliance'")
     cur.execute(
         """
         UPDATE robot_parts
@@ -3685,7 +3686,8 @@ def main():
     cur.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
     cur.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
     cur.execute("UPDATE series_master SET frame_type = 'dinosaur', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'dino_%'")
-    cur.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%'")
+    cur.execute("UPDATE series_master SET frame_type = 'appliance', max_rarity = 'N', can_evolve = 0 WHERE series_key = 'appliance'")
+    cur.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%' AND series_key != 'appliance'")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (

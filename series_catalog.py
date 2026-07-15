@@ -184,6 +184,190 @@ SERIES_DEFINITIONS.extend(
     for variant in DINO_SERIES_VARIANTS
 )
 
+APPLIANCE_SERIES_KEY = "appliance"
+
+SERIES_DEFINITIONS.append(
+    {
+        "series_key": APPLIANCE_SERIES_KEY,
+        "display_name": "暴走家電シリーズ",
+        "short_label": "家電",
+        "category": "appliance",
+        "frame_type": "appliance",
+        "role_label": "機能拡張",
+        "description": "家庭用電化製品を戦闘用AIで過剰改造した実験機群。そろえると専門機、混ぜると発明品になる。",
+        "max_rarity": "N",
+        "can_evolve": 0,
+        "default_active": 1,
+    }
+)
+
+APPLIANCE_SET_VARIANTS = (
+    {
+        "set_key": "rice_cooker",
+        "asset_suffix": "rice_cooker",
+        "name_ja": "炊飯器",
+        "formal_name": "ライスコア・クッカー",
+        "role_label": "耐久・防御",
+        "bonus_name": "極上保温",
+        "bonus_stats": {"hp": 3, "def": 3, "spd": -1},
+    },
+    {
+        "set_key": "microwave",
+        "asset_suffix": "microwave",
+        "name_ja": "電子レンジ",
+        "formal_name": "マイクロウェーブ・ブラスター",
+        "role_label": "攻撃・命中",
+        "bonus_name": "集中加熱",
+        "bonus_stats": {"atk": 3, "acc": 3, "cri": 1, "hp": -1},
+    },
+    {
+        "set_key": "vacuum",
+        "asset_suffix": "vacuum",
+        "name_ja": "掃除機",
+        "formal_name": "サイクロン・イーター",
+        "role_label": "素早さ・命中",
+        "bonus_name": "フルパワー吸引",
+        "bonus_stats": {"spd": 4, "acc": 2, "def": -1},
+    },
+    {
+        "set_key": "fridge",
+        "asset_suffix": "fridge",
+        "name_ja": "冷蔵庫",
+        "formal_name": "フロスト・ストレージ",
+        "role_label": "超耐久・防御",
+        "bonus_name": "急速冷凍装甲",
+        "bonus_stats": {"hp": 4, "def": 4, "spd": -2},
+    },
+    {
+        "set_key": "tv",
+        "asset_suffix": "tv",
+        "name_ja": "テレビ",
+        "formal_name": "ビジョン・チューナー",
+        "role_label": "命中・会心",
+        "bonus_name": "高精細予測",
+        "bonus_stats": {"acc": 4, "cri": 2, "hp": -1},
+    },
+    {
+        "set_key": "fan",
+        "asset_suffix": "fan",
+        "name_ja": "扇風機",
+        "formal_name": "エアロ・サーキュレーター",
+        "role_label": "素早さ・会心",
+        "bonus_name": "最大風量",
+        "bonus_stats": {"spd": 3, "cri": 3, "def": -1},
+    },
+    {
+        "set_key": "toaster",
+        "asset_suffix": "toaster",
+        "name_ja": "トースター",
+        "formal_name": "バーン・トースター",
+        "role_label": "攻撃・会心",
+        "bonus_name": "焼き加減・極",
+        "bonus_stats": {"atk": 4, "cri": 3, "def": -2},
+    },
+    {
+        "set_key": "dryer",
+        "asset_suffix": "dryer",
+        "name_ja": "ドライヤー",
+        "formal_name": "ブロウ・ストライカー",
+        "role_label": "攻撃・素早さ・命中",
+        "bonus_name": "温冷切替",
+        "bonus_stats": {"atk": 2, "spd": 2, "acc": 2},
+    },
+)
+
+APPLIANCE_NETWORK_BONUSES = {
+    2: {"bonus_name": "家庭内ネットワーク2", "bonus_stats": {"acc": 1}},
+    3: {"bonus_name": "家庭内ネットワーク3", "bonus_stats": {"acc": 1, "def": 1}},
+    4: {"bonus_name": "家庭内ネットワーク4", "bonus_stats": {"hp": 1, "def": 1, "acc": 1}},
+}
+
+APPLIANCE_PART_DISPLAY_NAMES = {
+    ("rice_cooker", "HEAD"): "炊飯制御ユニット",
+    ("rice_cooker", "RIGHT_ARM"): "しゃもじブレード",
+    ("rice_cooker", "LEFT_ARM"): "内釜シールド",
+    ("rice_cooker", "LEGS"): "保温安定脚",
+    ("microwave", "HEAD"): "レンジ制御炉",
+    ("microwave", "RIGHT_ARM"): "マイクロウェーブ砲",
+    ("microwave", "LEFT_ARM"): "耐熱ドアシールド",
+    ("microwave", "LEGS"): "回転加熱脚",
+    ("vacuum", "HEAD"): "サイクロン集塵炉",
+    ("vacuum", "RIGHT_ARM"): "吸引ノズル砲",
+    ("vacuum", "LEFT_ARM"): "回転ブラシシールド",
+    ("vacuum", "LEGS"): "ホイールブースター",
+    ("fridge", "HEAD"): "冷蔵保管装甲",
+    ("fridge", "RIGHT_ARM"): "冷気キャノン",
+    ("fridge", "LEFT_ARM"): "冷凍ドアシールド",
+    ("fridge", "LEGS"): "コンプレッサー脚",
+    ("tv", "HEAD"): "未来予測スクリーン",
+    ("tv", "RIGHT_ARM"): "リモコンランチャー",
+    ("tv", "LEFT_ARM"): "電波反射シールド",
+    ("tv", "LEGS"): "チャンネル追跡脚",
+    ("fan", "HEAD"): "送風タービンコア",
+    ("fan", "RIGHT_ARM"): "エアカッター",
+    ("fan", "LEFT_ARM"): "風圧シールド",
+    ("fan", "LEGS"): "首振りブースター",
+    ("toaster", "HEAD"): "高熱トースト炉",
+    ("toaster", "RIGHT_ARM"): "ヒーターブレード",
+    ("toaster", "LEFT_ARM"): "トーストシールド",
+    ("toaster", "LEGS"): "ポップアップ脚",
+    ("dryer", "HEAD"): "温冷風制御機",
+    ("dryer", "RIGHT_ARM"): "熱風バスター",
+    ("dryer", "LEFT_ARM"): "冷風シールド",
+    ("dryer", "LEGS"): "ターボドライ脚",
+}
+
+APPLIANCE_PART_STATS_BY_SET = {
+    "rice_cooker": {
+        "HEAD": {"hp": 5, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 0},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 4, "cri": 1},
+        "LEFT_ARM": {"hp": 4, "atk": 1, "def": 5, "spd": 0, "acc": 1, "cri": 1},
+        "LEGS": {"hp": 4, "atk": 1, "def": 2, "spd": 1, "acc": 4, "cri": 0},
+    },
+    "microwave": {
+        "HEAD": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 5, "cri": 0},
+        "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 2, "cri": 2},
+        "LEFT_ARM": {"hp": 2, "atk": 1, "def": 4, "spd": 1, "acc": 4, "cri": 0},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 4, "acc": 5, "cri": 0},
+    },
+    "vacuum": {
+        "HEAD": {"hp": 1, "atk": 1, "def": 1, "spd": 5, "acc": 4, "cri": 0},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 5, "cri": 0},
+        "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 5, "acc": 1, "cri": 0},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 6, "acc": 1, "cri": 2},
+    },
+    "fridge": {
+        "HEAD": {"hp": 5, "atk": 1, "def": 5, "spd": 0, "acc": 1, "cri": 0},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 0, "acc": 5, "cri": 1},
+        "LEFT_ARM": {"hp": 5, "atk": 1, "def": 5, "spd": 0, "acc": 1, "cri": 0},
+        "LEGS": {"hp": 5, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 0},
+    },
+    "tv": {
+        "HEAD": {"hp": 1, "atk": 1, "def": 1, "spd": 1, "acc": 5, "cri": 3},
+        "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 5, "cri": 0},
+        "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 1, "acc": 5, "cri": 0},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 4, "acc": 5, "cri": 0},
+    },
+    "fan": {
+        "HEAD": {"hp": 1, "atk": 1, "def": 1, "spd": 5, "acc": 1, "cri": 3},
+        "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 3},
+        "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 5, "acc": 1, "cri": 0},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 5, "acc": 4, "cri": 0},
+    },
+    "toaster": {
+        "HEAD": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 3},
+        "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 3},
+        "LEFT_ARM": {"hp": 1, "atk": 4, "def": 4, "spd": 1, "acc": 1, "cri": 1},
+        "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 4, "acc": 1, "cri": 4},
+    },
+    "dryer": {
+        "HEAD": {"hp": 1, "atk": 4, "def": 1, "spd": 5, "acc": 1, "cri": 0},
+        "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 4, "cri": 0},
+        "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 1, "acc": 5, "cri": 0},
+        "LEGS": {"hp": 1, "atk": 4, "def": 1, "spd": 5, "acc": 1, "cri": 0},
+    },
+}
+
 SERIES_PART_SLOT_DEFS = (
     {"part_type": "HEAD", "key_prefix": "head", "image_dir": "head", "label_ja": "ヘッド"},
     {"part_type": "RIGHT_ARM", "key_prefix": "right_arm", "image_dir": "right_arm", "label_ja": "右腕"},
@@ -411,6 +595,17 @@ DINO_PART_DISPLAY_NAMES_BY_KEY = {
 }
 
 DINO_PART_DEFINITIONS = []
+APPLIANCE_PART_DEFINITIONS = []
+APPLIANCE_PART_SET_BY_KEY = {}
+APPLIANCE_SET_BONUSES_BY_KEY = {
+    str(variant["set_key"]): {
+        "set_key": str(variant["set_key"]),
+        "name_ja": str(variant["name_ja"]),
+        "bonus_name": str(variant["bonus_name"]),
+        "bonus_stats": dict(variant["bonus_stats"]),
+    }
+    for variant in APPLIANCE_SET_VARIANTS
+}
 for variant in SERIES_VARIANTS:
     for slot in SERIES_PART_SLOT_DEFS:
         key = f"{slot['key_prefix']}_{variant['asset_suffix']}"
@@ -489,8 +684,42 @@ for variant in DINO_SERIES_VARIANTS:
         SERIES_PART_DEFINITIONS.append(part)
         PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
 
+APPLIANCE_IMAGE_BY_SLOT = {
+    "HEAD": "parts/head/head_n_machine.png",
+    "RIGHT_ARM": "parts/right_arm/right_arm_n_machine.png",
+    "LEFT_ARM": "parts/left_arm/left_arm_n_machine.png",
+    "LEGS": "parts/legs/legs_n_machine.png",
+}
+
+for variant in APPLIANCE_SET_VARIANTS:
+    for slot in SERIES_PART_SLOT_DEFS:
+        set_key = str(variant["set_key"])
+        key = f"{slot['key_prefix']}_n_appliance_{variant['asset_suffix']}"
+        part = {
+            "key": key,
+            "part_type": slot["part_type"],
+            "image_path": APPLIANCE_IMAGE_BY_SLOT[slot["part_type"]],
+            "rarity": "N",
+            "element": "MACHINE",
+            "series": APPLIANCE_SERIES_KEY,
+            "series_key": APPLIANCE_SERIES_KEY,
+            "series_label": "暴走家電シリーズ",
+            "frame_type": "appliance",
+            "display_name_ja": APPLIANCE_PART_DISPLAY_NAMES[(set_key, slot["part_type"])],
+            "is_admin_only": 0,
+            "stats": dict(APPLIANCE_PART_STATS_BY_SET[set_key][slot["part_type"]]),
+            "appliance_set_key": set_key,
+            "appliance_set_label": str(variant["name_ja"]),
+        }
+        APPLIANCE_PART_DEFINITIONS.append(part)
+        SERIES_PART_DEFINITIONS.append(part)
+        PART_KEY_SERIES_ASSIGNMENTS[key] = APPLIANCE_SERIES_KEY
+        APPLIANCE_PART_SET_BY_KEY[key] = set_key
+
 DINO_PART_KEYS = tuple(part["key"] for part in DINO_PART_DEFINITIONS)
 DINO_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in DINO_PART_DEFINITIONS}
+APPLIANCE_PART_KEYS = tuple(part["key"] for part in APPLIANCE_PART_DEFINITIONS)
+APPLIANCE_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in APPLIANCE_PART_DEFINITIONS}
 
 LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
 

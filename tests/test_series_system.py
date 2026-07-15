@@ -525,6 +525,151 @@ class SeriesSystemTests(unittest.TestCase):
             self.assertTrue(any(row["stat_key"] == "def" for row in stat_obj["series_bonus"]))
             self.assertTrue(any(row["stat_key"] == "hp" for row in stat_obj["series_bonus"]))
 
+    def test_appliance_series_seeded_with_distinct_parts(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            series = db.execute(
+                """
+                SELECT display_name, frame_type, max_rarity, can_evolve, is_active
+                FROM series_master
+                WHERE series_key = 'appliance'
+                """
+            ).fetchone()
+            self.assertIsNotNone(series)
+            self.assertEqual(series["display_name"], "暴走家電シリーズ")
+            self.assertEqual(series["frame_type"], "appliance")
+            self.assertEqual(series["max_rarity"], "N")
+            self.assertEqual(int(series["can_evolve"]), 0)
+            self.assertEqual(int(series["is_active"]), 1)
+
+            rows = db.execute(
+                """
+                SELECT key, image_path, rarity, element, series, series_key, frame_type, display_name_ja
+                FROM robot_parts
+                WHERE series_key = 'appliance'
+                ORDER BY key ASC
+                """
+            ).fetchall()
+            self.assertEqual(len(rows), 32)
+            keys = {row["key"] for row in rows}
+            self.assertIn("head_n_appliance_rice_cooker", keys)
+            self.assertIn("right_arm_n_appliance_microwave", keys)
+            self.assertIn("left_arm_n_appliance_fridge", keys)
+            self.assertIn("legs_n_appliance_vacuum", keys)
+            for row in rows:
+                self.assertEqual(row["series"], "appliance")
+                self.assertEqual(row["series_key"], "appliance")
+                self.assertEqual(row["frame_type"], "appliance")
+                self.assertEqual(row["rarity"], "N")
+                self.assertEqual(row["element"], "MACHINE")
+                self.assertTrue(str(row["display_name_ja"]).strip())
+                self.assertTrue(os.path.exists(os.path.join(game_app.ASSET_ROOT, row["image_path"])))
+
+    def test_appliance_mixed_parts_apply_network_bonus_only(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            keys = {
+                "head": "head_n_appliance_rice_cooker",
+                "r_arm": "right_arm_n_appliance_microwave",
+                "l_arm": "left_arm_n_appliance_fridge",
+                "legs": "legs_n_appliance_vacuum",
+            }
+            part_instance_ids = {}
+            for slot, key in keys.items():
+                part = game_app._get_part_by_key(db, key)
+                self.assertIsNotNone(part, key)
+                part_instance_ids[slot] = game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    part,
+                    plus=0,
+                    status="inventory",
+                )
+            game_app._equip_part_instances_on_robot(db, self.robot_id, part_instance_ids)
+            db.execute(
+                """
+                UPDATE robot_instance_parts
+                SET head_key = ?, r_arm_key = ?, l_arm_key = ?, legs_key = ?
+                WHERE robot_instance_id = ?
+                """,
+                (keys["head"], keys["r_arm"], keys["l_arm"], keys["legs"], self.robot_id),
+            )
+            db.commit()
+
+            stat_obj = game_app._compute_robot_stats_for_instance(db, self.robot_id)
+            self.assertEqual(stat_obj["series_counts"]["appliance"], 4)
+            bonuses = stat_obj["series_bonus"]
+            self.assertTrue(all(row["bonus_kind"] == "appliance_network" for row in bonuses))
+            self.assertEqual({row["stat_key"]: row["delta_value"] for row in bonuses}, {"hp": 1, "def": 1, "acc": 1})
+            self.assertFalse(any(row.get("bonus_kind") == "appliance_complete" for row in bonuses))
+            view = game_app._series_bonus_view_for_loadout(db, stat_obj["parts"], series_calc=stat_obj, progress_layer=5)
+            self.assertIn("家電2部位以上", view["condition_text"])
+            self.assertIn("家庭内ネットワーク4", view["effect_text"])
+
+    def test_appliance_complete_set_replaces_network_bonus(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            keys = {
+                "head": "head_n_appliance_rice_cooker",
+                "r_arm": "right_arm_n_appliance_rice_cooker",
+                "l_arm": "left_arm_n_appliance_rice_cooker",
+                "legs": "legs_n_appliance_rice_cooker",
+            }
+            part_instance_ids = {}
+            for slot, key in keys.items():
+                part = game_app._get_part_by_key(db, key)
+                self.assertIsNotNone(part, key)
+                part_instance_ids[slot] = game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    part,
+                    plus=0,
+                    status="inventory",
+                )
+            game_app._equip_part_instances_on_robot(db, self.robot_id, part_instance_ids)
+            db.execute(
+                """
+                UPDATE robot_instance_parts
+                SET head_key = ?, r_arm_key = ?, l_arm_key = ?, legs_key = ?
+                WHERE robot_instance_id = ?
+                """,
+                (keys["head"], keys["r_arm"], keys["l_arm"], keys["legs"], self.robot_id),
+            )
+            db.commit()
+
+            stat_obj = game_app._compute_robot_stats_for_instance(db, self.robot_id)
+            bonuses = stat_obj["series_bonus"]
+            self.assertTrue(all(row["bonus_kind"] == "appliance_complete" for row in bonuses))
+            self.assertEqual({row["stat_key"]: row["delta_value"] for row in bonuses}, {"hp": 3, "def": 3, "spd": -1})
+            self.assertFalse(any(row.get("bonus_name") == "家庭内ネットワーク4" for row in bonuses))
+            view = game_app._series_bonus_view_for_loadout(db, stat_obj["parts"], series_calc=stat_obj, progress_layer=5)
+            self.assertIn("完成家電ボーナス", view["effect_text"])
+            self.assertIn("極上保温", view["effect_text"])
+
+    def test_build_can_filter_appliance_frame(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for key in (
+                "head_n_appliance_tv",
+                "right_arm_n_appliance_toaster",
+                "left_arm_n_appliance_fan",
+                "legs_n_appliance_dryer",
+            ):
+                game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    game_app._get_part_by_key(db, key),
+                    plus=0,
+                    status="inventory",
+                )
+            db.commit()
+
+        html = self._client().get("/build?mode=new&frame_type=appliance").get_data(as_text=True)
+        self.assertIn("家電型", html)
+        self.assertIn("未来予測スクリーン", html)
+        self.assertIn("ヒーターブレード", html)
+        self.assertIn("家電2部位以上 / 同機種4部位で発動", html)
+
     def test_build_and_robot_detail_show_series_section(self):
         client = self._client()
         build_resp = client.get("/build")

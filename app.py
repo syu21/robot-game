@@ -33,6 +33,8 @@ from balance_config import (
     RARITY_WEIGHTS_BY_TIER,
 )
 from series_catalog import (
+    APPLIANCE_PART_KEYS,
+    APPLIANCE_PART_STAT_BY_KEY,
     DINO_PART_KEYS,
     DINO_PART_STAT_BY_KEY,
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
@@ -7351,6 +7353,36 @@ def _series_bonus_view_for_loadout(db, parts, series_calc=None, progress_layer=1
         if not meta:
             continue
         series_effects = [row for row in applied if str(row.get("series_key")) == series_key]
+        appliance_effects = [
+            row for row in series_effects
+            if str(row.get("bonus_kind") or "").startswith("appliance_")
+        ]
+        if appliance_effects:
+            bonus_kind = str(appliance_effects[0].get("bonus_kind") or "")
+            bonus_name = str(appliance_effects[0].get("bonus_name") or "").strip()
+            effect_text = " / ".join(
+                f"{_stat_label(row['stat_key'])} {_format_series_bonus_value(row['delta_value'], 'flat')}"
+                for row in appliance_effects
+            )
+            label = "完成家電ボーナス" if bonus_kind == "appliance_complete" else "家電系統ボーナス"
+            hint_text = (
+                f"{bonus_name}: {effect_text}"
+                if bonus_name
+                else effect_text
+            )
+            line_items.append(
+                {
+                    "series_key": series_key,
+                    "display_name": label,
+                    "role_label": str(meta["role_label"]),
+                    "count": int(count),
+                    "count_text": f"{int(count)}/4",
+                    "effect_text": hint_text,
+                    "hint_text": "同じ家電4部位で完成機、別家電混成で家庭内ネットワークが発動",
+                    "active": True,
+                }
+            )
+            continue
         effect_text = " / ".join(
             f"{_stat_label(row['stat_key'])} {_format_series_bonus_value(row['applied_value'], row.get('value_type'))}"
             for row in series_effects
@@ -7379,10 +7411,15 @@ def _series_bonus_view_for_loadout(db, parts, series_calc=None, progress_layer=1
         )
     if line_items:
         top = line_items[0]
+        condition_text = (
+            "家電2部位以上 / 同機種4部位で発動"
+            if top["series_key"] == "appliance"
+            else "同シリーズ 2部位 / 4部位で発動"
+        )
         return {
             "active": bool(applied),
             "status_label": "発動中" if applied else "準備中",
-            "condition_text": "同シリーズ 2部位 / 4部位で発動",
+            "condition_text": condition_text,
             "effect_text": f"{top['display_name']} {top['count_text']} / {top['effect_text']}",
             "detail_text": top["hint_text"],
             "catalog_rows": line_items,
@@ -7503,6 +7540,12 @@ FRAME_TYPE_DEFS = (
         "description": "恐竜型フレーム専用。恐竜型パーツどうしで編成できます。",
         "detail": "通常型・虫型とは混成できません。恐竜シリーズ内の組み替えは可能です。",
     },
+    {
+        "key": "appliance",
+        "label": "家電型",
+        "description": "暴走家電シリーズ専用。同じ家電で完成機、別家電を混ぜて改造機を作れます。",
+        "detail": "家電パーツ数と機種統一で、家庭内ネットワークまたは完成家電ボーナスが発動します。",
+    },
 )
 FRAME_TYPE_DEF_BY_KEY = {item["key"]: item for item in FRAME_TYPE_DEFS}
 FREE_BUILD_FRAME_MODE = "free"
@@ -7511,7 +7554,7 @@ BUILD_FRAME_MODE_DEFS = (
     {
         "key": FREE_BUILD_FRAME_MODE,
         "label": "自由編成",
-        "description": "通常型・虫型・恐竜型を自由に組み合わせます。",
+        "description": "通常型・虫型・恐竜型・家電型を自由に組み合わせます。",
         "detail": "異なるフレームが混ざったロボは実験機になり、セットボーナスとシリーズ効果は発動しません。",
     },
 )
@@ -7542,6 +7585,8 @@ def _infer_frame_type_from_series_key(series_key):
         return "insect"
     if key.startswith("dino_"):
         return "dinosaur"
+    if key == "appliance" or key.startswith("appliance_"):
+        return "appliance"
     return "normal"
 
 
@@ -14936,7 +14981,8 @@ def ensure_schema(db):
     db.execute("UPDATE series_master SET can_evolve = 0 WHERE can_evolve IS NULL")
     db.execute("UPDATE series_master SET frame_type = 'insect', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'insect_%'")
     db.execute("UPDATE series_master SET frame_type = 'dinosaur', max_rarity = 'N', can_evolve = 0 WHERE series_key LIKE 'dino_%'")
-    db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%'")
+    db.execute("UPDATE series_master SET frame_type = 'appliance', max_rarity = 'N', can_evolve = 0 WHERE series_key = 'appliance'")
+    db.execute("UPDATE series_master SET frame_type = 'normal', max_rarity = 'R', can_evolve = 1 WHERE series_key NOT LIKE 'insect_%' AND series_key NOT LIKE 'dino_%' AND series_key != 'appliance'")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS series_set_bonus (
@@ -16069,6 +16115,7 @@ def _sync_series_catalog(db):
         """
     )
     db.execute("UPDATE robot_parts SET frame_type = 'dinosaur' WHERE COALESCE(series_key, series, '') LIKE 'dino_%'")
+    db.execute("UPDATE robot_parts SET frame_type = 'appliance' WHERE COALESCE(series_key, series, '') = 'appliance'")
     db.execute(
         """
         UPDATE robot_parts
@@ -20668,8 +20715,11 @@ def _create_part_instance_from_master(db, user_id, part_row, plus=0, area_key=No
     ptype = _norm_part_type(part_row["part_type"])
     rarity = (part_row["rarity"] or "N").upper()
     part_key = str(part_row["key"] or "")
-    if rarity == "N" and part_key in DINO_PART_STAT_BY_KEY:
-        fixed_stats = DINO_PART_STAT_BY_KEY[part_key]
+    fixed_stat_by_key = {}
+    fixed_stat_by_key.update(DINO_PART_STAT_BY_KEY)
+    fixed_stat_by_key.update(APPLIANCE_PART_STAT_BY_KEY)
+    if rarity == "N" and part_key in fixed_stat_by_key:
+        fixed_stats = fixed_stat_by_key[part_key]
         weights = {f"w_{stat_key}": float(fixed_stats.get(stat_key, 0) or 0) / 12.0 for stat_key in STATS}
     else:
         bias = dict(_area_weight_bias(area_key) or {})

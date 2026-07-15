@@ -7,6 +7,12 @@ from constants import (
     PLUS_WEIGHT_BONUS_K,
     SET_BONUS_TABLE,
 )
+from series_catalog import (
+    APPLIANCE_NETWORK_BONUSES,
+    APPLIANCE_PART_SET_BY_KEY,
+    APPLIANCE_SERIES_KEY,
+    APPLIANCE_SET_BONUSES_BY_KEY,
+)
 
 STATS = ("hp", "atk", "def", "spd", "acc", "cri")
 FUSE_SUCCESS_RATE = {k: v[0] for k, v in FUSE_SUCCESS_TABLE.items()}
@@ -117,10 +123,89 @@ def count_series(parts, series_bonus_defs=None):
         key = _normalize_series_key(part.get("series"))
         if not key:
             continue
-        if valid_keys and key not in valid_keys:
+        if valid_keys and key not in valid_keys and key != APPLIANCE_SERIES_KEY:
             continue
         counts[key] = int(counts.get(key, 0)) + 1
     return counts
+
+
+def _apply_flat_series_bonus(out, *, series_key, part_count, bonus_name, bonus_kind, bonus_stats, set_key=None):
+    applied = []
+    for stat_key, raw_delta in (bonus_stats or {}).items():
+        stat = str(stat_key or "").strip().lower()
+        if stat not in STATS:
+            continue
+        delta = int(raw_delta or 0)
+        if delta == 0:
+            continue
+        before_value = int(out.get(stat) or 0)
+        after_value = max(1, before_value + delta)
+        out[stat] = after_value
+        applied.append(
+            {
+                "series_key": series_key,
+                "pieces_required": int(part_count),
+                "count": int(part_count),
+                "stat_key": stat,
+                "value_type": "flat",
+                "configured_value": delta,
+                "applied_value": int(after_value - before_value),
+                "stage_label": "固定",
+                "before_value": before_value,
+                "after_value": after_value,
+                "delta_value": int(after_value - before_value),
+                "bonus_name": str(bonus_name or ""),
+                "bonus_kind": str(bonus_kind or ""),
+                "set_key": str(set_key or ""),
+            }
+        )
+    return applied
+
+
+def _apply_appliance_bonus(stats, parts):
+    out = dict(stats)
+    appliance_parts = [
+        part for part in (parts or ())
+        if _normalize_series_key((part or {}).get("series")) == APPLIANCE_SERIES_KEY
+    ]
+    part_count = len(appliance_parts)
+    if part_count < 2:
+        return out, []
+
+    set_keys = [
+        APPLIANCE_PART_SET_BY_KEY.get(str((part or {}).get("key") or ""))
+        for part in appliance_parts
+    ]
+    set_keys = [key for key in set_keys if key]
+    required_slots = {str((part or {}).get("part_type") or "").strip().upper() for part in appliance_parts}
+    is_complete_set = (
+        part_count == 4
+        and len(set(set_keys)) == 1
+        and required_slots == {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}
+    )
+    if is_complete_set:
+        set_key = set_keys[0]
+        bonus = APPLIANCE_SET_BONUSES_BY_KEY.get(set_key) or {}
+        return out, _apply_flat_series_bonus(
+            out,
+            series_key=APPLIANCE_SERIES_KEY,
+            part_count=4,
+            bonus_name=bonus.get("bonus_name") or "",
+            bonus_kind="appliance_complete",
+            bonus_stats=bonus.get("bonus_stats") or {},
+            set_key=set_key,
+        )
+
+    tier = 4 if part_count >= 4 else 3 if part_count >= 3 else 2
+    bonus = APPLIANCE_NETWORK_BONUSES.get(tier) or {}
+    return out, _apply_flat_series_bonus(
+        out,
+        series_key=APPLIANCE_SERIES_KEY,
+        part_count=tier,
+        bonus_name=bonus.get("bonus_name") or "",
+        bonus_kind="appliance_network",
+        bonus_stats=bonus.get("bonus_stats") or {},
+    )
 
 
 def _series_bonus_scale(progress_layer, pieces_required):
@@ -150,7 +235,12 @@ def apply_series_bonus(stats, parts, series_bonus_defs=None, progress_layer=5):
     defs = series_bonus_defs or {}
     counts = count_series(parts, defs)
     applied = []
+    if counts.get(APPLIANCE_SERIES_KEY):
+        out, appliance_applied = _apply_appliance_bonus(out, parts)
+        applied.extend(appliance_applied)
     for series_key, part_count in counts.items():
+        if series_key == APPLIANCE_SERIES_KEY:
+            continue
         bonus_rows = list(defs.get(series_key) or [])
         for bonus in bonus_rows:
             pieces_required = int(bonus.get("pieces_required") or 0)
