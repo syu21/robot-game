@@ -4087,6 +4087,32 @@ def _admin_metrics_behavior_snapshot(db, *, window_days=ADMIN_METRICS_FUNNEL_DAY
     }
 
 
+def _home_recent_view_elapsed_seconds(db, user_id, now_ts):
+    row = db.execute(
+        """
+        SELECT created_at
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type IN (?, ?)
+          AND created_at <= ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (
+            int(user_id),
+            AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_VIEW"],
+            AUDIT_EVENT_TYPES["HOME_VIEW"],
+            int(now_ts),
+        ),
+    ).fetchone()
+    if not row:
+        return None
+    elapsed = int(now_ts) - int(row["created_at"] or 0)
+    if elapsed < 0 or elapsed > 3600:
+        return None
+    return elapsed
+
+
 def _admin_first_experience_snapshot(db, *, window_days=7):
     window_days = max(7, min(30, int(window_days or 7)))
     now_ts = _now_ts()
@@ -4136,6 +4162,20 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "third_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "first_three_complete": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "entry_source_rows": [],
+            "home_quick_start": {
+                "home_view_users": 0,
+                "within_15": 0,
+                "within_30": 0,
+                "within_60": 0,
+                "next_action_click_users": 0,
+                "next_action_view_users": 0,
+                "next_action_click_rate_pct": 0.0,
+                "home_stay_median_seconds": 0.0,
+                "home_direct_start_users": 0,
+                "home_direct_start_rate_pct": 0.0,
+                "previous_area_click_users": 0,
+                "previous_area_usage_rate_pct": 0.0,
+            },
             "layer1_boss": {
                 "avg_starts_to_first_encounter": 0.0,
                 "median_starts_to_first_encounter": 0.0,
@@ -4195,10 +4235,19 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     first_retry_click_after_win = set()
     entry_source_users = {
         "battle_retry": set(),
+        "home_next_action": set(),
         "home_previous_area": set(),
         "home_layer1_cta": set(),
         "area_select": set(),
     }
+    home_next_action_view_users = set()
+    home_next_action_click_users = set()
+    home_quick_start_users_15 = set()
+    home_quick_start_users_30 = set()
+    home_quick_start_users_60 = set()
+    home_quick_start_elapsed = []
+    home_direct_start_users = set()
+    home_previous_area_click_users = set()
     first_layer1_boss_encounter_ts_by_user = {}
     first_layer1_boss_encounter_source_by_user = {}
     layer1_boss_defeat_after_encounter_users = set()
@@ -4218,11 +4267,29 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
             if et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
                 step_users["home_first_view"].add(uid)
+            if et == AUDIT_EVENT_TYPES.get("HOME_NEXT_ACTION_VIEW"):
+                home_next_action_view_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("HOME_NEXT_ACTION_CLICK"):
+                home_next_action_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("HOME_PREVIOUS_AREA_CLICK"):
+                home_previous_area_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("HOME_QUICK_START"):
+                elapsed = int(payload.get("elapsed_seconds") or 0)
+                if elapsed > 0:
+                    home_quick_start_elapsed.append(elapsed)
+                if elapsed <= 15:
+                    home_quick_start_users_15.add(uid)
+                if elapsed <= 30:
+                    home_quick_start_users_30.add(uid)
+                if elapsed <= 60:
+                    home_quick_start_users_60.add(uid)
             if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
                 start_count += 1
                 entry_source = str(payload.get("entry_source") or "other")
                 if entry_source in entry_source_users:
                     entry_source_users[entry_source].add(uid)
+                if entry_source in {"home_next_action", "home_previous_area", "home_layer1_cta"}:
+                    home_direct_start_users.add(uid)
                 if area_key == "layer_1":
                     step_users["layer1_first_start"].add(uid)
                     layer1_start_count_by_user[uid] = int(layer1_start_count_by_user.get(uid, 0)) + 1
@@ -4333,6 +4400,7 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     within_10_count = sum(1 for value in first_encounter_start_counts if int(value) <= 10)
     entry_source_labels = {
         "battle_retry": "結果画面から再出撃",
+        "home_next_action": "NEXT ACTIONから出撃",
         "home_previous_area": "基地の前回出撃先から再出撃",
         "home_layer1_cta": "基地の第1層CTAから出撃",
         "area_select": "エリア選択から出撃",
@@ -4347,6 +4415,16 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     random_users = {
         uid for uid, source in first_layer1_boss_encounter_source_by_user.items() if source == "random"
     }
+    home_view_base = max(1, len(step_users["home_first_view"] | home_next_action_view_users))
+    home_quick_start_elapsed.sort()
+    if home_quick_start_elapsed:
+        mid = len(home_quick_start_elapsed) // 2
+        if len(home_quick_start_elapsed) % 2:
+            home_stay_median = float(home_quick_start_elapsed[mid])
+        else:
+            home_stay_median = (home_quick_start_elapsed[mid - 1] + home_quick_start_elapsed[mid]) / 2.0
+    else:
+        home_stay_median = 0.0
     return {
         "window_days": window_days,
         "registered_count": len(user_ids),
@@ -4375,6 +4453,26 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "rate_pct": (float(len(step_users["first_three_complete"])) / float(registered_count)) * 100.0,
         },
         "entry_source_rows": entry_source_rows,
+        "home_quick_start": {
+            "home_view_users": int(home_view_base),
+            "within_15": int(len(home_quick_start_users_15)),
+            "within_30": int(len(home_quick_start_users_30)),
+            "within_60": int(len(home_quick_start_users_60)),
+            "next_action_click_users": int(len(home_next_action_click_users)),
+            "next_action_view_users": int(len(home_next_action_view_users)),
+            "next_action_click_rate_pct": (
+                float(len(home_next_action_click_users)) / float(max(1, len(home_next_action_view_users))) * 100.0
+            ),
+            "home_stay_median_seconds": float(home_stay_median),
+            "home_direct_start_users": int(len(home_direct_start_users)),
+            "home_direct_start_rate_pct": (
+                float(len(home_direct_start_users)) / float(home_view_base) * 100.0
+            ),
+            "previous_area_click_users": int(len(home_previous_area_click_users)),
+            "previous_area_usage_rate_pct": (
+                float(len(home_previous_area_click_users)) / float(home_view_base) * 100.0
+            ),
+        },
         "layer1_boss": {
             "avg_starts_to_first_encounter": (
                 float(sum(first_encounter_start_counts)) / float(len(first_encounter_start_counts))
@@ -5770,7 +5868,7 @@ def _build_home_primary_explore_cta(
         }
 
     ready = bool(is_admin or int(ct_remain or 0) <= 0)
-    if next_action_card and next_action_card.get("home_primary") and not next_action_card.get("is_post"):
+    if next_action_card and not next_action_card.get("is_post") and next_action_card.get("cta_url"):
         return {
             "title": str(next_action_card.get("title") or "次の行動"),
             "destination_label": str(next_action_card.get("destination_label") or "パーツ強化"),
@@ -5811,6 +5909,11 @@ def _build_home_primary_explore_cta(
         button_label = str(next_action_card.get("cta_label") or "出撃する")
         helper_text = str(next_action_card.get("desc") or "").strip() or _area_home_desc_line(area["key"] if area else "")
         title = str(next_action_card.get("title") or "次の出撃")
+        if bool(next_action_card.get("boss_enter")):
+            title = "ボス出現！"
+            helper_text = "次の出撃でボスと遭遇します。"
+        elif str(next_action_card.get("area_key") or "") == LAYER4_FINAL_AREA_KEY:
+            title = "第4層最終試験"
         context_line = "ボス警報や解放直後の目標を優先表示しています。"
         boss_enter = bool(next_action_card.get("boss_enter"))
         area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
@@ -5822,7 +5925,7 @@ def _build_home_primary_explore_cta(
         context_line = "前回の探索先を覚えています。"
         boss_enter = False
         area_key = area["key"]
-    elif int(total_explores or 0) <= 0:
+    elif int(total_explores or 0) <= 0 and not (use_next_action and next_action_area_key != "layer_1"):
         area = _find_explore_area(available_areas, "layer_1") or selected_area or saved_area
         button_label = "第1層へ出撃"
         helper_text = "まずは1勝してパーツを持ち帰ろう。"
@@ -5835,6 +5938,8 @@ def _build_home_primary_explore_cta(
         button_label = str(next_action_card.get("cta_label") or "出撃する")
         helper_text = str(next_action_card.get("desc") or "").strip() or _area_home_desc_line(area["key"] if area else "")
         title = str(next_action_card.get("title") or "次の出撃")
+        if str(next_action_card.get("area_key") or "") == LAYER4_FINAL_AREA_KEY:
+            title = "第4層最終試験"
         context_line = "ボス警報や解放直後の目標を優先表示しています。"
         boss_enter = bool(next_action_card.get("boss_enter"))
         area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
@@ -43269,6 +43374,24 @@ def home():
         },
         ip=request.remote_addr,
     )
+    if home_primary_explore_cta:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_VIEW"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="home_next_action_view",
+            entity_type="home",
+            payload={
+                "action": "next_action",
+                "area_key": home_primary_explore_cta.get("area_key"),
+                "entry_source": "home_next_action",
+                "is_post": bool(home_primary_explore_cta.get("is_post")),
+                "disabled": bool(home_primary_explore_cta.get("disabled")),
+                "title": str(home_primary_explore_cta.get("title") or ""),
+            },
+            ip=request.remote_addr,
+        )
     _audit_once(
         db,
         AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"],
@@ -48321,7 +48444,7 @@ def explore():
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
     entry_source = (request.form.get("entry_source") or "").strip().lower()
-    if entry_source not in {"battle_retry", "home_previous_area", "home_layer1_cta", "area_select", "other"}:
+    if entry_source not in {"battle_retry", "home_next_action", "home_previous_area", "home_layer1_cta", "area_select", "other"}:
         entry_source = "other"
     explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_id = _battle_id_for_explore_submission(explore_submission_id)
@@ -48387,6 +48510,46 @@ def explore():
             payload={"area_key": area_key, "entry_source": entry_source},
             ip=request.remote_addr,
         )
+    if entry_source == "home_next_action":
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="home_next_action_click",
+            entity_type="home",
+            payload={"action": "next_action", "area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
+    elif entry_source == "home_previous_area":
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["HOME_PREVIOUS_AREA_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="home_previous_area_click",
+            entity_type="home",
+            payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
+    if entry_source in {"home_next_action", "home_previous_area", "home_layer1_cta"}:
+        home_elapsed = _home_recent_view_elapsed_seconds(db, user_id, now)
+        if home_elapsed is not None and int(home_elapsed) <= 60:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["HOME_QUICK_START"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="home_quick_start",
+                entity_type="home",
+                payload={
+                    "action": "quick_start",
+                    "area_key": area_key,
+                    "entry_source": entry_source,
+                    "elapsed_seconds": int(home_elapsed),
+                },
+                ip=request.remote_addr,
+            )
     layer1_win_count_before = 0
     if area_key == "layer_1":
         layer1_win_count_before = int(
@@ -48846,7 +49009,6 @@ def explore():
         and (not active_alert)
         and _area_supports_boss_alert(area_key)
         and _has_area_boss_candidates(db, area_key)
-        and False
         and int(layer1_protection_explore_count) >= int(LAYER1_PROTECTION_ALERT_EXPLORE_THRESHOLD) - 1
     ):
         picked = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)

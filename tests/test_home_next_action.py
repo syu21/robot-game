@@ -285,6 +285,11 @@ class HomeNextActionTests(unittest.TestCase):
 
     def test_home_next_action_new_layer_routes_to_map(self):
         self._create_active_robot()
+        self._insert_world_event(
+            self.user_id,
+            game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            {"area_key": "layer_1", "boss_kind": "fixed"},
+        )
         client = self._new_client(new_layer_badge=2)
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
@@ -292,6 +297,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn("NEW 第2層へ行く", html)
         self.assertIn('href="/map"', html)
+        self.assertEqual(html.count('data-explore-cta="1"'), 0)
 
     def test_home_shows_robot_tendency_comment_without_new_card(self):
         self._create_active_robot()
@@ -400,6 +406,11 @@ class HomeNextActionTests(unittest.TestCase):
 
     def test_home_next_action_targets_current_layer_boss_when_not_max(self):
         self._create_active_robot()
+        self._insert_world_event(
+            self.user_id,
+            game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            {"area_key": "layer_1", "boss_kind": "fixed"},
+        )
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("UPDATE users SET max_unlocked_layer = 2 WHERE id = ?", (self.user_id,))
@@ -411,9 +422,15 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn("第2層ボスを狙う", html)
         self.assertIn('name="area_key" value="layer_2"', html)
+        self.assertIn('name="entry_source" value="home_next_action"', html)
 
     def test_home_next_action_targets_layer4_boss_before_layer5_unlock(self):
         self._create_active_robot()
+        self._insert_world_event(
+            self.user_id,
+            game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            {"area_key": "layer_1", "boss_kind": "fixed"},
+        )
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("UPDATE users SET max_unlocked_layer = 4 WHERE id = ?", (self.user_id,))
@@ -425,9 +442,15 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn("第4層ボスを狙う", html)
         self.assertIn('name="area_key" value="layer_4_forge"', html)
+        self.assertIn('name="entry_source" value="home_next_action"', html)
 
     def test_home_next_action_falls_back_to_explore_at_layer5(self):
         self._create_active_robot()
+        self._insert_world_event(
+            self.user_id,
+            game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+            {"area_key": "layer_1", "boss_kind": "fixed"},
+        )
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute("UPDATE users SET max_unlocked_layer = 5 WHERE id = ?", (self.user_id,))
@@ -439,6 +462,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(html.count("next-action-card"), 1)
         self.assertIn(">出撃<", html)
         self.assertIn('name="area_key" value="layer_5_reboot"', html)
+        self.assertIn('name="entry_source" value="home_next_action"', html)
 
     def test_home_next_action_prioritizes_layer4_final_when_unlocked(self):
         self._create_active_robot()
@@ -643,9 +667,9 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        m = re.search(r'<div class="card next-action-card">(.*?)</div>\s*</div>', html, re.DOTALL)
-        self.assertIsNotNone(m)
-        card_html = m.group(1)
+        start = html.index("next-action-card")
+        end = html.index("home-layout-grid", start)
+        card_html = html[start:end]
         self.assertNotIn("/showcase", card_html)
         self.assertNotIn("/ranking", card_html)
         self.assertNotIn("ショーケース", card_html)
@@ -799,11 +823,49 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertRegex(html, r'<option value="layer_1" selected>')
         self.assertIn('class="panel home-explore-card"', html)
         self.assertIn("最初の出撃", html)
         self.assertIn("第1層へ出撃", html)
+        self.assertIn('name="area_key" value="layer_1"', html)
+        self.assertIn('name="entry_source" value="home_next_action"', html)
         self.assertNotIn("前回の出撃先で出撃", html)
+        self.assertEqual(html.count('data-explore-cta="1"'), 1)
+
+    def test_home_next_action_view_click_and_quick_start_are_audited(self):
+        self._create_active_robot()
+        client = self._new_client()
+
+        home_resp = client.get("/home")
+        self.assertEqual(home_resp.status_code, 200)
+        explore_resp = client.post(
+            "/explore",
+            data={"area_key": "layer_1", "entry_source": "home_next_action"},
+            follow_redirects=False,
+        )
+        self.assertIn(explore_resp.status_code, {200, 302})
+
+        with game_app.app.app_context():
+            rows = game_app.get_db().execute(
+                """
+                SELECT event_type, payload_json
+                FROM world_events_log
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            ).fetchall()
+
+        event_types = [row["event_type"] for row in rows]
+        self.assertIn(game_app.AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_VIEW"], event_types)
+        self.assertIn(game_app.AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"], event_types)
+        self.assertIn(game_app.AUDIT_EVENT_TYPES["HOME_QUICK_START"], event_types)
+        explore_start_payloads = [
+            json.loads(row["payload_json"] or "{}")
+            for row in rows
+            if row["event_type"] == game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]
+        ]
+        self.assertTrue(
+            any(payload.get("entry_source") == "home_next_action" for payload in explore_start_payloads)
+        )
 
     def test_home_uses_last_selected_explore_area_when_unlocked(self):
         self._create_active_robot()
@@ -818,12 +880,10 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertRegex(html, r'<option value="layer_2_rush" selected>')
         self.assertIn('class="panel home-explore-card"', html)
         self.assertIn("前回の出撃先", html)
-        self.assertIn("前回の出撃先で出撃", html)
         self.assertIn('name="area_key" value="layer_2_rush"', html)
-        self.assertLess(html.index("前回の出撃先"), html.index("最初のミッション"))
+        self.assertIn('name="entry_source" value="home_next_action"', html)
 
     def test_home_falls_back_when_saved_explore_area_is_locked(self):
         self._create_active_robot()
@@ -835,7 +895,7 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertRegex(html, r'<option value="layer_1" selected>')
+        self.assertIn('name="area_key" value="layer_1"', html)
         self.assertNotIn('value="layer_3"', html)
         self.assertNotIn("前回の出撃先で出撃", html)
 
@@ -1046,7 +1106,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("旧整備通路。最も安定した探索ルート。", html)
         self.assertNotIn("放電ノイズ帯。tier1/2が混在する中間層。", html)
         self.assertNotIn("推奨: 基本ステ確認と初期ドロップ回収。", html)
-        self.assertIn("マップへ（出撃先一覧）", html)
+        self.assertIn("出撃先を確認", html)
 
     def test_home_hides_evolution_actions_until_layer2_boss_defeat(self):
         self._create_active_robot()
@@ -1107,16 +1167,16 @@ class HomeNextActionTests(unittest.TestCase):
         resp = client.get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("Next Action を開く", html)
+        self.assertIn("NEXT ACTION", html)
         self.assertNotIn("たたまれています。", html)
-        self.assertEqual(html.count("next-action-card"), 0)
+        self.assertEqual(html.count("next-action-card"), 1)
 
         expand_resp = client.post("/home/next-action/expand", data={"next": "/home"})
         self.assertEqual(expand_resp.status_code, 302)
         resp = client.get("/home")
         html = resp.get_data(as_text=True)
         self.assertIn("next-action-card", html)
-        self.assertIn("たたむ", html)
+        self.assertIn("NEXT ACTION", html)
 
     def test_home_forces_next_action_open_when_boss_alert_active(self):
         self._create_active_robot()

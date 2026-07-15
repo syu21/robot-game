@@ -28,134 +28,40 @@
 </section>
 {% endif %}
 <div class="home-priority-stack">
-{% if show_next_action_card and next_action_card %}
+{% if home_primary_explore_cta %}
 <div class="panel home-explore-card">
-  <div class="card next-action-card">
+  <div class="card next-action-card home-next-action-unified">
     <div class="home-explore-card-head">
       <div>
         <div class="home-explore-kicker">NEXT ACTION</div>
-        <div><b>{{ next_action_card['title'] }}</b></div>
-      </div>
-      {% if home_next_action_force_open %}
-      <div class="home-explore-status">{% if boss_alert_status %}警報中{% else %}優先表示{% endif %}</div>
-      {% endif %}
-    </div>
-    {% if home_next_action_force_open %}
-    <div class="upgrade-cost">{% if boss_alert_status %}ボス警報中は自動表示されます。{% else %}今やることを迷わないよう、自動表示しています。{% endif %}</div>
-    {% endif %}
-    <div class="upgrade-cost">{{ next_action_card['desc'] }}</div>
-    {% if boss_goal_hint %}
-    <div class="home-explore-context">{{ boss_goal_hint }}</div>
-    {% endif %}
-    {% if boss_unlock_guide_lines %}
-    <div class="boss-unlock-inline" aria-label="ボス解放条件">
-      {% for line in boss_unlock_guide_lines %}
-      <span>{{ line }}</span>
-      {% endfor %}
-    </div>
-    {% endif %}
-    {% if home_primary_explore_cta %}
-    <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
-    {% endif %}
-    {% if part_inventory_status %}
-    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
-      {{ part_inventory_status['line'] }}
-    </div>
-    {% endif %}
-    <div class="home-inline-actions">
-      {% if next_action_card['is_post'] %}
-      <form method="post" action="{{ next_action_card['cta_url'] }}" class="inline-form inline-form-top">
-        {% if next_action_card['area_key'] %}
-        <input type="hidden" name="area_key" value="{{ next_action_card['area_key'] }}" />
-        {% endif %}
-        <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if next_action_card['area_key'] == 'layer_1' else 'other' }}" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        {% if next_action_card['boss_enter'] %}
-        <input type="hidden" name="boss_enter" value="1" />
-        {% endif %}
-        <button
-          type="submit"
-          class="home-primary-explore-cta"
-          data-explore-cta="1"
-          {% if home_primary_explore_cta and home_primary_explore_cta['disabled'] %}disabled{% endif %}
-        >{{ next_action_card['cta_label'] }}</button>
-      </form>
-      {% else %}
-      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ next_action_card['cta_url'] }}">{{ next_action_card['cta_label'] }}</a></p>
-      {% endif %}
-      {% for action in next_action_card.get('secondary_actions', []) %}
-        {% if action.get('is_post') %}
-        <form method="post" action="{{ action['url'] }}" class="inline-form inline-form-top">
-          {% if action.get('area_key') %}
-          <input type="hidden" name="area_key" value="{{ action['area_key'] }}" />
-          {% endif %}
-          <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if action.get('area_key') == 'layer_1' else 'other' }}" />
-          {% if explore_submission_id %}
-          <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-          {% endif %}
-          {% if action.get('boss_enter') %}
-          <input type="hidden" name="boss_enter" value="1" />
-          {% endif %}
-          <button type="submit" class="btn-secondary">{{ action['label'] }}</button>
-        </form>
-        {% else %}
-        <p class="link"><a class="battle-home-link" href="{{ action['url'] }}">{{ action['label'] }}</a></p>
-        {% endif %}
-      {% endfor %}
-      {% if home_primary_explore_cta and home_primary_explore_cta['title'] == '前回の出撃先' %}
-      <div class="home-explore-context">{{ home_primary_explore_cta['title'] }}</div>
-      <form method="post" action="{{ home_primary_explore_cta['cta_url'] }}" class="home-primary-explore-form inline-form inline-form-top">
-        {% if home_primary_explore_cta['area_key'] %}
-        <input type="hidden" name="area_key" value="{{ home_primary_explore_cta['area_key'] }}" />
-        {% endif %}
-        <input type="hidden" name="entry_source" value="home_previous_area" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        {% if home_primary_explore_cta['boss_enter'] %}
-        <input type="hidden" name="boss_enter" value="1" />
-        {% endif %}
-        <button
-          type="submit"
-          class="btn-secondary home-primary-explore-cta"
-          data-explore-cta="1"
-          {% if home_primary_explore_cta['disabled'] %}disabled{% endif %}
-        >{{ home_primary_explore_cta['button_current_label'] }}</button>
-      </form>
-      {% endif %}
-      {% if not home_next_action_force_open %}
-      <form method="post" action="{{ url_for('home_next_action_collapse') }}" class="inline-form inline-form-top">
-        <input type="hidden" name="next" value="{{ request.path }}" />
-        <button type="submit" class="btn-secondary">たたむ</button>
-      </form>
-      {% endif %}
-    </div>
-  </div>
-</div>
-{% elif home_primary_explore_cta %}
-<div class="panel home-explore-card">
-  <div class="card">
-    <div class="home-explore-card-head">
-      <div>
-        <div class="home-explore-kicker">{{ home_primary_explore_cta['title'] }}</div>
-        <div><b>{{ home_primary_explore_cta['destination_label'] }}</b></div>
+        <div><b>{{ home_primary_explore_cta['title'] }}</b></div>
+        <div class="home-next-action-destination">{{ home_primary_explore_cta['destination_label'] }}</div>
       </div>
       <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
-    {% if part_inventory_status %}
-    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
-      {{ part_inventory_status['line'] }}
-    </div>
+    {% if user and user['is_admin'] %}
+    <div class="robot-time">管理者確認: ボスへ直行</div>
     {% endif %}
-    <div class="home-explore-context">{{ home_primary_explore_cta['context_line'] }}</div>
+    {% if boss_alert_status %}
+    <div class="upgrade-cost">ボス警報中は自動表示されます。</div>
+    {% endif %}
+    {% if boss_goal_hint %}
+    <div class="home-next-action-goal">現在の目標: {{ boss_goal_hint }}</div>
+    {% endif %}
+    {% if layer1_boss_alert %}
+    <div class="home-next-action-goal">{{ layer1_boss_alert['line'] }} / {{ layer1_boss_alert['desc'] }}</div>
+    {% endif %}
     {% if boss_unlock_guide_lines %}
     <div class="boss-unlock-inline" aria-label="ボス解放条件">
       {% for line in boss_unlock_guide_lines %}
       <span>{{ line }}</span>
       {% endfor %}
+    </div>
+    {% endif %}
+    {% if part_inventory_status %}
+    <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
+      {{ part_inventory_status['line'] }}
     </div>
     {% endif %}
     {% if home_primary_explore_cta['is_post'] %}
@@ -163,7 +69,7 @@
       {% if home_primary_explore_cta['area_key'] %}
       <input type="hidden" name="area_key" value="{{ home_primary_explore_cta['area_key'] }}" />
       {% endif %}
-      <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if home_primary_explore_cta['area_key'] == 'layer_1' else 'home_previous_area' }}" />
+      <input type="hidden" name="entry_source" value="home_next_action" />
       {% if explore_submission_id %}
       <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
       {% endif %}
@@ -182,7 +88,7 @@
     <p class="link"><a class="battle-home-link battle-next-cta home-primary-explore-cta" href="{{ home_primary_explore_cta['cta_url'] }}">{{ home_primary_explore_cta['button_label'] }}</a></p>
     {% endif %}
     {% if home_primary_explore_cta['show_map_link'] %}
-    <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">{{ home_primary_explore_cta['map_link_label'] }}</a></p>
+    <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">詳細を見る</a></p>
     {% endif %}
   </div>
 </div>
@@ -208,18 +114,7 @@
       </div>
     </div>
     <div class="home-inline-actions">
-      {% if beginner_mission_is_post %}
-      <form method="post" action="{{ beginner_mission_cta_url }}" class="inline-form inline-form-top">
-        <input type="hidden" name="area_key" value="layer_1" />
-        <input type="hidden" name="entry_source" value="home_layer1_cta" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        <button type="submit">{{ beginner_mission_cta_label }}</button>
-      </form>
-      {% else %}
-      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ beginner_mission_cta_url }}">{{ beginner_mission_cta_label }}</a></p>
-      {% endif %}
+      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">確認する</a></p>
       <form method="post" action="{{ url_for('home_beginner_mission_hide') }}" class="inline-form inline-form-top">
         <input type="hidden" name="next" value="{{ request.path }}" />
         <button type="submit" class="btn-secondary">閉じる</button>
@@ -241,18 +136,11 @@
       </div>
     </div>
     <div class="intro-guide-body">
-      <p>ホーム上部の <b>最初のミッション</b> から、第1層へそのまま出撃できます。</p>
+      <p>ホーム上部の <b>NEXT ACTION</b> から、第1層へそのまま出撃できます。</p>
       <p>まずは1勝してパーツを持ち帰り、強くなったらボスに挑戦しましょう。</p>
     </div>
     <div class="intro-guide-footer">
-      <form method="post" action="{{ url_for('explore') }}" class="inline-form">
-        <input type="hidden" name="area_key" value="layer_1" />
-        <input type="hidden" name="entry_source" value="home_layer1_cta" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        <button type="submit">第1層へ出撃</button>
-      </form>
+      <button type="button" data-intro-close="1">確認する</button>
       <form id="intro-guide-dismiss-form" method="post" action="{{ url_for('home_intro_modal_dismiss') }}" class="inline-form">
         <input type="hidden" name="dont_show_again" value="1" />
         <button type="submit" class="btn-secondary">あとで</button>
@@ -354,14 +242,7 @@
     </section>
     {% endif %}
     <div class="daily-research-modal__actions">
-      <form method="post" action="{{ daily_research_explore_action }}" class="inline-form">
-        <input type="hidden" name="area_key" value="{{ daily_research_area_key }}" />
-        <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if daily_research_area_key == 'layer_1' else 'other' }}" />
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        <button type="submit" data-explore-cta="1" {% if ct_remain and ct_remain > 0 and not is_admin %}disabled{% endif %}>出撃する</button>
-      </form>
+      <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を確認</a></p>
       <button type="button" class="btn-secondary" data-daily-research-close>閉じる</button>
     </div>
   </div>
@@ -395,15 +276,7 @@
       {% endfor %}
     </div>
     <div class="upgrade-cost">挑戦権: 残り{{ alert['attempts_left'] }}回 / 有効期限: 約{{ alert['remain_minutes'] }}分</div>
-    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
-      <input type="hidden" name="area_key" value="{{ alert['area_key'] }}" />
-      <input type="hidden" name="entry_source" value="other" />
-      {% if explore_submission_id %}
-      <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-      {% endif %}
-      <input type="hidden" name="boss_enter" value="1" />
-      <button type="submit">ボスに挑戦する</button>
-    </form>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">確認する</a></p>
   </div>
   {% endfor %}
 </div>
@@ -449,47 +322,20 @@
                 </div>
                 {% endif %}
                 <div class="robot-overview-meta">
-                  {% set p = main_robot['personality'] if main_robot and main_robot['personality'] else 'silent' %}
-                  <span>性格: {{ personality_labels.get(p, '無口') }}</span>
-                  <span>思想: {{ main_robot_profile['signature_label'] if main_robot_profile else main_robot_style['style_label'] }}</span>
                   <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>
+                  <span>モジュール: {{ active_research_module['name_ja'] if active_research_module else '未装備' }}</span>
                 </div>
               </div>
             </div>
           </div>
-          <div class="stat-grid main-robot-stat-grid robot-status-grid">
-            <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ main_robot_stats['stats']['hp'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ main_robot_stats['stats']['atk'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ main_robot_stats['stats']['def'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ main_robot_stats['stats']['spd'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
+          <div class="stat-grid home-robot-compact-grid">
+            <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ main_robot_stats['power'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
+            <div class="stat-card"><div class="stat-label">現在のモジュール</div><div class="stat-value stat-small">{{ active_research_module['name_ja'] if active_research_module else '未装備' }}</div></div>
           </div>
-          <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top research-module-select-form">
-            <label for="research-module-select"><b>研究モジュール</b></label>
-            <select id="research-module-select" name="module_instance_id">
-              <option value="none">未装備</option>
-              {% for module in research_module_options %}
-              <option value="{{ module['instance_id'] }}" {% if active_research_module and active_research_module['instance_id'] == module['instance_id'] %}selected{% endif %}>
-                {{ module['name_ja'] }}
-              </option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="btn-secondary">適用</button>
-          </form>
-          {% if active_research_module and active_research_module.get('stat_line') %}
-          <div class="upgrade-cost">{{ active_research_module['stat_line'] }}</div>
-          {% endif %}
-          {% if active_research_module and active_research_module.get('trait_label') %}
-          <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>
-          {% endif %}
-          {% if active_research_module_fit %}
-          <div class="robot-time">今回の出撃先との相性: {{ active_research_module_fit['label'] }}。{{ active_research_module_fit['message'] }}</div>
-          {% endif %}
-          <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
           <div class="home-inline-actions">
-            <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">研究モジュール一覧</a></p>
+            <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>
             {% if research_module_combine_candidates %}
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">完成型へ合成</a></p>
             {% endif %}
@@ -515,6 +361,29 @@
           {% endif %}
           <details class="home-robot-details">
             <summary>詳細を見る</summary>
+          <div class="stat-grid main-robot-stat-grid robot-status-grid">
+            <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ main_robot_stats['stats']['hp'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ main_robot_stats['stats']['atk'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ main_robot_stats['stats']['def'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ main_robot_stats['stats']['spd'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
+          </div>
+          {% if active_research_module and active_research_module.get('stat_line') %}
+          <div class="upgrade-cost">{{ active_research_module['stat_line'] }}</div>
+          {% endif %}
+          {% if active_research_module and active_research_module.get('trait_label') %}
+          <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>
+          {% endif %}
+          {% if active_research_module_fit %}
+          <div class="robot-time">今回の出撃先との相性: {{ active_research_module_fit['label'] }}。{{ active_research_module_fit['message'] }}</div>
+          {% endif %}
+          {% for module in research_module_options %}
+          {% if module.get('is_locked') %}
+          <div class="upgrade-cost">保護中モジュール: {{ module['name_ja'] }}</div>
+          {% endif %}
+          {% endfor %}
+          <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
           <div class="main-robot-meta-grid">
             {% if style_achievements %}
             <div class="stat-card stat-card-full main-robot-achievements">
@@ -636,14 +505,7 @@
           {% endif %}
           <div class="home-inline-actions">
             {% if daily_research_card['cta']['is_post'] %}
-            <form method="post" action="{{ daily_research_card['cta']['url'] }}" class="inline-form inline-form-top">
-              <input type="hidden" name="area_key" value="{{ daily_research_card['cta']['area_key'] }}" />
-              <input type="hidden" name="entry_source" value="{{ 'home_layer1_cta' if daily_research_card['cta']['area_key'] == 'layer_1' else 'other' }}" />
-              {% if explore_submission_id %}
-              <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-              {% endif %}
-              <button type="submit" class="btn-secondary">{{ daily_research_card['cta']['label'] }}</button>
-            </form>
+            <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">確認する</a></p>
             {% else %}
             <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
             {% endif %}
@@ -1106,7 +968,7 @@
           <div class="home-explore-kicker">期間限定</div>
           <div class="home-insect-research-title">恐竜発掘キャンペーン</div>
         </div>
-        <a class="battle-home-link" href="{{ url_for('map_view') }}">出撃する</a>
+        <a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を見る</a>
       </div>
       <div class="upgrade-cost">
         出撃で恐竜型パーツを発見できることがあります。集めた恐竜パーツは、恐竜型どうしで編成できます。
@@ -1130,34 +992,21 @@
     </div>
     {% endif %}
     {% if has_any_robot %}
-      <form method="post" action="{{ url_for('explore') }}" class="inline-form home-explore-utility-form">
-        <label>出撃先:</label>
-        <select id="explore-area-select" name="area_key" required>
+      <div class="home-explore-utility-form home-explore-utility-summary">
+        <div><b>出撃先:</b></div>
+        <div class="upgrade-cost">
           {% for area in explore_areas %}
-          <option value="{{ area['key'] }}" {% if selected_explore_area_key == area['key'] %}selected{% endif %}>{{ area['label'] }}</option>
+            {% if selected_explore_area_key == area['key'] %}{{ area['label'] }}{% endif %}
           {% endfor %}
-        </select>
+        </div>
         {% if selected_explore_tendency_line %}
         <div class="robot-time">{{ selected_explore_tendency_line }}</div>
         {% endif %}
         {% if boss_unlock_guide_lines %}
         <div class="robot-time">ボス目標：{{ boss_unlock_guide_lines[0] }}</div>
         {% endif %}
-        {% if explore_submission_id %}
-        <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
-        {% endif %}
-        <input type="hidden" name="entry_source" value="area_select" />
-        <button
-          type="submit"
-          id="home-explore-submit"
-          data-explore-cta="1"
-          data-cta-ready-label="出撃する"
-          {% if not is_admin and ct_remain > 0 %}disabled{% endif %}
-        >{{ ct_button_text }}</button>
-        {% if is_main_admin %}
-        <button type="submit" name="boss_enter" value="1" class="btn-secondary">ボスへ直行</button>
-        {% endif %}
-      </form>
+        <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">出撃先を確認</a></p>
+      </div>
       {% if research_boost %}
       <div class="home-research-boost">
         <div class="home-research-boost-copy">
@@ -1180,9 +1029,6 @@
           <button type="submit" class="home-research-boost-button">{{ research_boost['toggle_label'] }}</button>
         </form>
       </div>
-      {% endif %}
-      {% if not trial_mode %}
-      <p class="link home-explore-utility-link"><a href="{{ url_for('map_view') }}">マップへ（出撃先一覧）</a></p>
       {% endif %}
     {% endif %}
       <div class="home-nav-section-title">育成</div>

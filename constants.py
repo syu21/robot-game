@@ -160,6 +160,10 @@ DEFEAT_LOGS = [
 
 AUDIT_EVENT_TYPES = {
     "HOME_VIEW": "audit.home.view",
+    "HOME_NEXT_ACTION_VIEW": "audit.home.next_action.view",
+    "HOME_NEXT_ACTION_CLICK": "audit.home.next_action.click",
+    "HOME_QUICK_START": "audit.home.quick_start",
+    "HOME_PREVIOUS_AREA_CLICK": "audit.home.previous_area.click",
     "EXPLORE_START": "audit.explore.start",
     "EXPLORE_END": "audit.explore.end",
     "COIN_DELTA": "audit.coin.delta",

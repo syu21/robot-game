@@ -10,9 +10,10 @@
       {% endif %}
     </div>
   </div>
-  {% if robot_presence['cards'] %}
+  {% set compact_cards = robot_presence['cards'][:4] %}
+  {% if compact_cards %}
   <div class="recent-robot-carousel" role="list" aria-label="{{ robot_presence['title'] }}">
-    {% for entry in robot_presence['cards'] %}
+    {% for entry in compact_cards %}
     {% if entry['detail_url'] %}
     <a class="recent-robot-card is-{{ entry['status_key'] }}{% if entry['is_featured'] %} is-featured{% endif %}{% if entry['is_supporter'] %} is-supporter{% endif %}" href="{{ entry['detail_url'] }}" role="listitem" title="{{ entry['display_name'] }} / {{ entry['robot_name'] }} / {{ entry['status_label'] }}">
     {% else %}
@@ -46,6 +47,9 @@
     {% endif %}
     {% endfor %}
   </div>
+  {% if robot_presence['cards']|length > 4 %}
+  <p class="link recent-robots-more"><a href="{{ url_for('records_view') }}">もっと見る</a></p>
+  {% endif %}
   {% else %}
   <div class="recent-robots-empty">{{ robot_presence['empty_line'] }}</div>
   {% endif %}

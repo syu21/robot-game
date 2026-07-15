@@ -97,6 +97,39 @@
     </div>
     <div class="admin-metrics-note-grid">
       <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">15秒以内出撃</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.within_15 }}人 / {{ first_experience_snapshot.home_quick_start.home_view_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">30秒以内出撃</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.within_30 }}人 / {{ first_experience_snapshot.home_quick_start.home_view_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">60秒以内出撃</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.within_60 }}人 / {{ first_experience_snapshot.home_quick_start.home_view_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">NEXT ACTIONクリック率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.next_action_click_users }}人 / {{ first_experience_snapshot.home_quick_start.next_action_view_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.home_quick_start.next_action_click_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">ホーム滞在時間中央値</div>
+        <div class="admin-metrics-note-value">{{ '%.1f'|format(first_experience_snapshot.home_quick_start.home_stay_median_seconds) }}秒</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">ホームから直接出撃率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.home_direct_start_users }}人 / {{ first_experience_snapshot.home_quick_start.home_view_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.home_quick_start.home_direct_start_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">前回出撃先利用率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_quick_start.previous_area_click_users }}人 / {{ first_experience_snapshot.home_quick_start.home_view_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.home_quick_start.previous_area_usage_rate_pct) }}%</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">第1層ボス初遭遇まで</div>
         <div class="admin-metrics-note-value">平均 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.avg_starts_to_first_encounter) }}回</div>
         <div class="robot-time">中央値 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.median_starts_to_first_encounter) }}回</div>
