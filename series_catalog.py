@@ -230,8 +230,8 @@ APPLIANCE_SET_VARIANTS = (
         "bonus_stats": {"spd": 4, "acc": 2, "def": -1},
     },
     {
-        "set_key": "fridge",
-        "asset_suffix": "fridge",
+        "set_key": "refrigerator",
+        "asset_suffix": "refrigerator",
         "name_ja": "冷蔵庫",
         "formal_name": "フロスト・ストレージ",
         "role_label": "超耐久・防御",
@@ -239,8 +239,8 @@ APPLIANCE_SET_VARIANTS = (
         "bonus_stats": {"hp": 4, "def": 4, "spd": -2},
     },
     {
-        "set_key": "tv",
-        "asset_suffix": "tv",
+        "set_key": "television",
+        "asset_suffix": "television",
         "name_ja": "テレビ",
         "formal_name": "ビジョン・チューナー",
         "role_label": "命中・会心",
@@ -248,8 +248,8 @@ APPLIANCE_SET_VARIANTS = (
         "bonus_stats": {"acc": 4, "cri": 2, "hp": -1},
     },
     {
-        "set_key": "fan",
-        "asset_suffix": "fan",
+        "set_key": "electric_fan",
+        "asset_suffix": "electric_fan",
         "name_ja": "扇風機",
         "formal_name": "エアロ・サーキュレーター",
         "role_label": "素早さ・会心",
@@ -266,8 +266,8 @@ APPLIANCE_SET_VARIANTS = (
         "bonus_stats": {"atk": 4, "cri": 3, "def": -2},
     },
     {
-        "set_key": "dryer",
-        "asset_suffix": "dryer",
+        "set_key": "hair_dryer",
+        "asset_suffix": "hair_dryer",
         "name_ja": "ドライヤー",
         "formal_name": "ブロウ・ストライカー",
         "role_label": "攻撃・素早さ・命中",
@@ -282,39 +282,46 @@ APPLIANCE_NETWORK_BONUSES = {
     4: {"bonus_name": "家庭内ネットワーク4", "bonus_stats": {"hp": 1, "def": 1, "acc": 1}},
 }
 
+APPLIANCE_LEGACY_SUFFIX_ALIASES = {
+    "fridge": "refrigerator",
+    "tv": "television",
+    "fan": "electric_fan",
+    "dryer": "hair_dryer",
+}
+
 APPLIANCE_PART_DISPLAY_NAMES = {
-    ("rice_cooker", "HEAD"): "炊飯制御ユニット",
-    ("rice_cooker", "RIGHT_ARM"): "しゃもじブレード",
-    ("rice_cooker", "LEFT_ARM"): "内釜シールド",
-    ("rice_cooker", "LEGS"): "保温安定脚",
-    ("microwave", "HEAD"): "レンジ制御炉",
-    ("microwave", "RIGHT_ARM"): "マイクロウェーブ砲",
-    ("microwave", "LEFT_ARM"): "耐熱ドアシールド",
-    ("microwave", "LEGS"): "回転加熱脚",
-    ("vacuum", "HEAD"): "サイクロン集塵炉",
-    ("vacuum", "RIGHT_ARM"): "吸引ノズル砲",
-    ("vacuum", "LEFT_ARM"): "回転ブラシシールド",
-    ("vacuum", "LEGS"): "ホイールブースター",
-    ("fridge", "HEAD"): "冷蔵保管装甲",
-    ("fridge", "RIGHT_ARM"): "冷気キャノン",
-    ("fridge", "LEFT_ARM"): "冷凍ドアシールド",
-    ("fridge", "LEGS"): "コンプレッサー脚",
-    ("tv", "HEAD"): "未来予測スクリーン",
-    ("tv", "RIGHT_ARM"): "リモコンランチャー",
-    ("tv", "LEFT_ARM"): "電波反射シールド",
-    ("tv", "LEGS"): "チャンネル追跡脚",
-    ("fan", "HEAD"): "送風タービンコア",
-    ("fan", "RIGHT_ARM"): "エアカッター",
-    ("fan", "LEFT_ARM"): "風圧シールド",
-    ("fan", "LEGS"): "首振りブースター",
-    ("toaster", "HEAD"): "高熱トースト炉",
+    ("rice_cooker", "HEAD"): "ライスコア・ユニット",
+    ("rice_cooker", "RIGHT_ARM"): "シャモジブレード",
+    ("rice_cooker", "LEFT_ARM"): "インナーポットシールド",
+    ("rice_cooker", "LEGS"): "キープウォームレッグ",
+    ("microwave", "HEAD"): "マイクロウェーブコア",
+    ("microwave", "RIGHT_ARM"): "ウェーブキャノン",
+    ("microwave", "LEFT_ARM"): "ヒートドアシールド",
+    ("microwave", "LEGS"): "ターンテーブルレッグ",
+    ("vacuum", "HEAD"): "サイクロンコア",
+    ("vacuum", "RIGHT_ARM"): "サクションノズル",
+    ("vacuum", "LEFT_ARM"): "ロータリーブラシシールド",
+    ("vacuum", "LEGS"): "ターボホイールレッグ",
+    ("refrigerator", "HEAD"): "フロストコア",
+    ("refrigerator", "RIGHT_ARM"): "フリーズキャノン",
+    ("refrigerator", "LEFT_ARM"): "フリーザードアシールド",
+    ("refrigerator", "LEGS"): "コンプレッサーレッグ",
+    ("television", "HEAD"): "ビジョンスクリーン",
+    ("television", "RIGHT_ARM"): "リモートランチャー",
+    ("television", "LEFT_ARM"): "シグナルシールド",
+    ("television", "LEGS"): "チューナーレッグ",
+    ("electric_fan", "HEAD"): "エアロタービン",
+    ("electric_fan", "RIGHT_ARM"): "エアカッター",
+    ("electric_fan", "LEFT_ARM"): "ウィンドシールド",
+    ("electric_fan", "LEGS"): "スイングブースター",
+    ("toaster", "HEAD"): "ヒートオーブンコア",
     ("toaster", "RIGHT_ARM"): "ヒーターブレード",
     ("toaster", "LEFT_ARM"): "トーストシールド",
-    ("toaster", "LEGS"): "ポップアップ脚",
-    ("dryer", "HEAD"): "温冷風制御機",
-    ("dryer", "RIGHT_ARM"): "熱風バスター",
-    ("dryer", "LEFT_ARM"): "冷風シールド",
-    ("dryer", "LEGS"): "ターボドライ脚",
+    ("toaster", "LEGS"): "ポップアップレッグ",
+    ("hair_dryer", "HEAD"): "エアブロウコア",
+    ("hair_dryer", "RIGHT_ARM"): "ヒートブラスター",
+    ("hair_dryer", "LEFT_ARM"): "クールウィンドシールド",
+    ("hair_dryer", "LEGS"): "ターボブロウレッグ",
 }
 
 APPLIANCE_PART_STATS_BY_SET = {
@@ -336,19 +343,19 @@ APPLIANCE_PART_STATS_BY_SET = {
         "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 5, "acc": 1, "cri": 0},
         "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 6, "acc": 1, "cri": 2},
     },
-    "fridge": {
+    "refrigerator": {
         "HEAD": {"hp": 5, "atk": 1, "def": 5, "spd": 0, "acc": 1, "cri": 0},
         "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 0, "acc": 5, "cri": 1},
         "LEFT_ARM": {"hp": 5, "atk": 1, "def": 5, "spd": 0, "acc": 1, "cri": 0},
         "LEGS": {"hp": 5, "atk": 1, "def": 4, "spd": 1, "acc": 1, "cri": 0},
     },
-    "tv": {
+    "television": {
         "HEAD": {"hp": 1, "atk": 1, "def": 1, "spd": 1, "acc": 5, "cri": 3},
         "RIGHT_ARM": {"hp": 1, "atk": 4, "def": 1, "spd": 1, "acc": 5, "cri": 0},
         "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 1, "acc": 5, "cri": 0},
         "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 4, "acc": 5, "cri": 0},
     },
-    "fan": {
+    "electric_fan": {
         "HEAD": {"hp": 1, "atk": 1, "def": 1, "spd": 5, "acc": 1, "cri": 3},
         "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 1, "cri": 3},
         "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 5, "acc": 1, "cri": 0},
@@ -360,7 +367,7 @@ APPLIANCE_PART_STATS_BY_SET = {
         "LEFT_ARM": {"hp": 1, "atk": 4, "def": 4, "spd": 1, "acc": 1, "cri": 1},
         "LEGS": {"hp": 1, "atk": 1, "def": 1, "spd": 4, "acc": 1, "cri": 4},
     },
-    "dryer": {
+    "hair_dryer": {
         "HEAD": {"hp": 1, "atk": 4, "def": 1, "spd": 5, "acc": 1, "cri": 0},
         "RIGHT_ARM": {"hp": 1, "atk": 5, "def": 1, "spd": 1, "acc": 4, "cri": 0},
         "LEFT_ARM": {"hp": 1, "atk": 1, "def": 4, "spd": 1, "acc": 5, "cri": 0},
@@ -684,21 +691,28 @@ for variant in DINO_SERIES_VARIANTS:
         SERIES_PART_DEFINITIONS.append(part)
         PART_KEY_SERIES_ASSIGNMENTS[key] = variant["series_key"]
 
-APPLIANCE_IMAGE_BY_SLOT = {
-    "HEAD": "parts/head/head_n_machine.png",
-    "RIGHT_ARM": "parts/right_arm/right_arm_n_machine.png",
-    "LEFT_ARM": "parts/left_arm/left_arm_n_machine.png",
-    "LEGS": "parts/legs/legs_n_machine.png",
+APPLIANCE_IMAGE_SUFFIX_BY_SLOT = {
+    "HEAD": "head",
+    "RIGHT_ARM": "right_arm",
+    "LEFT_ARM": "left_arm",
+    "LEGS": "legs",
+}
+
+APPLIANCE_LEGACY_PART_KEY_ALIASES = {
+    f"{slot['key_prefix']}_n_appliance_{old_suffix}": f"{slot['key_prefix']}_n_appliance_{new_suffix}"
+    for old_suffix, new_suffix in APPLIANCE_LEGACY_SUFFIX_ALIASES.items()
+    for slot in SERIES_PART_SLOT_DEFS
 }
 
 for variant in APPLIANCE_SET_VARIANTS:
     for slot in SERIES_PART_SLOT_DEFS:
         set_key = str(variant["set_key"])
         key = f"{slot['key_prefix']}_n_appliance_{variant['asset_suffix']}"
+        image_suffix = APPLIANCE_IMAGE_SUFFIX_BY_SLOT[slot["part_type"]]
         part = {
             "key": key,
             "part_type": slot["part_type"],
-            "image_path": APPLIANCE_IMAGE_BY_SLOT[slot["part_type"]],
+            "image_path": f"parts/{slot['image_dir']}/appliance_{variant['asset_suffix']}_{image_suffix}.png",
             "rarity": "N",
             "element": "MACHINE",
             "series": APPLIANCE_SERIES_KEY,

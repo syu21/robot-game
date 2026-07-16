@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from balance_config import ENEMY_SEED_STATS
 from series_catalog import (
+    APPLIANCE_LEGACY_PART_KEY_ALIASES,
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
     INSECT_R_PART_DEFINITIONS,
     PART_KEY_SERIES_ASSIGNMENTS,
@@ -601,6 +602,51 @@ def _sync_insect_part_display_names(cur):
             "UPDATE robot_parts SET display_name_ja = ? WHERE key = ?",
             (display_name, part_key),
         )
+
+
+def _table_exists(cur, table_name):
+    return cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (table_name,),
+    ).fetchone() is not None
+
+
+def _table_columns(cur, table_name):
+    if not _table_exists(cur, table_name):
+        return set()
+    return {str(row[1]) for row in cur.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _migrate_legacy_appliance_part_keys(cur):
+    if not _table_exists(cur, "robot_parts"):
+        return
+    key_columns_by_table = {
+        "user_parts_inventory": ("part_key",),
+        "market_daily_listings": ("part_key",),
+        "market_purchase_history": ("part_key",),
+        "market_sell_history": ("part_key",),
+        "robot_builds": ("head_key", "r_arm_key", "l_arm_key", "legs_key"),
+        "robot_instance_parts": ("head_key", "r_arm_key", "l_arm_key", "legs_key"),
+    }
+    for old_key, new_key in APPLIANCE_LEGACY_PART_KEY_ALIASES.items():
+        old_part = cur.execute("SELECT id FROM robot_parts WHERE key = ? LIMIT 1", (old_key,)).fetchone()
+        new_part = cur.execute("SELECT id FROM robot_parts WHERE key = ? LIMIT 1", (new_key,)).fetchone()
+        if not old_part or not new_part:
+            continue
+        for table_name, column_names in key_columns_by_table.items():
+            columns = _table_columns(cur, table_name)
+            for column_name in column_names:
+                if column_name in columns:
+                    cur.execute(
+                        f"UPDATE {table_name} SET {column_name} = ? WHERE {column_name} = ?",
+                        (new_key, old_key),
+                    )
+        if _table_exists(cur, "part_instances") and "part_id" in _table_columns(cur, "part_instances"):
+            cur.execute(
+                "UPDATE part_instances SET part_id = ? WHERE part_id = ?",
+                (int(new_part[0]), int(old_part[0])),
+            )
+        cur.execute("UPDATE robot_parts SET is_active = 0 WHERE key = ?", (old_key,))
 
 
 def _ensure_default_normal_robot_parts(cur):
@@ -3718,6 +3764,7 @@ def main():
     _upsert_series_rows(cur)
     _upsert_mini_robot_species(cur)
     _apply_series_part_assignments(cur)
+    _migrate_legacy_appliance_part_keys(cur)
     _sync_insect_part_display_names(cur)
     rows_to_fill = cur.execute(
         """

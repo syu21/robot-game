@@ -33,6 +33,7 @@ from balance_config import (
     RARITY_WEIGHTS_BY_TIER,
 )
 from series_catalog import (
+    APPLIANCE_LEGACY_PART_KEY_ALIASES,
     APPLIANCE_PART_KEYS,
     APPLIANCE_PART_STAT_BY_KEY,
     DINO_PART_KEYS,
@@ -15853,10 +15854,11 @@ def _seed_robot_assets_v2(db):
         )
         db.commit()
     _sync_series_catalog(db)
+    appliance_key_updates = _migrate_legacy_appliance_part_keys(db)
     insect_name_updates = _sync_insect_part_display_names(db)
     if _backfill_part_display_names(db) > 0:
         db.commit()
-    elif insect_name_updates > 0:
+    elif insect_name_updates > 0 or appliance_key_updates > 0:
         db.commit()
 
 
@@ -16133,6 +16135,56 @@ def _sync_series_catalog(db):
         WHERE frame_type = 'insect'
         """
     )
+
+
+def _seed_table_exists(db, table_name):
+    return db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (table_name,),
+    ).fetchone() is not None
+
+
+def _seed_table_columns(db, table_name):
+    if not _seed_table_exists(db, table_name):
+        return set()
+    return {str(row["name"]) for row in db.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
+def _migrate_legacy_appliance_part_keys(db):
+    if not _seed_table_exists(db, "robot_parts"):
+        return 0
+    changed = 0
+    key_columns_by_table = {
+        "user_parts_inventory": ("part_key",),
+        "market_daily_listings": ("part_key",),
+        "market_purchase_history": ("part_key",),
+        "market_sell_history": ("part_key",),
+        "robot_builds": ("head_key", "r_arm_key", "l_arm_key", "legs_key"),
+        "robot_instance_parts": ("head_key", "r_arm_key", "l_arm_key", "legs_key"),
+    }
+    for old_key, new_key in APPLIANCE_LEGACY_PART_KEY_ALIASES.items():
+        old_part = db.execute("SELECT id FROM robot_parts WHERE key = ? LIMIT 1", (old_key,)).fetchone()
+        new_part = db.execute("SELECT id FROM robot_parts WHERE key = ? LIMIT 1", (new_key,)).fetchone()
+        if not old_part or not new_part:
+            continue
+        for table_name, column_names in key_columns_by_table.items():
+            columns = _seed_table_columns(db, table_name)
+            for column_name in column_names:
+                if column_name in columns:
+                    cur = db.execute(
+                        f"UPDATE {table_name} SET {column_name} = ? WHERE {column_name} = ?",
+                        (new_key, old_key),
+                    )
+                    changed += int(cur.rowcount or 0)
+        if _seed_table_exists(db, "part_instances") and "part_id" in _seed_table_columns(db, "part_instances"):
+            cur = db.execute(
+                "UPDATE part_instances SET part_id = ? WHERE part_id = ?",
+                (int(new_part["id"]), int(old_part["id"])),
+            )
+            changed += int(cur.rowcount or 0)
+        cur = db.execute("UPDATE robot_parts SET is_active = 0 WHERE key = ? AND COALESCE(is_active, 1) != 0", (old_key,))
+        changed += int(cur.rowcount or 0)
+    return changed
 
 
 def _sync_insect_part_display_names(db):

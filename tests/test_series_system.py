@@ -554,7 +554,7 @@ class SeriesSystemTests(unittest.TestCase):
             keys = {row["key"] for row in rows}
             self.assertIn("head_n_appliance_rice_cooker", keys)
             self.assertIn("right_arm_n_appliance_microwave", keys)
-            self.assertIn("left_arm_n_appliance_fridge", keys)
+            self.assertIn("left_arm_n_appliance_refrigerator", keys)
             self.assertIn("legs_n_appliance_vacuum", keys)
             for row in rows:
                 self.assertEqual(row["series"], "appliance")
@@ -563,7 +563,20 @@ class SeriesSystemTests(unittest.TestCase):
                 self.assertEqual(row["rarity"], "N")
                 self.assertEqual(row["element"], "MACHINE")
                 self.assertTrue(str(row["display_name_ja"]).strip())
+                self.assertIn("/appliance_", row["image_path"])
                 self.assertTrue(os.path.exists(os.path.join(game_app.ASSET_ROOT, row["image_path"])))
+
+    def test_appliance_parts_can_be_picked_by_series_drop(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE robot_parts SET is_active = 0 WHERE series_key != 'appliance'")
+            db.execute("UPDATE robot_parts SET is_active = 1 WHERE series_key = 'appliance'")
+            db.commit()
+
+            part = game_app._pick_drop_part_master(db, rarity="N", area_key="layer_5_reboot", user_id=self.user_id)
+            self.assertIsNotNone(part)
+            self.assertEqual(part["series_key"], "appliance")
+            self.assertEqual(part["frame_type"], "appliance")
 
     def test_appliance_mixed_parts_apply_network_bonus_only(self):
         with game_app.app.app_context():
@@ -571,7 +584,7 @@ class SeriesSystemTests(unittest.TestCase):
             keys = {
                 "head": "head_n_appliance_rice_cooker",
                 "r_arm": "right_arm_n_appliance_microwave",
-                "l_arm": "left_arm_n_appliance_fridge",
+                "l_arm": "left_arm_n_appliance_refrigerator",
                 "legs": "legs_n_appliance_vacuum",
             }
             part_instance_ids = {}
@@ -650,10 +663,10 @@ class SeriesSystemTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             for key in (
-                "head_n_appliance_tv",
+                "head_n_appliance_television",
                 "right_arm_n_appliance_toaster",
-                "left_arm_n_appliance_fan",
-                "legs_n_appliance_dryer",
+                "left_arm_n_appliance_electric_fan",
+                "legs_n_appliance_hair_dryer",
             ):
                 game_app._create_part_instance_from_master(
                     db,
@@ -666,9 +679,51 @@ class SeriesSystemTests(unittest.TestCase):
 
         html = self._client().get("/build?mode=new&frame_type=appliance").get_data(as_text=True)
         self.assertIn("家電型", html)
-        self.assertIn("未来予測スクリーン", html)
+        self.assertIn("ビジョンスクリーン", html)
         self.assertIn("ヒーターブレード", html)
         self.assertIn("家電2部位以上 / 同機種4部位で発動", html)
+
+    def test_appliance_parts_compose_robot_image_and_icon(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            keys = {
+                "head": "head_n_appliance_television",
+                "r_arm": "right_arm_n_appliance_television",
+                "l_arm": "left_arm_n_appliance_television",
+                "legs": "legs_n_appliance_television",
+            }
+            part_instance_ids = {}
+            for slot, key in keys.items():
+                part_instance_ids[slot] = game_app._create_part_instance_from_master(
+                    db,
+                    self.user_id,
+                    game_app._get_part_by_key(db, key),
+                    plus=0,
+                    status="inventory",
+                )
+            game_app._equip_part_instances_on_robot(db, self.robot_id, part_instance_ids)
+            db.execute(
+                """
+                UPDATE robot_instance_parts
+                SET head_key = ?, r_arm_key = ?, l_arm_key = ?, legs_key = ?
+                WHERE robot_instance_id = ?
+                """,
+                (keys["head"], keys["r_arm"], keys["l_arm"], keys["legs"], self.robot_id),
+            )
+            db.commit()
+            parts_row = db.execute(
+                "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+                (self.robot_id,),
+            ).fetchone()
+
+            composed_rel = game_app._compose_instance_image(db, {"id": self.robot_id}, parts_row)
+            icon_rel = game_app._ensure_robot_instance_badge(db, self.robot_id, composed_rel)
+            db.commit()
+
+            self.assertTrue(composed_rel.startswith("robot_composed/instance_"))
+            self.assertTrue(icon_rel.startswith("robot_icons/"))
+            self.assertTrue(os.path.exists(os.path.join(game_app.STATIC_ROOT, composed_rel)))
+            self.assertTrue(os.path.exists(os.path.join(game_app.STATIC_ROOT, icon_rel)))
 
     def test_build_and_robot_detail_show_series_section(self):
         client = self._client()
