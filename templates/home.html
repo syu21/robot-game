@@ -449,6 +449,8 @@
         </div>
       {% endif %}
     </section>
+    {% if (factory_base_home and factory_base_home['equipped']) or daily_research_card or show_tower_entry %}
+    <div class="home-compact-tools" aria-label="研究所関連">
     {% if factory_base_home and factory_base_home['equipped'] %}
     <section class="panel home-base-panel">
       <div class="card home-fold-card">
@@ -542,6 +544,8 @@
         {% endif %}
       </div>
     </section>
+    {% endif %}
+    </div>
     {% endif %}
     {% if not trial_mode %}
     <section class="panel home-mvp-panel home-spotlight-panel">
@@ -666,13 +670,13 @@
       <div class="world-env-card home-layer4-race-card">
         <div class="home-research-card-head">
           <div>
-            <div><b>第四層攻略レース</b></div>
-            <div class="upgrade-cost">最前線の研究員たちが、第4層で調整を続けています。</div>
+            <div><b>第5層攻略レース</b></div>
+            <div class="upgrade-cost">最前線の研究員たちが、第5層の深層調査を進めています。</div>
           </div>
-          <span class="weekly-fit-badge">第4層</span>
+          <span class="weekly-fit-badge">第5層</span>
         </div>
         {% if layer4_warning_status %}
-        <div class="home-layer4-warning-list" aria-label="第4層試験警報">
+        <div class="home-layer4-warning-list" aria-label="第5層試験警報">
           {% for item in layer4_warning_status %}
           <div class="home-layer4-warning-pill is-{{ item['phase'] }}">
             <span class="home-layer4-warning-area">{{ item['area_label'] }}</span>
@@ -695,16 +699,16 @@
               </div>
             </div>
             <div class="home-layer4-race-meta">
-              <span class="home-layer4-race-primary">第4層探索 {{ row['layer4_week_explore_count'] }}回</span>
-              {% if row['layer4_week_core_count'] > 0 %}
-              <span>コア獲得 {{ row['layer4_week_core_count'] }}個</span>
+              <span class="home-layer4-race-primary">第5層探索 {{ row['layer5_week_explore_count'] }}回</span>
+              {% if row['layer5_week_core_count'] > 0 %}
+              <span>コア獲得 {{ row['layer5_week_core_count'] }}個</span>
               {% endif %}
               <span>試験ボス {{ row['boss_clear_line'] }}</span>
               <span>最終活動: {{ row['latest_activity_label'] }}</span>
             </div>
           </div>
           {% else %}
-          <div class="robot-part">まだ第4層に到達した研究員はいません。最初の到達者を目指しましょう。</div>
+          <div class="robot-part">まだ第5層で動きのある研究員はいません。最初の深層調査記録を目指しましょう。</div>
           {% endfor %}
         </div>
       </div>
@@ -961,34 +965,45 @@
       </div>
     </div>
     {% endif %}
-    {% if home_dinosaur_campaign and home_dinosaur_campaign.get('enabled') %}
-    <div class="card home-insect-research-card">
+    {% if home_appliance_campaign and home_appliance_campaign.get('enabled') %}
+    <div class="card home-insect-research-card home-appliance-campaign-card">
       <div class="home-insect-research-head">
         <div>
           <div class="home-explore-kicker">期間限定</div>
-          <div class="home-insect-research-title">恐竜発掘キャンペーン</div>
+          <div class="home-insect-research-title">家電研究キャンペーン</div>
         </div>
         <a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を見る</a>
       </div>
+      {% if home_appliance_campaign.get('image_paths') %}
+      <div class="home-appliance-campaign-visuals" aria-label="家電シリーズ">
+        {% for image_path in home_appliance_campaign.get('image_paths', []) %}
+        <img src="{{ url_for('static', filename=image_path) }}" alt="家電シリーズ" loading="lazy" decoding="async" />
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="upgrade-cost">
-        出撃で恐竜型パーツを発見できることがあります。集めた恐竜パーツは、恐竜型どうしで編成できます。
-        自由編成では通常型・虫型とも組み合わせ可能です。
+        新登場！家電シリーズ全{{ home_appliance_campaign.get('part_count', 32) }}パーツが通常探索で出現中！
+      </div>
+      <div class="home-appliance-motif-grid">
+        {% for motif in home_appliance_campaign.get('motifs', []) %}
+        <span>{{ motif }}</span>
+        {% endfor %}
       </div>
       <div class="home-insect-research-grid">
         <div class="home-insect-research-stat">
-          <span>キャンペーン追加発見率</span>
-          <b>{{ home_dinosaur_campaign.get('drop_rate_pct', 10) }}%</b>
-        </div>
-        <div class="home-insect-research-stat">
-          <span>今週の恐竜型パーツ入手数</span>
-          <b>{{ home_dinosaur_campaign.get('part_drops', 0) }}</b>
+          <span>今週の家電パーツ入手数</span>
+          <b>{{ home_appliance_campaign.get('part_drops', 0) }}</b>
         </div>
         <div class="home-insect-research-stat">
           <span>対象</span>
-          <b>N恐竜</b>
+          <b>N家電</b>
+        </div>
+        <div class="home-insect-research-stat">
+          <span>入手先</span>
+          <b>通常探索</b>
         </div>
       </div>
-      <p class="link home-insect-research-link"><a href="{{ url_for('build') }}">ロボ編成を見る</a></p>
+      <p class="link home-insect-research-link"><a href="{{ url_for('build') }}">家電ロボを組む</a></p>
     </div>
     {% endif %}
     {% if has_any_robot %}

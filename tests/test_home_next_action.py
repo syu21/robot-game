@@ -204,7 +204,7 @@ class HomeNextActionTests(unittest.TestCase):
             self._insert_world_event(
                 uid,
                 game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
-                {"area_key": "layer_4_forge"},
+                {"area_key": "layer_5_reboot"},
                 created_at=int(time.time()) + i,
             )
 
@@ -215,59 +215,59 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("frontier_admin", [row["username"] for row in rows])
 
         html = self._new_client().get("/home").get_data(as_text=True)
-        self.assertIn("第四層攻略レース", html)
-        self.assertIn("第4層探索", html)
+        self.assertIn("第5層攻略レース", html)
+        self.assertIn("第5層探索", html)
         self.assertNotIn("frontier_admin", html)
 
     def test_home_layer4_frontier_empty_state_and_optional_cards_hidden(self):
         html = self._new_client().get("/home").get_data(as_text=True)
 
-        self.assertIn("第四層攻略レース", html)
-        self.assertIn("まだ第4層に到達した研究員はいません。", html)
+        self.assertIn("第5層攻略レース", html)
+        self.assertIn("まだ第5層で動きのある研究員はいません。", html)
         self.assertNotIn("今週の研究機体", html)
         self.assertNotIn("今週の研究成果", html)
 
     def test_home_layer4_user_without_active_robot_does_not_break(self):
-        uid = self._create_user("frontier_no_robot", max_layer=4, active_robot=False)
+        uid = self._create_user("frontier_no_robot", max_layer=5, active_robot=False)
         self._insert_world_event(
             uid,
             game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
-            {"area_key": "layer_4_haze"},
+            {"area_key": "layer_5_reboot"},
         )
 
         resp = self._new_client().get("/home")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("frontier_no_robot", html)
-        self.assertIn("第4層探索", html)
+        self.assertIn("第5層探索", html)
 
     def test_home_weekly_featured_robot_and_research_highlights_render(self):
-        uid = self._create_user("weekly_researcher", max_layer=4, active_robot=True)
+        uid = self._create_user("weekly_researcher", max_layer=5, active_robot=True)
         for _ in range(3):
             self._insert_world_event(
                 uid,
                 game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
-                {"area_key": "layer_4_burst"},
+                {"area_key": "layer_5_reboot"},
             )
         self._insert_world_event(uid, game_app.AUDIT_EVENT_TYPES["FUSE"], {"mode": "single"})
         self._insert_world_event(
             uid,
             game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
-            {"area_key": "layer_4_burst", "boss_kind": "fixed"},
+            {"area_key": "layer_5_reboot", "boss_kind": "fixed"},
         )
         self._insert_world_event(
             uid,
             game_app.AUDIT_EVENT_TYPES["CORE_DROP"],
-            {"area_key": "layer_4_burst", "quantity": 2, "core_key": game_app.EVOLUTION_CORE_KEY},
+            {"area_key": "layer_5_reboot", "quantity": 2, "core_key": game_app.EVOLUTION_CORE_KEY},
         )
 
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertIn("今週の研究機体", html)
         self.assertIn("weekly_researcher機", html)
-        self.assertIn("第4層探索 3回", html)
+        self.assertIn("第5層探索 3回", html)
         self.assertIn("コア獲得 2個", html)
-        self.assertIn("試験ボス 1/3", html)
+        self.assertIn("試験ボス 1/2", html)
         self.assertIn("今週の研究成果", html)
         self.assertIn("最多出撃", html)
         self.assertIn("最多強化", html)

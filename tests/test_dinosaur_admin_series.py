@@ -111,7 +111,7 @@ class DinosaurAdminSeriesTests(unittest.TestCase):
             )
             self.assertEqual(count, 0)
 
-    def test_dinosaur_campaign_adds_public_n_drop_on_win_reward(self):
+    def test_dinosaur_campaign_no_longer_adds_drop_on_win_reward(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             with mock.patch.object(game_app.random, "random", side_effect=[1.0, 0.0]):
@@ -121,15 +121,8 @@ class DinosaurAdminSeriesTests(unittest.TestCase):
                     1,
                     area_key="layer_1",
                 )
-            self.assertTrue(rewards["campaign_drop_triggered"])
-            self.assertEqual(len(rewards["dropped_parts"]), 1)
-            dropped = rewards["dropped_parts"][0]
-            self.assertEqual(dropped["source"], "campaign")
-            self.assertEqual(dropped["campaign_key"], game_app.DINOSAUR_DEBUT_CAMPAIGN["key"])
-            self.assertEqual(dropped["drop_type"], "campaign_dinosaur_debut")
-            part = game_app._get_part_by_key(db, dropped["part_key"])
-            self.assertEqual(part["frame_type"], "dinosaur")
-            self.assertEqual(part["rarity"], "N")
+            self.assertFalse(rewards["campaign_drop_triggered"])
+            self.assertFalse(any(item.get("source") == "campaign" for item in rewards["dropped_parts"]))
 
     def test_dinosaur_parts_are_excluded_from_base_n_drops(self):
         with game_app.app.app_context():
@@ -174,11 +167,11 @@ class DinosaurAdminSeriesTests(unittest.TestCase):
             dropped = game_app._pick_drop_part_master(db, rarity="R", area_key="layer_5_pinnacle", user_id=self.user_id)
             self.assertIsNone(dropped)
 
-    def test_home_shows_dinosaur_campaign_not_old_insect_campaign(self):
+    def test_home_shows_appliance_campaign_not_old_insect_campaign(self):
         client = self._client(user_id=self.user_id, username="dino_user")
         html = client.get("/home").get_data(as_text=True)
-        self.assertIn("恐竜発掘キャンペーン", html)
-        self.assertIn("出撃で恐竜型パーツを発見できることがあります", html)
+        self.assertIn("家電研究キャンペーン", html)
+        self.assertIn("家電シリーズ全32パーツ", html)
         self.assertNotIn("虫型研究 進行中", html)
 
     def test_admin_grant_route_adds_missing_only_and_writes_audit(self):

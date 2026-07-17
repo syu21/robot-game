@@ -133,7 +133,8 @@ class InsectResearchTests(unittest.TestCase):
         home = client.get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("恐竜発掘キャンペーン", home_html)
+        self.assertIn("家電研究キャンペーン", home_html)
+        self.assertIn("家電シリーズ全32パーツ", home_html)
         self.assertNotIn("虫型研究 進行中", home_html)
 
         self._set_insect_parts(2)

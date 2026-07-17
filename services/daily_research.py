@@ -40,8 +40,8 @@ DAILY_RESEARCH_REWARD_SOURCE_EVENTS = {EVENT_EXPLORE_END, EVENT_FUSE, EVENT_BUIL
 DAILY_RESEARCH_TASKS = [
     {
         "key": "explore_layer1_2",
-        "title": "第1層で2回出撃",
-        "description": "第1層で今日の研究データを集めます。",
+        "title": "家電パーツを探そう",
+        "description": "第1層で家電シリーズの発見データを集めます。",
         "target_event": EVENT_EXPLORE_END,
         "target_area_key": "layer_1",
         "target_count": 2,
@@ -49,8 +49,8 @@ DAILY_RESEARCH_TASKS = [
     },
     {
         "key": "explore_layer2_1",
-        "title": "第2層で1回出撃",
-        "description": "第2層で今日の研究データを集めます。",
+        "title": "電子レンジパーツを探そう",
+        "description": "第2層で家電シリーズの反応を調査します。",
         "target_event": EVENT_EXPLORE_END,
         "target_area_key": "layer_2",
         "target_count": 1,
@@ -66,8 +66,8 @@ DAILY_RESEARCH_TASKS = [
     },
     {
         "key": "build_view_1",
-        "title": "ロボ編成画面を見る",
-        "description": "ロボ編成画面で現在の構成を確認します。",
+        "title": "家電ロボの編成を見る",
+        "description": "ロボ編成画面で家電パーツの組み合わせを確認します。",
         "target_event": EVENT_BUILD_VIEW,
         "target_count": 1,
         "reward_coins": 25,

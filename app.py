@@ -1944,7 +1944,7 @@ INSECT_RESEARCH_HOME_ENABLED = True
 INSECT_RESEARCH_PART_SLOTS = ("head", "r_arm", "l_arm", "legs")
 INSECT_RESEARCH_PART_TYPES = ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")
 DINOSAUR_DEBUT_CAMPAIGN = {
-    "enabled": True,
+    "enabled": False,
     "key": "dinosaur_debut",
     "name": "恐竜発掘キャンペーン",
     "short_label": "恐竜発掘中",
@@ -1970,6 +1970,15 @@ DINOSAUR_DEBUT_CAMPAIGN = {
         "layer_5_reboot",
         "layer_5_overdrive",
     ),
+}
+APPLIANCE_HOME_CAMPAIGN = {
+    "enabled": True,
+    "key": "appliance_research",
+    "name": "家電研究キャンペーン",
+    "short_label": "家電研究中",
+    "series_key": "appliance",
+    "part_count": 32,
+    "motifs": ("炊飯器", "電子レンジ", "掃除機", "冷蔵庫", "テレビ", "扇風機", "トースター", "ドライヤー"),
 }
 RANKING_METRIC_DEFS = (
     {
@@ -9345,6 +9354,42 @@ def _home_dinosaur_campaign_view(db, week_key):
         "short_label": DINOSAUR_DEBUT_CAMPAIGN["short_label"],
         "drop_rate_pct": int(round(float(DINOSAUR_DEBUT_CAMPAIGN["drop_rate"]) * 100)),
         "part_drops": int(part_drops),
+    }
+
+
+def _home_appliance_campaign_view(db, week_key):
+    if not APPLIANCE_HOME_CAMPAIGN.get("enabled"):
+        return {"enabled": False}
+    start_dt, end_dt = _world_week_bounds(week_key)
+    row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE COALESCE(NULLIF(rp.series_key, ''), NULLIF(pi.series, ''), NULLIF(rp.series, ''), '') = ?
+          AND pi.created_at >= ?
+          AND pi.created_at < ?
+        """,
+        (
+            APPLIANCE_HOME_CAMPAIGN["series_key"],
+            int(start_dt.timestamp()),
+            int(end_dt.timestamp()),
+        ),
+    ).fetchone()
+    return {
+        "enabled": True,
+        "key": APPLIANCE_HOME_CAMPAIGN["key"],
+        "name": APPLIANCE_HOME_CAMPAIGN["name"],
+        "short_label": APPLIANCE_HOME_CAMPAIGN["short_label"],
+        "part_count": int(APPLIANCE_HOME_CAMPAIGN["part_count"]),
+        "motifs": list(APPLIANCE_HOME_CAMPAIGN["motifs"]),
+        "part_drops": int((row or {})["c"] or 0),
+        "image_paths": [
+            "robot_assets/parts/head/appliance_rice_cooker_head.png",
+            "robot_assets/parts/head/appliance_microwave_head.png",
+            "robot_assets/parts/head/appliance_vacuum_head.png",
+            "robot_assets/parts/head/appliance_refrigerator_head.png",
+        ],
     }
 
 
@@ -32689,16 +32734,16 @@ def _home_event_payload(row):
         return {}
 
 
-def _home_layer4_boss_clear_count(db, user_id):
-    return sum(1 for area_key in LAYER4_SUBAREA_KEYS if _has_fixed_boss_defeat_in_area(db, int(user_id), area_key))
+def _home_layer5_boss_clear_count(db, user_id):
+    return sum(1 for area_key in LAYER5_SUBAREA_KEYS if _has_fixed_boss_defeat_in_area(db, int(user_id), area_key))
 
 
-def _home_layer4_week_metrics(db, user_id):
+def _home_layer5_week_metrics(db, user_id):
     week_key = _world_week_key()
     start_dt, end_dt = _world_week_bounds(week_key)
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
-    area_keys = tuple(LAYER4_SUBAREA_KEYS)
+    area_keys = tuple(LAYER5_SUBAREA_KEYS)
     explore_count = db.execute(
         f"""
         SELECT COUNT(*) AS c
@@ -32730,8 +32775,8 @@ def _home_layer4_week_metrics(db, user_id):
         (int(user_id), AUDIT_EVENT_TYPES["CORE_DROP"], start_ts, end_ts, *area_keys),
     ).fetchone()
     return {
-        "layer4_week_explore_count": int((explore_count["c"] if explore_count else 0) or 0),
-        "layer4_week_core_count": int((core_count["c"] if core_count else 0) or 0),
+        "layer5_week_explore_count": int((explore_count["c"] if explore_count else 0) or 0),
+        "layer5_week_core_count": int((core_count["c"] if core_count else 0) or 0),
     }
 
 
@@ -32767,7 +32812,7 @@ def get_layer4_warning_status_for_user(db, user_id):
 
 def get_layer4_frontier_users(limit=5, db=None):
     """
-    第4層到達者を表示用に取得する。管理者は除外する。
+    第5層到達者を表示用に取得する。管理者は除外する。
     """
     db = db or get_db()
     limit = max(1, int(limit or 5))
@@ -32778,16 +32823,16 @@ def get_layer4_frontier_users(limit=5, db=None):
         FROM users
         WHERE COALESCE(is_admin, 0) = 0
           AND (
-            COALESCE(max_unlocked_layer, 1) >= 4
-            OR last_explore_area_key IN (?, ?, ?, ?)
+            COALESCE(max_unlocked_layer, 1) >= 5
+            OR last_explore_area_key IN (?, ?, ?)
           )
         """,
-        (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY),
+        (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY),
     ).fetchall()
     for row in user_rows:
         candidate_ids[int(row["id"])] = {
             "user": row,
-            "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY) else "layer_4_forge",
+            "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY) else "layer_5_reboot",
             "latest_activity_at": int(row["last_seen_at"] or 0),
         }
     event_rows = db.execute(
@@ -32798,7 +32843,7 @@ def get_layer4_frontier_users(limit=5, db=None):
         WHERE wel.user_id IS NOT NULL
           AND COALESCE(u.is_admin, 0) = 0
           AND wel.event_type IN (?, ?, ?)
-          AND wel.payload_json LIKE '%layer_4%'
+          AND wel.payload_json LIKE '%layer_5%'
         ORDER BY wel.created_at DESC, wel.id DESC
         LIMIT 300
         """,
@@ -32816,7 +32861,7 @@ def get_layer4_frontier_users(limit=5, db=None):
             or payload.get("explore_area_key")
             or ""
         )
-        if area_key not in (*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY):
+        if area_key not in (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY):
             continue
         uid = int(row["user_id"])
         entry = candidate_ids.get(uid)
@@ -32841,10 +32886,10 @@ def get_layer4_frontier_users(limit=5, db=None):
     for uid, entry in candidate_ids.items():
         user_row = entry["user"]
         visuals = _user_visuals(db, uid, visuals_cache)
-        clear_count = _home_layer4_boss_clear_count(db, uid)
-        week_metrics = _home_layer4_week_metrics(db, uid)
+        clear_count = _home_layer5_boss_clear_count(db, uid)
+        week_metrics = _home_layer5_week_metrics(db, uid)
         latest_activity_at = max(int(entry.get("latest_activity_at") or 0), int(user_row["last_seen_at"] or 0))
-        area_key = str(entry.get("area_key") or user_row["last_explore_area_key"] or "layer_4_forge")
+        area_key = str(entry.get("area_key") or user_row["last_explore_area_key"] or "layer_5_reboot")
         rows.append(
             {
                 "id": uid,
@@ -32854,9 +32899,9 @@ def get_layer4_frontier_users(limit=5, db=None):
                 "area_key": area_key,
                 "area_label": _home_layer4_area_label(area_key),
                 "boss_clear_count": int(clear_count),
-                "boss_clear_line": f"{int(clear_count)}/{len(LAYER4_SUBAREA_KEYS)}",
-                "layer4_week_explore_count": int(week_metrics["layer4_week_explore_count"]),
-                "layer4_week_core_count": int(week_metrics["layer4_week_core_count"]),
+                "boss_clear_line": f"{int(clear_count)}/{len(LAYER5_SUBAREA_KEYS)}",
+                "layer5_week_explore_count": int(week_metrics["layer5_week_explore_count"]),
+                "layer5_week_core_count": int(week_metrics["layer5_week_core_count"]),
                 "latest_activity_at": latest_activity_at,
                 "latest_activity_label": _home_activity_label(latest_activity_at),
                 "avatar_path": visuals["avatar"],
@@ -32886,8 +32931,10 @@ def _weekly_featured_robot_comment(profile, max_layer):
         return "粘り強く試験突破を狙う研究機体です。"
     if "ACC" in text or "命中" in text:
         return "安定した命中で攻略を進める研究機体です。"
+    if int(max_layer or 0) >= 5:
+        return "第5層攻略中の研究機体。今週も最前線で調整が続いています。"
     if int(max_layer or 0) >= 4:
-        return "第四層攻略中の研究機体。今週も最前線で調整が続いています。"
+        return "深層攻略中の研究機体。今週も最前線で調整が続いています。"
     return "総合力で試験突破を狙う研究機体です。"
 
 
@@ -43420,6 +43467,7 @@ def home():
     section_started_at = time.perf_counter()
     home_insect_research = _home_insect_research_view(db, week_key)
     home_dinosaur_campaign = _home_dinosaur_campaign_view(db, week_key)
+    home_appliance_campaign = _home_appliance_campaign_view(db, week_key)
     factory_home_summary = get_user_factory_view(db, int(user["id"]))
     factory_research_home_summary = factory_research_summary(db)
     factory_base_home = get_factory_cosmetic_loadout(db, int(user["id"]))
@@ -43657,6 +43705,7 @@ def home():
             home_lab_level=home_lab_level,
             home_insect_research=home_insect_research,
             home_dinosaur_campaign=home_dinosaur_campaign,
+            home_appliance_campaign=home_appliance_campaign,
             factory_home_summary=factory_home_summary,
             factory_research_home_summary=factory_research_home_summary,
             factory_base_home=factory_base_home,
