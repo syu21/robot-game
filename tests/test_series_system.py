@@ -569,7 +569,7 @@ class SeriesSystemTests(unittest.TestCase):
     def test_appliance_parts_can_be_picked_by_series_drop(self):
         with game_app.app.app_context():
             db = game_app.get_db()
-            db.execute("UPDATE robot_parts SET is_active = 0 WHERE series_key != 'appliance'")
+            db.execute("UPDATE robot_parts SET is_active = 0 WHERE COALESCE(series_key, '') != 'appliance'")
             db.execute("UPDATE robot_parts SET is_active = 1 WHERE series_key = 'appliance'")
             db.commit()
 

@@ -192,8 +192,8 @@ class DailyResearchTests(unittest.TestCase):
             db.commit()
 
             task = get_or_create_daily_task(db, self.user_id, today_key)
-            self.assertEqual(task["title"], "ロボ編成画面を見る")
-            self.assertEqual(task["description"], "ロボ編成画面で現在の構成を確認します。")
+            self.assertEqual(task["title"], "家電ロボの編成を見る")
+            self.assertEqual(task["description"], "ロボ編成画面で家電パーツの組み合わせを確認します。")
 
     def test_tomorrow_reward_is_reserved_and_claimed_once(self):
         today_key = get_day_key()

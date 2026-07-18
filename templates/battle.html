@@ -261,6 +261,28 @@
   {% endif %}
   <div class="robot-time battle-result-saved-note">勝敗と戦利品は保存済みです。</div>
 
+  {% if summary.get('first_upgrade_guide') %}
+  {% set first_upgrade = summary.get('first_upgrade_guide') %}
+  <section class="card first-upgrade-guide-card">
+    <div class="section-kicker">最初の育成</div>
+    <h3>{{ first_upgrade.get('title', '新しいパーツで機体を更新できます') }}</h3>
+    <p class="upgrade-cost">{{ first_upgrade.get('desc', '') }}</p>
+    <div class="home-inline-actions">
+      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts', onboarding='first_upgrade', source='battle_result') }}">{{ first_upgrade.get('cta_label', '入手したパーツを見比べる') }}</a></p>
+      <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="area_key" value="{{ explore_area_key }}" />
+        <input type="hidden" name="entry_source" value="battle_retry" />
+        <input type="hidden" name="onboarding_first_upgrade_skip" value="1" />
+        <input type="hidden" name="first_upgrade_source" value="battle_result" />
+        {% if summary.get('next_explore_submission_id') %}
+        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+        {% endif %}
+        <button type="submit" class="btn-secondary">{{ first_upgrade.get('skip_label', 'このまま出撃する') }}</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">

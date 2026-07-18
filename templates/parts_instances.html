@@ -4,6 +4,17 @@
 <div id="parts-page-root">
   <h1>所持パーツ</h1>
 
+  {% if first_upgrade_guide %}
+  <section class="card first-upgrade-guide-card">
+    <div class="section-kicker">最初の育成</div>
+    <h3>{{ first_upgrade_guide.get('parts_title', '今の装備と、拾ったパーツを見比べよう') }}</h3>
+    <p class="upgrade-cost">{{ first_upgrade_guide.get('parts_desc', '') }}</p>
+    {% if recommended_part_instance_id %}
+    <div class="part-meta-line">おすすめ候補を1件だけ表示しています。</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <div class="card part-page-summary">
     <div class="part-page-summary-head">
       <div>
@@ -89,11 +100,17 @@
                 {% else %}
                   <span class="part-chip">所持中</span>
                 {% endif %}
+                {% if p.get('first_upgrade_recommended') %}
+                  <span class="part-chip is-recommended">おすすめ</span>
+                {% endif %}
                 {% if p.get('locked') %}
                   <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              {% if p.get('first_upgrade_recommended_note') %}
+              <div class="part-meta-line first-upgrade-recommended-note">{{ p.get('first_upgrade_recommended_note') }}</div>
+              {% endif %}
               <div class="part-meta-line">フレーム：{{ p['frame_label'] }}</div>
               {% if p.get('series_badge') %}
               <div class="part-meta-line">シリーズ：{{ p['series_badge']['short_label'] }}</div>
@@ -166,11 +183,17 @@
                 {% else %}
                   <span class="part-chip">所持中</span>
                 {% endif %}
+                {% if p.get('first_upgrade_recommended') %}
+                  <span class="part-chip is-recommended">おすすめ</span>
+                {% endif %}
                 {% if p.get('locked') %}
                   <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              {% if p.get('first_upgrade_recommended_note') %}
+              <div class="part-meta-line first-upgrade-recommended-note">{{ p.get('first_upgrade_recommended_note') }}</div>
+              {% endif %}
               <div class="part-meta-line">フレーム：{{ p['frame_label'] }}</div>
               {% if p.get('series_badge') %}
               <div class="part-meta-line">シリーズ：{{ p['series_badge']['short_label'] }}</div>

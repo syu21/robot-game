@@ -1468,6 +1468,11 @@ body.lightbox-open .lightbox-overlay {
   border-color: rgba(26, 107, 103, 0.34);
   color: #0d5956;
 }
+.part-chip.is-recommended {
+  background: rgba(255, 236, 168, 0.95);
+  border-color: rgba(196, 128, 24, 0.42);
+  color: #6d4300;
+}
 .part-chip.is-locked,
 .part-lock-badge {
   background: rgba(255, 244, 214, 0.98);
@@ -1499,6 +1504,13 @@ body.lightbox-open .lightbox-overlay {
   font-size: 13px;
   line-height: 1.4;
   color: #4b453b;
+}
+.first-upgrade-guide-card {
+  border-color: rgba(102, 224, 255, 0.32);
+}
+.first-upgrade-recommended-note {
+  color: #8a5a00;
+  font-weight: 700;
 }
 .fuse-base-facts {
   display: flex;

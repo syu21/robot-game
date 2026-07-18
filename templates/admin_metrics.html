@@ -86,6 +86,21 @@
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_three_complete.numerator }}人 / {{ first_experience_snapshot.first_three_complete.denominator }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.first_three_complete.rate_pct) }}%</div>
       </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">機体更新ガイド表示</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_upgrade.shown_users }}人</div>
+        <div class="robot-time">表示→クリック {{ '%.1f'|format(first_experience_snapshot.first_upgrade.shown_to_click_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初回機体更新完了</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_upgrade.complete_users }}人</div>
+        <div class="robot-time">3出撃完了→更新 {{ '%.1f'|format(first_experience_snapshot.first_upgrade.first_three_to_complete_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">更新後の再出撃</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_upgrade.after_explore_users }}人</div>
+        <div class="robot-time">ボス再挑戦 {{ first_experience_snapshot.first_upgrade.after_boss_attempt_users }}人</div>
+      </div>
     </div>
     <div class="admin-metrics-note-grid">
       {% for row in first_experience_snapshot.entry_source_rows %}

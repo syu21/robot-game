@@ -4173,6 +4173,16 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "second_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "third_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "first_three_complete": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "first_upgrade": {
+                "shown_users": 0,
+                "click_users": 0,
+                "complete_users": 0,
+                "shown_to_click_rate_pct": 0.0,
+                "click_to_complete_rate_pct": 0.0,
+                "first_three_to_complete_rate_pct": 0.0,
+                "after_explore_users": 0,
+                "after_boss_attempt_users": 0,
+            },
             "entry_source_rows": [],
             "home_quick_start": {
                 "home_view_users": 0,
@@ -4264,6 +4274,12 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     first_layer1_boss_encounter_source_by_user = {}
     layer1_boss_defeat_after_encounter_users = set()
     layer1_start_count_by_user = {}
+    first_upgrade_shown_users = set()
+    first_upgrade_click_users = set()
+    first_upgrade_complete_users = set()
+    first_upgrade_complete_ts_by_user = {}
+    first_upgrade_after_explore_users = set()
+    first_upgrade_after_boss_attempt_users = set()
     for user_row in user_rows:
         uid = int(user_row["id"])
         created_day = _jst_date_from_ts(int(user_row["created_at"] or 0))
@@ -4340,6 +4356,19 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                     layer1_boss_defeat_after_encounter_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
                 step_users["first_three_complete"].add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
+                first_upgrade_shown_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_CLICK"):
+                first_upgrade_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_COMPLETE"):
+                first_upgrade_complete_users.add(uid)
+                first_upgrade_complete_ts_by_user.setdefault(uid, ts)
+            complete_ts = first_upgrade_complete_ts_by_user.get(uid)
+            if complete_ts and ts > int(complete_ts):
+                if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
+                    first_upgrade_after_explore_users.add(uid)
+                if et in {AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], AUDIT_EVENT_TYPES["BOSS_ATTEMPT"]}:
+                    first_upgrade_after_boss_attempt_users.add(uid)
         if created_day + timedelta(days=1) <= today_jst and (created_day + timedelta(days=1)) in user_days:
             step_users["next_day_return"].add(uid)
 
@@ -4463,6 +4492,22 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "numerator": len(step_users["first_three_complete"]),
             "denominator": len(user_ids),
             "rate_pct": (float(len(step_users["first_three_complete"])) / float(registered_count)) * 100.0,
+        },
+        "first_upgrade": {
+            "shown_users": int(len(first_upgrade_shown_users)),
+            "click_users": int(len(first_upgrade_click_users)),
+            "complete_users": int(len(first_upgrade_complete_users)),
+            "shown_to_click_rate_pct": (
+                float(len(first_upgrade_click_users)) / float(max(1, len(first_upgrade_shown_users))) * 100.0
+            ),
+            "click_to_complete_rate_pct": (
+                float(len(first_upgrade_complete_users)) / float(max(1, len(first_upgrade_click_users))) * 100.0
+            ),
+            "first_three_to_complete_rate_pct": (
+                float(len(first_upgrade_complete_users)) / float(max(1, len(step_users["first_three_complete"]))) * 100.0
+            ),
+            "after_explore_users": int(len(first_upgrade_after_explore_users)),
+            "after_boss_attempt_users": int(len(first_upgrade_after_boss_attempt_users)),
         },
         "entry_source_rows": entry_source_rows,
         "home_quick_start": {
@@ -5897,6 +5942,8 @@ def _build_home_primary_explore_cta(
             "map_link_label": "",
             "map_href": "",
             "context_line": str(next_action_card.get("context_line") or "次の目標を優先表示しています。"),
+            "secondary_actions": list(next_action_card.get("secondary_actions") or []),
+            "onboarding_first_upgrade": bool(next_action_card.get("onboarding_first_upgrade")),
         }
     selected_area = _find_explore_area(available_areas, selected_area_key)
     saved_area = _find_explore_area(available_areas, saved_area_key)
@@ -10796,6 +10843,278 @@ def _grant_onboarding_first_three_reward_if_ready(db, user_row, *, area_key, req
     return {"granted": True, "completed": int(completed), "reward_coins": int(ONBOARDING_FIRST_THREE_REWARD_COINS)}
 
 
+FIRST_UPGRADE_GUIDE_SHOWN_DEDUPE_SECONDS = 3600
+
+
+def _onboarding_first_upgrade_normal_user(user_row):
+    if not user_row or not hasattr(user_row, "keys"):
+        return False
+    keys = user_row.keys()
+    if "is_admin" in keys and int(user_row["is_admin"] or 0) == 1:
+        return False
+    if "analytics_excluded" in keys and int(user_row["analytics_excluded"] or 0) == 1:
+        return False
+    if _is_test_user_row(user_row):
+        return False
+    return True
+
+
+def _onboarding_first_upgrade_should_show(db, user_row):
+    if not _onboarding_first_upgrade_normal_user(user_row):
+        return False
+    keys = user_row.keys()
+    if "first_upgrade_guide_started_at" not in keys or int(user_row["first_upgrade_guide_started_at"] or 0) <= 0:
+        return False
+    if "first_upgrade_guide_completed_at" in keys and int(user_row["first_upgrade_guide_completed_at"] or 0) > 0:
+        return False
+    if "first_upgrade_guide_dismissed_at" in keys and int(user_row["first_upgrade_guide_dismissed_at"] or 0) > 0:
+        return False
+    return _count_user_completed_explores(db, int(user_row["id"])) >= int(ONBOARDING_FIRST_THREE_TARGET)
+
+
+def _onboarding_first_upgrade_view(db, user_row, *, source):
+    completed = _count_user_completed_explores(db, int(user_row["id"]))
+    return {
+        "title": "新しいパーツで機体を更新できます",
+        "desc": "持ち帰ったパーツを使うと、ロボの見た目や能力を変えられます。ボスへ挑む前に機体を確認してみましょう。",
+        "home_title": "持ち帰ったパーツを機体に使おう",
+        "home_desc": "パーツを見比べて、最初の機体更新をしてみましょう。",
+        "parts_title": "今の装備と、拾ったパーツを見比べよう",
+        "parts_desc": "能力が高いだけでなく、見た目や得意分野も変わります。気になるパーツを選んで確認してください。",
+        "cta_label": "入手したパーツを見比べる",
+        "home_cta_label": "パーツを見比べる",
+        "skip_label": "このまま出撃する",
+        "source": str(source or ""),
+        "explore_end_count": int(completed),
+    }
+
+
+def _audit_onboarding_first_upgrade_event(
+    db,
+    event_key,
+    user_id,
+    *,
+    source,
+    payload=None,
+    request_id=None,
+    ip=None,
+    dedupe_seconds=0,
+):
+    event_type = AUDIT_EVENT_TYPES.get(event_key)
+    if not event_type:
+        return False
+    now = _now_ts()
+    base_payload = {
+        "user_id": int(user_id),
+        "source": str(source or ""),
+        "request_id": request_id,
+    }
+    base_payload.update(payload or {})
+    if dedupe_seconds:
+        existing = db.execute(
+            """
+            SELECT 1
+            FROM world_events_log
+            WHERE user_id = ?
+              AND event_type = ?
+              AND created_at >= ?
+              AND COALESCE(json_extract(payload_json, '$.source'), '') = ?
+            LIMIT 1
+            """,
+            (int(user_id), event_type, int(now - int(dedupe_seconds)), str(source or "")),
+        ).fetchone()
+        if existing:
+            return False
+    audit_log(
+        db,
+        event_type,
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="first_upgrade_guide",
+        entity_type="user",
+        entity_id=int(user_id),
+        payload=base_payload,
+        ip=ip,
+    )
+    return True
+
+
+def _audit_onboarding_first_upgrade_shown(db, user_row, *, source, recommended_part_instance_id=None, request_id=None, ip=None):
+    return _audit_onboarding_first_upgrade_event(
+        db,
+        "ONBOARDING_FIRST_UPGRADE_SHOWN",
+        int(user_row["id"]),
+        source=source,
+        request_id=request_id,
+        ip=ip,
+        dedupe_seconds=FIRST_UPGRADE_GUIDE_SHOWN_DEDUPE_SECONDS,
+        payload={
+            "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
+            "active_robot_id_before": int(user_row["active_robot_id"] or 0) if "active_robot_id" in user_row.keys() and user_row["active_robot_id"] else None,
+            "recommended_part_instance_id": recommended_part_instance_id,
+        },
+    )
+
+
+def _audit_onboarding_first_upgrade_click(db, user_row, *, source, recommended_part_instance_id=None, request_id=None, ip=None):
+    return _audit_onboarding_first_upgrade_event(
+        db,
+        "ONBOARDING_FIRST_UPGRADE_CLICK",
+        int(user_row["id"]),
+        source=source,
+        request_id=request_id,
+        ip=ip,
+        payload={
+            "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
+            "active_robot_id_before": int(user_row["active_robot_id"] or 0) if "active_robot_id" in user_row.keys() and user_row["active_robot_id"] else None,
+            "recommended_part_instance_id": recommended_part_instance_id,
+        },
+    )
+
+
+def _audit_onboarding_first_upgrade_skip(db, user_row, *, source, area_key=None, request_id=None, ip=None):
+    return _audit_onboarding_first_upgrade_event(
+        db,
+        "ONBOARDING_FIRST_UPGRADE_SKIP",
+        int(user_row["id"]),
+        source=source,
+        request_id=request_id,
+        ip=ip,
+        payload={
+            "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
+            "active_robot_id_before": int(user_row["active_robot_id"] or 0) if "active_robot_id" in user_row.keys() and user_row["active_robot_id"] else None,
+            "area_key": str(area_key or ""),
+        },
+    )
+
+
+def _start_onboarding_first_upgrade_guide(db, user_row, *, source, request_id=None, ip=None):
+    if not _onboarding_first_upgrade_normal_user(user_row):
+        return None
+    keys = user_row.keys()
+    if "onboarding_first_three_reward_claimed" in keys and int(user_row["onboarding_first_three_reward_claimed"] or 0) != 1:
+        return None
+    if "first_upgrade_guide_completed_at" in keys and int(user_row["first_upgrade_guide_completed_at"] or 0) > 0:
+        return None
+    if "first_upgrade_guide_dismissed_at" in keys and int(user_row["first_upgrade_guide_dismissed_at"] or 0) > 0:
+        return None
+    completed = _count_user_completed_explores(db, int(user_row["id"]))
+    if completed < int(ONBOARDING_FIRST_THREE_TARGET):
+        return None
+    if "first_upgrade_guide_started_at" in keys and int(user_row["first_upgrade_guide_started_at"] or 0) <= 0:
+        db.execute(
+            "UPDATE users SET first_upgrade_guide_started_at = ? WHERE id = ? AND COALESCE(first_upgrade_guide_started_at, 0) = 0",
+            (_now_ts(), int(user_row["id"])),
+        )
+    refreshed = db.execute("SELECT * FROM users WHERE id = ?", (int(user_row["id"]),)).fetchone()
+    if not _onboarding_first_upgrade_should_show(db, refreshed):
+        return None
+    _audit_onboarding_first_upgrade_shown(db, refreshed, source=source, request_id=request_id, ip=ip)
+    return _onboarding_first_upgrade_view(db, refreshed, source=source)
+
+
+def _first_upgrade_current_equipped_totals(db, active_robot_id):
+    if not active_robot_id:
+        return {}, {}
+    mapping = _ensure_robot_instance_part_instances(db, int(active_robot_id)) or {}
+    ids = [int(value) for value in mapping.values() if value]
+    if not ids:
+        return {}, {}
+    placeholders = ",".join("?" for _ in ids)
+    rows = db.execute(
+        f"""
+        SELECT pi.*, rp.key AS part_key, rp.image_path, rp.display_name_ja, rp.frame_type, rp.series_key, rp.series_label
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.id IN ({placeholders})
+        """,
+        ids,
+    ).fetchall()
+    total_by_type = {}
+    id_by_slot = {slot: int(value) for slot, value in mapping.items() if value}
+    for row in rows:
+        ptype = _norm_part_type(row["part_type"])
+        total_by_type[ptype] = int(_part_total_value(compute_part_stats(dict(row))))
+    return total_by_type, id_by_slot
+
+
+def _first_upgrade_recommended_part_instance_id(db, user_row, items):
+    if not user_row or "active_robot_id" not in user_row.keys() or not user_row["active_robot_id"]:
+        return None
+    equipped_totals, equipped_ids_by_slot = _first_upgrade_current_equipped_totals(db, int(user_row["active_robot_id"]))
+    equipped_ids = set(equipped_ids_by_slot.values())
+    best = None
+    for item in items or []:
+        if not item.get("is_inventory"):
+            continue
+        item_id = int(item.get("id") or 0)
+        if item_id <= 0 or item_id in equipped_ids:
+            continue
+        ptype = _norm_part_type(item.get("part_type"))
+        current_total = equipped_totals.get(ptype)
+        if current_total is None:
+            continue
+        delta = int(item.get("total_value") or 0) - int(current_total)
+        if delta <= 0:
+            continue
+        candidate = (delta, -item_id, item_id)
+        if best is None or candidate > best:
+            best = candidate
+    return int(best[2]) if best else None
+
+
+def _first_upgrade_changed_part_types(db, before_slot_ids, after_slot_ids):
+    changed_slots = [
+        slot
+        for slot in ("head", "r_arm", "l_arm", "legs")
+        if int(before_slot_ids.get(slot) or 0) != int(after_slot_ids.get(slot) or 0)
+    ]
+    if not changed_slots:
+        return []
+    labels = {
+        "head": "HEAD",
+        "r_arm": "RIGHT_ARM",
+        "l_arm": "LEFT_ARM",
+        "legs": "LEGS",
+    }
+    return [labels[slot] for slot in changed_slots]
+
+
+def _complete_onboarding_first_upgrade(db, user_row, *, active_robot_id_before, active_robot_id_after, changed_part_types, request_id=None, ip=None):
+    if not _onboarding_first_upgrade_should_show(db, user_row):
+        return False
+    if not changed_part_types:
+        return False
+    updated = db.execute(
+        """
+        UPDATE users
+        SET first_upgrade_guide_completed_at = ?
+        WHERE id = ?
+          AND COALESCE(first_upgrade_guide_started_at, 0) > 0
+          AND COALESCE(first_upgrade_guide_completed_at, 0) = 0
+          AND COALESCE(first_upgrade_guide_dismissed_at, 0) = 0
+        """,
+        (_now_ts(), int(user_row["id"])),
+    ).rowcount
+    if updated <= 0:
+        return False
+    _audit_onboarding_first_upgrade_event(
+        db,
+        "ONBOARDING_FIRST_UPGRADE_COMPLETE",
+        int(user_row["id"]),
+        source="build_confirm",
+        request_id=request_id,
+        ip=ip,
+        payload={
+            "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
+            "active_robot_id_before": int(active_robot_id_before or 0) or None,
+            "active_robot_id_after": int(active_robot_id_after or 0) or None,
+            "changed_part_types": list(changed_part_types),
+        },
+    )
+    return True
+
+
 def _layer1_boss_alert_view(db, user_row):
     if not user_row or not hasattr(user_row, "keys"):
         return None
@@ -12543,6 +12862,12 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0")
     if "onboarding_first_three_reward_claimed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN onboarding_first_three_reward_claimed INTEGER NOT NULL DEFAULT 0")
+    if "first_upgrade_guide_started_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN first_upgrade_guide_started_at INTEGER NOT NULL DEFAULT 0")
+    if "first_upgrade_guide_completed_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN first_upgrade_guide_completed_at INTEGER NOT NULL DEFAULT 0")
+    if "first_upgrade_guide_dismissed_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN first_upgrade_guide_dismissed_at INTEGER NOT NULL DEFAULT 0")
     added_lab_coin_converted_at = "lab_coin_converted_at" not in cols
     if "lab_coin" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN lab_coin INTEGER NOT NULL DEFAULT 0")
@@ -12767,6 +13092,9 @@ def ensure_schema(db):
     db.execute("UPDATE users SET layer1_first_clear_reward_claimed = 0 WHERE layer1_first_clear_reward_claimed IS NULL")
     db.execute("UPDATE users SET layer1_first_clear_home_seen = 0 WHERE layer1_first_clear_home_seen IS NULL")
     db.execute("UPDATE users SET onboarding_first_three_reward_claimed = 0 WHERE onboarding_first_three_reward_claimed IS NULL")
+    db.execute("UPDATE users SET first_upgrade_guide_started_at = 0 WHERE first_upgrade_guide_started_at IS NULL")
+    db.execute("UPDATE users SET first_upgrade_guide_completed_at = 0 WHERE first_upgrade_guide_completed_at IS NULL")
+    db.execute("UPDATE users SET first_upgrade_guide_dismissed_at = 0 WHERE first_upgrade_guide_dismissed_at IS NULL")
     db.execute(
         """
         UPDATE users
@@ -34372,6 +34700,33 @@ def _home_next_action_card(
             "area_key": None,
             "boss_enter": False,
         }
+    if _onboarding_first_upgrade_should_show(db, user):
+        area_key = str(user["last_explore_area_key"] or "").strip() or "layer_1"
+        return {
+            "title": "持ち帰ったパーツを機体に使おう",
+            "desc": "パーツを見比べて、最初の機体更新をしてみましょう。",
+            "cta_label": "パーツを見比べる",
+            "cta_url": url_for("parts", onboarding="first_upgrade", source="home_next_action"),
+            "is_post": False,
+            "area_key": None,
+            "boss_enter": False,
+            "home_primary": True,
+            "destination_label": "機体更新",
+            "context_line": "出撃はそのまま続けられます。",
+            "secondary_actions": [
+                {
+                    "label": "そのまま出撃する",
+                    "url": url_for("explore"),
+                    "is_post": True,
+                    "area_key": area_key,
+                    "entry_source": "home_next_action",
+                    "first_upgrade_skip": True,
+                    "first_upgrade_source": "home_next_action",
+                }
+            ],
+            "force_open": True,
+            "onboarding_first_upgrade": True,
+        }
     if boss_alert_status:
         alert = boss_alert_status[0]
         remain = "●" * max(1, int(alert.get("attempts_left") or 0))
@@ -43542,6 +43897,14 @@ def home():
             },
             ip=request.remote_addr,
         )
+        if home_primary_explore_cta.get("onboarding_first_upgrade"):
+            _audit_onboarding_first_upgrade_shown(
+                db,
+                user,
+                source="home_next_action",
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            )
     _audit_once(
         db,
         AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"],
@@ -48623,6 +48986,15 @@ def explore():
     if str(user["last_explore_area_key"] or "").strip() != area_key:
         db.execute("UPDATE users SET last_explore_area_key = ? WHERE id = ?", (area_key, user_id))
         db.commit()
+    if (request.form.get("onboarding_first_upgrade_skip") or "").strip() in {"1", "true", "on", "yes"}:
+        _audit_onboarding_first_upgrade_skip(
+            db,
+            user,
+            source=(request.form.get("first_upgrade_source") or entry_source or "explore"),
+            area_key=area_key,
+            request_id=request_id,
+            ip=request.remote_addr,
+        )
     if _get_active_robot(db, user_id) is None:
         session["message"] = "先にロボを組み立てよう。/build で保存できます。"
         return redirect(url_for("build"))
@@ -51040,9 +51412,18 @@ def explore():
         request_id=request_id,
         ip=request.remote_addr,
     )
+    first_upgrade_guide_result = None
     if onboarding_first_three_reward_result and onboarding_first_three_reward_result.get("granted"):
         world_bonus_notes.append(
             f"最初の調査完了: +{int(onboarding_first_three_reward_result.get('reward_coins') or 0)}コイン"
+        )
+        user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        first_upgrade_guide_result = _start_onboarding_first_upgrade_guide(
+            db,
+            user,
+            source="battle_result",
+            request_id=request_id,
+            ip=request.remote_addr,
         )
     if dropped_parts_count_for_lab > 0:
         _audit_once(
@@ -51357,6 +51738,7 @@ def explore():
             if onboarding_first_three_reward_result and onboarding_first_three_reward_result.get("granted")
             else _onboarding_first_three_progress_view(db, user)
         ),
+        "first_upgrade_guide": first_upgrade_guide_result,
         "layer1_boss_alert": layer1_boss_alert_status_after,
         "next_action_primary_label": (
             "もう一度、第1層へ出撃"
@@ -53127,6 +53509,12 @@ def build():
 def build_confirm():
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    first_upgrade_active_robot_id_before = int(user["active_robot_id"] or 0) if user and user["active_robot_id"] else 0
+    first_upgrade_parts_before = (
+        _ensure_robot_instance_part_instances(db, first_upgrade_active_robot_id_before) or {}
+        if first_upgrade_active_robot_id_before
+        else {}
+    )
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
     selected_frame_type = _normalize_build_frame_mode(request.form.get("build_mode") or request.form.get("frame_type"))
@@ -53463,6 +53851,15 @@ def build_confirm():
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
+        first_upgrade_completed = _complete_onboarding_first_upgrade(
+            db,
+            user,
+            active_robot_id_before=first_upgrade_active_robot_id_before,
+            active_robot_id_after=instance_id,
+            changed_part_types=_first_upgrade_changed_part_types(db, first_upgrade_parts_before, selected),
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
         for pid in consumed_ids:
             audit_log(
                 db,
@@ -53482,7 +53879,11 @@ def build_confirm():
         db.rollback()
         session["message"] = str(exc)
         return _build_redirect()
-    session["message"] = "機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。"
+    session["message"] = (
+        "機体を更新しました。新しい構成で出撃できます。"
+        if first_upgrade_completed
+        else ("機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。")
+    )
     return redirect(url_for("robots", build_result_id=int(instance_id)))
 
 
@@ -57700,9 +58101,13 @@ def parts():
     db = get_db()
     user_id = int(session["user_id"])
     user_row = db.execute(
-        "SELECT id, is_admin, max_unlocked_layer, part_inventory_limit FROM users WHERE id = ?",
+        "SELECT * FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
+    onboarding_mode = str(request.args.get("onboarding") or "").strip().lower()
+    onboarding_source = str(request.args.get("source") or "parts").strip().lower()
+    if onboarding_source not in {"battle_result", "home_next_action", "parts"}:
+        onboarding_source = "parts"
     selected_part_type = _normalize_part_type_filter(request.args.get("part_type"))
     selected_frame_type = str(request.args.get("frame_type") or "").strip().lower()
     if selected_frame_type not in {"", *FRAME_TYPE_DEF_BY_KEY.keys()}:
@@ -57748,6 +58153,35 @@ def parts():
         params,
     ).fetchone()
     all_items = _sort_part_card_items([_part_card_payload(r) for r in rows], selected_sort)
+    first_upgrade_guide = None
+    recommended_part_instance_id = None
+    if onboarding_mode == "first_upgrade" and _onboarding_first_upgrade_should_show(db, user_row):
+        recommended_part_instance_id = _first_upgrade_recommended_part_instance_id(db, user_row, all_items)
+        for item in all_items:
+            if int(item.get("id") or 0) == int(recommended_part_instance_id or 0):
+                item["first_upgrade_recommended"] = True
+                item["first_upgrade_recommended_note"] = "現在の装備より総合値が高いパーツです"
+                break
+        if recommended_part_instance_id:
+            all_items.sort(key=lambda item: 0 if int(item.get("id") or 0) == int(recommended_part_instance_id) else 1)
+        first_upgrade_guide = _onboarding_first_upgrade_view(db, user_row, source="parts")
+        _audit_onboarding_first_upgrade_click(
+            db,
+            user_row,
+            source=onboarding_source,
+            recommended_part_instance_id=recommended_part_instance_id,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+        _audit_onboarding_first_upgrade_shown(
+            db,
+            user_row,
+            source="parts",
+            recommended_part_instance_id=recommended_part_instance_id,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+        db.commit()
     total = len(all_items)
     items = all_items[offset : offset + per_page]
     compare_items = []
@@ -57845,6 +58279,9 @@ def parts():
         list_params["frame_type"] = selected_frame_type
     if selected_sort != "recommended":
         list_params["sort"] = selected_sort
+    if first_upgrade_guide:
+        list_params["onboarding"] = "first_upgrade"
+        list_params["source"] = "parts"
     prev_url = url_for("parts", page=page - 1, **list_params) if page > 1 else None
     next_url = url_for("parts", page=page + 1, **list_params) if total > page * per_page else None
     compare_clear_params = dict(list_params)
@@ -57874,6 +58311,8 @@ def parts():
         selected_part_type=selected_part_type,
         selected_frame_type=selected_frame_type,
         selected_sort=selected_sort,
+        first_upgrade_guide=first_upgrade_guide,
+        recommended_part_instance_id=recommended_part_instance_id,
         parts_sort_defs=PARTS_SORT_DEFS,
         part_type_filters=_part_type_filter_rows(
             selected_part_type,

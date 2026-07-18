@@ -87,6 +87,30 @@
     {% else %}
     <p class="link"><a class="battle-home-link battle-next-cta home-primary-explore-cta" href="{{ home_primary_explore_cta['cta_url'] }}">{{ home_primary_explore_cta['button_label'] }}</a></p>
     {% endif %}
+    {% if home_primary_explore_cta.get('secondary_actions') %}
+    <div class="home-inline-actions home-next-secondary-actions">
+      {% for action in home_primary_explore_cta.get('secondary_actions', []) %}
+        {% if action.get('is_post') %}
+        <form method="post" action="{{ action.get('url') }}" class="inline-form inline-form-top">
+          {% if action.get('area_key') %}
+          <input type="hidden" name="area_key" value="{{ action.get('area_key') }}" />
+          {% endif %}
+          <input type="hidden" name="entry_source" value="{{ action.get('entry_source', 'home_next_action') }}" />
+          {% if action.get('first_upgrade_skip') %}
+          <input type="hidden" name="onboarding_first_upgrade_skip" value="1" />
+          <input type="hidden" name="first_upgrade_source" value="{{ action.get('first_upgrade_source', 'home_next_action') }}" />
+          {% endif %}
+          {% if explore_submission_id %}
+          <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
+          {% endif %}
+          <button type="submit" class="btn-secondary">{{ action.get('label', '続ける') }}</button>
+        </form>
+        {% else %}
+        <p class="link"><a class="battle-home-link" href="{{ action.get('url') }}">{{ action.get('label', '開く') }}</a></p>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if home_primary_explore_cta['show_map_link'] %}
     <p class="link home-explore-card-link"><a href="{{ home_primary_explore_cta['map_href'] }}">詳細を見る</a></p>
     {% endif %}
