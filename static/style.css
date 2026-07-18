@@ -14752,6 +14752,88 @@ body#page-world .world-competition-grid {
   }
 }
 
+@media (max-width: 768px) {
+  body.home-page .home-compact-tools,
+  body.home-page.home-mobile .home-compact-tools,
+  .home-compact-tools {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: minmax(176px, 62vw) !important;
+    grid-template-columns: none !important;
+    gap: 10px !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 2px 8px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.home-page .home-compact-tools > .panel,
+  body.home-page.home-mobile .home-compact-tools > .panel,
+  .home-compact-tools > .panel {
+    width: 100%;
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+
+  body.home-page .home-compact-tools .card,
+  body.home-page.home-mobile .home-compact-tools .card,
+  .home-compact-tools .card {
+    min-height: 116px;
+    padding: 12px !important;
+  }
+
+  body.home-page .home-compact-tools .home-fold-summary,
+  body.home-page.home-mobile .home-compact-tools .home-fold-summary,
+  .home-compact-tools .home-fold-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  body.home-page .home-compact-tools .home-fold-summary b,
+  body.home-page.home-mobile .home-compact-tools .home-fold-summary b,
+  .home-compact-tools .home-fold-summary b {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-size: 18px;
+    line-height: 1.35;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+
+  body.home-page .home-compact-tools .home-fold-actions,
+  body.home-page.home-mobile .home-compact-tools .home-fold-actions,
+  .home-compact-tools .home-fold-actions {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  body.home-page .home-compact-tools .home-fold-body,
+  body.home-page.home-mobile .home-compact-tools .home-fold-body,
+  .home-compact-tools .home-fold-body {
+    margin-top: 8px;
+  }
+
+  body.home-page .home-compact-tools .home-inline-actions,
+  body.home-page.home-mobile .home-compact-tools .home-inline-actions,
+  .home-compact-tools .home-inline-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  body.home-page .home-compact-tools .home-inline-actions .link,
+  body.home-page.home-mobile .home-compact-tools .home-inline-actions .link,
+  .home-compact-tools .home-inline-actions .link {
+    margin: 0;
+  }
+}
+
 /* recent robots alignment fix: keep badges off the robot thumbnail */
 .recent-robot-card {
   position: relative;
