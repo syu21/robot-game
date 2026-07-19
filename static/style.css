@@ -8641,9 +8641,9 @@ button.secondary {
     display: none !important;
   }
 
-  body.home-page .home-actions-panel { order: 1; }
-  body.home-page .home-compact-tools { order: 2; }
-  body.home-page .home-current-robot { order: 3; }
+  body.home-page .home-current-robot { order: 1; }
+  body.home-page .home-actions-panel { order: 2; }
+  body.home-page .home-compact-tools { order: 3; }
   body.home-page .home-layer4-panel { order: 4; }
   body.home-page .home-mvp-panel,
   body.home-page .home-champion-panel { order: 5; }
@@ -8698,6 +8698,10 @@ body.home-page .main-robot-stat-grid {
 body.home-page .robot-status-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   gap: 8px !important;
+}
+
+body.home-page .home-robot-compact-grid {
+  display: none !important;
 }
 
   body.home-page .main-robot-thumb {
@@ -8768,9 +8772,9 @@ body.home-page.home-mobile .home-area-card-grid {
   display: none !important;
 }
 
-body.home-page.home-mobile .home-actions-panel { order: 1; }
-body.home-page.home-mobile .home-compact-tools { order: 2; }
-body.home-page.home-mobile .home-current-robot { order: 3; }
+body.home-page.home-mobile .home-current-robot { order: 1; }
+body.home-page.home-mobile .home-actions-panel { order: 2; }
+body.home-page.home-mobile .home-compact-tools { order: 3; }
 body.home-page.home-mobile .home-layer4-panel { order: 4; }
 body.home-page.home-mobile .home-mvp-panel,
 body.home-page.home-mobile .home-champion-panel { order: 5; }
@@ -8894,8 +8898,7 @@ body.home-page.home-mobile .recent-robot-card {
 }
 
 body.home-page.home-mobile .home-robot-compact-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 7px !important;
+  display: none !important;
 }
 
 body.home-page.home-mobile .recent-robot-icon {
@@ -9061,7 +9064,7 @@ body.home-page.home-mobile .invite-link-row {
   body.home-page .main-robot-layout,
   body.home-page.home-mobile .main-robot-layout {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 10px !important;
     align-items: start !important;
   }
@@ -9093,8 +9096,8 @@ body.home-page.home-mobile .invite-link-row {
   body.home-page .robot-status-grid,
   body.home-page.home-mobile .main-robot-stat-grid,
   body.home-page.home-mobile .robot-status-grid {
-    grid-column: 2 !important;
-    grid-row: 2 !important;
+    grid-column: 1 !important;
+    grid-row: auto !important;
     grid-template-columns: 1fr !important;
     gap: 8px !important;
     align-self: start !important;
@@ -9104,6 +9107,11 @@ body.home-page.home-mobile .invite-link-row {
   body.home-page.home-mobile .main-robot-stat-grid .stat-card {
     padding: 9px 10px !important;
     min-height: 0 !important;
+  }
+
+  body.home-page .home-robot-compact-grid,
+  body.home-page.home-mobile .home-robot-compact-grid {
+    display: none !important;
   }
 
   body.home-page .robot-overview-meta,
@@ -14746,9 +14754,9 @@ body#page-world .world-competition-grid {
   .home-right-stack {
     display: contents;
   }
-  .home-actions-panel { order: 1; }
-  .home-compact-tools { order: 2; }
-  .home-current-robot { order: 3; }
+  .home-current-robot { order: 1; }
+  .home-actions-panel { order: 2; }
+  .home-compact-tools { order: 3; }
   .home-layer4-panel { order: 4; }
   .home-mvp-panel { order: 5; }
   .home-champion-panel { order: 5; }
