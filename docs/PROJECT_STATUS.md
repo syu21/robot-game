@@ -117,7 +117,9 @@
 - 探索先メモで `育成傾向` を短く表示
 - 研究モジュール:
   - ホームの出撃機体カードで、次の出撃に使う研究モジュールを選択できる
-  - `users.active_research_module_instance_id` で選択状態を管理し、ロボ個体には固定装備しない
+  - Phase 1としてブランド、役割タグ、最大3個のOS構成、ブランドシンクロ、3ブランド混成、OS名、構成プレビュー、出撃時の6ステ補正を実装
+  - `user_module_loadouts` で次回出撃用のSLOT 1〜3を管理し、`users.active_research_module_instance_id` はSLOT 1互換ミラーとして残す
+  - 構成は次回出撃のみ有効で、出撃後にロードアウトを解除する
   - 研究ゲージ `research_module_pity` を `x/100` で表示
   - 同種prototypeが3個以上ある場合、`/modules` からcompleteへ合成できる
   - `/modules/synthesis` で研究モジュール2個 + コインからランダム性能の合成産モジュールを生成できる

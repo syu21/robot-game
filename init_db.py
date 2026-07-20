@@ -1428,6 +1428,22 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_module_loadouts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            module_instance_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, slot_index),
+            UNIQUE(user_id, module_instance_id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_instance_id) REFERENCES user_research_modules(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_instances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -3457,6 +3473,8 @@ def main():
         "npc_sell_price": "npc_sell_price INTEGER NOT NULL DEFAULT 0",
         "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+        "brand_key": "brand_key TEXT",
+        "role_key": "role_key TEXT",
     }
     for column_name, column_sql in research_module_column_defs.items():
         if column_name not in research_module_cols:
@@ -3489,6 +3507,8 @@ def main():
         "generated_name_ja": "generated_name_ja TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
+        "brand_key": "brand_key TEXT",
+        "role_key": "role_key TEXT",
     }
     for column_name, column_sql in user_research_module_column_defs.items():
         if column_name not in user_research_module_cols:
@@ -3539,6 +3559,47 @@ def main():
     cur.execute("UPDATE user_research_modules SET synthesis_generation = COALESCE(generation, 0) WHERE synthesis_generation IS NULL")
     cur.execute("UPDATE user_research_modules SET created_at = ? WHERE created_at IS NULL OR created_at = 0", (now_ts,))
     cur.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    cur.execute("UPDATE research_modules SET brand_key = 'eden', role_key = 'precision' WHERE family IN ('sniper', 'analysis') AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    cur.execute("UPDATE research_modules SET brand_key = 'titan', role_key = 'guard' WHERE family = 'heavy' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    cur.execute("UPDATE research_modules SET brand_key = 'volt', role_key = 'speed' WHERE family = 'assault' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    cur.execute("UPDATE research_modules SET brand_key = 'scrap_x', role_key = 'unstable' WHERE family = 'berserk' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    cur.execute("UPDATE research_modules SET brand_key = 'nova', role_key = 'support' WHERE (brand_key IS NULL OR TRIM(brand_key) = '')")
+    cur.execute(
+        """
+        UPDATE user_research_modules
+        SET brand_key = (
+                CASE
+                    WHEN MAX(COALESCE(hp_bonus, (SELECT hp_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(def_bonus, (SELECT def_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) >=
+                         MAX(COALESCE(spd_bonus, (SELECT spd_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(atk_bonus, (SELECT atk_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(cri_bonus, (SELECT cri_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) THEN 'titan'
+                    WHEN COALESCE(spd_bonus, (SELECT spd_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)) >=
+                         MAX(COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(atk_bonus, (SELECT atk_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(cri_bonus, (SELECT cri_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) THEN 'volt'
+                    WHEN COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)) >=
+                         MAX(COALESCE(atk_bonus, (SELECT atk_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(cri_bonus, (SELECT cri_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) THEN 'eden'
+                    ELSE 'scrap_x'
+                END
+            ),
+            role_key = (
+                CASE
+                    WHEN COALESCE(atk_bonus, (SELECT atk_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)) >=
+                         MAX(COALESCE(hp_bonus, (SELECT hp_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(def_bonus, (SELECT def_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(spd_bonus, (SELECT spd_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(cri_bonus, (SELECT cri_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) THEN 'power'
+                    WHEN MAX(COALESCE(hp_bonus, (SELECT hp_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(def_bonus, (SELECT def_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) >=
+                         MAX(COALESCE(spd_bonus, (SELECT spd_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)), COALESCE(cri_bonus, (SELECT cri_bonus FROM research_modules WHERE module_key = user_research_modules.module_key))) THEN 'guard'
+                    WHEN COALESCE(spd_bonus, (SELECT spd_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)) >= COALESCE(acc_bonus, (SELECT acc_bonus FROM research_modules WHERE module_key = user_research_modules.module_key)) THEN 'speed'
+                    ELSE 'precision'
+                END
+            )
+        WHERE brand_key IS NULL OR TRIM(brand_key) = '' OR role_key IS NULL OR TRIM(role_key) = ''
+        """
+    )
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_module_loadouts (user_id, slot_index, module_instance_id, created_at, updated_at)
+        SELECT id, 1, active_research_module_instance_id, ?, ?
+        FROM users
+        WHERE active_research_module_instance_id IS NOT NULL
+        """,
+        (now_ts, now_ts),
+    )
     cur.execute(
         """
         INSERT OR IGNORE INTO user_research_module_catalog (

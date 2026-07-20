@@ -6,20 +6,28 @@
   <div class="flash">{{ message }}</div>
   {% endif %}
   <div class="card module-summary-card">
-    <div><b>現在の作戦</b></div>
-    {% if active_research_module %}
-    <div class="upgrade-cost">{{ active_research_module['name_ja'] }}</div>
-    <div class="module-stat-chips">
-      {% for chip in active_research_module['stat_chips'] %}
-      <span class="module-stat-chip {{ chip['tone'] }}">{{ chip['text'] }}</span>
-      {% endfor %}
-    </div>
-    {% if active_research_module['trait_label'] %}
-    <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>
-    {% endif %}
-    {% else %}
-    <div class="upgrade-cost">未設定</div>
-    {% endif %}
+    <div><b>現在のOS構成</b></div>
+    <div class="upgrade-cost">{{ module_loadout['os_name'] }}</div>
+    <div class="robot-time">{{ module_loadout['os_label_ja'] }} / 次回出撃のみ有効</div>
+    {% for slot in [1, 2, 3] %}
+      {% set module = module_loadout['modules'][slot - 1] if module_loadout['modules']|length >= slot else None %}
+      <div class="module-card-meta">
+        <span class="module-badge">SLOT {{ slot }}</span>
+        {% if module %}
+        <span class="module-badge active">{{ module['brand_short_label'] }}</span>
+        <span>{{ module['name_ja'] }} / {{ module['rarity_label'] }}</span>
+        {% else %}
+        <span class="module-badge muted">未設定</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+    <div class="robot-time">個体補正: {{ module_loadout['individual_bonus_line'] }}</div>
+    <div class="robot-time">同期補正: {{ module_loadout['synergy_label'] }} / {{ module_loadout['synergy_bonus_line'] }}</div>
+    <div class="robot-time">最終補正: {{ module_loadout['final_bonus_line'] }}</div>
+    <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="module_instance_id" value="none" />
+      <button type="submit" class="btn-secondary">OS構成を解除</button>
+    </form>
     <div class="upgrade-cost">研究ゲージ: {{ research_module_pity }}/{{ research_module_pity_target }}</div>
     <div class="robot-time">100で試作型モジュールを1個保証</div>
     <div class="upgrade-cost">図鑑: {{ catalog_summary['registered'] }}/{{ catalog_summary['total'] }}（{{ catalog_summary['percent'] }}%）</div>
@@ -63,12 +71,22 @@
       {% endfor %}
     </div>
     {% if research_module_options %}
+    <form id="module-loadout-form" method="post" action="{{ url_for('modules_select') }}" class="module-loadout-form">
+      <div class="module-card-meta">
+        <span class="module-badge active">最大3個</span>
+        <span class="robot-time">チェックした順ではなく、一覧上の順でSLOT 1〜3に設定</span>
+      </div>
+      <button type="submit">このOS構成を設定</button>
+    </form>
     <div class="module-card-grid">
       {% for module in research_module_options %}
       <div class="module-card">
         <div class="module-card-title">{{ module['name_ja'] }}</div>
         <div class="module-card-meta">
           <span class="module-badge">{{ module['type_label'] }}</span>
+          <span class="module-badge active">{{ module['brand_label'] }}</span>
+          <span class="module-badge">{{ module['brand_theme'] }}</span>
+          <span class="module-badge">{{ module['role_label'] }}</span>
           {% if module['is_active_module'] %}<span class="module-badge active">使用中</span>{% endif %}
           {% if module['is_locked'] %}<span class="module-badge locked">保護中</span>{% endif %}
           <span class="module-badge {{ 'ok' if module['is_synthesis_material'] else 'muted' }}">{{ module['material_status_label'] }}</span>
@@ -97,6 +115,10 @@
         <div class="robot-time">第{{ module['synthesis_generation'] }}世代</div>
         {% endif %}
         <div class="robot-time">買取: {{ module['npc_sell_price'] }}コイン</div>
+        <label class="module-card-meta">
+          <input form="module-loadout-form" type="checkbox" name="module_instance_ids" value="{{ module['instance_id'] }}" {% if module['is_active_module'] %}checked{% endif %} />
+          <span>OS構成に入れる</span>
+        </label>
         <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top">
           <input type="hidden" name="module_instance_id" value="{{ module['instance_id'] }}" />
           <button type="submit">次の出撃で使う</button>

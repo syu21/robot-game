@@ -236,6 +236,15 @@
   {% set strategy = summary.get('module_strategy') %}
   <section class="card module-strategy-card">
     <div class="section-kicker">今回の作戦</div>
+    {% if summary.get('module_loadout') %}
+    {% set loadout = summary.get('module_loadout') %}
+    <p class="upgrade-cost">今回の搭載OS: {{ loadout.get('os_name', 'NO MODULE OS') }} / {{ loadout.get('os_label_ja', '未設定') }}</p>
+    <details>
+      <summary>モジュール最終補正</summary>
+      <p class="robot-time">同期: {{ loadout.get('synergy_label', 'なし') }} / {{ loadout.get('synergy_bonus_line', 'なし') }}</p>
+      <p class="robot-time">最終補正: {{ loadout.get('final_bonus_line', 'なし') }}</p>
+    </details>
+    {% endif %}
     <h3>{{ strategy.get('module_name', '研究モジュール') }}</h3>
     <div class="module-meta">
       <span>{{ strategy.get('type_label', '研究モジュール') }}</span>

@@ -171,6 +171,10 @@ AUDIT_EVENT_TYPES = {
     "DROP": "audit.drop",
     "MODULE_DROP": "audit.module.drop",
     "MODULE_SELECT": "audit.module.select",
+    "MODULE_LOADOUT_SET": "audit.module.loadout.set",
+    "MODULE_LOADOUT_CLEAR": "audit.module.loadout.clear",
+    "MODULE_SYNERGY_APPLY": "audit.module.synergy.apply",
+    "MODULE_CONSUME": "audit.module.consume",
     "MODULE_PITY_PROGRESS": "audit.module.pity.progress",
     "MODULE_PITY_GRANT": "audit.module.pity.grant",
     "MODULE_COMBINE": "audit.module.combine",
@@ -422,4 +426,50 @@ AUDIT_EVENT_TYPES = {
     "DAILY_RESEARCH_REWARD_RESERVE": "audit.daily_research.reward.reserve",
     "DAILY_RESEARCH_REWARD_CLAIM": "audit.daily_research.reward.claim",
     "DAILY_RESEARCH_MODAL_VIEW": "audit.daily_research.modal.view",
+}
+
+MODULE_STAT_KEYS = ("hp", "atk", "def", "spd", "acc", "cri")
+MODULE_STAT_LABELS = {
+    "hp": "耐久",
+    "atk": "攻撃",
+    "def": "防御",
+    "spd": "素早さ",
+    "acc": "命中",
+    "cri": "会心",
+}
+
+MODULE_BRAND_DEFINITIONS = {
+    "titan": {"key": "titan", "label": "TITAN HEAVY", "short_label": "TITAN", "theme": "重装・防衛", "primary_stats": ("hp", "def")},
+    "volt": {"key": "volt", "label": "VOLT EDGE", "short_label": "VOLT", "theme": "高速・先制", "primary_stats": ("spd", "cri")},
+    "eden": {"key": "eden", "label": "EDEN LOGIC", "short_label": "EDEN", "theme": "解析・精密", "primary_stats": ("acc", "def")},
+    "scrap_x": {"key": "scrap_x", "label": "SCRAP-X", "short_label": "SCRAP", "theme": "暴走・背水", "primary_stats": ("atk", "cri")},
+    "nova": {"key": "nova", "label": "NOVA LINK", "short_label": "NOVA", "theme": "混成・適応", "primary_stats": MODULE_STAT_KEYS},
+}
+
+MODULE_ROLE_DEFINITIONS = {
+    "power": {"key": "power", "label": "攻撃"},
+    "guard": {"key": "guard", "label": "防衛"},
+    "speed": {"key": "speed", "label": "高速"},
+    "precision": {"key": "precision", "label": "精密"},
+    "support": {"key": "support", "label": "補助"},
+    "unstable": {"key": "unstable", "label": "暴走"},
+}
+
+MODULE_BRAND_SYNC_RULES = {
+    "titan": {"2": {"hp": 4, "def": 4}, "3_add": {"hp": 4, "def": 4, "spd": -2}, "sync_label": "TITAN同期"},
+    "volt": {"2": {"spd": 4, "cri": 3}, "3_add": {"spd": 4, "cri": 3, "hp": -2}, "sync_label": "VOLT同期"},
+    "eden": {"2": {"acc": 5, "def": 2}, "3_add": {"acc": 5, "def": 2, "cri": -1}, "sync_label": "EDEN同期"},
+    "scrap_x": {"2": {"atk": 5, "cri": 3}, "3_add": {"atk": 5, "cri": 3, "def": -3}, "sync_label": "SCRAP同期"},
+    "nova": {"2": {"hp": 2, "atk": 2, "def": 2, "spd": 2, "acc": 2, "cri": 2}, "3_add": {"hp": 2, "atk": 2, "def": 2, "spd": 2, "acc": 2, "cri": 2}, "sync_label": "NOVA同期"},
+}
+
+MODULE_OS_JA_LABELS = {
+    "TITAN FORTRESS OS": "重装要塞型",
+    "VOLT FLASH OS": "高速閃撃型",
+    "EDEN ANALYZER OS": "完全解析型",
+    "SCRAP BERSERK OS": "暴走火力型",
+    "NOVA ADAPTIVE OS": "万能適応型",
+    "HYBRID CONTROL OS": "混成制御型",
+    "CUSTOM OS": "独自構成",
+    "NO MODULE OS": "未設定",
 }

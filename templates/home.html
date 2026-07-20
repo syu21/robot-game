@@ -348,7 +348,7 @@
                 <div class="robot-overview-meta">
                   <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>
-                  <span>モジュール: {{ active_research_module['name_ja'] if active_research_module else '未装備' }}</span>
+                  <span>搭載OS: {{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</span>
                 </div>
               </div>
             </div>
@@ -356,7 +356,7 @@
           <div class="stat-grid home-robot-compact-grid">
             <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ main_robot_stats['power'] if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
-            <div class="stat-card"><div class="stat-label">現在のモジュール</div><div class="stat-value stat-small">{{ active_research_module['name_ja'] if active_research_module else '未装備' }}</div></div>
+            <div class="stat-card"><div class="stat-label">搭載OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</div></div>
           </div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>
@@ -394,7 +394,7 @@
             <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
           </div>
           {% if active_research_module and active_research_module.get('stat_line') %}
-          <div class="upgrade-cost">{{ active_research_module['stat_line'] }}</div>
+          <div class="upgrade-cost">同期: {{ active_module_loadout['synergy_label'] }} / 主補正: {{ active_module_loadout['final_bonus_line'] }}</div>
           {% endif %}
           {% if active_research_module and active_research_module.get('trait_label') %}
           <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>

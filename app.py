@@ -67,6 +67,12 @@ from constants import (
     LEGAL_BRAND_NAME,
     LEGAL_DISCLOSURE_POLICY,
     LEGAL_OPERATOR_NAME,
+    MODULE_BRAND_DEFINITIONS,
+    MODULE_BRAND_SYNC_RULES,
+    MODULE_OS_JA_LABELS,
+    MODULE_ROLE_DEFINITIONS,
+    MODULE_STAT_KEYS,
+    MODULE_STAT_LABELS,
     SUPPORT_EMAIL,
     VICTORY_LOGS,
 )
@@ -12443,6 +12449,22 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS user_module_loadouts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            slot_index INTEGER NOT NULL,
+            module_instance_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, slot_index),
+            UNIQUE(user_id, module_instance_id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (module_instance_id) REFERENCES user_research_modules(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_factory_facilities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -12915,6 +12937,8 @@ def ensure_schema(db):
         "npc_sell_price": "npc_sell_price INTEGER NOT NULL DEFAULT 0",
         "is_active": "is_active INTEGER NOT NULL DEFAULT 1",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
+        "brand_key": "brand_key TEXT",
+        "role_key": "role_key TEXT",
     }
     for column_name, column_sql in research_module_column_defs.items():
         if column_name not in research_module_cols:
@@ -12947,6 +12971,8 @@ def ensure_schema(db):
         "generated_name_ja": "generated_name_ja TEXT",
         "created_at": "created_at INTEGER NOT NULL DEFAULT 0",
         "updated_at": "updated_at INTEGER NOT NULL DEFAULT 0",
+        "brand_key": "brand_key TEXT",
+        "role_key": "role_key TEXT",
     }
     for column_name, column_sql in user_research_module_column_defs.items():
         if column_name not in user_research_module_cols:
@@ -13001,6 +13027,40 @@ def ensure_schema(db):
         (research_module_now,),
     )
     db.execute("UPDATE user_research_modules SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = 0")
+    db.execute("UPDATE research_modules SET brand_key = 'eden', role_key = 'precision' WHERE family IN ('sniper', 'analysis') AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    db.execute("UPDATE research_modules SET brand_key = 'titan', role_key = 'guard' WHERE family = 'heavy' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    db.execute("UPDATE research_modules SET brand_key = 'volt', role_key = 'speed' WHERE family = 'assault' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    db.execute("UPDATE research_modules SET brand_key = 'scrap_x', role_key = 'unstable' WHERE family = 'berserk' AND (brand_key IS NULL OR TRIM(brand_key) = '')")
+    db.execute("UPDATE research_modules SET brand_key = 'nova', role_key = 'support' WHERE (brand_key IS NULL OR TRIM(brand_key) = '')")
+    rows = db.execute(
+        """
+        SELECT urm.id AS instance_id,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.brand_key IS NULL OR TRIM(urm.brand_key) = '' OR urm.role_key IS NULL OR TRIM(urm.role_key) = ''
+        """
+    ).fetchall()
+    for row in rows:
+        brand_key, role_key = _module_brand_role_from_bonus(dict(row))
+        db.execute(
+            "UPDATE user_research_modules SET brand_key = COALESCE(NULLIF(TRIM(brand_key), ''), ?), role_key = COALESCE(NULLIF(TRIM(role_key), ''), ?) WHERE id = ?",
+            (brand_key, role_key, int(row["instance_id"])),
+        )
+    db.execute(
+        """
+        INSERT OR IGNORE INTO user_module_loadouts (user_id, slot_index, module_instance_id, created_at, updated_at)
+        SELECT id, 1, active_research_module_instance_id, ?, ?
+        FROM users
+        WHERE active_research_module_instance_id IS NOT NULL
+        """,
+        (research_module_now, research_module_now),
+    )
     db.execute(
         """
         INSERT OR IGNORE INTO user_research_module_catalog (
@@ -17052,6 +17112,148 @@ def _research_module_family_label(family_key):
     return labels.get(str(family_key or "").strip(), str(family_key or "").strip() or "研究")
 
 
+def _empty_module_bonus():
+    return {key: 0 for key in MODULE_STAT_KEYS}
+
+
+def _module_bonus_from_obj(module, *, suffix=True):
+    result = {}
+    for key in MODULE_STAT_KEYS:
+        source_key = f"{key}_bonus" if suffix else key
+        result[key] = int((module or {}).get(source_key) or 0)
+    return result
+
+
+def _add_module_bonus(*bonuses):
+    result = _empty_module_bonus()
+    for bonus in bonuses:
+        for key in MODULE_STAT_KEYS:
+            result[key] += int((bonus or {}).get(key) or 0)
+    return result
+
+
+def _module_bonus_line(bonus):
+    parts = []
+    for key in MODULE_STAT_KEYS:
+        value = int((bonus or {}).get(key) or 0)
+        if value:
+            parts.append(f"{MODULE_STAT_LABELS.get(key, key)} {value:+d}")
+    return " / ".join(parts) if parts else "なし"
+
+
+def _module_brand_role_from_bonus(bonus):
+    values = {key: int((bonus or {}).get(key) or 0) for key in MODULE_STAT_KEYS}
+    positives = [max(0, value) for value in values.values()]
+    top = max(positives) if positives else 0
+    ordered = ("hp", "def", "spd", "acc", "atk", "cri")
+    top_keys = [key for key in ordered if max(0, values[key]) == top]
+    second = sorted(positives, reverse=True)[1] if len(positives) > 1 else 0
+    balanced = top <= 0 or (top - second <= 1 and sum(1 for value in positives if value >= max(0, top - 1)) >= 3)
+    if balanced:
+        brand_key = "nova"
+    else:
+        key = top_keys[0]
+        if key in {"hp", "def"}:
+            brand_key = "titan"
+        elif key == "spd":
+            brand_key = "volt"
+        elif key == "acc":
+            brand_key = "eden"
+        else:
+            brand_key = "scrap_x"
+    role_top_order = ("atk", "hp", "def", "spd", "acc", "cri")
+    role_top = max(role_top_order, key=lambda key: (max(0, values[key]), -role_top_order.index(key)))
+    if balanced:
+        role_key = "support"
+    elif values["atk"] > 0 and values["cri"] > 0 and max(values["hp"], values["def"]) < 0:
+        role_key = "unstable"
+    elif role_top == "atk":
+        role_key = "power"
+    elif role_top in {"hp", "def"}:
+        role_key = "guard"
+    elif role_top == "spd":
+        role_key = "speed"
+    elif role_top == "acc":
+        role_key = "precision"
+    elif role_top == "cri":
+        role_key = "unstable"
+    else:
+        role_key = "support"
+    return brand_key, role_key
+
+
+def _module_brand_label(brand_key):
+    return MODULE_BRAND_DEFINITIONS.get(str(brand_key or ""), MODULE_BRAND_DEFINITIONS["nova"])["label"]
+
+
+def _module_role_label(role_key):
+    return MODULE_ROLE_DEFINITIONS.get(str(role_key or ""), MODULE_ROLE_DEFINITIONS["support"])["label"]
+
+
+def _module_os_name(modules):
+    brand_keys = [str(module.get("brand_key") or "nova") for module in modules or []]
+    if not brand_keys:
+        os_name = "NO MODULE OS"
+    elif len(brand_keys) == 3 and len(set(brand_keys)) == 1:
+        os_name = {
+            "titan": "TITAN FORTRESS OS",
+            "volt": "VOLT FLASH OS",
+            "eden": "EDEN ANALYZER OS",
+            "scrap_x": "SCRAP BERSERK OS",
+            "nova": "NOVA ADAPTIVE OS",
+        }.get(brand_keys[0], "CUSTOM OS")
+    elif len(brand_keys) == 3 and len(set(brand_keys)) == 3:
+        os_name = "HYBRID CONTROL OS"
+    elif any(count >= 2 for count in Counter(brand_keys).values()):
+        brand_key = next(key for key, count in Counter(brand_keys).items() if count >= 2)
+        os_name = f"{MODULE_BRAND_DEFINITIONS.get(brand_key, MODULE_BRAND_DEFINITIONS['nova'])['short_label']} SYNC OS"
+    else:
+        os_name = "CUSTOM OS"
+    return {"os_name": os_name, "os_label_ja": MODULE_OS_JA_LABELS.get(os_name, "独自構成")}
+
+
+def _module_synergy_for_modules(modules):
+    modules = list(modules or [])[:3]
+    brand_counts = Counter(str(module.get("brand_key") or "nova") for module in modules)
+    synergy_bonus = _empty_module_bonus()
+    synergy_key = ""
+    synergy_label = "なし"
+    if len(modules) == 3 and len(brand_counts) == 3:
+        synergy_key = "hybrid_control"
+        synergy_label = "混成制御"
+        synergy_bonus = {key: 2 for key in MODULE_STAT_KEYS}
+    else:
+        sync_brand = next((key for key, count in brand_counts.items() if count >= 2), None)
+        if sync_brand:
+            rule = MODULE_BRAND_SYNC_RULES.get(sync_brand)
+            if rule:
+                synergy_key = f"{sync_brand}_{brand_counts[sync_brand]}sync"
+                synergy_label = rule["sync_label"]
+                synergy_bonus = _add_module_bonus(rule["2"], rule["3_add"] if brand_counts[sync_brand] >= 3 else {})
+    return {"synergy_key": synergy_key, "synergy_label": synergy_label, "synergy_bonus": synergy_bonus, "brand_counts": dict(brand_counts)}
+
+
+def _module_loadout_summary(modules):
+    modules = list(modules or [])[:3]
+    individual_bonus = _empty_module_bonus()
+    for module in modules:
+        individual_bonus = _add_module_bonus(individual_bonus, _module_bonus_from_obj(module))
+    synergy = _module_synergy_for_modules(modules)
+    final_bonus = _add_module_bonus(individual_bonus, synergy["synergy_bonus"])
+    os_meta = _module_os_name(modules)
+    return {
+        **os_meta,
+        **synergy,
+        "modules": modules,
+        "module_instance_ids": [int(module.get("instance_id") or 0) for module in modules],
+        "individual_bonus": individual_bonus,
+        "final_bonus": final_bonus,
+        "individual_bonus_line": _module_bonus_line(individual_bonus),
+        "synergy_bonus_line": _module_bonus_line(synergy["synergy_bonus"]),
+        "final_bonus_line": _module_bonus_line(final_bonus),
+    }
+
+
 def _synthesized_module_name(module):
     if not module:
         return "研究合成モジュール"
@@ -17088,6 +17290,21 @@ def _research_module_view(row):
     if not row:
         return None
     module = dict(row)
+    bonus = _module_bonus_from_obj(module)
+    fallback_brand_key, fallback_role_key = _module_brand_role_from_bonus(bonus)
+    brand_key = str(module.get("brand_key") or fallback_brand_key).strip()
+    role_key = str(module.get("role_key") or fallback_role_key).strip()
+    if brand_key not in MODULE_BRAND_DEFINITIONS:
+        brand_key = fallback_brand_key
+    if role_key not in MODULE_ROLE_DEFINITIONS:
+        role_key = fallback_role_key
+    brand_def = MODULE_BRAND_DEFINITIONS[brand_key]
+    module["brand_key"] = brand_key
+    module["brand_label"] = brand_def["label"]
+    module["brand_short_label"] = brand_def["short_label"]
+    module["brand_theme"] = brand_def["theme"]
+    module["role_key"] = role_key
+    module["role_label"] = _module_role_label(role_key)
     if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
         module["name_ja"] = _synthesized_module_name(module)
         module["rarity"] = module.get("synthesis_grade") or module.get("rarity") or "refined"
@@ -17174,6 +17391,7 @@ def _active_research_module_for_user(db, user_id, user_row=None):
                rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
                urm.generation, urm.synthesis_score, urm.generated_name_ja,
+               COALESCE(urm.brand_key, rm.brand_key) AS brand_key, COALESCE(urm.role_key, rm.role_key) AS role_key,
                urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
@@ -17186,6 +17404,121 @@ def _active_research_module_for_user(db, user_id, user_row=None):
         (int(module_instance_id), int(user_id)),
     ).fetchone()
     return _research_module_view(row)
+
+
+def _research_module_loadout_rows(db, user_id):
+    rows = db.execute(
+        """
+        SELECT uml.slot_index,
+               urm.id AS instance_id, urm.user_id, urm.module_key, urm.status,
+               rm.name_ja, rm.rarity, rm.family,
+               COALESCE(urm.hp_bonus, rm.hp_bonus) AS hp_bonus,
+               COALESCE(urm.atk_bonus, rm.atk_bonus) AS atk_bonus,
+               COALESCE(urm.def_bonus, rm.def_bonus) AS def_bonus,
+               COALESCE(urm.spd_bonus, rm.spd_bonus) AS spd_bonus,
+               COALESCE(urm.acc_bonus, rm.acc_bonus) AS acc_bonus,
+               COALESCE(urm.cri_bonus, rm.cri_bonus) AS cri_bonus,
+               COALESCE(urm.brand_key, rm.brand_key) AS brand_key,
+               COALESCE(urm.role_key, rm.role_key) AS role_key,
+               rm.description, rm.tier, rm.trade_policy, rm.source_type, rm.is_limited, rm.npc_sell_price,
+               rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
+               urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
+               COALESCE(urm.generation, 0) AS generation, COALESCE(urm.synthesis_score, 0) AS synthesis_score,
+               urm.generated_name_ja,
+               urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
+        FROM user_module_loadouts uml
+        JOIN user_research_modules urm ON urm.id = uml.module_instance_id
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE uml.user_id = ?
+          AND uml.slot_index BETWEEN 1 AND 3
+          AND urm.user_id = ?
+          AND urm.status = 'inventory'
+          AND rm.is_active = 1
+        ORDER BY uml.slot_index ASC
+        """,
+        (int(user_id), int(user_id)),
+    ).fetchall()
+    return [_research_module_view(row) for row in rows]
+
+
+def _active_research_module_loadout_for_user(db, user_id):
+    modules = _research_module_loadout_rows(db, user_id)
+    if not modules:
+        legacy = _active_research_module_for_user(db, user_id)
+        modules = [legacy] if legacy else []
+    return _module_loadout_summary(modules)
+
+
+def _active_module_ids_for_user(db, user_id):
+    ids = {int(module.get("instance_id") or 0) for module in _research_module_loadout_rows(db, user_id)}
+    if not ids:
+        user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        if user and user["active_research_module_instance_id"]:
+            ids.add(int(user["active_research_module_instance_id"]))
+    return {module_id for module_id in ids if module_id > 0}
+
+
+def _set_research_module_loadout(db, user_id, module_instance_ids, *, request_id=None, ip=None):
+    ids = [int(value) for value in module_instance_ids if int(value or 0) > 0]
+    if len(ids) > 3:
+        return {"ok": False, "reason": "設定できるモジュールは最大3個です"}
+    if len(ids) != len(set(ids)):
+        return {"ok": False, "reason": "同じ個体を複数スロットへ設定できません"}
+    modules = []
+    for module_id in ids:
+        module = _research_module_instance_row(db, module_id, user_id)
+        if not module:
+            return {"ok": False, "reason": "選択できない研究モジュールです"}
+        if str(module.get("status") or "") != "inventory" or module.get("sold_at"):
+            return {"ok": False, "reason": "所持中の研究モジュールだけ設定できます"}
+        modules.append(module)
+    now_ts = int(time.time())
+    db.execute("DELETE FROM user_module_loadouts WHERE user_id = ?", (int(user_id),))
+    for slot_index, module in enumerate(modules, start=1):
+        db.execute(
+            """
+            INSERT INTO user_module_loadouts (user_id, slot_index, module_instance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (int(user_id), int(slot_index), int(module["instance_id"]), now_ts, now_ts),
+        )
+    first_id = int(modules[0]["instance_id"]) if modules else None
+    db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (first_id, int(user_id)))
+    summary = _module_loadout_summary(modules)
+    payload = _module_loadout_audit_payload(summary, user_id=user_id)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_LOADOUT_SET" if modules else "MODULE_LOADOUT_CLEAR"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_loadout_set" if modules else "module_loadout_clear",
+        entity_type="module_loadout",
+        payload=payload,
+        ip=ip,
+    )
+    return {"ok": True, "summary": summary}
+
+
+def _module_loadout_audit_payload(summary, *, user_id, robot_instance_id=None, area_key=None, battle_result_id=None):
+    modules = list((summary or {}).get("modules") or [])
+    return {
+        "user_id": int(user_id),
+        "robot_instance_id": int(robot_instance_id) if robot_instance_id else None,
+        "module_instance_ids": [int(module.get("instance_id") or 0) for module in modules],
+        "slot_module_map": {str(index + 1): int(module.get("instance_id") or 0) for index, module in enumerate(modules)},
+        "brand_keys": [str(module.get("brand_key") or "") for module in modules],
+        "role_keys": [str(module.get("role_key") or "") for module in modules],
+        "brand_counts": dict((summary or {}).get("brand_counts") or {}),
+        "synergy_key": (summary or {}).get("synergy_key") or "",
+        "synergy_label": (summary or {}).get("synergy_label") or "なし",
+        "os_name": (summary or {}).get("os_name") or "NO MODULE OS",
+        "os_label_ja": (summary or {}).get("os_label_ja") or "未設定",
+        "individual_bonus": (summary or {}).get("individual_bonus") or _empty_module_bonus(),
+        "synergy_bonus": (summary or {}).get("synergy_bonus") or _empty_module_bonus(),
+        "final_bonus": (summary or {}).get("final_bonus") or _empty_module_bonus(),
+        "area_key": area_key,
+        "battle_result_id": battle_result_id,
+    }
 
 
 def _user_research_module_options(db, user_id):
@@ -17203,6 +17536,7 @@ def _user_research_module_options(db, user_id):
                rm.is_active, urm.is_locked, urm.sold_at, urm.synthesis_grade, urm.synthesis_family,
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
                urm.generation, urm.synthesis_score, urm.generated_name_ja,
+               COALESCE(urm.brand_key, rm.brand_key) AS brand_key, COALESCE(urm.role_key, rm.role_key) AS role_key,
                urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
@@ -17235,6 +17569,13 @@ def _apply_research_module_to_stats(stats, module):
         if value > 0:
             target_key = max(("hp", "def", "spd", "acc", "cri"), key=lambda key: int(result.get(key) or 0))
             result[target_key] = max(1, int(result.get(target_key) or 0) + value)
+    return result
+
+
+def _apply_research_module_loadout_to_stats(stats, loadout_summary):
+    result = dict(stats or {})
+    for stat_key, value in ((loadout_summary or {}).get("final_bonus") or {}).items():
+        result[stat_key] = max(1, int(result.get(stat_key) or 0) + int(value or 0))
     return result
 
 
@@ -17461,12 +17802,16 @@ def _grant_research_module_instance(db, user_id, module_key, *, source="admin", 
     if not module:
         return None
     now_ts = int(time.time())
+    brand_key = module["brand_key"] if "brand_key" in module.keys() and module["brand_key"] else None
+    role_key = module["role_key"] if "role_key" in module.keys() and module["role_key"] else None
+    if not brand_key or not role_key:
+        brand_key, role_key = _module_brand_role_from_bonus(_module_bonus_from_obj(dict(module)))
     cur = db.execute(
         """
-        INSERT INTO user_research_modules (user_id, module_key, status, created_at, updated_at)
-        VALUES (?, ?, 'inventory', ?, ?)
+        INSERT INTO user_research_modules (user_id, module_key, status, brand_key, role_key, created_at, updated_at)
+        VALUES (?, ?, 'inventory', ?, ?, ?, ?)
         """,
-        (int(user_id), module["module_key"], now_ts, now_ts),
+        (int(user_id), module["module_key"], brand_key, role_key, now_ts, now_ts),
     )
     instance_id = int(cur.lastrowid)
     _register_research_module_catalog(
@@ -17561,24 +17906,28 @@ def _advance_research_module_pity(db, user_id, area_key, *, rng=None, request_id
 
 
 def _research_module_combine_candidates(db, user_id):
-    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
+    active_filter = ""
+    params = [int(user_id)]
+    if active_ids:
+        active_filter = f"AND urm.id NOT IN ({','.join(['?'] * len(active_ids))})"
+        params.extend(sorted(active_ids))
     rows = db.execute(
-        """
+        f"""
         SELECT urm.module_key, rm.name_ja, rm.family, COUNT(*) AS count
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
         WHERE urm.user_id = ?
           AND urm.status = 'inventory'
           AND COALESCE(urm.is_locked, 0) = 0
-          AND (? = 0 OR urm.id != ?)
+          {active_filter}
           AND rm.rarity = 'prototype'
           AND rm.is_active = 1
         GROUP BY urm.module_key, rm.name_ja, rm.family
         HAVING COUNT(*) >= 3
         ORDER BY rm.family ASC, urm.module_key ASC
         """,
-        (int(user_id), active_id, active_id),
+        params,
     ).fetchall()
     candidates = []
     for row in rows:
@@ -17681,6 +18030,7 @@ def _research_module_instance_row(db, module_instance_id, user_id=None):
                urm.synthesis_result_type, urm.origin_module_a_id, urm.origin_module_b_id,
                COALESCE(urm.generation, 0) AS generation, COALESCE(urm.synthesis_score, 0) AS synthesis_score,
                urm.generated_name_ja,
+               COALESCE(urm.brand_key, rm.brand_key) AS brand_key, COALESCE(urm.role_key, rm.role_key) AS role_key,
                urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
@@ -20752,15 +21102,14 @@ def upgrade_factory_facility(db, user_id, facility_key, *, request_id=None, ip=N
 
 
 def _research_module_synthesis_materials(db, user_id):
-    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     rows = _user_research_module_options(db, user_id)
     materials = []
     for item in rows:
         reason = ""
         if int(item.get("is_locked") or 0) != 0:
             reason = "保護中のため素材不可"
-        elif active_id and int(item["instance_id"]) == active_id:
+        elif int(item["instance_id"]) in active_ids:
             reason = "使用中のため素材不可"
         item["is_synthesis_material"] = not reason
         item["synthesis_block_reason"] = reason
@@ -20768,10 +21117,13 @@ def _research_module_synthesis_materials(db, user_id):
     return materials
 
 
-def _annotate_research_module_material_status(modules, active_module=None):
+def _annotate_research_module_material_status(modules, active_module=None, active_ids=None):
+    ids = {int(value) for value in (active_ids or []) if int(value or 0) > 0}
     active_id = int(active_module.get("instance_id") or 0) if active_module else 0
+    if active_id:
+        ids.add(active_id)
     for module in modules:
-        is_active = active_id and int(module.get("instance_id") or 0) == active_id
+        is_active = int(module.get("instance_id") or 0) in ids
         module["is_active_module"] = bool(is_active)
         if is_active:
             module["material_status_label"] = "使用中のため素材不可"
@@ -20794,8 +21146,7 @@ def _validate_research_module_synthesis_materials(db, user_id, module_a_id, modu
         return None, None, "素材は2個選んでください"
     if int(module_a_id or 0) == int(module_b_id or 0):
         return None, None, "同じモジュールを2つ選ぶことはできません"
-    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (int(user_id),)).fetchone()
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     modules = []
     for module_id in (module_a_id, module_b_id):
         module = _research_module_instance_row(db, int(module_id), None)
@@ -20809,7 +21160,7 @@ def _validate_research_module_synthesis_materials(db, user_id, module_a_id, modu
             return None, None, "すでに消費済みです"
         if int(module.get("is_locked") or 0) != 0:
             return None, None, "ロック中のため素材にできません"
-        if active_id and int(module["instance_id"]) == active_id:
+        if int(module["instance_id"]) in active_ids:
             return None, None, "現在使用中のため素材にできません"
         modules.append(module)
     return modules[0], modules[1], ""
@@ -41178,9 +41529,35 @@ def _daily_research_task_view(task):
 def modules_select():
     db = get_db()
     user_id = int(session["user_id"])
+    raw_ids = [value.strip() for value in request.form.getlist("module_instance_ids") if str(value or "").strip()]
+    if raw_ids:
+        try:
+            module_ids = [int(value) for value in raw_ids if value.lower() != "none"]
+        except ValueError:
+            session["message"] = "研究モジュールの指定が不正です"
+            return redirect(url_for("modules"))
+        result = _set_research_module_loadout(
+            db,
+            user_id,
+            module_ids,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+        if not result.get("ok"):
+            session["message"] = result.get("reason") or "OS構成を設定できませんでした"
+            return redirect(url_for("modules"))
+        db.commit()
+        session["message"] = "OS構成を設定しました"
+        return redirect(url_for("modules"))
     raw_id = (request.form.get("module_instance_id") or "").strip()
     if raw_id == "" or raw_id.lower() == "none":
-        db.execute("UPDATE users SET active_research_module_instance_id = NULL WHERE id = ?", (user_id,))
+        _set_research_module_loadout(
+            db,
+            user_id,
+            [],
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
         audit_log(
             db,
             AUDIT_EVENT_TYPES["MODULE_SELECT"],
@@ -41206,10 +41583,16 @@ def modules_select():
     if str(module.get("status") or "") != "inventory" or module.get("sold_at"):
         session["message"] = "所持中の研究モジュールだけ設定できます"
         return redirect(url_for("home"))
-    db.execute(
-        "UPDATE users SET active_research_module_instance_id = ? WHERE id = ?",
-        (module_instance_id, user_id),
+    result = _set_research_module_loadout(
+        db,
+        user_id,
+        [module_instance_id],
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
     )
+    if not result.get("ok"):
+        session["message"] = result.get("reason") or "研究モジュールを設定できませんでした"
+        return redirect(url_for("home"))
     audit_log(
         db,
         AUDIT_EVENT_TYPES["MODULE_SELECT"],
@@ -41248,10 +41631,16 @@ def modules_synthesis_equip():
     if not module or str(module.get("status") or "") != "inventory" or module.get("sold_at"):
         session["message"] = "設定できない研究モジュールです"
         return redirect(url_for("modules"))
-    db.execute(
-        "UPDATE users SET active_research_module_instance_id = ? WHERE id = ?",
-        (module_instance_id, user_id),
+    result = _set_research_module_loadout(
+        db,
+        user_id,
+        [module_instance_id],
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
     )
+    if not result.get("ok"):
+        session["message"] = result.get("reason") or "設定できない研究モジュールです"
+        return redirect(url_for("modules"))
     audit_log(
         db,
         AUDIT_EVENT_TYPES["MODULE_SELECT"],
@@ -41282,8 +41671,7 @@ def modules_synthesis_equip():
 def modules_combine():
     db = get_db()
     user_id = int(session["user_id"])
-    user = db.execute("SELECT active_research_module_instance_id FROM users WHERE id = ?", (user_id,)).fetchone()
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     source_module_key = (request.form.get("source_module_key") or "").strip()
     result_module_key = RESEARCH_MODULE_COMBINE_MAP.get(source_module_key)
     if not result_module_key:
@@ -41314,19 +41702,24 @@ def modules_combine():
     if not source or not result:
         session["message"] = "合成先の研究モジュールが見つかりません"
         return redirect(url_for("modules"))
+    active_filter = ""
+    row_params = [user_id, source_module_key]
+    if active_ids:
+        active_filter = f"AND id NOT IN ({','.join(['?'] * len(active_ids))})"
+        row_params.extend(sorted(active_ids))
     rows = db.execute(
-        """
+        f"""
         SELECT id
         FROM user_research_modules
         WHERE user_id = ?
           AND module_key = ?
           AND status = 'inventory'
           AND COALESCE(is_locked, 0) = 0
-          AND (? = 0 OR id != ?)
+          {active_filter}
         ORDER BY id ASC
         LIMIT 3
         """,
-        (user_id, source_module_key, active_id, active_id),
+        row_params,
     ).fetchall()
     if len(rows) < 3:
         blocked_locked = int(db.execute(
@@ -41337,14 +41730,15 @@ def modules_combine():
             """,
             (user_id, source_module_key),
         ).fetchone()["c"] or 0)
-        blocked_active = 1 if active_id and db.execute(
+        blocked_active = 1 if active_ids and db.execute(
             """
             SELECT 1
             FROM user_research_modules
-            WHERE id = ? AND user_id = ? AND module_key = ? AND status = 'inventory'
+            WHERE user_id = ? AND module_key = ? AND status = 'inventory'
+              AND id IN (SELECT module_instance_id FROM user_module_loadouts WHERE user_id = ?)
             LIMIT 1
             """,
-            (active_id, user_id, source_module_key),
+            (user_id, source_module_key, user_id),
         ).fetchone() else 0
         if blocked_locked:
             session["message"] = "保護中のモジュールは合成素材に使えません"
@@ -41482,6 +41876,7 @@ def modules_sell_confirm(module_instance_id):
                rm.is_active, urm.synthesis_grade, urm.synthesis_family, urm.synthesis_result_type,
                urm.origin_module_a_id, urm.origin_module_b_id, urm.generation, urm.synthesis_score,
                urm.generated_name_ja,
+               COALESCE(urm.brand_key, rm.brand_key) AS brand_key, COALESCE(urm.role_key, rm.role_key) AS role_key,
                urm.trait_key, urm.trait_value, urm.trait_grade, urm.research_policy_key, urm.synthesis_generation
         FROM user_research_modules urm
         JOIN research_modules rm ON rm.module_key = urm.module_key
@@ -41496,12 +41891,12 @@ def modules_sell_confirm(module_instance_id):
     if not module:
         session["message"] = "売却できない研究モジュールです"
         return redirect(url_for("modules"))
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     return render_template(
         "module_sell_confirm.html",
         user=user,
         module=_research_module_view(module),
-        is_active_selected=(active_id == int(module_instance_id)),
+        is_active_selected=(int(module_instance_id) in active_ids),
     )
 
 
@@ -41519,7 +41914,7 @@ def modules_sell():
         session["message"] = "売却確認が必要です"
         return redirect(url_for("modules_sell_confirm", module_instance_id=module_instance_id))
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     module = db.execute(
         """
         SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.is_locked,
@@ -41541,7 +41936,7 @@ def modules_sell():
     if int(module["is_locked"] or 0) != 0:
         session["message"] = "保護中のモジュールは買取できません"
         return redirect(url_for("modules"))
-    if active_id == module_instance_id:
+    if module_instance_id in active_ids:
         session["message"] = "現在選択中のモジュールは買取できません"
         return redirect(url_for("modules"))
     if str(module["trade_policy"] or "tradable") != "tradable":
@@ -41708,6 +42103,9 @@ def modules_synthesis_create():
         )
     result = _roll_research_module_synthesis(module_a, module_b, research_policy_key=research_policy_key)
     bonuses = result["bonuses"]
+    result_brand_key, result_role_key = _module_brand_role_from_bonus(
+        {key.replace("_bonus", ""): value for key, value in bonuses.items()}
+    )
     trait = result.get("trait") or {"trait_key": None, "trait_value": 0, "trait_grade": None}
     now_ts = int(time.time())
     consume_cur = db.execute(
@@ -41729,10 +42127,10 @@ def modules_synthesis_create():
         """
         INSERT INTO user_research_modules
         (user_id, module_key, status, is_locked, hp_bonus, atk_bonus, def_bonus, spd_bonus, acc_bonus, cri_bonus,
-         trait_key, trait_value, trait_grade, research_policy_key, synthesis_generation,
+         brand_key, role_key, trait_key, trait_value, trait_grade, research_policy_key, synthesis_generation,
          synthesis_grade, synthesis_family, synthesis_result_type, origin_module_a_id, origin_module_b_id,
          generation, synthesis_score, generated_name_ja, created_at, updated_at)
-        VALUES (?, ?, 'inventory', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, 'inventory', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -41743,6 +42141,8 @@ def modules_synthesis_create():
             int(bonuses["spd_bonus"]),
             int(bonuses["acc_bonus"]),
             int(bonuses["cri_bonus"]),
+            result_brand_key,
+            result_role_key,
             trait.get("trait_key"),
             int(trait.get("trait_value") or 0),
             trait.get("trait_grade"),
@@ -41792,6 +42192,8 @@ def modules_synthesis_create():
         "spd_bonus": int(bonuses["spd_bonus"]),
         "acc_bonus": int(bonuses["acc_bonus"]),
         "cri_bonus": int(bonuses["cri_bonus"]),
+        "brand_key": result_brand_key,
+        "role_key": result_role_key,
         "trait_key": trait.get("trait_key"),
         "trait_label": trait_label(trait.get("trait_key")),
         "trait_value": int(trait.get("trait_value") or 0),
@@ -41871,7 +42273,7 @@ def modules_reroll_confirm(module_instance_id):
         return redirect(url_for("modules"))
     token = secrets.token_urlsafe(24)
     session[_module_reroll_token_key(module_instance_id)] = token
-    active_id = int(user["active_research_module_instance_id"] or 0) if user and user["active_research_module_instance_id"] else 0
+    active_ids = _active_module_ids_for_user(db, user_id)
     return render_template(
         "modules_reroll_confirm.html",
         user=user,
@@ -41879,7 +42281,7 @@ def modules_reroll_confirm(module_instance_id):
         current_total=_research_module_stats_total(_research_module_bonus_dict(module)),
         cost_coins=cost,
         coins_before=int(user["coins"] or 0),
-        is_active_selected=(active_id == int(module_instance_id)),
+        is_active_selected=(int(module_instance_id) in active_ids),
         reroll_token=token,
     )
 
@@ -42008,16 +42410,17 @@ def modules():
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
     module_options = _user_research_module_options(db, user_id)
-    active_module = _active_research_module_for_user(db, user_id, user_row=user)
-    module_options = _annotate_research_module_material_status(module_options, active_module)
+    loadout_summary = _active_research_module_loadout_for_user(db, user_id)
+    active_module = loadout_summary["modules"][0] if loadout_summary.get("modules") else None
+    active_ids = set(loadout_summary.get("module_instance_ids") or [])
+    module_options = _annotate_research_module_material_status(module_options, active_module, active_ids=active_ids)
     module_options = _annotate_research_module_reroll_status(module_options, user)
-    active_module_id = int(active_module.get("instance_id") or 0) if active_module else 0
     filter_key = str(request.args.get("filter") or "all").strip()
     sort_key = str(request.args.get("sort") or "new").strip()
     def _module_matches_filter(module):
         labels = set(module.get("usage_labels") or [])
         if filter_key == "active":
-            return active_module_id and int(module.get("instance_id") or 0) == active_module_id
+            return int(module.get("instance_id") or 0) in active_ids
         if filter_key == "locked":
             return int(module.get("is_locked") or 0) != 0
         if filter_key == "trait":
@@ -42049,6 +42452,7 @@ def modules():
         user=user,
         message=message,
         active_research_module=active_module,
+        module_loadout=loadout_summary,
         research_module_options=module_options,
         module_filter_key=filter_key,
         module_sort_key=sort_key,
@@ -43268,7 +43672,8 @@ def home():
     )
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
     research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
-    active_research_module = _active_research_module_for_user(db, int(user["id"]), user_row=user) if main_robot else None
+    active_module_loadout = _active_research_module_loadout_for_user(db, int(user["id"])) if main_robot else _module_loadout_summary([])
+    active_research_module = active_module_loadout["modules"][0] if active_module_loadout.get("modules") else None
     research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
     research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
@@ -43944,6 +44349,7 @@ def home():
             main_robot_stats=main_robot_stats,
             research_module_options=research_module_options,
             active_research_module=active_research_module,
+            active_module_loadout=active_module_loadout,
             active_research_module_fit=active_research_module_fit,
             research_module_combine_candidates=research_module_combine_candidates,
             research_module_pity=research_module_pity,
@@ -49168,28 +49574,46 @@ def explore():
     if not robot_stats:
         session["message"] = "アクティブロボの個体ステータスを取得できません。再編成後に探索してください。"
         return redirect(url_for("robots"))
-    active_research_module = _active_research_module_for_user(db, user_id, user_row=user)
-    if active_research_module:
+    module_loadout_summary = _active_research_module_loadout_for_user(db, user_id)
+    active_research_module = module_loadout_summary["modules"][0] if module_loadout_summary.get("modules") else None
+    if module_loadout_summary.get("modules"):
+        module_payload = _module_loadout_audit_payload(
+            module_loadout_summary,
+            user_id=user_id,
+            robot_instance_id=int(active["id"]) if active else None,
+            area_key=area_key,
+        )
         audit_log(
             db,
-            AUDIT_EVENT_TYPES["MODULE_STRATEGY_APPLY"],
+            AUDIT_EVENT_TYPES["MODULE_SYNERGY_APPLY"],
             user_id=user_id,
             request_id=request_id,
             action_key="explore",
-            entity_type="research_module",
-            entity_id=int(active_research_module.get("instance_id") or 0),
-            payload={
-                "user_id": user_id,
-                "robot_instance_id": int(active["id"]) if active else None,
-                "module_instance_id": int(active_research_module.get("instance_id") or 0),
-                "module_key": active_research_module.get("module_key"),
-                "module_name": active_research_module.get("name_ja"),
-                "area_key": area_key,
-                **_research_module_bonus_payload(active_research_module),
-            },
+            entity_type="module_loadout",
+            payload=module_payload,
             ip=request.remote_addr,
         )
-    base_stats = _apply_research_module_to_stats(robot_stats["stats"], active_research_module)
+        if active_research_module:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_STRATEGY_APPLY"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="research_module",
+                entity_id=int(active_research_module.get("instance_id") or 0),
+                payload={
+                    "user_id": user_id,
+                    "robot_instance_id": int(active["id"]) if active else None,
+                    "module_instance_id": int(active_research_module.get("instance_id") or 0),
+                    "module_key": active_research_module.get("module_key"),
+                    "module_name": active_research_module.get("name_ja"),
+                    "area_key": area_key,
+                    **_research_module_bonus_payload(active_research_module),
+                },
+                ip=request.remote_addr,
+            )
+    base_stats = _apply_research_module_loadout_to_stats(robot_stats["stats"], module_loadout_summary)
     player_atk_base = int(base_stats["atk"])
     player_def_base = int(base_stats["def"])
     player_spd = int(base_stats["spd"])
@@ -51243,6 +51667,13 @@ def explore():
                     "module_trait_key": active_research_module.get("trait_key"),
                     "module_trait_value": int(active_research_module.get("trait_value") or 0),
                     "module_trait_trigger_count": int((module_trait_state or {}).get("trigger_count") or 0),
+                    "loadout": _module_loadout_audit_payload(
+                        module_loadout_summary,
+                        user_id=user_id,
+                        robot_instance_id=int(active["id"]) if active else None,
+                        area_key=area_key,
+                        battle_result_id=battle_id,
+                    ),
                 }
                 if active_research_module
                 else None
@@ -51458,6 +51889,26 @@ def explore():
             "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
         },
     )
+    if module_loadout_summary.get("modules"):
+        consume_payload = _module_loadout_audit_payload(
+            module_loadout_summary,
+            user_id=user_id,
+            robot_instance_id=int(active["id"]) if active else None,
+            area_key=area_key,
+            battle_result_id=battle_id,
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_CONSUME"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="module_loadout",
+            payload=consume_payload,
+            ip=request.remote_addr,
+        )
+        db.execute("DELETE FROM user_module_loadouts WHERE user_id = ?", (int(user_id),))
+        db.execute("UPDATE users SET active_research_module_instance_id = NULL WHERE id = ?", (int(user_id),))
     db.commit()
 
     enemy_image_path = last_enemy["image_path"] if last_enemy and "image_path" in last_enemy.keys() else None
@@ -51706,6 +52157,7 @@ def explore():
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
         "module_strategy": module_strategy_card,
+        "module_loadout": module_loadout_summary,
         "module_snapshot": (
             {
                 "module_instance_id": int(active_research_module.get("instance_id") or 0),
@@ -51714,6 +52166,7 @@ def explore():
                 "module_trait_key": active_research_module.get("trait_key"),
                 "module_trait_value": int(active_research_module.get("trait_value") or 0),
                 "module_trait_trigger_count": int((module_trait_state or {}).get("trigger_count") or 0),
+                "loadout": _module_loadout_audit_payload(module_loadout_summary, user_id=user_id, robot_instance_id=int(active["id"]) if active else None, area_key=area_key, battle_result_id=battle_id),
             }
             if active_research_module
             else None
