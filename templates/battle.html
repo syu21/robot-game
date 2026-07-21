@@ -266,6 +266,24 @@
       {% endfor %}
     </div>
     {% endif %}
+    {% if summary.get('module_protocol') %}
+    {% set protocol = summary.get('module_protocol') %}
+    <div class="module-protocol-result">
+      <p class="upgrade-cost">今回のプロトコル: {{ protocol.get('protocol_name', 'プロトコル') }}</p>
+      {% if protocol.get('activation_count') %}
+      <p class="robot-time">発動: {{ protocol.get('activation_count') }}回{% if protocol.get('effect_summary') %} / {{ protocol.get('effect_summary') }}{% endif %}</p>
+      {% else %}
+      <p class="robot-time">発動条件には到達しませんでした</p>
+      {% endif %}
+      <details>
+        <summary>プロトコル詳細</summary>
+        <p class="robot-time">発動ターン: {{ protocol.get('activation_turns', [])|join(', ') if protocol.get('activation_turns') else 'なし' }}</p>
+        {% for event in protocol.get('events', []) %}
+        <p class="robot-time">{{ event.get('turn') }}T: {{ event.get('text') }}</p>
+        {% endfor %}
+      </details>
+    </div>
+    {% endif %}
   </section>
   {% endif %}
   <div class="robot-time battle-result-saved-note">勝敗と戦利品は保存済みです。</div>
@@ -541,6 +559,9 @@
             {% endif %}
             {% if t.get('module_trait_trigger_line') %}
               <div class="battle-line drop">{{ t['module_trait_trigger_line'] }}</div>
+            {% endif %}
+            {% if t.get('module_protocol_trigger_line') %}
+              <div class="battle-line drop">{{ t['module_protocol_trigger_line'] }}</div>
             {% endif %}
             {% if t.get('player_skill') %}
               <div class="battle-skill">「{{ t['player_skill'] }}」</div>

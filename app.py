@@ -70,6 +70,7 @@ from constants import (
     MODULE_BRAND_DEFINITIONS,
     MODULE_BRAND_SYNC_RULES,
     MODULE_OS_JA_LABELS,
+    MODULE_PROTOCOL_DEFINITIONS,
     MODULE_ROLE_DEFINITIONS,
     MODULE_STAT_KEYS,
     MODULE_STAT_LABELS,
@@ -79,6 +80,7 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.research_module_synthesis import synthesize_research_module
+from services import module_protocols
 from services.module_traits import (
     POLICY_DEFS as MODULE_RESEARCH_POLICY_DEFS,
     module_area_fit,
@@ -12748,6 +12750,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN active_robot_id INTEGER")
     if "active_research_module_instance_id" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN active_research_module_instance_id INTEGER")
+    if "selected_module_protocol_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_key TEXT")
+    if "selected_module_protocol_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_at INTEGER NOT NULL DEFAULT 0")
     if "battle_log_mode" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN battle_log_mode TEXT NOT NULL DEFAULT 'collapsed'")
     if "boss_meter_explore_l1" not in cols:
@@ -17485,6 +17491,21 @@ def _set_research_module_loadout(db, user_id, module_instance_ids, *, request_id
     first_id = int(modules[0]["instance_id"]) if modules else None
     db.execute("UPDATE users SET active_research_module_instance_id = ? WHERE id = ?", (first_id, int(user_id)))
     summary = _module_loadout_summary(modules)
+    selected_protocol_key = ""
+    user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    if user_row:
+        selected_protocol_key = _selected_module_protocol_key(user_row)
+    if selected_protocol_key and not module_protocols.is_protocol_available(summary, selected_protocol_key):
+        _clear_module_protocol(
+            db,
+            user_id,
+            event_key="MODULE_PROTOCOL_AUTO_CLEAR",
+            request_id=request_id,
+            ip=ip,
+            reason="loadout_changed",
+            previous_protocol_key=selected_protocol_key,
+            loadout_summary=summary,
+        )
     payload = _module_loadout_audit_payload(summary, user_id=user_id)
     audit_log(
         db,
@@ -17519,6 +17540,125 @@ def _module_loadout_audit_payload(summary, *, user_id, robot_instance_id=None, a
         "area_key": area_key,
         "battle_result_id": battle_result_id,
     }
+
+
+def _module_protocol_view(protocol_key):
+    definition = module_protocols.protocol_definition(protocol_key)
+    return dict(definition) if definition else None
+
+
+def _module_protocol_options(loadout_summary, selected_key=None):
+    selected_key = str(selected_key or "").strip()
+    options = module_protocols.available_protocols(loadout_summary)
+    for item in options:
+        item["is_selected"] = bool(selected_key and item["protocol_key"] == selected_key)
+        item["max_activations_label"] = "状態中" if int(item.get("max_activations") or 0) <= 0 else f"最大{int(item.get('max_activations') or 0)}回"
+        brand_key = str(item.get("brand_key") or "")
+        brand_def = MODULE_BRAND_DEFINITIONS.get(brand_key, MODULE_BRAND_DEFINITIONS["nova"])
+        item["brand_label"] = brand_def["short_label"]
+        item["required_label"] = (
+            "3ブランド混成 または NOVA 2"
+            if item["protocol_key"] == "adaptive_shift"
+            else f"{brand_def['short_label']} {int(item.get('required_brand_count') or 0)}"
+        )
+    return options
+
+
+def _selected_module_protocol_key(user_row):
+    if not user_row or "selected_module_protocol_key" not in user_row.keys():
+        return ""
+    return str(user_row["selected_module_protocol_key"] or "").strip()
+
+
+def _active_module_protocol_for_user(db, user_id, loadout_summary=None, user_row=None, *, request_id=None, ip=None, auto_clear=False):
+    user = user_row or db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    key = _selected_module_protocol_key(user)
+    if not key:
+        return None
+    loadout_summary = loadout_summary or _active_research_module_loadout_for_user(db, user_id)
+    if module_protocols.is_protocol_available(loadout_summary, key):
+        return _module_protocol_view(key)
+    if auto_clear:
+        _clear_module_protocol(
+            db,
+            user_id,
+            event_key="MODULE_PROTOCOL_AUTO_CLEAR",
+            request_id=request_id,
+            ip=ip,
+            reason="loadout_changed",
+            previous_protocol_key=key,
+            loadout_summary=loadout_summary,
+        )
+    return None
+
+
+def _module_protocol_audit_payload(protocol, loadout_summary, *, user_id, robot_instance_id=None, battle_result_id=None, area_key=None, enemy_key=None, is_boss=False, **extra):
+    protocol = protocol or {}
+    payload = {
+        "user_id": int(user_id),
+        "robot_instance_id": int(robot_instance_id) if robot_instance_id else None,
+        "battle_result_id": battle_result_id,
+        "area_key": area_key,
+        "enemy_key": enemy_key,
+        "is_boss": bool(is_boss),
+        "os_key": (loadout_summary or {}).get("synergy_key") or "",
+        "os_name": (loadout_summary or {}).get("os_name") or "NO MODULE OS",
+        "protocol_key": protocol.get("protocol_key"),
+        "protocol_name": protocol.get("name_ja") or protocol.get("protocol_name"),
+        "brand_counts": dict((loadout_summary or {}).get("brand_counts") or {}),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _clear_module_protocol(db, user_id, *, event_key="MODULE_PROTOCOL_CLEAR", request_id=None, ip=None, reason="manual", previous_protocol_key=None, loadout_summary=None):
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    previous_key = previous_protocol_key or _selected_module_protocol_key(user)
+    protocol = _module_protocol_view(previous_key)
+    loadout_summary = loadout_summary or _active_research_module_loadout_for_user(db, user_id)
+    db.execute(
+        "UPDATE users SET selected_module_protocol_key = NULL, selected_module_protocol_at = 0 WHERE id = ?",
+        (int(user_id),),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES[event_key],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_protocol_clear",
+        entity_type="module_protocol",
+        payload=_module_protocol_audit_payload(protocol, loadout_summary, user_id=user_id, trigger_reason=reason),
+        ip=ip,
+    )
+
+
+def _set_module_protocol(db, user_id, protocol_key, loadout_summary=None, *, request_id=None, ip=None):
+    key = str(protocol_key or "").strip()
+    loadout_summary = loadout_summary or _active_research_module_loadout_for_user(db, user_id)
+    if not key or key.lower() == "none":
+        _clear_module_protocol(db, user_id, request_id=request_id, ip=ip, reason="manual", loadout_summary=loadout_summary)
+        return {"ok": True, "protocol": None}
+    protocol = _module_protocol_view(key)
+    if not protocol:
+        return {"ok": False, "reason": "存在しないプロトコルです"}
+    if not module_protocols.is_protocol_available(loadout_summary, key):
+        return {"ok": False, "reason": "現在のOS構成では選択できないプロトコルです"}
+    now_ts = int(time.time())
+    db.execute(
+        "UPDATE users SET selected_module_protocol_key = ?, selected_module_protocol_at = ? WHERE id = ?",
+        (key, now_ts, int(user_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_PROTOCOL_SET"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_protocol_set",
+        entity_type="module_protocol",
+        payload=_module_protocol_audit_payload(protocol, loadout_summary, user_id=user_id),
+        ip=ip,
+    )
+    return {"ok": True, "protocol": protocol}
 
 
 def _user_research_module_options(db, user_id):
@@ -41617,6 +41757,29 @@ def modules_select():
     return redirect(url_for("home"))
 
 
+@app.route("/modules/protocol", methods=["POST"])
+@login_required
+def modules_protocol_select():
+    db = get_db()
+    user_id = int(session["user_id"])
+    loadout_summary = _active_research_module_loadout_for_user(db, user_id)
+    protocol_key = (request.form.get("protocol_key") or "").strip()
+    result = _set_module_protocol(
+        db,
+        user_id,
+        protocol_key,
+        loadout_summary,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        db.commit()
+        session["message"] = "プロトコルなしにしました" if not result.get("protocol") else "ACTIVE PROTOCOLを設定しました"
+    else:
+        session["message"] = result.get("reason") or "プロトコルを設定できませんでした"
+    return redirect(url_for("modules"))
+
+
 @app.route("/modules/synthesis/equip", methods=["POST"])
 @login_required
 def modules_synthesis_equip():
@@ -42411,6 +42574,19 @@ def modules():
         return redirect(url_for("login", next=request.path, reason="expired"))
     module_options = _user_research_module_options(db, user_id)
     loadout_summary = _active_research_module_loadout_for_user(db, user_id)
+    selected_protocol_before = _selected_module_protocol_key(user)
+    active_protocol = _active_module_protocol_for_user(
+        db,
+        user_id,
+        loadout_summary,
+        user_row=user,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+        auto_clear=True,
+    )
+    if selected_protocol_before and not active_protocol:
+        db.commit()
+    protocol_options = _module_protocol_options(loadout_summary, active_protocol.get("protocol_key") if active_protocol else "")
     active_module = loadout_summary["modules"][0] if loadout_summary.get("modules") else None
     active_ids = set(loadout_summary.get("module_instance_ids") or [])
     module_options = _annotate_research_module_material_status(module_options, active_module, active_ids=active_ids)
@@ -42453,6 +42629,8 @@ def modules():
         message=message,
         active_research_module=active_module,
         module_loadout=loadout_summary,
+        active_module_protocol=active_protocol,
+        module_protocol_options=protocol_options,
         research_module_options=module_options,
         module_filter_key=filter_key,
         module_sort_key=sort_key,
@@ -43674,6 +43852,22 @@ def home():
     research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
     active_module_loadout = _active_research_module_loadout_for_user(db, int(user["id"])) if main_robot else _module_loadout_summary([])
     active_research_module = active_module_loadout["modules"][0] if active_module_loadout.get("modules") else None
+    selected_protocol_before = _selected_module_protocol_key(user)
+    active_module_protocol = (
+        _active_module_protocol_for_user(
+            db,
+            int(user["id"]),
+            active_module_loadout,
+            user_row=user,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+            auto_clear=True,
+        )
+        if main_robot
+        else None
+    )
+    if selected_protocol_before and not active_module_protocol:
+        db.commit()
     research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
     research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
@@ -44350,6 +44544,7 @@ def home():
             research_module_options=research_module_options,
             active_research_module=active_research_module,
             active_module_loadout=active_module_loadout,
+            active_module_protocol=active_module_protocol,
             active_research_module_fit=active_research_module_fit,
             research_module_combine_candidates=research_module_combine_candidates,
             research_module_pity=research_module_pity,
@@ -49576,6 +49771,15 @@ def explore():
         return redirect(url_for("robots"))
     module_loadout_summary = _active_research_module_loadout_for_user(db, user_id)
     active_research_module = module_loadout_summary["modules"][0] if module_loadout_summary.get("modules") else None
+    active_module_protocol = _active_module_protocol_for_user(
+        db,
+        user_id,
+        module_loadout_summary,
+        user_row=user,
+        request_id=request_id,
+        ip=request.remote_addr,
+        auto_clear=True,
+    )
     if module_loadout_summary.get("modules"):
         module_payload = _module_loadout_audit_payload(
             module_loadout_summary,
@@ -49644,6 +49848,7 @@ def explore():
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
     module_trait_state = _module_trait_state(active_research_module)
+    module_protocol_state = None
     all_turn_logs = []
     reward_coin = 0
     reward_exp = 0
@@ -50385,6 +50590,35 @@ def explore():
                 ip=request.remote_addr,
             )
         enemy_hp = enemy_max_hp
+        protocol_start_lines = []
+        if active_module_protocol and module_protocol_state is None:
+            module_protocol_state = module_protocols.init_protocol_state(active_module_protocol["protocol_key"], module_loadout_summary)
+            protocol_start_lines = module_protocols.battle_start(
+                module_protocol_state,
+                {"atk": enemy_atk, "def": enemy_def, "spd": enemy_spd, "acc": enemy_acc, "hp": enemy_max_hp},
+            )
+            adaptive_hp_bonus = int((module_protocol_state.get("adaptive_bonus") or {}).get("hp") or 0)
+            if adaptive_hp_bonus > 0:
+                player_max_hp += adaptive_hp_bonus
+                player_hp += adaptive_hp_bonus
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_PROTOCOL_START"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_protocol",
+                payload=_module_protocol_audit_payload(
+                    active_module_protocol,
+                    module_loadout_summary,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    area_key=area_key,
+                    enemy_key=enemy["key"] if "key" in enemy.keys() else None,
+                    is_boss=bool(area_boss_active and battle_no == 1),
+                ),
+                ip=request.remote_addr,
+            )
         if weekly_env and (enemy.get("element") or "").upper() == (weekly_env.get("element") or "").upper():
             spawned_bonus_applied = True
         # 序盤救済Aは「通常のtier1戦のみ」で有効。
@@ -50415,9 +50649,30 @@ def explore():
             enemy_trait_triggers = []
             module_trait_trigger_line = None
             module_trait_triggers = []
+            module_protocol_trigger_line = None
+            module_protocol_triggers = []
             player_skill = random.choice(["スラッシュ", "バースト", "ドライブ"])
+            if turn == 1 and protocol_start_lines:
+                module_protocol_triggers.extend(protocol_start_lines)
+            module_protocol_triggers.extend(
+                module_protocols.turn_start(
+                    module_protocol_state,
+                    turn,
+                    player_hp,
+                    player_max_hp,
+                    enemy_hp,
+                    enemy_max_hp,
+                )
+            )
+            player_hp, protocol_heal_lines = module_protocols.consume_pending_heal(
+                module_protocol_state,
+                player_hp,
+                player_max_hp,
+            )
+            module_protocol_triggers.extend(protocol_heal_lines)
 
-            player_first = player_spd >= enemy_spd
+            protocol_player_spd = module_protocols.effective_speed(module_protocol_state, player_spd, turn)
+            player_first = protocol_player_spd >= enemy_spd
             if player_first:
                 force_player_hit = relief_miss_enabled and (player_miss_streak >= 2)
                 player_effective_atk = player_atk
@@ -50433,10 +50688,19 @@ def explore():
                     acc=player_acc,
                 )
                 module_trait_triggers.extend(trait_lines)
+                player_effective_atk, player_effective_acc, player_effective_cri, force_player_hit, protocol_lines = module_protocols.apply_attack_modifiers(
+                    module_protocol_state,
+                    atk=player_effective_atk,
+                    acc=player_effective_acc,
+                    cri=player_cri,
+                    force_hit=force_player_hit,
+                    turn=turn,
+                )
+                module_protocol_triggers.extend(protocol_lines)
                 player_damage, critical, player_attack_detail = _resolve_attack_logged(
                     player_effective_atk,
                     player_effective_acc,
-                    player_cri,
+                    player_effective_cri,
                     enemy_def,
                     enemy_acc,
                     rng=random,
@@ -50458,6 +50722,14 @@ def explore():
                 if force_player_hit and not player_missed:
                     player_relief_line = "救済: 連続MISSのため命中補正"
                 _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
+                module_protocol_triggers.extend(
+                    module_protocols.after_player_attack(
+                        module_protocol_state,
+                        turn=turn,
+                        missed=player_missed,
+                        critical=critical,
+                    )
+                )
                 raw_player_damage = int(player_damage)
                 if enemy_trait_key == "heavy" and raw_player_damage > 0:
                     reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -50472,10 +50744,21 @@ def explore():
                 ):
                     player_damage = 0
                     enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                player_damage, protocol_recoil, protocol_lines = module_protocols.apply_outgoing_damage(
+                    module_protocol_state,
+                    player_damage,
+                    turn=turn,
+                    player_max_hp=player_max_hp,
+                    rng=random,
+                )
+                module_protocol_triggers.extend(protocol_lines)
                 enemy_hp = max(0, enemy_hp - player_damage)
+                if protocol_recoil > 0:
+                    player_hp = max(0, player_hp - int(protocol_recoil))
+                    module_protocol_triggers.append(f"過駆動の反動で耐久を{int(protocol_recoil)}失った")
                 if enemy_hp == 0 and critical:
                     crit_finisher_kills += 1
-                if enemy_hp > 0:
+                if enemy_hp > 0 and player_hp > 0:
                     enemy_effective_atk = enemy_atk
                     player_effective_def, trait_lines = _module_before_enemy_attack(
                         module_trait_state,
@@ -50485,6 +50768,7 @@ def explore():
                         defense=player_def,
                     )
                     module_trait_triggers.extend(trait_lines)
+                    player_effective_def = module_protocols.apply_defense_modifiers(module_protocol_state, player_effective_def, turn)
                     if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                         enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                         if not berserk_triggered:
@@ -50504,9 +50788,22 @@ def explore():
                         damage_noise_range=None,
                     )
                     enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
+                    enemy_damage, protocol_lines = module_protocols.apply_incoming_damage(
+                        module_protocol_state,
+                        enemy_damage,
+                        turn=turn,
+                    )
+                    module_protocol_triggers.extend(protocol_lines)
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                     player_hp = max(0, player_hp - enemy_damage)
                     damage_taken_total += max(0, int(enemy_damage))
+                    player_hp, protocol_lines = module_protocols.after_player_damage(
+                        module_protocol_state,
+                        turn=turn,
+                        player_hp=player_hp,
+                        player_max_hp=player_max_hp,
+                    )
+                    module_protocol_triggers.extend(protocol_lines)
                     if enemy_trait_key == "unstable" and enemy_hp > 0 and random.random() < 0.35:
                         recoil = min(enemy_hp, max(1, int(math.ceil(enemy_effective_atk * 0.12))))
                         enemy_hp = max(0, enemy_hp - recoil)
@@ -50524,6 +50821,7 @@ def explore():
                     defense=player_def,
                 )
                 module_trait_triggers.extend(trait_lines)
+                player_effective_def = module_protocols.apply_defense_modifiers(module_protocol_state, player_effective_def, turn)
                 if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                     enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                     if not berserk_triggered:
@@ -50543,9 +50841,22 @@ def explore():
                     damage_noise_range=None,
                 )
                 enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
+                enemy_damage, protocol_lines = module_protocols.apply_incoming_damage(
+                    module_protocol_state,
+                    enemy_damage,
+                    turn=turn,
+                )
+                module_protocol_triggers.extend(protocol_lines)
                 enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                 player_hp = max(0, player_hp - enemy_damage)
                 damage_taken_total += max(0, int(enemy_damage))
+                player_hp, protocol_lines = module_protocols.after_player_damage(
+                    module_protocol_state,
+                    turn=turn,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                )
+                module_protocol_triggers.extend(protocol_lines)
                 if enemy_trait_key == "unstable" and enemy_hp > 0 and random.random() < 0.35:
                     recoil = min(enemy_hp, max(1, int(math.ceil(enemy_effective_atk * 0.12))))
                     enemy_hp = max(0, enemy_hp - recoil)
@@ -50565,10 +50876,19 @@ def explore():
                         acc=player_acc,
                     )
                     module_trait_triggers.extend(trait_lines)
+                    player_effective_atk, player_effective_acc, player_effective_cri, force_player_hit, protocol_lines = module_protocols.apply_attack_modifiers(
+                        module_protocol_state,
+                        atk=player_effective_atk,
+                        acc=player_effective_acc,
+                        cri=player_cri,
+                        force_hit=force_player_hit,
+                        turn=turn,
+                    )
+                    module_protocol_triggers.extend(protocol_lines)
                     player_damage, critical, player_attack_detail = _resolve_attack_logged(
                         player_effective_atk,
                         player_effective_acc,
-                        player_cri,
+                        player_effective_cri,
                         enemy_def,
                         enemy_acc,
                         rng=random,
@@ -50590,6 +50910,14 @@ def explore():
                     if force_player_hit and not player_missed:
                         player_relief_line = "救済: 連続MISSのため命中補正"
                     _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
+                    module_protocol_triggers.extend(
+                        module_protocols.after_player_attack(
+                            module_protocol_state,
+                            turn=turn,
+                            missed=player_missed,
+                            critical=critical,
+                        )
+                    )
                     raw_player_damage = int(player_damage)
                     if enemy_trait_key == "heavy" and raw_player_damage > 0:
                         reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -50604,7 +50932,18 @@ def explore():
                     ):
                         player_damage = 0
                         enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                    player_damage, protocol_recoil, protocol_lines = module_protocols.apply_outgoing_damage(
+                        module_protocol_state,
+                        player_damage,
+                        turn=turn,
+                        player_max_hp=player_max_hp,
+                        rng=random,
+                    )
+                    module_protocol_triggers.extend(protocol_lines)
                     enemy_hp = max(0, enemy_hp - player_damage)
+                    if protocol_recoil > 0:
+                        player_hp = max(0, player_hp - int(protocol_recoil))
+                        module_protocol_triggers.append(f"過駆動の反動で耐久を{int(protocol_recoil)}失った")
                     if enemy_hp == 0 and critical:
                         crit_finisher_kills += 1
                 elif enemy_hp <= 0:
@@ -50618,6 +50957,8 @@ def explore():
                 enemy_trait_trigger_line = " / ".join(enemy_trait_triggers)
             if module_trait_triggers:
                 module_trait_trigger_line = " / ".join(module_trait_triggers)
+            if module_protocol_triggers:
+                module_protocol_trigger_line = " / ".join(module_protocol_triggers)
 
             battle_logs.append(
                 {
@@ -50650,6 +50991,7 @@ def explore():
                     "enemy_attack_note": enemy_attack_note,
                     "enemy_trait_trigger_line": enemy_trait_trigger_line,
                     "module_trait_trigger_line": module_trait_trigger_line,
+                    "module_protocol_trigger_line": module_protocol_trigger_line,
                     "player_relief_line": player_relief_line,
                     "player_berserk_line": player_berserk_line,
                 }
@@ -51566,6 +51908,62 @@ def explore():
         _clear_explore_cooldown(db, user_id)
     else:
         _touch_explore_cooldown(db, user_id, now)
+    module_protocol_summary = module_protocols.summary(module_protocol_state)
+    if active_module_protocol and module_protocol_summary:
+        for index, event in enumerate(module_protocol_summary.get("events") or [], start=1):
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_PROTOCOL_TRIGGER"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_protocol",
+                payload=_module_protocol_audit_payload(
+                    active_module_protocol,
+                    module_loadout_summary,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    battle_result_id=battle_id,
+                    area_key=area_key,
+                    enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                    is_boss=bool(area_boss_active),
+                    activation_index=index,
+                    activation_turn=event.get("turn"),
+                    trigger_reason=event.get("text"),
+                    effect_type=event.get("effect_type"),
+                    effect_value=event.get("effect_value"),
+                    damage_reduced=event.get("damage_reduced"),
+                    healing_amount=event.get("healing_amount"),
+                    bonus_damage=event.get("bonus_damage"),
+                    recoil_damage=event.get("recoil_damage"),
+                    guaranteed_hit=event.get("guaranteed_hit"),
+                    critical_bonus=event.get("critical_bonus"),
+                ),
+                ip=request.remote_addr,
+            )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_PROTOCOL_FINISH"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="module_protocol",
+            payload=_module_protocol_audit_payload(
+                active_module_protocol,
+                module_loadout_summary,
+                user_id=user_id,
+                robot_instance_id=int(active["id"]) if active else None,
+                battle_result_id=battle_id,
+                area_key=area_key,
+                enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                is_boss=bool(area_boss_active),
+                protocol_activation_count=int(module_protocol_summary.get("activation_count") or 0),
+                protocol_summary_json=module_protocol_summary,
+                result_win=bool(final_outcome == "win"),
+                turn_count=len(all_turn_logs),
+            ),
+            ip=request.remote_addr,
+        )
     module_strategy_card = _research_module_strategy_card(
         active_research_module,
         all_turn_logs,
@@ -51676,6 +52074,16 @@ def explore():
                     ),
                 }
                 if active_research_module
+                else None
+            ),
+            "protocol": (
+                {
+                    "protocol_key": active_module_protocol.get("protocol_key"),
+                    "protocol_name": active_module_protocol.get("name_ja"),
+                    "protocol_activation_count": int((module_protocol_summary or {}).get("activation_count") or 0),
+                    "protocol_summary_json": module_protocol_summary,
+                }
+                if active_module_protocol
                 else None
             ),
             "stage_modifier": {
@@ -51909,6 +52317,16 @@ def explore():
         )
         db.execute("DELETE FROM user_module_loadouts WHERE user_id = ?", (int(user_id),))
         db.execute("UPDATE users SET active_research_module_instance_id = NULL WHERE id = ?", (int(user_id),))
+    if active_module_protocol:
+        _clear_module_protocol(
+            db,
+            user_id,
+            request_id=request_id,
+            ip=request.remote_addr,
+            reason="consume_after_explore",
+            previous_protocol_key=active_module_protocol.get("protocol_key"),
+            loadout_summary=module_loadout_summary,
+        )
     db.commit()
 
     enemy_image_path = last_enemy["image_path"] if last_enemy and "image_path" in last_enemy.keys() else None
@@ -52158,6 +52576,7 @@ def explore():
         "explore_ct_status_label": explore_ct_status_label,
         "module_strategy": module_strategy_card,
         "module_loadout": module_loadout_summary,
+        "module_protocol": module_protocol_summary,
         "module_snapshot": (
             {
                 "module_instance_id": int(active_research_module.get("instance_id") or 0),

@@ -113,9 +113,14 @@ Phase 1では追加効果なし。UI表示、分析、将来条件用。
 - `audit.module.loadout.clear`
 - `audit.module.synergy.apply`
 - `audit.module.consume`
+- `audit.module.protocol.*`
 
 payloadにはOS名、ブランド構成、シンクロ、個体補正、同期補正、最終補正を残す。通常の構成変更は世界ログ表示用途にしない。
 
-## Phase 1非対象
+## Phase 2
 
-特殊プロトコル、耐久度、修理、容量、オーバークロック、毎ターン回復、反撃、追加攻撃、ドロップ率変更、課金商品、世界限定個体は未実装。
+特殊プロトコルv1は `docs/MODULE_PROTOCOL_SPEC.md` を正とする。
+
+## 非対象
+
+耐久度、修理、容量、オーバークロック、毎ターン回復、反撃、追加攻撃、ドロップ率変更、課金商品、世界限定個体は未実装。

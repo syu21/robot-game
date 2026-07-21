@@ -349,6 +349,7 @@
                   <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>
                   <span>搭載OS: {{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</span>
+                  <span>プロトコル: {{ active_module_protocol['name_ja'] if active_module_protocol else 'なし' }}</span>
                 </div>
               </div>
             </div>
@@ -357,6 +358,7 @@
             <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ main_robot_stats['power'] if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
             <div class="stat-card"><div class="stat-label">搭載OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</div></div>
+            <div class="stat-card"><div class="stat-label">プロトコル</div><div class="stat-value stat-small">{{ active_module_protocol['name_ja'] if active_module_protocol else 'なし' }}</div></div>
           </div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>

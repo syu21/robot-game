@@ -146,6 +146,12 @@
 - `audit.module.synthesis.result`
 - `audit.module.strategy.apply`
 - `audit.module.strategy.result`
+- `audit.module.protocol.set`
+- `audit.module.protocol.clear`
+- `audit.module.protocol.auto_clear`
+- `audit.module.protocol.start`
+- `audit.module.protocol.trigger`
+- `audit.module.protocol.finish`
 - `audit.module.reroll`
 
 補足:
@@ -474,6 +480,14 @@
 - `audit.module.strategy.result`
   - 出撃終了時のモジュール結果。payload に `module_trait_key`, `module_trait_trigger_count` を含める。
 - `audit.module.trait.trigger`
+- `audit.module.protocol.set` / `audit.module.protocol.clear` / `audit.module.protocol.auto_clear`
+  - ACTIVE PROTOCOL の手動設定、手動解除、OS構成変更による自動解除。
+- `audit.module.protocol.start`
+  - 出撃開始時のプロトコルスナップショット。payload に `protocol_key`, `protocol_name`, `os_name`, `brand_counts` を含める。
+- `audit.module.protocol.trigger`
+  - 実際に発動した瞬間だけ記録。payload に `activation_turn`, `effect_type`, `damage_reduced`, `healing_amount`, `bonus_damage`, `recoil_damage`, `guaranteed_hit`, `critical_bonus` を含める。
+- `audit.module.protocol.finish`
+  - 1出撃1回。payload に `protocol_activation_count`, `protocol_summary_json`, `result_win`, `turn_count` を含める。
   - 作戦特性が発動した戦闘の集約ログ。1戦1件で `trait_key`, `trait_label`, `trigger_count`, `trigger_labels` を含める。
 
 ## 11. 第1層 初回体験改善

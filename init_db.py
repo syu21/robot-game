@@ -817,6 +817,8 @@ def main():
             avatar_path TEXT,
             active_robot_id INTEGER,
             active_research_module_instance_id INTEGER,
+            selected_module_protocol_key TEXT,
+            selected_module_protocol_at INTEGER NOT NULL DEFAULT 0,
             battle_log_mode TEXT NOT NULL DEFAULT 'collapsed',
             boss_meter_explore_l1 INTEGER NOT NULL DEFAULT 0,
             boss_meter_win_l1 INTEGER NOT NULL DEFAULT 0,
@@ -3298,6 +3300,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN active_robot_id INTEGER")
     if "active_research_module_instance_id" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN active_research_module_instance_id INTEGER")
+    if "selected_module_protocol_key" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_key TEXT")
+    if "selected_module_protocol_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_at INTEGER NOT NULL DEFAULT 0")
     if "stable_no_damage_wins" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN stable_no_damage_wins INTEGER NOT NULL DEFAULT 0")
     if "burst_crit_finisher_kills" not in users_cols:
