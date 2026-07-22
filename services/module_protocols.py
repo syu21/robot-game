@@ -1,7 +1,7 @@
 import math
 from collections import Counter
 
-from constants import MODULE_PROTOCOL_DEFINITIONS
+from constants import MODULE_BRAND_DEFINITIONS, MODULE_PROTOCOL_DEFINITIONS
 
 
 def protocol_definition(protocol_key):
@@ -31,9 +31,13 @@ def available_protocols(loadout_summary):
         if unlocked:
             item["lock_reason"] = ""
         elif key == "adaptive_shift":
-            item["lock_reason"] = "NOVA 2個以上、または3ブランド混成で解放"
+            missing = max(0, required - int(brand_counts.get(brand_key, 0)))
+            item["lock_reason"] = f"共鳴率不足：NOVAをあと{missing}基接続、または3ブランド混成で解放"
+        elif required >= 3:
+            item["lock_reason"] = "完全共鳴未到達：同一ブランド3基で秘匿命令を解禁"
         else:
-            item["lock_reason"] = f"あと{max(0, required - int(brand_counts.get(brand_key, 0)))}個で解放"
+            brand_label = MODULE_BRAND_DEFINITIONS.get(brand_key, {}).get("short_label") or brand_key.upper()
+            item["lock_reason"] = f"共鳴率不足：{brand_label}をあと{max(0, required - int(brand_counts.get(brand_key, 0)))}基接続すると解放"
         result.append(item)
     return result
 
@@ -76,6 +80,12 @@ def init_protocol_state(protocol_key, loadout_summary):
     }
 
 
+def _definition(state):
+    if not state:
+        return {}
+    return state.get("definition") or MODULE_PROTOCOL_DEFINITIONS.get(str(state.get("protocol_key") or ""), {})
+
+
 def _event(state, turn, text, *, effect_type="", effect_value=0, **extra):
     state["activation_count"] = int(state.get("activation_count") or 0) + 1
     state.setdefault("activation_turns", []).append(int(turn))
@@ -100,32 +110,34 @@ def _pick_adaptation(enemy_stats):
     top = max(stats.values()) if stats else 0
     top_keys = [key for key, value in stats.items() if value == top]
     if len(top_keys) != 1:
-        return "hp", {"hp": 8}, "耐久構成"
+        return "hp", {"hp": 8}
     key = top_keys[0]
     if key == "atk":
-        return "def", {"def_pct": 0.10}, "防御構成"
+        return "def", {"def_pct": 0.10}
     if key == "def":
-        return "atk", {"atk_pct": 0.10}, "攻撃構成"
+        return "atk", {"atk_pct": 0.10}
     if key == "spd":
-        return "acc", {"acc": 10}, "命中構成"
-    return "spd", {"spd_pct": 0.10}, "高速構成"
+        return "acc", {"acc": 10}
+    return "spd", {"spd_pct": 0.10}
 
 
 def battle_start(state, enemy_stats):
     if not state:
         return []
     key = state["protocol_key"]
+    definition = _definition(state)
     if key == "fortress_guard":
-        return [_event(state, 1, "要塞防御が展開され、被害を軽減した", effect_type="damage_reduction_window", effect_value=15)]
+        return [_event(state, 1, definition.get("battle_start_log") or "絶対防衛機構《アイギス・ウォール》――展開。", effect_type="damage_reduction_window", effect_value=15)]
     if key == "opening_acceleration":
-        return [_event(state, 1, "開幕加速により演算速度が上昇した", effect_type="speed_pct", effect_value=20)]
+        return [_event(state, 1, definition.get("battle_start_log") or "零秒加速《クロノ・アクセル》――時間軸接続。", effect_type="speed_pct", effect_value=20)]
     if key == "target_analysis":
-        return [_event(state, 1, "標的解析により敵機動データを取得した", effect_type="accuracy", effect_value=10)]
+        return [_event(state, 1, definition.get("battle_start_log") or "未来観測《オラクル・トレース》――解析開始。", effect_type="accuracy", effect_value=10)]
     if key == "adaptive_shift":
-        selected, bonus, label = _pick_adaptation(enemy_stats)
+        selected, bonus = _pick_adaptation(enemy_stats)
         state["selected_adaptation"] = selected
         state["adaptive_bonus"] = bonus
-        return [_event(state, 1, f"適応変換が敵機を解析し、{label}へ移行した", effect_type=f"adapt_{selected}", effect_value=1)]
+        adapt_log = (definition.get("adapt_logs") or {}).get(selected) or "敵性情報を解析し、適応形態へ移行した。"
+        return [_event(state, 1, f"{definition.get('battle_start_log') or '万象適応《アカシック・シフト》――敵性情報を接続。'} {adapt_log}", effect_type=f"adapt_{selected}", effect_value=1)]
     return []
 
 
@@ -134,30 +146,31 @@ def turn_start(state, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp):
         return []
     lines = []
     key = state["protocol_key"]
+    definition = _definition(state)
     if key == "limit_break":
         active = int(player_hp) * 100 <= int(player_max_hp) * 35
         if active and not state.get("limit_break_active"):
             state["limit_break_active"] = True
-            lines.append(_event(state, turn, "限界突破が起動し、攻撃出力が上昇した", effect_type="limit_break_on", effect_value=1))
+            lines.append(_event(state, turn, definition.get("on_log") or "崩壊臨界《デッドライン・イグニッション》――安全装置解除。", effect_type="limit_break_on", effect_value=1))
         elif (not active) and state.get("limit_break_active"):
             state["limit_break_active"] = False
-            lines.append(_event(state, turn, "耐久回復により限界突破が停止した", effect_type="limit_break_off", effect_value=1))
+            lines.append(_event(state, turn, definition.get("off_log") or "耐久回復を確認。崩壊臨界領域から離脱した。", effect_type="limit_break_off", effect_value=1))
     if key == "emergency_reconfiguration" and int(turn) == 4 and int(state.get("activation_count") or 0) <= 0:
         if int(player_hp) * 100 < int(player_max_hp) * 50:
             healing = min(int(player_max_hp) - int(player_hp), max(1, int(round(int(player_max_hp) * 0.08))))
             state["pending_reconfiguration_heal"] = healing
-            lines.append(_event(state, turn, "緊急再構成により修復プロトコルへ切り替えた", effect_type="healing", effect_value=healing, healing_amount=healing))
+            lines.append(_event(state, turn, definition.get("heal_log") or "損傷率を優先し、緊急修復形態へ再構築した。", effect_type="healing", effect_value=healing, healing_amount=healing))
         elif any(item.get("missed") for item in state.get("recent_player_results", [])[-2:]):
             state["pending_guaranteed_hit"] = True
-            lines.append(_event(state, turn, "緊急再構成により軌道補正プロトコルへ切り替えた", effect_type="guaranteed_hit", effect_value=1, guaranteed_hit=True))
+            lines.append(_event(state, turn, definition.get("guaranteed_hit_log") or "攻撃誤差を検出し、未来照準形態へ再構築した。", effect_type="guaranteed_hit", effect_value=1, guaranteed_hit=True))
         elif int(enemy_hp) * 100 < int(enemy_max_hp) * 40:
             state["temporary_bonus"] = {"atk_pct": 0.15}
             state["temporary_bonus_until_turn"] = int(turn) + 1
-            lines.append(_event(state, turn, "緊急再構成により攻撃プロトコルへ切り替えた", effect_type="atk_pct", effect_value=15))
+            lines.append(_event(state, turn, definition.get("attack_log") or "敵耐久低下を確認し、殲滅形態へ再構築した。", effect_type="atk_pct", effect_value=15))
         else:
             state["temporary_bonus"] = {"def_pct": 0.10}
             state["temporary_bonus_until_turn"] = int(turn) + 1
-            lines.append(_event(state, turn, "緊急再構成により防御プロトコルへ切り替えた", effect_type="def_pct", effect_value=10))
+            lines.append(_event(state, turn, definition.get("defense_log") or "戦況維持を優先し、防衛形態へ再構築した。", effect_type="def_pct", effect_value=10))
     return lines
 
 
@@ -169,7 +182,7 @@ def consume_pending_heal(state, player_hp, player_max_hp):
         return int(player_hp), []
     actual = min(max(0, int(player_max_hp) - int(player_hp)), healing)
     state["totals"]["healing_amount"] += actual
-    return min(int(player_max_hp), int(player_hp) + actual), [f"緊急再構成により耐久を{actual}回復した"]
+    return min(int(player_max_hp), int(player_hp) + actual), [f"戦局再編により耐久を{actual}再構築した"]
 
 
 def effective_speed(state, base_spd, turn):
@@ -207,14 +220,14 @@ def apply_attack_modifiers(state, *, atk, acc, cri, force_hit, turn):
         state["pending_critical_bonus"] = False
         state["critical_bonus_from_chain"] = True
         state["totals"]["critical_bonus"] += 1
-        lines.append("会心連鎖により次撃の会心精度が上昇した")
+        lines.append((_definition(state).get("consume_log") or "蓄積された雷光が、次の一撃へ解放された。"))
     else:
         state["critical_bonus_from_chain"] = False
     if state.get("pending_guaranteed_hit") and not force_hit:
         force_hit = True
         state["pending_guaranteed_hit"] = False
         state["totals"]["guaranteed_hit"] += 1
-        lines.append("誤差修正により次撃の軌道を固定した")
+        lines.append((_definition(state).get("consume_log") or "演算結果が書き換えられ、次撃の命中が確定した。"))
     return atk, acc, cri, force_hit, lines
 
 
@@ -240,12 +253,13 @@ def after_player_attack(state, *, turn, missed, critical):
     state.setdefault("recent_player_results", []).append({"turn": int(turn), "missed": bool(missed), "critical": bool(critical)})
     state["recent_player_results"] = state["recent_player_results"][-4:]
     lines = []
+    definition = _definition(state)
     if state["protocol_key"] == "critical_chain" and critical and not state.get("critical_bonus_from_chain") and int(state.get("activation_count") or 0) < 2:
         state["pending_critical_bonus"] = True
-        lines.append(_event(state, turn, "会心連鎖が起動し、次撃の会心精度が上昇した", effect_type="critical_bonus", effect_value=15, critical_bonus=True))
+        lines.append(_event(state, turn, definition.get("trigger_log") or "雷光連鎖《ヴォルト・レゾナンス》――次撃へ接続。", effect_type="critical_bonus", effect_value=15, critical_bonus=True))
     if state["protocol_key"] == "miss_correction" and missed and int(state.get("activation_count") or 0) < 2 and not state.get("pending_guaranteed_hit"):
         state["pending_guaranteed_hit"] = True
-        lines.append(_event(state, turn, "誤差修正が完了し、次撃の軌道を固定した", effect_type="guaranteed_hit", effect_value=1, guaranteed_hit=True))
+        lines.append(_event(state, turn, definition.get("trigger_log") or "因果修正《ラプラス・リライト》――誤差を検出。", effect_type="guaranteed_hit", effect_value=1, guaranteed_hit=True))
     return lines
 
 
@@ -255,6 +269,7 @@ def apply_outgoing_damage(state, damage, *, turn, player_max_hp, rng):
         return damage, 0, []
     lines = []
     recoil = 0
+    definition = _definition(state)
     if state["protocol_key"] == "unstable_overdrive" and int(state.get("activation_count") or 0) < 2 and rng.random() < 0.20:
         before = damage
         damage = max(1, int(round(damage * 1.5)))
@@ -262,7 +277,7 @@ def apply_outgoing_damage(state, damage, *, turn, player_max_hp, rng):
         recoil = max(1, int(math.ceil(int(player_max_hp) * 0.05)))
         state["totals"]["bonus_damage"] += bonus
         state["totals"]["recoil_damage"] += recoil
-        lines.append(_event(state, turn, "不安定過駆動が成功し、出力が暴走した", effect_type="damage_multiplier", effect_value=150, bonus_damage=bonus, recoil_damage=recoil))
+        lines.append(_event(state, turn, definition.get("trigger_log") or "禁断過駆動《ラグナロク・バースト》――臨界突破。", effect_type="damage_multiplier", effect_value=150, bonus_damage=bonus, recoil_damage=recoil))
     return damage, recoil, lines
 
 
@@ -271,13 +286,14 @@ def apply_incoming_damage(state, damage, *, turn):
     if not state or damage <= 0:
         return damage, []
     lines = []
+    definition = _definition(state)
     if state["protocol_key"] == "fortress_guard" and int(turn) <= 3:
         before = damage
         damage = max(1, int(math.floor(damage * 0.85)))
         reduced = max(0, before - damage)
         if reduced > 0:
             state["totals"]["damage_reduced"] += reduced
-            lines.append(_event(state, turn, "要塞防御が被害を軽減した", effect_type="damage_reduction", effect_value=reduced, damage_reduced=reduced))
+            lines.append(_event(state, turn, definition.get("trigger_log") or "多層装甲が衝撃を吸収し、致命傷を拒絶した。", effect_type="damage_reduction", effect_value=reduced, damage_reduced=reduced))
     return damage, lines
 
 
@@ -291,8 +307,9 @@ def after_player_damage(state, *, turn, player_hp, player_max_hp):
     heal = max(1, int(round(int(player_max_hp) * 0.12)))
     actual = min(max(0, int(player_max_hp) - int(player_hp)), heal)
     state["totals"]["healing_amount"] += actual
-    _event(state, turn, "緊急修復が作動し、耐久を回復した", effect_type="healing", effect_value=actual, healing_amount=actual)
-    return min(int(player_max_hp), int(player_hp) + actual), [f"緊急修復が作動し、耐久を{actual}回復した"]
+    definition = _definition(state)
+    _event(state, turn, definition.get("trigger_log") or "自己再生機構《リザレクション・ギア》――緊急起動。", effect_type="healing", effect_value=actual, healing_amount=actual)
+    return min(int(player_max_hp), int(player_hp) + actual), [definition.get("heal_log") or f"崩壊した装甲が再構築され、耐久を{actual}回復した。"]
 
 
 def summary(state):
@@ -304,7 +321,7 @@ def summary(state):
     if totals.get("damage_reduced"):
         effect_parts.append(f"軽減 {int(totals['damage_reduced'])}")
     if totals.get("healing_amount"):
-        effect_parts.append(f"回復 {int(totals['healing_amount'])}")
+        effect_parts.append(f"再構築した耐久 {int(totals['healing_amount'])}")
     if totals.get("bonus_damage"):
         effect_parts.append(f"追加ダメージ {int(totals['bonus_damage'])}")
     if totals.get("recoil_damage"):

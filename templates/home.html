@@ -348,8 +348,8 @@
                 <div class="robot-overview-meta">
                   <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>
-                  <span>搭載OS: {{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</span>
-                  <span>プロトコル: {{ active_module_protocol['name_ja'] if active_module_protocol else 'なし' }}</span>
+                  <span>戦闘OS: {{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</span>
+                  <span>秘匿命令: {{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</span>
                 </div>
               </div>
             </div>
@@ -357,8 +357,8 @@
           <div class="stat-grid home-robot-compact-grid">
             <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ main_robot_stats['power'] if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
-            <div class="stat-card"><div class="stat-label">搭載OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_name'] if active_module_loadout else 'NO MODULE OS' }}</div></div>
-            <div class="stat-card"><div class="stat-label">プロトコル</div><div class="stat-value stat-small">{{ active_module_protocol['name_ja'] if active_module_protocol else 'なし' }}</div></div>
+            <div class="stat-card"><div class="stat-label">戦闘OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</div></div>
+            <div class="stat-card"><div class="stat-label">秘匿命令</div><div class="stat-value stat-small">{{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</div></div>
           </div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>
@@ -396,7 +396,7 @@
             <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
           </div>
           {% if active_research_module and active_research_module.get('stat_line') %}
-          <div class="upgrade-cost">同期: {{ active_module_loadout['synergy_label'] }} / 主補正: {{ active_module_loadout['final_bonus_line'] }}</div>
+          <div class="upgrade-cost">共鳴領域: {{ active_module_loadout['synergy_label'] }} / 最終演算出力: {{ active_module_loadout['final_bonus_line'] }}</div>
           {% endif %}
           {% if active_research_module and active_research_module.get('trait_label') %}
           <div class="robot-time">作戦特性: {{ active_research_module['trait_label'] }} / {{ active_research_module['trait_description'] }}</div>

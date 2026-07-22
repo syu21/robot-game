@@ -198,7 +198,8 @@ class ModuleProtocolPhase2Tests(unittest.TestCase):
             resp = client.post("/explore", data={"area_key": "layer_2"}, follow_redirects=True)
         html = resp.get_data(as_text=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("今回のプロトコル: 要塞防御", html)
+        self.assertIn("今回起動した秘匿命令", html)
+        self.assertIn("絶対防衛機構《アイギス・ウォール》", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             self.assertIsNone(db.execute("SELECT selected_module_protocol_key FROM users WHERE id = ?", (self.user_id,)).fetchone()["selected_module_protocol_key"])

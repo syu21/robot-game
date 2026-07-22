@@ -238,11 +238,12 @@
     <div class="section-kicker">今回の作戦</div>
     {% if summary.get('module_loadout') %}
     {% set loadout = summary.get('module_loadout') %}
-    <p class="upgrade-cost">今回の搭載OS: {{ loadout.get('os_name', 'NO MODULE OS') }} / {{ loadout.get('os_label_ja', '未設定') }}</p>
+    <p class="upgrade-cost">搭載戦闘OS<br>{{ loadout.get('os_label_ja', '無装演算型《ブランク・コア》') }}</p>
+    <p class="robot-time">{{ loadout.get('os_name', 'NO MODULE OS') }} / {{ loadout.get('os_tagline', '補助演算に頼らず、機体本来の性能だけで戦う。') }}</p>
     <details>
       <summary>モジュール最終補正</summary>
-      <p class="robot-time">同期: {{ loadout.get('synergy_label', 'なし') }} / {{ loadout.get('synergy_bonus_line', 'なし') }}</p>
-      <p class="robot-time">最終補正: {{ loadout.get('final_bonus_line', 'なし') }}</p>
+      <p class="robot-time">共鳴領域 / SYNCHRONIZE: {{ loadout.get('synergy_label', 'なし') }} / {{ loadout.get('synergy_bonus_line', 'なし') }}</p>
+      <p class="robot-time">最終演算出力: {{ loadout.get('final_bonus_line', 'なし') }}</p>
     </details>
     {% endif %}
     <h3>{{ strategy.get('module_name', '研究モジュール') }}</h3>
@@ -269,11 +270,11 @@
     {% if summary.get('module_protocol') %}
     {% set protocol = summary.get('module_protocol') %}
     <div class="module-protocol-result">
-      <p class="upgrade-cost">今回のプロトコル: {{ protocol.get('protocol_name', 'プロトコル') }}</p>
+      <p class="upgrade-cost">今回起動した秘匿命令<br>{{ protocol.get('protocol_name', '秘匿命令') }}</p>
       {% if protocol.get('activation_count') %}
-      <p class="robot-time">発動: {{ protocol.get('activation_count') }}回{% if protocol.get('effect_summary') %} / {{ protocol.get('effect_summary') }}{% endif %}</p>
+      <p class="robot-time">発動回数：{{ protocol.get('activation_count') }}回{% if protocol.get('effect_summary') %} / {{ protocol.get('effect_summary') }}{% endif %}</p>
       {% else %}
-      <p class="robot-time">発動条件には到達しませんでした</p>
+      <p class="robot-time">秘匿命令は待機状態のまま戦闘を終了しました</p>
       {% endif %}
       <details>
         <summary>プロトコル詳細</summary>

@@ -22,22 +22,22 @@
 
 ## ブランド
 
-- `titan`: TITAN HEAVY / 重装・防衛 / hp, def
-- `volt`: VOLT EDGE / 高速・先制 / spd, cri
-- `eden`: EDEN LOGIC / 解析・精密 / acc, def
-- `scrap_x`: SCRAP-X / 暴走・背水 / atk, cri
-- `nova`: NOVA LINK / 混成・適応 / 全能力
+- `titan`: TITAN HEAVY / 絶対装甲機関《タイタン》 / 重装 / 防衛 / 不沈 / hp, def
+- `volt`: VOLT EDGE / 神速演算機関《ヴォルト》 / 高速 / 先制 / 連撃 / spd, cri
+- `eden`: EDEN LOGIC / 全知解析機関《エデン》 / 解析 / 精密 / 必中 / acc, def
+- `scrap_x`: SCRAP-X / 禁断暴走機関《スクラップ・エクス》 / 暴走 / 背水 / 極限火力 / atk, cri
+- `nova`: NOVA LINK / 万象接続機関《ノヴァ》 / 適応 / 混成 / 万能 / 全能力
 
 定義は `constants.py` の `MODULE_BRAND_DEFINITIONS` に集約。
 
 ## 役割タグ
 
-- `power`: 攻撃
-- `guard`: 防衛
-- `speed`: 高速
-- `precision`: 精密
-- `support`: 補助
-- `unstable`: 暴走
+- `power`: 殲滅演算 / 攻撃特化
+- `guard`: 絶対防衛 / 耐久・防御特化
+- `speed`: 神速駆動 / 速度特化
+- `precision`: 未来照準 / 命中特化
+- `support`: 戦況支配 / 補助・適応型
+- `unstable`: 禁忌出力 / 暴走・極端型
 
 Phase 1では追加効果なし。UI表示、分析、将来条件用。
 
@@ -64,11 +64,24 @@ Phase 1では追加効果なし。UI表示、分析、将来条件用。
 
 - 同ブランド2個: ブランドごとの2個効果
 - 同ブランド3個: 2個効果 + 3個追加効果
-- 3ブランド混成: 全能力+2 / `混成制御`
+- 3ブランド混成: 全能力+2 / `複合演算領域《トリニティ・コード》`
 - 2個だけ別ブランド: なし
 - 1個以下: なし
 
 同ブランド効果と混成制御は重複しない。
+
+表示名:
+
+- `titan` 2: `第一装甲解放《アイアン・ウォール》`
+- `titan` 3: `最終装甲解放《アブソリュート・フォートレス》`
+- `volt` 2: `第一加速領域《ライトニング・ドライブ》`
+- `volt` 3: `最終加速領域《ゼロ・フレーム》`
+- `eden` 2: `第一解析領域《オラクル・サイト》`
+- `eden` 3: `最終解析領域《ラプラス・コード》`
+- `scrap_x` 2: `第一禁忌解放《ブラッド・イグニッション》`
+- `scrap_x` 3: `最終禁忌解放《ラグナロク・オーバー》`
+- `nova` 2: `第一適応領域《オール・リンク》`
+- `nova` 3: `最終適応領域《アカシック・ノヴァ》`
 
 ## OS名
 
@@ -84,7 +97,17 @@ Phase 1では追加効果なし。UI表示、分析、将来条件用。
 - その他: `CUSTOM OS`
 - 未装着: `NO MODULE OS`
 
-日本語補助名は `MODULE_OS_JA_LABELS`。
+日本語型名は `MODULE_OS_DEFINITIONS` と `MODULE_SYNC_OS_JA_LABELS`。
+
+- `TITAN FORTRESS OS`: `不落絶城型《アブソリュート・タイタン》`
+- `VOLT FLASH OS`: `神速殲滅型《クロノ・ブレイカー》`
+- `EDEN ANALYZER OS`: `全知必中型《ラプラス・アイ》`
+- `SCRAP BERSERK OS`: `終焉暴走型《ラグナロク・ギア》`
+- `NOVA ADAPTIVE OS`: `万象適応型《アカシック・ノヴァ》`
+- `HYBRID CONTROL OS`: `三位複合型《トリニティ・アンノウン》`
+- `<BRAND> SYNC OS`: ブランド別の同期型名
+- `CUSTOM OS`: `未定義構築型《アンノウン・コード》`
+- `NO MODULE OS`: `無装演算型《ブランク・コア》`
 
 ## 戦闘適用順
 

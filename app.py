@@ -69,7 +69,9 @@ from constants import (
     LEGAL_OPERATOR_NAME,
     MODULE_BRAND_DEFINITIONS,
     MODULE_BRAND_SYNC_RULES,
+    MODULE_OS_DEFINITIONS,
     MODULE_OS_JA_LABELS,
+    MODULE_SYNC_OS_JA_LABELS,
     MODULE_PROTOCOL_DEFINITIONS,
     MODULE_ROLE_DEFINITIONS,
     MODULE_STAT_KEYS,
@@ -17198,6 +17200,7 @@ def _module_role_label(role_key):
 
 def _module_os_name(modules):
     brand_keys = [str(module.get("brand_key") or "nova") for module in modules or []]
+    sync_brand_key = ""
     if not brand_keys:
         os_name = "NO MODULE OS"
     elif len(brand_keys) == 3 and len(set(brand_keys)) == 1:
@@ -17211,11 +17214,19 @@ def _module_os_name(modules):
     elif len(brand_keys) == 3 and len(set(brand_keys)) == 3:
         os_name = "HYBRID CONTROL OS"
     elif any(count >= 2 for count in Counter(brand_keys).values()):
-        brand_key = next(key for key, count in Counter(brand_keys).items() if count >= 2)
-        os_name = f"{MODULE_BRAND_DEFINITIONS.get(brand_key, MODULE_BRAND_DEFINITIONS['nova'])['short_label']} SYNC OS"
+        sync_brand_key = next(key for key, count in Counter(brand_keys).items() if count >= 2)
+        os_name = f"{MODULE_BRAND_DEFINITIONS.get(sync_brand_key, MODULE_BRAND_DEFINITIONS['nova'])['short_label']} SYNC OS"
     else:
         os_name = "CUSTOM OS"
-    return {"os_name": os_name, "os_label_ja": MODULE_OS_JA_LABELS.get(os_name, "独自構成")}
+    os_def = MODULE_OS_DEFINITIONS.get(os_name, {})
+    os_label_ja = MODULE_SYNC_OS_JA_LABELS.get(sync_brand_key) if sync_brand_key else ""
+    if not os_label_ja:
+        os_label_ja = os_def.get("name_ja") or MODULE_OS_JA_LABELS.get(os_name, "未定義構築型《アンノウン・コード》")
+    return {
+        "os_name": os_name,
+        "os_label_ja": os_label_ja,
+        "os_tagline": os_def.get("tagline") or "既存理論に属さない、研究員独自の戦闘構成。",
+    }
 
 
 def _module_synergy_for_modules(modules):
@@ -17226,7 +17237,7 @@ def _module_synergy_for_modules(modules):
     synergy_label = "なし"
     if len(modules) == 3 and len(brand_counts) == 3:
         synergy_key = "hybrid_control"
-        synergy_label = "混成制御"
+        synergy_label = "複合演算領域《トリニティ・コード》"
         synergy_bonus = {key: 2 for key in MODULE_STAT_KEYS}
     else:
         sync_brand = next((key for key, count in brand_counts.items() if count >= 2), None)
@@ -17234,7 +17245,7 @@ def _module_synergy_for_modules(modules):
             rule = MODULE_BRAND_SYNC_RULES.get(sync_brand)
             if rule:
                 synergy_key = f"{sync_brand}_{brand_counts[sync_brand]}sync"
-                synergy_label = rule["sync_label"]
+                synergy_label = rule["sync_label_3"] if brand_counts[sync_brand] >= 3 else rule["sync_label"]
                 synergy_bonus = _add_module_bonus(rule["2"], rule["3_add"] if brand_counts[sync_brand] >= 3 else {})
     return {"synergy_key": synergy_key, "synergy_label": synergy_label, "synergy_bonus": synergy_bonus, "brand_counts": dict(brand_counts)}
 
@@ -17311,6 +17322,10 @@ def _research_module_view(row):
     module["brand_theme"] = brand_def["theme"]
     module["role_key"] = role_key
     module["role_label"] = _module_role_label(role_key)
+    module["role_sub_label"] = MODULE_ROLE_DEFINITIONS.get(role_key, MODULE_ROLE_DEFINITIONS["support"]).get("sub_label", "")
+    module["brand_alias_ja"] = brand_def.get("alias_ja") or brand_def["label"]
+    module["brand_tagline"] = brand_def.get("tagline") or ""
+    module["brand_description"] = brand_def.get("description") or ""
     if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
         module["name_ja"] = _synthesized_module_name(module)
         module["rarity"] = module.get("synthesis_grade") or module.get("rarity") or "refined"
@@ -17556,10 +17571,11 @@ def _module_protocol_options(loadout_summary, selected_key=None):
         brand_key = str(item.get("brand_key") or "")
         brand_def = MODULE_BRAND_DEFINITIONS.get(brand_key, MODULE_BRAND_DEFINITIONS["nova"])
         item["brand_label"] = brand_def["short_label"]
+        item["brand_alias_ja"] = brand_def.get("alias_ja") or brand_def["label"]
         item["required_label"] = (
             "3ブランド混成 または NOVA 2"
             if item["protocol_key"] == "adaptive_shift"
-            else f"{brand_def['short_label']} {int(item.get('required_brand_count') or 0)}"
+            else f"{brand_def['short_label']} {int(item.get('required_brand_count') or 0)}基接続"
         )
     return options
 
@@ -41774,9 +41790,9 @@ def modules_protocol_select():
     )
     if result.get("ok"):
         db.commit()
-        session["message"] = "プロトコルなしにしました" if not result.get("protocol") else "ACTIVE PROTOCOLを設定しました"
+        session["message"] = "秘匿命令を使用しない構成にしました" if not result.get("protocol") else "新たな秘匿戦闘命令が解禁されました"
     else:
-        session["message"] = result.get("reason") or "プロトコルを設定できませんでした"
+        session["message"] = result.get("reason") or "秘匿命令を設定できませんでした"
     return redirect(url_for("modules"))
 
 
@@ -50755,7 +50771,7 @@ def explore():
                 enemy_hp = max(0, enemy_hp - player_damage)
                 if protocol_recoil > 0:
                     player_hp = max(0, player_hp - int(protocol_recoil))
-                    module_protocol_triggers.append(f"過駆動の反動で耐久を{int(protocol_recoil)}失った")
+                    module_protocol_triggers.append(active_module_protocol.get("recoil_log") or f"限界出力の代償として、耐久を{int(protocol_recoil)}失った。")
                 if enemy_hp == 0 and critical:
                     crit_finisher_kills += 1
                 if enemy_hp > 0 and player_hp > 0:
@@ -50943,7 +50959,7 @@ def explore():
                     enemy_hp = max(0, enemy_hp - player_damage)
                     if protocol_recoil > 0:
                         player_hp = max(0, player_hp - int(protocol_recoil))
-                        module_protocol_triggers.append(f"過駆動の反動で耐久を{int(protocol_recoil)}失った")
+                        module_protocol_triggers.append(active_module_protocol.get("recoil_log") or f"限界出力の代償として、耐久を{int(protocol_recoil)}失った。")
                     if enemy_hp == 0 and critical:
                         crit_finisher_kills += 1
                 elif enemy_hp <= 0:

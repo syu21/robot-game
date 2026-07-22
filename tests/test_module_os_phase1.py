@@ -146,7 +146,9 @@ class ModuleOSPhase1Tests(unittest.TestCase):
              mock.patch.object(game_app, "_roll_research_module_drop", return_value=None):
             resp = client.post("/explore", data={"area_key": "layer_2"}, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("今回の搭載OS: TITAN FORTRESS OS", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn("TITAN FORTRESS OS", html)
+        self.assertIn("不落絶城型《アブソリュート・タイタン》", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             self.assertEqual(int(db.execute("SELECT COUNT(*) AS c FROM user_module_loadouts WHERE user_id = ?", (self.user_id,)).fetchone()["c"]), 0)

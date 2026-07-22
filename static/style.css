@@ -15720,6 +15720,7 @@ button.robo-fixed-nav-item {
   line-height: 1.35;
   font-weight: 800;
   margin-bottom: 8px;
+  overflow-wrap: anywhere;
 }
 .module-card-meta {
   display: flex;
@@ -15738,6 +15739,8 @@ button.robo-fixed-nav-item {
   color: #dbeafe;
   background: rgba(59, 130, 246, 0.14);
   border: 1px solid rgba(147, 197, 253, 0.22);
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 .module-badge.ok {
   color: #bbf7d0;

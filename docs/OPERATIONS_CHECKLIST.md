@@ -401,6 +401,8 @@
 - [ ] 合成結果に作戦特性が付く場合がある
 - [ ] 基地の研究モジュール欄に出撃先との相性が表示される
 - [ ] 出撃後も選択中モジュールが消費されない
+- [ ] `/modules` に `戦闘演算核 / BATTLE OS` と `秘匿戦闘命令 / ACTIVE PROTOCOL` が表示される
+- [ ] 戦闘結果に日本語型名の戦闘OSと、起動した秘匿命令名が表示される
 
 ## 12. 第1層 初回体験改善
 - [ ] `python3 init_db.py` 後、`users.onboarding_first_three_reward_claimed` がある

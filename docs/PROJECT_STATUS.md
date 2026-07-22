@@ -118,6 +118,7 @@
 - 研究モジュール:
   - ホームの出撃機体カードで、次の出撃に使う研究モジュールを選択できる
   - Phase 1としてブランド、役割タグ、最大3個のOS構成、ブランドシンクロ、3ブランド混成、OS名、構成プレビュー、出撃時の6ステ補正を実装
+  - ブランド、役割、シンクロ、戦闘OS、秘匿戦闘命令のプレイヤー向け名称は `constants.py` に集約
   - `user_module_loadouts` で次回出撃用のSLOT 1〜3を管理し、`users.active_research_module_instance_id` はSLOT 1互換ミラーとして残す
   - 構成は次回出撃のみ有効で、出撃後にロードアウトを解除する
   - 研究ゲージ `research_module_pity` を `x/100` で表示
@@ -717,8 +718,8 @@
 - モジュールを「次回出撃用に1個選ぶ」非消耗品として維持。
 - 研究方針、作戦特性、出撃先適性を追加し、数値最大だけでなく型と用途で選べる導線へ拡張。
 - 詳細仕様は `docs/MODULE_SPEC.md`。
-- 研究モジュール拡張 Phase 1: 最大3個のOS構成、ブランド、役割、シンクロ、OS名を追加。詳細は `docs/MODULE_SYSTEM_SPEC.md`。
-- 研究モジュール拡張 Phase 2: `ACTIVE PROTOCOL` を1出撃1個だけ選択可能にし、10種類の特殊プロトコルv1を追加。詳細は `docs/MODULE_PROTOCOL_SPEC.md`。
+- 研究モジュール拡張 Phase 1: 最大3個の戦闘OS構成、ブランド、役割、共鳴領域、OS名を追加。詳細は `docs/MODULE_SYSTEM_SPEC.md`。
+- 研究モジュール拡張 Phase 2: `秘匿戦闘命令 / ACTIVE PROTOCOL` を1出撃1個だけ選択可能にし、10種類の特殊プロトコルv1を追加。詳細は `docs/MODULE_PROTOCOL_SPEC.md`。
 
 ## 11. 第1層 初回体験改善
 - 第1層初勝利の結果画面に専用案内と主CTA `もう一度、第1層へ出撃` を追加。

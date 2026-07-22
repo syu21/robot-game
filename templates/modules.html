@@ -6,9 +6,10 @@
   <div class="flash">{{ message }}</div>
   {% endif %}
   <div class="card module-summary-card">
-    <div><b>現在のOS構成</b></div>
-    <div class="upgrade-cost">{{ module_loadout['os_name'] }}</div>
-    <div class="robot-time">{{ module_loadout['os_label_ja'] }} / 次回出撃のみ有効</div>
+    <div><b>戦闘演算核 / BATTLE OS</b></div>
+    <div class="robot-time">3基の研究モジュールを同期し、機体の戦闘思想を構築します。</div>
+    <div class="upgrade-cost">{{ module_loadout['os_label_ja'] }}</div>
+    <div class="robot-time">{{ module_loadout['os_name'] }} / {{ module_loadout['os_tagline'] }} / 次回出撃に適用</div>
     {% for slot in [1, 2, 3] %}
       {% set module = module_loadout['modules'][slot - 1] if module_loadout['modules']|length >= slot else None %}
       <div class="module-card-meta">
@@ -17,13 +18,13 @@
         <span class="module-badge active">{{ module['brand_short_label'] }}</span>
         <span>{{ module['name_ja'] }} / {{ module['rarity_label'] }}</span>
         {% else %}
-        <span class="module-badge muted">未設定</span>
+        <span class="module-badge muted">空きスロット</span>
         {% endif %}
       </div>
     {% endfor %}
     <div class="robot-time">個体補正: {{ module_loadout['individual_bonus_line'] }}</div>
-    <div class="robot-time">同期補正: {{ module_loadout['synergy_label'] }} / {{ module_loadout['synergy_bonus_line'] }}</div>
-    <div class="robot-time">最終補正: {{ module_loadout['final_bonus_line'] }}</div>
+    <div class="robot-time">共鳴領域 / SYNCHRONIZE: {{ module_loadout['synergy_label'] }} / {{ module_loadout['synergy_bonus_line'] }}</div>
+    <div class="robot-time">最終演算出力: {{ module_loadout['final_bonus_line'] }}</div>
     <form method="post" action="{{ url_for('modules_select') }}" class="inline-form inline-form-top">
       <input type="hidden" name="module_instance_id" value="none" />
       <button type="submit" class="btn-secondary">OS構成を解除</button>
@@ -34,14 +35,16 @@
   </div>
 
   <div class="card module-summary-card">
-    <div><b>ACTIVE PROTOCOL</b></div>
-    <div class="upgrade-cost">{{ active_module_protocol['name_ja'] if active_module_protocol else 'プロトコルなし' }}</div>
-    <div class="robot-time">現在のブランド構成: {% for key, count in module_loadout['brand_counts'].items() %}{{ key }} x{{ count }}{% if not loop.last %} / {% endif %}{% else %}なし{% endfor %}</div>
+    <div><b>秘匿戦闘命令 / ACTIVE PROTOCOL</b></div>
+    <div class="robot-time">戦闘中に一度だけ、または条件成立時に起動する機体固有命令です。</div>
+    <div class="upgrade-cost">{{ active_module_protocol['name_ja'] if active_module_protocol else '秘匿命令を使用しない' }}</div>
+    <div class="robot-time">{{ active_module_protocol['quote'] if active_module_protocol else '機体本来の演算のみで出撃します' }}</div>
     {% if module_protocol_options %}
     <div class="module-card-grid">
       {% for protocol in module_protocol_options %}
       <div class="module-card">
         <div class="module-card-title">{{ '●' if protocol['is_selected'] else '○' }} {{ protocol['name_ja'] }}</div>
+        <div class="robot-time">{{ protocol['quote'] }}</div>
         <div class="module-card-meta">
           <span class="module-badge {{ 'active' if protocol['is_unlocked'] else 'muted' }}">{{ protocol['brand_label'] }}</span>
           <span class="module-badge">{{ protocol['required_label'] }}</span>
@@ -52,7 +55,8 @@
         {% if protocol['is_unlocked'] %}
         <form method="post" action="{{ url_for('modules_protocol_select') }}" class="inline-form inline-form-top">
           <input type="hidden" name="protocol_key" value="{{ protocol['protocol_key'] }}" />
-          <button type="submit" {% if protocol['is_selected'] %}class="btn-secondary"{% endif %}>このプロトコルを設定</button>
+          <button type="submit" {% if protocol['is_selected'] %}class="btn-secondary"{% endif %}>秘匿命令を承認する</button>
+          <div class="robot-time">次回出撃に設定</div>
         </form>
         {% else %}
         <div class="robot-time">{{ protocol['lock_reason'] }}</div>
@@ -63,7 +67,8 @@
     {% endif %}
     <form method="post" action="{{ url_for('modules_protocol_select') }}" class="inline-form inline-form-top">
       <input type="hidden" name="protocol_key" value="none" />
-      <button type="submit" class="btn-secondary">プロトコルなし</button>
+      <button type="submit" class="btn-secondary">秘匿命令を使用しない</button>
+      <div class="robot-time">機体本来の演算のみで出撃します</div>
     </form>
   </div>
 
@@ -110,7 +115,7 @@
         <span class="module-badge active">最大3個</span>
         <span class="robot-time">チェックした順ではなく、一覧上の順でSLOT 1〜3に設定</span>
       </div>
-      <button type="submit">このOS構成を設定</button>
+      <button type="submit">戦闘OSを接続する</button>
     </form>
     <div class="module-card-grid">
       {% for module in research_module_options %}
@@ -118,9 +123,10 @@
         <div class="module-card-title">{{ module['name_ja'] }}</div>
         <div class="module-card-meta">
           <span class="module-badge">{{ module['type_label'] }}</span>
-          <span class="module-badge active">{{ module['brand_label'] }}</span>
+          <span class="module-badge active">{{ module['brand_alias_ja'] }}</span>
           <span class="module-badge">{{ module['brand_theme'] }}</span>
-          <span class="module-badge">{{ module['role_label'] }}</span>
+          <span class="module-badge">役割：{{ module['role_label'] }}</span>
+          {% if module['role_sub_label'] %}<span class="module-badge muted">{{ module['role_sub_label'] }}</span>{% endif %}
           {% if module['is_active_module'] %}<span class="module-badge active">使用中</span>{% endif %}
           {% if module['is_locked'] %}<span class="module-badge locked">保護中</span>{% endif %}
           <span class="module-badge {{ 'ok' if module['is_synthesis_material'] else 'muted' }}">{{ module['material_status_label'] }}</span>
