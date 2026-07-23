@@ -720,6 +720,7 @@
 - 詳細仕様は `docs/MODULE_SPEC.md`。
 - 研究モジュール拡張 Phase 1: 最大3個の戦闘OS構成、ブランド、役割、共鳴領域、OS名を追加。詳細は `docs/MODULE_SYSTEM_SPEC.md`。
 - 研究モジュール拡張 Phase 2: `秘匿戦闘命令 / ACTIVE PROTOCOL` を1出撃1個だけ選択可能にし、10種類の特殊プロトコルv1を追加。詳細は `docs/MODULE_PROTOCOL_SPEC.md`。
+- 研究モジュール拡張 Phase 3: `戦闘命令構築 / BATTLE CODE` を追加。条件コード1個 + 効果コード1個の自動戦闘命令を次回出撃へ設定できる。詳細は `docs/MODULE_BATTLE_CODE_SPEC.md`。
 
 ## 11. 第1層 初回体験改善
 - 第1層初勝利の結果画面に専用案内と主CTA `もう一度、第1層へ出撃` を追加。

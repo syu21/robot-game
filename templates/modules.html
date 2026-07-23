@@ -73,6 +73,72 @@
   </div>
 
   <div class="card module-summary-card">
+    <div><b>戦闘命令構築 / BATTLE CODE</b></div>
+    <div class="robot-time">条件コードと効果コードを接続し、機体専用の自動戦闘命令を構築します。</div>
+    {% if show_battle_code_intro %}
+    <div class="flash">
+      新しい研究領域が解放されました<br>
+      条件と効果を1つずつ接続し、あなたのロボ専用の戦闘命令を構築できます。
+    </div>
+    {% endif %}
+    <div class="upgrade-cost">{{ active_battle_code['display_name'] if active_battle_code else '標準戦闘演算' }}</div>
+    <div class="robot-time">{{ active_battle_code['condition_name'] ~ ' -> ' ~ active_battle_code['effect_name'] if active_battle_code else 'BATTLE CODEを使用せず出撃します' }}</div>
+    {% set bc = battle_code_options %}
+    <div class="module-card-grid">
+      {% for condition in bc['conditions'] %}
+      <form method="post" action="{{ url_for('modules_battle_code_select') }}" class="module-card {{ 'selected' if condition['is_selected'] else '' }}">
+        <input type="hidden" name="action" value="preview" />
+        <input type="hidden" name="condition_key" value="{{ condition['condition_key'] }}" />
+        <input type="hidden" name="effect_key" value="{{ bc['selected_effect_key'] }}" />
+        <button type="submit" class="module-card-button">
+          <span class="module-card-title">IF {{ condition['name_ja'] }}</span>
+          <span class="robot-time">{{ condition['short_description'] }}</span>
+          <span class="module-badge">{{ condition['timing_label'] }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+    <div class="module-card-grid">
+      {% for effect in bc['effects'] %}
+      <form method="post" action="{{ url_for('modules_battle_code_select') }}" class="module-card {{ 'selected' if effect['is_selected'] else '' }}">
+        <input type="hidden" name="action" value="preview" />
+        <input type="hidden" name="condition_key" value="{{ bc['selected_condition_key'] }}" />
+        <input type="hidden" name="effect_key" value="{{ effect['effect_key'] }}" />
+        <button type="submit" class="module-card-button">
+          <span class="module-card-title">THEN {{ effect['name_ja'] }}</span>
+          <span class="robot-time">{{ effect['short_description'] }}</span>
+          <span class="module-badge">{{ effect['effect_value_label'] }}</span>
+          <span class="module-badge muted">{{ effect['duration_label'] }}</span>
+          <span class="module-badge">{{ effect['affinity_label'] }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+    {% if bc['preview'] %}
+    <div class="module-card selected">
+      <div class="module-card-title">構築される戦闘命令</div>
+      <div class="upgrade-cost">{{ bc['preview']['display_name'] }}</div>
+      <div class="robot-time">実際の発動条件: {{ bc['preview']['condition_timing'] }}</div>
+      <div class="robot-time">実際の効果: {{ bc['preview']['effect_value_label'] }}</div>
+      <div class="robot-time">発動回数・効果時間: {{ bc['preview']['duration_label'] }}</div>
+      <div class="robot-time">{{ bc['preview']['specific_description'] }}</div>
+    </div>
+    <form method="post" action="{{ url_for('modules_battle_code_select') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="action" value="save" />
+      <input type="hidden" name="condition_key" value="{{ bc['selected_condition_key'] }}" />
+      <input type="hidden" name="effect_key" value="{{ bc['selected_effect_key'] }}" />
+      <button type="submit">戦闘命令を機体へ記録する</button>
+      <div class="robot-time">次回出撃から適用</div>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('modules_battle_code_select') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="action" value="clear" />
+      <button type="submit" class="btn-secondary">戦闘命令を初期化する</button>
+      <div class="robot-time">BATTLE CODEを使用せず出撃します</div>
+    </form>
+  </div>
+
+  <div class="card module-summary-card">
     <div><b>研究合成</b></div>
     <div class="robot-time">研究モジュール2個とコインで、新しい作戦チップを生成します。</div>
     {% if material_candidate_count >= 2 %}

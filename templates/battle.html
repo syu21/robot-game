@@ -232,8 +232,8 @@
       </div>
     {% endif %}
   </div>
-  {% if summary.get('module_strategy') %}
-  {% set strategy = summary.get('module_strategy') %}
+  {% if summary.get('module_strategy') or summary.get('module_protocol') or summary.get('battle_code') %}
+  {% set strategy = summary.get('module_strategy') or {} %}
   <section class="card module-strategy-card">
     <div class="section-kicker">今回の作戦</div>
     {% if summary.get('module_loadout') %}
@@ -246,6 +246,7 @@
       <p class="robot-time">最終演算出力: {{ loadout.get('final_bonus_line', 'なし') }}</p>
     </details>
     {% endif %}
+    {% if summary.get('module_strategy') %}
     <h3>{{ strategy.get('module_name', '研究モジュール') }}</h3>
     <div class="module-meta">
       <span>{{ strategy.get('type_label', '研究モジュール') }}</span>
@@ -267,6 +268,7 @@
       {% endfor %}
     </div>
     {% endif %}
+    {% endif %}
     {% if summary.get('module_protocol') %}
     {% set protocol = summary.get('module_protocol') %}
     <div class="module-protocol-result">
@@ -280,6 +282,29 @@
         <summary>プロトコル詳細</summary>
         <p class="robot-time">発動ターン: {{ protocol.get('activation_turns', [])|join(', ') if protocol.get('activation_turns') else 'なし' }}</p>
         {% for event in protocol.get('events', []) %}
+        <p class="robot-time">{{ event.get('turn') }}T: {{ event.get('text') }}</p>
+        {% endfor %}
+      </details>
+    </div>
+    {% endif %}
+    {% if summary.get('battle_code') %}
+    {% set code = summary.get('battle_code') %}
+    <div class="module-protocol-result">
+      <p class="upgrade-cost">今回のBATTLE CODE<br>{{ code.get('display_name', '標準戦闘演算') }}</p>
+      {% if code.get('activation_count') %}
+      <p class="robot-time">条件成立：{{ code.get('condition_event_count', 0) }}回 / 命令発動：{{ code.get('activation_count', 0) }}回{% if code.get('effect_summary') %} / {{ code.get('effect_summary') }}{% endif %}</p>
+      {% else %}
+      <p class="robot-time">BATTLE CODEは待機状態のまま戦闘を終了しました</p>
+      {% endif %}
+      <details>
+        <summary>BATTLE CODE詳細</summary>
+        <p class="robot-time">条件: {{ code.get('condition_name', '条件コード') }}</p>
+        <p class="robot-time">効果: {{ code.get('effect_name', '効果コード') }}</p>
+        <p class="robot-time">発動ターン: {{ code.get('activation_turns', [])|join(', ') if code.get('activation_turns') else 'なし' }}</p>
+        {% for event in code.get('events', []) %}
+        <p class="robot-time">{{ event.get('turn') }}T: {{ event.get('text') }}</p>
+        {% endfor %}
+        {% for event in code.get('consume_events', []) %}
         <p class="robot-time">{{ event.get('turn') }}T: {{ event.get('text') }}</p>
         {% endfor %}
       </details>
@@ -563,6 +588,9 @@
             {% endif %}
             {% if t.get('module_protocol_trigger_line') %}
               <div class="battle-line drop">{{ t['module_protocol_trigger_line'] }}</div>
+            {% endif %}
+            {% if t.get('battle_code_trigger_line') %}
+              <div class="battle-line drop">{{ t['battle_code_trigger_line'] }}</div>
             {% endif %}
             {% if t.get('player_skill') %}
               <div class="battle-skill">「{{ t['player_skill'] }}」</div>

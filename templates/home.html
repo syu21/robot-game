@@ -350,6 +350,7 @@
                   <span>勝利: {{ user['wins'] }}</span>
                   <span>戦闘OS: {{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</span>
                   <span>秘匿命令: {{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</span>
+                  <span>BATTLE CODE: {{ active_battle_code['display_name'] if active_battle_code else '標準戦闘演算' }}</span>
                 </div>
               </div>
             </div>
@@ -359,6 +360,7 @@
             <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
             <div class="stat-card"><div class="stat-label">戦闘OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</div></div>
             <div class="stat-card"><div class="stat-label">秘匿命令</div><div class="stat-value stat-small">{{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</div></div>
+            <div class="stat-card"><div class="stat-label">BATTLE CODE</div><div class="stat-value stat-small">{{ active_battle_code['display_name'] if active_battle_code else '標準戦闘演算' }}</div></div>
           </div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>

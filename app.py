@@ -67,6 +67,8 @@ from constants import (
     LEGAL_BRAND_NAME,
     LEGAL_DISCLOSURE_POLICY,
     LEGAL_OPERATOR_NAME,
+    BATTLE_CODE_CONDITIONS,
+    BATTLE_CODE_EFFECTS,
     MODULE_BRAND_DEFINITIONS,
     MODULE_BRAND_SYNC_RULES,
     MODULE_OS_DEFINITIONS,
@@ -82,7 +84,7 @@ from constants import (
 from services.personality_logs import generate_exploration_log, get_idle_line, get_streak_lines, pick_personality
 from services.audit import audit_log
 from services.research_module_synthesis import synthesize_research_module
-from services import module_protocols
+from services import battle_codes, module_protocols
 from services.module_traits import (
     POLICY_DEFS as MODULE_RESEARCH_POLICY_DEFS,
     module_area_fit,
@@ -12756,6 +12758,12 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_key TEXT")
     if "selected_module_protocol_at" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN selected_module_protocol_at INTEGER NOT NULL DEFAULT 0")
+    if "selected_battle_code_condition_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN selected_battle_code_condition_key TEXT")
+    if "selected_battle_code_effect_key" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN selected_battle_code_effect_key TEXT")
+    if "selected_battle_code_updated_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN selected_battle_code_updated_at INTEGER NOT NULL DEFAULT 0")
     if "battle_log_mode" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN battle_log_mode TEXT NOT NULL DEFAULT 'collapsed'")
     if "boss_meter_explore_l1" not in cols:
@@ -17675,6 +17683,151 @@ def _set_module_protocol(db, user_id, protocol_key, loadout_summary=None, *, req
         ip=ip,
     )
     return {"ok": True, "protocol": protocol}
+
+
+def _selected_battle_code_keys(user_row):
+    if not user_row:
+        return "", ""
+    condition_key = ""
+    effect_key = ""
+    if "selected_battle_code_condition_key" in user_row.keys():
+        condition_key = str(user_row["selected_battle_code_condition_key"] or "").strip()
+    if "selected_battle_code_effect_key" in user_row.keys():
+        effect_key = str(user_row["selected_battle_code_effect_key"] or "").strip()
+    return condition_key, effect_key
+
+
+def _battle_code_view(condition_key, effect_key):
+    return battle_codes.snapshot(condition_key, effect_key)
+
+
+def _active_battle_code_for_user(db, user_id, user_row=None):
+    user = user_row or db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    condition_key, effect_key = _selected_battle_code_keys(user)
+    if not condition_key and not effect_key:
+        return None
+    return _battle_code_view(condition_key, effect_key)
+
+
+def _battle_code_preview(condition_key, effect_key):
+    selected_condition = condition_key or "after_miss"
+    selected_effect = effect_key or "guaranteed_hit"
+    preview = battle_codes.combination_summary(selected_condition, selected_effect)
+    return preview or battle_codes.combination_summary("after_miss", "guaranteed_hit")
+
+
+def _battle_code_options(selected_condition_key="", selected_effect_key=""):
+    selected_condition_key = str(selected_condition_key or "").strip() or "after_miss"
+    selected_effect_key = str(selected_effect_key or "").strip() or "guaranteed_hit"
+    conditions = []
+    for item in battle_codes.active_conditions():
+        conditions.append(
+            {
+                **item,
+                "is_selected": item["condition_key"] == selected_condition_key,
+            }
+        )
+    effects = []
+    for item in battle_codes.active_effects():
+        effects.append(
+            {
+                **item,
+                "is_selected": item["effect_key"] == selected_effect_key,
+                "effect_value_label": battle_codes.effect_value_label(item),
+                "duration_label": battle_codes.duration_policy(selected_condition_key, item["effect_key"])["label"],
+            }
+        )
+    return {
+        "selected_condition_key": selected_condition_key,
+        "selected_effect_key": selected_effect_key,
+        "conditions": conditions,
+        "effects": effects,
+        "preview": _battle_code_preview(selected_condition_key, selected_effect_key),
+    }
+
+
+def _battle_code_audit_payload(code, loadout_summary=None, protocol=None, *, user_id, robot_instance_id=None, battle_result_id=None, area_key=None, enemy_key=None, is_boss=False, **extra):
+    code = code or {}
+    payload = {
+        "user_id": int(user_id),
+        "robot_instance_id": int(robot_instance_id) if robot_instance_id else None,
+        "battle_result_id": battle_result_id,
+        "area_key": area_key,
+        "enemy_key": enemy_key,
+        "is_boss": bool(is_boss),
+        "os_key": (loadout_summary or {}).get("synergy_key") or "",
+        "os_name": (loadout_summary or {}).get("os_name") or "NO MODULE OS",
+        "protocol_key": (protocol or {}).get("protocol_key"),
+        "condition_key": code.get("condition_key"),
+        "effect_key": code.get("effect_key"),
+        "battle_code_name": code.get("display_name"),
+        "condition_name": code.get("condition_name"),
+        "effect_name": code.get("effect_name"),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _clear_battle_code(db, user_id, *, request_id=None, ip=None, reason="manual", previous_code=None, loadout_summary=None, protocol=None):
+    code = previous_code
+    if code is None:
+        user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        condition_key, effect_key = _selected_battle_code_keys(user)
+        code = _battle_code_view(condition_key, effect_key)
+    db.execute(
+        """
+        UPDATE users
+        SET selected_battle_code_condition_key = NULL,
+            selected_battle_code_effect_key = NULL,
+            selected_battle_code_updated_at = 0
+        WHERE id = ?
+        """,
+        (int(user_id),),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_CLEAR"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_clear",
+        entity_type="module_battle_code",
+        payload=_battle_code_audit_payload(code, loadout_summary, protocol, user_id=user_id, trigger_reason=reason),
+        ip=ip,
+    )
+
+
+def _set_battle_code(db, user_id, condition_key, effect_key, loadout_summary=None, protocol=None, *, request_id=None, ip=None):
+    condition_key = str(condition_key or "").strip()
+    effect_key = str(effect_key or "").strip()
+    if (not condition_key and not effect_key) or condition_key.lower() == "none" or effect_key.lower() == "none":
+        _clear_battle_code(db, user_id, request_id=request_id, ip=ip, reason="manual", loadout_summary=loadout_summary, protocol=protocol)
+        return {"ok": True, "battle_code": None}
+    validation = battle_codes.validate_selection(condition_key, effect_key)
+    if not validation.get("ok"):
+        return {"ok": False, "reason": validation.get("reason") or "BATTLE CODEを設定できませんでした"}
+    code = _battle_code_view(condition_key, effect_key)
+    now_ts = int(time.time())
+    db.execute(
+        """
+        UPDATE users
+        SET selected_battle_code_condition_key = ?,
+            selected_battle_code_effect_key = ?,
+            selected_battle_code_updated_at = ?
+        WHERE id = ?
+        """,
+        (condition_key, effect_key, now_ts, int(user_id)),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_SET"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_set",
+        entity_type="module_battle_code",
+        payload=_battle_code_audit_payload(code, loadout_summary, protocol, user_id=user_id),
+        ip=ip,
+    )
+    return {"ok": True, "battle_code": code}
 
 
 def _user_research_module_options(db, user_id):
@@ -41796,6 +41949,52 @@ def modules_protocol_select():
     return redirect(url_for("modules"))
 
 
+@app.route("/modules/battle-code", methods=["POST"])
+@login_required
+def modules_battle_code_select():
+    db = get_db()
+    user_id = int(session["user_id"])
+    loadout_summary = _active_research_module_loadout_for_user(db, user_id)
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    active_protocol = _active_module_protocol_for_user(db, user_id, loadout_summary, user_row=user)
+    action = str(request.form.get("action") or "preview").strip()
+    condition_key = str(request.form.get("condition_key") or "").strip()
+    effect_key = str(request.form.get("effect_key") or "").strip()
+    if action == "clear":
+        _clear_battle_code(
+            db,
+            user_id,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+            loadout_summary=loadout_summary,
+            protocol=active_protocol,
+        )
+        db.commit()
+        session["message"] = "BATTLE CODEを標準戦闘演算へ戻しました"
+        return redirect(url_for("modules"))
+    if action == "save":
+        result = _set_battle_code(
+            db,
+            user_id,
+            condition_key,
+            effect_key,
+            loadout_summary,
+            active_protocol,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+        if result.get("ok"):
+            db.commit()
+            session["message"] = "戦闘命令を機体へ記録しました"
+            return redirect(url_for("modules"))
+        session["message"] = result.get("reason") or "BATTLE CODEを設定できませんでした"
+    else:
+        validation = battle_codes.validate_selection(condition_key, effect_key)
+        if not validation.get("ok"):
+            session["message"] = validation.get("reason") or "BATTLE CODEをプレビューできませんでした"
+    return redirect(url_for("modules", bc_condition=condition_key, bc_effect=effect_key))
+
+
 @app.route("/modules/synthesis/equip", methods=["POST"])
 @login_required
 def modules_synthesis_equip():
@@ -42603,6 +42802,14 @@ def modules():
     if selected_protocol_before and not active_protocol:
         db.commit()
     protocol_options = _module_protocol_options(loadout_summary, active_protocol.get("protocol_key") if active_protocol else "")
+    active_battle_code = _active_battle_code_for_user(db, user_id, user_row=user)
+    selected_bc_condition = str(request.args.get("bc_condition") or "").strip()
+    selected_bc_effect = str(request.args.get("bc_effect") or "").strip()
+    if not selected_bc_condition or not selected_bc_effect:
+        stored_condition, stored_effect = _selected_battle_code_keys(user)
+        selected_bc_condition = selected_bc_condition or stored_condition or "after_miss"
+        selected_bc_effect = selected_bc_effect or stored_effect or "guaranteed_hit"
+    battle_code_options = _battle_code_options(selected_bc_condition, selected_bc_effect)
     active_module = loadout_summary["modules"][0] if loadout_summary.get("modules") else None
     active_ids = set(loadout_summary.get("module_instance_ids") or [])
     module_options = _annotate_research_module_material_status(module_options, active_module, active_ids=active_ids)
@@ -42647,6 +42854,9 @@ def modules():
         module_loadout=loadout_summary,
         active_module_protocol=active_protocol,
         module_protocol_options=protocol_options,
+        active_battle_code=active_battle_code,
+        battle_code_options=battle_code_options,
+        show_battle_code_intro=bool(module_options and not active_battle_code),
         research_module_options=module_options,
         module_filter_key=filter_key,
         module_sort_key=sort_key,
@@ -43884,6 +44094,7 @@ def home():
     )
     if selected_protocol_before and not active_module_protocol:
         db.commit()
+    active_battle_code = _active_battle_code_for_user(db, int(user["id"]), user_row=user) if main_robot else None
     research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
     research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
@@ -44561,6 +44772,7 @@ def home():
             active_research_module=active_research_module,
             active_module_loadout=active_module_loadout,
             active_module_protocol=active_module_protocol,
+            active_battle_code=active_battle_code,
             active_research_module_fit=active_research_module_fit,
             research_module_combine_candidates=research_module_combine_candidates,
             research_module_pity=research_module_pity,
@@ -49796,6 +50008,7 @@ def explore():
         ip=request.remote_addr,
         auto_clear=True,
     )
+    active_battle_code = _active_battle_code_for_user(db, user_id, user_row=user)
     if module_loadout_summary.get("modules"):
         module_payload = _module_loadout_audit_payload(
             module_loadout_summary,
@@ -49865,6 +50078,8 @@ def explore():
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
     module_trait_state = _module_trait_state(active_research_module)
     module_protocol_state = None
+    battle_code_state = battle_codes.init_state(active_battle_code)
+    battle_code_started = False
     all_turn_logs = []
     reward_coin = 0
     reward_exp = 0
@@ -50635,6 +50850,31 @@ def explore():
                 ),
                 ip=request.remote_addr,
             )
+        battle_code_start_lines = []
+        if active_battle_code and battle_code_state and not battle_code_started:
+            battle_code_started = True
+            battle_code_start_lines.extend(battle_codes.start_lines(battle_code_state))
+            player_hp, code_lines = battle_codes.battle_start(battle_code_state, player_hp, player_max_hp)
+            battle_code_start_lines.extend(code_lines)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_START"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_battle_code",
+                payload=_battle_code_audit_payload(
+                    active_battle_code,
+                    module_loadout_summary,
+                    active_module_protocol,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    area_key=area_key,
+                    enemy_key=enemy["key"] if "key" in enemy.keys() else None,
+                    is_boss=bool(area_boss_active and battle_no == 1),
+                ),
+                ip=request.remote_addr,
+            )
         if weekly_env and (enemy.get("element") or "").upper() == (weekly_env.get("element") or "").upper():
             spawned_bonus_applied = True
         # 序盤救済Aは「通常のtier1戦のみ」で有効。
@@ -50667,9 +50907,13 @@ def explore():
             module_trait_triggers = []
             module_protocol_trigger_line = None
             module_protocol_triggers = []
+            battle_code_trigger_line = None
+            battle_code_triggers = []
             player_skill = random.choice(["スラッシュ", "バースト", "ドライブ"])
             if turn == 1 and protocol_start_lines:
                 module_protocol_triggers.extend(protocol_start_lines)
+            if turn == 1 and battle_code_start_lines:
+                battle_code_triggers.extend(battle_code_start_lines)
             module_protocol_triggers.extend(
                 module_protocols.turn_start(
                     module_protocol_state,
@@ -50686,9 +50930,19 @@ def explore():
                 player_max_hp,
             )
             module_protocol_triggers.extend(protocol_heal_lines)
+            player_hp, code_lines = battle_codes.turn_start(
+                battle_code_state,
+                turn,
+                player_hp,
+                player_max_hp,
+                enemy_hp,
+                enemy_max_hp,
+            )
+            battle_code_triggers.extend(code_lines)
 
             protocol_player_spd = module_protocols.effective_speed(module_protocol_state, player_spd, turn)
-            player_first = protocol_player_spd >= enemy_spd
+            code_player_spd = battle_codes.effective_speed(battle_code_state, protocol_player_spd, turn)
+            player_first = code_player_spd >= enemy_spd
             if player_first:
                 force_player_hit = relief_miss_enabled and (player_miss_streak >= 2)
                 player_effective_atk = player_atk
@@ -50713,6 +50967,14 @@ def explore():
                     turn=turn,
                 )
                 module_protocol_triggers.extend(protocol_lines)
+                player_effective_atk, player_effective_cri, force_player_hit, code_lines = battle_codes.apply_attack_modifiers(
+                    battle_code_state,
+                    atk=player_effective_atk,
+                    cri=player_effective_cri,
+                    force_hit=force_player_hit,
+                    turn=turn,
+                )
+                battle_code_triggers.extend(code_lines)
                 player_damage, critical, player_attack_detail = _resolve_attack_logged(
                     player_effective_atk,
                     player_effective_acc,
@@ -50737,15 +50999,6 @@ def explore():
                     player_miss_streak = (player_miss_streak + 1) if player_missed else 0
                 if force_player_hit and not player_missed:
                     player_relief_line = "救済: 連続MISSのため命中補正"
-                _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
-                module_protocol_triggers.extend(
-                    module_protocols.after_player_attack(
-                        module_protocol_state,
-                        turn=turn,
-                        missed=player_missed,
-                        critical=critical,
-                    )
-                )
                 raw_player_damage = int(player_damage)
                 if enemy_trait_key == "heavy" and raw_player_damage > 0:
                     reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -50769,9 +51022,38 @@ def explore():
                 )
                 module_protocol_triggers.extend(protocol_lines)
                 enemy_hp = max(0, enemy_hp - player_damage)
+                _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
+                module_protocol_triggers.extend(
+                    module_protocols.after_player_attack(
+                        module_protocol_state,
+                        turn=turn,
+                        missed=player_missed,
+                        critical=critical,
+                    )
+                )
+                player_hp, code_lines = battle_codes.after_player_attack(
+                    battle_code_state,
+                    turn=turn,
+                    missed=player_missed,
+                    critical=critical,
+                    enemy_hp=enemy_hp,
+                    enemy_max_hp=enemy_max_hp,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                )
+                battle_code_triggers.extend(code_lines)
                 if protocol_recoil > 0:
                     player_hp = max(0, player_hp - int(protocol_recoil))
                     module_protocol_triggers.append(active_module_protocol.get("recoil_log") or f"限界出力の代償として、耐久を{int(protocol_recoil)}失った。")
+                    player_hp, code_lines = battle_codes.after_player_damage(
+                        battle_code_state,
+                        turn=turn,
+                        player_hp=player_hp,
+                        player_max_hp=player_max_hp,
+                        enemy_hp=enemy_hp,
+                        enemy_max_hp=enemy_max_hp,
+                    )
+                    battle_code_triggers.extend(code_lines)
                 if enemy_hp == 0 and critical:
                     crit_finisher_kills += 1
                 if enemy_hp > 0 and player_hp > 0:
@@ -50785,6 +51067,7 @@ def explore():
                     )
                     module_trait_triggers.extend(trait_lines)
                     player_effective_def = module_protocols.apply_defense_modifiers(module_protocol_state, player_effective_def, turn)
+                    player_effective_def = battle_codes.apply_defense_modifiers(battle_code_state, player_effective_def, turn)
                     if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                         enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                         if not berserk_triggered:
@@ -50810,6 +51093,7 @@ def explore():
                         turn=turn,
                     )
                     module_protocol_triggers.extend(protocol_lines)
+                    battle_code_triggers.extend(battle_codes.after_incoming_damage(battle_code_state, turn=turn, damage=enemy_damage))
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                     player_hp = max(0, player_hp - enemy_damage)
                     damage_taken_total += max(0, int(enemy_damage))
@@ -50820,6 +51104,15 @@ def explore():
                         player_max_hp=player_max_hp,
                     )
                     module_protocol_triggers.extend(protocol_lines)
+                    player_hp, code_lines = battle_codes.after_player_damage(
+                        battle_code_state,
+                        turn=turn,
+                        player_hp=player_hp,
+                        player_max_hp=player_max_hp,
+                        enemy_hp=enemy_hp,
+                        enemy_max_hp=enemy_max_hp,
+                    )
+                    battle_code_triggers.extend(code_lines)
                     if enemy_trait_key == "unstable" and enemy_hp > 0 and random.random() < 0.35:
                         recoil = min(enemy_hp, max(1, int(math.ceil(enemy_effective_atk * 0.12))))
                         enemy_hp = max(0, enemy_hp - recoil)
@@ -50838,6 +51131,7 @@ def explore():
                 )
                 module_trait_triggers.extend(trait_lines)
                 player_effective_def = module_protocols.apply_defense_modifiers(module_protocol_state, player_effective_def, turn)
+                player_effective_def = battle_codes.apply_defense_modifiers(battle_code_state, player_effective_def, turn)
                 if enemy_trait_key == "berserk" and enemy_hp * 2 <= enemy_max_hp:
                     enemy_effective_atk = max(1, int(round(enemy_atk * 1.2)))
                     if not berserk_triggered:
@@ -50863,6 +51157,7 @@ def explore():
                     turn=turn,
                 )
                 module_protocol_triggers.extend(protocol_lines)
+                battle_code_triggers.extend(battle_codes.after_incoming_damage(battle_code_state, turn=turn, damage=enemy_damage))
                 enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                 player_hp = max(0, player_hp - enemy_damage)
                 damage_taken_total += max(0, int(enemy_damage))
@@ -50873,6 +51168,15 @@ def explore():
                     player_max_hp=player_max_hp,
                 )
                 module_protocol_triggers.extend(protocol_lines)
+                player_hp, code_lines = battle_codes.after_player_damage(
+                    battle_code_state,
+                    turn=turn,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                    enemy_hp=enemy_hp,
+                    enemy_max_hp=enemy_max_hp,
+                )
+                battle_code_triggers.extend(code_lines)
                 if enemy_trait_key == "unstable" and enemy_hp > 0 and random.random() < 0.35:
                     recoil = min(enemy_hp, max(1, int(math.ceil(enemy_effective_atk * 0.12))))
                     enemy_hp = max(0, enemy_hp - recoil)
@@ -50901,6 +51205,14 @@ def explore():
                         turn=turn,
                     )
                     module_protocol_triggers.extend(protocol_lines)
+                    player_effective_atk, player_effective_cri, force_player_hit, code_lines = battle_codes.apply_attack_modifiers(
+                        battle_code_state,
+                        atk=player_effective_atk,
+                        cri=player_effective_cri,
+                        force_hit=force_player_hit,
+                        turn=turn,
+                    )
+                    battle_code_triggers.extend(code_lines)
                     player_damage, critical, player_attack_detail = _resolve_attack_logged(
                         player_effective_atk,
                         player_effective_acc,
@@ -50925,15 +51237,6 @@ def explore():
                         player_miss_streak = (player_miss_streak + 1) if player_missed else 0
                     if force_player_hit and not player_missed:
                         player_relief_line = "救済: 連続MISSのため命中補正"
-                    _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
-                    module_protocol_triggers.extend(
-                        module_protocols.after_player_attack(
-                            module_protocol_state,
-                            turn=turn,
-                            missed=player_missed,
-                            critical=critical,
-                        )
-                    )
                     raw_player_damage = int(player_damage)
                     if enemy_trait_key == "heavy" and raw_player_damage > 0:
                         reduced_damage = max(1, int(math.floor(raw_player_damage * 0.85)))
@@ -50957,9 +51260,38 @@ def explore():
                     )
                     module_protocol_triggers.extend(protocol_lines)
                     enemy_hp = max(0, enemy_hp - player_damage)
+                    _module_after_player_attack(module_trait_state, missed=player_missed, critical=critical)
+                    module_protocol_triggers.extend(
+                        module_protocols.after_player_attack(
+                            module_protocol_state,
+                            turn=turn,
+                            missed=player_missed,
+                            critical=critical,
+                        )
+                    )
+                    player_hp, code_lines = battle_codes.after_player_attack(
+                        battle_code_state,
+                        turn=turn,
+                        missed=player_missed,
+                        critical=critical,
+                        enemy_hp=enemy_hp,
+                        enemy_max_hp=enemy_max_hp,
+                        player_hp=player_hp,
+                        player_max_hp=player_max_hp,
+                    )
+                    battle_code_triggers.extend(code_lines)
                     if protocol_recoil > 0:
                         player_hp = max(0, player_hp - int(protocol_recoil))
                         module_protocol_triggers.append(active_module_protocol.get("recoil_log") or f"限界出力の代償として、耐久を{int(protocol_recoil)}失った。")
+                        player_hp, code_lines = battle_codes.after_player_damage(
+                            battle_code_state,
+                            turn=turn,
+                            player_hp=player_hp,
+                            player_max_hp=player_max_hp,
+                            enemy_hp=enemy_hp,
+                            enemy_max_hp=enemy_max_hp,
+                        )
+                        battle_code_triggers.extend(code_lines)
                     if enemy_hp == 0 and critical:
                         crit_finisher_kills += 1
                 elif enemy_hp <= 0:
@@ -50975,6 +51307,8 @@ def explore():
                 module_trait_trigger_line = " / ".join(module_trait_triggers)
             if module_protocol_triggers:
                 module_protocol_trigger_line = " / ".join(module_protocol_triggers)
+            if battle_code_triggers:
+                battle_code_trigger_line = " / ".join(battle_code_triggers)
 
             battle_logs.append(
                 {
@@ -51008,6 +51342,7 @@ def explore():
                     "enemy_trait_trigger_line": enemy_trait_trigger_line,
                     "module_trait_trigger_line": module_trait_trigger_line,
                     "module_protocol_trigger_line": module_protocol_trigger_line,
+                    "battle_code_trigger_line": battle_code_trigger_line,
                     "player_relief_line": player_relief_line,
                     "player_berserk_line": player_berserk_line,
                 }
@@ -51925,6 +52260,7 @@ def explore():
     else:
         _touch_explore_cooldown(db, user_id, now)
     module_protocol_summary = module_protocols.summary(module_protocol_state)
+    battle_code_summary = battle_codes.summary(battle_code_state)
     if active_module_protocol and module_protocol_summary:
         for index, event in enumerate(module_protocol_summary.get("events") or [], start=1):
             audit_log(
@@ -51975,6 +52311,114 @@ def explore():
                 is_boss=bool(area_boss_active),
                 protocol_activation_count=int(module_protocol_summary.get("activation_count") or 0),
                 protocol_summary_json=module_protocol_summary,
+                result_win=bool(final_outcome == "win"),
+                turn_count=len(all_turn_logs),
+            ),
+            ip=request.remote_addr,
+        )
+    if active_battle_code and battle_code_summary:
+        for index, event in enumerate(battle_code_summary.get("condition_events") or [], start=1):
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_CONDITION"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_battle_code",
+                payload=_battle_code_audit_payload(
+                    active_battle_code,
+                    module_loadout_summary,
+                    active_module_protocol,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    battle_result_id=battle_id,
+                    area_key=area_key,
+                    enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                    is_boss=bool(area_boss_active),
+                    condition_event_index=index,
+                    activation_turn=event.get("turn"),
+                    trigger_reason=event.get("text"),
+                ),
+                ip=request.remote_addr,
+            )
+        for index, event in enumerate(battle_code_summary.get("events") or [], start=1):
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_TRIGGER"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_battle_code",
+                payload=_battle_code_audit_payload(
+                    active_battle_code,
+                    module_loadout_summary,
+                    active_module_protocol,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    battle_result_id=battle_id,
+                    area_key=area_key,
+                    enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                    is_boss=bool(area_boss_active),
+                    activation_index=index,
+                    activation_turn=event.get("turn"),
+                    trigger_reason=event.get("text"),
+                    effect_type=event.get("effect_type"),
+                    effect_value=event.get("effect_value"),
+                    duration_turns=event.get("duration_turns"),
+                    healing_amount=event.get("healing_amount"),
+                    damage_reduced=event.get("damage_reduced"),
+                    bonus_damage=event.get("bonus_damage"),
+                    guaranteed_hit=event.get("guaranteed_hit"),
+                    critical_bonus=event.get("critical_bonus"),
+                ),
+                ip=request.remote_addr,
+            )
+        for index, event in enumerate(battle_code_summary.get("consume_events") or [], start=1):
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_CONSUME"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="module_battle_code",
+                payload=_battle_code_audit_payload(
+                    active_battle_code,
+                    module_loadout_summary,
+                    active_module_protocol,
+                    user_id=user_id,
+                    robot_instance_id=int(active["id"]) if active else None,
+                    battle_result_id=battle_id,
+                    area_key=area_key,
+                    enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                    is_boss=bool(area_boss_active),
+                    activation_turn=event.get("turn"),
+                    trigger_reason=event.get("text"),
+                    consume_index=index,
+                    damage_reduced=event.get("damage_reduced"),
+                    guaranteed_hit=event.get("guaranteed_hit"),
+                ),
+                ip=request.remote_addr,
+            )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_FINISH"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="module_battle_code",
+            payload=_battle_code_audit_payload(
+                active_battle_code,
+                module_loadout_summary,
+                active_module_protocol,
+                user_id=user_id,
+                robot_instance_id=int(active["id"]) if active else None,
+                battle_result_id=battle_id,
+                area_key=area_key,
+                enemy_key=(last_enemy["key"] if last_enemy and "key" in last_enemy.keys() else None),
+                is_boss=bool(area_boss_active),
+                battle_code_activation_count=int(battle_code_summary.get("activation_count") or 0),
+                battle_code_condition_event_count=int(battle_code_summary.get("condition_event_count") or 0),
+                battle_code_summary_json=battle_code_summary,
                 result_win=bool(final_outcome == "win"),
                 turn_count=len(all_turn_logs),
             ),
@@ -52100,6 +52544,21 @@ def explore():
                     "protocol_summary_json": module_protocol_summary,
                 }
                 if active_module_protocol
+                else None
+            ),
+            "battle_code": (
+                {
+                    "battle_code_condition_key": active_battle_code.get("condition_key"),
+                    "battle_code_effect_key": active_battle_code.get("effect_key"),
+                    "battle_code_display_name": active_battle_code.get("display_name"),
+                    "battle_code_condition_name": active_battle_code.get("condition_name"),
+                    "battle_code_effect_name": active_battle_code.get("effect_name"),
+                    "battle_code_activation_count": int((battle_code_summary or {}).get("activation_count") or 0),
+                    "battle_code_condition_event_count": int((battle_code_summary or {}).get("condition_event_count") or 0),
+                    "battle_code_activation_turns": list((battle_code_summary or {}).get("activation_turns") or []),
+                    "battle_code_summary_json": battle_code_summary,
+                }
+                if active_battle_code
                 else None
             ),
             "stage_modifier": {
@@ -52342,6 +52801,17 @@ def explore():
             reason="consume_after_explore",
             previous_protocol_key=active_module_protocol.get("protocol_key"),
             loadout_summary=module_loadout_summary,
+        )
+    if active_battle_code:
+        _clear_battle_code(
+            db,
+            user_id,
+            request_id=request_id,
+            ip=request.remote_addr,
+            reason="consume_after_explore",
+            previous_code=active_battle_code,
+            loadout_summary=module_loadout_summary,
+            protocol=active_module_protocol,
         )
     db.commit()
 
@@ -52593,6 +53063,7 @@ def explore():
         "module_strategy": module_strategy_card,
         "module_loadout": module_loadout_summary,
         "module_protocol": module_protocol_summary,
+        "battle_code": battle_code_summary,
         "module_snapshot": (
             {
                 "module_instance_id": int(active_research_module.get("instance_id") or 0),

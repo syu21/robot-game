@@ -152,6 +152,13 @@
 - `audit.module.protocol.start`
 - `audit.module.protocol.trigger`
 - `audit.module.protocol.finish`
+- `audit.module.battle_code.set`
+- `audit.module.battle_code.clear`
+- `audit.module.battle_code.start`
+- `audit.module.battle_code.condition`
+- `audit.module.battle_code.trigger`
+- `audit.module.battle_code.consume`
+- `audit.module.battle_code.finish`
 - `audit.module.reroll`
 
 補足:
@@ -488,6 +495,18 @@
   - 実際に発動した瞬間だけ記録。payload に `activation_turn`, `effect_type`, `damage_reduced`, `healing_amount`, `bonus_damage`, `recoil_damage`, `guaranteed_hit`, `critical_bonus` を含める。
 - `audit.module.protocol.finish`
   - 1出撃1回。payload に `protocol_activation_count`, `protocol_summary_json`, `result_win`, `turn_count` を含める。
+- `audit.module.battle_code.set` / `audit.module.battle_code.clear`
+  - 次回出撃用BATTLE CODE設定。payload に `condition_key`, `effect_key`, `battle_code_name`, `os_name`, `protocol_key` を含める。
+- `audit.module.battle_code.start`
+  - 出撃開始時のBATTLE CODEスナップショット。
+- `audit.module.battle_code.condition`
+  - 条件成立。payload に `condition_event_index`, `activation_turn`, `trigger_reason` を含める。
+- `audit.module.battle_code.trigger`
+  - 実際の効果付与。payload に `activation_index`, `effect_type`, `effect_value`, `duration_turns`, `healing_amount`, `guaranteed_hit` などを含める。
+- `audit.module.battle_code.consume`
+  - 次撃・次回被弾などの消費。payload に `consume_index`, `trigger_reason` を含める。
+- `audit.module.battle_code.finish`
+  - 1出撃1回。payload に `battle_code_activation_count`, `battle_code_condition_event_count`, `battle_code_summary_json`, `result_win`, `turn_count` を含める。
   - 作戦特性が発動した戦闘の集約ログ。1戦1件で `trait_key`, `trait_label`, `trigger_count`, `trigger_labels` を含める。
 
 ## 11. 第1層 初回体験改善
