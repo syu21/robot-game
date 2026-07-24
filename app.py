@@ -34354,52 +34354,6 @@ def get_layer4_frontier_users(limit=5, db=None):
             "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY) else "layer_5_reboot",
             "latest_activity_at": int(row["last_seen_at"] or 0),
         }
-    event_rows = db.execute(
-        """
-        SELECT wel.user_id, wel.created_at, wel.payload_json
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.user_id IS NOT NULL
-          AND COALESCE(u.is_admin, 0) = 0
-          AND wel.event_type IN (?, ?, ?)
-          AND wel.payload_json LIKE '%layer_5%'
-        ORDER BY wel.created_at DESC, wel.id DESC
-        LIMIT 300
-        """,
-        (
-            AUDIT_EVENT_TYPES["EXPLORE_END"],
-            AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
-            AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
-        ),
-    ).fetchall()
-    for row in event_rows:
-        payload = _home_event_payload(row)
-        area_key = str(
-            payload.get("area_key")
-            or payload.get("boss_area_key")
-            or payload.get("explore_area_key")
-            or ""
-        )
-        if area_key not in (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY):
-            continue
-        uid = int(row["user_id"])
-        entry = candidate_ids.get(uid)
-        if not entry:
-            user_row = db.execute(
-                """
-                SELECT id, username, display_name, max_unlocked_layer, last_explore_area_key, last_seen_at
-                FROM users
-                WHERE id = ? AND COALESCE(is_admin, 0) = 0
-                """,
-                (uid,),
-            ).fetchone()
-            if not user_row:
-                continue
-            entry = {"user": user_row, "area_key": area_key, "latest_activity_at": 0}
-            candidate_ids[uid] = entry
-        if int(row["created_at"] or 0) >= int(entry.get("latest_activity_at") or 0):
-            entry["area_key"] = area_key
-            entry["latest_activity_at"] = int(row["created_at"] or 0)
     visuals_cache = {}
     rows = []
     for uid, entry in candidate_ids.items():
