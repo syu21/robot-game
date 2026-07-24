@@ -14,7 +14,9 @@ BATTLE CODEは、次回出撃用に `IF 条件コード -> THEN 効果コード`
 
 条件と効果は必ずセット。不正キー、片方のみ、非アクティブ定義は拒否。
 
-出撃開始時に `services.battle_codes.snapshot()` を作成し、戦闘中と結果表示はスナップショットを使用する。出撃後は次回設定をclearする。
+出撃開始時に `services.battle_codes.snapshot()` を作成し、戦闘中と結果表示はスナップショットを使用する。旧単発設定は出撃後にclearする。
+
+保存ライブラリ版は `docs/MODULE_BATTLE_CODE_LIBRARY_SPEC.md` を正とする。ライブラリで選択したBATTLE CODEは出撃後も選択を維持する。
 
 ## 定義
 

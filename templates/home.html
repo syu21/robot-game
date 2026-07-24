@@ -364,10 +364,32 @@
           </div>
           <div class="home-inline-actions">
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">変更</a></p>
+            <p class="link"><a class="battle-home-link" href="{{ url_for('modules_battle_codes') }}">BATTLE CODE LIBRARY</a></p>
             {% if research_module_combine_candidates %}
             <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">完成型へ合成</a></p>
             {% endif %}
           </div>
+          {% if battle_code_quick_slots %}
+          <div class="card">
+            <h2>BATTLE CODE</h2>
+            <div class="module-card-meta">
+              {% for slot in battle_code_quick_slots %}
+                {% if slot['code'] %}
+                <form method="post" action="{{ url_for('modules_battle_codes_select') }}" class="inline-form">
+                  <input type="hidden" name="battle_code_id" value="{{ slot['code']['id'] }}" />
+                  <input type="hidden" name="return_to" value="home" />
+                  <button type="submit" class="{{ 'btn-secondary' if not slot['code']['is_selected'] else '' }}" {% if not slot['code']['is_usable'] %}disabled{% endif %}>CODE-0{{ slot['slot_number'] }}</button>
+                  <span class="robot-time">{{ slot['code']['usage_label_name'] }}</span>
+                </form>
+                {% endif %}
+              {% endfor %}
+              <form method="post" action="{{ url_for('modules_battle_codes_unselect') }}" class="inline-form">
+                <input type="hidden" name="return_to" value="home" />
+                <button type="submit" class="btn-secondary">標準</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
           {% if robot_customize_cta %}
           <div class="card">
             <h2>ロボ調整</h2>

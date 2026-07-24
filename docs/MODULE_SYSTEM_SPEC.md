@@ -144,7 +144,7 @@ payloadにはOS名、ブランド構成、シンクロ、個体補正、同期�
 
 特殊プロトコルv1は `docs/MODULE_PROTOCOL_SPEC.md` を正とする。
 
-BATTLE CODE v1は `docs/MODULE_BATTLE_CODE_SPEC.md` を正とする。
+BATTLE CODE v1は `docs/MODULE_BATTLE_CODE_SPEC.md`、保存ライブラリは `docs/MODULE_BATTLE_CODE_LIBRARY_SPEC.md` を正とする。
 
 ## 非対象
 

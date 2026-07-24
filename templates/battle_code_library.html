@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>BATTLE CODE LIBRARY</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card module-summary-card">
+    <div><b>次回出撃コード</b></div>
+    <div class="upgrade-cost">{{ active_battle_code['display_name'] if active_battle_code else '標準戦闘演算' }}</div>
+    <div class="robot-time">
+      {{ active_battle_code['usage_label_name'] ~ ' / CODE-0' ~ active_battle_code['slot_number'] if active_battle_code and active_battle_code.get('slot_number') else 'BATTLE CODEを使用せず出撃します' }}
+    </div>
+    <form method="post" action="{{ url_for('modules_battle_codes_unselect') }}" class="inline-form inline-form-top">
+      <button type="submit" class="btn-secondary">標準戦闘演算にする</button>
+    </form>
+  </div>
+
+  <div class="module-card-grid">
+    {% for slot in slots %}
+    {% set code = slot['code'] %}
+    <div class="module-card {{ 'selected' if code and code['is_selected'] else '' }}">
+      <div class="module-card-title">CODE-0{{ slot['slot_number'] }}</div>
+      {% if code %}
+      <div class="upgrade-cost">{{ code['display_name'] }}</div>
+      <div class="robot-time">{{ code['usage_label_name'] }} / {{ code['condition_name'] }} -> {{ code['effect_name'] }}</div>
+      {% if not code['is_usable'] %}
+      <div class="flash">{{ code['disabled_reason'] }}</div>
+      {% endif %}
+      <div class="module-card-meta">
+        <span class="module-badge">使用 {{ code['stats'].get('use_count', 0) }}回</span>
+        <span class="module-badge">勝利 {{ code['stats'].get('win_count', 0) }}回</span>
+        <span class="module-badge">発動 {{ code['stats'].get('activation_count', 0) }}回</span>
+      </div>
+      <form method="post" action="{{ url_for('modules_battle_codes_select') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="battle_code_id" value="{{ code['id'] }}" />
+        <button type="submit" {% if not code['is_usable'] %}disabled{% endif %}>次回出撃に選択</button>
+      </form>
+      <p class="link"><a class="battle-home-link" href="{{ url_for('modules_battle_codes', slot=slot['slot_number'], condition_key=code['condition_key'], effect_key=code['effect_key']) }}">編集</a></p>
+      <form method="post" action="{{ url_for('modules_battle_codes_share') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="battle_code_id" value="{{ code['id'] }}" />
+        <button type="submit" class="btn-secondary">共有文を作成</button>
+      </form>
+      <form method="post" action="{{ url_for('modules_battle_codes_delete') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="battle_code_id" value="{{ code['id'] }}" />
+        <button type="submit" class="btn-secondary">削除</button>
+      </form>
+      {% else %}
+      <div class="upgrade-cost">空きスロット</div>
+      <div class="robot-time">条件コードと効果コードを選んで保存できます。</div>
+      <p class="link"><a class="battle-home-link" href="{{ url_for('modules_battle_codes', slot=slot['slot_number']) }}">このスロットに作成</a></p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card module-summary-card">
+    <div><b>コード作成 / 編集</b></div>
+    {% set bc = battle_code_options %}
+    <div class="module-card-meta">
+      {% for slot in slots %}
+      <p class="link"><a class="battle-home-link" href="{{ url_for('modules_battle_codes', slot=slot['slot_number'], condition_key=bc['selected_condition_key'], effect_key=bc['selected_effect_key']) }}">CODE-0{{ slot['slot_number'] }}</a></p>
+      {% endfor %}
+    </div>
+    <div class="module-card-grid">
+      {% for condition in bc['conditions'] %}
+      <form method="get" action="{{ url_for('modules_battle_codes') }}" class="module-card {{ 'selected' if condition['is_selected'] else '' }}">
+        <input type="hidden" name="slot" value="{{ selected_slot }}" />
+        <input type="hidden" name="condition_key" value="{{ condition['condition_key'] }}" />
+        <input type="hidden" name="effect_key" value="{{ bc['selected_effect_key'] }}" />
+        <button type="submit" class="module-card-button">
+          <span class="module-card-title">IF {{ condition['name_ja'] }}</span>
+          <span class="robot-time">{{ condition['short_description'] }}</span>
+          <span class="module-badge">{{ condition['timing_label'] }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+    <div class="module-card-grid">
+      {% for effect in bc['effects'] %}
+      <form method="get" action="{{ url_for('modules_battle_codes') }}" class="module-card {{ 'selected' if effect['is_selected'] else '' }}">
+        <input type="hidden" name="slot" value="{{ selected_slot }}" />
+        <input type="hidden" name="condition_key" value="{{ bc['selected_condition_key'] }}" />
+        <input type="hidden" name="effect_key" value="{{ effect['effect_key'] }}" />
+        <button type="submit" class="module-card-button">
+          <span class="module-card-title">THEN {{ effect['name_ja'] }}</span>
+          <span class="robot-time">{{ effect['short_description'] }}</span>
+          <span class="module-badge">{{ effect['effect_value_label'] }}</span>
+          <span class="module-badge muted">{{ effect['duration_label'] }}</span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+    {% if bc['preview'] %}
+    <div class="module-card selected">
+      <div class="module-card-title">保存内容</div>
+      <div class="upgrade-cost">CODE-0{{ selected_slot }} / {{ bc['preview']['display_name'] }}</div>
+      <div class="robot-time">{{ bc['preview']['specific_description'] }}</div>
+    </div>
+    <form method="post" action="{{ url_for('modules_battle_codes_save') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="slot_number" value="{{ selected_slot }}" />
+      <input type="hidden" name="condition_key" value="{{ bc['selected_condition_key'] }}" />
+      <input type="hidden" name="effect_key" value="{{ bc['selected_effect_key'] }}" />
+      <select name="usage_label">
+        {% for key, label in usage_labels.items() %}
+        <option value="{{ key }}" {% if key == selected_usage_label %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">CODE-0{{ selected_slot }}へ保存</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('modules') }}">研究モジュールへ戻る</a></p>
+</div>
+{% endblock %}

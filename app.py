@@ -69,6 +69,8 @@ from constants import (
     LEGAL_OPERATOR_NAME,
     BATTLE_CODE_CONDITIONS,
     BATTLE_CODE_EFFECTS,
+    BATTLE_CODE_LIBRARY_DEFAULT_SLOTS,
+    BATTLE_CODE_USAGE_LABELS,
     MODULE_BRAND_DEFINITIONS,
     MODULE_BRAND_SYNC_RULES,
     MODULE_OS_DEFINITIONS,
@@ -14451,6 +14453,62 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_battle_result_cache_user_created ON battle_result_cache(user_id, created_at)")
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS battle_code_library (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER,
+            slot_number INTEGER NOT NULL,
+            condition_key TEXT NOT NULL,
+            effect_key TEXT NOT NULL,
+            display_name_snapshot TEXT NOT NULL,
+            usage_label TEXT NOT NULL DEFAULT 'unset',
+            is_selected INTEGER NOT NULL DEFAULT 0,
+            is_public INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            last_selected_at INTEGER,
+            deleted_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_battle_code_library_user_slot ON battle_code_library(user_id, slot_number, deleted_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_battle_code_library_user_selected ON battle_code_library(user_id, is_selected, deleted_at)")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battle_code_stats (
+            battle_code_library_id INTEGER PRIMARY KEY,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            win_count INTEGER NOT NULL DEFAULT 0,
+            loss_count INTEGER NOT NULL DEFAULT 0,
+            boss_use_count INTEGER NOT NULL DEFAULT 0,
+            boss_win_count INTEGER NOT NULL DEFAULT 0,
+            condition_event_count INTEGER NOT NULL DEFAULT 0,
+            activation_count INTEGER NOT NULL DEFAULT 0,
+            total_turns INTEGER NOT NULL DEFAULT 0,
+            total_healing INTEGER NOT NULL DEFAULT 0,
+            total_guaranteed_hits INTEGER NOT NULL DEFAULT 0,
+            total_bonus_damage INTEGER NOT NULL DEFAULT 0,
+            total_damage_reduced INTEGER NOT NULL DEFAULT 0,
+            total_critical_bonus_uses INTEGER NOT NULL DEFAULT 0,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (battle_code_library_id) REFERENCES battle_code_library(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battle_code_stat_events (
+            battle_result_id TEXT NOT NULL,
+            battle_code_library_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (battle_result_id, battle_code_library_id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_user_id INTEGER NOT NULL,
@@ -17701,12 +17759,473 @@ def _battle_code_view(condition_key, effect_key):
     return battle_codes.snapshot(condition_key, effect_key)
 
 
-def _active_battle_code_for_user(db, user_id, user_row=None):
+def _battle_code_usage_label_name(label_key):
+    return BATTLE_CODE_USAGE_LABELS.get(str(label_key or "unset").strip(), BATTLE_CODE_USAGE_LABELS["unset"])
+
+
+def _normalize_battle_code_usage_label(label_key):
+    key = str(label_key or "unset").strip()
+    return key if key in BATTLE_CODE_USAGE_LABELS else "unset"
+
+
+def _battle_code_library_row_view(row, stats=None):
+    if not row:
+        return None
+    code = _battle_code_view(row["condition_key"], row["effect_key"])
+    usable = bool(code)
+    label_key = _normalize_battle_code_usage_label(row["usage_label"])
+    view = {
+        "id": int(row["id"]),
+        "library_id": int(row["id"]),
+        "user_id": int(row["user_id"]),
+        "robot_instance_id": int(row["robot_instance_id"]) if row["robot_instance_id"] else None,
+        "slot_number": int(row["slot_number"]),
+        "condition_key": row["condition_key"],
+        "effect_key": row["effect_key"],
+        "display_name": row["display_name_snapshot"] or (code or {}).get("display_name") or "",
+        "display_name_snapshot": row["display_name_snapshot"] or "",
+        "usage_label": label_key,
+        "usage_label_name": _battle_code_usage_label_name(label_key),
+        "is_selected": bool(row["is_selected"]),
+        "is_public": bool(row["is_public"]),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "last_selected_at": int(row["last_selected_at"] or 0) if row["last_selected_at"] else None,
+        "deleted_at": int(row["deleted_at"] or 0) if row["deleted_at"] else None,
+        "is_usable": usable,
+        "disabled_reason": "" if usable else "現在の定義では使用できないBATTLE CODEです",
+        "stats": dict(stats or {}),
+    }
+    if code:
+        view.update(
+            {
+                "condition_name": code.get("condition_name"),
+                "effect_name": code.get("effect_name"),
+                "condition_description": code.get("condition_description"),
+                "effect_description": code.get("effect_description"),
+                "condition_timing": code.get("condition_timing"),
+                "effect_value_label": code.get("effect_value_label"),
+                "duration_label": code.get("duration_label"),
+                "specific_description": code.get("specific_description"),
+                "condition": code.get("condition"),
+                "effect": code.get("effect"),
+                "duration": code.get("duration"),
+            }
+        )
+    else:
+        view.setdefault("condition_name", row["condition_key"])
+        view.setdefault("effect_name", row["effect_key"])
+    return view
+
+
+def _battle_code_library_payload(code, *, user_id, **extra):
+    payload = {
+        "user_id": int(user_id),
+        "battle_code_library_id": int(code.get("id") or code.get("library_id") or 0) or None,
+        "slot_number": int(code.get("slot_number") or 0) or None,
+        "condition_key": code.get("condition_key"),
+        "effect_key": code.get("effect_key"),
+        "battle_code_name": code.get("display_name"),
+        "usage_label": code.get("usage_label"),
+        "usage_label_name": code.get("usage_label_name"),
+        "is_selected": bool(code.get("is_selected")),
+        "is_usable": bool(code.get("is_usable", True)),
+    }
+    payload.update(extra)
+    return payload
+
+
+def _battle_code_library_stats_map(db, user_id):
+    rows = db.execute(
+        """
+        SELECT s.*
+        FROM battle_code_stats s
+        JOIN battle_code_library l ON l.id = s.battle_code_library_id
+        WHERE l.user_id = ?
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return {int(row["battle_code_library_id"]): dict(row) for row in rows}
+
+
+def _battle_code_library_slots(db, user_id):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM battle_code_library
+        WHERE user_id = ?
+          AND deleted_at IS NULL
+        ORDER BY slot_number ASC, updated_at DESC, id DESC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    stats_map = _battle_code_library_stats_map(db, user_id)
+    slot_map = {}
+    for row in rows:
+        slot = int(row["slot_number"])
+        if slot not in slot_map:
+            slot_map[slot] = _battle_code_library_row_view(row, stats_map.get(int(row["id"])))
+    slots = []
+    for slot_number in range(1, int(BATTLE_CODE_LIBRARY_DEFAULT_SLOTS) + 1):
+        slots.append({"slot_number": slot_number, "code": slot_map.get(slot_number)})
+    return slots
+
+
+def _active_battle_code_library_row(db, user_id):
+    return db.execute(
+        """
+        SELECT *
+        FROM battle_code_library
+        WHERE user_id = ?
+          AND is_selected = 1
+          AND deleted_at IS NULL
+        ORDER BY last_selected_at DESC, updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+
+
+def _active_battle_code_for_user(db, user_id, user_row=None, *, request_id=None, ip=None, auto_fallback=False):
+    library_row = _active_battle_code_library_row(db, user_id)
+    if library_row:
+        code = _battle_code_library_row_view(library_row)
+        if code and code.get("is_usable"):
+            return code
+        if auto_fallback:
+            db.execute(
+                "UPDATE battle_code_library SET is_selected = 0, updated_at = ? WHERE id = ?",
+                (int(time.time()), int(library_row["id"])),
+            )
+            db.execute(
+                """
+                UPDATE users
+                SET selected_battle_code_condition_key = NULL,
+                    selected_battle_code_effect_key = NULL,
+                    selected_battle_code_updated_at = 0
+                WHERE id = ?
+                """,
+                (int(user_id),),
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_FALLBACK"],
+                user_id=int(user_id),
+                request_id=request_id,
+                action_key="module_battle_code_library_fallback",
+                entity_type="module_battle_code_library",
+                entity_id=int(library_row["id"]),
+                payload=_battle_code_library_payload(code, user_id=user_id, fallback_reason="invalid_definition"),
+                ip=ip,
+            )
+        return None
     user = user_row or db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
     condition_key, effect_key = _selected_battle_code_keys(user)
     if not condition_key and not effect_key:
         return None
     return _battle_code_view(condition_key, effect_key)
+
+
+def _sync_selected_battle_code_columns(db, user_id, condition_key=None, effect_key=None):
+    now_ts = int(time.time()) if condition_key and effect_key else 0
+    db.execute(
+        """
+        UPDATE users
+        SET selected_battle_code_condition_key = ?,
+            selected_battle_code_effect_key = ?,
+            selected_battle_code_updated_at = ?
+        WHERE id = ?
+        """,
+        (condition_key, effect_key, now_ts, int(user_id)),
+    )
+
+
+def _migrate_battle_code_library_for_user(db, user_id, user_row=None, *, request_id=None, ip=None):
+    user = user_row or db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    condition_key, effect_key = _selected_battle_code_keys(user)
+    if not condition_key or not effect_key:
+        return None
+    existing_count = int(
+        db.execute(
+            "SELECT COUNT(*) AS count FROM battle_code_library WHERE user_id = ? AND deleted_at IS NULL",
+            (int(user_id),),
+        ).fetchone()["count"]
+        or 0
+    )
+    if existing_count > 0:
+        return None
+    code = _battle_code_view(condition_key, effect_key)
+    if not code:
+        return None
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO battle_code_library
+            (user_id, slot_number, condition_key, effect_key, display_name_snapshot,
+             usage_label, is_selected, is_public, created_at, updated_at, last_selected_at)
+        VALUES (?, 1, ?, ?, ?, 'unset', 1, 0, ?, ?, ?)
+        """,
+        (int(user_id), condition_key, effect_key, code["display_name"], now_ts, now_ts, now_ts),
+    )
+    migrated = _battle_code_library_row_view(
+        db.execute("SELECT * FROM battle_code_library WHERE id = ?", (int(cur.lastrowid),)).fetchone()
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_MIGRATE"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_library_migrate",
+        entity_type="module_battle_code_library",
+        entity_id=int(cur.lastrowid),
+        payload=_battle_code_library_payload(migrated, user_id=user_id, migrated_from="legacy_selected_battle_code"),
+        ip=ip,
+    )
+    return migrated
+
+
+def _battle_code_library_save(db, user_id, slot_number, condition_key, effect_key, usage_label, *, request_id=None, ip=None):
+    try:
+        slot_number = int(slot_number)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "スロット指定が不正です"}
+    if slot_number < 1 or slot_number > int(BATTLE_CODE_LIBRARY_DEFAULT_SLOTS):
+        return {"ok": False, "reason": "使用できないスロットです"}
+    validation = battle_codes.validate_selection(condition_key, effect_key)
+    if not validation.get("ok"):
+        return {"ok": False, "reason": validation.get("reason") or "BATTLE CODEを保存できませんでした"}
+    usage_label = _normalize_battle_code_usage_label(usage_label)
+    now_ts = int(time.time())
+    code = _battle_code_view(condition_key, effect_key)
+    current = db.execute(
+        """
+        SELECT *
+        FROM battle_code_library
+        WHERE user_id = ?
+          AND slot_number = ?
+          AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), slot_number),
+    ).fetchone()
+    if current and current["condition_key"] == condition_key and current["effect_key"] == effect_key:
+        db.execute(
+            "UPDATE battle_code_library SET usage_label = ?, updated_at = ? WHERE id = ?",
+            (usage_label, now_ts, int(current["id"])),
+        )
+        saved = _battle_code_library_row_view(db.execute("SELECT * FROM battle_code_library WHERE id = ?", (int(current["id"]),)).fetchone())
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_LABEL_UPDATE"],
+            user_id=int(user_id),
+            request_id=request_id,
+            action_key="module_battle_code_library_label_update",
+            entity_type="module_battle_code_library",
+            entity_id=int(current["id"]),
+            payload=_battle_code_library_payload(saved, user_id=user_id),
+            ip=ip,
+        )
+        return {"ok": True, "code": saved, "mode": "label_update"}
+    was_selected = bool(current and current["is_selected"])
+    if current:
+        db.execute("UPDATE battle_code_library SET deleted_at = ?, is_selected = 0, updated_at = ? WHERE id = ?", (now_ts, now_ts, int(current["id"])))
+    cur = db.execute(
+        """
+        INSERT INTO battle_code_library
+            (user_id, slot_number, condition_key, effect_key, display_name_snapshot,
+             usage_label, is_selected, is_public, created_at, updated_at, last_selected_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+        """,
+        (int(user_id), slot_number, condition_key, effect_key, code["display_name"], usage_label, 1 if was_selected else 0, now_ts, now_ts, now_ts if was_selected else None),
+    )
+    if was_selected:
+        _sync_selected_battle_code_columns(db, user_id, condition_key, effect_key)
+    saved = _battle_code_library_row_view(db.execute("SELECT * FROM battle_code_library WHERE id = ?", (int(cur.lastrowid),)).fetchone())
+    event_key = "MODULE_BATTLE_CODE_LIBRARY_OVERWRITE" if current else "MODULE_BATTLE_CODE_LIBRARY_CREATE"
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES[event_key],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key=("module_battle_code_library_overwrite" if current else "module_battle_code_library_create"),
+        entity_type="module_battle_code_library",
+        entity_id=int(cur.lastrowid),
+        payload=_battle_code_library_payload(saved, user_id=user_id, replaced_id=(int(current["id"]) if current else None)),
+        ip=ip,
+    )
+    return {"ok": True, "code": saved, "mode": "overwrite" if current else "create"}
+
+
+def _battle_code_library_select(db, user_id, code_id, *, request_id=None, ip=None):
+    try:
+        code_id = int(code_id)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "BATTLE CODEの指定が不正です"}
+    row = db.execute(
+        "SELECT * FROM battle_code_library WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+        (code_id, int(user_id)),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "選択できないBATTLE CODEです"}
+    code = _battle_code_library_row_view(row)
+    if not code or not code.get("is_usable"):
+        return {"ok": False, "reason": "現在の定義では使用できないBATTLE CODEです"}
+    now_ts = int(time.time())
+    db.execute("UPDATE battle_code_library SET is_selected = 0, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL", (now_ts, int(user_id)))
+    db.execute("UPDATE battle_code_library SET is_selected = 1, last_selected_at = ?, updated_at = ? WHERE id = ?", (now_ts, now_ts, code_id))
+    _sync_selected_battle_code_columns(db, user_id, code["condition_key"], code["effect_key"])
+    code["is_selected"] = True
+    code["last_selected_at"] = now_ts
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_SELECT"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_library_select",
+        entity_type="module_battle_code_library",
+        entity_id=code_id,
+        payload=_battle_code_library_payload(code, user_id=user_id),
+        ip=ip,
+    )
+    return {"ok": True, "code": code}
+
+
+def _battle_code_library_unselect(db, user_id, *, request_id=None, ip=None):
+    current = _active_battle_code_library_row(db, user_id)
+    code = _battle_code_library_row_view(current) if current else None
+    now_ts = int(time.time())
+    db.execute("UPDATE battle_code_library SET is_selected = 0, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL", (now_ts, int(user_id)))
+    _sync_selected_battle_code_columns(db, user_id)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_UNSELECT"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_library_unselect",
+        entity_type="module_battle_code_library",
+        entity_id=(int(current["id"]) if current else None),
+        payload=_battle_code_library_payload(code or {}, user_id=user_id),
+        ip=ip,
+    )
+    return {"ok": True}
+
+
+def _battle_code_library_delete(db, user_id, code_id, *, request_id=None, ip=None):
+    try:
+        code_id = int(code_id)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "BATTLE CODEの指定が不正です"}
+    row = db.execute(
+        "SELECT * FROM battle_code_library WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+        (code_id, int(user_id)),
+    ).fetchone()
+    if not row:
+        return {"ok": False, "reason": "削除できないBATTLE CODEです"}
+    code = _battle_code_library_row_view(row)
+    now_ts = int(time.time())
+    db.execute("UPDATE battle_code_library SET deleted_at = ?, is_selected = 0, updated_at = ? WHERE id = ?", (now_ts, now_ts, code_id))
+    if int(row["is_selected"] or 0):
+        _sync_selected_battle_code_columns(db, user_id)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_DELETE"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_library_delete",
+        entity_type="module_battle_code_library",
+        entity_id=code_id,
+        payload=_battle_code_library_payload(code, user_id=user_id),
+        ip=ip,
+    )
+    return {"ok": True, "code": code}
+
+
+def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_result_id, result_win, is_boss, turn_count, request_id=None, ip=None):
+    if not code or not code.get("id") and not code.get("library_id"):
+        return False
+    if not summary:
+        return False
+    library_id = int(code.get("id") or code.get("library_id"))
+    now_ts = int(time.time())
+    cur = db.execute(
+        "INSERT OR IGNORE INTO battle_code_stat_events (battle_result_id, battle_code_library_id, created_at) VALUES (?, ?, ?)",
+        (str(battle_result_id), library_id, now_ts),
+    )
+    if int(cur.rowcount or 0) <= 0:
+        return False
+    totals = dict(summary.get("effect_totals") or {})
+    values = {
+        "use_count": 1,
+        "win_count": 1 if result_win else 0,
+        "loss_count": 0 if result_win else 1,
+        "boss_use_count": 1 if is_boss else 0,
+        "boss_win_count": 1 if is_boss and result_win else 0,
+        "condition_event_count": int(summary.get("condition_event_count") or 0),
+        "activation_count": int(summary.get("activation_count") or 0),
+        "total_turns": int(turn_count or 0),
+        "total_healing": int(totals.get("healing_amount") or 0),
+        "total_guaranteed_hits": int(totals.get("guaranteed_hit") or 0),
+        "total_bonus_damage": int(totals.get("bonus_damage") or 0),
+        "total_damage_reduced": int(totals.get("damage_reduced") or 0),
+        "total_critical_bonus_uses": int(totals.get("critical_bonus") or 0),
+    }
+    db.execute(
+        """
+        INSERT INTO battle_code_stats (
+            battle_code_library_id, use_count, win_count, loss_count, boss_use_count, boss_win_count,
+            condition_event_count, activation_count, total_turns, total_healing, total_guaranteed_hits,
+            total_bonus_damage, total_damage_reduced, total_critical_bonus_uses, last_used_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(battle_code_library_id) DO UPDATE SET
+            use_count = use_count + excluded.use_count,
+            win_count = win_count + excluded.win_count,
+            loss_count = loss_count + excluded.loss_count,
+            boss_use_count = boss_use_count + excluded.boss_use_count,
+            boss_win_count = boss_win_count + excluded.boss_win_count,
+            condition_event_count = condition_event_count + excluded.condition_event_count,
+            activation_count = activation_count + excluded.activation_count,
+            total_turns = total_turns + excluded.total_turns,
+            total_healing = total_healing + excluded.total_healing,
+            total_guaranteed_hits = total_guaranteed_hits + excluded.total_guaranteed_hits,
+            total_bonus_damage = total_bonus_damage + excluded.total_bonus_damage,
+            total_damage_reduced = total_damage_reduced + excluded.total_damage_reduced,
+            total_critical_bonus_uses = total_critical_bonus_uses + excluded.total_critical_bonus_uses,
+            last_used_at = excluded.last_used_at,
+            updated_at = excluded.updated_at
+        """,
+        (
+            library_id,
+            values["use_count"],
+            values["win_count"],
+            values["loss_count"],
+            values["boss_use_count"],
+            values["boss_win_count"],
+            values["condition_event_count"],
+            values["activation_count"],
+            values["total_turns"],
+            values["total_healing"],
+            values["total_guaranteed_hits"],
+            values["total_bonus_damage"],
+            values["total_damage_reduced"],
+            values["total_critical_bonus_uses"],
+            now_ts,
+            now_ts,
+        ),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_STATS_UPDATE"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="module_battle_code_library_stats_update",
+        entity_type="module_battle_code_library",
+        entity_id=library_id,
+        payload=_battle_code_library_payload(code, user_id=user_id, battle_result_id=str(battle_result_id), result_win=bool(result_win), stats_delta=values),
+        ip=ip,
+    )
+    return True
 
 
 def _battle_code_preview(condition_key, effect_key):
@@ -17758,6 +18277,10 @@ def _battle_code_audit_payload(code, loadout_summary=None, protocol=None, *, use
         "os_key": (loadout_summary or {}).get("synergy_key") or "",
         "os_name": (loadout_summary or {}).get("os_name") or "NO MODULE OS",
         "protocol_key": (protocol or {}).get("protocol_key"),
+        "battle_code_library_id": code.get("id") or code.get("library_id"),
+        "battle_code_slot_number": code.get("slot_number"),
+        "battle_code_usage_label": code.get("usage_label"),
+        "battle_code_usage_label_name": code.get("usage_label_name"),
         "condition_key": code.get("condition_key"),
         "effect_key": code.get("effect_key"),
         "battle_code_name": code.get("display_name"),
@@ -17784,6 +18307,10 @@ def _clear_battle_code(db, user_id, *, request_id=None, ip=None, reason="manual"
         """,
         (int(user_id),),
     )
+    db.execute(
+        "UPDATE battle_code_library SET is_selected = 0, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
+        (int(time.time()), int(user_id)),
+    )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_CLEAR"],
@@ -17807,6 +18334,10 @@ def _set_battle_code(db, user_id, condition_key, effect_key, loadout_summary=Non
         return {"ok": False, "reason": validation.get("reason") or "BATTLE CODEを設定できませんでした"}
     code = _battle_code_view(condition_key, effect_key)
     now_ts = int(time.time())
+    db.execute(
+        "UPDATE battle_code_library SET is_selected = 0, updated_at = ? WHERE user_id = ? AND deleted_at IS NULL",
+        (now_ts, int(user_id)),
+    )
     db.execute(
         """
         UPDATE users
@@ -41995,6 +42526,195 @@ def modules_battle_code_select():
     return redirect(url_for("modules", bc_condition=condition_key, bc_effect=effect_key))
 
 
+def _battle_code_library_redirect(default_endpoint="modules_battle_codes"):
+    target = str(request.form.get("return_to") or "").strip()
+    if target == "home":
+        return redirect(url_for("home"))
+    if target == "modules":
+        return redirect(url_for("modules"))
+    return redirect(url_for(default_endpoint))
+
+
+@app.route("/modules/battle-codes")
+@login_required
+def modules_battle_codes():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    migrated = _migrate_battle_code_library_for_user(
+        db,
+        user_id,
+        user_row=user,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    selected_library_before = _active_battle_code_library_row(db, user_id)
+    active_battle_code = _active_battle_code_for_user(
+        db,
+        user_id,
+        user_row=user,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+        auto_fallback=True,
+    )
+    if migrated:
+        active_battle_code = migrated
+    if migrated or (selected_library_before and not active_battle_code):
+        db.commit()
+    selected_condition = str(request.args.get("condition_key") or "").strip()
+    selected_effect = str(request.args.get("effect_key") or "").strip()
+    try:
+        selected_slot = int(request.args.get("slot") or 1)
+    except ValueError:
+        selected_slot = 1
+    selected_slot = min(max(1, selected_slot), int(BATTLE_CODE_LIBRARY_DEFAULT_SLOTS))
+    slot_code = None
+    slots = _battle_code_library_slots(db, user_id)
+    for item in slots:
+        if int(item["slot_number"]) == selected_slot:
+            slot_code = item.get("code")
+            break
+    if slot_code and (not selected_condition or not selected_effect):
+        selected_condition = selected_condition or slot_code.get("condition_key") or ""
+        selected_effect = selected_effect or slot_code.get("effect_key") or ""
+    if not selected_condition:
+        selected_condition = "after_miss"
+    if not selected_effect:
+        selected_effect = "guaranteed_hit"
+    message = session.pop("message", None)
+    if migrated and not message:
+        message = "現在のBATTLE CODEをCODE-01へ移行しました。次回からライブラリで切替できます。"
+    return render_template(
+        "battle_code_library.html",
+        user=user,
+        message=message,
+        slots=slots,
+        active_battle_code=active_battle_code,
+        battle_code_options=_battle_code_options(selected_condition, selected_effect),
+        usage_labels=BATTLE_CODE_USAGE_LABELS,
+        selected_slot=selected_slot,
+        selected_usage_label=(slot_code or {}).get("usage_label", "unset"),
+        default_slot_count=int(BATTLE_CODE_LIBRARY_DEFAULT_SLOTS),
+    )
+
+
+@app.route("/modules/battle-codes/save", methods=["POST"])
+@login_required
+def modules_battle_codes_save():
+    db = get_db()
+    user_id = int(session["user_id"])
+    result = _battle_code_library_save(
+        db,
+        user_id,
+        request.form.get("slot_number"),
+        str(request.form.get("condition_key") or "").strip(),
+        str(request.form.get("effect_key") or "").strip(),
+        request.form.get("usage_label"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        db.commit()
+        mode = result.get("mode")
+        session["message"] = "用途ラベルを更新しました" if mode == "label_update" else "BATTLE CODEをライブラリへ保存しました"
+        return _battle_code_library_redirect()
+    session["message"] = result.get("reason") or "BATTLE CODEを保存できませんでした"
+    return redirect(url_for("modules_battle_codes"))
+
+
+@app.route("/modules/battle-codes/select", methods=["POST"])
+@login_required
+def modules_battle_codes_select():
+    db = get_db()
+    user_id = int(session["user_id"])
+    result = _battle_code_library_select(
+        db,
+        user_id,
+        request.form.get("battle_code_id"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        db.commit()
+        session["message"] = "次回出撃のBATTLE CODEを選択しました"
+        return _battle_code_library_redirect()
+    session["message"] = result.get("reason") or "BATTLE CODEを選択できませんでした"
+    return _battle_code_library_redirect()
+
+
+@app.route("/modules/battle-codes/unselect", methods=["POST"])
+@login_required
+def modules_battle_codes_unselect():
+    db = get_db()
+    user_id = int(session["user_id"])
+    _battle_code_library_unselect(
+        db,
+        user_id,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "BATTLE CODEを使用しない構成にしました"
+    return _battle_code_library_redirect()
+
+
+@app.route("/modules/battle-codes/delete", methods=["POST"])
+@login_required
+def modules_battle_codes_delete():
+    db = get_db()
+    user_id = int(session["user_id"])
+    result = _battle_code_library_delete(
+        db,
+        user_id,
+        request.form.get("battle_code_id"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    if result.get("ok"):
+        db.commit()
+        session["message"] = "BATTLE CODEを削除しました"
+    else:
+        session["message"] = result.get("reason") or "BATTLE CODEを削除できませんでした"
+    return _battle_code_library_redirect()
+
+
+@app.route("/modules/battle-codes/share", methods=["POST"])
+@login_required
+def modules_battle_codes_share():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        code_id = int(request.form.get("battle_code_id") or 0)
+    except ValueError:
+        code_id = 0
+    row = db.execute(
+        "SELECT * FROM battle_code_library WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+        (code_id, user_id),
+    ).fetchone()
+    code = _battle_code_library_row_view(row) if row else None
+    if not code:
+        session["message"] = "共有できないBATTLE CODEです"
+        return redirect(url_for("modules_battle_codes"))
+    share_text = f"BATTLE CODE {code['display_name']} / {code['usage_label_name']} / IF {code.get('condition_name')} THEN {code.get('effect_name')}"
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_SHARE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_battle_code_library_share",
+        entity_type="module_battle_code_library",
+        entity_id=code_id,
+        payload=_battle_code_library_payload(code, user_id=user_id, share_text=share_text),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = share_text
+    return redirect(url_for("modules_battle_codes"))
+
+
 @app.route("/modules/synthesis/equip", methods=["POST"])
 @login_required
 def modules_synthesis_equip():
@@ -42802,7 +43522,17 @@ def modules():
     if selected_protocol_before and not active_protocol:
         db.commit()
     protocol_options = _module_protocol_options(loadout_summary, active_protocol.get("protocol_key") if active_protocol else "")
-    active_battle_code = _active_battle_code_for_user(db, user_id, user_row=user)
+    selected_battle_code_library_before = _active_battle_code_library_row(db, user_id)
+    active_battle_code = _active_battle_code_for_user(
+        db,
+        user_id,
+        user_row=user,
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+        auto_fallback=True,
+    )
+    if selected_battle_code_library_before and not active_battle_code:
+        db.commit()
     selected_bc_condition = str(request.args.get("bc_condition") or "").strip()
     selected_bc_effect = str(request.args.get("bc_effect") or "").strip()
     if not selected_bc_condition or not selected_bc_effect:
@@ -44094,7 +44824,19 @@ def home():
     )
     if selected_protocol_before and not active_module_protocol:
         db.commit()
-    active_battle_code = _active_battle_code_for_user(db, int(user["id"]), user_row=user) if main_robot else None
+    active_battle_code = (
+        _active_battle_code_for_user(
+            db,
+            int(user["id"]),
+            user_row=user,
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+            auto_fallback=True,
+        )
+        if main_robot
+        else None
+    )
+    battle_code_quick_slots = _battle_code_library_slots(db, int(user["id"])) if main_robot else []
     research_module_combine_candidates = _research_module_combine_candidates(db, int(user["id"])) if main_robot else []
     research_module_pity = int(user["research_module_pity"] or 0) if "research_module_pity" in user.keys() else 0
     main_robot_style = _robot_style_from_instance_key(main_robot.get("style_key") if main_robot else None)
@@ -44773,6 +45515,7 @@ def home():
             active_module_loadout=active_module_loadout,
             active_module_protocol=active_module_protocol,
             active_battle_code=active_battle_code,
+            battle_code_quick_slots=battle_code_quick_slots,
             active_research_module_fit=active_research_module_fit,
             research_module_combine_candidates=research_module_combine_candidates,
             research_module_pity=research_module_pity,
@@ -50008,7 +50751,14 @@ def explore():
         ip=request.remote_addr,
         auto_clear=True,
     )
-    active_battle_code = _active_battle_code_for_user(db, user_id, user_row=user)
+    active_battle_code = _active_battle_code_for_user(
+        db,
+        user_id,
+        user_row=user,
+        request_id=request_id,
+        ip=request.remote_addr,
+        auto_fallback=True,
+    )
     if module_loadout_summary.get("modules"):
         module_payload = _module_loadout_audit_payload(
             module_loadout_summary,
@@ -52424,6 +53174,18 @@ def explore():
             ),
             ip=request.remote_addr,
         )
+        _battle_code_library_stats_update(
+            db,
+            user_id,
+            active_battle_code,
+            battle_code_summary,
+            battle_result_id=battle_id,
+            result_win=bool(final_outcome == "win"),
+            is_boss=bool(area_boss_active),
+            turn_count=len(all_turn_logs),
+            request_id=request_id,
+            ip=request.remote_addr,
+        )
     module_strategy_card = _research_module_strategy_card(
         active_research_module,
         all_turn_logs,
@@ -52550,6 +53312,10 @@ def explore():
                 {
                     "battle_code_condition_key": active_battle_code.get("condition_key"),
                     "battle_code_effect_key": active_battle_code.get("effect_key"),
+                    "battle_code_library_id": active_battle_code.get("id") or active_battle_code.get("library_id"),
+                    "battle_code_slot_number": active_battle_code.get("slot_number"),
+                    "battle_code_usage_label": active_battle_code.get("usage_label"),
+                    "battle_code_usage_label_name": active_battle_code.get("usage_label_name"),
                     "battle_code_display_name": active_battle_code.get("display_name"),
                     "battle_code_condition_name": active_battle_code.get("condition_name"),
                     "battle_code_effect_name": active_battle_code.get("effect_name"),
@@ -52802,7 +53568,7 @@ def explore():
             previous_protocol_key=active_module_protocol.get("protocol_key"),
             loadout_summary=module_loadout_summary,
         )
-    if active_battle_code:
+    if active_battle_code and not (active_battle_code.get("id") or active_battle_code.get("library_id")):
         _clear_battle_code(
             db,
             user_id,

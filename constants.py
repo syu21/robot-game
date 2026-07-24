@@ -188,6 +188,16 @@ AUDIT_EVENT_TYPES = {
     "MODULE_BATTLE_CODE_TRIGGER": "audit.module.battle_code.trigger",
     "MODULE_BATTLE_CODE_CONSUME": "audit.module.battle_code.consume",
     "MODULE_BATTLE_CODE_FINISH": "audit.module.battle_code.finish",
+    "MODULE_BATTLE_CODE_LIBRARY_CREATE": "audit.module.battle_code.library.create",
+    "MODULE_BATTLE_CODE_LIBRARY_OVERWRITE": "audit.module.battle_code.library.overwrite",
+    "MODULE_BATTLE_CODE_LIBRARY_DELETE": "audit.module.battle_code.library.delete",
+    "MODULE_BATTLE_CODE_LIBRARY_SELECT": "audit.module.battle_code.library.select",
+    "MODULE_BATTLE_CODE_LIBRARY_UNSELECT": "audit.module.battle_code.library.unselect",
+    "MODULE_BATTLE_CODE_LIBRARY_LABEL_UPDATE": "audit.module.battle_code.library.label_update",
+    "MODULE_BATTLE_CODE_LIBRARY_SHARE": "audit.module.battle_code.library.share",
+    "MODULE_BATTLE_CODE_LIBRARY_MIGRATE": "audit.module.battle_code.library.migrate",
+    "MODULE_BATTLE_CODE_LIBRARY_FALLBACK": "audit.module.battle_code.library.fallback",
+    "MODULE_BATTLE_CODE_LIBRARY_STATS_UPDATE": "audit.module.battle_code.library.stats_update",
     "MODULE_PITY_PROGRESS": "audit.module.pity.progress",
     "MODULE_PITY_GRANT": "audit.module.pity.grant",
     "MODULE_COMBINE": "audit.module.combine",
@@ -681,6 +691,18 @@ MODULE_PROTOCOL_DEFINITIONS = {
         "max_activations": 1,
         "is_active": True,
     },
+}
+
+BATTLE_CODE_LIBRARY_DEFAULT_SLOTS = 3
+
+BATTLE_CODE_USAGE_LABELS = {
+    "unset": "用途未設定",
+    "general": "通常探索",
+    "boss": "ボス攻略",
+    "speed": "高速周回",
+    "stable": "安定重視",
+    "comeback": "逆転狙い",
+    "experiment": "実験中",
 }
 
 BATTLE_CODE_CONDITIONS = {

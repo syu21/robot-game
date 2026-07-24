@@ -159,6 +159,16 @@
 - `audit.module.battle_code.trigger`
 - `audit.module.battle_code.consume`
 - `audit.module.battle_code.finish`
+- `audit.module.battle_code.library.create`
+- `audit.module.battle_code.library.overwrite`
+- `audit.module.battle_code.library.delete`
+- `audit.module.battle_code.library.select`
+- `audit.module.battle_code.library.unselect`
+- `audit.module.battle_code.library.label_update`
+- `audit.module.battle_code.library.share`
+- `audit.module.battle_code.library.migrate`
+- `audit.module.battle_code.library.fallback`
+- `audit.module.battle_code.library.stats_update`
 - `audit.module.reroll`
 
 補足:
@@ -487,6 +497,7 @@
 - `audit.module.strategy.result`
   - 出撃終了時のモジュール結果。payload に `module_trait_key`, `module_trait_trigger_count` を含める。
 - `audit.module.trait.trigger`
+  - 作戦特性が発動した戦闘の集約ログ。1戦1件で `trait_key`, `trait_label`, `trigger_count`, `trigger_labels` を含める。
 - `audit.module.protocol.set` / `audit.module.protocol.clear` / `audit.module.protocol.auto_clear`
   - ACTIVE PROTOCOL の手動設定、手動解除、OS構成変更による自動解除。
 - `audit.module.protocol.start`
@@ -507,7 +518,9 @@
   - 次撃・次回被弾などの消費。payload に `consume_index`, `trigger_reason` を含める。
 - `audit.module.battle_code.finish`
   - 1出撃1回。payload に `battle_code_activation_count`, `battle_code_condition_event_count`, `battle_code_summary_json`, `result_win`, `turn_count` を含める。
-  - 作戦特性が発動した戦闘の集約ログ。1戦1件で `trait_key`, `trait_label`, `trigger_count`, `trigger_labels` を含める。
+- `audit.module.battle_code.library.*`
+  - 保存ライブラリの作成、上書き、削除、選択、解除、用途更新、共有文作成、旧設定移行、無効コードfallback、統計更新。
+  - payload に `battle_code_library_id`, `slot_number`, `condition_key`, `effect_key`, `usage_label`, `is_selected`, `is_usable` を含める。
 
 ## 11. 第1層 初回体験改善
 - `audit.onboarding.first_three_progress`

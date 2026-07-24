@@ -403,6 +403,9 @@
 - [ ] 出撃後も選択中モジュールが消費されない
 - [ ] `/modules` に `戦闘演算核 / BATTLE OS` と `秘匿戦闘命令 / ACTIVE PROTOCOL` が表示される
 - [ ] `/modules` に `戦闘命令構築 / BATTLE CODE` が表示され、条件6種・効果6種を選択できる
+- [ ] `/modules/battle-codes` でBATTLE CODEを3枠保存、選択、上書き、削除できる
+- [ ] ホームから保存済みBATTLE CODEをクイック選択できる
+- [ ] `battle_code_stats` が出撃後にコード別で加算される
 - [ ] BATTLE CODE保存後、ホーム出撃前に命令名が表示される
 - [ ] 戦闘結果に `今回のBATTLE CODE` と発動サマリーが表示される
 - [ ] 戦闘結果に日本語型名の戦闘OSと、起動した秘匿命令名が表示される

@@ -1907,6 +1907,62 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_battle_result_cache_user_created ON battle_result_cache(user_id, created_at)")
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS battle_code_library (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER,
+            slot_number INTEGER NOT NULL,
+            condition_key TEXT NOT NULL,
+            effect_key TEXT NOT NULL,
+            display_name_snapshot TEXT NOT NULL,
+            usage_label TEXT NOT NULL DEFAULT 'unset',
+            is_selected INTEGER NOT NULL DEFAULT 0,
+            is_public INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            last_selected_at INTEGER,
+            deleted_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_battle_code_library_user_slot ON battle_code_library(user_id, slot_number, deleted_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_battle_code_library_user_selected ON battle_code_library(user_id, is_selected, deleted_at)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battle_code_stats (
+            battle_code_library_id INTEGER PRIMARY KEY,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            win_count INTEGER NOT NULL DEFAULT 0,
+            loss_count INTEGER NOT NULL DEFAULT 0,
+            boss_use_count INTEGER NOT NULL DEFAULT 0,
+            boss_win_count INTEGER NOT NULL DEFAULT 0,
+            condition_event_count INTEGER NOT NULL DEFAULT 0,
+            activation_count INTEGER NOT NULL DEFAULT 0,
+            total_turns INTEGER NOT NULL DEFAULT 0,
+            total_healing INTEGER NOT NULL DEFAULT 0,
+            total_guaranteed_hits INTEGER NOT NULL DEFAULT 0,
+            total_bonus_damage INTEGER NOT NULL DEFAULT 0,
+            total_damage_reduced INTEGER NOT NULL DEFAULT 0,
+            total_critical_bonus_uses INTEGER NOT NULL DEFAULT 0,
+            last_used_at INTEGER,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (battle_code_library_id) REFERENCES battle_code_library(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battle_code_stat_events (
+            battle_result_id TEXT NOT NULL,
+            battle_code_library_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (battle_result_id, battle_code_library_id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS daily_research_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
