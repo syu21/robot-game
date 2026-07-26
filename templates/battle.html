@@ -180,6 +180,22 @@
     </div>
     {% endif %}
     {% endif %}
+    {% if summary.get('research_task_updates') %}
+      {% for task in summary.get('research_task_updates', [])[:2] %}
+      <div class="battle-summary-row">
+        <span class="label">研究進捗</span>
+        <b>{{ task.get('title', '研究課題') }}</b>
+        <span class="battle-lab-level-inline">{{ task.get('progress_line') }}{% if task.get('is_completed') %} 達成{% endif %}</span>
+      </div>
+      {% endfor %}
+    {% endif %}
+    {% if summary.get('personal_record_updates') %}
+      {% for record in summary.get('personal_record_updates', [])[:2] %}
+      <div class="battle-summary-row battle-lab-level-up">
+        PERSONAL BEST: {{ record.get('scope_key') }} {{ record.get('best_value') }}{% if record.get('record_key') == 'area_fastest_win_turns' %}T{% endif %}
+      </div>
+      {% endfor %}
+    {% endif %}
     {% if reward_front.get('part_rows') %}
     <div class="battle-summary-row">ドロップ:</div>
     <div class="battle-drop-list">

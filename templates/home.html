@@ -305,6 +305,30 @@
   {% endfor %}
 </div>
 {% endif %}
+{% if solo_research_home %}
+<section class="card module-summary-card">
+  <div class="home-explore-kicker">次の研究</div>
+  {% set next_task = solo_research_home.get('next_task') %}
+  <h2>{{ next_task['title'] if next_task else '研究課題ボード' }}</h2>
+  {% if next_task %}
+  <div class="upgrade-cost">{{ next_task['category_label'] }} / {{ next_task['progress_line'] }} / 報酬: 研究EXP {{ next_task['reward_exp'] }}</div>
+  <div class="robot-time">{{ next_task['description'] }}</div>
+  {% endif %}
+  <div class="module-card-grid">
+    {% for task in solo_research_home.get('tasks', []) %}
+    <div class="module-card {{ 'selected' if task.get('is_completed') else '' }}">
+      <div class="module-card-title">{{ task['category_label'] }}</div>
+      <div class="upgrade-cost">{{ task['title'] }}</div>
+      <div class="robot-time">{{ task['progress_line'] }} / 研究EXP {{ task['reward_exp'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if solo_research_home.get('recent_records') %}
+  <div class="robot-time">最近の自己記録: {{ solo_research_home['recent_records'][0]['label'] }}</div>
+  {% endif %}
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳を開く</a></p>
+</section>
+{% endif %}
 <div class="home-layout-grid priority-core">
   <div class="home-main-stack">
     <section class="panel home-current-robot {% if profile_rewards and profile_rewards.frame_key %}achievement-frame achievement-frame--{{ profile_rewards.frame_key|replace('_', '-') }}{% endif %}">

@@ -16,6 +16,7 @@ from series_catalog import (
 from services.robot_titles import ensure_robot_title_system
 from services.tower import ensure_tower_schema
 from services.achievements import ensure_achievement_defaults
+from services.solo_research import seed_research_task_definitions
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -2001,6 +2002,98 @@ def main():
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_profiles (
+            user_id INTEGER PRIMARY KEY,
+            research_level INTEGER NOT NULL DEFAULT 1,
+            research_exp INTEGER NOT NULL DEFAULT 0,
+            lifetime_research_exp INTEGER NOT NULL DEFAULT 0,
+            active_task_slots INTEGER NOT NULL DEFAULT 3,
+            hold_task_id INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_task_definitions (
+            task_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            difficulty INTEGER NOT NULL DEFAULT 1,
+            condition_type TEXT NOT NULL,
+            condition_payload_json TEXT,
+            reward_exp INTEGER NOT NULL DEFAULT 0,
+            min_layer INTEGER NOT NULL DEFAULT 1,
+            required_feature TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            version INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            task_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            slot_index INTEGER NOT NULL DEFAULT 0,
+            progress INTEGER NOT NULL DEFAULT 0,
+            target INTEGER NOT NULL DEFAULT 1,
+            snapshot_json TEXT,
+            assigned_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            claimed_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_tasks_user_status ON user_research_tasks(user_id, status, slot_index)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_research_tasks_user_assigned ON user_research_tasks(user_id, assigned_at)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_personal_records (
+            user_id INTEGER NOT NULL,
+            record_key TEXT NOT NULL,
+            scope_key TEXT NOT NULL,
+            best_value INTEGER NOT NULL,
+            best_payload_json TEXT,
+            robot_instance_id INTEGER,
+            achieved_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, record_key, scope_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_discoveries (
+            user_id INTEGER NOT NULL,
+            discovery_type TEXT NOT NULL,
+            discovery_key TEXT NOT NULL,
+            first_discovered_at INTEGER NOT NULL,
+            source_key TEXT,
+            metadata_json TEXT,
+            PRIMARY KEY (user_id, discovery_type, discovery_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_event_receipts (
+            user_id INTEGER NOT NULL,
+            event_uid TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, event_uid)
+        )
+        """
+    )
+    seed_research_task_definitions(conn)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_metrics (

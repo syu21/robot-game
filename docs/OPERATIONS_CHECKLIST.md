@@ -1,6 +1,6 @@
 # 運用チェックリスト
 
-最終更新日: 2026-06-21
+最終更新日: 2026-07-26
 
 ## 1. 出撃
 - [ ] `POST /explore` が成功し8ターン以内で終了
@@ -147,6 +147,14 @@
   - `audit.onboarding.layer1.first_win`
   - `audit.battle.result.view`
   - `audit.explore.retry.click`
+- [ ] ソロ研究ログが残る
+  - `audit.research.task.assign`
+  - `audit.research.task.progress`
+  - `audit.research.task.complete`
+  - `audit.research.task.claim`
+  - `audit.research.task.hold`
+  - `audit.research.level.up`
+  - `audit.personal_record.update`
 
 ## 7. 共有/招待
 - [ ] ボス撃破時のみ共有ボタン表示
@@ -167,6 +175,11 @@
 - [ ] `python3 -m unittest tests.test_battle_affinity tests.test_weekly_champion`
 - [ ] `python3 -m unittest tests.test_market tests.test_lab_casino tests.test_explore_drop_budget tests.test_tier_growth_staging tests.test_streak_bonus tests.test_parts_fuse_route`
 - [ ] `python3 -m unittest tests.test_trial_mode`
+- [ ] `python3 -m unittest tests.test_solo_research`
+- [ ] `/home` に `ソロ研究所` が表示され、3枠の研究タスクが補充される
+- [ ] `/research` に研究Lv、進行中タスク、完了済み研究、個人記録が表示される
+- [ ] 戦闘結果に研究進行と個人記録更新が表示される
+- [ ] `/admin/research-tasks` で研究タスク定義の有効/無効を切り替えられる
 - [ ] `/register` から `試験機で体験する` で `/trial/start` に入れる
 - [ ] 体験中の `/home` に `お試しプレイ中`、`アーク・プロト`、`あとN分遊べます`、`あとN回出撃できます` が出る
 - [ ] 体験中は `layer_1` だけ出撃でき、出撃結果に戦利品と次アクションが出る

@@ -107,6 +107,16 @@ from services.daily_research import (
     mark_daily_research_modal_viewed,
     should_show_daily_research_modal,
 )
+from services.solo_research import (
+    ensure_research_board,
+    hold_research_task,
+    notebook_view,
+    research_home_view,
+    resume_held_research_task,
+    seed_research_task_definitions,
+    update_personal_records_from_explore,
+    update_research_tasks_for_event,
+)
 from services.archetype import compute_archetype
 from services.lab_level import get_lab_rank_label, grant_lab_exp, lab_level_view
 from services.presence import get_presence_count, get_recent_home_robot_presence, get_recent_presence, touch_presence
@@ -12376,6 +12386,98 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_profiles (
+            user_id INTEGER PRIMARY KEY,
+            research_level INTEGER NOT NULL DEFAULT 1,
+            research_exp INTEGER NOT NULL DEFAULT 0,
+            lifetime_research_exp INTEGER NOT NULL DEFAULT 0,
+            active_task_slots INTEGER NOT NULL DEFAULT 3,
+            hold_task_id INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS research_task_definitions (
+            task_key TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            difficulty INTEGER NOT NULL DEFAULT 1,
+            condition_type TEXT NOT NULL,
+            condition_payload_json TEXT,
+            reward_exp INTEGER NOT NULL DEFAULT 0,
+            min_layer INTEGER NOT NULL DEFAULT 1,
+            required_feature TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            version INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            task_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            slot_index INTEGER NOT NULL DEFAULT 0,
+            progress INTEGER NOT NULL DEFAULT 0,
+            target INTEGER NOT NULL DEFAULT 1,
+            snapshot_json TEXT,
+            assigned_at INTEGER NOT NULL,
+            completed_at INTEGER,
+            claimed_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_tasks_user_status ON user_research_tasks(user_id, status, slot_index)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_user_research_tasks_user_assigned ON user_research_tasks(user_id, assigned_at)")
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_personal_records (
+            user_id INTEGER NOT NULL,
+            record_key TEXT NOT NULL,
+            scope_key TEXT NOT NULL,
+            best_value INTEGER NOT NULL,
+            best_payload_json TEXT,
+            robot_instance_id INTEGER,
+            achieved_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, record_key, scope_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_discoveries (
+            user_id INTEGER NOT NULL,
+            discovery_type TEXT NOT NULL,
+            discovery_key TEXT NOT NULL,
+            first_discovered_at INTEGER NOT NULL,
+            source_key TEXT,
+            metadata_json TEXT,
+            PRIMARY KEY (user_id, discovery_type, discovery_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_event_receipts (
+            user_id INTEGER NOT NULL,
+            event_uid TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, event_uid)
+        )
+        """
+    )
+    seed_research_task_definitions(db)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS research_modules (
@@ -34335,6 +34437,7 @@ def get_layer4_frontier_users(limit=5, db=None):
     """
     db = db or get_db()
     limit = max(1, int(limit or 5))
+    layer5_area_keys = (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY)
     candidate_ids = {}
     user_rows = db.execute(
         """
@@ -34346,13 +34449,63 @@ def get_layer4_frontier_users(limit=5, db=None):
             OR last_explore_area_key IN (?, ?, ?)
           )
         """,
-        (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY),
+        layer5_area_keys,
     ).fetchall()
     for row in user_rows:
         candidate_ids[int(row["id"])] = {
             "user": row,
-            "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in (*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY) else "layer_5_reboot",
+            "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in layer5_area_keys else "layer_5_reboot",
             "latest_activity_at": int(row["last_seen_at"] or 0),
+        }
+    event_rows = db.execute(
+        """
+        SELECT u.id,
+               u.username,
+               u.display_name,
+               u.max_unlocked_layer,
+               u.last_explore_area_key,
+               u.last_seen_at,
+               wel.created_at,
+               COALESCE(
+                   json_extract(wel.payload_json, '$.area_key'),
+                   json_extract(wel.payload_json, '$.boss_area_key'),
+                   json_extract(wel.payload_json, '$.explore_area_key')
+               ) AS event_area_key
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.user_id IS NOT NULL
+          AND COALESCE(u.is_admin, 0) = 0
+          AND wel.event_type IN (?, ?, ?)
+          AND COALESCE(
+              json_extract(wel.payload_json, '$.area_key'),
+              json_extract(wel.payload_json, '$.boss_area_key'),
+              json_extract(wel.payload_json, '$.explore_area_key')
+          ) IN (?, ?, ?)
+        ORDER BY wel.created_at DESC, wel.id DESC
+        LIMIT 300
+        """,
+        (
+            AUDIT_EVENT_TYPES.get("EXPLORE_END", "audit.explore.end"),
+            AUDIT_EVENT_TYPES.get("BOSS_DEFEAT", "audit.boss.defeat"),
+            AUDIT_EVENT_TYPES.get("BATTLE_END", "audit.battle.end"),
+            *layer5_area_keys,
+        ),
+    ).fetchall()
+    for row in event_rows:
+        uid = int(row["id"])
+        latest_activity_at = max(int(row["created_at"] or 0), int(row["last_seen_at"] or 0))
+        if uid in candidate_ids:
+            candidate_ids[uid]["latest_activity_at"] = max(
+                int(candidate_ids[uid].get("latest_activity_at") or 0),
+                latest_activity_at,
+            )
+            if str(row["event_area_key"] or "") in layer5_area_keys:
+                candidate_ids[uid]["area_key"] = str(row["event_area_key"])
+            continue
+        candidate_ids[uid] = {
+            "user": row,
+            "area_key": str(row["event_area_key"] or "layer_5_reboot"),
+            "latest_activity_at": latest_activity_at,
         }
     visuals_cache = {}
     rows = []
@@ -45340,6 +45493,7 @@ def home():
         )
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
     home_lab_level = lab_level_view(user)
+    solo_research_home = research_home_view(db, int(user["id"]))
     _home_section_log("achievement", section_started_at)
     section_started_at = time.perf_counter()
     home_insect_research = _home_insect_research_view(db, week_key)
@@ -45592,6 +45746,7 @@ def home():
             research_boost_x_share=research_boost_x_share,
             boss_medal_summary=boss_medal_summary,
             home_lab_level=home_lab_level,
+            solo_research_home=solo_research_home,
             home_insect_research=home_insect_research,
             home_dinosaur_campaign=home_dinosaur_campaign,
             home_appliance_campaign=home_appliance_campaign,
@@ -45770,6 +45925,60 @@ def daily_research_modal_seen():
     )
     db.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/research/tasks/hold", methods=["POST"])
+@login_required
+def research_task_hold():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        task_id = int(request.form.get("task_id") or 0)
+    except ValueError:
+        task_id = 0
+    result = hold_research_task(db, user_id, task_id)
+    db.commit()
+    session["message"] = "研究課題を保留しました" if result.get("ok") else result.get("reason", "研究課題を保留できませんでした")
+    return redirect(url_for("research_view"))
+
+
+@app.route("/research/tasks/resume", methods=["POST"])
+@login_required
+def research_task_resume():
+    db = get_db()
+    user_id = int(session["user_id"])
+    try:
+        task_id = int(request.form.get("task_id") or 0)
+    except ValueError:
+        task_id = 0
+    result = resume_held_research_task(db, user_id, task_id)
+    db.commit()
+    session["message"] = "保留中の研究課題を再開しました" if result.get("ok") else result.get("reason", "研究課題を再開できませんでした")
+    return redirect(url_for("research_view"))
+
+
+@app.route("/admin/research-tasks", methods=["GET", "POST"])
+@login_required
+def admin_research_tasks():
+    db = get_db()
+    user_id = int(session["user_id"])
+    if not _is_admin_user(user_id):
+        abort(403)
+    seed_research_task_definitions(db)
+    if request.method == "POST":
+        task_key = str(request.form.get("task_key") or "").strip()
+        is_active = 1 if str(request.form.get("is_active") or "0").strip() == "1" else 0
+        db.execute("UPDATE research_task_definitions SET is_active = ? WHERE task_key = ?", (is_active, task_key))
+        db.commit()
+        session["message"] = "研究課題定義を更新しました"
+        return redirect(url_for("admin_research_tasks"))
+    rows = db.execute("SELECT * FROM research_task_definitions ORDER BY category ASC, difficulty ASC, task_key ASC").fetchall()
+    return render_template(
+        "admin_research_tasks.html",
+        user=db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone(),
+        rows=rows,
+        message=session.pop("message", None),
+    )
 
 
 @app.route("/daily-research/task/claim", methods=["POST"])
@@ -48924,10 +49133,15 @@ def research_view():
     week_key = _world_week_key()
     research_summary = _home_research_summary(db, week_key)
     weekly_trends = _world_weekly_trends(db, week_key, limit=8)
+    research = notebook_view(db, int(user["id"]))
+    db.commit()
     return render_template(
         "research.html",
+        user=user,
+        research=research,
         research_summary=research_summary,
         weekly_trends=weekly_trends,
+        message=session.pop("message", None),
     )
 
 
@@ -53232,6 +53446,13 @@ def explore():
                 "spd": player_spd,
                 "acc": player_acc,
                 "cri": player_cri,
+                "series_keys": sorted(
+                    {
+                        str(part.get("series_key") or part.get("series") or "").strip()
+                        for part in ((robot_stats or {}).get("parts") or [])
+                        if str(part.get("series_key") or part.get("series") or "").strip()
+                    }
+                ),
             },
             "module": (
                 {
@@ -53687,6 +53908,8 @@ def explore():
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
         "lab_level_result": lab_level_result,
+        "research_task_updates": list(session.pop("solo_research_updates", []) or []),
+        "personal_record_updates": list(session.pop("solo_record_updates", []) or []),
         "reward_core": reward_core,
         "highlight_core_drop": bool(reward_core > 0),
         "dropped_core_name": dropped_core_name,

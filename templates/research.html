@@ -1,38 +1,76 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="panel">
-  <h1>研究進捗</h1>
-  <div class="research-card">
-    <div class="research-head">
-      {% if research_summary['icon_path'] %}
-      <img class="research-icon" src="{{ url_for('static', filename=research_summary['icon_path']) }}" alt="research icon" loading="lazy" />
-      {% endif %}
-      <div>
-        <div>勝利属性: <b>{{ research_summary['current_research_element'] or '-' }}</b></div>
-        <div>next unlock: {{ research_summary['next_part_type'] or '-' }}</div>
-      </div>
-    </div>
-    <div class="research-progress-line">
-      <span>{{ research_summary['progress'] }}/100</span>
-      <progress class="research-progress-meter" max="100" value="{{ research_summary['progress'] }}"></progress>
-    </div>
-    <div class="research-stage">
-      stage {{ research_summary['unlocked_stage'] }} / 4
-      <span class="research-stage-dots">
-        {% for i in range(4) %}{% if i < research_summary['unlocked_stage'] %}●{% else %}○{% endif %}{% endfor %}
-      </span>
-    </div>
+  <h1>研究手帳</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+  {% set home = research['home'] %}
+  {% set level = home['level'] %}
+  <div class="card module-summary-card">
+    <div><b>研究所</b></div>
+    <div class="upgrade-cost">Lv.{{ level['level'] }} / {{ level['rank_label'] }}</div>
+    <div class="robot-time">次のLvまで {{ level['exp_to_next'] }} EXP / 累計 {{ level['total_exp'] }} EXP</div>
   </div>
-</div>
-<div class="panel">
-  <h2>今週の研究トレンド</h2>
-  <ul class="ranking-mini">
-    {% for t in weekly_trends %}
-      <li><span>{{ t['element'] }}</span><span>{{ t['value'] }} build</span></li>
+
+  <div class="card module-summary-card">
+    <div><b>研究課題</b></div>
+    <div class="module-card-grid">
+      {% for task in home.get('tasks', []) %}
+      <div class="module-card">
+        <div class="module-card-title">{{ task['category_label'] }}</div>
+        <div class="upgrade-cost">{{ task['title'] }}</div>
+        <div class="robot-time">{{ task['description'] }}</div>
+        <div class="robot-time">{{ task['progress_line'] }} / 報酬: 研究EXP {{ task['reward_exp'] }}</div>
+        {% if not task.get('is_completed') %}
+        <form method="post" action="{{ url_for('research_task_hold') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="task_id" value="{{ task['id'] }}" />
+          <button type="submit" class="btn-secondary">研究保留</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if home.get('held_task') %}
+    {% set held = home['held_task'] %}
+    <div class="module-card">
+      <div class="module-card-title">保留中</div>
+      <div class="upgrade-cost">{{ held['title'] }}</div>
+      <div class="robot-time">{{ held['progress_line'] }}</div>
+      <form method="post" action="{{ url_for('research_task_resume') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="task_id" value="{{ held['id'] }}" />
+        <button type="submit">再開</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card module-summary-card">
+    <div><b>最近の自己記録</b></div>
+    {% if home.get('recent_records') %}
+      {% for record in home.get('recent_records') %}
+      <div class="robot-time">{{ record['label'] }}</div>
+      {% endfor %}
     {% else %}
-      <li>今週はまだ組み立てデータがありません。</li>
-    {% endfor %}
-  </ul>
-  <p class="link"><a href="{{ url_for('home') }}">基地へ</a></p>
+      <div class="robot-time">まだ自己記録はありません。探索で勝利すると記録されます。</div>
+    {% endif %}
+  </div>
+
+  <div class="card module-summary-card">
+    <div><b>達成済み研究</b></div>
+    {% if research.get('completed_tasks') %}
+      {% for task in research.get('completed_tasks') %}
+      <div class="module-card-meta">
+        <span class="module-badge">{{ task['category_label'] }}</span>
+        <span>{{ task['title'] }}</span>
+        <span class="robot-time">研究EXP {{ task['reward_exp'] }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="robot-time">達成済み研究はまだありません。</div>
+    {% endif %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a></p>
 </div>
 {% endblock %}

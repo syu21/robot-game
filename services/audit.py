@@ -81,4 +81,34 @@ def audit_log(
                 ensure_tomorrow_research_reward(db, int(user_id), get_day_key(now_ts))
         except Exception:
             pass
+        try:
+            from services.solo_research import (
+                EVENT_EXPLORE_END,
+                RESEARCH_TASK_EVENTS,
+                update_personal_records_from_explore,
+                update_research_tasks_for_event,
+            )
+
+            if event_type in RESEARCH_TASK_EVENTS:
+                updates = update_research_tasks_for_event(db, int(user_id), event_type, payload=payload or {})
+                if updates:
+                    try:
+                        from flask import has_request_context, session
+
+                        if has_request_context():
+                            session["solo_research_updates"] = updates
+                    except Exception:
+                        pass
+            if event_type == EVENT_EXPLORE_END:
+                records = update_personal_records_from_explore(db, int(user_id), payload or {})
+                if records:
+                    try:
+                        from flask import has_request_context, session
+
+                        if has_request_context():
+                            session["solo_record_updates"] = records
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     return rid

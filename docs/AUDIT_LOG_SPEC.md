@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-05-04
+最終更新日: 2026-07-26
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -178,7 +178,22 @@
 - `audit.module.reroll` はモジュール再調整時に記録する。payload は `user_id`, `module_id`, `rarity`, `cost`, `before_stats`, `after_stats`, `coins_before`, `coins_after` を含める。
 - `MODULE_SYNTHESIS_RESULT` / `MODULE_STRATEGY_RESULT` は将来の公開イベント候補だが、現時点では世界ログ公開に使わない。
 
-### 4.8.2 ロボ工場
+### 4.8.2 ソロ研究所
+- `audit.research.task.assign`
+- `audit.research.task.progress`
+- `audit.research.task.complete`
+- `audit.research.task.claim`
+- `audit.research.task.hold`
+- `audit.research.level.up`
+- `audit.research.discovery`
+- `audit.personal_record.update`
+
+補足:
+- 研究タスク進行は `battle_id` または `request_id` を receipt として記録し、同一イベントの二重処理を防ぐ。
+- `audit.research.task.complete` と `audit.research.task.claim` は Phase 1 では同一処理内で連続記録される。
+- `audit.personal_record.update` は改善時だけ記録する。
+
+### 4.8.3 ロボ工場
 - `audit.factory.ensure_defaults`
 - `audit.factory.claim`
 - `audit.factory.upgrade`

@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>研究課題定義</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+  <div class="card module-summary-card">
+    {% for row in rows %}
+    <div class="module-card-meta">
+      <span class="module-badge">{{ row['category'] }}</span>
+      <span><b>{{ row['title'] }}</b></span>
+      <span class="robot-time">{{ row['task_key'] }} / EXP {{ row['reward_exp'] }} / Lv{{ row['min_layer'] }}+</span>
+      <form method="post" action="{{ url_for('admin_research_tasks') }}" class="inline-form">
+        <input type="hidden" name="task_key" value="{{ row['task_key'] }}" />
+        <input type="hidden" name="is_active" value="{{ 0 if row['is_active'] else 1 }}" />
+        <button type="submit" class="btn-secondary">{{ '無効化' if row['is_active'] else '有効化' }}</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('admin') }}">管理へ戻る</a></p>
+</div>
+{% endblock %}
