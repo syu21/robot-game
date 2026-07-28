@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>シリーズ完成記録</h1>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳へ</a></p>
+  <div class="module-card-grid">
+    {% for item in catalog.get('items', []) %}
+    <div class="module-card {{ 'selected' if item.completed else '' }}">
+      <div class="module-card-title">{{ '完成' if item.completed else '研究中' }}</div>
+      <div class="upgrade-cost">{{ item.label }}</div>
+      <div class="robot-time">{{ item.done }} / {{ item.total }}（{{ item.percent }}%）</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

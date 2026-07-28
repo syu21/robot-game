@@ -16,7 +16,7 @@ from series_catalog import (
 from services.robot_titles import ensure_robot_title_system
 from services.tower import ensure_tower_schema
 from services.achievements import ensure_achievement_defaults
-from services.solo_research import seed_research_task_definitions
+from services.solo_research import ensure_research_phase2_schema, seed_research_task_definitions
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "game.db")
@@ -2094,6 +2094,7 @@ def main():
         """
     )
     seed_research_task_definitions(conn)
+    ensure_research_phase2_schema(conn)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_metrics (

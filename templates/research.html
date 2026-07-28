@@ -7,10 +7,29 @@
   {% endif %}
   {% set home = research['home'] %}
   {% set level = home['level'] %}
+  {% set summary = research.get('summary') or home.get('summary') %}
   <div class="card module-summary-card">
     <div><b>研究所</b></div>
     <div class="upgrade-cost">Lv.{{ level['level'] }} / {{ level['rank_label'] }}</div>
     <div class="robot-time">次のLvまで {{ level['exp_to_next'] }} EXP / 累計 {{ level['total_exp'] }} EXP</div>
+    <div class="module-card-meta">
+      <span class="module-badge">パーツ {{ summary.get('parts_percent', 0) }}%</span>
+      <span class="module-badge">完成シリーズ {{ summary.get('series_done', 0) }}</span>
+      <span class="module-badge">敵研究 {{ summary.get('enemy_done', 0) }}</span>
+      <span class="module-badge">設計機 {{ summary.get('design_count', 0) }}</span>
+    </div>
+    <div class="module-card-meta">
+      <a class="battle-home-link" href="{{ url_for('research_parts_view') }}">パーツ図鑑</a>
+      <a class="battle-home-link" href="{{ url_for('research_series_view') }}">シリーズ</a>
+      <a class="battle-home-link" href="{{ url_for('research_enemies_view') }}">敵図鑑</a>
+      <a class="battle-home-link" href="{{ url_for('research_bosses_view') }}">ボス研究</a>
+      <a class="battle-home-link" href="{{ url_for('research_designs_view') }}">設計機記録</a>
+      <a class="battle-home-link" href="{{ url_for('research_records_view') }}">自己記録</a>
+    </div>
+    {% if research.get('next_series') %}
+    {% set hint = research.get('next_series') %}
+    <div class="robot-time">次のシリーズ候補: {{ hint.label }} {{ hint.done }} / {{ hint.total }}</div>
+    {% endif %}
   </div>
 
   <div class="card module-summary-card">

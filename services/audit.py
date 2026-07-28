@@ -84,11 +84,31 @@ def audit_log(
         try:
             from services.solo_research import (
                 EVENT_EXPLORE_END,
+                RESEARCH_COLLECTION_EVENTS,
                 RESEARCH_TASK_EVENTS,
+                process_research_collection_event,
                 update_personal_records_from_explore,
                 update_research_tasks_for_event,
             )
 
+            if event_type in RESEARCH_COLLECTION_EVENTS:
+                collection_updates = process_research_collection_event(
+                    db,
+                    int(user_id),
+                    event_type,
+                    payload=payload or {},
+                    request_id=rid,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                )
+                if collection_updates:
+                    try:
+                        from flask import has_request_context, session
+
+                        if has_request_context():
+                            session["solo_collection_updates"] = collection_updates
+                    except Exception:
+                        pass
             if event_type in RESEARCH_TASK_EVENTS:
                 updates = update_research_tasks_for_event(db, int(user_id), event_type, payload=payload or {})
                 if updates:
@@ -100,7 +120,7 @@ def audit_log(
                     except Exception:
                         pass
             if event_type == EVENT_EXPLORE_END:
-                records = update_personal_records_from_explore(db, int(user_id), payload or {})
+                records = update_personal_records_from_explore(db, int(user_id), payload or {}, include_extended=True)
                 if records:
                     try:
                         from flask import has_request_context, session

@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>設計機記録</h1>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳へ</a></p>
+  <div class="module-card-grid">
+    {% for item in catalog.get('items', []) %}
+    <div class="module-card selected">
+      {% if item.image_path %}
+      <img class="robot-mini" src="{{ url_for('static', filename=item.image_path) }}" alt="{{ item.robot_name or '設計機' }}" loading="lazy" />
+      {% endif %}
+      <div class="module-card-title">設計 {{ item.build_count }}回</div>
+      <div class="upgrade-cost">{{ item.robot_name or '無名の設計機' }}</div>
+      <div class="robot-time">{{ item.head_key }} / {{ item.r_arm_key }} / {{ item.l_arm_key }} / {{ item.legs_key }}</div>
+    </div>
+    {% else %}
+    <div class="card">まだ設計機記録はありません。</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

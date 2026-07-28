@@ -180,6 +180,13 @@
     </div>
     {% endif %}
     {% endif %}
+    {% if summary.get('research_collection_updates') %}
+      {% for update in summary.get('research_collection_updates', [])[:3] %}
+      <div class="battle-summary-row battle-lab-level-up">
+        研究記録: {{ update.get('label') }}{% if update.get('exp') %} / 研究EXP +{{ update.get('exp') }}{% endif %}
+      </div>
+      {% endfor %}
+    {% endif %}
     {% if summary.get('research_task_updates') %}
       {% for task in summary.get('research_task_updates', [])[:2] %}
       <div class="battle-summary-row">

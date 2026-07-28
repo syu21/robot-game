@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>自己記録</h1>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳へ</a></p>
+  <div class="card module-summary-card">
+    {% for item in catalog.get('items', []) %}
+    <div class="module-card-meta">
+      <span class="module-badge">{{ item.record_label }}</span>
+      <span>{{ item.label }}</span>
+    </div>
+    {% else %}
+    <div class="robot-time">まだ自己記録はありません。</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

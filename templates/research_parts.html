@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>パーツ図鑑</h1>
+  {% set summary = catalog.get('summary') %}
+  <div class="card module-summary-card">
+    <div class="upgrade-cost">発見 {{ summary.get('parts_done', 0) }} / {{ summary.get('parts_total', 0) }}（{{ summary.get('parts_percent', 0) }}%）</div>
+    {% if catalog.get('hint') %}
+    {% set hint = catalog.get('hint') %}
+    <div class="robot-time">未完成ヒント: {{ hint.label }} {{ hint.done }} / {{ hint.total }}</div>
+    {% endif %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳へ</a></p>
+  </div>
+  <div class="module-card-grid">
+    {% for item in catalog.get('items', []) %}
+    <div class="module-card {{ 'selected' if item.found else '' }}">
+      {% if item.image_path %}
+      <img class="battle-drop-mini" src="{{ url_for('static', filename=item.image_path) }}" alt="{{ item.label }}" loading="lazy" />
+      {% endif %}
+      <div class="module-card-title">{{ item.series_label or '通常' }} / {{ item.part_type_label }}</div>
+      <div class="upgrade-cost">{{ item.label }}</div>
+      <div class="robot-time">レアリティ {{ item.rarity }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -309,7 +309,17 @@
 <section class="card module-summary-card">
   <div class="home-explore-kicker">次の研究</div>
   {% set next_task = solo_research_home.get('next_task') %}
+  {% set research_summary = solo_research_home.get('summary') or {} %}
   <h2>{{ next_task['title'] if next_task else '研究課題ボード' }}</h2>
+  <div class="module-card-meta">
+    <span class="module-badge">パーツ図鑑 {{ research_summary.get('parts_percent', 0) }}%</span>
+    <span class="module-badge">完成シリーズ {{ research_summary.get('series_done', 0) }}</span>
+    <span class="module-badge">設計機 {{ research_summary.get('design_count', 0) }}</span>
+  </div>
+  {% if solo_research_home.get('next_series') %}
+  {% set next_series = solo_research_home.get('next_series') %}
+  <div class="robot-time">次のシリーズ: {{ next_series.label }} {{ next_series.done }} / {{ next_series.total }}</div>
+  {% endif %}
   {% if next_task %}
   <div class="upgrade-cost">{{ next_task['category_label'] }} / {{ next_task['progress_line'] }} / 報酬: 研究EXP {{ next_task['reward_exp'] }}</div>
   <div class="robot-time">{{ next_task['description'] }}</div>

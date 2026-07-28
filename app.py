@@ -21,6 +21,7 @@ from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
+import click
 from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
 from PIL import Image, ImageDraw
@@ -108,12 +109,21 @@ from services.daily_research import (
     should_show_daily_research_modal,
 )
 from services.solo_research import (
+    backfill_research,
+    bosses_catalog_view,
+    designs_catalog_view,
+    enemies_catalog_view,
+    ensure_research_phase2_schema,
     ensure_research_board,
     hold_research_task,
     notebook_view,
+    parts_catalog_view,
+    rebuild_research_records,
+    records_catalog_view,
     research_home_view,
     resume_held_research_task,
     seed_research_task_definitions,
+    series_catalog_view,
     update_personal_records_from_explore,
     update_research_tasks_for_event,
 )
@@ -12478,6 +12488,7 @@ def ensure_schema(db):
         """
     )
     seed_research_task_definitions(db)
+    ensure_research_phase2_schema(db)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS research_modules (
@@ -49145,6 +49156,88 @@ def research_view():
     )
 
 
+@app.route("/research/parts")
+@login_required
+def research_parts_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_parts.html", user=user, catalog=parts_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.route("/research/series")
+@login_required
+def research_series_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_series.html", user=user, catalog=series_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.route("/research/enemies")
+@login_required
+def research_enemies_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_enemies.html", user=user, catalog=enemies_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.route("/research/bosses")
+@login_required
+def research_bosses_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_enemies.html", user=user, catalog=bosses_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.route("/research/designs")
+@login_required
+def research_designs_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_designs.html", user=user, catalog=designs_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.route("/research/records")
+@login_required
+def research_records_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template("research_records.html", user=user, catalog=records_catalog_view(db, int(user["id"])), message=session.pop("message", None))
+
+
+@app.cli.command("research-backfill")
+@click.option("--user-id", type=int, default=None)
+@click.option("--dry-run", is_flag=True, default=False)
+def research_backfill_command(user_id=None, dry_run=False):
+    db = get_db()
+    result = backfill_research(db, user_id=user_id, dry_run=dry_run)
+    if not dry_run:
+        db.commit()
+    click.echo(json.dumps(result, ensure_ascii=False))
+
+
+@app.cli.command("research-rebuild-records")
+@click.option("--user-id", type=int, default=None)
+@click.option("--dry-run", is_flag=True, default=False)
+def research_rebuild_records_command(user_id=None, dry_run=False):
+    db = get_db()
+    result = rebuild_research_records(db, user_id=user_id, dry_run=dry_run)
+    if not dry_run:
+        db.commit()
+    click.echo(json.dumps(result, ensure_ascii=False))
+
+
 @app.route("/world")
 @login_required
 def world_view():
@@ -53908,6 +54001,7 @@ def explore():
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
         "lab_level_result": lab_level_result,
+        "research_collection_updates": list(session.pop("solo_collection_updates", []) or []),
         "research_task_updates": list(session.pop("solo_research_updates", []) or []),
         "personal_record_updates": list(session.pop("solo_record_updates", []) or []),
         "reward_core": reward_core,
