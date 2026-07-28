@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-import click
+import click as click_lib
 from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
 from PIL import Image, ImageDraw
@@ -49217,25 +49217,25 @@ def research_records_view():
 
 
 @app.cli.command("research-backfill")
-@click.option("--user-id", type=int, default=None)
-@click.option("--dry-run", is_flag=True, default=False)
+@click_lib.option("--user-id", type=int, default=None)
+@click_lib.option("--dry-run", is_flag=True, default=False)
 def research_backfill_command(user_id=None, dry_run=False):
     db = get_db()
     result = backfill_research(db, user_id=user_id, dry_run=dry_run)
     if not dry_run:
         db.commit()
-    click.echo(json.dumps(result, ensure_ascii=False))
+    click_lib.echo(json.dumps(result, ensure_ascii=False))
 
 
 @app.cli.command("research-rebuild-records")
-@click.option("--user-id", type=int, default=None)
-@click.option("--dry-run", is_flag=True, default=False)
+@click_lib.option("--user-id", type=int, default=None)
+@click_lib.option("--dry-run", is_flag=True, default=False)
 def research_rebuild_records_command(user_id=None, dry_run=False):
     db = get_db()
     result = rebuild_research_records(db, user_id=user_id, dry_run=dry_run)
     if not dry_run:
         db.commit()
-    click.echo(json.dumps(result, ensure_ascii=False))
+    click_lib.echo(json.dumps(result, ensure_ascii=False))
 
 
 @app.route("/world")
