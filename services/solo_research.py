@@ -1567,6 +1567,7 @@ def backfill_research(db, user_id=None, dry_run=False):
 
 def rebuild_research_records(db, user_id=None, dry_run=False):
     ensure_research_phase2_schema(db)
+    robot_columns = _table_columns(db, "robot_instances")
     params = []
     where = ""
     if user_id:
@@ -1574,6 +1575,8 @@ def rebuild_research_records(db, user_id=None, dry_run=False):
         params.append(int(user_id))
     users = db.execute(f"SELECT id FROM users {where} ORDER BY id", tuple(params)).fetchall()
     result = {"users": len(users), "records": 0, "errors": []}
+    if "power_score" not in robot_columns:
+        return result
     if dry_run:
         result["records"] = sum(
             int(db.execute("SELECT COUNT(*) AS c FROM user_personal_records WHERE user_id = ?", (int(user["id"]),)).fetchone()["c"] or 0)
