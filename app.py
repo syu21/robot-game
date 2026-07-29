@@ -23,6 +23,7 @@ from functools import wraps
 
 import click as click_lib
 from flask import Flask, Response, abort, flash, g, has_request_context, jsonify, redirect, render_template, request, session, url_for
+from flask import before_render_template, template_rendered
 from markupsafe import Markup, escape
 from PIL import Image, ImageDraw
 from balance_config import (
@@ -931,7 +932,9 @@ COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS = max(
     30,
     int(os.getenv("COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS", "60")),
 )
-PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "1200")))
+PERF_DIAGNOSTICS = str(os.getenv("PERF_DIAGNOSTICS", "0")).strip().lower() in {"1", "true", "yes", "on"}
+PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "500")))
+PERF_SLOW_SQL_MS = max(1, int(os.getenv("PERF_SLOW_SQL_MS", "50")))
 PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
 HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
@@ -5191,9 +5194,20 @@ class TimedSQLiteConnection(sqlite3.Connection):
         try:
             return super().execute(sql, parameters)
         finally:
-            elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+            elapsed_ms_float = (time.perf_counter() - started_at) * 1000
+            elapsed_ms = int(round(elapsed_ms_float))
+            if has_request_context():
+                g.perf_sql_count = int(getattr(g, "perf_sql_count", 0) or 0) + 1
+                g.perf_sql_total_ms = float(getattr(g, "perf_sql_total_ms", 0.0) or 0.0) + elapsed_ms_float
+                if PERF_DIAGNOSTICS and elapsed_ms_float >= float(PERF_SLOW_SQL_MS):
+                    compact_sql = " ".join(str(sql or "").split())[:400]
+                    slow_queries = list(getattr(g, "perf_slow_sql", []) or [])
+                    slow_queries.append({"elapsed_ms": round(elapsed_ms_float, 3), "sql": compact_sql})
+                    slow_queries.sort(key=lambda item: float(item["elapsed_ms"]), reverse=True)
+                    g.perf_slow_sql = slow_queries[:10]
             if (
-                elapsed_ms >= int(HOME_SQL_SLOW_MS)
+                PERF_DIAGNOSTICS
+                and elapsed_ms >= int(HOME_SQL_SLOW_MS)
                 and has_request_context()
                 and (request.path or "") == "/home"
             ):
@@ -5209,6 +5223,33 @@ class TimedSQLiteConnection(sqlite3.Connection):
 
 def _home_cache_scope_key():
     return str(DB_PATH)
+
+
+def _perf_response_size(response):
+    try:
+        value = response.calculate_content_length()
+        if value is not None:
+            return int(value)
+    except Exception:
+        pass
+    return 0
+
+
+@before_render_template.connect_via(app)
+def _perf_before_render_template(sender, template, context, **extra):
+    if has_request_context():
+        g.perf_template_started_at = time.perf_counter()
+
+
+@template_rendered.connect_via(app)
+def _perf_template_rendered(sender, template, context, **extra):
+    if not has_request_context():
+        return
+    started_at = getattr(g, "perf_template_started_at", None)
+    if not started_at:
+        return
+    g.perf_render_ms = float(getattr(g, "perf_render_ms", 0.0) or 0.0) + ((time.perf_counter() - started_at) * 1000)
+    g.perf_template_started_at = None
 
 
 def _research_part_type_for_stage(stage):
@@ -39981,6 +40022,38 @@ def log_slow_request(response):
     elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
     response.headers["X-Robolabo-Elapsed-Ms"] = str(elapsed_ms)
     path = request.path or ""
+    if PERF_DIAGNOSTICS and request.endpoint != "static" and not path.startswith("/static/"):
+        sql_count = int(getattr(g, "perf_sql_count", 0) or 0)
+        sql_total_ms = float(getattr(g, "perf_sql_total_ms", 0.0) or 0.0)
+        render_ms = float(getattr(g, "perf_render_ms", 0.0) or 0.0)
+        response_bytes = _perf_response_size(response)
+        response.headers["X-Robolabo-Sql-Count"] = str(sql_count)
+        response.headers["X-Robolabo-Sql-Total-Ms"] = f"{sql_total_ms:.3f}"
+        response.headers["X-Robolabo-Render-Ms"] = f"{render_ms:.3f}"
+        response.headers["X-Robolabo-Response-Bytes"] = str(response_bytes)
+        slow_sql = list(getattr(g, "perf_slow_sql", []) or [])
+        if slow_sql:
+            response.headers["X-Robolabo-Slow-Sql-Count"] = str(len(slow_sql))
+        app.logger.info(
+            "perf.request route=%s method=%s status=%s total_ms=%s sql_count=%s sql_total_ms=%.3f render_ms=%.3f response_bytes=%s request_id=%s",
+            path,
+            request.method,
+            int(response.status_code),
+            elapsed_ms,
+            sql_count,
+            sql_total_ms,
+            render_ms,
+            response_bytes,
+            getattr(g, "request_id", None),
+        )
+        for item in slow_sql:
+            app.logger.info(
+                "perf.sql_slow route=%s elapsed_ms=%.3f request_id=%s sql=%s",
+                path,
+                float(item.get("elapsed_ms") or 0),
+                getattr(g, "request_id", None),
+                item.get("sql"),
+            )
     if (
         elapsed_ms >= int(PERF_SLOW_REQUEST_MS)
         and request.endpoint != "static"
