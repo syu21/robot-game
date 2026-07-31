@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>{{ trial['title'] }}</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card module-summary-card">
+    <div class="module-card-meta">
+      <span class="module-badge">{{ trial['category_label'] }}</span>
+      <span class="module-badge {% if trial['best_grade']['rank'] >= 1 %}ok{% else %}muted{% endif %}">ベスト: {{ trial['best_grade']['label'] }}</span>
+      <span class="module-badge muted">挑戦 {{ trial['attempts_count'] }}</span>
+    </div>
+    <div class="robot-time">{{ trial['description'] }}</div>
+    <div class="robot-time">報酬: 研究EXP / 試験章 / 称号 / 特殊カラー / DECOR / 設計機カード枠 / 研究手帳記録</div>
+  </div>
+
+  <div class="module-card-grid">
+    <div class="module-card">
+      <div class="module-card-title">評価条件</div>
+      <div class="robot-time">合格: {{ trial['pass']|join(' / ') }}</div>
+      <div class="robot-time">優秀: {{ trial['excellent']|join(' / ') }}</div>
+      <div class="robot-time">完全解析: {{ trial['complete']|join(' / ') }}</div>
+      <div class="robot-time">制限ターン: {{ trial['max_turns'] }}</div>
+    </div>
+
+    <div class="module-card">
+      <div class="module-card-title">出撃ロボ</div>
+      {% if active_robot and stats %}
+      <div class="upgrade-cost">{{ active_robot['name'] }} / {{ robot_type_label }}</div>
+      <div class="robot-time">
+        HP {{ stats['stats']['hp'] }} / ATK {{ stats['stats']['atk'] }} / DEF {{ stats['stats']['def'] }}
+        / SPD {{ stats['stats']['spd'] }} / ACC {{ stats['stats']['acc'] }} / CRI {{ stats['stats']['cri'] }}
+      </div>
+      {% if requirement['ok'] %}
+      <div class="module-card-meta"><span class="module-badge ok">挑戦可能</span></div>
+      {% else %}
+      <div class="module-card-meta"><span class="module-badge muted">{{ requirement['reason'] }}</span></div>
+      {% endif %}
+      <form method="post" action="{{ url_for('research_trial_detail', trial_key=trial['key']) }}" class="inline-form inline-form-top">
+        <button type="submit" {% if not requirement['ok'] %}disabled{% endif %}>試験へ挑む</button>
+      </form>
+      {% else %}
+      <div class="robot-time">出撃ロボが必要です。</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if result %}
+  <div class="card module-summary-card">
+    <div><b>試験結果</b></div>
+    <div class="module-card-meta">
+      <span class="module-badge {% if result['grade']['rank'] >= 1 %}ok{% else %}muted{% endif %}">{{ result['grade']['label'] }}</span>
+      <span class="module-badge">ターン {{ result['battle']['turns'] }}</span>
+      <span class="module-badge">残HP {{ result['battle']['player_final_hp'] }} / {{ result['battle']['player_hp_max'] }}</span>
+      <span class="module-badge">MISS {{ result['battle']['player_miss_count'] }}</span>
+    </div>
+    {% if reward %}
+    <div class="robot-time">
+      {% if reward['improved'] %}ベスト更新{% else %}ベスト更新なし{% endif %}
+      / 研究EXP +{{ reward['reward_exp'] }}
+      {% if reward['title_granted'] %} / 称号「完全解析者」獲得{% endif %}
+    </div>
+    {% endif %}
+    <div class="module-card-grid">
+      {% for log in result['battle']['turn_logs'][:8] %}
+      <div class="module-card">
+        <div class="robot-time">
+          T{{ log['turn'] }} {{ '自機' if log['actor'] == 'player' else log['enemy_name'] }}
+          {% if log['miss'] %}MISS{% else %}{{ log['damage'] }}ダメージ{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if best_payload and best_payload.get('battle') %}
+  <div class="card module-summary-card">
+    <div><b>ベスト記録</b></div>
+    <div class="robot-time">
+      {{ best_payload['grade']['label'] }} /
+      {{ best_payload['battle']['turns'] }}ターン /
+      残HP {{ best_payload['battle']['player_final_hp'] }} /
+      MISS {{ best_payload['battle']['player_miss_count'] }}
+    </div>
+  </div>
+  {% endif %}
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_trials') }}">研究試験場へ戻る</a></p>
+</div>
+{% endblock %}

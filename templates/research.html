@@ -25,6 +25,7 @@
       <a class="battle-home-link" href="{{ url_for('research_bosses_view') }}">ボス研究</a>
       <a class="battle-home-link" href="{{ url_for('research_designs_view') }}">設計機記録</a>
       <a class="battle-home-link" href="{{ url_for('research_records_view') }}">自己記録</a>
+      <a class="battle-home-link" href="{{ url_for('research_trials') }}">研究試験場</a>
     </div>
     {% if research.get('next_series') %}
     {% set hint = research.get('next_series') %}

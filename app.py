@@ -14902,6 +14902,39 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS research_trial_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            trial_key TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            grade_rank INTEGER NOT NULL,
+            reward_exp INTEGER NOT NULL DEFAULT 0,
+            result_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_trial_progress (
+            user_id INTEGER NOT NULL,
+            trial_key TEXT NOT NULL,
+            best_grade TEXT NOT NULL DEFAULT '',
+            best_grade_rank INTEGER NOT NULL DEFAULT 0,
+            best_result_json TEXT NOT NULL DEFAULT '{}',
+            attempts_count INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, trial_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS showcase_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             robot_id INTEGER NOT NULL,
@@ -16082,6 +16115,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_attempts_user_created ON research_trial_attempts(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_attempts_trial ON research_trial_attempts(trial_key, grade_rank DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_progress_user_rank ON user_research_trial_progress(user_id, best_grade_rank DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_user_presence_last_active_at ON user_presence(last_active_at DESC)")
@@ -49204,6 +49240,656 @@ def progress_view():
         "progress.html",
         today_progress=today_progress,
         today_progress_cards=_build_today_progress_cards(today_progress),
+    )
+
+
+RESEARCH_TRIAL_GRADE_DEFS = (
+    {"rank": 0, "key": "none", "label": "未合格", "reward_exp": 0},
+    {"rank": 1, "key": "pass", "label": "合格", "reward_exp": 20},
+    {"rank": 2, "key": "excellent", "label": "優秀", "reward_exp": 35},
+    {"rank": 3, "key": "complete", "label": "完全解析", "reward_exp": 55},
+)
+RESEARCH_TRIAL_GRADES_BY_RANK = {int(item["rank"]): item for item in RESEARCH_TRIAL_GRADE_DEFS}
+RESEARCH_TRIAL_GRADES_BY_KEY = {item["key"]: item for item in RESEARCH_TRIAL_GRADE_DEFS}
+
+RESEARCH_TRIAL_DEFS = (
+    {
+        "key": "perf_fast_win",
+        "category": "basic",
+        "category_label": "基礎性能",
+        "title": "高速決着試験",
+        "description": "標準試験機を短いターンで撃破する。",
+        "enemy": {"name": "標準試験機", "hp": 22, "atk": 6, "def": 4, "spd": 8, "acc": 8, "cri": 2},
+        "max_turns": 8,
+        "pass": ("撃破",),
+        "excellent": ("6ターン以内",),
+        "complete": ("5ターン以内", "HP50%以上"),
+    },
+    {
+        "key": "perf_survival",
+        "category": "basic",
+        "category_label": "基礎性能",
+        "title": "耐久保持試験",
+        "description": "防御試験機を撃破し、残HPを評価する。",
+        "enemy": {"name": "防御試験機", "hp": 24, "atk": 7, "def": 5, "spd": 6, "acc": 8, "cri": 1},
+        "max_turns": 8,
+        "pass": ("撃破",),
+        "excellent": ("HP50%以上",),
+        "complete": ("ノーダメージ",),
+    },
+    {
+        "key": "perf_precision",
+        "category": "basic",
+        "category_label": "基礎性能",
+        "title": "精密命中試験",
+        "description": "回避試験機へ攻撃を当て続ける。",
+        "enemy": {"name": "回避試験機", "hp": 20, "atk": 5, "def": 3, "spd": 12, "acc": 11, "cri": 2},
+        "max_turns": 8,
+        "pass": ("撃破",),
+        "excellent": ("MISS 1回以内",),
+        "complete": ("MISSなし", "HP50%以上"),
+    },
+    {
+        "key": "type_fortress",
+        "category": "type",
+        "category_label": "型別",
+        "title": "耐久型重装撃破試験",
+        "description": "耐久型の構成で重装試験機を撃破する。",
+        "enemy": {"name": "重装試験機", "hp": 28, "atk": 8, "def": 8, "spd": 5, "acc": 8, "cri": 1},
+        "max_turns": 10,
+        "required_type": "fortress",
+        "pass": ("耐久型で撃破",),
+        "excellent": ("8ターン以内",),
+        "complete": ("HP50%以上",),
+    },
+    {
+        "key": "type_sniper",
+        "category": "type",
+        "category_label": "型別",
+        "title": "高速機迎撃試験",
+        "description": "命中型の構成で高速試験機を撃破する。",
+        "enemy": {"name": "高速試験機", "hp": 24, "atk": 7, "def": 4, "spd": 18, "acc": 13, "cri": 3},
+        "max_turns": 8,
+        "required_type": "sniper",
+        "pass": ("命中型で撃破",),
+        "excellent": ("6ターン以内",),
+        "complete": ("MISSなし", "HP50%以上"),
+    },
+    {
+        "key": "type_burst",
+        "category": "type",
+        "category_label": "型別",
+        "title": "爆発火力試験",
+        "description": "爆発型の構成で規定ターン以内に撃破する。",
+        "enemy": {"name": "装甲試験機", "hp": 30, "atk": 6, "def": 7, "spd": 7, "acc": 9, "cri": 2},
+        "max_turns": 7,
+        "required_type": "burst",
+        "pass": ("爆発型で撃破",),
+        "excellent": ("6ターン以内",),
+        "complete": ("5ターン以内", "HP50%以上"),
+    },
+    {
+        "key": "type_swift",
+        "category": "type",
+        "category_label": "型別",
+        "title": "速攻型三連戦試験",
+        "description": "速攻型の構成で3体の試験機を連続撃破する。",
+        "enemies": (
+            {"name": "三連戦試験機A", "hp": 15, "atk": 5, "def": 3, "spd": 9, "acc": 8, "cri": 1},
+            {"name": "三連戦試験機B", "hp": 17, "atk": 6, "def": 4, "spd": 10, "acc": 9, "cri": 2},
+            {"name": "三連戦試験機C", "hp": 19, "atk": 7, "def": 4, "spd": 11, "acc": 10, "cri": 2},
+        ),
+        "max_turns": 12,
+        "required_type": "swift",
+        "pass": ("速攻型で3連戦突破",),
+        "excellent": ("10ターン以内",),
+        "complete": ("8ターン以内", "HP50%以上"),
+    },
+    {
+        "key": "build_same_series_3",
+        "category": "build",
+        "category_label": "構成制限",
+        "title": "同一シリーズ連携試験",
+        "description": "同一シリーズを3部位以上装備して撃破する。",
+        "enemy": {"name": "連携試験機", "hp": 25, "atk": 7, "def": 5, "spd": 8, "acc": 9, "cri": 2},
+        "max_turns": 9,
+        "build_rule": "same_series_3",
+        "pass": ("同一シリーズ3部位以上で撃破",),
+        "excellent": ("7ターン以内",),
+        "complete": ("HP50%以上",),
+    },
+    {
+        "key": "build_all_diff_series",
+        "category": "build",
+        "category_label": "構成制限",
+        "title": "異系統混成試験",
+        "description": "4部位すべて別シリーズで撃破する。",
+        "enemy": {"name": "混成試験機", "hp": 23, "atk": 7, "def": 4, "spd": 9, "acc": 9, "cri": 2},
+        "max_turns": 9,
+        "build_rule": "all_diff_series",
+        "pass": ("4部位すべて別シリーズで撃破",),
+        "excellent": ("7ターン以内",),
+        "complete": ("MISSなし",),
+    },
+    {
+        "key": "build_n_only_no_decor",
+        "category": "build",
+        "category_label": "構成制限",
+        "title": "素体解析試験",
+        "description": "Nパーツのみ、DECORなしで撃破する。",
+        "enemy": {"name": "素体試験機", "hp": 20, "atk": 6, "def": 4, "spd": 8, "acc": 8, "cri": 1},
+        "max_turns": 8,
+        "build_rule": "n_only_no_decor",
+        "pass": ("Nパーツのみ・DECORなしで撃破",),
+        "excellent": ("6ターン以内",),
+        "complete": ("HP50%以上",),
+    },
+    {
+        "key": "boss_layer1_replay",
+        "category": "boss",
+        "category_label": "ボス再現",
+        "title": "第1層ボス再現試験",
+        "description": "第1層ボスの行動を再現した試験機を撃破する。",
+        "enemy": {"name": "第1層再現ボス", "hp": 32, "atk": 8, "def": 6, "spd": 8, "acc": 10, "cri": 3},
+        "max_turns": 10,
+        "pass": ("撃破",),
+        "excellent": ("8ターン以内",),
+        "complete": ("HP50%以上", "MISSなし"),
+    },
+    {
+        "key": "boss_layer2_replay",
+        "category": "boss",
+        "category_label": "ボス再現",
+        "title": "第2層ボス再現試験",
+        "description": "第2層ボスの行動を再現した試験機を撃破する。",
+        "enemy": {"name": "第2層再現ボス", "hp": 38, "atk": 10, "def": 7, "spd": 10, "acc": 11, "cri": 4},
+        "max_turns": 11,
+        "pass": ("撃破",),
+        "excellent": ("9ターン以内",),
+        "complete": ("HP50%以上", "MISSなし"),
+    },
+)
+RESEARCH_TRIAL_DEFS_BY_KEY = {item["key"]: item for item in RESEARCH_TRIAL_DEFS}
+RESEARCH_TRIAL_TYPE_LABELS = {
+    "fortress": "耐久型",
+    "sniper": "命中型",
+    "burst": "爆発型",
+    "swift": "速攻型",
+    "balanced": "標準型",
+}
+
+
+def _research_trial_grade(rank):
+    return dict(RESEARCH_TRIAL_GRADES_BY_RANK.get(int(rank or 0), RESEARCH_TRIAL_GRADES_BY_RANK[0]))
+
+
+def _research_trial_progress_rows(db, user_id):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM user_research_trial_progress
+        WHERE user_id = ?
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return {row["trial_key"]: row for row in rows}
+
+
+def _research_trial_robot_type(stat_obj):
+    archetype_key = ((stat_obj or {}).get("archetype") or {}).get("key")
+    if archetype_key in ("fortress", "sniper", "swift"):
+        return archetype_key
+    stats = dict((stat_obj or {}).get("stats") or {})
+    atk = int(stats.get("atk") or 0)
+    cri = int(stats.get("cri") or 0)
+    if atk + (cri * 2) >= int(stats.get("def") or 0) + int(stats.get("hp") or 0) // 3 + 6:
+        return "burst"
+    return "balanced"
+
+
+def _research_trial_build_state(stat_obj):
+    parts = list((stat_obj or {}).get("parts") or [])
+    series_counts = Counter(str(p.get("series") or "").strip() for p in parts if p.get("series"))
+    rarities = [str(p.get("rarity") or "").upper() for p in parts]
+    decor_count = int((stat_obj or {}).get("decor_count") or 0)
+    return {
+        "series_counts": dict(series_counts),
+        "max_same_series": max(series_counts.values()) if series_counts else 0,
+        "series_unique_count": len(series_counts),
+        "rarities": rarities,
+        "all_n": bool(rarities and all(r == "N" for r in rarities)),
+        "decor_count": int(decor_count),
+    }
+
+
+def _research_trial_requirement_result(trial, stat_obj):
+    robot_type = _research_trial_robot_type(stat_obj)
+    required_type = trial.get("required_type")
+    if required_type and robot_type != required_type:
+        return {
+            "ok": False,
+            "reason": f"必要型: {RESEARCH_TRIAL_TYPE_LABELS.get(required_type, required_type)} / 現在: {RESEARCH_TRIAL_TYPE_LABELS.get(robot_type, robot_type)}",
+        }
+    build = _research_trial_build_state(stat_obj)
+    rule = trial.get("build_rule")
+    if rule == "same_series_3" and int(build["max_same_series"]) < 3:
+        return {"ok": False, "reason": "同一シリーズ3部位以上が必要です。"}
+    if rule == "all_diff_series" and int(build["series_unique_count"]) < 4:
+        return {"ok": False, "reason": "4部位すべて別シリーズが必要です。"}
+    if rule == "n_only_no_decor" and (not build["all_n"] or int(build["decor_count"]) > 0):
+        return {"ok": False, "reason": "Nパーツのみ、DECORなしが必要です。"}
+    return {"ok": True, "reason": ""}
+
+
+def _research_trial_decor_count(db, robot_id):
+    base = db.execute(
+        "SELECT decor_asset_id FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(robot_id),),
+    ).fetchone()
+    count = 1 if base and base["decor_asset_id"] else 0
+    extra = db.execute(
+        "SELECT COUNT(*) AS c FROM robot_instance_decors WHERE robot_instance_id = ?",
+        (int(robot_id),),
+    ).fetchone()
+    return int(count + int(extra["c"] or 0))
+
+
+def _research_trial_enemies(trial):
+    if trial.get("enemies"):
+        return [dict(e) for e in trial["enemies"]]
+    return [dict(trial["enemy"])]
+
+
+def _simulate_research_trial(player_stats, trial, *, seed=None):
+    roller = random.Random(seed if seed is not None else random.randrange(1, 10**9))
+    stats = {k: int(player_stats.get(k) or 0) for k in ("hp", "atk", "def", "spd", "acc", "cri")}
+    player_hp_max = max(1, int(stats["hp"]))
+    player_hp = player_hp_max
+    max_turns = max(1, int(trial.get("max_turns") or 8))
+    logs = []
+    player_damage_total = 0
+    enemy_damage_total = 0
+    player_miss_count = 0
+    enemy_miss_count = 0
+    turns = 0
+    defeated_count = 0
+    enemies = _research_trial_enemies(trial)
+    for enemy_index, enemy in enumerate(enemies, start=1):
+        enemy_hp = max(1, int(enemy["hp"]))
+        enemy_hp_max = enemy_hp
+        while player_hp > 0 and enemy_hp > 0 and turns < max_turns:
+            turns += 1
+            player_first = int(stats["spd"]) >= int(enemy["spd"])
+            order = ("player", "enemy") if player_first else ("enemy", "player")
+            for actor in order:
+                if player_hp <= 0 or enemy_hp <= 0:
+                    break
+                if actor == "player":
+                    damage, critical, detail = resolve_attack(
+                        stats["atk"],
+                        stats["acc"],
+                        stats["cri"],
+                        int(enemy["def"]),
+                        int(enemy["acc"]),
+                        rng=roller,
+                        return_detail=True,
+                    )
+                    if detail.get("miss"):
+                        player_miss_count += 1
+                    enemy_hp = max(0, enemy_hp - int(damage))
+                    player_damage_total += int(damage)
+                    logs.append(
+                        {
+                            "turn": turns,
+                            "enemy_index": enemy_index,
+                            "actor": "player",
+                            "target": "enemy",
+                            "enemy_name": enemy["name"],
+                            "damage": int(damage),
+                            "critical": bool(critical),
+                            "miss": bool(detail.get("miss")),
+                            "target_hp_after": int(enemy_hp),
+                            "target_hp_max": int(enemy_hp_max),
+                        }
+                    )
+                else:
+                    damage, critical, detail = resolve_attack(
+                        int(enemy["atk"]),
+                        int(enemy["acc"]),
+                        int(enemy["cri"]),
+                        stats["def"],
+                        stats["acc"],
+                        rng=roller,
+                        return_detail=True,
+                    )
+                    if detail.get("miss"):
+                        enemy_miss_count += 1
+                    player_hp = max(0, player_hp - int(damage))
+                    enemy_damage_total += int(damage)
+                    logs.append(
+                        {
+                            "turn": turns,
+                            "enemy_index": enemy_index,
+                            "actor": "enemy",
+                            "target": "player",
+                            "enemy_name": enemy["name"],
+                            "damage": int(damage),
+                            "critical": bool(critical),
+                            "miss": bool(detail.get("miss")),
+                            "target_hp_after": int(player_hp),
+                            "target_hp_max": int(player_hp_max),
+                        }
+                    )
+            if enemy_hp <= 0:
+                defeated_count += 1
+        if player_hp <= 0 or turns >= max_turns:
+            break
+    win = defeated_count == len(enemies)
+    hp_percent = int(round((player_hp / player_hp_max) * 100)) if player_hp_max else 0
+    return {
+        "win": bool(win),
+        "turns": int(turns),
+        "timeout": bool((not win) and player_hp > 0 and turns >= max_turns),
+        "player_hp_max": int(player_hp_max),
+        "player_final_hp": int(player_hp),
+        "player_hp_percent": int(hp_percent),
+        "enemy_final_hp": 0 if win else int(enemy_hp if "enemy_hp" in locals() else 0),
+        "defeated_count": int(defeated_count),
+        "enemy_count": int(len(enemies)),
+        "player_damage_total": int(player_damage_total),
+        "enemy_damage_total": int(enemy_damage_total),
+        "player_miss_count": int(player_miss_count),
+        "enemy_miss_count": int(enemy_miss_count),
+        "turn_logs": logs,
+    }
+
+
+def _evaluate_research_trial(trial, battle):
+    if not battle.get("win"):
+        return _research_trial_grade(0)
+    rank = 1
+    key = trial["key"]
+    turns = int(battle.get("turns") or 0)
+    hp_percent = int(battle.get("player_hp_percent") or 0)
+    misses = int(battle.get("player_miss_count") or 0)
+    damage_taken = int(battle.get("enemy_damage_total") or 0)
+    if key == "perf_fast_win":
+        if turns <= 6:
+            rank = 2
+        if turns <= 5 and hp_percent >= 50:
+            rank = 3
+    elif key == "perf_survival":
+        if hp_percent >= 50:
+            rank = 2
+        if damage_taken == 0:
+            rank = 3
+    elif key == "perf_precision":
+        if misses <= 1:
+            rank = 2
+        if misses == 0 and hp_percent >= 50:
+            rank = 3
+    elif key in ("type_fortress", "build_same_series_3", "build_n_only_no_decor"):
+        if turns <= (8 if key == "type_fortress" else 7 if key == "build_same_series_3" else 6):
+            rank = 2
+        if hp_percent >= 50:
+            rank = 3
+    elif key == "type_sniper":
+        if turns <= 6:
+            rank = 2
+        if misses == 0 and hp_percent >= 50:
+            rank = 3
+    elif key == "type_burst":
+        if turns <= 6:
+            rank = 2
+        if turns <= 5 and hp_percent >= 50:
+            rank = 3
+    elif key == "type_swift":
+        if turns <= 10:
+            rank = 2
+        if turns <= 8 and hp_percent >= 50:
+            rank = 3
+    elif key == "build_all_diff_series":
+        if turns <= 7:
+            rank = 2
+        if misses == 0:
+            rank = 3
+    elif key in ("boss_layer1_replay", "boss_layer2_replay"):
+        if turns <= (8 if key == "boss_layer1_replay" else 9):
+            rank = 2
+        if hp_percent >= 50 and misses == 0:
+            rank = 3
+    return _research_trial_grade(rank)
+
+
+def _research_trial_view_item(trial, progress_row=None):
+    best_rank = int(progress_row["best_grade_rank"] or 0) if progress_row else 0
+    grade = _research_trial_grade(best_rank)
+    return {
+        **trial,
+        "best_grade": grade,
+        "attempts_count": int(progress_row["attempts_count"] or 0) if progress_row else 0,
+    }
+
+
+def _research_trials_view(db, user_id):
+    progress = _research_trial_progress_rows(db, user_id)
+    active_robot = _get_active_robot(db, int(user_id)) or _select_main_robot(db, int(user_id))
+    stat_obj = _compute_robot_stats_for_instance(db, int(active_robot["id"])) if active_robot else None
+    if stat_obj and active_robot:
+        stat_obj["decor_count"] = _research_trial_decor_count(db, int(active_robot["id"]))
+    robot_type = _research_trial_robot_type(stat_obj) if stat_obj else None
+    grouped = []
+    for category in ("basic", "type", "build", "boss"):
+        trials = [_research_trial_view_item(t, progress.get(t["key"])) for t in RESEARCH_TRIAL_DEFS if t["category"] == category]
+        if trials:
+            grouped.append({"category": category, "label": trials[0]["category_label"], "trials": trials})
+    total = len(RESEARCH_TRIAL_DEFS)
+    completed = sum(1 for row in progress.values() if int(row["best_grade_rank"] or 0) >= 1)
+    analyzed = sum(1 for row in progress.values() if int(row["best_grade_rank"] or 0) >= 3)
+    return {
+        "groups": grouped,
+        "total": total,
+        "completed": int(completed),
+        "analyzed": int(analyzed),
+        "active_robot": active_robot,
+        "stats": stat_obj,
+        "robot_type": robot_type,
+        "robot_type_label": RESEARCH_TRIAL_TYPE_LABELS.get(robot_type, "未設定") if robot_type else "未設定",
+        "recent_attempts": db.execute(
+            """
+            SELECT *
+            FROM research_trial_attempts
+            WHERE user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 5
+            """,
+            (int(user_id),),
+        ).fetchall(),
+    }
+
+
+def _record_research_trial_attempt(db, user_id, robot_id, trial, grade, battle):
+    now = int(time.time())
+    previous = db.execute(
+        """
+        SELECT *
+        FROM user_research_trial_progress
+        WHERE user_id = ? AND trial_key = ?
+        """,
+        (int(user_id), trial["key"]),
+    ).fetchone()
+    previous_rank = int(previous["best_grade_rank"] or 0) if previous else 0
+    new_rank = int(grade["rank"])
+    improved = new_rank > previous_rank
+    previous_reward = int(_research_trial_grade(previous_rank)["reward_exp"])
+    current_reward = int(grade["reward_exp"])
+    reward_exp = max(0, current_reward - previous_reward) if improved else 0
+    result_payload = {
+        "trial_key": trial["key"],
+        "trial_title": trial["title"],
+        "grade": grade,
+        "battle": battle,
+    }
+    db.execute(
+        """
+        INSERT INTO research_trial_attempts
+            (user_id, robot_instance_id, trial_key, grade, grade_rank, reward_exp, result_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            int(robot_id),
+            trial["key"],
+            grade["key"],
+            new_rank,
+            int(reward_exp),
+            json.dumps(result_payload, ensure_ascii=False),
+            now,
+        ),
+    )
+    if previous:
+        db.execute(
+            """
+            UPDATE user_research_trial_progress
+            SET best_grade = CASE WHEN ? > best_grade_rank THEN ? ELSE best_grade END,
+                best_grade_rank = CASE WHEN ? > best_grade_rank THEN ? ELSE best_grade_rank END,
+                best_result_json = CASE WHEN ? > best_grade_rank THEN ? ELSE best_result_json END,
+                attempts_count = attempts_count + 1,
+                completed_at = CASE WHEN completed_at IS NULL AND ? >= 1 THEN ? ELSE completed_at END,
+                updated_at = ?
+            WHERE user_id = ? AND trial_key = ?
+            """,
+            (
+                new_rank,
+                grade["key"],
+                new_rank,
+                new_rank,
+                new_rank,
+                json.dumps(result_payload, ensure_ascii=False),
+                new_rank,
+                now,
+                now,
+                int(user_id),
+                trial["key"],
+            ),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO user_research_trial_progress
+                (user_id, trial_key, best_grade, best_grade_rank, best_result_json, attempts_count, completed_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                int(user_id),
+                trial["key"],
+                grade["key"] if new_rank > 0 else "",
+                new_rank,
+                json.dumps(result_payload, ensure_ascii=False),
+                now if new_rank >= 1 else None,
+                now,
+            ),
+        )
+    exp_result = None
+    if reward_exp > 0:
+        exp_result = grant_lab_exp(
+            db,
+            int(user_id),
+            "research_trial.grade_up",
+            int(reward_exp),
+            source_entity_type="research_trial",
+            source_entity_id=None,
+            payload={"trial_key": trial["key"], "grade": grade["key"], "rank": new_rank},
+        )
+    title_granted = False
+    if new_rank >= 3 and improved:
+        title_granted = grant_robot_title(db, int(robot_id), "research_trial_analyst", source_event="research_trial_complete")
+        db.execute(
+            """
+            INSERT INTO robot_achievements
+                (robot_id, type, title, body, enemy_key, enemy_name, week_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(robot_id),
+                "research_trial",
+                f"{trial['title']}: 完全解析",
+                "研究試験場で完全解析を達成した。",
+                trial["key"],
+                trial["title"],
+                _world_week_key(),
+                now,
+            ),
+        )
+    return {"improved": improved, "reward_exp": int(reward_exp), "exp_result": exp_result, "title_granted": bool(title_granted)}
+
+
+@app.route("/research/trials")
+@login_required
+def research_trials():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    return render_template(
+        "research_trials.html",
+        user=user,
+        trial_view=_research_trials_view(db, int(user["id"])),
+        grades=RESEARCH_TRIAL_GRADE_DEFS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/research/trials/<trial_key>", methods=["GET", "POST"])
+@login_required
+def research_trial_detail(trial_key):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    trial = RESEARCH_TRIAL_DEFS_BY_KEY.get(str(trial_key or ""))
+    if not trial:
+        abort(404)
+    progress = _research_trial_progress_rows(db, int(user["id"])).get(trial["key"])
+    active_robot = _get_active_robot(db, int(user["id"])) or _select_main_robot(db, int(user["id"]))
+    stat_obj = _compute_robot_stats_for_instance(db, int(active_robot["id"])) if active_robot else None
+    if stat_obj and active_robot:
+        stat_obj["decor_count"] = _research_trial_decor_count(db, int(active_robot["id"]))
+    requirement = _research_trial_requirement_result(trial, stat_obj) if stat_obj else {"ok": False, "reason": "出撃ロボが必要です。"}
+    result = None
+    reward = None
+    if request.method == "POST":
+        if not active_robot or not stat_obj:
+            session["message"] = "研究試験には出撃ロボが必要です。"
+            return redirect(url_for("research_trial_detail", trial_key=trial["key"]))
+        if not requirement.get("ok"):
+            session["message"] = requirement.get("reason") or "試験条件を満たしていません。"
+            return redirect(url_for("research_trial_detail", trial_key=trial["key"]))
+        seed = int(time.time()) ^ (int(user["id"]) << 8) ^ (int(active_robot["id"]) << 16)
+        battle = _simulate_research_trial((stat_obj or {}).get("stats") or {}, trial, seed=seed)
+        grade = _evaluate_research_trial(trial, battle)
+        reward = _record_research_trial_attempt(db, int(user["id"]), int(active_robot["id"]), trial, grade, battle)
+        db.commit()
+        result = {"battle": battle, "grade": grade}
+        progress = _research_trial_progress_rows(db, int(user["id"])).get(trial["key"])
+    best_payload = {}
+    if progress and progress["best_result_json"]:
+        try:
+            best_payload = json.loads(progress["best_result_json"])
+        except (TypeError, ValueError):
+            best_payload = {}
+    return render_template(
+        "research_trial_detail.html",
+        user=user,
+        trial=_research_trial_view_item(trial, progress),
+        active_robot=active_robot,
+        stats=stat_obj,
+        robot_type_label=RESEARCH_TRIAL_TYPE_LABELS.get(_research_trial_robot_type(stat_obj), "未設定") if stat_obj else "未設定",
+        requirement=requirement,
+        result=result,
+        reward=reward,
+        best_payload=best_payload,
+        message=session.pop("message", None),
     )
 
 

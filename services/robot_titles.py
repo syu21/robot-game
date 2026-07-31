@@ -124,6 +124,17 @@ TITLE_MASTER_DEFS = (
         "sort_order": 40,
     },
     {
+        "key": "research_trial_analyst",
+        "name_ja": "完全解析者",
+        "description": "研究試験で完全解析を達成した機体。",
+        "category": "record",
+        "rarity": 3,
+        "icon_key": "analysis",
+        "color_key": "cyan",
+        "unlock_scope": "robot",
+        "sort_order": 45,
+    },
+    {
         "key": "mvp_weekly",
         "name_ja": "今週の顔",
         "description": "今週のMVPとして観測された機体。",

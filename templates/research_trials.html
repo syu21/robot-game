@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>研究試験場</h1>
+  {% if message %}
+  <div class="flash">{{ message }}</div>
+  {% endif %}
+
+  <div class="card module-summary-card">
+    <div><b>試験進捗</b></div>
+    <div class="module-card-meta">
+      <span class="module-badge">合格 {{ trial_view['completed'] }} / {{ trial_view['total'] }}</span>
+      <span class="module-badge">完全解析 {{ trial_view['analyzed'] }} / {{ trial_view['total'] }}</span>
+      <span class="module-badge">報酬は研究記録中心</span>
+    </div>
+    {% if trial_view['active_robot'] %}
+    <div class="robot-time">
+      出撃ロボ: {{ trial_view['active_robot']['name'] }} / 型: {{ trial_view['robot_type_label'] }}
+      {% if trial_view['stats'] %}
+      / HP {{ trial_view['stats']['stats']['hp'] }} ATK {{ trial_view['stats']['stats']['atk'] }} DEF {{ trial_view['stats']['stats']['def'] }} SPD {{ trial_view['stats']['stats']['spd'] }} ACC {{ trial_view['stats']['stats']['acc'] }}
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="robot-time">出撃ロボが未設定です。ホームでロボを準備してください。</div>
+    {% endif %}
+  </div>
+
+  {% for group in trial_view['groups'] %}
+  <div class="card module-summary-card">
+    <div><b>{{ group['label'] }}</b></div>
+    <div class="module-card-grid">
+      {% for trial in group['trials'] %}
+      <div class="module-card">
+        <div class="module-card-title">{{ trial['title'] }}</div>
+        <div class="robot-time">{{ trial['description'] }}</div>
+        <div class="module-card-meta">
+          <span class="module-badge {% if trial['best_grade']['rank'] >= 1 %}ok{% else %}muted{% endif %}">{{ trial['best_grade']['label'] }}</span>
+          <span class="module-badge muted">挑戦 {{ trial['attempts_count'] }}</span>
+        </div>
+        <div class="robot-time">合格: {{ trial['pass']|join(' / ') }}</div>
+        <div class="robot-time">優秀: {{ trial['excellent']|join(' / ') }}</div>
+        <div class="robot-time">完全解析: {{ trial['complete']|join(' / ') }}</div>
+        <p class="link"><a class="battle-home-link" href="{{ url_for('research_trial_detail', trial_key=trial['key']) }}">試験を選ぶ</a></p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card module-summary-card">
+    <div><b>最近の試験</b></div>
+    {% if trial_view['recent_attempts'] %}
+      {% for attempt in trial_view['recent_attempts'] %}
+      <div class="robot-time">{{ attempt['trial_key'] }} / {{ attempt['grade'] }} / 研究EXP +{{ attempt['reward_exp'] }}</div>
+      {% endfor %}
+    {% else %}
+      <div class="robot-time">まだ試験記録はありません。</div>
+    {% endif %}
+  </div>
+
+  <p class="link"><a class="battle-home-link" href="{{ url_for('factory') }}">ロボ工場へ戻る</a></p>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳へ戻る</a></p>
+</div>
+{% endblock %}

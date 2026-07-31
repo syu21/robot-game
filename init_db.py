@@ -3039,6 +3039,39 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS research_trial_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            trial_key TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            grade_rank INTEGER NOT NULL,
+            reward_exp INTEGER NOT NULL DEFAULT 0,
+            result_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_research_trial_progress (
+            user_id INTEGER NOT NULL,
+            trial_key TEXT NOT NULL,
+            best_grade TEXT NOT NULL DEFAULT '',
+            best_grade_rank INTEGER NOT NULL DEFAULT 0,
+            best_result_json TEXT NOT NULL DEFAULT '{}',
+            attempts_count INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, trial_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS showcase_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             robot_id INTEGER NOT NULL,
@@ -4396,6 +4429,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_history_updated ON robot_history(updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_achievements_robot_created ON robot_achievements(robot_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_title_unlocks_robot ON robot_title_unlocks(robot_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_attempts_user_created ON research_trial_attempts(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_attempts_trial ON research_trial_attempts(trial_key, grade_rank DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_research_trial_progress_user_rank ON user_research_trial_progress(user_id, best_grade_rank DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_robot_type ON showcase_votes(robot_id, vote_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_user ON showcase_votes(user_id, vote_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lab_submissions_status_created ON lab_robot_submissions(status, created_at DESC)")
