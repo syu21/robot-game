@@ -363,9 +363,51 @@
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
       {% set tutorial_next = summary.get('tutorial_layer1_next_action') %}
-      <div><b>{% if tutorial_next %}{{ tutorial_next['title'] }}{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
-      <div class="upgrade-cost">{% if tutorial_next %}{{ tutorial_next['desc'] }}{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
-      {% if tutorial_next %}
+      {% set boss_retry = summary.get('boss_retry') %}
+      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
+      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
+      {% if boss_retry %}
+      {% if boss_retry.get('failure') %}
+      <div class="notice">
+        <div><b>{{ boss_retry['failure'].get('label', '構成見直し') }}</b></div>
+        <div>{{ boss_retry['failure'].get('text', 'パーツ構成を見直して、もう一度挑戦しましょう。') }}</div>
+      </div>
+      {% endif %}
+      <form method="post" action="{{ boss_retry.get('action_url') or url_for('boss_retry_layer1') }}" id="explore-return-form">
+        <input type="hidden" name="area_key" value="layer_1" />
+        <input type="hidden" name="entry_source" value="boss_retry" />
+        <input type="hidden" name="boss_enter" value="1" />
+        <input type="hidden" name="surface" value="battle_result" />
+        {% if summary.get('next_explore_submission_id') %}
+        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+        {% endif %}
+        {% if summary.get('explore_ct_is_admin') %}
+        <button type="submit" id="explore-return-btn" class="js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="1" data-cta-ready-label="{{ boss_retry.get('cta_label', 'もう一度ボスへ挑む') }}">{{ boss_retry.get('cta_label', 'もう一度ボスへ挑む') }}</button>
+        {% elif (summary.get('explore_ct_remain') or 0) > 0 %}
+        <button
+          type="submit"
+          id="explore-return-btn"
+          class="js-explore-return-btn"
+          data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+          data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
+          data-ct-admin="0"
+          data-cta-ready-label="{{ boss_retry.get('cta_label', 'もう一度ボスへ挑む') }}"
+          disabled
+        >再挑戦まで あと{{ summary.get('explore_ct_remain', 0) }}秒</button>
+        <span id="explore-return-ct-label" class="battle-return-ct js-explore-return-label">{{ summary.get('explore_ct_status_label', '') }}</span>
+        {% else %}
+        <button type="submit" id="explore-return-btn" class="js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}" data-ct-admin="0" data-cta-ready-label="{{ boss_retry.get('cta_label', 'もう一度ボスへ挑む') }}">{{ boss_retry.get('cta_label', 'もう一度ボスへ挑む') }}</button>
+        <span id="explore-return-ct-label" class="battle-return-ct js-explore-return-label">{{ summary.get('explore_ct_status_label', '') }}</span>
+        {% endif %}
+      </form>
+      <div class="home-inline-actions">
+        <form method="post" action="{{ boss_retry.get('parts_action_url') or url_for('boss_retry_layer1_parts') }}" class="inline-form inline-form-top">
+          <input type="hidden" name="surface" value="battle_result" />
+          <button type="submit" class="btn-secondary">パーツを見直す</button>
+        </form>
+        <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
+      </div>
+      {% elif tutorial_next %}
       <a class="battle-home-link battle-next-cta" href="{{ tutorial_next['cta_url'] }}">{{ tutorial_next['cta_label'] }}</a>
       {% if tutorial_next.get('actions') %}
       <div class="home-inline-actions">

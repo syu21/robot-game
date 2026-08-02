@@ -156,12 +156,60 @@
       </div>
       <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">遭遇ソース</div>
-        <div class="admin-metrics-note-value">保証 {{ first_experience_snapshot.layer1_boss.guarantee_users }}人 / 通常 {{ first_experience_snapshot.layer1_boss.random_users }}人</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.layer1_boss.source_total }}人 / {{ first_experience_snapshot.layer1_boss.encounter_count }}人</div>
+        <div class="robot-time">
+          {% for row in first_experience_snapshot.layer1_boss.source_rows %}
+            {{ row.label }} {{ row.count }}{% if not loop.last %} / {% endif %}
+          {% endfor %}
+        </div>
       </div>
       <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">初遭遇後撃破率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.layer1_boss.defeat_after_first_encounter_count }}人 / {{ first_experience_snapshot.layer1_boss.encounter_count }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.layer1_boss.defeat_after_first_encounter_rate_pct) }}%</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      {% set boss_retry = first_experience_snapshot.layer1_boss_retry %}
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第1層ボス初遭遇人数</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.initial_encounter_users }}人</div>
+        <div class="robot-time">初回敗北 {{ boss_retry.initial_loss_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">再挑戦可能状態</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.available_users }}人</div>
+        <div class="robot-time">CTA表示 {{ boss_retry.cta_view_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">再挑戦CTAクリック率</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.cta_click_users }}人 / {{ boss_retry.cta_view_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(boss_retry.cta_click_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">再挑戦実行率</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.executed_users }}人 / {{ boss_retry.available_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(boss_retry.execution_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">再挑戦経由撃破</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.retry_defeat_users }}人</div>
+        <div class="robot-time">初遭遇後撃破 {{ boss_retry.defeat_after_first_encounter_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初遭遇から撃破まで</div>
+        <div class="admin-metrics-note-value">{{ '%.0f'|format(boss_retry.median_seconds_to_defeat) }}秒</div>
+        <div class="robot-time">中央値</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">24時間以内撃破率</div>
+        <div class="admin-metrics-note-value">{{ boss_retry.defeat_within_24h_users }}人 / {{ boss_retry.defeat_within_24h_denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(boss_retry.defeat_within_24h_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">敗北後の育成行動</div>
+        <div class="admin-metrics-note-value">パーツ確認 {{ boss_retry.parts_click_users }}人</div>
+        <div class="robot-time">編成完了 {{ boss_retry.build_complete_users }}人</div>
       </div>
     </div>
     <div class="admin-metrics-bar-list">

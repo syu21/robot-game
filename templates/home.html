@@ -69,7 +69,10 @@
       {% if home_primary_explore_cta['area_key'] %}
       <input type="hidden" name="area_key" value="{{ home_primary_explore_cta['area_key'] }}" />
       {% endif %}
-      <input type="hidden" name="entry_source" value="home_next_action" />
+      <input type="hidden" name="entry_source" value="{{ home_primary_explore_cta.get('entry_source', 'home_next_action') }}" />
+      {% if home_primary_explore_cta.get('surface') %}
+      <input type="hidden" name="surface" value="{{ home_primary_explore_cta.get('surface') }}" />
+      {% endif %}
       {% if explore_submission_id %}
       <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
       {% endif %}
@@ -96,6 +99,9 @@
           <input type="hidden" name="area_key" value="{{ action.get('area_key') }}" />
           {% endif %}
           <input type="hidden" name="entry_source" value="{{ action.get('entry_source', 'home_next_action') }}" />
+          {% if action.get('surface') %}
+          <input type="hidden" name="surface" value="{{ action.get('surface') }}" />
+          {% endif %}
           {% if action.get('first_upgrade_skip') %}
           <input type="hidden" name="onboarding_first_upgrade_skip" value="1" />
           <input type="hidden" name="first_upgrade_source" value="{{ action.get('first_upgrade_source', 'home_next_action') }}" />

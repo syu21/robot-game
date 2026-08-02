@@ -3713,16 +3713,18 @@ def _jst_day_key_to_bounds(day_key):
 def _collect_daily_metrics(db, day_key):
     start_ts, end_ts = _jst_day_key_to_bounds(day_key)
     user_filter = _analytics_user_filter_sql("u")
+    dau_event_types = tuple(ADMIN_METRICS_DAU_EVENT_TYPES)
     dau_count = db.execute(
         f"""
-        SELECT COUNT(DISTINCT user_id) AS c
+        SELECT COUNT(DISTINCT wel.user_id) AS c
         FROM world_events_log wel
         JOIN users u ON u.id = wel.user_id
         WHERE wel.user_id IS NOT NULL
           AND wel.created_at >= ? AND wel.created_at < ?
+          AND wel.event_type IN ({",".join(["?"] * len(dau_event_types))})
           AND {user_filter}
         """,
-        (start_ts, end_ts),
+        (start_ts, end_ts, *dau_event_types),
     ).fetchone()["c"]
     new_users = db.execute(
         f"SELECT COUNT(*) AS c FROM users u WHERE created_at >= ? AND created_at < ? AND {user_filter}",
@@ -3846,6 +3848,28 @@ ADMIN_METRICS_WORLD_EVENT_TO_STEP = {
     AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]: "boss_encounter",
     AUDIT_EVENT_TYPES["BOSS_DEFEAT"]: "boss_defeat",
 }
+ADMIN_METRICS_DAU_EVENT_TYPES = (
+    AUDIT_EVENT_TYPES["HOME_VIEW"],
+    AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
+    AUDIT_EVENT_TYPES["EXPLORE_START"],
+    AUDIT_EVENT_TYPES["EXPLORE_END"],
+    AUDIT_EVENT_TYPES["FUSE"],
+    AUDIT_EVENT_TYPES["PART_EVOLVE"],
+    AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
+    AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+    AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+    AUDIT_EVENT_TYPES["CHAT_POST"],
+    AUDIT_EVENT_TYPES["SHOWCASE_EXPAND"],
+    AUDIT_EVENT_TYPES["SHOWCASE_LIKE"],
+    AUDIT_EVENT_TYPES["SHOWCASE_BATTLE"],
+    AUDIT_EVENT_TYPES["LAB_TYPING_START"],
+    AUDIT_EVENT_TYPES["LAB_TYPING_FINISH"],
+    AUDIT_EVENT_TYPES["LAB_RACE_ENTRY"],
+    AUDIT_EVENT_TYPES["LAB_RACE_START"],
+    AUDIT_EVENT_TYPES["LAB_RACE_FINISH"],
+    AUDIT_EVENT_TYPES["LAB_CASINO_BET_PLACE"],
+    AUDIT_EVENT_TYPES["LAB_CASINO_RACE_START"],
+)
 
 
 def _parse_login_log_created_at(value):
@@ -4162,6 +4186,91 @@ def _home_recent_view_elapsed_seconds(db, user_id, now_ts):
     return elapsed
 
 
+def _home_recent_view_context(db, user_id, now_ts, *, max_age_seconds=1800):
+    row = db.execute(
+        """
+        SELECT created_at, payload_json
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND created_at <= ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["HOME_VIEW"], int(now_ts)),
+    ).fetchone()
+    if not row:
+        return {"home_session_id": None, "home_viewed_at": None, "seconds_from_home_view": None}
+    elapsed = int(now_ts) - int(row["created_at"] or 0)
+    if elapsed < 0 or elapsed > int(max_age_seconds):
+        return {"home_session_id": None, "home_viewed_at": None, "seconds_from_home_view": None}
+    try:
+        payload = json.loads(row["payload_json"] or "{}")
+    except Exception:
+        payload = {}
+    return {
+        "home_session_id": str((payload or {}).get("home_session_id") or ""),
+        "home_viewed_at": int(row["created_at"] or 0),
+        "seconds_from_home_view": int(elapsed),
+    }
+
+
+def _normalize_entry_source(value):
+    source = str(value or "").strip().lower()
+    aliases = {
+        "home_next_action": "next_action",
+        "home_previous_area": "previous_area",
+        "home_layer1_cta": "layer1_primary_cta",
+        "other": "unknown",
+        "retry_result": "battle_retry",
+    }
+    source = aliases.get(source, source)
+    allowed = {
+        "next_action_first_explore",
+        "next_action",
+        "battle_retry",
+        "previous_area",
+        "layer1_primary_cta",
+        "area_select",
+        "boss_retry",
+        "unknown",
+    }
+    return source if source in allowed else "unknown"
+
+
+def _normalize_boss_source(value):
+    source = str(value or "").strip().lower()
+    aliases = {
+        "random": "normal",
+        "alert_guarantee": "guaranteed",
+        "active_alert": "guaranteed_retry",
+        "tutorial_forced": "fixed",
+        "tutorial_forced_boss": "fixed",
+        "pity_forced": "pity",
+    }
+    source = aliases.get(source, source)
+    allowed = {"normal", "pity", "guaranteed", "guaranteed_retry", "fixed", "admin_test", "unknown"}
+    return source if source in allowed else "unknown"
+
+
+def _battle_result_view_payload(*, user_id, area_key, battle_result, summary=None, result_surface="battle_result"):
+    summary = dict(summary or {})
+    battle_result_value = str(battle_result or summary.get("outcome_base") or summary.get("outcome") or "").strip()
+    battle_result_key = "win" if battle_result_value in {"勝利", "WIN", "win"} or bool(summary.get("outcome_is_win")) else "lose"
+    return {
+        "user_id": int(user_id),
+        "area_key": str(area_key or "layer_1"),
+        "battle_result": battle_result_key,
+        "outcome": summary.get("outcome") or ("勝利" if battle_result_key == "win" else "敗北"),
+        "battle_id": summary.get("battle_id"),
+        "is_first_explore": bool(summary.get("is_first_explore")),
+        "is_first_victory": bool(summary.get("layer1_first_win_result")),
+        "boss_encountered": bool(summary.get("is_area_boss")),
+        "boss_defeated": bool(summary.get("is_area_boss") and summary.get("outcome_is_win")),
+        "result_surface": str(result_surface or "battle_result"),
+    }
+
+
 def _admin_first_experience_snapshot(db, *, window_days=7):
     window_days = max(7, min(30, int(window_days or 7)))
     now_ts = _now_ts()
@@ -4190,8 +4299,12 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             ("retry_click", "再出撃クリック"),
             ("second_start", "第2回出撃"),
             ("third_start", "第3回出撃"),
+            ("first_three_complete", "初回3出撃完了"),
             ("part_first_drop", "初パーツ入手"),
+            ("first_build_guide_view", "機体更新ガイド表示"),
+            ("first_build_guide_click", "機体更新ガイドクリック"),
             ("build_first_complete", "初編成完了"),
+            ("post_build_explore_start", "更新後出撃"),
             ("boss_encounter", "第1層ボス遭遇"),
             ("boss_defeat", "第1層ボス撃破"),
             ("next_day_return", "翌日再訪"),
@@ -4243,8 +4356,29 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 "encounter_count": 0,
                 "guarantee_users": 0,
                 "random_users": 0,
+                "source_rows": [],
+                "source_total": 0,
                 "defeat_after_first_encounter_rate_pct": 0.0,
                 "defeat_after_first_encounter_count": 0,
+            },
+            "layer1_boss_retry": {
+                "initial_encounter_users": 0,
+                "initial_loss_users": 0,
+                "available_users": 0,
+                "cta_view_users": 0,
+                "cta_click_users": 0,
+                "cta_click_rate_pct": 0.0,
+                "executed_users": 0,
+                "execution_rate_pct": 0.0,
+                "retry_defeat_users": 0,
+                "defeat_after_first_encounter_users": 0,
+                "defeat_after_first_encounter_rate_pct": 0.0,
+                "median_seconds_to_defeat": 0.0,
+                "defeat_within_24h_users": 0,
+                "defeat_within_24h_denominator": 0,
+                "defeat_within_24h_rate_pct": 0.0,
+                "parts_click_users": 0,
+                "build_complete_users": 0,
             },
         }
     placeholders = ",".join("?" for _ in user_ids)
@@ -4294,10 +4428,13 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     first_retry_click_after_win = set()
     entry_source_users = {
         "battle_retry": set(),
-        "home_next_action": set(),
-        "home_previous_area": set(),
-        "home_layer1_cta": set(),
+        "next_action_first_explore": set(),
+        "next_action": set(),
+        "previous_area": set(),
+        "layer1_primary_cta": set(),
         "area_select": set(),
+        "boss_retry": set(),
+        "unknown": set(),
     }
     home_next_action_view_users = set()
     home_next_action_click_users = set()
@@ -4310,6 +4447,14 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     first_layer1_boss_encounter_ts_by_user = {}
     first_layer1_boss_encounter_source_by_user = {}
     layer1_boss_defeat_after_encounter_users = set()
+    layer1_boss_retry_available_users = set()
+    layer1_boss_retry_cta_view_users = set()
+    layer1_boss_retry_cta_click_users = set()
+    layer1_boss_retry_executed_users = set()
+    layer1_boss_retry_defeat_users = set()
+    layer1_boss_retry_parts_click_users = set()
+    layer1_boss_retry_build_complete_users = set()
+    layer1_boss_defeat_ts_by_user = {}
     layer1_start_count_by_user = {}
     first_upgrade_shown_users = set()
     first_upgrade_click_users = set()
@@ -4350,14 +4495,16 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                     home_quick_start_users_60.add(uid)
             if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
                 start_count += 1
-                entry_source = str(payload.get("entry_source") or "other")
+                entry_source = _normalize_entry_source(payload.get("entry_source"))
                 if entry_source in entry_source_users:
                     entry_source_users[entry_source].add(uid)
-                if entry_source in {"home_next_action", "home_previous_area", "home_layer1_cta"}:
+                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta"}:
                     home_direct_start_users.add(uid)
                 if area_key == "layer_1":
                     step_users["layer1_first_start"].add(uid)
                     layer1_start_count_by_user[uid] = int(layer1_start_count_by_user.get(uid, 0)) + 1
+                    if entry_source == "boss_retry":
+                        layer1_boss_retry_executed_users.add(uid)
                 if start_count >= 2:
                     step_users["second_start"].add(uid)
                 if start_count >= 3:
@@ -4380,17 +4527,31 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 step_users["part_first_drop"].add(uid)
             if et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
                 step_users["build_first_complete"].add(uid)
+                if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
+                    layer1_boss_retry_build_complete_users.add(uid)
             if et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
-                step_users["boss_encounter"].add(uid)
-                first_layer1_boss_encounter_ts_by_user.setdefault(uid, ts)
-                first_layer1_boss_encounter_source_by_user.setdefault(
-                    uid,
-                    str(payload.get("encounter_source") or "random"),
-                )
+                boss_source = _normalize_boss_source(payload.get("boss_source") or payload.get("encounter_source") or "unknown")
+                if bool(payload.get("retry_available")):
+                    layer1_boss_retry_available_users.add(uid)
+                if boss_source == "guaranteed_retry":
+                    pass
+                else:
+                    step_users["boss_encounter"].add(uid)
+                    first_layer1_boss_encounter_ts_by_user.setdefault(uid, ts)
+                    first_layer1_boss_encounter_source_by_user.setdefault(uid, boss_source)
             if et == AUDIT_EVENT_TYPES["BOSS_DEFEAT"] and area_key == "layer_1":
                 step_users["boss_defeat"].add(uid)
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
                     layer1_boss_defeat_after_encounter_users.add(uid)
+                    layer1_boss_defeat_ts_by_user.setdefault(uid, ts)
+            if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_VIEW") and area_key == "layer_1":
+                layer1_boss_retry_cta_view_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_CLICK") and area_key == "layer_1":
+                layer1_boss_retry_cta_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_PARTS_CLICK") and area_key == "layer_1":
+                layer1_boss_retry_parts_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_RESULT") and area_key == "layer_1" and bool(payload.get("defeated")):
+                layer1_boss_retry_defeat_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
                 step_users["first_three_complete"].add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
@@ -4422,25 +4583,100 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
         ("third_start", "第3回出撃"),
         ("first_three_complete", "初回3出撃完了"),
         ("part_first_drop", "初パーツ入手"),
+        ("first_build_guide_view", "機体更新ガイド表示"),
+        ("first_build_guide_click", "機体更新ガイドクリック"),
         ("build_first_complete", "初編成完了"),
+        ("post_build_explore_start", "更新後出撃"),
         ("boss_encounter", "第1層ボス遭遇"),
         ("boss_defeat", "第1層ボス撃破"),
         ("next_day_return", "翌日再訪"),
     ]
+    ordered_step_users = {key: set() for key, _label in step_defs}
+    first_step_ts_by_user = {}
+
+    def _first_ts_for(uid, key):
+        created_ts = int(next((row["created_at"] for row in user_rows if int(row["id"]) == int(uid)), 0) or 0)
+        if key == "registered":
+            return created_ts
+        found = []
+        build_complete_ts = None
+        for event in events_by_user.get(int(uid), []):
+            et = event["event_type"]
+            ts = int(event["created_at"])
+            payload = event["payload"]
+            area_key = str(payload.get("area_key") or "")
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
+            if et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
+                build_complete_ts = ts if build_complete_ts is None else min(build_complete_ts, ts)
+            if key == "home_first_view" and et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
+                found.append(ts)
+            elif key == "layer1_first_start" and et == AUDIT_EVENT_TYPES["EXPLORE_START"] and area_key == "layer_1":
+                found.append(ts)
+            elif key == "layer1_first_complete" and et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1":
+                found.append(ts)
+            elif key == "layer1_first_win" and et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1" and win:
+                found.append(ts)
+            elif key == "battle_result_view" and et == AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"]:
+                found.append(ts)
+            elif key == "retry_click" and et == AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"]:
+                found.append(ts)
+            elif key == "second_start" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_EXPLORE_SECOND_START"):
+                found.append(ts)
+            elif key == "third_start" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_EXPLORE_THIRD_START"):
+                found.append(ts)
+            elif key == "first_three_complete" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
+                found.append(ts)
+            elif key == "part_first_drop" and et in {AUDIT_EVENT_TYPES["DROP"], AUDIT_EVENT_TYPES["ONBOARDING_PART_FIRST_DROP"]}:
+                found.append(ts)
+            elif key == "first_build_guide_view" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
+                found.append(ts)
+            elif key == "first_build_guide_click" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_CLICK"):
+                found.append(ts)
+            elif key == "build_first_complete" and et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
+                found.append(ts)
+            elif key == "boss_encounter" and et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
+                found.append(ts)
+            elif key == "boss_defeat" and et == AUDIT_EVENT_TYPES["BOSS_DEFEAT"] and area_key == "layer_1":
+                found.append(ts)
+            elif key == "next_day_return":
+                created_day = _jst_date_from_ts(created_ts)
+                if _jst_date_from_ts(ts) == created_day + timedelta(days=1):
+                    found.append(ts)
+        if key == "post_build_explore_start":
+            for event in events_by_user.get(int(uid), []):
+                if event["event_type"] == AUDIT_EVENT_TYPES["EXPLORE_START"] and build_complete_ts and int(event["created_at"]) > int(build_complete_ts):
+                    found.append(int(event["created_at"]))
+        return min(found) if found else None
+
+    for user_row in user_rows:
+        uid = int(user_row["id"])
+        prev_ts = None
+        first_step_ts_by_user[uid] = {}
+        for key, _label in step_defs:
+            ts = _first_ts_for(uid, key)
+            if ts is None:
+                break
+            if prev_ts is not None and int(ts) < int(prev_ts):
+                break
+            ordered_step_users[key].add(uid)
+            first_step_ts_by_user[uid][key] = int(ts)
+            prev_ts = int(ts)
+
     rows = []
     prev_count = len(user_ids)
     for key, label in step_defs:
-        count = len(step_users.get(key, set()))
+        count = len(ordered_step_users.get(key, set()))
         rows.append(
             {
                 "key": key,
                 "label": label,
                 "count": int(count),
                 "pct_of_registered": (float(count) / float(registered_count)) * 100.0,
-                "pct_of_previous": (float(count) / float(max(1, prev_count))) * 100.0,
+                "pct_of_previous": min(100.0, (float(count) / float(max(1, prev_count))) * 100.0),
             }
         )
-        prev_count = max(1, count)
+        prev_count = count
 
     first_win_users = set(first_win_ts_by_user.keys())
 
@@ -4478,20 +4714,59 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     within_10_count = sum(1 for value in first_encounter_start_counts if int(value) <= 10)
     entry_source_labels = {
         "battle_retry": "結果画面から再出撃",
-        "home_next_action": "NEXT ACTIONから出撃",
-        "home_previous_area": "基地の前回出撃先から再出撃",
-        "home_layer1_cta": "基地の第1層CTAから出撃",
+        "next_action_first_explore": "初任務NEXT ACTIONから出撃",
+        "next_action": "NEXT ACTIONから出撃",
+        "previous_area": "基地の前回出撃先から再出撃",
+        "layer1_primary_cta": "基地の第1層CTAから出撃",
         "area_select": "エリア選択から出撃",
+        "boss_retry": "ボス再挑戦から出撃",
+        "unknown": "不明",
     }
     entry_source_rows = [
         {"key": key, "label": label, "count": len(entry_source_users.get(key, set()))}
         for key, label in entry_source_labels.items()
     ]
-    guarantee_users = {
-        uid for uid, source in first_layer1_boss_encounter_source_by_user.items() if source == "alert_guarantee"
+    boss_source_labels = {
+        "normal": "通常",
+        "pity": "保証",
+        "guaranteed": "確定保証",
+        "guaranteed_retry": "再挑戦保証",
+        "fixed": "固定",
+        "admin_test": "管理者テスト",
+        "unknown": "不明",
     }
-    random_users = {
-        uid for uid, source in first_layer1_boss_encounter_source_by_user.items() if source == "random"
+    boss_source_rows = []
+    for key, label in boss_source_labels.items():
+        boss_source_rows.append(
+            {
+                "key": key,
+                "label": label,
+                "count": sum(1 for source in first_layer1_boss_encounter_source_by_user.values() if source == key),
+            }
+        )
+    defeat_elapsed_seconds = [
+        int(layer1_boss_defeat_ts_by_user[uid]) - int(first_ts)
+        for uid, first_ts in first_layer1_boss_encounter_ts_by_user.items()
+        if uid in layer1_boss_defeat_ts_by_user and int(layer1_boss_defeat_ts_by_user[uid]) >= int(first_ts)
+    ]
+    defeat_elapsed_seconds.sort()
+    if defeat_elapsed_seconds:
+        mid = len(defeat_elapsed_seconds) // 2
+        layer1_boss_defeat_median_seconds = (
+            float(defeat_elapsed_seconds[mid])
+            if len(defeat_elapsed_seconds) % 2
+            else (defeat_elapsed_seconds[mid - 1] + defeat_elapsed_seconds[mid]) / 2.0
+        )
+    else:
+        layer1_boss_defeat_median_seconds = 0.0
+    layer1_boss_24h_judged_users = {
+        uid for uid, first_ts in first_layer1_boss_encounter_ts_by_user.items() if int(now_ts) >= int(first_ts) + 86400
+    }
+    layer1_boss_24h_defeat_users = {
+        uid
+        for uid in layer1_boss_24h_judged_users
+        if uid in layer1_boss_defeat_ts_by_user
+        and int(layer1_boss_defeat_ts_by_user[uid]) <= int(first_layer1_boss_encounter_ts_by_user[uid]) + 86400
     }
     home_view_base = max(1, len(step_users["home_first_view"] | home_next_action_view_users))
     home_quick_start_elapsed.sort()
@@ -4577,12 +4852,41 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "within_10_rate_pct": (float(within_10_count) / float(max(1, len(first_encounter_start_counts)))) * 100.0,
             "within_10_count": int(within_10_count),
             "encounter_count": int(len(first_encounter_start_counts)),
-            "guarantee_users": int(len(guarantee_users)),
-            "random_users": int(len(random_users)),
+            "source_rows": boss_source_rows,
+            "source_total": int(sum(int(row["count"]) for row in boss_source_rows)),
+            "guarantee_users": int(sum(int(row["count"]) for row in boss_source_rows if row["key"] in {"pity", "guaranteed"})),
+            "random_users": int(sum(int(row["count"]) for row in boss_source_rows if row["key"] == "normal")),
             "defeat_after_first_encounter_rate_pct": (
                 float(len(layer1_boss_defeat_after_encounter_users)) / float(max(1, len(first_layer1_boss_encounter_ts_by_user))) * 100.0
             ),
             "defeat_after_first_encounter_count": int(len(layer1_boss_defeat_after_encounter_users)),
+        },
+        "layer1_boss_retry": {
+            "initial_encounter_users": int(len(first_layer1_boss_encounter_ts_by_user)),
+            "initial_loss_users": int(len(layer1_boss_retry_available_users - layer1_boss_defeat_after_encounter_users)),
+            "available_users": int(len(layer1_boss_retry_available_users)),
+            "cta_view_users": int(len(layer1_boss_retry_cta_view_users)),
+            "cta_click_users": int(len(layer1_boss_retry_cta_click_users)),
+            "cta_click_rate_pct": (
+                float(len(layer1_boss_retry_cta_click_users)) / float(max(1, len(layer1_boss_retry_cta_view_users))) * 100.0
+            ),
+            "executed_users": int(len(layer1_boss_retry_executed_users)),
+            "execution_rate_pct": (
+                float(len(layer1_boss_retry_executed_users)) / float(max(1, len(layer1_boss_retry_available_users))) * 100.0
+            ),
+            "retry_defeat_users": int(len(layer1_boss_retry_defeat_users)),
+            "defeat_after_first_encounter_users": int(len(layer1_boss_defeat_after_encounter_users)),
+            "defeat_after_first_encounter_rate_pct": (
+                float(len(layer1_boss_defeat_after_encounter_users)) / float(max(1, len(first_layer1_boss_encounter_ts_by_user))) * 100.0
+            ),
+            "median_seconds_to_defeat": float(layer1_boss_defeat_median_seconds),
+            "defeat_within_24h_users": int(len(layer1_boss_24h_defeat_users)),
+            "defeat_within_24h_denominator": int(len(layer1_boss_24h_judged_users)),
+            "defeat_within_24h_rate_pct": (
+                float(len(layer1_boss_24h_defeat_users)) / float(max(1, len(layer1_boss_24h_judged_users))) * 100.0
+            ),
+            "parts_click_users": int(len(layer1_boss_retry_parts_click_users)),
+            "build_complete_users": int(len(layer1_boss_retry_build_complete_users)),
         },
     }
 
@@ -4768,11 +5072,20 @@ def _admin_progression_snapshot(db):
                 boss_blocker_layer = int(highest_layer)
         item["boss_status"] = boss_status
         item["boss_blocker_layer"] = boss_blocker_layer
-        item["role_label"] = ("管理者" if item["is_admin"] else ("集計除外" if item.get("analytics_excluded") else "一般"))
+        suspicious_reasons = detect_suspicious_registration(item, {})
+        item["suspicious_reasons"] = suspicious_reasons
+        if item["is_admin"]:
+            item["role_label"] = "管理者"
+        elif item.get("analytics_excluded") or _is_test_user_row(item):
+            item["role_label"] = "テスト・集計除外"
+        elif suspicious_reasons:
+            item["role_label"] = "不審候補"
+        else:
+            item["role_label"] = "正常ユーザー"
 
         if not item["is_banned"]:
             listed_rows.append(item)
-        if item["is_admin"] or item["is_banned"] or item.get("analytics_excluded") or _is_test_user_row(item):
+        if item["is_admin"] or item["is_banned"] or item.get("analytics_excluded") or _is_test_user_row(item) or suspicious_reasons:
             continue
         analysis_rows.append(item)
         stop_counts[int(highest_layer)] += 1
@@ -10538,6 +10851,196 @@ def _consume_boss_attempt(db, user_id, area_key, now_ts=None):
     return {"before": before, "after": after}
 
 
+def _layer1_boss_retry_boss_key():
+    return str(LAYER_BOSS_KEY_BY_LAYER.get(1) or "").strip()
+
+
+def _boss_retry_row(db, user_id, area_key="layer_1"):
+    return db.execute(
+        """
+        SELECT retry_boss_key, retry_status, retry_first_encountered_at,
+               retry_last_encountered_at, retry_last_attempted_at,
+               retry_attempt_count, retry_defeated_at, retry_last_submission_id
+        FROM user_boss_progress
+        WHERE user_id = ? AND area_key = ?
+        """,
+        (int(user_id), str(area_key or "layer_1")),
+    ).fetchone()
+
+
+def _layer1_boss_retry_state(db, user_id):
+    boss_key = _layer1_boss_retry_boss_key()
+    row = _boss_retry_row(db, user_id, "layer_1")
+    if not row or not boss_key:
+        return {
+            "available": False,
+            "status": "none",
+            "boss_key": boss_key,
+            "attempt_number": 1,
+            "attempt_count": 0,
+            "first_encountered_at": None,
+            "last_attempted_at": None,
+        }
+    status = str(row["retry_status"] or "none").strip() or "none"
+    attempt_count = int(row["retry_attempt_count"] or 0)
+    return {
+        "available": bool(status == "available" and str(row["retry_boss_key"] or "") == boss_key),
+        "status": status,
+        "boss_key": str(row["retry_boss_key"] or boss_key),
+        "attempt_number": max(1, attempt_count + 1),
+        "attempt_count": attempt_count,
+        "first_encountered_at": row["retry_first_encountered_at"],
+        "last_encountered_at": row["retry_last_encountered_at"],
+        "last_attempted_at": row["retry_last_attempted_at"],
+        "defeated_at": row["retry_defeated_at"],
+    }
+
+
+def _boss_retry_mark_encounter(db, user_id, *, boss_key=None, now_ts=None):
+    boss_key = str(boss_key or _layer1_boss_retry_boss_key() or "").strip()
+    ts = int(time.time()) if now_ts is None else int(now_ts)
+    if not boss_key:
+        return _layer1_boss_retry_state(db, user_id)
+    _ensure_user_boss_progress_row(db, int(user_id), "layer_1")
+    row = _boss_retry_row(db, int(user_id), "layer_1")
+    if row and str(row["retry_status"] or "") == "defeated":
+        return _layer1_boss_retry_state(db, user_id)
+    db.execute(
+        """
+        UPDATE user_boss_progress
+        SET retry_boss_key = ?,
+            retry_status = 'available',
+            retry_first_encountered_at = COALESCE(retry_first_encountered_at, ?),
+            retry_last_encountered_at = ?,
+            retry_attempt_count = CASE
+                WHEN retry_attempt_count IS NULL OR retry_attempt_count < 1 THEN 1
+                ELSE retry_attempt_count
+            END,
+            updated_at = ?
+        WHERE user_id = ? AND area_key = 'layer_1'
+        """,
+        (boss_key, ts, ts, ts, int(user_id)),
+    )
+    return _layer1_boss_retry_state(db, user_id)
+
+
+def _boss_retry_mark_attempt(db, user_id, *, submission_id=None, now_ts=None):
+    ts = int(time.time()) if now_ts is None else int(now_ts)
+    submission = str(submission_id or "").strip()
+    state = _layer1_boss_retry_state(db, user_id)
+    if not state.get("available"):
+        return state
+    row = _boss_retry_row(db, int(user_id), "layer_1")
+    last_submission = str(row["retry_last_submission_id"] or "").strip() if row else ""
+    if submission and last_submission == submission:
+        return _layer1_boss_retry_state(db, user_id)
+    db.execute(
+        """
+        UPDATE user_boss_progress
+        SET retry_last_attempted_at = ?,
+            retry_attempt_count = COALESCE(retry_attempt_count, 0) + 1,
+            retry_last_submission_id = ?,
+            updated_at = ?
+        WHERE user_id = ? AND area_key = 'layer_1' AND retry_status = 'available'
+        """,
+        (ts, submission or None, ts, int(user_id)),
+    )
+    return _layer1_boss_retry_state(db, user_id)
+
+
+def _boss_retry_mark_defeated(db, user_id, *, boss_key=None, now_ts=None):
+    boss_key = str(boss_key or _layer1_boss_retry_boss_key() or "").strip()
+    ts = int(time.time()) if now_ts is None else int(now_ts)
+    _ensure_user_boss_progress_row(db, int(user_id), "layer_1")
+    db.execute(
+        """
+        UPDATE user_boss_progress
+        SET retry_boss_key = COALESCE(retry_boss_key, ?),
+            retry_status = 'defeated',
+            retry_defeated_at = COALESCE(retry_defeated_at, ?),
+            updated_at = ?
+        WHERE user_id = ? AND area_key = 'layer_1'
+          AND COALESCE(retry_status, 'none') != 'defeated'
+        """,
+        (boss_key or None, ts, ts, int(user_id)),
+    )
+    return _layer1_boss_retry_state(db, user_id)
+
+
+def _boss_retry_audit_payload(state, *, surface=None, ct_remaining_seconds=None):
+    state = dict(state or {})
+    return {
+        "boss_key": state.get("boss_key") or _layer1_boss_retry_boss_key(),
+        "area_key": "layer_1",
+        "surface": surface,
+        "attempt_number": int(state.get("attempt_number") or 1),
+        "retry_state": str(state.get("status") or "none"),
+        "ct_remaining_seconds": int(ct_remaining_seconds or 0),
+    }
+
+
+def _audit_boss_retry_cta_view_once(db, user_id, *, state, surface, request_id=None, ip=None):
+    payload = _boss_retry_audit_payload(state, surface=surface)
+    key = "boss_retry_cta_viewed"
+    viewed = set(session.get(key) or [])
+    marker = f"{surface}:{payload['boss_key']}:{payload['attempt_number']}"
+    if marker in viewed:
+        return
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BOSS_RETRY_CTA_VIEW"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="boss_retry_cta_view",
+        entity_type="user_boss_progress",
+        payload=payload,
+        ip=ip,
+    )
+    viewed.add(marker)
+    session[key] = sorted(viewed)
+
+
+def _boss_retry_failure_reason(turn_logs, *, player_hp=0, player_max_hp=0, timeout=False):
+    logs = list(turn_logs or [])
+    attack_logs = [log for log in logs if str(log.get("actor") or "").lower() in {"player", "robot", "you"} or "player_damage" in log or "enemy_damage" in log]
+    attempts = 0
+    misses = 0
+    dealt = 0
+    for log in attack_logs:
+        text = json.dumps(log, ensure_ascii=False)
+        if "MISS" in text or "ミス" in text or "回避" in text:
+            attempts += 1
+            misses += 1
+            continue
+        if "enemy_damage" in log:
+            attempts += 1
+            dmg = int(log.get("enemy_damage") or 0)
+            dealt += max(0, dmg)
+        elif "damage" in log and str(log.get("target") or "").lower() in {"enemy", "boss"}:
+            attempts += 1
+            dealt += max(0, int(log.get("damage") or 0))
+    miss_rate = float(misses) / float(max(1, attempts))
+    if attempts >= 2 and (miss_rate >= 0.45 or (misses >= 2 and dealt <= 0)):
+        return "low_accuracy"
+    if int(player_hp or 0) <= 0 and dealt > 0 and not timeout:
+        return "low_durability"
+    if bool(timeout) or int(player_hp or 0) > 0:
+        return "low_damage"
+    return "unknown"
+
+
+def _boss_retry_failure_advice(reason):
+    reason = str(reason or "unknown")
+    labels = {
+        "low_accuracy": ("命中不足", "攻撃が当たりにくい状態です。命中の高いパーツを試してみましょう。"),
+        "low_durability": ("耐久不足", "攻撃は通っています。耐久や防御の高いパーツを試してみましょう。"),
+        "low_damage": ("火力不足", "攻撃には耐えられています。攻撃や会心の高い右腕を試してみましょう。"),
+        "unknown": ("構成見直し", "パーツ構成を見直して、もう一度挑戦しましょう。"),
+    }
+    label, text = labels.get(reason, labels["unknown"])
+    return {"reason": reason, "label": label, "text": text}
+
+
 def _area_boss_spawn_profile(area_key, streak_before):
     boss_progress_key = _boss_area_key_for_route(area_key)
     base_probability = float(AREA_BOSS_SPAWN_RATES.get(area_key, 0.1))
@@ -14709,6 +15212,14 @@ def ensure_schema(db):
             active_boss_enemy_id INTEGER,
             boss_attempts_left INTEGER NOT NULL DEFAULT 0,
             boss_alert_expires_at INTEGER,
+            retry_boss_key TEXT,
+            retry_status TEXT NOT NULL DEFAULT 'none',
+            retry_first_encountered_at INTEGER,
+            retry_last_encountered_at INTEGER,
+            retry_last_attempted_at INTEGER,
+            retry_attempt_count INTEGER NOT NULL DEFAULT 0,
+            retry_defeated_at INTEGER,
+            retry_last_submission_id TEXT,
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (user_id, area_key),
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -15844,7 +16355,25 @@ def ensure_schema(db):
         db.execute("ALTER TABLE user_boss_progress ADD COLUMN boss_attempts_left INTEGER NOT NULL DEFAULT 0")
     if "boss_alert_expires_at" not in ubp_cols:
         db.execute("ALTER TABLE user_boss_progress ADD COLUMN boss_alert_expires_at INTEGER")
+    if "retry_boss_key" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_boss_key TEXT")
+    if "retry_status" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_status TEXT NOT NULL DEFAULT 'none'")
+    if "retry_first_encountered_at" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_first_encountered_at INTEGER")
+    if "retry_last_encountered_at" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_encountered_at INTEGER")
+    if "retry_last_attempted_at" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_attempted_at INTEGER")
+    if "retry_attempt_count" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_attempt_count INTEGER NOT NULL DEFAULT 0")
+    if "retry_defeated_at" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_defeated_at INTEGER")
+    if "retry_last_submission_id" not in ubp_cols:
+        db.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_submission_id TEXT")
     db.execute("UPDATE user_boss_progress SET boss_attempts_left = 0 WHERE boss_attempts_left IS NULL")
+    db.execute("UPDATE user_boss_progress SET retry_status = 'none' WHERE retry_status IS NULL OR TRIM(retry_status) = ''")
+    db.execute("UPDATE user_boss_progress SET retry_attempt_count = 0 WHERE retry_attempt_count IS NULL")
     db.execute("UPDATE world_weekly_environment SET mode = '暴走' WHERE LOWER(mode) = 'storm'")
     db.execute("UPDATE world_weekly_environment SET mode = '活性' WHERE LOWER(mode) = 'surge'")
     db.execute("UPDATE world_weekly_environment SET mode = '安定' WHERE LOWER(mode) = 'calm'")
@@ -41747,7 +42276,9 @@ def is_analytics_excluded_user(row):
     return bool(
         ("analytics_excluded" in keys and int(row["analytics_excluded"] or 0) == 1)
         or ("is_admin" in keys and int(row["is_admin"] or 0) == 1)
+        or ("is_banned" in keys and int(row["is_banned"] or 0) == 1)
         or _is_test_user_row(row)
+        or bool(detect_suspicious_registration(dict(row), {}))
     )
 
 
@@ -41756,9 +42287,17 @@ def _analytics_user_filter_sql(alias="u"):
     return (
         f"COALESCE({prefix}analytics_excluded, 0) = 0 "
         f"AND COALESCE({prefix}is_admin, 0) = 0 "
+        f"AND COALESCE({prefix}is_banned, 0) = 0 "
         f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE 'test_%' "
         f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE 'bot_%' "
-        f"AND COALESCE({prefix}username, '') <> 'test_user'"
+        f"AND COALESCE({prefix}username, '') <> 'test_user' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '%sleep%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '%waitfor delay%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '%pg_sleep%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '%dbms_pipe%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '% xor %' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '% or 1=1%' "
+        f"AND LOWER(COALESCE({prefix}username, '')) NOT LIKE '%union select%'"
     )
 
 
@@ -41854,6 +42393,8 @@ def _auth_rate_limit_key(scope, key):
 
 
 def _check_auth_rate_limit(scope, key, limits, *, now_ts=None):
+    if app.config.get("TESTING") and os.getenv("ENABLE_AUTH_RATE_LIMIT_IN_TESTS") != "1":
+        return {"limited": False}
     now = int(now_ts or time.time())
     rate_key = _auth_rate_limit_key(scope, key)
     with AUTH_RATE_LIMIT_LOCK:
@@ -45434,6 +45975,29 @@ def home():
         ).fetchone()["c"]
         or 0
     )
+    explore_start_total = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user["id"]), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+        ).fetchone()["c"]
+        or 0
+    )
+    first_victory_total = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM world_events_log
+            WHERE user_id = ?
+              AND event_type = ?
+              AND (
+                COALESCE(json_extract(payload_json, '$.result.win'), 0) = 1
+                OR LOWER(COALESCE(json_extract(payload_json, '$.result'), '')) = 'win'
+              )
+            """,
+            (int(user["id"]), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+        ).fetchone()["c"]
+        or 0
+    )
     onboarding_first_three_progress = _onboarding_first_three_progress_view(db, user)
     layer1_boss_alert = _layer1_boss_alert_view(db, user)
     collab_unlock_progress = get_collab_unlock_progress(db, int(user["id"]))
@@ -45537,6 +46101,97 @@ def home():
         saved_area_key=saved_explore_area_key,
         next_action_card=next_action_card,
     )
+    first_explore_before_user = bool(
+        has_any_robot
+        and int(user["is_admin"] or 0) != 1
+        and not is_analytics_excluded_user(user)
+        and int(explore_start_total or 0) == 0
+        and int(first_victory_total or 0) == 0
+    )
+    first_explore_after_win_user = bool(
+        has_any_robot
+        and int(user["is_admin"] or 0) != 1
+        and not is_analytics_excluded_user(user)
+        and 0 < int(explore_start_total or 0) < int(ONBOARDING_FIRST_THREE_TARGET)
+        and int(first_victory_total or 0) > 0
+    )
+    layer1_boss_retry_state = _layer1_boss_retry_state(db, int(user["id"]))
+    layer1_boss_retry_home_visible = bool(
+        home_primary_explore_cta
+        and has_any_robot
+        and int(explore_start_total or 0) > 0
+        and layer1_boss_retry_state.get("available")
+    )
+    if home_primary_explore_cta and layer1_boss_retry_home_visible:
+        retry_ready = bool(int(ct_remain or 0) <= 0 or int(user["is_admin"] or 0) == 1)
+        home_primary_explore_cta.update(
+            {
+                "title": "第1層ボスに再挑戦しよう",
+                "destination_label": "第1層ボス",
+                "helper_text": "第1層ボスを再捕捉しました。前回の戦闘記録により、次は少し有利に戦えます。機体を整えて、もう一度挑戦できます。",
+                "status_text": "再挑戦可能" if retry_ready else f"CT中: あと{int(ct_remain)}秒",
+                "button_label": "ボスへ再挑戦",
+                "button_current_label": "ボスへ再挑戦" if retry_ready else f"再挑戦まで あと{int(ct_remain)}秒",
+                "cta_url": url_for("boss_retry_layer1"),
+                "area_key": "layer_1",
+                "entry_source": "boss_retry",
+                "surface": "home_next_action",
+                "boss_enter": True,
+                "show_map_link": False,
+                "context_line": "第1層ボス再挑戦を優先表示しています。",
+                "secondary_actions": [
+                    {
+                        "label": "パーツを見直す",
+                        "url": url_for("boss_retry_layer1_parts"),
+                        "is_post": True,
+                        "entry_source": "boss_retry",
+                        "surface": "home_next_action",
+                    }
+                ],
+            }
+        )
+        show_beginner_mission = False
+        show_next_action_card = False
+        home_return_explore_cta = None
+        _audit_boss_retry_cta_view_once(
+            db,
+            int(user["id"]),
+            state=layer1_boss_retry_state,
+            surface="home_next_action",
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+    elif home_primary_explore_cta and first_explore_before_user:
+        home_primary_explore_cta.update(
+            {
+                "title": "初任務",
+                "destination_label": "第1層",
+                "helper_text": "最初のミッションです。第1層へ出撃して、最初のロボパーツを持ち帰ろう。",
+                "button_label": "第1層へ出撃",
+                "button_current_label": "第1層へ出撃" if int(ct_remain or 0) <= 0 else f"クールタイム中 あと{int(ct_remain)}秒",
+                "area_key": "layer_1",
+                "entry_source": "next_action_first_explore",
+                "show_map_link": False,
+                "context_line": "勝てばロボパーツを持ち帰れます。",
+            }
+        )
+        show_beginner_mission = False
+        show_next_action_card = False
+        home_return_explore_cta = None
+    elif home_primary_explore_cta and first_explore_after_win_user:
+        home_primary_explore_cta.update(
+            {
+                "title": "初任務達成",
+                "destination_label": "第1層",
+                "helper_text": "パーツを持ち帰りました。もう一度出撃して、機体更新に必要なパーツを集めよう。",
+                "button_label": "もう一度第1層へ出撃",
+                "button_current_label": "もう一度第1層へ出撃" if int(ct_remain or 0) <= 0 else f"クールタイム中 あと{int(ct_remain)}秒",
+                "area_key": "layer_1",
+                "entry_source": "next_action",
+                "show_map_link": False,
+                "context_line": "勝てばロボパーツを持ち帰れます。",
+            }
+        )
     intro_npc_image = "images/ui/robonavi.png"
     explore_submission_id = _issue_explore_submission_id()
     referral_counts = _referral_counts_for_referrer(db, user["id"])
@@ -45661,6 +46316,9 @@ def home():
         db.execute("UPDATE users SET layer1_first_clear_home_seen = 1 WHERE id = ?", (int(user["id"]),))
     _home_section_log("profile_contest", section_started_at)
     section_started_at = time.perf_counter()
+    home_session_id = uuid.uuid4().hex
+    session["home_session_id"] = home_session_id
+    session["home_viewed_at"] = int(now)
     audit_log(
         db,
         AUDIT_EVENT_TYPES["HOME_VIEW"],
@@ -45672,6 +46330,8 @@ def home():
             "has_any_robot": bool(has_any_robot),
             "total_explores": int(total_explores or 0),
             "beginner_focus": bool(home_beginner_focus),
+            "home_session_id": home_session_id,
+            "home_viewed_at": int(now),
         },
         ip=request.remote_addr,
     )
@@ -45687,6 +46347,8 @@ def home():
                 "action": "next_action",
                 "area_key": home_primary_explore_cta.get("area_key"),
                 "entry_source": "home_next_action",
+                "entry_source_resolved": str(home_primary_explore_cta.get("entry_source") or "next_action"),
+                "home_session_id": home_session_id,
                 "is_post": bool(home_primary_explore_cta.get("is_post")),
                 "disabled": bool(home_primary_explore_cta.get("disabled")),
                 "title": str(home_primary_explore_cta.get("title") or ""),
@@ -51526,6 +52188,74 @@ def battle_attack_async():
     )
 
 
+@app.route("/boss/retry/layer-1", methods=["POST"])
+@login_required
+def boss_retry_layer1():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        return redirect(url_for("login"))
+    if _get_active_robot(db, user_id) is None:
+        session["message"] = "先にロボを組み立てよう。/build で保存できます。"
+        return redirect(url_for("build"))
+    state = _layer1_boss_retry_state(db, user_id)
+    if state.get("status") == "defeated":
+        session["message"] = "このボスはすでに撃破済みです。"
+        return redirect(url_for("home"))
+    if not state.get("available"):
+        session["message"] = "ボス再挑戦の条件を満たしていません。"
+        return redirect(url_for("home"))
+    if not str(request.form.get("explore_submission_id") or "").strip():
+        session["message"] = "ボス再挑戦の条件を満たしていません。"
+        return redirect(url_for("home"))
+    now_ts = _now_ts()
+    wait = _enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now_ts)
+    if int(wait or 0) > 0:
+        session["message"] = f"再挑戦まで あと{int(wait)}秒です。"
+        return redirect(url_for("home"))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BOSS_RETRY_CTA_CLICK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="boss_retry_cta_click",
+        entity_type="user_boss_progress",
+        payload=_boss_retry_audit_payload(
+            state,
+            surface=str(request.form.get("surface") or "home_next_action"),
+            ct_remaining_seconds=0,
+        ),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return redirect(url_for("explore"), code=307)
+
+
+@app.route("/boss/retry/layer-1/parts", methods=["POST"])
+@login_required
+def boss_retry_layer1_parts():
+    db = get_db()
+    user_id = int(session["user_id"])
+    state = _layer1_boss_retry_state(db, user_id)
+    if state.get("available"):
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["BOSS_RETRY_PARTS_CLICK"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="boss_retry_parts_click",
+            entity_type="user_boss_progress",
+            payload=_boss_retry_audit_payload(
+                state,
+                surface=str(request.form.get("surface") or "home_next_action"),
+            ),
+            ip=request.remote_addr,
+        )
+        db.commit()
+    return redirect(url_for("parts", **{"from": "boss_retry"}))
+
+
 @app.route("/explore", methods=["POST"])
 @login_required
 def explore():
@@ -51549,9 +52279,7 @@ def explore():
     user_id = session["user_id"]
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
-    entry_source = (request.form.get("entry_source") or "").strip().lower()
-    if entry_source not in {"battle_retry", "home_next_action", "home_previous_area", "home_layer1_cta", "area_select", "other"}:
-        entry_source = "other"
+    entry_source = _normalize_entry_source(request.form.get("entry_source"))
     explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_id = _battle_id_for_explore_submission(explore_submission_id)
     battle_debug = (request.args.get("debug") or "").strip() == "1"
@@ -51596,6 +52324,7 @@ def explore():
     evolution_feature_unlocked = _evolution_feature_unlocked(db, user=user, user_id=user_id)
 
     now = _now_ts()
+    home_view_context = _home_recent_view_context(db, user_id, now)
     ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
     newbie_boost_active = _is_newbie_boost_active(user, now_ts=now)
     research_boost_result = _consume_research_boost_if_available(
@@ -51615,6 +52344,17 @@ def explore():
         ct_seconds_effective = int(ct_seconds)
     if wait > 0:
         return redirect(url_for("home"))
+    boss_retry_requested = bool(entry_source == "boss_retry" and boss_enter_requested and area_key == "layer_1")
+    boss_retry_state_before = _layer1_boss_retry_state(db, user_id) if entry_source == "boss_retry" else None
+    if entry_source == "boss_retry":
+        if (
+            not boss_retry_requested
+            or not explore_submission_id
+            or not (boss_retry_state_before or {}).get("available")
+        ):
+            session["message"] = "ボス再挑戦の条件を満たしていません。"
+            db.commit()
+            return redirect(url_for("home"))
     if entry_source == "battle_retry":
         audit_log(
             db,
@@ -51625,7 +52365,7 @@ def explore():
             payload={"area_key": area_key, "entry_source": entry_source},
             ip=request.remote_addr,
         )
-    if entry_source == "home_next_action":
+    if entry_source in {"next_action", "next_action_first_explore"}:
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
@@ -51633,10 +52373,10 @@ def explore():
             request_id=request_id,
             action_key="home_next_action_click",
             entity_type="home",
-            payload={"action": "next_action", "area_key": area_key, "entry_source": entry_source},
+            payload={"action": "next_action", "area_key": area_key, "entry_source": entry_source, **home_view_context},
             ip=request.remote_addr,
         )
-    elif entry_source == "home_previous_area":
+    elif entry_source == "previous_area":
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_PREVIOUS_AREA_CLICK"],
@@ -51644,11 +52384,11 @@ def explore():
             request_id=request_id,
             action_key="home_previous_area_click",
             entity_type="home",
-            payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source},
+            payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source, **home_view_context},
             ip=request.remote_addr,
         )
-    if entry_source in {"home_next_action", "home_previous_area", "home_layer1_cta"}:
-        home_elapsed = _home_recent_view_elapsed_seconds(db, user_id, now)
+    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta"}:
+        home_elapsed = home_view_context.get("seconds_from_home_view")
         if home_elapsed is not None and int(home_elapsed) <= 60:
             audit_log(
                 db,
@@ -51662,6 +52402,7 @@ def explore():
                     "area_key": area_key,
                     "entry_source": entry_source,
                     "elapsed_seconds": int(home_elapsed),
+                    **home_view_context,
                 },
                 ip=request.remote_addr,
             )
@@ -51684,6 +52425,13 @@ def explore():
             ).fetchone()["c"]
             or 0
         )
+    explore_start_count_before = int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+        ).fetchone()["c"]
+        or 0
+    )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["EXPLORE_START"],
@@ -51703,6 +52451,20 @@ def explore():
             "ct_seconds": int(ct_seconds_effective),
             "base_ct_seconds": int(ct_seconds),
             "entry_source": entry_source,
+            "previous_area_key": str(user["last_explore_area_key"] or "") if "last_explore_area_key" in user.keys() else "",
+            "home_session_id": home_view_context.get("home_session_id"),
+            "seconds_from_home_view": home_view_context.get("seconds_from_home_view"),
+            "is_first_explore": bool(explore_start_count_before == 0),
+            "explore_count_before": int(explore_start_count_before),
+            **(
+                {
+                    "boss_key": boss_retry_state_before.get("boss_key"),
+                    "boss_source": "guaranteed_retry",
+                    "retry_state": boss_retry_state_before.get("status"),
+                }
+                if boss_retry_requested and boss_retry_state_before
+                else {}
+            ),
         },
         ip=request.remote_addr,
     )
@@ -51954,6 +52716,12 @@ def explore():
             area_boss_encounter_source = "tutorial_forced"
             area_boss_spawn_p = 1.0
             area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
+            layer1_retry_encounter_state = _boss_retry_mark_encounter(
+                db,
+                user_id,
+                boss_key=(area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None),
+                now_ts=now,
+            )
             _tutorial_layer1_transition(
                 db,
                 user_id,
@@ -52025,12 +52793,16 @@ def explore():
                     "npc_boss_template_id": area_boss_template_id,
                     "attempts_before": None,
                     "attempts_after": None,
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "boss_source": _normalize_boss_source("tutorial_forced"),
+                    "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
+                    "retry_state": layer1_retry_encounter_state.get("status"),
                 },
                 ip=request.remote_addr,
             )
             audit_log(
                 db,
-                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] if area_key == "layer_1" else AUDIT_EVENT_TYPES["BOSS_ALERT_CONSUME"],
                 user_id=user_id,
                 request_id=request_id,
                 action_key="explore",
@@ -52057,6 +52829,13 @@ def explore():
                     "pity_forced": False,
                     "streak_before": int(area_boss_streak_before),
                     "encounter_source": "tutorial_forced",
+                    "boss_source": _normalize_boss_source("tutorial_forced"),
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "explore_count": int(layer1_protection_explore_count),
+                    "pity_count": int(area_boss_streak_before),
+                    "is_first_encounter": bool(tutorial_layer1_first_boss),
+                    "retry_available": bool(layer1_retry_encounter_state.get("available")),
+                    "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                     "is_forced_layer1_boss": True,
                     "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
                     "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
@@ -52065,7 +52844,96 @@ def explore():
             )
             layer1_boss_hint_line = "第1層ボス反応。突破の手応えを試す時です。"
     if (not area_boss_active) and boss_enter_requested and _area_supports_boss_alert(area_key):
-        if user_is_main_admin and _has_area_boss_candidates(db, area_key):
+        if boss_retry_requested:
+            area_boss_active = True
+            total_fights = 1
+            area_boss_enemy = _pick_layer_boss_enemy(db, "layer_1", weekly_env=weekly_env, rng=random)
+            if area_boss_enemy is None:
+                session["message"] = "第1層ボスを取得できませんでした。"
+                db.commit()
+                return redirect(url_for("home"))
+            area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
+            area_boss_template_id = (
+                int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
+            )
+            area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
+            area_boss_spawn_p = 1.0
+            area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, "layer_1")
+            area_boss_encounter_source = "guaranteed_retry"
+            boss_retry_state_after_attempt = _boss_retry_mark_attempt(
+                db,
+                user_id,
+                submission_id=explore_submission_id,
+                now_ts=now,
+            )
+            area_boss_attempt_before = max(0, int(boss_retry_state_after_attempt.get("attempt_number") or 1) - 1)
+            area_boss_attempt_after = int(boss_retry_state_after_attempt.get("attempt_number") or 1)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    area_boss_template_id
+                    if area_boss_kind == "npc"
+                    else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": "layer_1",
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else _layer1_boss_retry_boss_key(),
+                    "boss_source": "guaranteed_retry",
+                    "entry_source": entry_source,
+                    "attempt_number": int(boss_retry_state_after_attempt.get("attempt_number") or 1),
+                    "retry_state": boss_retry_state_after_attempt.get("status"),
+                    "boss_kind": area_boss_kind,
+                    "npc_boss_template_id": area_boss_template_id,
+                    "attempts_before": area_boss_attempt_before,
+                    "attempts_after": area_boss_attempt_after,
+                    "encounter_source": "guaranteed_retry",
+                },
+                ip=request.remote_addr,
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] if area_key == "layer_1" else AUDIT_EVENT_TYPES["BOSS_ALERT_CONSUME"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    area_boss_template_id
+                    if area_boss_kind == "npc"
+                    else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": "layer_1",
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "is_boss": True,
+                    "boss_kind": area_boss_kind,
+                    "area_label": _boss_area_label(area_key),
+                    "enemy_name": area_boss_enemy["name_ja"] if "name_ja" in area_boss_enemy.keys() else "第1層ボス",
+                    "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
+                    "spawn_probability": 1.0,
+                    "pity_forced": False,
+                    "streak_before": int(area_boss_streak_before),
+                    "encounter_source": "guaranteed_retry",
+                    "boss_source": "guaranteed_retry",
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else _layer1_boss_retry_boss_key(),
+                    "explore_count": int(explore_start_count_before),
+                    "pity_count": int(area_boss_streak_before),
+                    "is_first_encounter": False,
+                    "retry_available": True,
+                    "attempt_number": int(boss_retry_state_after_attempt.get("attempt_number") or 1),
+                    "retry_state": boss_retry_state_after_attempt.get("status"),
+                },
+                ip=request.remote_addr,
+            )
+        elif user_is_main_admin and _has_area_boss_candidates(db, area_key):
             area_boss_active = True
             total_fights = 1
             area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
@@ -52127,6 +52995,16 @@ def explore():
             consume = _consume_boss_attempt(db, user_id, area_key, now_ts=now)
             area_boss_attempt_before = int(consume["before"])
             area_boss_attempt_after = int(consume["after"])
+            layer1_retry_encounter_state = (
+                _boss_retry_mark_encounter(
+                    db,
+                    user_id,
+                    boss_key=(area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None),
+                    now_ts=now,
+                )
+                if area_key == "layer_1"
+                else {"available": False, "attempt_count": 0, "status": "none"}
+            )
             audit_log(
                 db,
                 AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
@@ -52153,6 +53031,50 @@ def explore():
                     "attempts_after": area_boss_attempt_after,
                     "expires_at": int(active_alert["expires_at"]),
                     "encounter_source": "active_alert",
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "boss_source": _normalize_boss_source("active_alert"),
+                    "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
+                    "retry_state": layer1_retry_encounter_state.get("status"),
+                },
+                ip=request.remote_addr,
+            )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] if area_key == "layer_1" else AUDIT_EVENT_TYPES["BOSS_ALERT_CONSUME"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type=("npc_boss_template" if area_boss_kind == "npc" else "enemy"),
+                entity_id=(
+                    int(area_boss_enemy.get("_npc_boss_template_id") or 0)
+                    if area_boss_kind == "npc"
+                    else (int(area_boss_enemy["id"]) if "id" in area_boss_enemy.keys() and area_boss_enemy["id"] else None)
+                ),
+                payload={
+                    "user_id": user_id,
+                    "area_key": area_key,
+                    "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "is_boss": True,
+                    "boss_kind": area_boss_kind,
+                    "npc_boss_template_id": area_boss_template_id,
+                    "source_robot_instance_id": area_boss_enemy.get("_source_robot_instance_id"),
+                    "source_user_id": area_boss_enemy.get("_source_user_id"),
+                    "source_faction": area_boss_enemy.get("_source_faction"),
+                    "boss_type": (area_boss_enemy_meta["code"] if area_boss_enemy_meta else None),
+                    "spawn_probability": area_boss_spawn_p,
+                    "pity_forced": False,
+                    "streak_before": int(area_boss_streak_before),
+                    "attempts_before": area_boss_attempt_before,
+                    "attempts_after": area_boss_attempt_after,
+                    "expires_at": int(active_alert["expires_at"]),
+                    "encounter_source": "active_alert",
+                    "boss_source": _normalize_boss_source("active_alert"),
+                    "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
+                    "explore_count": int(explore_start_count_before),
+                    "pity_count": int(area_boss_streak_before),
+                    "is_first_encounter": False,
+                    "retry_available": bool(layer1_retry_encounter_state.get("available")),
+                    "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                 },
                 ip=request.remote_addr,
             )
@@ -52174,6 +53096,12 @@ def explore():
                 user_id=user_id,
                 area_key=area_key,
                 enemy_id=int(picked.get("_alert_enemy_id") or picked["id"]),
+                now_ts=now,
+            )
+            layer1_retry_encounter_state = _boss_retry_mark_encounter(
+                db,
+                user_id,
+                boss_key=(picked["key"] if "key" in picked.keys() else None),
                 now_ts=now,
             )
             layer1_protection_alert_guaranteed = True
@@ -52229,6 +53157,14 @@ def explore():
                     "spawn_probability": 1.0,
                     "pity_forced": True,
                     "streak_before": int(area_boss_streak_before),
+                    "encounter_source": "alert_guarantee",
+                    "boss_source": _normalize_boss_source("alert_guarantee"),
+                    "boss_key": picked["key"] if "key" in picked.keys() else None,
+                    "explore_count": int(layer1_protection_explore_count) + 1,
+                    "pity_count": int(area_boss_streak_before),
+                    "is_first_encounter": bool(tutorial_layer1_first_boss),
+                    "retry_available": bool(layer1_retry_encounter_state.get("available")),
+                    "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                     "alert_attempts_left": int(alert_state["attempts_left"]),
                     "alert_expires_at": int(alert_state["expires_at"]),
                     "newbie_protection_applied": True,
@@ -52273,6 +53209,12 @@ def explore():
                         area_boss_template_id = picked_template_id
                         area_boss_encounter_source = str(boss_roll.get("encounter_source") or "random")
                         area_boss_enemy_meta = picked_meta
+                        layer1_retry_encounter_state = _boss_retry_mark_encounter(
+                            db,
+                            user_id,
+                            boss_key=(picked["key"] if "key" in picked.keys() else None),
+                            now_ts=now,
+                        )
                         layer1_boss_hint_line = (
                             "第1層ボス警報発令。調査反応を追跡して、ボスを捕捉しました。"
                             if area_boss_encounter_source == "alert_guarantee"
@@ -52299,6 +53241,10 @@ def explore():
                                 "attempts_before": None,
                                 "attempts_after": None,
                                 "encounter_source": area_boss_encounter_source,
+                                "boss_key": picked["key"] if "key" in picked.keys() else None,
+                                "boss_source": _normalize_boss_source(area_boss_encounter_source),
+                                "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
+                                "retry_state": layer1_retry_encounter_state.get("status"),
                             },
                             ip=request.remote_addr,
                         )
@@ -52328,6 +53274,13 @@ def explore():
                                 "pity_forced": bool(area_boss_pity_forced),
                                 "streak_before": int(area_boss_streak_before),
                                 "encounter_source": area_boss_encounter_source,
+                                "boss_source": _normalize_boss_source(area_boss_encounter_source),
+                                "boss_key": picked["key"] if "key" in picked.keys() else None,
+                                "explore_count": int(layer1_protection_explore_count) if area_key == "layer_1" else None,
+                                "pity_count": int(area_boss_streak_before),
+                                "is_first_encounter": bool(area_key == "layer_1" and int(layer1_protection_explore_count or 0) <= 0),
+                                "retry_available": bool(layer1_retry_encounter_state.get("available")),
+                                "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                             },
                             ip=request.remote_addr,
                         )
@@ -52387,6 +53340,12 @@ def explore():
                                 "spawn_probability": float(area_boss_spawn_p),
                                 "pity_forced": bool(area_boss_pity_forced),
                                 "streak_before": int(area_boss_streak_before),
+                                "encounter_source": str((boss_roll.get("layer4_warning_encounter_source") if boss_roll else "") or ("pity" if area_boss_pity_forced else "random")),
+                                "boss_source": _normalize_boss_source("pity" if area_boss_pity_forced else "random"),
+                                "boss_key": picked["key"] if "key" in picked.keys() else None,
+                                "explore_count": None,
+                                "pity_count": int(area_boss_streak_before),
+                                "is_first_encounter": False,
                                 "layer4_warning": {
                                     "progress_before": int(boss_roll.get("layer4_warning_progress") or 0),
                                     "guaranteed": bool(boss_roll.get("layer4_warning_guaranteed")),
@@ -52586,6 +53545,12 @@ def explore():
                     "spawn_probability": float(area_boss_spawn_p),
                     "pity_forced": bool(area_boss_pity_forced),
                     "streak_before": int(area_boss_streak_before),
+                    "encounter_source": "legacy",
+                    "boss_source": _normalize_boss_source("unknown"),
+                    "boss_key": enemy["key"] if "key" in enemy.keys() else None,
+                    "explore_count": None,
+                    "pity_count": int(area_boss_streak_before),
+                    "is_first_encounter": False,
                     "legacy_mode": bool(area_boss_legacy_mode),
                 },
                 ip=request.remote_addr,
@@ -53378,6 +54343,16 @@ def explore():
                     )
             if area_boss_active and battle_no == 1:
                 _clear_boss_alert(db, user_id, area_key, now_ts=now)
+                if (
+                    area_key == "layer_1"
+                    and str(enemy.get("key") or "") == _layer1_boss_retry_boss_key()
+                ):
+                    _boss_retry_mark_defeated(
+                        db,
+                        user_id,
+                        boss_key=(enemy["key"] if "key" in enemy.keys() else None),
+                        now_ts=now,
+                    )
                 unlocked_layer = _maybe_unlock_next_layer(db, user_id, user, area_key, enemy)
                 if unlocked_layer:
                     boss_unlock_line = f"⚙ 第{int(unlocked_layer)}層 解放"
@@ -53647,6 +54622,76 @@ def explore():
 
     if area_boss_active and final_outcome != "win" and area_key in LAYER4_WARNING_BOSS_ADVICE:
         world_bonus_notes.append(f"第4層試験助言: {LAYER4_WARNING_BOSS_ADVICE[area_key]}")
+
+    boss_retry_summary = None
+    boss_retry_failure_reason = None
+    boss_retry_state_after_result = None
+    if (
+        area_boss_active
+        and area_key == "layer_1"
+        and last_enemy is not None
+        and str(last_enemy.get("key") or "") == _layer1_boss_retry_boss_key()
+    ):
+        boss_retry_state_after_result = _layer1_boss_retry_state(db, user_id)
+        if entry_source == "boss_retry":
+            if final_outcome != "win":
+                boss_retry_failure_reason = _boss_retry_failure_reason(
+                    all_turn_logs,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                    timeout=final_battle_timeout,
+                )
+            first_encountered_at = boss_retry_state_after_result.get("first_encountered_at")
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["BOSS_RETRY_RESULT"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="boss_retry_result",
+                entity_type="enemy",
+                entity_id=(int(last_enemy["id"]) if "id" in last_enemy.keys() and last_enemy["id"] else None),
+                payload={
+                    "boss_key": last_enemy["key"] if "key" in last_enemy.keys() else _layer1_boss_retry_boss_key(),
+                    "area_key": "layer_1",
+                    "attempt_number": int(boss_retry_state_after_result.get("attempt_count") or 1),
+                    "result": "win" if final_outcome == "win" else "lose",
+                    "defeated": bool(final_outcome == "win"),
+                    "turn_count": int(len(all_turn_logs)),
+                    "failure_reason": boss_retry_failure_reason or "unknown",
+                    "first_encountered_at": first_encountered_at,
+                    "elapsed_seconds_from_first_encounter": (
+                        int(now - int(first_encountered_at))
+                        if first_encountered_at
+                        else None
+                    ),
+                },
+                ip=request.remote_addr,
+            )
+        if final_outcome != "win" and boss_retry_state_after_result.get("available"):
+            if not boss_retry_failure_reason:
+                boss_retry_failure_reason = _boss_retry_failure_reason(
+                    all_turn_logs,
+                    player_hp=player_hp,
+                    player_max_hp=player_max_hp,
+                    timeout=final_battle_timeout,
+                )
+            boss_retry_summary = {
+                "title": "ボス警報 継続中",
+                "desc": "第1層ボスを再捕捉しました。機体を整えて、もう一度挑戦できます。",
+                "cta_label": "もう一度ボスへ挑む",
+                "action_url": url_for("boss_retry_layer1"),
+                "parts_action_url": url_for("boss_retry_layer1_parts"),
+                "attempt_number": int(boss_retry_state_after_result.get("attempt_number") or 1),
+                "failure": _boss_retry_failure_advice(boss_retry_failure_reason),
+            }
+            _audit_boss_retry_cta_view_once(
+                db,
+                user_id,
+                state=boss_retry_state_after_result,
+                surface="battle_result",
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
 
     if weekly_mode == "活性" and final_outcome == "win":
         world_bonus_notes.append("世界状態ボーナス発動: 勝利コイン+1")
@@ -54756,6 +55801,7 @@ def explore():
         "outcome_base": ("勝利" if final_outcome == "win" else "敗北"),
         "outcome_is_win": bool(final_outcome == "win"),
         "battle_id": battle_id,
+        "is_first_explore": bool(explore_start_count_before == 0),
         "battle_kind_label": battle_kind_label,
         "reward_coin": reward_coin,
         "reward_exp": reward_exp,
@@ -54895,6 +55941,7 @@ def explore():
         ),
         "first_upgrade_guide": first_upgrade_guide_result,
         "layer1_boss_alert": layer1_boss_alert_status_after,
+        "boss_retry": boss_retry_summary,
         "next_action_primary_label": (
             "もう一度、第1層へ出撃"
             if area_key == "layer_1"
@@ -54988,6 +56035,23 @@ def explore():
         area_key=area["key"],
         area_label=area["label"],
     )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"],
+        user_id=user_id,
+        request_id=request_id,
+        action_key="battle_result",
+        entity_type="battle_result",
+        entity_id=None,
+        payload=_battle_result_view_payload(
+            user_id=user_id,
+            area_key=area["key"],
+            battle_result=final_outcome,
+            summary=summary,
+            result_surface=("boss_result" if area_boss_active else "battle_result"),
+        ),
+        ip=request.remote_addr,
+    )
     db.commit()
     return render_template(
         "battle.html",
@@ -55036,11 +56100,13 @@ def battle_result():
         action_key="battle_result",
         entity_type="battle_result",
         entity_id=None,
-        payload={
-            "area_key": str(saved.get("area_key") or "layer_1"),
-            "battle_id": summary.get("battle_id"),
-            "outcome": summary.get("outcome"),
-        },
+        payload=_battle_result_view_payload(
+            user_id=user_id,
+            area_key=str(saved.get("area_key") or "layer_1"),
+            battle_result=summary.get("outcome_base") or summary.get("outcome"),
+            summary=summary,
+            result_surface="retry_result",
+        ),
         ip=request.remote_addr,
     )
     db.commit()
@@ -64042,6 +65108,7 @@ def admin_users():
     if not _is_admin_user(admin_user_id):
         return abort(403)
     message = None
+    show_suspicious = request.args.get("show_suspicious") == "1"
     if request.method == "POST":
         if not _csrf_valid_or_unseeded():
             abort(400)
@@ -64366,6 +65433,8 @@ def admin_users():
             item["analytics_badges"].append("テスト候補")
         if item["suspicious_reasons"]:
             item["analytics_badges"].append("不審登録候補")
+        if item["suspicious_reasons"] and not show_suspicious:
+            continue
         rows.append(item)
     return render_template(
         "admin_users.html",
@@ -64373,6 +65442,7 @@ def admin_users():
         message=message,
         self_user_id=admin_user_id,
         analytics_reason_choices=ANALYTICS_EXCLUDE_REASON_CHOICES,
+        show_suspicious=show_suspicious,
     )
 
 

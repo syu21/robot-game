@@ -2914,6 +2914,14 @@ def main():
             active_boss_enemy_id INTEGER,
             boss_attempts_left INTEGER NOT NULL DEFAULT 0,
             boss_alert_expires_at INTEGER,
+            retry_boss_key TEXT,
+            retry_status TEXT NOT NULL DEFAULT 'none',
+            retry_first_encountered_at INTEGER,
+            retry_last_encountered_at INTEGER,
+            retry_last_attempted_at INTEGER,
+            retry_attempt_count INTEGER NOT NULL DEFAULT 0,
+            retry_defeated_at INTEGER,
+            retry_last_submission_id TEXT,
             updated_at INTEGER NOT NULL,
             PRIMARY KEY (user_id, area_key),
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -4116,7 +4124,25 @@ def main():
         cur.execute("ALTER TABLE user_boss_progress ADD COLUMN boss_attempts_left INTEGER NOT NULL DEFAULT 0")
     if "boss_alert_expires_at" not in ubp_cols:
         cur.execute("ALTER TABLE user_boss_progress ADD COLUMN boss_alert_expires_at INTEGER")
+    if "retry_boss_key" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_boss_key TEXT")
+    if "retry_status" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_status TEXT NOT NULL DEFAULT 'none'")
+    if "retry_first_encountered_at" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_first_encountered_at INTEGER")
+    if "retry_last_encountered_at" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_encountered_at INTEGER")
+    if "retry_last_attempted_at" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_attempted_at INTEGER")
+    if "retry_attempt_count" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_attempt_count INTEGER NOT NULL DEFAULT 0")
+    if "retry_defeated_at" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_defeated_at INTEGER")
+    if "retry_last_submission_id" not in ubp_cols:
+        cur.execute("ALTER TABLE user_boss_progress ADD COLUMN retry_last_submission_id TEXT")
     cur.execute("UPDATE user_boss_progress SET boss_attempts_left = 0 WHERE boss_attempts_left IS NULL")
+    cur.execute("UPDATE user_boss_progress SET retry_status = 'none' WHERE retry_status IS NULL OR TRIM(retry_status) = ''")
+    cur.execute("UPDATE user_boss_progress SET retry_attempt_count = 0 WHERE retry_attempt_count IS NULL")
     rip_cols = {row[1] for row in cur.execute("PRAGMA table_info(robot_instance_parts)").fetchall()}
     if "head_part_instance_id" not in rip_cols:
         cur.execute("ALTER TABLE robot_instance_parts ADD COLUMN head_part_instance_id INTEGER")

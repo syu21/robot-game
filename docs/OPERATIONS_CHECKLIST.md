@@ -431,6 +431,10 @@
 - [ ] 第1層通常勝利で `第1層ボス警報` が進む
 - [ ] 10到達後の次回第1層出撃で `encounter_source=alert_guarantee` のボス遭遇になる
 - [ ] 管理者と `analytics_excluded=1` は初回3出撃表示・警報表示の対象外
+- [ ] 登録直後の初回出撃前ユーザーは `/home` 主CTAが `初任務` / `第1層へ出撃` になる
+- [ ] 初回勝利後、3出撃未満の通常ユーザーは `/home` 主CTAから第1層へ再出撃できる
+- [ ] 初回CTA経由の `EXPLORE_START` payload に `entry_source=next_action_first_explore`, `home_session_id`, `seconds_from_home_view`, `is_first_explore=true` が入る
+- [ ] 戦闘結果直表示でも `audit.battle.result.view` が記録される
 
 ## 13. ホーム出撃導線統合
 - [ ] `/home` 上部に統合 `NEXT ACTION` が表示される
@@ -441,3 +445,15 @@
 - [ ] スマホ幅で `NEXT ACTION` と出撃ボタンが初期表示内に収まる
 - [ ] `audit.home.next_action.view` / `audit.home.next_action.click` / `audit.home.quick_start` が記録される
 - [ ] 管理メトリクスに 15/30/60秒以内出撃、NEXT ACTIONクリック率、ホーム滞在中央値が表示される
+- [ ] DAU は実操作イベントのみを数え、管理者、BAN、集計除外、不審登録候補を除外する
+- [ ] 初回体験ファネルは時系列順に成立したステップだけを数え、`前段比` が100%を超えない
+- [ ] 第1層ボス遭遇ソースは `normal/pity/guaranteed/guaranteed_retry/fixed/admin_test/unknown` で表示される
+
+## 14. 第1層ボス再挑戦保証
+- [ ] `python3 init_db.py` 後、`user_boss_progress` に `retry_boss_key`, `retry_status`, `retry_first_encountered_at`, `retry_attempt_count` がある
+- [ ] 第1層ボス初遭遇で `retry_status=available` になる
+- [ ] 第1層ボス撃破で `retry_status=defeated` になり、CTAが消える
+- [ ] `/boss/retry/layer-1` は POST のみで、未遭遇/撃破済み/active robotなし/CT中を安全に戻す
+- [ ] 再挑戦の `EXPLORE_START` に `entry_source=boss_retry`, `boss_source=guaranteed_retry` が入る
+- [ ] 再挑戦敗北結果に `もう一度ボスへ挑む`、`パーツを見直す`、簡易敗因が1件だけ表示される
+- [ ] 管理メトリクスに再挑戦可能、CTA表示/クリック、実行、再挑戦経由撃破、24h撃破率、パーツ確認、編成完了が表示される

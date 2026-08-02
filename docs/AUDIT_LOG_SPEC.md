@@ -552,3 +552,18 @@
   - 保証遭遇で警報を消費した記録。
 - `audit.boss.encounter`
   - 既存イベント。第1層では `encounter_source=random|alert_guarantee` を追加する。
+
+## 12. 第1層ボス再挑戦保証
+- `audit.boss.encounter`
+  - 第1層では payload に `boss_key`, `boss_source`, `is_first_encounter`, `retry_available`, `attempt_number` を含める。
+  - 初回通常遭遇は `boss_source=normal`, `is_first_encounter=true`, `retry_available=true`, `attempt_number=1`。
+  - 直接再挑戦は `boss_source=guaranteed_retry`, `is_first_encounter=false` とし、初遭遇人数には含めない。
+- `audit.boss.attempt`
+  - 再挑戦開始時は `entry_source=boss_retry`, `boss_source=guaranteed_retry`, `attempt_number`, `retry_state` を含める。
+- `audit.explore.start`
+  - 再挑戦時は `entry_source=boss_retry`, `boss_key`, `boss_source=guaranteed_retry`, `retry_state` を含める。
+- `audit.boss.retry.result`
+  - payload は `boss_key`, `area_key`, `attempt_number`, `result`, `defeated`, `turn_count`, `failure_reason`, `first_encountered_at`, `elapsed_seconds_from_first_encounter`。
+- `audit.boss.retry.cta.view` / `audit.boss.retry.cta.click` / `audit.boss.retry.parts_click`
+  - payload は `boss_key`, `surface`, `attempt_number`, `ct_remaining_seconds`。
+  - `surface` は `home_next_action`、`battle_result`、`parts_return` を想定する。
