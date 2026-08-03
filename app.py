@@ -4221,6 +4221,7 @@ def _normalize_entry_source(value):
         "home_next_action": "next_action",
         "home_previous_area": "previous_area",
         "home_layer1_cta": "layer1_primary_cta",
+        "home_layer2_unlock": "layer2_unlock_home",
         "other": "unknown",
         "retry_result": "battle_retry",
     }
@@ -4233,6 +4234,8 @@ def _normalize_entry_source(value):
         "layer1_primary_cta",
         "area_select",
         "boss_retry",
+        "layer2_unlock_result",
+        "layer2_unlock_home",
         "unknown",
     }
     return source if source in allowed else "unknown"
@@ -4380,6 +4383,24 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 "parts_click_users": 0,
                 "build_complete_users": 0,
             },
+            "layer2_unlock": {
+                "layer1_first_defeat_users": 0,
+                "unlocked_users": 0,
+                "result_cta_view_users": 0,
+                "result_cta_click_users": 0,
+                "home_cta_view_users": 0,
+                "home_cta_click_users": 0,
+                "first_explore_users": 0,
+                "first_explore_rate_pct": 0.0,
+                "median_seconds_to_first_explore": 0.0,
+                "within_15m_users": 0,
+                "within_24h_users": 0,
+                "within_24h_denominator": 0,
+                "within_24h_rate_pct": 0.0,
+                "result_cta_click_rate_pct": 0.0,
+                "home_cta_click_rate_pct": 0.0,
+                "entry_source_rows": [],
+            },
         }
     placeholders = ",".join("?" for _ in user_ids)
     event_rows = db.execute(
@@ -4434,6 +4455,8 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
         "layer1_primary_cta": set(),
         "area_select": set(),
         "boss_retry": set(),
+        "layer2_unlock_result": set(),
+        "layer2_unlock_home": set(),
         "unknown": set(),
     }
     home_next_action_view_users = set()
@@ -4455,6 +4478,13 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     layer1_boss_retry_parts_click_users = set()
     layer1_boss_retry_build_complete_users = set()
     layer1_boss_defeat_ts_by_user = {}
+    layer2_unlock_users = set()
+    layer2_result_cta_view_users = set()
+    layer2_result_cta_click_users = set()
+    layer2_home_cta_view_users = set()
+    layer2_home_cta_click_users = set()
+    layer2_first_explore_ts_by_user = {}
+    layer2_first_explore_source_by_user = {}
     layer1_start_count_by_user = {}
     first_upgrade_shown_users = set()
     first_upgrade_click_users = set()
@@ -4498,7 +4528,10 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 entry_source = _normalize_entry_source(payload.get("entry_source"))
                 if entry_source in entry_source_users:
                     entry_source_users[entry_source].add(uid)
-                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta"}:
+                if area_key == "layer_2" and uid not in layer2_first_explore_ts_by_user:
+                    layer2_first_explore_ts_by_user[uid] = ts
+                    layer2_first_explore_source_by_user[uid] = entry_source
+                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home"}:
                     home_direct_start_users.add(uid)
                 if area_key == "layer_1":
                     step_users["layer1_first_start"].add(uid)
@@ -4541,9 +4574,27 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                     first_layer1_boss_encounter_source_by_user.setdefault(uid, boss_source)
             if et == AUDIT_EVENT_TYPES["BOSS_DEFEAT"] and area_key == "layer_1":
                 step_users["boss_defeat"].add(uid)
+                if bool(payload.get("is_first_defeat")) or uid not in layer1_boss_defeat_ts_by_user:
+                    layer1_boss_defeat_ts_by_user.setdefault(uid, ts)
+                if int(payload.get("unlocked_layer") or 0) == 2:
+                    layer2_unlock_users.add(uid)
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
                     layer1_boss_defeat_after_encounter_users.add(uid)
                     layer1_boss_defeat_ts_by_user.setdefault(uid, ts)
+            if et == AUDIT_EVENT_TYPES.get("LAYER_UNLOCK") and int(payload.get("unlocked_layer") or 0) == 2:
+                layer2_unlock_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("LAYER2_UNLOCK_CTA_VIEW"):
+                surface = str(payload.get("surface") or "")
+                if surface == "boss_result":
+                    layer2_result_cta_view_users.add(uid)
+                elif surface == "home_next_action":
+                    layer2_home_cta_view_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("LAYER2_UNLOCK_CTA_CLICK"):
+                surface = str(payload.get("surface") or "")
+                if surface == "boss_result":
+                    layer2_result_cta_click_users.add(uid)
+                elif surface == "home_next_action":
+                    layer2_home_cta_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_VIEW") and area_key == "layer_1":
                 layer1_boss_retry_cta_view_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_CLICK") and area_key == "layer_1":
@@ -4720,6 +4771,8 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
         "layer1_primary_cta": "基地の第1層CTAから出撃",
         "area_select": "エリア選択から出撃",
         "boss_retry": "ボス再挑戦から出撃",
+        "layer2_unlock_result": "ボス撃破結果から第2層",
+        "layer2_unlock_home": "基地NEXT ACTIONから第2層",
         "unknown": "不明",
     }
     entry_source_rows = [
@@ -4769,6 +4822,45 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
         and int(layer1_boss_defeat_ts_by_user[uid]) <= int(first_layer1_boss_encounter_ts_by_user[uid]) + 86400
     }
     home_view_base = max(1, len(step_users["home_first_view"] | home_next_action_view_users))
+    layer2_elapsed_seconds = [
+        int(layer2_first_explore_ts_by_user[uid]) - int(layer1_boss_defeat_ts_by_user[uid])
+        for uid in layer2_first_explore_ts_by_user
+        if uid in layer1_boss_defeat_ts_by_user and int(layer2_first_explore_ts_by_user[uid]) >= int(layer1_boss_defeat_ts_by_user[uid])
+    ]
+    layer2_elapsed_seconds.sort()
+    if layer2_elapsed_seconds:
+        mid = len(layer2_elapsed_seconds) // 2
+        layer2_median_seconds = (
+            float(layer2_elapsed_seconds[mid])
+            if len(layer2_elapsed_seconds) % 2
+            else (layer2_elapsed_seconds[mid - 1] + layer2_elapsed_seconds[mid]) / 2.0
+        )
+    else:
+        layer2_median_seconds = 0.0
+    layer2_15m_users = {
+        uid
+        for uid, ts in layer2_first_explore_ts_by_user.items()
+        if uid in layer1_boss_defeat_ts_by_user and int(ts) <= int(layer1_boss_defeat_ts_by_user[uid]) + 900
+    }
+    layer2_24h_judged_users = {
+        uid for uid, defeat_ts in layer1_boss_defeat_ts_by_user.items() if int(now_ts) >= int(defeat_ts) + 86400
+    }
+    layer2_24h_users = {
+        uid
+        for uid in layer2_24h_judged_users
+        if uid in layer2_first_explore_ts_by_user
+        and int(layer2_first_explore_ts_by_user[uid]) <= int(layer1_boss_defeat_ts_by_user[uid]) + 86400
+    }
+    layer2_entry_labels = {
+        "layer2_unlock_result": "ボス撃破結果",
+        "layer2_unlock_home": "基地NEXT ACTION",
+        "area_select": "エリア選択",
+        "unknown": "その他",
+    }
+    layer2_entry_counts = {key: set() for key in layer2_entry_labels}
+    for uid, source in layer2_first_explore_source_by_user.items():
+        key = source if source in layer2_entry_counts and source != "unknown" else ("area_select" if source == "area_select" else "unknown")
+        layer2_entry_counts[key].add(uid)
     home_quick_start_elapsed.sort()
     if home_quick_start_elapsed:
         mid = len(home_quick_start_elapsed) // 2
@@ -4887,6 +4979,35 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             ),
             "parts_click_users": int(len(layer1_boss_retry_parts_click_users)),
             "build_complete_users": int(len(layer1_boss_retry_build_complete_users)),
+        },
+        "layer2_unlock": {
+            "layer1_first_defeat_users": int(len(layer1_boss_defeat_ts_by_user)),
+            "unlocked_users": int(len(layer2_unlock_users)),
+            "result_cta_view_users": int(len(layer2_result_cta_view_users)),
+            "result_cta_click_users": int(len(layer2_result_cta_click_users)),
+            "result_cta_click_rate_pct": (
+                float(len(layer2_result_cta_click_users)) / float(max(1, len(layer2_result_cta_view_users))) * 100.0
+            ),
+            "home_cta_view_users": int(len(layer2_home_cta_view_users)),
+            "home_cta_click_users": int(len(layer2_home_cta_click_users)),
+            "home_cta_click_rate_pct": (
+                float(len(layer2_home_cta_click_users)) / float(max(1, len(layer2_home_cta_view_users))) * 100.0
+            ),
+            "first_explore_users": int(len(layer2_first_explore_ts_by_user)),
+            "first_explore_rate_pct": (
+                float(len(layer2_first_explore_ts_by_user)) / float(max(1, len(layer1_boss_defeat_ts_by_user))) * 100.0
+            ),
+            "median_seconds_to_first_explore": float(layer2_median_seconds),
+            "within_15m_users": int(len(layer2_15m_users)),
+            "within_24h_users": int(len(layer2_24h_users)),
+            "within_24h_denominator": int(len(layer2_24h_judged_users)),
+            "within_24h_rate_pct": (
+                float(len(layer2_24h_users)) / float(max(1, len(layer2_24h_judged_users))) * 100.0
+            ),
+            "entry_source_rows": [
+                {"key": key, "label": label, "count": int(len(layer2_entry_counts.get(key, set())))}
+                for key, label in layer2_entry_labels.items()
+            ],
         },
     }
 
@@ -6348,6 +6469,7 @@ def _build_home_primary_explore_cta(
         use_next_action
         and (
             bool(next_action_card.get("boss_enter"))
+            or (next_action_area_key == "layer_2" and bool(next_action_card.get("layer2_unlock")))
             or next_action_area_key in {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
         )
     )
@@ -6402,6 +6524,11 @@ def _build_home_primary_explore_cta(
     current_label = button_label if ready else f"クールタイム中 あと{int(ct_remain)}秒"
     status_text = "出撃可能" if ready else f"クールタイム中 あと{int(ct_remain)}秒"
     map_link_label = "マップで出撃先を変える" if not use_next_action else "いったんマップを見る"
+    form_entry_source = None
+    if use_next_action:
+        form_entry_source = str(next_action_card.get("entry_source") or "").strip()
+        if not form_entry_source or form_entry_source == "next_action":
+            form_entry_source = "home_next_action"
     return {
         "title": title,
         "destination_label": area["label"] if area else "探索先未設定",
@@ -6413,6 +6540,7 @@ def _build_home_primary_explore_cta(
         "cta_url": url_for("explore"),
         "area_key": area_key,
         "boss_enter": boss_enter,
+        "entry_source": form_entry_source,
         "disabled": not ready,
         "show_map_link": True,
         "map_link_label": map_link_label,
@@ -11807,9 +11935,19 @@ def _maybe_unlock_next_layer(db, user_id, user_row, area_key, enemy_row):
         if layer2_sorties < int(LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED):
             return None
     unlocked_layer = max_layer + 1
+    now_ts = _now_ts()
     db.execute(
-        "UPDATE users SET max_unlocked_layer = ?, layer2_unlocked = CASE WHEN ? >= 2 THEN 1 ELSE layer2_unlocked END WHERE id = ?",
-        (int(unlocked_layer), int(unlocked_layer), user_id),
+        """
+        UPDATE users
+        SET max_unlocked_layer = ?,
+            layer2_unlocked = CASE WHEN ? >= 2 THEN 1 ELSE layer2_unlocked END,
+            layer2_unlocked_at = CASE
+                WHEN ? = 2 THEN COALESCE(layer2_unlocked_at, ?)
+                ELSE layer2_unlocked_at
+            END
+        WHERE id = ?
+        """,
+        (int(unlocked_layer), int(unlocked_layer), int(unlocked_layer), int(now_ts), user_id),
     )
     return int(unlocked_layer)
 
@@ -13431,6 +13569,12 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN boss_meter_win_l1 INTEGER NOT NULL DEFAULT 0")
     if "layer2_unlocked" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN layer2_unlocked INTEGER NOT NULL DEFAULT 0")
+    if "layer2_unlocked_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN layer2_unlocked_at INTEGER")
+    if "layer2_unlock_notice_seen_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN layer2_unlock_notice_seen_at INTEGER")
+    if "layer2_first_explore_at" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN layer2_first_explore_at INTEGER")
     if "max_unlocked_layer" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN max_unlocked_layer INTEGER NOT NULL DEFAULT 1")
     if "home_axis_hint_seen" not in cols:
@@ -27896,6 +28040,93 @@ def _home_recent_unlocked_layer(db, user_id, now_ts=None):
     return v if 1 <= v <= MAX_UNLOCKABLE_LAYER else None
 
 
+def _first_layer2_explore_start_at(db, user_id):
+    row = db.execute(
+        """
+        SELECT created_at
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') = 'layer_2'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+    ).fetchone()
+    return int(row["created_at"] or 0) if row else None
+
+
+def _first_layer1_boss_defeat_at(db, user_id):
+    row = db.execute(
+        """
+        SELECT created_at
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') = 'layer_1'
+          AND COALESCE(json_extract(payload_json, '$.boss_kind'), 'fixed') = 'fixed'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["BOSS_DEFEAT"]),
+    ).fetchone()
+    return int(row["created_at"] or 0) if row else None
+
+
+def _layer2_unlock_state(db, user_row):
+    if not user_row:
+        return {
+            "layer1_boss_defeated": False,
+            "layer2_unlocked": False,
+            "layer2_unlocked_at": None,
+            "layer2_first_explore_at": None,
+            "pending_first_explore": False,
+            "inconsistent": False,
+        }
+    user_id = int(user_row["id"])
+    layer1_defeat_at = _first_layer1_boss_defeat_at(db, user_id)
+    layer1_boss_defeated = bool(layer1_defeat_at)
+    layer2_unlocked = bool(_user_max_unlocked_layer(user_row) >= 2)
+    keys = set(user_row.keys()) if hasattr(user_row, "keys") else set()
+    unlocked_at = (
+        int(user_row["layer2_unlocked_at"] or 0)
+        if "layer2_unlocked_at" in keys and user_row["layer2_unlocked_at"]
+        else None
+    )
+    first_explore_at = (
+        int(user_row["layer2_first_explore_at"] or 0)
+        if "layer2_first_explore_at" in keys and user_row["layer2_first_explore_at"]
+        else None
+    ) or _first_layer2_explore_start_at(db, user_id)
+    is_admin = int(user_row["is_admin"] or 0) == 1 if "is_admin" in keys else False
+    inconsistent = bool(layer2_unlocked and not layer1_boss_defeated and not is_admin)
+    return {
+        "layer1_boss_defeated": layer1_boss_defeated,
+        "layer1_boss_defeated_at": layer1_defeat_at,
+        "layer2_unlocked": layer2_unlocked,
+        "layer2_unlocked_at": unlocked_at,
+        "layer2_first_explore_at": first_explore_at,
+        "pending_first_explore": bool(layer1_boss_defeated and layer2_unlocked and unlocked_at and not first_explore_at),
+        "notice_seen_at": (
+            int(user_row["layer2_unlock_notice_seen_at"] or 0)
+            if "layer2_unlock_notice_seen_at" in keys and user_row["layer2_unlock_notice_seen_at"]
+            else None
+        ),
+        "inconsistent": inconsistent,
+    }
+
+
+def _layer2_unlock_cta_payload(state, *, surface, entry_source=None, ct_remaining_seconds=0):
+    return {
+        "surface": str(surface or ""),
+        "entry_source": str(entry_source or ""),
+        "ct_remaining_seconds": int(max(0, int(ct_remaining_seconds or 0))),
+        "notice_seen": bool((state or {}).get("notice_seen_at")),
+        "unlocked_layer": 2,
+        "layer2_unlocked_at": (state or {}).get("layer2_unlocked_at"),
+    }
+
+
 def _has_fixed_boss_defeat_in_area(db, user_id, area_key):
     row = db.execute(
         """
@@ -36614,6 +36845,41 @@ def _home_next_action_card(
             "is_post": False,
             "area_key": None,
             "boss_enter": False,
+        }
+    layer2_unlock_state = _layer2_unlock_state(db, user)
+    if layer2_unlock_state.get("inconsistent"):
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["LAYER_UNLOCK_INCONSISTENT"],
+            user_id=int(user["id"]),
+            action_key="layer_unlock_inconsistent",
+            entity_type="user",
+            entity_id=int(user["id"]),
+            payload={
+                "user_id": int(user["id"]),
+                "max_unlocked_layer": int(_user_max_unlocked_layer(user)),
+                "layer2_unlocked": bool(layer2_unlock_state.get("layer2_unlocked")),
+                "layer1_boss_defeated": bool(layer2_unlock_state.get("layer1_boss_defeated")),
+            },
+        )
+    if layer2_unlock_state.get("pending_first_explore"):
+        return {
+            "title": "新区域 解放",
+            "desc": "第2層への経路が開きました。より強い敵と、新しいパーツが待っています。",
+            "cta_label": "第2層へ出撃",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": "layer_2",
+            "boss_enter": False,
+            "entry_source": "layer2_unlock_home",
+            "home_primary": True,
+            "destination_label": "第2層",
+            "context_line": "第1層より強い敵が出現します。今の機体でまず挑戦してみましょう。",
+            "secondary_actions": [
+                {"label": "基地で機体を整える", "url": url_for("home"), "is_post": False}
+            ],
+            "force_open": True,
+            "layer2_unlock": True,
         }
     if _onboarding_first_upgrade_should_show(db, user):
         area_key = str(user["last_explore_area_key"] or "").strip() or "layer_1"
@@ -46161,7 +46427,7 @@ def home():
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
-    elif home_primary_explore_cta and first_explore_before_user:
+    elif home_primary_explore_cta and first_explore_before_user and not (next_action_card and next_action_card.get("layer2_unlock")):
         home_primary_explore_cta.update(
             {
                 "title": "初任務",
@@ -46178,7 +46444,7 @@ def home():
         show_beginner_mission = False
         show_next_action_card = False
         home_return_explore_cta = None
-    elif home_primary_explore_cta and first_explore_after_win_user:
+    elif home_primary_explore_cta and first_explore_after_win_user and not (next_action_card and next_action_card.get("layer2_unlock")):
         home_primary_explore_cta.update(
             {
                 "title": "初任務達成",
@@ -46355,6 +46621,22 @@ def home():
             },
             ip=request.remote_addr,
         )
+        if str(home_primary_explore_cta.get("entry_source") or "") == "layer2_unlock_home":
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["LAYER2_UNLOCK_CTA_VIEW"],
+                user_id=int(user["id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="layer2_unlock_cta_view",
+                entity_type="home",
+                payload=_layer2_unlock_cta_payload(
+                    _layer2_unlock_state(db, user),
+                    surface="home_next_action",
+                    entry_source="layer2_unlock_home",
+                    ct_remaining_seconds=int(ct_remain or 0),
+                ),
+                ip=request.remote_addr,
+            )
         if home_primary_explore_cta.get("onboarding_first_upgrade"):
             _audit_onboarding_first_upgrade_shown(
                 db,
@@ -52365,7 +52647,7 @@ def explore():
             payload={"area_key": area_key, "entry_source": entry_source},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action", "next_action_first_explore"}:
+    if entry_source in {"next_action", "next_action_first_explore", "layer2_unlock_home"}:
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
@@ -52374,6 +52656,23 @@ def explore():
             action_key="home_next_action_click",
             entity_type="home",
             payload={"action": "next_action", "area_key": area_key, "entry_source": entry_source, **home_view_context},
+            ip=request.remote_addr,
+        )
+    if area_key == "layer_2" and entry_source in {"layer2_unlock_result", "layer2_unlock_home"}:
+        layer2_click_state = _layer2_unlock_state(db, user)
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAYER2_UNLOCK_CTA_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="layer2_unlock_cta_click",
+            entity_type=("home" if entry_source == "layer2_unlock_home" else "battle_result"),
+            payload=_layer2_unlock_cta_payload(
+                layer2_click_state,
+                surface=("home_next_action" if entry_source == "layer2_unlock_home" else "boss_result"),
+                entry_source=entry_source,
+                ct_remaining_seconds=wait,
+            ),
             ip=request.remote_addr,
         )
     elif entry_source == "previous_area":
@@ -52387,7 +52686,7 @@ def explore():
             payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source, **home_view_context},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta"}:
+    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home"}:
         home_elapsed = home_view_context.get("seconds_from_home_view")
         if home_elapsed is not None and int(home_elapsed) <= 60:
             audit_log(
@@ -52432,6 +52731,33 @@ def explore():
         ).fetchone()["c"]
         or 0
     )
+    layer2_state_before_start = _layer2_unlock_state(db, user) if area_key == "layer_2" else None
+    layer2_start_count_before = 0
+    is_first_layer2_explore = False
+    seconds_from_layer2_unlock = None
+    if area_key == "layer_2":
+        layer2_start_count_before = int(
+            db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM world_events_log
+                WHERE user_id = ?
+                  AND event_type = ?
+                  AND COALESCE(json_extract(payload_json, '$.area_key'), '') = 'layer_2'
+                """,
+                (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+            ).fetchone()["c"]
+            or 0
+        )
+        is_first_layer2_explore = bool(layer2_start_count_before == 0)
+        unlocked_at = (layer2_state_before_start or {}).get("layer2_unlocked_at")
+        if unlocked_at:
+            seconds_from_layer2_unlock = max(0, int(now) - int(unlocked_at))
+        if is_first_layer2_explore:
+            db.execute(
+                "UPDATE users SET layer2_first_explore_at = COALESCE(layer2_first_explore_at, ?) WHERE id = ?",
+                (int(now), int(user_id)),
+            )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["EXPLORE_START"],
@@ -52456,6 +52782,9 @@ def explore():
             "seconds_from_home_view": home_view_context.get("seconds_from_home_view"),
             "is_first_explore": bool(explore_start_count_before == 0),
             "explore_count_before": int(explore_start_count_before),
+            "is_first_layer2_explore": bool(is_first_layer2_explore) if area_key == "layer_2" else False,
+            "layer2_explore_count_before": int(layer2_start_count_before) if area_key == "layer_2" else None,
+            "seconds_from_layer_unlock": seconds_from_layer2_unlock,
             **(
                 {
                     "boss_key": boss_retry_state_before.get("boss_key"),
@@ -54353,7 +54682,19 @@ def explore():
                         boss_key=(enemy["key"] if "key" in enemy.keys() else None),
                         now_ts=now,
                     )
+                boss_key_for_payload = enemy["key"] if "key" in enemy.keys() else None
+                is_first_boss_defeat = not _has_fixed_boss_defeat_in_area(db, user_id, area_key)
                 unlocked_layer = _maybe_unlock_next_layer(db, user_id, user, area_key, enemy)
+                layer_unlock_triggered = bool(unlocked_layer)
+                if int(unlocked_layer or 0) == 2:
+                    db.execute(
+                        """
+                        UPDATE users
+                        SET layer2_unlocked_at = COALESCE(layer2_unlocked_at, ?)
+                        WHERE id = ?
+                        """,
+                        (int(now), int(user_id)),
+                    )
                 if unlocked_layer:
                     boss_unlock_line = f"⚙ 第{int(unlocked_layer)}層 解放"
                     session["home_new_layer_badge"] = int(unlocked_layer)
@@ -54373,7 +54714,8 @@ def explore():
                         "user_id": user_id,
                         "week_key": _world_week_key(),
                         "area_key": area_key,
-                        "enemy_key": enemy["key"] if "key" in enemy.keys() else None,
+                        "enemy_key": boss_key_for_payload,
+                        "boss_key": boss_key_for_payload,
                         "is_boss": True,
                         "boss_kind": area_boss_kind,
                         "robot_instance_id": (
@@ -54401,6 +54743,10 @@ def explore():
                         "attempts_before": area_boss_attempt_before,
                         "attempts_after": area_boss_attempt_after,
                         "unlocked_layer": (int(unlocked_layer) if unlocked_layer else None),
+                        "is_first_defeat": bool(is_first_boss_defeat),
+                        "layer_unlock_triggered": bool(layer_unlock_triggered),
+                        "entry_source": entry_source,
+                        "attempt_number": area_boss_attempt_after,
                         "turn_limit_removed": bool(battle_turn_limit_removed),
                         "turn_limit": battle_turn_limit,
                         "safety_turn_cap": battle_safety_turn_cap,
@@ -54427,6 +54773,30 @@ def explore():
                     },
                     ip=request.remote_addr,
                 )
+                if int(unlocked_layer or 0) == 2:
+                    layer_unlock_payload = {
+                        "user_id": int(user_id),
+                        "from_layer": 1,
+                        "unlocked_layer": 2,
+                        "trigger_type": "boss_defeat",
+                        "trigger_boss_key": boss_key_for_payload,
+                        "is_first_unlock": True,
+                        "area_key": area_key,
+                        "robot_instance_id": int(active["id"]) if active else None,
+                        "robot_name": active["name"] if active and "name" in active.keys() else None,
+                    }
+                    audit_log(
+                        db,
+                        AUDIT_EVENT_TYPES["LAYER_UNLOCK"],
+                        user_id=user_id,
+                        request_id=request_id,
+                        action_key="layer_unlock",
+                        entity_type="user",
+                        entity_id=int(user_id),
+                        payload=layer_unlock_payload,
+                        ip=request.remote_addr,
+                    )
+                    world_bonus_notes.append("第2層への経路が開きました")
                 if (
                     tutorial_layer1_subject
                     and area_key == "layer_1"
@@ -54478,12 +54848,17 @@ def explore():
                     )
                     display_name = _display_username_for_user_row(db, user)
                     robot_name = active["name"] if active and "name" in active.keys() and active["name"] else "探索機"
+                    clear_message = (
+                        f"{display_name}のロボ『{robot_name}』が第1層を突破し、第2層への経路を開放した"
+                        if int(unlocked_layer or 0) == 2
+                        else f"{display_name}のロボ『{robot_name}』が第1層試験を突破。新たな研究員として記録されました。"
+                    )
                     db.execute(
                         "INSERT INTO chat_messages (user_id, username, message, created_at) VALUES (?, ?, ?, ?)",
                         (
                             user_id,
                             "SYSTEM",
-                            f"{display_name}のロボ『{robot_name}』が第1層試験を突破。新たな研究員として記録されました。",
+                            clear_message,
                             now_str(),
                         ),
                     )
@@ -54517,7 +54892,11 @@ def explore():
                         (
                             user_id,
                             "SYSTEM",
-                            f"【BOSS撃破】{session.get('username', 'unknown')} が {_boss_area_label(area_key)} の『{enemy_name}』を討伐！{reward_label}",
+	                            (
+	                                f"【BOSS撃破】{session.get('username', 'unknown')} が {_boss_area_label(area_key)} の『{enemy_name}』を討伐！第2層への経路を開放！{reward_label}"
+	                                if int(unlocked_layer or 0) == 2
+	                                else f"【BOSS撃破】{session.get('username', 'unknown')} が {_boss_area_label(area_key)} の『{enemy_name}』を討伐！{reward_label}"
+	                            ),
                             now_str(),
                         ),
                     )
@@ -55775,6 +56154,40 @@ def explore():
     else:
         explore_ct_button_label = "もう一度出撃"
         explore_ct_status_label = "出撃可能"
+    layer2_unlock_result_card = None
+    if int(unlocked_layer or 0) == 2:
+        layer2_unlock_state_after = _layer2_unlock_state(db, db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+        layer2_unlock_result_card = {
+            "title": "第1層 突破",
+            "desc": "封鎖されていた経路が開きました。第2層への出撃が可能になりました。",
+            "area_key": "layer_2",
+            "area_label": "第2層",
+            "cta_label": "第2層へ進む",
+            "entry_source": "layer2_unlock_result",
+            "secondary_label": "基地で機体を整える",
+            "ct_remaining_seconds": int(explore_ct_remain),
+            "ct_label": f"第2層出撃まで あと {'%02d:%02d' % (int(explore_ct_remain) // 60, int(explore_ct_remain) % 60)}" if int(explore_ct_remain) > 0 and not explore_ct_is_admin else "",
+            "helper": "第1層より少し手強い敵が現れます。今の機体でまず挑戦してみましょう。",
+        }
+        db.execute(
+            "UPDATE users SET layer2_unlock_notice_seen_at = COALESCE(layer2_unlock_notice_seen_at, ?) WHERE id = ?",
+            (int(now), int(user_id)),
+        )
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["LAYER2_UNLOCK_CTA_VIEW"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="layer2_unlock_cta_view",
+            entity_type="battle_result",
+            payload=_layer2_unlock_cta_payload(
+                layer2_unlock_state_after,
+                surface="boss_result",
+                entry_source="layer2_unlock_result",
+                ct_remaining_seconds=int(explore_ct_remain),
+            ),
+            ip=request.remote_addr,
+        )
     if area_boss_active and area_key == LAYER4_FINAL_AREA_KEY:
         battle_kind_label = "第4層 最終試験"
     elif area_boss_active and _area_layer(area_key) == 4:
@@ -55942,6 +56355,7 @@ def explore():
         "first_upgrade_guide": first_upgrade_guide_result,
         "layer1_boss_alert": layer1_boss_alert_status_after,
         "boss_retry": boss_retry_summary,
+        "layer2_unlock_result": layer2_unlock_result_card,
         "next_action_primary_label": (
             "もう一度、第1層へ出撃"
             if area_key == "layer_1"

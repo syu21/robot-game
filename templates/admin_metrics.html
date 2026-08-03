@@ -169,8 +169,8 @@
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.layer1_boss.defeat_after_first_encounter_rate_pct) }}%</div>
       </div>
     </div>
-    <div class="admin-metrics-note-grid">
-      {% set boss_retry = first_experience_snapshot.layer1_boss_retry %}
+	    <div class="admin-metrics-note-grid">
+	      {% set boss_retry = first_experience_snapshot.layer1_boss_retry %}
       <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">第1層ボス初遭遇人数</div>
         <div class="admin-metrics-note-value">{{ boss_retry.initial_encounter_users }}人</div>
@@ -210,9 +210,51 @@
         <div class="admin-metrics-note-label">敗北後の育成行動</div>
         <div class="admin-metrics-note-value">パーツ確認 {{ boss_retry.parts_click_users }}人</div>
         <div class="robot-time">編成完了 {{ boss_retry.build_complete_users }}人</div>
-      </div>
-    </div>
-    <div class="admin-metrics-bar-list">
+	      </div>
+	    </div>
+	    <div class="admin-metrics-note-grid">
+	      {% set layer2_unlock = first_experience_snapshot.layer2_unlock %}
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">第1層ボス初撃破</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.layer1_first_defeat_users }}人</div>
+	        <div class="robot-time">第2層解放 {{ layer2_unlock.unlocked_users }}人</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">解放結果CTA</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.result_cta_click_users }}人 / {{ layer2_unlock.result_cta_view_users }}人</div>
+	        <div class="robot-time">{{ '%.1f'|format(layer2_unlock.result_cta_click_rate_pct) }}%</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">基地第2層CTA</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.home_cta_click_users }}人 / {{ layer2_unlock.home_cta_view_users }}人</div>
+	        <div class="robot-time">{{ '%.1f'|format(layer2_unlock.home_cta_click_rate_pct) }}%</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">第2層初出撃率</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.first_explore_users }}人 / {{ layer2_unlock.layer1_first_defeat_users }}人</div>
+	        <div class="robot-time">{{ '%.1f'|format(layer2_unlock.first_explore_rate_pct) }}%</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">初撃破→第2層初出撃</div>
+	        <div class="admin-metrics-note-value">{{ '%.0f'|format(layer2_unlock.median_seconds_to_first_explore) }}秒</div>
+	        <div class="robot-time">15分以内 {{ layer2_unlock.within_15m_users }}人</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">24時間以内第2層出撃</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.within_24h_users }}人 / {{ layer2_unlock.within_24h_denominator }}人</div>
+	        <div class="robot-time">{{ '%.1f'|format(layer2_unlock.within_24h_rate_pct) }}%</div>
+	      </div>
+	      <div class="admin-metrics-note-card">
+	        <div class="admin-metrics-note-label">第2層初出撃入口</div>
+	        <div class="admin-metrics-note-value">{{ layer2_unlock.first_explore_users }}人</div>
+	        <div class="robot-time">
+	          {% for row in layer2_unlock.entry_source_rows %}
+	            {{ row.label }} {{ row.count }}{% if not loop.last %} / {% endif %}
+	          {% endfor %}
+	        </div>
+	      </div>
+	    </div>
+	    <div class="admin-metrics-bar-list">
       {% for item in first_experience_snapshot.rows %}
       <article class="admin-metrics-bar-row">
         <div class="admin-metrics-bar-head">

@@ -457,3 +457,16 @@
 - [ ] 再挑戦の `EXPLORE_START` に `entry_source=boss_retry`, `boss_source=guaranteed_retry` が入る
 - [ ] 再挑戦敗北結果に `もう一度ボスへ挑む`、`パーツを見直す`、簡易敗因が1件だけ表示される
 - [ ] 管理メトリクスに再挑戦可能、CTA表示/クリック、実行、再挑戦経由撃破、24h撃破率、パーツ確認、編成完了が表示される
+
+## 15. 第2層解放・次目標導線
+- [ ] `python3 init_db.py` 後、`users` に `layer2_unlocked_at`, `layer2_unlock_notice_seen_at`, `layer2_first_explore_at` がある
+- [ ] 第1層固定ボス初撃破で第2層が解放され、結果画面に `第1層 突破` が出る
+- [ ] 結果画面の主CTA `第2層へ進む` は `area_key=layer_2`, `entry_source=layer2_unlock_result` でPOSTする
+- [ ] CT中は第2層CTAが残り時間表示になる
+- [ ] 第2層未出撃中の基地 `NEXT ACTION` は `新区域 解放` / `第2層へ出撃` になる
+- [ ] 基地CTAは `entry_source=layer2_unlock_home` を残す
+- [ ] 第2層初出撃後、専用NEXT ACTIONは消える
+- [ ] `audit.boss.defeat` に `is_first_defeat`, `unlocked_layer`, `layer_unlock_triggered`, `entry_source`, `attempt_number` が入る
+- [ ] `audit.layer.unlock`, `audit.layer2.unlock_cta.view`, `audit.layer2.unlock_cta.click` が記録される
+- [ ] `audit.explore.start` に `is_first_layer2_explore` と `seconds_from_layer_unlock` が入る
+- [ ] 管理メトリクスに第1層突破後導線のCTA率、初出撃率、入口別人数が表示される

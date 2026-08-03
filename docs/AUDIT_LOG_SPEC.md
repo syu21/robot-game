@@ -567,3 +567,19 @@
 - `audit.boss.retry.cta.view` / `audit.boss.retry.cta.click` / `audit.boss.retry.parts_click`
   - payload は `boss_key`, `surface`, `attempt_number`, `ct_remaining_seconds`。
   - `surface` は `home_next_action`、`battle_result`、`parts_return` を想定する。
+
+## 13. 第2層解放・次目標導線
+- `audit.boss.defeat`
+  - 第1層固定ボス初撃破時は payload に `boss_key`, `area_key`, `is_first_defeat=true`, `unlocked_layer=2`, `layer_unlock_triggered=true`, `entry_source`, `attempt_number` を含める。
+  - 2回目以降や既解放時は `layer_unlock_triggered=false` または `unlocked_layer=null`。
+- `audit.layer.unlock`
+  - 第2層初解放時に1回記録する。
+  - payload は `user_id`, `from_layer=1`, `unlocked_layer=2`, `trigger_type=boss_defeat`, `trigger_boss_key`, `is_first_unlock`。
+- `audit.layer.unlock.inconsistent`
+  - 第1層ボス未撃破なのに第2層解放済みの不整合を管理監査へ残す。ユーザー画面ではエラーにしない。
+- `audit.layer2.unlock_cta.view` / `audit.layer2.unlock_cta.click`
+  - payload は `surface`, `entry_source`, `ct_remaining_seconds`, `notice_seen`, `layer2_unlocked_at`。
+  - surface は `boss_result`, `home_next_action`, `area_select` を想定する。
+- `audit.explore.start`
+  - `area_key=layer_2` では `is_first_layer2_explore`, `entry_source`, `seconds_from_layer_unlock`, `layer2_explore_count_before` を含める。
+  - 初回のみ `is_first_layer2_explore=true`、2回目以降は false。

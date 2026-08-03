@@ -827,6 +827,9 @@ def main():
             boss_meter_explore_l1 INTEGER NOT NULL DEFAULT 0,
             boss_meter_win_l1 INTEGER NOT NULL DEFAULT 0,
             layer2_unlocked INTEGER NOT NULL DEFAULT 0,
+            layer2_unlocked_at INTEGER,
+            layer2_unlock_notice_seen_at INTEGER,
+            layer2_first_explore_at INTEGER,
             max_unlocked_layer INTEGER NOT NULL DEFAULT 1,
             home_axis_hint_seen INTEGER NOT NULL DEFAULT 0,
             stable_no_damage_wins INTEGER NOT NULL DEFAULT 0,
@@ -3623,6 +3626,12 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_reward_claimed INTEGER NOT NULL DEFAULT 0")
     if "layer1_first_clear_home_seen" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN layer1_first_clear_home_seen INTEGER NOT NULL DEFAULT 0")
+    if "layer2_unlocked_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN layer2_unlocked_at INTEGER")
+    if "layer2_unlock_notice_seen_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN layer2_unlock_notice_seen_at INTEGER")
+    if "layer2_first_explore_at" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN layer2_first_explore_at INTEGER")
     if "onboarding_first_three_reward_claimed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN onboarding_first_three_reward_claimed INTEGER NOT NULL DEFAULT 0")
     if "first_upgrade_guide_started_at" not in users_cols:

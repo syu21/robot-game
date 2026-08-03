@@ -754,3 +754,11 @@
 - 再挑戦にも共通出撃CTを適用。ボスステータス、報酬、DECOR重複抑止、第2層解放条件は変更なし。
 - 基地 `NEXT ACTION` は再挑戦可能状態を通常出撃より優先する。敗北結果には簡易敗因と `もう一度ボスへ挑む` を出す。
 - 監査は `boss_source=guaranteed_retry`、`audit.boss.retry.*`、管理メトリクスで追跡する。
+
+## 14. 第2層解放・次目標導線 v1
+- 第1層固定ボス初撃破時、結果画面に `第1層 突破` と `第2層へ進む` を表示する。
+- 第2層未出撃中は基地 `NEXT ACTION` を `新区域 解放` / `第2層へ出撃` に切り替える。
+- 結果画面は `entry_source=layer2_unlock_result`、基地は `entry_source=layer2_unlock_home` で既存 `/explore` へPOSTする。
+- `users.layer2_unlocked_at`, `layer2_unlock_notice_seen_at`, `layer2_first_explore_at` で一度だけ表示・初回出撃を補助管理する。
+- 管理メトリクスに第1層初撃破、第2層解放、CTA表示/クリック、第2層初出撃率、15分/24時間以内到達、入口別人数を追加。
+- 戦闘、報酬、解放条件、CTは変更なし。

@@ -57,14 +57,43 @@
   {% set enemy_img = summary.get('enemy_image_url') if summary and summary.get('enemy_image_url') else url_for('static', filename='assets/placeholder_enemy.png') %}
   <div class="battle-result-compact-stack">
   <div class="battle-section-title battle-section-title-compact">結果</div>
-  <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
-    <div class="battle-outcome-label">{% if summary.get('outcome_is_win') %}WIN{% else %}LOSE{% endif %}</div>
-    <div class="battle-outcome-sub">{{ summary['outcome'] }}</div>
-    {% if summary.get('timeout_decision_line') %}
-    <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
-    {% endif %}
-  </div>
-  {% if summary.get('layer1_first_win_result') %}
+	  <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
+	    <div class="battle-outcome-label">{% if summary.get('outcome_is_win') %}WIN{% else %}LOSE{% endif %}</div>
+	    <div class="battle-outcome-sub">{{ summary['outcome'] }}</div>
+	    {% if summary.get('timeout_decision_line') %}
+	    <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
+	    {% endif %}
+	  </div>
+	  {% if summary.get('layer2_unlock_result') %}
+	  {% set layer2_unlock = summary.get('layer2_unlock_result') %}
+	  <div class="card notice battle-next-card-primary">
+	    <div><b>{{ layer2_unlock.get('title', '第1層 突破') }}</b></div>
+	    <div class="upgrade-cost">{{ layer2_unlock.get('desc') }}</div>
+	    <div class="robot-time">{{ layer2_unlock.get('helper') }}</div>
+	    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+	      <input type="hidden" name="area_key" value="layer_2" />
+	      <input type="hidden" name="entry_source" value="{{ layer2_unlock.get('entry_source', 'layer2_unlock_result') }}" />
+	      {% if summary.get('next_explore_submission_id') %}
+	      <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+	      {% endif %}
+	      <button type="submit" class="battle-next-cta js-explore-return-btn"
+	        data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+	        data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
+	        data-ct-admin="{{ 1 if summary.get('explore_ct_is_admin') else 0 }}"
+	        data-cta-ready-label="{{ layer2_unlock.get('cta_label', '第2層へ進む') }}"
+	        {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}disabled{% endif %}
+	      >{% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}{{ layer2_unlock.get('ct_label') }}{% else %}{{ layer2_unlock.get('cta_label', '第2層へ進む') }}{% endif %}</button>
+	    </form>
+	    {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}
+	    <div class="battle-return-ct js-explore-return-label">{{ layer2_unlock.get('ct_label') }}</div>
+	    {% endif %}
+	    <div class="home-inline-actions">
+	      <a class="battle-home-link" href="{{ url_for('parts') }}">入手した報酬を見る</a>
+	      <a class="battle-home-link" href="{{ url_for('home') }}">{{ layer2_unlock.get('secondary_label', '基地で機体を整える') }}</a>
+	    </div>
+	  </div>
+	  {% endif %}
+	  {% if summary.get('layer1_first_win_result') %}
   <div class="card notice battle-next-card-primary">
     <div><b>初勝利！</b></div>
     <div class="upgrade-cost">ロボの調査が進みました。</div>
@@ -362,10 +391,11 @@
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
-      {% set tutorial_next = summary.get('tutorial_layer1_next_action') %}
-      {% set boss_retry = summary.get('boss_retry') %}
-      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
-      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
+	      {% set tutorial_next = summary.get('tutorial_layer1_next_action') %}
+	      {% set boss_retry = summary.get('boss_retry') %}
+	      {% set layer2_unlock = summary.get('layer2_unlock_result') %}
+	      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif layer2_unlock %}第2層へ進む{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
+	      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif layer2_unlock %}新しく解放された第2層へ初出撃しよう。{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
       {% if boss_retry %}
       {% if boss_retry.get('failure') %}
       <div class="notice">
@@ -429,8 +459,23 @@
         {% endfor %}
       </div>
       {% endif %}
-      {% elif summary.get('unlocked_layer') %}
-      <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
+	      {% elif layer2_unlock %}
+	      <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
+	        <input type="hidden" name="area_key" value="layer_2" />
+	        <input type="hidden" name="entry_source" value="{{ layer2_unlock.get('entry_source', 'layer2_unlock_result') }}" />
+	        {% if summary.get('next_explore_submission_id') %}
+	        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+	        {% endif %}
+	        <button type="submit" id="explore-return-btn" class="js-explore-return-btn"
+	          data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+	          data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
+	          data-ct-admin="{{ 1 if summary.get('explore_ct_is_admin') else 0 }}"
+	          data-cta-ready-label="{{ layer2_unlock.get('cta_label', '第2層へ進む') }}"
+	          {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}disabled{% endif %}
+	        >{% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}{{ layer2_unlock.get('ct_label') }}{% else %}{{ layer2_unlock.get('cta_label', '第2層へ進む') }}{% endif %}</button>
+	      </form>
+	      {% elif summary.get('unlocked_layer') %}
+	      <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
       {% else %}
       <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="{{ explore_area_key }}" />

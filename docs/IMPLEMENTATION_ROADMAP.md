@@ -628,3 +628,12 @@
 - UI: 基地 `NEXT ACTION` と敗北結果画面に再挑戦CTAを出す。全画面モーダルや長文チュートリアルは追加しない。
 - 監査: `boss_source=guaranteed_retry` と `audit.boss.retry.*` で、通常遭遇と直接再挑戦を分離する。
 - 非目標: 専用パーツ、新通貨、追加報酬、CT短縮、ボス弱体化。
+
+## Phase 3.7: 第2層解放・次目標導線 v1
+
+- 目的: 第1層ボス撃破後に、解放達成を認識し、そのまま第2層初出撃へ進める導線を作る。
+- 実装範囲: 第1層固定ボス初撃破、第2層初解放、第2層初出撃前のみ。
+- UI: 結果画面に `第1層 突破` カード、基地 `NEXT ACTION` に `新区域 解放` を出す。
+- 入口: 結果画面は `entry_source=layer2_unlock_result`、基地は `entry_source=layer2_unlock_home`。
+- 監査: `audit.layer.unlock`, `audit.layer2.unlock_cta.*`, `audit.explore.start.is_first_layer2_explore` で到達を追う。
+- 非目標: 第2層以降の解放演出拡張、戦闘バランス変更、報酬変更、CT変更、強制チュートリアル。
