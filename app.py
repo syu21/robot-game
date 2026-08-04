@@ -261,8 +261,22 @@ from services.stats import (
     STATS,
     WEIGHT_TEMPLATES,
     compute_part_stats,
+    compute_power,
     compute_robot_stats,
     generate_noisy_weights,
+)
+from services.robot_tuning import (
+    DAILY_GAIN_LIMIT as ROBOT_TUNING_DAILY_GAIN_LIMIT,
+    TUNING_STAT_KEYS,
+    allocate_tuning_points,
+    apply_tuning_bonus,
+    ensure_robot_tuning_schema,
+    get_or_create_tuning_state,
+    grant_tuning_xp,
+    mark_daily_cap_logged,
+    reset_tuning_state,
+    tuning_area_weight_labels,
+    tuning_summary,
 )
 
 RESEARCH_MODULE_SEEDS = (
@@ -2170,6 +2184,11 @@ RELEASE_FLAG_DEFS = (
         "summary": "3機のロボでどこまで登れるか挑戦する、第4層到達者向けの記録チャレンジです。",
     },
     {
+        "key": "robot_tuning_v1",
+        "label": "機体調整 v1",
+        "summary": "第2層以降の勝利で、出撃機体に小さな調整経験が残る成長システムを公開します。",
+    },
+    {
         "key": MARKET_FEATURE_KEY,
         "label": "廃品市場",
         "summary": "余剰パーツ売却と日替わり購入市場を一般公開します。管理者は非公開中でも確認できます。",
@@ -2191,6 +2210,7 @@ RELEASE_FLAG_DEFS = (
     },
 )
 RELEASE_FLAG_DEF_BY_KEY = {item["key"]: item for item in RELEASE_FLAG_DEFS}
+ROBOT_TUNING_FEATURE_KEY = "robot_tuning_v1"
 PUBLIC_RELEASED_BASE_LAYER = 3
 MAIN_ADMIN_USERNAME = "admin（管理人）"
 MAIN_ADMIN_USERNAME_ALIASES = ("admin", MAIN_ADMIN_USERNAME)
@@ -6011,6 +6031,16 @@ def _series_system_enabled_for_user(db, *, user_row=None, user_id=None, is_admin
     )
 
 
+def _robot_tuning_open_for_viewer(db, *, user_row=None, user_id=None, is_admin=None):
+    return _release_open_for_viewer(
+        db,
+        ROBOT_TUNING_FEATURE_KEY,
+        user_row=user_row,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
 def _insect_r_parts_open_for_viewer(db, *, user_row=None, user_id=None, is_admin=None):
     return _release_open_for_viewer(
         db,
@@ -6610,6 +6640,7 @@ def _build_map_nodes(user_row, area_streaks=None, db=None):
                 "description_lines": info["desc"][:3],
                 "growth_tendency_label": _area_growth_tendency_label(key),
                 "tendency_line": tendency_line,
+                "tuning_tendency_line": _area_tuning_tendency_line(key),
                 "recommended_archetype": archetype_label,
                 "win_streak": int(streaks.get(key, 0)),
             }
@@ -10389,16 +10420,25 @@ def _area_growth_tendency_label(area_key):
 def _area_growth_tendency_line(area_key, *, context="map"):
     tendency = _area_growth_tendency(area_key)
     if not tendency:
-        return "育成傾向: 通常探索"
+        return "入手パーツ傾向: 通常探索"
     if context == "home":
         configured = str(tendency.get("home_line") or "").strip()
         if configured:
-            return configured
+            return configured.replace("育成傾向:", "入手パーツ傾向:", 1)
     configured = str(tendency.get("map_line") or "").strip()
     if configured:
-        return f"育成傾向: {configured}"
+        return f"入手パーツ傾向: {configured}"
     label = _area_growth_tendency_label(area_key)
-    return f"育成傾向: {label}"
+    return f"入手パーツ傾向: {label}"
+
+
+def _area_tuning_tendency_line(area_key):
+    if str(area_key or "").strip() == "layer_1":
+        return "機体調整: 第2層以降の勝利で解放"
+    labels = tuning_area_weight_labels(area_key)
+    if not labels:
+        return ""
+    return f"機体調整: 勝利すると{'・'.join(labels)}の調整経験を得やすい"
 
 
 def _area_growth_expected_stats(area_key):
@@ -12898,6 +12938,7 @@ def _home_research_unlock_banner(db, current_week_key):
 
 
 def ensure_schema(db):
+    ensure_robot_tuning_schema(db)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_bases (
@@ -23990,7 +24031,16 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         disable_set_bonus=bool(int(owner_row["is_mixed_frame"] or 0)) if owner_row else False,
     )
     archetype = compute_archetype(ordered)
-    computed_style = _robot_style_from_final_stats(calc["stats"])
+    base_final_stats = dict(calc["stats"])
+    final_stats = dict(base_final_stats)
+    tuning_state = None
+    tuning_view = None
+    tuning_bonus_rows = []
+    if owner_row and _robot_tuning_open_for_viewer(db, user_id=owner_row["user_id"]):
+        tuning_state = get_or_create_tuning_state(db, int(robot_instance_id), int(owner_row["user_id"]))
+        final_stats, tuning_bonus_rows = apply_tuning_bonus(base_final_stats, tuning_state)
+        tuning_view = tuning_summary(tuning_state, base_stats=base_final_stats)
+    computed_style = _robot_style_from_final_stats(final_stats)
     row = db.execute(
         "SELECT style_key FROM robot_instances WHERE id = ?",
         (int(robot_instance_id),),
@@ -24002,8 +24052,9 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
             (computed_style["style_key"], int(robot_instance_id)),
         )
     return {
-        "stats": calc["stats"],
-        "power": calc["power"],
+        "stats": final_stats,
+        "base_stats": base_final_stats,
+        "power": compute_power(final_stats),
         "set_bonus": calc["set_bonus"],
         "series_bonus": calc.get("series_bonus") or [],
         "series_counts": calc.get("series_counts") or {},
@@ -24013,6 +24064,8 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         "parts": ordered,
         "archetype": archetype,
         "robot_style": computed_style,
+        "tuning_summary": tuning_view,
+        "tuning_bonus_rows": tuning_bonus_rows,
     }
 
 
@@ -45839,6 +45892,8 @@ def home():
         user["active_robot_id"],
     )
     main_robot_stats = _compute_robot_stats_for_instance(db, main_robot["id"]) if main_robot else None
+    main_robot_tuning_summary = (main_robot_stats or {}).get("tuning_summary") if main_robot_stats else None
+    robot_tuning_intro = session.pop("robot_tuning_intro", None)
     research_module_options = _user_research_module_options(db, int(user["id"])) if main_robot else []
     active_module_loadout = _active_research_module_loadout_for_user(db, int(user["id"])) if main_robot else _module_loadout_summary([])
     active_research_module = active_module_loadout["modules"][0] if active_module_loadout.get("modules") else None
@@ -46214,11 +46269,20 @@ def home():
                 "warning_line": str(area_desc[2]) if len(area_desc) >= 3 else "",
                 "growth_tendency_label": _area_growth_tendency_label(area_row["key"]),
                 "tendency_line": line,
+                "tuning_tendency_line": _area_tuning_tendency_line(area_row["key"]),
             }
         )
     selected_explore_tendency_line = next(
         (
             str(card.get("tendency_line") or "")
+            for card in home_area_cards
+            if str(card.get("key") or "") == str(selected_explore_area_key or "")
+        ),
+        "",
+    )
+    selected_explore_tuning_tendency_line = next(
+        (
+            str(card.get("tuning_tendency_line") or "")
             for card in home_area_cards
             if str(card.get("key") or "") == str(selected_explore_area_key or "")
         ),
@@ -46682,6 +46746,8 @@ def home():
             showcase_rows=showcase_rows,
             main_robot=main_robot,
             main_robot_stats=main_robot_stats,
+            main_robot_tuning_summary=main_robot_tuning_summary,
+            robot_tuning_intro=robot_tuning_intro,
             research_module_options=research_module_options,
             active_research_module=active_research_module,
             active_module_loadout=active_module_loadout,
@@ -46709,6 +46775,7 @@ def home():
             home_return_explore_cta=home_return_explore_cta,
             selected_explore_area_key=selected_explore_area_key,
             selected_explore_tendency_line=selected_explore_tendency_line,
+            selected_explore_tuning_tendency_line=selected_explore_tuning_tendency_line,
             home_area_cards=home_area_cards,
             stage_modifiers_enabled=STAGE_MODIFIERS_ENABLED,
             locked_layer_lines=locked_layer_lines,
@@ -55898,6 +55965,97 @@ def explore():
         },
         ip=request.remote_addr,
     )
+    robot_tuning_result = None
+    if active and battle_id:
+        tuning_day_key = get_day_key(now)
+        tuning_gain_seen_before = db.execute(
+            """
+            SELECT 1
+            FROM robot_tuning_gain_events
+            WHERE user_id = ? AND granted = 1
+            LIMIT 1
+            """,
+            (int(user_id),),
+        ).fetchone()
+        robot_tuning_result = grant_tuning_xp(
+            db,
+            user_id=user_id,
+            robot_instance_id=int(active["id"]),
+            area_key=area_key,
+            won=bool(final_outcome == "win"),
+            day_key=tuning_day_key,
+            source_battle_id=int(battle_id),
+            source_request_id=request_id,
+            is_admin=bool(int(user["is_admin"] or 0) == 1),
+            feature_open=_robot_tuning_open_for_viewer(db, user_row=user),
+            now_ts=now,
+        )
+        if robot_tuning_result.get("granted"):
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ROBOT_TUNING_XP_GAIN"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="robot_tuning.xp_gain",
+                entity_type="robot_instance",
+                entity_id=int(active["id"]),
+                payload={
+                    "area_key": area_key,
+                    "battle_id": int(battle_id),
+                    "stat_key": robot_tuning_result.get("stat_key"),
+                    "stat_label": robot_tuning_result.get("stat_label"),
+                    "level_before": int(robot_tuning_result.get("level_before") or 0),
+                    "level_after": int(robot_tuning_result.get("level_after") or 0),
+                    "xp_before": int(robot_tuning_result.get("xp_before") or 0),
+                    "xp_after": int(robot_tuning_result.get("xp_after") or 0),
+                    "daily_gain_count": int(robot_tuning_result.get("daily_gain_count") or 0),
+                    "daily_limit": ROBOT_TUNING_DAILY_GAIN_LIMIT,
+                },
+                ip=request.remote_addr,
+            )
+            if robot_tuning_result.get("completed"):
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["ROBOT_TUNING_COMPLETE"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="robot_tuning.complete",
+                    entity_type="robot_instance",
+                    entity_id=int(active["id"]),
+                    payload={"area_key": area_key, "battle_id": int(battle_id)},
+                    ip=request.remote_addr,
+                )
+            if robot_tuning_result.get("daily_cap_reached"):
+                mark_daily_cap_logged(db, user_id, tuning_day_key, now_ts=now)
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["ROBOT_TUNING_DAILY_CAP"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="robot_tuning.daily_cap",
+                    entity_type="user",
+                    entity_id=int(user_id),
+                    payload={"day_key": tuning_day_key, "daily_limit": ROBOT_TUNING_DAILY_GAIN_LIMIT},
+                    ip=request.remote_addr,
+                )
+            if not tuning_gain_seen_before:
+                session["robot_tuning_intro"] = {
+                    "robot_id": int(active["id"]),
+                    "message": "機体調整が始まりました",
+                }
+        elif robot_tuning_result.get("reason") == "daily_cap" and robot_tuning_result.get("cap_audit_needed"):
+            mark_daily_cap_logged(db, user_id, tuning_day_key, now_ts=now)
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ROBOT_TUNING_DAILY_CAP"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="robot_tuning.daily_cap",
+                entity_type="user",
+                entity_id=int(user_id),
+                payload={"day_key": tuning_day_key, "daily_limit": ROBOT_TUNING_DAILY_GAIN_LIMIT},
+                ip=request.remote_addr,
+            )
     evaluate_referral_qualification(db, user_id, request_ip=request.remote_addr)
     lab_exp_delta = 5
     if final_outcome == "win":
@@ -56254,6 +56412,7 @@ def explore():
         "weekly_element": weekly_env["element"] if weekly_env else None,
         "weekly_mode": weekly_mode,
         "world_bonus_notes": world_bonus_notes,
+        "robot_tuning_result": robot_tuning_result,
         "bonus_events": bonus_events,
         "bonus_line": bonus_line,
         "streak_hint_line": streak_hint_line,
@@ -56848,6 +57007,8 @@ def robot_detail(instance_id):
     )
     robot["archetype"] = stat_obj.get("archetype") if stat_obj else None
     robot["robot_profile"] = _robot_profile_view(stat_obj)
+    robot["base_stats"] = stat_obj.get("base_stats") if stat_obj else None
+    robot["tuning_summary"] = stat_obj.get("tuning_summary") if stat_obj else None
     robot["style_state"] = (
         _robot_style_state_for_view(db, int(robot["id"]), stat_obj=stat_obj)
         if stat_obj
@@ -56950,6 +57111,120 @@ def robot_detail(instance_id):
         can_share=(int(robot["user_id"]) == user_id),
         can_maintain=(int(robot["user_id"]) == user_id),
     )
+
+
+@app.route("/robots/<int:instance_id>/tuning/reset", methods=["GET", "POST"])
+@login_required
+def robot_tuning_reset(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = db.execute(
+        """
+        SELECT id, user_id, name
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        LIMIT 1
+        """,
+        (int(instance_id), user_id),
+    ).fetchone()
+    if not robot:
+        abort(404)
+    if not _robot_tuning_open_for_viewer(db, user_id=user_id):
+        abort(404)
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    state = get_or_create_tuning_state(db, int(instance_id), user_id)
+    summary_view = tuning_summary(state)
+    now = int(time.time())
+    last_free = int(summary_view.get("last_free_reset_at") or 0)
+    free_available = (not last_free) or (now - last_free >= 7 * 24 * 60 * 60)
+    cost = 0 if free_available else 500
+    if request.method == "POST":
+        before_payload = {
+            "total_level": int(summary_view["total_level"]),
+            "unassigned_points": int(summary_view["unassigned_points"]),
+            "rows": [
+                {"key": row["key"], "level": int(row["level"]), "xp": int(row["xp"])}
+                for row in summary_view["rows"]
+            ],
+        }
+        result = reset_tuning_state(db, user_id=user_id, robot_instance_id=int(instance_id), now_ts=now)
+        if not result.get("ok"):
+            session["message"] = "コインが足りないため再調整できません。"
+            db.rollback()
+            return redirect(url_for("robot_tuning_reset", instance_id=int(instance_id)))
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["ROBOT_TUNING_RESET"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="robot_tuning.reset",
+            entity_type="robot_instance",
+            entity_id=int(instance_id),
+            delta_coins=-int(result.get("cost") or 0),
+            payload={
+                "before": before_payload,
+                "returned_points": int(result.get("returned_points") or 0),
+                "cost": int(result.get("cost") or 0),
+                "free": bool(result.get("free")),
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+        session["message"] = "機体調整を未配分ポイントへ戻しました。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    db.commit()
+    return render_template(
+        "robot_tuning_reset.html",
+        robot=robot,
+        user=user,
+        tuning=summary_view,
+        free_available=free_available,
+        cost=cost,
+    )
+
+
+@app.route("/robots/<int:instance_id>/tuning/allocate", methods=["POST"])
+@login_required
+def robot_tuning_allocate(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = db.execute(
+        """
+        SELECT id
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        LIMIT 1
+        """,
+        (int(instance_id), user_id),
+    ).fetchone()
+    if not robot:
+        abort(404)
+    if not _robot_tuning_open_for_viewer(db, user_id=user_id):
+        abort(404)
+    allocations = {key: request.form.get(key, "0") for key in TUNING_STAT_KEYS}
+    result = allocate_tuning_points(db, user_id=user_id, robot_instance_id=int(instance_id), allocations=allocations)
+    if not result.get("ok"):
+        db.rollback()
+        session["message"] = "配分値が上限を超えています。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_TUNING_ALLOCATE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_tuning.allocate",
+        entity_type="robot_instance",
+        entity_id=int(instance_id),
+        payload={
+            "spent": int(result.get("spent") or 0),
+            "allocations": result.get("allocations") or {},
+            "unassigned_points": int(result.get("unassigned_points") or 0),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "機体調整ポイントを配分しました。"
+    return redirect(url_for("robot_detail", instance_id=int(instance_id)))
 
 
 @app.route("/robots/<int:instance_id>/maintenance", methods=["GET", "POST"])
@@ -57651,6 +57926,25 @@ def robot_instance_decompose(instance_id):
                 payload={"reason": "decompose_fallback_drop", "part_type": ptype, "part_key": pkey, "robot_instance_id": row["id"]},
                 ip=request.remote_addr,
             )
+    tuning_state_before = db.execute(
+        "SELECT * FROM robot_tuning_states WHERE robot_instance_id = ? LIMIT 1",
+        (int(instance_id),),
+    ).fetchone()
+    tuning_delete_payload = None
+    if tuning_state_before:
+        tuning_delete_payload = {
+            "total_level": int(tuning_summary(tuning_state_before)["total_level"]),
+            "unassigned_points": int(tuning_state_before["unassigned_points"] or 0),
+            "rows": [
+                {
+                    "key": key,
+                    "level": int(tuning_state_before[f"{key}_level"] or 0),
+                    "xp": int(tuning_state_before[f"{key}_xp"] or 0),
+                }
+                for key in TUNING_STAT_KEYS
+            ],
+        }
+        db.execute("DELETE FROM robot_tuning_states WHERE robot_instance_id = ?", (int(instance_id),))
     db.execute(
         "UPDATE robot_instances SET status = 'decomposed', decomposed_at = ?, updated_at = ? WHERE id = ?",
         (int(time.time()), int(time.time()), instance_id),
@@ -57669,6 +57963,7 @@ def robot_instance_decompose(instance_id):
             "restored_count": restored if restored else 4,
             "restored_part_instance_ids": restored_ids,
             "fallback_drop": restored == 0,
+            "robot_tuning_deleted": tuning_delete_payload,
         },
         ip=request.remote_addr,
     )
@@ -65994,6 +66289,54 @@ def admin_user_delete_confirm(target_user_id):
     return render_template("admin_user_delete_confirm.html", target=target, summary=summary)
 
 
+def _admin_robot_tuning_snapshot(db, *, window_days=7):
+    now_ts = int(time.time())
+    since_ts = now_ts - max(1, int(window_days or 7)) * 86400
+    row = db.execute(
+        """
+        SELECT
+            COUNT(*) AS states_total,
+            SUM(CASE WHEN (
+                hp_level + atk_level + def_level + spd_level + acc_level + cri_level
+            ) > 0 OR unassigned_points > 0 THEN 1 ELSE 0 END) AS touched_robots,
+            SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed_robots,
+            AVG(hp_level + atk_level + def_level + spd_level + acc_level + cri_level + unassigned_points) AS avg_total_level
+        FROM robot_tuning_states
+        """
+    ).fetchone()
+    gains = db.execute(
+        """
+        SELECT
+            COUNT(*) AS gain_events,
+            COUNT(DISTINCT user_id) AS gain_users,
+            COUNT(DISTINCT robot_instance_id) AS gain_robots
+        FROM robot_tuning_gain_events
+        WHERE granted = 1 AND created_at >= ?
+        """,
+        (int(since_ts),),
+    ).fetchone()
+    cap = db.execute(
+        """
+        SELECT COUNT(*) AS cap_days, COUNT(DISTINCT user_id) AS cap_users
+        FROM user_daily_tuning_progress
+        WHERE eligible_win_count >= ? AND updated_at >= ?
+        """,
+        (ROBOT_TUNING_DAILY_GAIN_LIMIT, int(since_ts)),
+    ).fetchone()
+    return {
+        "window_days": int(window_days or 7),
+        "states_total": int((row or {})["states_total"] or 0) if row else 0,
+        "touched_robots": int((row or {})["touched_robots"] or 0) if row else 0,
+        "completed_robots": int((row or {})["completed_robots"] or 0) if row else 0,
+        "avg_total_level": float((row or {})["avg_total_level"] or 0.0) if row else 0.0,
+        "gain_events": int((gains or {})["gain_events"] or 0) if gains else 0,
+        "gain_users": int((gains or {})["gain_users"] or 0) if gains else 0,
+        "gain_robots": int((gains or {})["gain_robots"] or 0) if gains else 0,
+        "cap_days": int((cap or {})["cap_days"] or 0) if cap else 0,
+        "cap_users": int((cap or {})["cap_users"] or 0) if cap else 0,
+    }
+
+
 @app.route("/admin/metrics", methods=["GET", "POST"])
 @login_required
 def admin_metrics():
@@ -66029,6 +66372,7 @@ def admin_metrics():
     behavior_snapshot = _admin_metrics_behavior_snapshot(db, window_days=funnel_days)
     first_experience_snapshot = _admin_first_experience_snapshot(db, window_days=funnel_days)
     progression_snapshot = _admin_progression_snapshot(db)
+    robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
     analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
     daily_explore_max = 0.0
@@ -66058,6 +66402,7 @@ def admin_metrics():
         behavior_snapshot=behavior_snapshot,
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,
+        robot_tuning_snapshot=robot_tuning_snapshot,
         analytics_counts=analytics_counts,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),

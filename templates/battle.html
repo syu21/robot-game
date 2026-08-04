@@ -209,6 +209,18 @@
     </div>
     {% endif %}
     {% endif %}
+    {% if summary.get('robot_tuning_result') and summary['robot_tuning_result'].get('granted') %}
+    {% set tuning = summary['robot_tuning_result'] %}
+    <div class="battle-summary-row">
+      <span class="label">機体調整</span>
+      <b>{{ tuning.get('message') }}</b>
+      {% if tuning.get('daily_cap_reached') %}
+      <span class="battle-lab-level-inline">本日の機体調整は完了しました</span>
+      {% endif %}
+    </div>
+    {% elif summary.get('robot_tuning_result') and summary['robot_tuning_result'].get('reason') == 'daily_cap' %}
+    <div class="battle-summary-row"><span class="label">機体調整</span> <b>本日分完了</b></div>
+    {% endif %}
     {% if summary.get('research_collection_updates') %}
       {% for update in summary.get('research_collection_updates', [])[:3] %}
       <div class="battle-summary-row battle-lab-level-up">

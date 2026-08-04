@@ -292,6 +292,16 @@
   </div>
 </div>
 {% endif %}
+{% if robot_tuning_intro and main_robot %}
+<div class="panel research-unlock-banner">
+  <div class="card">
+    <div><b>機体調整が始まりました</b></div>
+    <div class="upgrade-cost">入手パーツの性能とは別に、出撃した機体自身にも小さな成長が残ります。</div>
+    <div class="robot-time">探索場所によって、機体に残る調整経験が変わります。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=main_robot['id']) }}">機体調整を見る</a></p>
+  </div>
+</div>
+{% endif %}
 {% if boss_alert_status %}
 <div class="panel priority-boss-alert">
   <h2>ボス警報</h2>
@@ -504,6 +514,14 @@
             {% endif %}
             {% if main_robot_profile and main_robot_profile.get('focus_line') %}
             <div class="upgrade-cost">注目能力: {{ main_robot_profile['focus_line'] }}</div>
+            {% endif %}
+            {% if main_robot_tuning_summary %}
+            <div class="upgrade-cost">
+              機体調整 {{ main_robot_tuning_summary['total_level'] }}/{{ main_robot_tuning_summary['total_cap'] }}
+              {% if main_robot_tuning_summary.get('top_rows') %}
+                / {% for row in main_robot_tuning_summary['top_rows'] %}{{ row['label'] }} Lv{{ row['level'] }}{% if not loop.last %} / {% endif %}{% endfor %}
+              {% endif %}
+            </div>
             {% endif %}
             {% if main_robot_profile and main_robot_profile.get('style_support_line') %}
             <div class="robot-time">{{ main_robot_profile['style_support_line'] }}</div>
@@ -1106,6 +1124,9 @@
         </div>
         {% if selected_explore_tendency_line %}
         <div class="robot-time">{{ selected_explore_tendency_line }}</div>
+        {% endif %}
+        {% if selected_explore_tuning_tendency_line %}
+        <div class="robot-time">{{ selected_explore_tuning_tendency_line }}</div>
         {% endif %}
         {% if boss_unlock_guide_lines %}
         <div class="robot-time">ボス目標：{{ boss_unlock_guide_lines[0] }}</div>

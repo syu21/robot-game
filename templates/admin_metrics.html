@@ -46,6 +46,37 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">機体調整 v1</div>
+        <div class="admin-metrics-section-sub">直近{{ robot_tuning_snapshot.window_days }}日の調整経験と上限到達を確認します。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">調整状態あり</div>
+        <div class="admin-metrics-note-value">{{ robot_tuning_snapshot.touched_robots }}機</div>
+        <div class="robot-time">レコード総数 {{ robot_tuning_snapshot.states_total }}機</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">直近XP獲得</div>
+        <div class="admin-metrics-note-value">{{ robot_tuning_snapshot.gain_events }}件</div>
+        <div class="robot-time">{{ robot_tuning_snapshot.gain_users }}人 / {{ robot_tuning_snapshot.gain_robots }}機</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">日次上限到達</div>
+        <div class="admin-metrics-note-value">{{ robot_tuning_snapshot.cap_users }}人</div>
+        <div class="robot-time">{{ robot_tuning_snapshot.cap_days }} user-days</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">完成機体</div>
+        <div class="admin-metrics-note-value">{{ robot_tuning_snapshot.completed_robots }}機</div>
+        <div class="robot-time">平均Lv {{ '%.1f'|format(robot_tuning_snapshot.avg_total_level) }}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">新規初回体験</div>
         <div class="admin-metrics-section-sub">直近{{ first_experience_snapshot.window_days }}日の正常新規登録を母数に、初回導線を再集計します。</div>
       </div>

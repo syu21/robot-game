@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>機体調整の再調整</h1>
+
+<div class="card">
+  <h2>{{ robot['name'] }} の機体調整を再配分します</h2>
+  <div class="robot-part">現在の調整レベル {{ tuning['total_level'] }} / {{ tuning['total_cap'] }}</div>
+  <div class="robot-time">現在の調整レベルは未配分ポイントとして返還されます。</div>
+  <div class="robot-time">途中の調整経験は失われます。</div>
+  {% if free_available %}
+  <div class="robot-part">無料再調整: 利用可能</div>
+  {% else %}
+  <div class="robot-part">必要コイン: {{ cost }} / 所持コイン: {{ user['coins'] }}</div>
+  {% endif %}
+  <form method="post" action="{{ url_for('robot_tuning_reset', instance_id=robot['id']) }}" class="inline-form inline-form-top">
+    <button type="submit">再調整を実行</button>
+    <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=robot['id']) }}">戻る</a>
+  </form>
+</div>
+
+<div class="card">
+  <h2>現在値</h2>
+  <div class="stats-grid">
+    {% for row in tuning['rows'] %}
+    <div class="stat-card">
+      <div class="stat-label">{{ row['label'] }}</div>
+      <div class="stat-value">Lv{{ row['level'] }}</div>
+      <div class="robot-time">次まで {{ row['xp'] }}/{{ row['xp_per_level'] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

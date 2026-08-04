@@ -23,6 +23,9 @@
     {% if stage_modifiers_enabled and node.get('tendency_line') %}
     <div class="robot-part">{{ node['tendency_line'] }}</div>
     {% endif %}
+    {% if node.get('tuning_tendency_line') %}
+    <div class="robot-part">{{ node['tuning_tendency_line'] }}</div>
+    {% endif %}
     <div class="robot-part">所属層: 第{{ node['layer'] }}層</div>
     <div class="robot-part">推奨称号: {{ node['recommended_archetype'] }}</div>
     <div class="robot-part">連勝: {{ node['win_streak'] }}</div>

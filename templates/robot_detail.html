@@ -181,6 +181,39 @@
   {% endfor %}
 </div>
 
+{% if robot.get('tuning_summary') %}
+{% set tuning = robot['tuning_summary'] %}
+<div class="card">
+  <h2>機体調整</h2>
+  <div class="robot-part">機体調整 {{ tuning['total_level'] }} / {{ tuning['total_cap'] }}</div>
+  {% if tuning.get('unassigned_points') %}
+  <div class="robot-part">未配分ポイント: {{ tuning['unassigned_points'] }}</div>
+  <form method="post" action="{{ url_for('robot_tuning_allocate', instance_id=robot['id']) }}" class="inline-form inline-form-top">
+    {% for row in tuning['rows'] %}
+    <label>{{ row['label'] }}
+      <input type="number" name="{{ row['key'] }}" value="0" min="0" max="{{ tuning['per_stat_cap'] - row['level'] }}" />
+    </label>
+    {% endfor %}
+    <button type="submit">配分する</button>
+  </form>
+  {% endif %}
+  <div class="stats-grid">
+    {% for row in tuning['rows'] %}
+    <div class="stat-card">
+      <div class="stat-label">{{ row['label'] }}</div>
+      <div class="stat-value">Lv{{ row['level'] }}</div>
+      <div class="robot-time">次まで {{ row['xp'] }}/{{ row['xp_per_level'] }}</div>
+      <div class="robot-time">機体ステータス +{{ '%.1f'|format(row['percent']) }}%</div>
+      {% if row['base'] %}
+      <div class="robot-time">現在の装備: {{ row['base'] }} → {{ row['after'] }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="link"><a class="battle-home-link" href="{{ url_for('robot_tuning_reset', instance_id=robot['id']) }}">再調整する</a></p>
+</div>
+{% endif %}
+
 {% if robot.get('series_view') and robot['series_view'].get('catalog_rows') %}
 <div class="card">
   <h2>シリーズ効果</h2>
