@@ -3835,6 +3835,131 @@ def _collect_recent_daily_metrics(db, days=7):
     return rows
 
 
+def _audit_explore_count_for_day(db, day_key):
+    start_ts, end_ts = _jst_day_key_to_bounds(day_key)
+    row = db.execute(
+        f"""
+        SELECT COUNT(*) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+          AND wel.created_at >= ? AND wel.created_at < ?
+          AND {_analytics_user_filter_sql("u")}
+        """,
+        (AUDIT_EVENT_TYPES["EXPLORE_END"], int(start_ts), int(end_ts)),
+    ).fetchone()
+    return int(row["c"] or 0) if row else 0
+
+
+def _measurement_health_snapshot(db, *, rows, window_days=7):
+    now_ts = _now_ts()
+    start_ts = int(now_ts - max(1, int(window_days or 7)) * 86400)
+    user_filter = _analytics_user_filter_sql("u")
+    start_count = int(
+        db.execute(
+            f"""
+            SELECT COUNT(*) AS c
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.event_type = ?
+              AND wel.created_at >= ?
+              AND {user_filter}
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_START"], start_ts),
+        ).fetchone()["c"]
+        or 0
+    )
+    end_count = int(
+        db.execute(
+            f"""
+            SELECT COUNT(*) AS c
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.event_type = ?
+              AND wel.created_at >= ?
+              AND {user_filter}
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts),
+        ).fetchone()["c"]
+        or 0
+    )
+    unknown_entry = int(
+        db.execute(
+            f"""
+            SELECT COUNT(*) AS c
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.event_type = ?
+              AND wel.created_at >= ?
+              AND {user_filter}
+              AND COALESCE(json_extract(wel.payload_json, '$.entry_source'), '') IN ('', 'unknown')
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_START"], start_ts),
+        ).fetchone()["c"]
+        or 0
+    )
+    missing_request = int(
+        db.execute(
+            f"""
+            SELECT COUNT(*) AS c
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.event_type IN (?, ?)
+              AND wel.created_at >= ?
+              AND {user_filter}
+              AND COALESCE(wel.request_id, '') = ''
+            """,
+            (AUDIT_EVENT_TYPES["EXPLORE_START"], AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts),
+        ).fetchone()["c"]
+        or 0
+    )
+    failed_count = int(
+        db.execute(
+            f"""
+            SELECT COUNT(*) AS c
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.event_type = ?
+              AND wel.created_at >= ?
+              AND {user_filter}
+            """,
+            (AUDIT_EVENT_TYPES.get("EXPLORE_FAILED"), start_ts),
+        ).fetchone()["c"]
+        or 0
+    )
+    daily_diffs = []
+    for row in rows or []:
+        day_key = str(row["day_key"])
+        audit_count = _audit_explore_count_for_day(db, day_key)
+        saved_count = int(row["explore_count"] or 0)
+        if int(audit_count) != int(saved_count):
+            daily_diffs.append({"day_key": day_key, "saved": saved_count, "audit": audit_count, "delta": audit_count - saved_count})
+    issues = []
+    if start_count != end_count:
+        issues.append(f"explore.start/end差分 {start_count}/{end_count}")
+    for diff in daily_diffs[:3]:
+        issues.append(f"{diff['day_key']} daily_metrics探索 {diff['saved']} / audit探索 {diff['audit']}")
+    if start_count > 0 and unknown_entry > 0:
+        issues.append(f"entry_source不明 {unknown_entry}/{start_count}")
+    if missing_request > 0:
+        issues.append(f"request_id欠損 {missing_request}")
+    status = "OK" if not issues else "要確認"
+    return {
+        "window_days": int(window_days or 7),
+        "status": status,
+        "issues": issues,
+        "start_count": start_count,
+        "end_count": end_count,
+        "start_end_delta": start_count - end_count,
+        "daily_diff_count": int(len(daily_diffs)),
+        "daily_diffs": daily_diffs,
+        "unknown_entry_count": unknown_entry,
+        "unknown_entry_rate_pct": (float(unknown_entry) / float(max(1, start_count))) * 100.0,
+        "missing_request_id_count": missing_request,
+        "failed_count": failed_count,
+    }
+
+
 ADMIN_METRICS_FUNNEL_DAYS = 7
 ADMIN_METRICS_NEW_USER_DAYS = 7
 ADMIN_METRICS_REVISIT_COHORT_DAYS = 30
@@ -4242,6 +4367,7 @@ def _normalize_entry_source(value):
         "home_previous_area": "previous_area",
         "home_layer1_cta": "layer1_primary_cta",
         "home_layer2_unlock": "layer2_unlock_home",
+        "direct_or_unknown": "unknown",
         "other": "unknown",
         "retry_result": "battle_retry",
     }
@@ -4294,7 +4420,30 @@ def _battle_result_view_payload(*, user_id, area_key, battle_result, summary=Non
     }
 
 
-def _admin_first_experience_snapshot(db, *, window_days=7):
+def _audit_explore_failed(db, user_id, *, area_key=None, stage="pre_start", reason="unknown", exception=None, payload=None):
+    payload = dict(payload or {})
+    payload.update(
+        {
+            "area_key": str(area_key or ""),
+            "stage": str(stage or "pre_start"),
+            "reason": str(reason or "unknown"),
+            "exception_class": exception.__class__.__name__ if exception else None,
+            "request_id": getattr(g, "request_id", None),
+        }
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["EXPLORE_FAILED"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="explore_failed",
+        entity_type="explore",
+        payload=payload,
+        ip=request.remote_addr if has_request_context() else None,
+    )
+
+
+def build_new_user_onboarding_funnel(db, *, window_days=7):
     window_days = max(7, min(30, int(window_days or 7)))
     now_ts = _now_ts()
     start_ts = int(now_ts - window_days * 86400)
@@ -4357,6 +4506,10 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 "after_boss_attempt_users": 0,
             },
             "entry_source_rows": [],
+            "basis_label": f"登録日コホート: 直近{window_days}日で登録した正常ユーザー",
+            "action_basis_label": f"直近{window_days}日行動: 登録日に関係なく通過した初回導線",
+            "home_ready": {"ready_users": 0, "cta_visible_users": 0, "cta_click_users": 0, "cta_click_rate_pct": 0.0},
+            "start_without_end": {"users": 0, "starts": 0},
             "home_quick_start": {
                 "home_view_users": 0,
                 "within_15": 0,
@@ -4468,6 +4621,9 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     first_retry_start_after_win = {}
     first_retry_click_after_win = set()
     entry_source_users = {
+        "home_next_action": set(),
+        "home_previous_area": set(),
+        "home_layer1_cta": set(),
         "battle_retry": set(),
         "next_action_first_explore": set(),
         "next_action": set(),
@@ -4481,6 +4637,9 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
     }
     home_next_action_view_users = set()
     home_next_action_click_users = set()
+    home_ready_users = set()
+    first_explore_cta_view_users = set()
+    first_explore_cta_click_users = set()
     home_quick_start_users_15 = set()
     home_quick_start_users_30 = set()
     home_quick_start_users_60 = set()
@@ -4527,6 +4686,12 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
             if et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
                 step_users["home_first_view"].add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_HOME_READY"):
+                home_ready_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_EXPLORE_CTA_VIEW"):
+                first_explore_cta_view_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_EXPLORE_CTA_CLICK"):
+                first_explore_cta_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("HOME_NEXT_ACTION_VIEW"):
                 home_next_action_view_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("HOME_NEXT_ACTION_CLICK"):
@@ -4784,6 +4949,9 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             median_starts = (first_encounter_start_counts[mid - 1] + first_encounter_start_counts[mid]) / 2.0
     within_10_count = sum(1 for value in first_encounter_start_counts if int(value) <= 10)
     entry_source_labels = {
+        "home_next_action": "ホームNEXT ACTION",
+        "home_previous_area": "ホーム前回出撃先",
+        "home_layer1_cta": "ホーム第1層CTA",
         "battle_retry": "結果画面から再出撃",
         "next_action_first_explore": "初任務NEXT ACTIONから出撃",
         "next_action": "NEXT ACTIONから出撃",
@@ -4892,6 +5060,8 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
         home_stay_median = 0.0
     return {
         "window_days": window_days,
+        "basis_label": f"登録日コホート: 直近{window_days}日で登録した正常ユーザー",
+        "action_basis_label": f"直近{window_days}日行動: 登録日に関係なく通過した初回導線",
         "registered_count": len(user_ids),
         "rows": rows,
         "retry_10m": _retry_metric(seconds=600),
@@ -4903,19 +5073,19 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             "rate_pct": (float(len(first_retry_click_after_win)) / float(max(1, len(first_win_users)))) * 100.0,
         },
         "second_start": {
-            "numerator": len(step_users["second_start"]),
+            "numerator": len(ordered_step_users["second_start"]),
             "denominator": len(user_ids),
-            "rate_pct": (float(len(step_users["second_start"])) / float(registered_count)) * 100.0,
+            "rate_pct": (float(len(ordered_step_users["second_start"])) / float(registered_count)) * 100.0,
         },
         "third_start": {
-            "numerator": len(step_users["third_start"]),
+            "numerator": len(ordered_step_users["third_start"]),
             "denominator": len(user_ids),
-            "rate_pct": (float(len(step_users["third_start"])) / float(registered_count)) * 100.0,
+            "rate_pct": (float(len(ordered_step_users["third_start"])) / float(registered_count)) * 100.0,
         },
         "first_three_complete": {
-            "numerator": len(step_users["first_three_complete"]),
+            "numerator": len(ordered_step_users["first_three_complete"]),
             "denominator": len(user_ids),
-            "rate_pct": (float(len(step_users["first_three_complete"])) / float(registered_count)) * 100.0,
+            "rate_pct": (float(len(ordered_step_users["first_three_complete"])) / float(registered_count)) * 100.0,
         },
         "first_upgrade": {
             "shown_users": int(len(first_upgrade_shown_users)),
@@ -4928,12 +5098,20 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
                 float(len(first_upgrade_complete_users)) / float(max(1, len(first_upgrade_click_users))) * 100.0
             ),
             "first_three_to_complete_rate_pct": (
-                float(len(first_upgrade_complete_users)) / float(max(1, len(step_users["first_three_complete"]))) * 100.0
+                float(len(first_upgrade_complete_users)) / float(max(1, len(ordered_step_users["first_three_complete"]))) * 100.0
             ),
             "after_explore_users": int(len(first_upgrade_after_explore_users)),
             "after_boss_attempt_users": int(len(first_upgrade_after_boss_attempt_users)),
         },
         "entry_source_rows": entry_source_rows,
+        "home_ready": {
+            "ready_users": int(len(home_ready_users)),
+            "cta_visible_users": int(len(first_explore_cta_view_users)),
+            "cta_click_users": int(len(first_explore_cta_click_users)),
+            "cta_click_rate_pct": (
+                float(len(first_explore_cta_click_users)) / float(max(1, len(first_explore_cta_view_users))) * 100.0
+            ),
+        },
         "home_quick_start": {
             "home_view_users": int(home_view_base),
             "within_15": int(len(home_quick_start_users_15)),
@@ -5030,6 +5208,10 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
             ],
         },
     }
+
+
+def _admin_first_experience_snapshot(db, *, window_days=7):
+    return build_new_user_onboarding_funnel(db, window_days=window_days)
 
 
 def _admin_progression_snapshot(db):
@@ -46665,6 +46847,54 @@ def home():
         },
         ip=request.remote_addr,
     )
+    if first_explore_before_user:
+        first_layer_available = bool(_find_explore_area(unlocked_explore_areas, "layer_1"))
+        next_action_type = str((home_primary_explore_cta or {}).get("entry_source") or "direct_or_unknown")
+        first_cta_visible = bool(
+            home_primary_explore_cta
+            and str(home_primary_explore_cta.get("area_key") or "") == "layer_1"
+            and str(home_primary_explore_cta.get("cta_url") or "") == url_for("explore")
+        )
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_HOME_READY"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="onboarding_home_ready",
+            entity_type="home",
+            payload={
+                "user_id": int(user["id"]),
+                "has_active_robot": bool(active_robot),
+                "has_any_robot": bool(has_any_robot),
+                "layer1_available": bool(first_layer_available),
+                "explore_ct_seconds": int(ct_remain or 0),
+                "next_action_type": next_action_type,
+                "next_action_visible": bool(home_primary_explore_cta),
+                "first_mission_visible": bool(show_beginner_mission),
+                "first_explore_cta_visible": bool(first_cta_visible),
+                "home_session_id": home_session_id,
+            },
+            ip=request.remote_addr,
+        )
+        if first_cta_visible:
+            disabled = bool(home_primary_explore_cta.get("disabled"))
+            _audit_once(
+                db,
+                AUDIT_EVENT_TYPES["ONBOARDING_FIRST_EXPLORE_CTA_VIEW"],
+                user_id=int(user["id"]),
+                request_id=getattr(g, "request_id", None),
+                action_key="onboarding_first_explore_cta_view",
+                entity_type="home",
+                payload={
+                    "surface": "next_action",
+                    "area_key": "layer_1",
+                    "disabled": disabled,
+                    "disabled_reason": "cooldown" if disabled else "",
+                    "entry_source": str(home_primary_explore_cta.get("entry_source") or "next_action_first_explore"),
+                    "home_session_id": home_session_id,
+                },
+                ip=request.remote_addr,
+            )
     if home_primary_explore_cta:
         audit_log(
             db,
@@ -52635,15 +52865,21 @@ def explore():
     boss_enter_requested = (request.form.get("boss_enter") or "").strip().lower() in {"1", "true", "on", "yes"}
     area = next((a for a in EXPLORE_AREAS if a["key"] == area_key), None)
     if area is None:
+        _audit_explore_failed(db, user_id, area_key=area_key, stage="validation", reason="validation")
+        db.commit()
         session["message"] = "探索先が不正です。"
         return redirect(url_for("home"))
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     user_is_main_admin = _is_main_admin_user_id(db, user_id)
     battle_log_mode = _battle_log_mode_for_user(user)
     if not _area_visible_for_viewer(db, area_key, user_row=user):
+        _audit_explore_failed(db, user_id, area_key=area_key, stage="validation", reason="validation")
+        db.commit()
         session["message"] = "その探索先はまだ公開準備中です。"
         return redirect(url_for("home"))
     if not _is_area_unlocked(user, area_key, db=db):
+        _audit_explore_failed(db, user_id, area_key=area_key, stage="validation", reason="validation")
+        db.commit()
         area_layer = _area_layer(area_key)
         if area_key in SPECIAL_EXPLORE_AREA_KEYS:
             session["message"] = f"その探索先は未解放です。{_special_area_unlock_reason(area_key)}"
@@ -52665,6 +52901,8 @@ def explore():
             ip=request.remote_addr,
         )
     if _get_active_robot(db, user_id) is None:
+        _audit_explore_failed(db, user_id, area_key=area_key, stage="validation", reason="missing_robot")
+        db.commit()
         session["message"] = "先にロボを組み立てよう。/build で保存できます。"
         return redirect(url_for("build"))
     duplicate_redirect = _redirect_processed_explore_result(db, user_id, battle_id)
@@ -52692,6 +52930,15 @@ def explore():
         wait = _enforce_explore_cooldown_or_wait(db, user, user_id, now_ts=now)
         ct_seconds_effective = int(ct_seconds)
     if wait > 0:
+        _audit_explore_failed(
+            db,
+            user_id,
+            area_key=area_key,
+            stage="cooldown",
+            reason="cooldown",
+            payload={"wait_seconds": int(wait), "entry_source": entry_source},
+        )
+        db.commit()
         return redirect(url_for("home"))
     boss_retry_requested = bool(entry_source == "boss_retry" and boss_enter_requested and area_key == "layer_1")
     boss_retry_state_before = _layer1_boss_retry_state(db, user_id) if entry_source == "boss_retry" else None
@@ -52702,6 +52949,7 @@ def explore():
             or not (boss_retry_state_before or {}).get("available")
         ):
             session["message"] = "ボス再挑戦の条件を満たしていません。"
+            _audit_explore_failed(db, user_id, area_key=area_key, stage="validation", reason="validation", payload={"entry_source": entry_source})
             db.commit()
             return redirect(url_for("home"))
     if entry_source == "battle_retry":
@@ -52798,6 +53046,24 @@ def explore():
         ).fetchone()["c"]
         or 0
     )
+    if area_key == "layer_1" and explore_start_count_before == 0:
+        surface = {
+            "next_action_first_explore": "next_action",
+            "next_action": "next_action",
+            "previous_area": "home_direct",
+            "layer1_primary_cta": "home_direct",
+            "area_select": "area_select",
+        }.get(entry_source, "direct_or_unknown")
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_FIRST_EXPLORE_CTA_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="onboarding_first_explore_cta_click",
+            entity_type="explore",
+            payload={"surface": surface, "area_key": area_key, "entry_source": entry_source, **home_view_context},
+            ip=request.remote_addr,
+        )
     layer2_state_before_start = _layer2_unlock_state(db, user) if area_key == "layer_2" else None
     layer2_start_count_before = 0
     is_first_layer2_explore = False
@@ -52916,6 +53182,8 @@ def explore():
     active = _get_active_robot(db, user_id)
     robot_stats = _compute_robot_stats_for_instance(db, active["id"]) if active else None
     if not robot_stats:
+        _audit_explore_failed(db, user_id, area_key=area_key, stage="battle_setup", reason="missing_robot")
+        db.commit()
         session["message"] = "アクティブロボの個体ステータスを取得できません。再編成後に探索してください。"
         return redirect(url_for("robots"))
     module_loadout_summary = _active_research_module_loadout_for_user(db, user_id)
@@ -66379,6 +66647,7 @@ def admin_metrics():
     for row in sorted(rows, key=lambda item: item["day_key"]):
         dau_count = int(row["dau_count"] or 0)
         explore_count = int(row["explore_count"] or 0)
+        audit_explore_count = _audit_explore_count_for_day(db, str(row["day_key"]))
         explores_per_dau = (float(explore_count) / float(dau_count)) if dau_count else 0.0
         daily_explore_max = max(daily_explore_max, explores_per_dau)
         daily_explore_rows.append(
@@ -66386,6 +66655,9 @@ def admin_metrics():
                 "day_key": str(row["day_key"]),
                 "dau_count": dau_count,
                 "explore_count": explore_count,
+                "audit_explore_count": int(audit_explore_count),
+                "explore_count_diff": int(audit_explore_count) - int(explore_count),
+                "explore_count_mismatch": bool(int(audit_explore_count) != int(explore_count)),
                 "explores_per_dau": float(explores_per_dau),
             }
         )
@@ -66395,10 +66667,12 @@ def admin_metrics():
             if daily_explore_max > 0
             else 0.0
         )
+    measurement_health = _measurement_health_snapshot(db, rows=rows, window_days=funnel_days)
     return render_template(
         "admin_metrics.html",
         rows=rows,
         daily_explore_rows=daily_explore_rows,
+        measurement_health=measurement_health,
         behavior_snapshot=behavior_snapshot,
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,

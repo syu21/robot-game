@@ -58,6 +58,8 @@
   - `users.analytics_excluded` で攻撃スキャン、テスト登録、管理者を通常プレイヤー指標から外せる
   - `/admin/users` で個別除外/復帰、不審登録候補の一括除外ができる
   - `/admin/metrics` は通常プレイヤーだけの行動ファネルと初回体験ファネルを表示する
+  - `/admin/metrics` 上部に `計測健全性` を置き、`explore.start / end` 差分、`daily_metrics / audit再計算` 差分、entry_source不明率、request_id欠損を確認できる
+  - 初回体験ファネルは `build_new_user_onboarding_funnel(...)` を正本にし、カードと棒グラフで第2回・第3回・初回3出撃完了の母数がずれないようにする
   - DAU は `HOME_VIEW` / `EXPLORE_START` / `EXPLORE_END` など実ユーザー操作イベントだけを母数にし、管理者、BAN、集計除外、攻撃風登録名は除外する
   - 初回体験ファネルはイベント時刻順に再計算し、後続ステップだけが先に立ったユーザーで比率が100%を超えないようにする
 - `login/register` には `ロボらぼ β版公開中` の案内を置き、登録後はそのまま基地から出撃できることを短く伝える

@@ -1,6 +1,6 @@
 # 監査ログ仕様（world_events_log）
 
-最終更新日: 2026-07-26
+最終更新日: 2026-08-09
 
 ## 1. 目的
 - ユーザー行動・管理操作・経済変動の追跡
@@ -31,6 +31,7 @@
 ### 4.1 出撃/戦闘
 - `audit.explore.start`
 - `audit.explore.end`
+- `audit.explore.failed`
 - `audit.boss.encounter`
 - `audit.boss.attempt`
 - `audit.boss.defeat`
@@ -492,6 +493,12 @@
 
 ## 9. 初回体験ファネル
 - `audit.onboarding.home.first_view`
+- `audit.onboarding.home_ready`
+  - 初回ホーム準備状態。payload は `user_id`, `has_active_robot`, `layer1_available`, `explore_ct_seconds`, `next_action_type`, `next_action_visible`, `first_mission_visible`, `first_explore_cta_visible`, `home_session_id`。
+- `audit.onboarding.first_explore_cta_view`
+  - 第1層初出撃CTA表示。payload は `surface`, `area_key`, `disabled`, `disabled_reason`, `entry_source`, `home_session_id`。
+- `audit.onboarding.first_explore_cta_click`
+  - 第1層初出撃CTAクリック。payload は `surface`, `area_key`, `entry_source`, `home_session_id`, `seconds_from_home_view`。
 - `audit.onboarding.layer1.first_start`
 - `audit.onboarding.layer1.first_complete`
 - `audit.onboarding.layer1.first_win`
@@ -501,6 +508,11 @@
 - `audit.onboarding.explore.third_start`
 - `audit.onboarding.part.first_drop`
 - `audit.onboarding.build.first_complete`
+
+補足:
+- `/admin/metrics` の新規初回体験は `build_new_user_onboarding_funnel(...)` を正本にする。
+- 登録日コホートと直近行動ファネルを混ぜず、同一画面内のカードと棒グラフは同じ共通ファネル結果を参照する。
+- `audit.explore.failed` は正常完了ではない出撃試行の診断用。payload は `area_key`, `stage`, `reason`, `exception_class`, `request_id` を含める。`audit.explore.end` の意味は変更しない。
 
 ## 10. 研究モジュール v2
 - `audit.module.synthesis.preview`

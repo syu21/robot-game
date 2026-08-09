@@ -77,8 +77,46 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">計測健全性</div>
+        <div class="admin-metrics-section-sub">探索監査とdaily_metricsの整合性を確認します。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">計測状態</div>
+        <div class="admin-metrics-note-value">{{ measurement_health.status }}</div>
+        <div class="robot-time">直近{{ measurement_health.window_days }}日</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">explore.start / end</div>
+        <div class="admin-metrics-note-value">{{ measurement_health.start_count }} / {{ measurement_health.end_count }}</div>
+        <div class="robot-time">差分 {{ measurement_health.start_end_delta }}</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">entry_source不明</div>
+        <div class="admin-metrics-note-value">{{ measurement_health.unknown_entry_count }}件</div>
+        <div class="robot-time">{{ '%.1f'|format(measurement_health.unknown_entry_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">request_id欠損</div>
+        <div class="admin-metrics-note-value">{{ measurement_health.missing_request_id_count }}件</div>
+        <div class="robot-time">failed {{ measurement_health.failed_count }}件</div>
+      </div>
+    </div>
+    {% if measurement_health.issues %}
+    <div class="admin-metrics-copy">
+      {% for issue in measurement_health.issues %}
+      <p>⚠ {{ issue }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">新規初回体験</div>
-        <div class="admin-metrics-section-sub">直近{{ first_experience_snapshot.window_days }}日の正常新規登録を母数に、初回導線を再集計します。</div>
+        <div class="admin-metrics-section-sub">{{ first_experience_snapshot.basis_label }}。同じ共通ファネルを各カードと棒グラフで参照します。</div>
       </div>
       <form method="get" class="inline-form admin-metrics-toolbar">
         <label>集計窓
@@ -92,6 +130,11 @@
       </form>
     </div>
     <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初回ホーム準備OK</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.home_ready.ready_users }}人</div>
+        <div class="robot-time">CTA表示 {{ first_experience_snapshot.home_ready.cta_visible_users }}人 / クリック {{ first_experience_snapshot.home_ready.cta_click_users }}人</div>
+      </div>
       <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">初勝利後再出撃率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_10m.numerator }}人 / {{ first_experience_snapshot.retry_10m.denominator }}人</div>
@@ -604,17 +647,36 @@
           </tr>
         </thead>
         <tbody>
-        {% for r in rows %}
+        {% for r in daily_explore_rows %}
           {% set avg = (r['explore_count'] / r['dau_count']) if r['dau_count'] else 0 %}
           <tr>
             <td>{{ r['day_key'] }}</td>
             <td>{{ r['dau_count'] }}</td>
-            <td>{{ r['new_users'] }}</td>
-            <td>{{ r['explore_count'] }}</td>
+            <td>
+              {% for saved in rows %}
+                {% if saved['day_key'] == r['day_key'] %}{{ saved['new_users'] }}{% endif %}
+              {% endfor %}
+            </td>
+            <td>
+              {{ r['explore_count'] }} / audit再計算 {{ r['audit_explore_count'] }}
+              {% if r['explore_count_mismatch'] %}<div class="robot-time">⚠ 集計差分あり {{ r['explore_count_diff'] }}</div>{% endif %}
+            </td>
             <td>{{ '%.2f'|format(avg) }}</td>
-            <td>{{ r['boss_encounters'] }}</td>
-            <td>{{ r['boss_defeats'] }}</td>
-            <td>{{ r['fuse_count'] }}</td>
+            <td>
+              {% for saved in rows %}
+                {% if saved['day_key'] == r['day_key'] %}{{ saved['boss_encounters'] }}{% endif %}
+              {% endfor %}
+            </td>
+            <td>
+              {% for saved in rows %}
+                {% if saved['day_key'] == r['day_key'] %}{{ saved['boss_defeats'] }}{% endif %}
+              {% endfor %}
+            </td>
+            <td>
+              {% for saved in rows %}
+                {% if saved['day_key'] == r['day_key'] %}{{ saved['fuse_count'] }}{% endif %}
+              {% endfor %}
+            </td>
           </tr>
         {% else %}
           <tr><td colspan="8">データがありません。</td></tr>
