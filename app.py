@@ -4866,7 +4866,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 build_complete_ts = ts if build_complete_ts is None else min(build_complete_ts, ts)
             if key == "home_first_view" and et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
                 found.append(ts)
-            elif key == "layer1_first_start" and et == AUDIT_EVENT_TYPES["EXPLORE_START"] and area_key == "layer_1":
+            elif key == "layer1_first_start" and et in {AUDIT_EVENT_TYPES["EXPLORE_START"], AUDIT_EVENT_TYPES["EXPLORE_END"]} and area_key == "layer_1":
                 found.append(ts)
             elif key == "layer1_first_complete" and et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1":
                 found.append(ts)
