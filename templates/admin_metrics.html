@@ -46,6 +46,53 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">今日の研究指令</div>
+        <div class="admin-metrics-section-sub">{{ daily_research_summary.day_key }} の自動生成3件です。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">表示人数</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.viewed_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">1件以上進行</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.progressed_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">2件以上完了</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.two_complete_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">3件完了</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.all_complete_users }}人</div>
+      </div>
+    </div>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>指令</th>
+          <th>区分</th>
+          <th>達成人数</th>
+          <th>平均進捗</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mission in daily_research_summary.missions %}
+        <tr>
+          <td><b>{{ mission.title }}</b><div class="robot-time">{{ mission.description }}</div></td>
+          <td>{{ mission.mission_type }}</td>
+          <td>{{ mission.completed_users }}人</td>
+          <td>{{ '%.2f'|format(mission.avg_progress) }} / {{ mission.target }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">機体調整 v1</div>
         <div class="admin-metrics-section-sub">直近{{ robot_tuning_snapshot.window_days }}日の調整経験と上限到達を確認します。</div>
       </div>

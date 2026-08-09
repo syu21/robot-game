@@ -1,30 +1,29 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="card">
-  <div class="home-explore-kicker">今日の研究テーマ</div>
+  <div class="home-explore-kicker">今日の研究指令</div>
   {% if message %}
   <p class="flash">{{ message }}</p>
   {% endif %}
-  {% if task_view %}
-  <h1>{{ task_view['title'] }}</h1>
-  <div class="upgrade-cost">{{ task_view['description'] }}</div>
-  <div class="robot-time">進捗: {{ task_view['progress_line'] }}</div>
-  <div class="robot-time">報酬: {{ task_view['reward_coins'] }}コイン</div>
-  <div class="robot-time">状態: {% if task_view['is_done'] %}達成済み{% else %}進行中{% endif %}</div>
+  {% if task_views %}
+  <h1>{{ daily_research_summary['title'] }}</h1>
+  <div class="robot-time">研究継続 {{ daily_research_summary.get('streak', 0) }}日</div>
+  {% for row in task_views %}
+  <div class="daily-research-task-row">
+    <h3>{{ row['title'] }}</h3>
+    <div class="upgrade-cost">{{ row['description'] }}</div>
+    <div class="robot-time">進捗: {{ row['progress_line'] }} / 報酬: {{ row['reward_coins'] }}コイン / {% if row['is_done'] %}✓ 完了{% else %}進行中{% endif %}</div>
+  </div>
+  {% endfor %}
   <div class="home-inline-actions">
-    {% if task_view['cta']['is_post'] %}
-    <form method="post" action="{{ task_view['cta']['url'] }}" class="inline-form inline-form-top">
-      <input type="hidden" name="area_key" value="{{ task_view['cta']['area_key'] }}" />
-      <button type="submit">{{ task_view['cta']['label'] }}</button>
-    </form>
-    {% else %}
-    <p class="link"><a class="battle-home-link" href="{{ task_view['cta']['url'] }}">{{ task_view['cta']['label'] }}</a></p>
-    {% endif %}
+    <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を見る</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('parts_strengthen') }}">強化へ</a></p>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('build') }}">編成へ</a></p>
     <p class="link"><a href="{{ url_for('home') }}">ホームへ戻る</a></p>
   </div>
   {% else %}
-  <h1>今日の研究テーマ</h1>
-  <div class="upgrade-cost">今日のテーマはありません。</div>
+  <h1>今日の研究指令</h1>
+  <div class="upgrade-cost">今日の指令はありません。</div>
   <p class="link"><a href="{{ url_for('home') }}">ホームへ戻る</a></p>
   {% endif %}
 </div>

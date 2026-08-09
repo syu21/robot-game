@@ -864,7 +864,7 @@ def main():
             evolution_core_progress INTEGER NOT NULL DEFAULT 0,
             home_beginner_mission_hidden INTEGER NOT NULL DEFAULT 0,
             home_next_action_collapsed INTEGER NOT NULL DEFAULT 0,
-            home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1,
+            home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0,
             home_base_collapsed INTEGER NOT NULL DEFAULT 1,
             home_tower_collapsed INTEGER NOT NULL DEFAULT 1,
             tutorial_layer1_state TEXT NOT NULL DEFAULT 'new',
@@ -893,6 +893,8 @@ def main():
             market_free_refresh_used_at TEXT,
             market_refresh_day_key TEXT,
             last_daily_research_modal_day TEXT,
+            daily_research_streak INTEGER NOT NULL DEFAULT 0,
+            daily_research_last_completed_day TEXT,
             last_seen_at INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )
@@ -2002,6 +2004,57 @@ def main():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, source_day_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            mission_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            condition_key TEXT NOT NULL,
+            target INTEGER NOT NULL DEFAULT 1,
+            progress INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_progress_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key, source_key)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_day_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            completed_count INTEGER NOT NULL DEFAULT 0,
+            two_completed_at INTEGER,
+            all_completed_at INTEGER,
+            all_reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key)
         )
         """
     )
@@ -3601,7 +3654,7 @@ def main():
     if "home_next_action_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_daily_research_collapsed" not in users_cols:
-        cur.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1")
+        cur.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_base_collapsed" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN home_base_collapsed INTEGER NOT NULL DEFAULT 1")
     if "home_tower_collapsed" not in users_cols:
@@ -3665,6 +3718,10 @@ def main():
         cur.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     if "last_daily_research_modal_day" not in users_cols:
         cur.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
+    if "daily_research_streak" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN daily_research_streak INTEGER NOT NULL DEFAULT 0")
+    if "daily_research_last_completed_day" not in users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN daily_research_last_completed_day TEXT")
 
     research_module_cols = {row[1] for row in cur.execute("PRAGMA table_info(research_modules)").fetchall()}
     research_module_trade_cols = {"tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"}
@@ -3901,7 +3958,7 @@ def main():
     cur.execute("UPDATE users SET research_boost_auto_use_enabled = 0 WHERE research_boost_auto_use_enabled NOT IN (0, 1)")
     cur.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     cur.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
-    cur.execute("UPDATE users SET home_daily_research_collapsed = 1 WHERE home_daily_research_collapsed IS NULL")
+    cur.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
     cur.execute("UPDATE users SET home_base_collapsed = 1 WHERE home_base_collapsed IS NULL")
     cur.execute("UPDATE users SET home_tower_collapsed = 1 WHERE home_tower_collapsed IS NULL")
     cur.execute(

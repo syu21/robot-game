@@ -27,8 +27,9 @@ def audit_log(
     payload_json = json.dumps(payload or {}, ensure_ascii=False)
     now_ts = int(time.time())
     ip_digest = _ip_hash(ip)
+    source_event_id = None
     try:
-        db.execute(
+        cursor = db.execute(
             """
             INSERT INTO world_events_log
             (created_at, event_type, payload_json, user_id, request_id, ip_hash, action_key, entity_type, entity_id, delta_coins, delta_count)
@@ -48,6 +49,7 @@ def audit_log(
                 delta_count,
             ),
         )
+        source_event_id = cursor.lastrowid
     except Exception:
         # Backward-compatible fallback when migration has not run yet.
         db.execute(
@@ -64,17 +66,28 @@ def audit_log(
                 DAILY_RESEARCH_TASK_EVENTS,
                 ensure_tomorrow_research_reward,
                 get_day_key,
-                update_daily_task_progress,
+                update_daily_research_progress,
             )
 
             if event_type in DAILY_RESEARCH_TASK_EVENTS:
-                result = update_daily_task_progress(db, int(user_id), event_type, payload=payload or {})
-                if result and result.get("claimed"):
+                result = update_daily_research_progress(
+                    db,
+                    int(user_id),
+                    event_type,
+                    payload=payload or {},
+                    request_id=rid,
+                    source_event_id=source_event_id,
+                )
+                if result:
                     try:
-                        from flask import has_request_context, session
+                        from flask import g, has_request_context, session
 
                         if has_request_context():
-                            session["message"] = "今日の研究テーマ達成。コインを受け取りました。"
+                            existing = list(getattr(g, "daily_research_updates", []) or [])
+                            existing.append(result)
+                            g.daily_research_updates = existing
+                            if result.get("claimed"):
+                                session["message"] = "今日の研究テーマ達成。コインを受け取りました。"
                     except Exception:
                         pass
             if event_type in DAILY_RESEARCH_REWARD_SOURCE_EVENTS:

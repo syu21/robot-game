@@ -19,10 +19,11 @@ EVENT_BOSS_DEFEAT = "audit.boss.defeat"
 DAILY_RESEARCH_TASK_CREATE = "audit.daily_research.task.create"
 DAILY_RESEARCH_TASK_PROGRESS = "audit.daily_research.progress"
 DAILY_RESEARCH_TASK_COMPLETE = "audit.daily_research.complete"
-DAILY_RESEARCH_TASK_CLAIM = "audit.daily_research.claim"
+DAILY_RESEARCH_TASK_CLAIM = "audit.daily_research.reward"
 DAILY_RESEARCH_REWARD_RESERVE = "audit.daily_research.reward.reserve"
 DAILY_RESEARCH_REWARD_CLAIM = "audit.daily_research.reward.claim"
 DAILY_RESEARCH_MODAL_VIEW = "audit.daily_research.modal.view"
+DAILY_RESEARCH_VIEW = "audit.daily_research.view"
 
 DAILY_RESEARCH_TASK_EVENTS = {
     EVENT_EXPLORE_END,
@@ -35,7 +36,7 @@ DAILY_RESEARCH_TASK_EVENTS = {
     EVENT_BOSS_DEFEAT,
     EVENT_DROP,
 }
-DAILY_RESEARCH_REWARD_SOURCE_EVENTS = {EVENT_EXPLORE_END, EVENT_FUSE, EVENT_BUILD_CONFIRM}
+DAILY_RESEARCH_REWARD_SOURCE_EVENTS = set()
 
 DAILY_RESEARCH_TASKS = [
     {
@@ -82,6 +83,150 @@ DAILY_RESEARCH_TASKS = [
     },
 ]
 DAILY_RESEARCH_TASK_BY_KEY = {task["key"]: task for task in DAILY_RESEARCH_TASKS}
+DAILY_RESEARCH_MISSION_COIN_REWARD = 25
+DAILY_RESEARCH_ALL_COMPLETE_COIN_REWARD = 50
+DAILY_RESEARCH_MISSION_POOLS = {
+    "sortie": [
+        {
+            "key": "patrol_sortie_3",
+            "title": "巡回試験",
+            "description": "戦場データが不足している。3回の出撃記録を提出せよ。",
+            "mission_type": "sortie",
+            "condition": "explore_complete",
+            "target": 3,
+            "reward_coins": 20,
+        },
+        {
+            "key": "victory_data_5",
+            "title": "勝利記録試験",
+            "description": "任意の区画で勝利ログを5件集めよ。",
+            "mission_type": "sortie",
+            "condition": "win_any",
+            "target": 5,
+            "reward_coins": 25,
+        },
+        {
+            "key": "same_area_patrol_3",
+            "title": "定点巡回試験",
+            "description": "同じ区画を3回巡回し、環境差分を記録せよ。",
+            "mission_type": "sortie",
+            "condition": "same_area_explore",
+            "target": 3,
+            "reward_coins": 20,
+        },
+        {
+            "key": "different_area_2",
+            "title": "比較巡回試験",
+            "description": "異なる2区画へ出撃し、反応差を比較せよ。",
+            "mission_type": "sortie",
+            "condition": "distinct_area_explore",
+            "target": 2,
+            "reward_coins": 20,
+        },
+    ],
+    "training": [
+        {
+            "key": "strengthen_process_1",
+            "title": "強化試験",
+            "description": "旧パーツを再利用し、強化工程を1回完了せよ。",
+            "mission_type": "training",
+            "condition": "strengthen",
+            "target": 1,
+            "reward_coins": 25,
+        },
+        {
+            "key": "build_update_1",
+            "title": "編成試験",
+            "description": "機体構成を1回更新し、比較用の設計記録を残せ。",
+            "mission_type": "training",
+            "condition": "build_confirm",
+            "target": 1,
+            "reward_coins": 25,
+        },
+        {
+            "key": "parts_collect_3",
+            "title": "回収試験",
+            "description": "回収パーツを3個記録し、素材候補を整理せよ。",
+            "mission_type": "training",
+            "condition": "drop_parts",
+            "target": 3,
+            "reward_coins": 20,
+        },
+    ],
+    "tendency": [
+        {
+            "key": "armor_tendency_win_3",
+            "title": "重装試験",
+            "description": "装甲系統の挙動を再検証する。耐久寄り区画で戦闘データを採取せよ。",
+            "mission_type": "tendency",
+            "condition": "tendency_win",
+            "tendency_key": "defense",
+            "fallback_area_key": "layer_1",
+            "target": 3,
+            "reward_coins": 25,
+        },
+        {
+            "key": "aim_tendency_win_3",
+            "title": "照準試験",
+            "description": "照準系統の反応を確認する。命中寄り区画で勝利記録を集めよ。",
+            "mission_type": "tendency",
+            "condition": "tendency_win",
+            "tendency_key": "accuracy",
+            "fallback_area_key": "layer_1",
+            "target": 3,
+            "reward_coins": 25,
+        },
+        {
+            "key": "overload_tendency_win_3",
+            "title": "過負荷試験",
+            "description": "攻撃・会心寄り区画で出力変化を観測せよ。",
+            "mission_type": "tendency",
+            "condition": "tendency_win",
+            "tendency_key": "attack",
+            "fallback_area_key": "layer_1",
+            "target": 3,
+            "reward_coins": 25,
+        },
+    ],
+}
+DAILY_RESEARCH_MISSION_BY_KEY = {
+    mission["key"]: mission
+    for missions in DAILY_RESEARCH_MISSION_POOLS.values()
+    for mission in missions
+}
+DAILY_RESEARCH_AREA_TENDENCY = {
+    "layer_1": {"defense", "accuracy", "attack"},
+    "layer_2": {"attack"},
+    "layer_2_mist": {"accuracy"},
+    "layer_2_rush": {"attack"},
+    "layer_3": {"defense"},
+    "layer_3_fortress": {"defense"},
+    "layer_3_sniper": {"accuracy"},
+    "layer_3_burst": {"attack"},
+    "layer_4_forge": {"defense"},
+    "layer_4_haze": {"accuracy"},
+    "layer_4_burst": {"attack"},
+}
+DAILY_RESEARCH_AREA_LABELS = {
+    "layer_1": "第1層",
+    "layer_2": "第2層",
+    "layer_2_mist": "霧区画",
+    "layer_2_rush": "高速区画",
+    "layer_3": "第3層",
+    "layer_3_fortress": "重装区画",
+    "layer_3_sniper": "照準区画",
+    "layer_3_burst": "過負荷区画",
+    "layer_4_forge": "第4層フォージ",
+    "layer_4_haze": "第4層ヘイズ",
+    "layer_4_burst": "第4層バースト",
+}
+MISSION_KEY_ALIASES = {
+    "explore_layer1_2": "patrol_sortie_3",
+    "explore_layer2_1": "patrol_sortie_3",
+    "strengthen_1": "strengthen_process_1",
+    "build_view_1": "build_update_1",
+    "world_view_1": "patrol_sortie_3",
+}
 LEGACY_DAILY_RESEARCH_TASK_ALIASES = {
     "explore_3": "explore_layer1_2",
     "explore_5": "explore_layer1_2",
@@ -136,19 +281,20 @@ def _row_to_task(row):
     return data
 
 
-def _audit(db, event_type, user_id, payload=None, action_key=None, entity_type=None, entity_id=None, delta_coins=None):
+def _audit(db, event_type, user_id, payload=None, action_key=None, entity_type=None, entity_id=None, delta_coins=None, request_id=None):
     try:
         db.execute(
             """
             INSERT INTO world_events_log
-            (created_at, event_type, payload_json, user_id, action_key, entity_type, entity_id, delta_coins)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (created_at, event_type, payload_json, user_id, request_id, action_key, entity_type, entity_id, delta_coins)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 int(time.time()),
                 str(event_type),
                 json.dumps(payload or {}, ensure_ascii=False),
                 int(user_id) if user_id is not None else None,
+                str(request_id) if request_id else None,
                 action_key,
                 entity_type,
                 entity_id,
@@ -160,6 +306,519 @@ def _audit(db, event_type, user_id, payload=None, action_key=None, entity_type=N
             "INSERT INTO world_events_log (created_at, event_type, payload_json) VALUES (?, ?, ?)",
             (int(time.time()), str(event_type), json.dumps(payload or {}, ensure_ascii=False)),
         )
+
+
+def _stable_index(seed_text, length):
+    return int(hashlib.sha256(str(seed_text).encode("utf-8")).hexdigest()[:8], 16) % max(1, int(length))
+
+
+def get_daily_research_missions(day_key=None):
+    day_key = str(day_key or get_day_key())
+    mission_types = ["sortie", "training", "tendency"]
+    missions = []
+    for mission_type in mission_types:
+        pool = DAILY_RESEARCH_MISSION_POOLS[mission_type]
+        missions.append(dict(pool[_stable_index(f"{day_key}:{mission_type}", len(pool))]))
+    return missions
+
+
+def _user_max_layer(user_row):
+    if not user_row:
+        return 1
+    try:
+        return max(1, int(user_row["max_unlocked_layer"] or 1))
+    except Exception:
+        return 1
+
+
+def _area_layer(area_key):
+    key = str(area_key or "")
+    if key.startswith("layer_"):
+        try:
+            return int(key.split("_")[1])
+        except Exception:
+            return 1
+    return 1
+
+
+def _best_unlocked_tendency_area(tendency_key, max_layer):
+    candidates = []
+    for area_key, tendencies in DAILY_RESEARCH_AREA_TENDENCY.items():
+        if str(tendency_key) in tendencies and _area_layer(area_key) <= int(max_layer):
+            candidates.append(area_key)
+    if not candidates:
+        return "layer_1"
+    candidates.sort(key=lambda key: (_area_layer(key), key))
+    return candidates[-1]
+
+
+def _mission_for_user(db, user_id, mission):
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    max_layer = _user_max_layer(user)
+    item = dict(mission or {})
+    if item.get("condition") == "tendency_win":
+        area_key = _best_unlocked_tendency_area(item.get("tendency_key"), max_layer)
+        if _area_layer(area_key) > max_layer:
+            area_key = str(item.get("fallback_area_key") or "layer_1")
+        item["target_area_key"] = area_key
+        if area_key == "layer_1":
+            item["title"] = "基礎" + str(item.get("title") or "研究試験")
+            item["description"] = "まず第1層で基礎データを採取せよ。未解放区画の代替試験として扱う。"
+        else:
+            item["description"] = f"{DAILY_RESEARCH_AREA_LABELS.get(area_key, area_key)}で戦闘データを採取せよ。"
+    return item
+
+
+def ensure_daily_research_progress_schema(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            mission_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            condition_key TEXT NOT NULL,
+            target INTEGER NOT NULL DEFAULT 1,
+            progress INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_progress_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key, source_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_day_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            completed_count INTEGER NOT NULL DEFAULT 0,
+            two_completed_at INTEGER,
+            all_completed_at INTEGER,
+            all_reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    user_cols = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+    if "daily_research_streak" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN daily_research_streak INTEGER NOT NULL DEFAULT 0")
+    if "daily_research_last_completed_day" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN daily_research_last_completed_day TEXT")
+
+
+def get_or_create_daily_research_missions(db, user_id, day_key=None):
+    ensure_daily_research_progress_schema(db)
+    day_key = str(day_key or get_day_key())
+    now_ts = int(time.time())
+    for mission in get_daily_research_missions(day_key):
+        item = _mission_for_user(db, user_id, mission)
+        db.execute(
+            """
+            INSERT OR IGNORE INTO daily_research_progress
+            (user_id, day_key, mission_key, mission_type, title, description, condition_key, target, reward_coins, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(user_id),
+                day_key,
+                item["key"],
+                item["mission_type"],
+                item["title"],
+                item.get("description") or "",
+                item["condition"],
+                int(item.get("target") or 1),
+                int(item.get("reward_coins") or DAILY_RESEARCH_MISSION_COIN_REWARD),
+                now_ts,
+                now_ts,
+            ),
+        )
+    rows = db.execute(
+        """
+        SELECT *
+        FROM daily_research_progress
+        WHERE user_id = ? AND day_key = ?
+        ORDER BY id ASC
+        """,
+        (int(user_id), day_key),
+    ).fetchall()
+    return [daily_research_mission_view(dict(row)) for row in rows]
+
+
+def _progress_payload(row, before, after, source, reward_coins=0):
+    return {
+        "day_key": str(row["day_key"]),
+        "mission_key": str(row["mission_key"]),
+        "mission_type": str(row["mission_type"]),
+        "progress_before": int(before),
+        "progress_after": int(after),
+        "target": int(row["target"] or 1),
+        "source": str(source or ""),
+        "reward_coins": int(reward_coins or 0),
+    }
+
+
+def _event_win(payload):
+    result = (payload or {}).get("result")
+    if isinstance(result, dict):
+        return bool(result.get("win"))
+    return str(result or (payload or {}).get("outcome") or "").lower() in {"win", "勝利", "true", "1"}
+
+
+def _mission_event_delta(db, user_id, row, event_type, payload):
+    condition = str(row["condition_key"] or "")
+    if condition == "explore_complete":
+        return 1 if str(event_type) == EVENT_EXPLORE_END else 0
+    if condition == "win_any":
+        return 1 if str(event_type) == EVENT_EXPLORE_END and _event_win(payload) else 0
+    if condition == "same_area_explore":
+        return 1 if str(event_type) == EVENT_EXPLORE_END else 0
+    if condition == "distinct_area_explore":
+        return 1 if str(event_type) == EVENT_EXPLORE_END else 0
+    if condition == "strengthen":
+        return 1 if str(event_type) == EVENT_FUSE else 0
+    if condition == "build_confirm":
+        return 1 if str(event_type) == EVENT_BUILD_CONFIRM else 0
+    if condition == "drop_parts":
+        if str(event_type) == EVENT_DROP:
+            return max(1, int((payload or {}).get("drop_count") or (payload or {}).get("count") or 1))
+        if str(event_type) == EVENT_EXPLORE_END:
+            return max(0, int((payload or {}).get("dropped_parts_count") or 0))
+    if condition == "tendency_win":
+        if str(event_type) != EVENT_EXPLORE_END or not _event_win(payload):
+            return 0
+        mission = DAILY_RESEARCH_MISSION_BY_KEY.get(str(row["mission_key"]))
+        area_key = str((payload or {}).get("area_key") or "").strip()
+        tendencies = DAILY_RESEARCH_AREA_TENDENCY.get(area_key, set())
+        target_tendency = str((mission or {}).get("tendency_key") or "")
+        return 1 if target_tendency in tendencies else 0
+    return 0
+
+
+def _source_key(event_type, request_id=None, source_event_id=None, payload=None):
+    if request_id:
+        return f"request:{event_type}:{request_id}"
+    if source_event_id:
+        return f"event:{event_type}:{source_event_id}"
+    payload = payload or {}
+    battle_id = payload.get("battle_id") or payload.get("result_id")
+    if battle_id:
+        return f"battle:{event_type}:{battle_id}"
+    return f"fallback:{event_type}:{hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()[:16]}"
+
+
+def _refresh_day_record(db, user_id, day_key, *, source, request_id=None):
+    ensure_daily_research_progress_schema(db)
+    now_ts = int(time.time())
+    completed_count = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM daily_research_progress
+            WHERE user_id = ? AND day_key = ? AND completed_at IS NOT NULL
+            """,
+            (int(user_id), str(day_key)),
+        ).fetchone()["c"]
+        or 0
+    )
+    db.execute(
+        """
+        INSERT OR IGNORE INTO daily_research_day_records
+        (user_id, day_key, completed_count, created_at, updated_at)
+        VALUES (?, ?, 0, ?, ?)
+        """,
+        (int(user_id), str(day_key), now_ts, now_ts),
+    )
+    row = db.execute(
+        "SELECT * FROM daily_research_day_records WHERE user_id = ? AND day_key = ?",
+        (int(user_id), str(day_key)),
+    ).fetchone()
+    before_completed = int(row["completed_count"] or 0) if row else 0
+    updates = ["completed_count = ?", "updated_at = ?"]
+    params = [completed_count, now_ts]
+    if completed_count >= 2 and row and not row["two_completed_at"]:
+        updates.append("two_completed_at = ?")
+        params.append(now_ts)
+        _audit(
+            db,
+            DAILY_RESEARCH_TASK_COMPLETE,
+            user_id,
+            {
+                "day_key": str(day_key),
+                "mission_key": "daily_research_2_of_3",
+                "mission_type": "daily_summary",
+                "progress_before": before_completed,
+                "progress_after": completed_count,
+                "target": 2,
+                "source": str(source or ""),
+                "reward_coins": 0,
+            },
+            action_key="daily_research.two_complete",
+            entity_type="daily_research_day",
+            request_id=request_id,
+        )
+    all_reward_coins = 0
+    if completed_count >= 3 and row and not row["all_completed_at"]:
+        updates.extend(["all_completed_at = ?", "all_reward_claimed_at = ?"])
+        params.extend([now_ts, now_ts])
+        all_reward_coins = DAILY_RESEARCH_ALL_COMPLETE_COIN_REWARD
+        db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (all_reward_coins, int(user_id)))
+        user = db.execute("SELECT daily_research_streak, daily_research_last_completed_day FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        previous_day = _prev_day_key(day_key)
+        current_streak = int(user["daily_research_streak"] or 0) if user else 0
+        next_streak = current_streak + 1 if user and str(user["daily_research_last_completed_day"] or "") == previous_day else 1
+        db.execute(
+            "UPDATE users SET daily_research_streak = ?, daily_research_last_completed_day = ? WHERE id = ?",
+            (int(next_streak), str(day_key), int(user_id)),
+        )
+        _audit(
+            db,
+            DAILY_RESEARCH_TASK_CLAIM,
+            user_id,
+            {
+                "day_key": str(day_key),
+                "mission_key": "daily_research_all_complete",
+                "mission_type": "daily_summary",
+                "progress_before": before_completed,
+                "progress_after": completed_count,
+                "target": 3,
+                "source": str(source or ""),
+                "reward_coins": all_reward_coins,
+                "streak": int(next_streak),
+            },
+            action_key="daily_research.all_reward",
+            entity_type="daily_research_day",
+            delta_coins=all_reward_coins,
+            request_id=request_id,
+        )
+    params.extend([int(user_id), str(day_key)])
+    db.execute(
+        f"""
+        UPDATE daily_research_day_records
+        SET {', '.join(updates)}
+        WHERE user_id = ? AND day_key = ?
+        """,
+        params,
+    )
+    return {"completed_count": completed_count, "all_reward_coins": all_reward_coins}
+
+
+def update_daily_research_progress(db, user_id, event_type, payload=None, request_id=None, source_event_id=None):
+    if not user_id or event_type not in DAILY_RESEARCH_TASK_EVENTS:
+        return None
+    ensure_daily_research_progress_schema(db)
+    day_key = get_day_key()
+    has_visible_missions = db.execute(
+        """
+        SELECT 1
+        FROM daily_research_progress
+        WHERE user_id = ? AND day_key = ?
+        LIMIT 1
+        """,
+        (int(user_id), day_key),
+    ).fetchone()
+    if not has_visible_missions:
+        return {"updates": [], "claimed": None}
+    rows = db.execute(
+        """
+        SELECT *
+        FROM daily_research_progress
+        WHERE user_id = ? AND day_key = ? AND completed_at IS NULL
+        ORDER BY id ASC
+        """,
+        (int(user_id), day_key),
+    ).fetchall()
+    source_key = _source_key(event_type, request_id=request_id, source_event_id=source_event_id, payload=payload)
+    updates = []
+    for row in rows:
+        delta = _mission_event_delta(db, user_id, row, event_type, payload or {})
+        if delta <= 0:
+            continue
+        try:
+            db.execute(
+                """
+                INSERT INTO daily_research_progress_receipts
+                (user_id, day_key, mission_key, source_key, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (int(user_id), day_key, str(row["mission_key"]), source_key, int(time.time())),
+            )
+        except Exception:
+            continue
+        before = int(row["progress"] or 0)
+        target = max(1, int(row["target"] or 1))
+        after = min(target, before + int(delta))
+        completed = after >= target
+        reward_coins = int(row["reward_coins"] or 0) if completed else 0
+        if completed and reward_coins > 0:
+            db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (reward_coins, int(user_id)))
+        db.execute(
+            """
+            UPDATE daily_research_progress
+            SET progress = ?,
+                completed_at = CASE WHEN ? = 1 THEN COALESCE(completed_at, ?) ELSE completed_at END,
+                reward_claimed_at = CASE WHEN ? = 1 THEN COALESCE(reward_claimed_at, ?) ELSE reward_claimed_at END,
+                updated_at = ?
+            WHERE id = ? AND completed_at IS NULL
+            """,
+            (after, 1 if completed else 0, int(time.time()), 1 if completed else 0, int(time.time()), int(time.time()), int(row["id"])),
+        )
+        progress_payload = _progress_payload(row, before, after, event_type, reward_coins=0)
+        _audit(
+            db,
+            DAILY_RESEARCH_TASK_PROGRESS,
+            user_id,
+            progress_payload,
+            action_key="daily_research.progress",
+            entity_type="daily_research_progress",
+            entity_id=int(row["id"]),
+            request_id=request_id,
+        )
+        result = {"mission_key": str(row["mission_key"]), "title": str(row["title"]), "progress": after, "target": target, "completed": completed, "reward_coins": reward_coins}
+        if completed:
+            complete_payload = _progress_payload(row, before, after, event_type, reward_coins=reward_coins)
+            _audit(
+                db,
+                DAILY_RESEARCH_TASK_COMPLETE,
+                user_id,
+                complete_payload,
+                action_key="daily_research.complete",
+                entity_type="daily_research_progress",
+                entity_id=int(row["id"]),
+                request_id=request_id,
+            )
+            _audit(
+                db,
+                DAILY_RESEARCH_TASK_CLAIM,
+                user_id,
+                complete_payload,
+                action_key="daily_research.reward",
+                entity_type="daily_research_progress",
+                entity_id=int(row["id"]),
+                delta_coins=reward_coins,
+                request_id=request_id,
+            )
+        updates.append(result)
+    if updates:
+        day_record = _refresh_day_record(db, int(user_id), day_key, source=event_type, request_id=request_id)
+        return {"updated": updates, "claimed": any(item["completed"] for item in updates), "day_record": day_record}
+    return None
+
+
+def daily_research_mission_view(row):
+    data = dict(row)
+    target = max(1, int(data.get("target") or data.get("target_count") or 1))
+    progress = min(target, int(data.get("progress") or data.get("current_count") or 0))
+    completed = bool(data.get("completed_at")) or str(data.get("status") or "") in {"completed", "claimed"}
+    return {
+        "id": int(data.get("id") or 0),
+        "mission_key": str(data.get("mission_key") or data.get("task_key") or ""),
+        "task_key": str(data.get("mission_key") or data.get("task_key") or ""),
+        "mission_type": str(data.get("mission_type") or "daily"),
+        "title": str(data.get("title") or "今日の研究指令"),
+        "description": str(data.get("description") or ""),
+        "progress": progress,
+        "target": target,
+        "target_count": target,
+        "progress_line": f"{progress}/{target}",
+        "reward_coins": int(data.get("reward_coins") or 0),
+        "is_done": bool(completed),
+        "is_completed": bool(completed),
+        "is_claimed": bool(data.get("reward_claimed_at") or str(data.get("status") or "") == "claimed"),
+        "status": "claimed" if completed else "active",
+    }
+
+
+def daily_research_home_summary(db, user_id, day_key=None):
+    missions = get_or_create_daily_research_missions(db, user_id, day_key or get_day_key())
+    done_count = sum(1 for item in missions if item["is_done"])
+    user = db.execute("SELECT daily_research_streak FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    return {
+        "day_key": str(day_key or get_day_key()),
+        "missions": missions,
+        "done_count": int(done_count),
+        "total_count": len(missions),
+        "title": f"今日の研究指令 {done_count}/{len(missions)}",
+        "streak": int(user["daily_research_streak"] or 0) if user and "daily_research_streak" in user.keys() else 0,
+    }
+
+
+def daily_research_admin_summary(db, day_key=None):
+    ensure_daily_research_progress_schema(db)
+    day_key = str(day_key or get_day_key())
+    missions = get_daily_research_missions(day_key)
+    rows = []
+    for mission in missions:
+        row = db.execute(
+            """
+            SELECT COUNT(*) AS viewed_users,
+                   SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed_users,
+                   AVG(CAST(progress AS REAL)) AS avg_progress
+            FROM daily_research_progress
+            WHERE day_key = ? AND mission_key = ?
+            """,
+            (day_key, mission["key"]),
+        ).fetchone()
+        target = int(mission.get("target") or 1)
+        rows.append(
+            {
+                **mission,
+                "viewed_users": int(row["viewed_users"] or 0) if row else 0,
+                "completed_users": int(row["completed_users"] or 0) if row else 0,
+                "avg_progress": float(row["avg_progress"] or 0.0) if row else 0.0,
+                "target": target,
+            }
+        )
+    two = db.execute(
+        "SELECT COUNT(*) AS c FROM daily_research_day_records WHERE day_key = ? AND completed_count >= 2",
+        (day_key,),
+    ).fetchone()
+    three = db.execute(
+        "SELECT COUNT(*) AS c FROM daily_research_day_records WHERE day_key = ? AND completed_count >= 3",
+        (day_key,),
+    ).fetchone()
+    progressed = db.execute(
+        "SELECT COUNT(DISTINCT user_id) AS c FROM daily_research_progress WHERE day_key = ? AND progress > 0",
+        (day_key,),
+    ).fetchone()
+    one_complete = db.execute(
+        "SELECT COUNT(DISTINCT user_id) AS c FROM daily_research_progress WHERE day_key = ? AND completed_at IS NOT NULL",
+        (day_key,),
+    ).fetchone()
+    viewed = db.execute(
+        "SELECT COUNT(DISTINCT user_id) AS c FROM daily_research_progress WHERE day_key = ?",
+        (day_key,),
+    ).fetchone()
+    return {
+        "day_key": day_key,
+        "missions": rows,
+        "viewed_users": int(viewed["c"] or 0) if viewed else 0,
+        "progressed_users": int(progressed["c"] or 0) if progressed else 0,
+        "one_complete_users": int(one_complete["c"] or 0) if one_complete else 0,
+        "two_complete_users": int(two["c"] or 0) if two else 0,
+        "all_complete_users": int(three["c"] or 0) if three else 0,
+    }
 
 
 def _event_count(db, user_id, event_type, day_key):
@@ -228,6 +887,15 @@ def _choose_task(db, user_id, today_key):
 
 
 def get_or_create_daily_task(db, user_id, today_key):
+    missions = get_or_create_daily_research_missions(db, user_id, today_key)
+    return missions[0] if missions else None
+
+
+def get_or_create_daily_tasks(db, user_id, today_key):
+    return get_or_create_daily_research_missions(db, user_id, today_key)
+
+
+def get_or_create_legacy_daily_task(db, user_id, today_key):
     row = db.execute(
         "SELECT * FROM daily_research_tasks WHERE user_id = ? AND day_key = ? LIMIT 1",
         (int(user_id), str(today_key)),
@@ -290,6 +958,10 @@ def _task_event_matches(task_row, event_type, payload=None):
 
 
 def update_daily_task_progress(db, user_id, event_type, payload=None):
+    return update_daily_research_progress(db, user_id, event_type, payload=payload)
+
+
+def update_legacy_daily_task_progress(db, user_id, event_type, payload=None):
     if not user_id or event_type not in DAILY_RESEARCH_TASK_EVENTS:
         return None
     today_key = get_day_key()

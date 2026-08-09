@@ -305,7 +305,7 @@ def grant_tuning_xp(
     if not stat_key:
         return {"granted": False, "reason": "stat_cap"}
     try:
-        db.execute(
+        cursor = db.execute(
             """
             INSERT INTO robot_tuning_gain_events
                 (user_id, robot_instance_id, area_key, stat_key, source_battle_id, source_request_id,
@@ -323,6 +323,7 @@ def grant_tuning_xp(
                 now,
             ),
         )
+        gain_event_id = int(cursor.lastrowid)
     except sqlite3.IntegrityError:
         return {"granted": False, "reason": "duplicate"}
     xp_col = f"{stat_key}_xp"
@@ -376,9 +377,9 @@ def grant_tuning_xp(
             xp_before = ?,
             xp_after = ?,
             reason = NULL
-        WHERE source_battle_id = ?
+        WHERE id = ?
         """,
-        (level_before, level_after, xp_before, xp_after, int(source_battle_id)),
+        (level_before, level_after, xp_before, xp_after, gain_event_id),
     )
     daily_after = daily_count + 1
     return {

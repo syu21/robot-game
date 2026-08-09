@@ -54,6 +54,10 @@
 - `audit.part.evolve`
 - `audit.core.drop`
 - `audit.build.confirm`
+- `audit.daily_research.view`
+- `audit.daily_research.progress`
+- `audit.daily_research.complete`
+- `audit.daily_research.reward`
 
 ### 4.4 機体/展示
 - `audit.robot.rename`
@@ -513,6 +517,21 @@
 - `/admin/metrics` の新規初回体験は `build_new_user_onboarding_funnel(...)` を正本にする。
 - 登録日コホートと直近行動ファネルを混ぜず、同一画面内のカードと棒グラフは同じ共通ファネル結果を参照する。
 - `audit.explore.failed` は正常完了ではない出撃試行の診断用。payload は `area_key`, `stage`, `reason`, `exception_class`, `request_id` を含める。`audit.explore.end` の意味は変更しない。
+
+## 9.1 今日の研究指令
+- `audit.daily_research.view`
+  - ホームで今日の研究指令3件を表示した記録。payload は `day_key`, `mission_count`, `completed_count`。
+- `audit.daily_research.progress`
+  - 指令進捗。payload は `day_key`, `mission_key`, `mission_type`, `progress_before`, `progress_after`, `target`, `source`, `reward_coins`。
+- `audit.daily_research.complete`
+  - 指令または2件達成記録の完了。payload は progress と同形式。
+- `audit.daily_research.reward`
+  - 指令報酬または3件完了報酬。payload は progress と同形式に加え、全完了時は `streak`。
+
+二重加算防止:
+- `daily_research_progress_receipts` で `user_id, day_key, mission_key, source_key` を一意化する。
+- `source_key` は `request_id` 優先、なければ元イベントIDまたはbattle_idを使う。
+- 同一操作内のdaily_research auditは元操作と同じ `request_id` を保持する。
 
 ## 10. 研究モジュール v2
 - `audit.module.synthesis.preview`

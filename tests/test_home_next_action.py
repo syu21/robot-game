@@ -324,9 +324,9 @@ class HomeNextActionTests(unittest.TestCase):
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertEqual(html.count("daily-research-home-card"), 1)
-        self.assertIn("今日の研究テーマ", html)
-        self.assertIn("▶", html)
-        self.assertIn("開く", html)
+        self.assertIn("今日の研究指令", html)
+        self.assertIn("▼", html)
+        self.assertIn("ホームから隠す", html)
         self.assertNotIn("達成報酬：", html)
         self.assertNotIn("研究課題報酬を受け取る", html)
         self.assertNotIn("デイリー研究レポート", html)
@@ -344,7 +344,7 @@ class HomeNextActionTests(unittest.TestCase):
 
         html = client.get("/home").get_data(as_text=True)
         self.assertIn("daily-research-home-card", html)
-        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("今日の研究指令", html)
         self.assertIn("開く", html)
         self.assertNotIn("ホームから隠す", html)
 
@@ -371,8 +371,8 @@ class HomeNextActionTests(unittest.TestCase):
 
         self.assertLess(html.index("NEXT ACTION"), html.index("出撃機体"))
         self.assertLess(html.index("出撃機体"), html.index("通常研究所"))
-        self.assertLess(html.index("通常研究所"), html.index("今日の研究テーマ"))
-        self.assertLess(html.index("今日の研究テーマ"), html.index("観測塔"))
+        self.assertLess(html.index("通常研究所"), html.index("今日の研究指令"))
+        self.assertLess(html.index("今日の研究指令"), html.index("観測塔"))
 
     def test_home_folded_lab_sections_can_be_expanded_and_persist(self):
         self._create_active_robot()
@@ -380,7 +380,7 @@ class HomeNextActionTests(unittest.TestCase):
 
         html = client.get("/home").get_data(as_text=True)
         self.assertIn("通常研究所", html)
-        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("今日の研究指令", html)
         self.assertIn("観測塔", html)
         self.assertNotIn("自分の基地を見る", html)
         self.assertNotIn("観測塔に挑戦", html)
@@ -400,7 +400,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
 
-        self.assertIn("今日の研究テーマ", html)
+        self.assertIn("今日の研究指令", html)
         self.assertIn("進捗:", html)
         self.assertIn("報酬:", html)
 
@@ -864,7 +864,12 @@ class HomeNextActionTests(unittest.TestCase):
             if row["event_type"] == game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]
         ]
         self.assertTrue(
-            any(payload.get("entry_source") == "home_next_action" for payload in explore_start_payloads)
+            any(
+                payload.get("entry_source") == "next_action"
+                and payload.get("home_session_id")
+                and payload.get("seconds_from_home_view") is not None
+                for payload in explore_start_payloads
+            )
         )
 
     def test_home_uses_last_selected_explore_area_when_unlocked(self):

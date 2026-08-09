@@ -104,8 +104,11 @@ from services.daily_research import (
     build_yesterday_report,
     claim_daily_task_reward,
     claim_pending_research_rewards,
+    daily_research_admin_summary,
+    daily_research_home_summary,
     get_day_key,
     get_or_create_daily_task,
+    get_or_create_daily_tasks,
     mark_daily_research_modal_viewed,
     should_show_daily_research_modal,
 )
@@ -10602,16 +10605,16 @@ def _area_growth_tendency_label(area_key):
 def _area_growth_tendency_line(area_key, *, context="map"):
     tendency = _area_growth_tendency(area_key)
     if not tendency:
-        return "入手パーツ傾向: 通常探索"
+        return "育成傾向: 通常探索"
     if context == "home":
         configured = str(tendency.get("home_line") or "").strip()
         if configured:
-            return configured.replace("育成傾向:", "入手パーツ傾向:", 1)
+            return configured
     configured = str(tendency.get("map_line") or "").strip()
     if configured:
-        return f"入手パーツ傾向: {configured}"
+        return f"育成傾向: {configured}"
     label = _area_growth_tendency_label(area_key)
-    return f"入手パーツ傾向: {label}"
+    return f"育成傾向: {label}"
 
 
 def _area_tuning_tendency_line(area_key):
@@ -13303,6 +13306,57 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS daily_research_progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            mission_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            condition_key TEXT NOT NULL,
+            target INTEGER NOT NULL DEFAULT 1,
+            progress INTEGER NOT NULL DEFAULT 0,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER,
+            reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_progress_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            mission_key TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key, mission_key, source_key)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_research_day_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            completed_count INTEGER NOT NULL DEFAULT 0,
+            two_completed_at INTEGER,
+            all_completed_at INTEGER,
+            all_reward_claimed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, day_key)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_research_profiles (
             user_id INTEGER PRIMARY KEY,
             research_level INTEGER NOT NULL DEFAULT 1,
@@ -13897,7 +13951,7 @@ def ensure_schema(db):
     if "home_next_action_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_next_action_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_daily_research_collapsed" not in cols:
-        db.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 1")
+        db.execute("ALTER TABLE users ADD COLUMN home_daily_research_collapsed INTEGER NOT NULL DEFAULT 0")
     if "home_base_collapsed" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN home_base_collapsed INTEGER NOT NULL DEFAULT 1")
     if "home_tower_collapsed" not in cols:
@@ -13957,6 +14011,10 @@ def ensure_schema(db):
         db.execute("ALTER TABLE users ADD COLUMN market_refresh_day_key TEXT")
     if "last_daily_research_modal_day" not in cols:
         db.execute("ALTER TABLE users ADD COLUMN last_daily_research_modal_day TEXT")
+    if "daily_research_streak" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN daily_research_streak INTEGER NOT NULL DEFAULT 0")
+    if "daily_research_last_completed_day" not in cols:
+        db.execute("ALTER TABLE users ADD COLUMN daily_research_last_completed_day TEXT")
     research_module_cols = {row["name"] for row in db.execute("PRAGMA table_info(research_modules)").fetchall()}
     research_module_trade_cols = {"tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"}
     added_research_module_trade_cols = any(column not in research_module_cols for column in research_module_trade_cols)
@@ -14172,7 +14230,7 @@ def ensure_schema(db):
     db.execute("UPDATE users SET evolution_core_progress = 0 WHERE evolution_core_progress IS NULL OR evolution_core_progress < 0")
     db.execute("UPDATE users SET home_beginner_mission_hidden = 0 WHERE home_beginner_mission_hidden IS NULL")
     db.execute("UPDATE users SET home_next_action_collapsed = 0 WHERE home_next_action_collapsed IS NULL")
-    db.execute("UPDATE users SET home_daily_research_collapsed = 1 WHERE home_daily_research_collapsed IS NULL")
+    db.execute("UPDATE users SET home_daily_research_collapsed = 0 WHERE home_daily_research_collapsed IS NULL")
     db.execute("UPDATE users SET home_base_collapsed = 1 WHERE home_base_collapsed IS NULL")
     db.execute("UPDATE users SET home_tower_collapsed = 1 WHERE home_tower_collapsed IS NULL")
     db.execute("UPDATE users SET starter_robot_name_pending = 0 WHERE starter_robot_name_pending IS NULL")
@@ -43609,13 +43667,13 @@ def _daily_research_task_view(task):
         "is_post": False,
         "area_key": None,
     }
-    if task_key == "explore_layer1_2":
+    if task_key in {"explore_layer1_2", "patrol_sortie_3", "victory_data_5", "same_area_patrol_3", "different_area_2", "armor_tendency_win_3", "aim_tendency_win_3", "overload_tendency_win_3"}:
         cta = {"label": "出撃する", "url": url_for("explore"), "is_post": True, "area_key": "layer_1"}
     elif task_key == "explore_layer2_1":
         cta = {"label": "出撃する", "url": url_for("explore"), "is_post": True, "area_key": "layer_2"}
-    elif task_key == "strengthen_1":
+    elif task_key in {"strengthen_1", "strengthen_process_1"}:
         cta = {"label": "強化する", "url": url_for("parts_strengthen"), "is_post": False, "area_key": None}
-    elif task_key == "build_view_1":
+    elif task_key in {"build_view_1", "build_update_1"}:
         cta = {"label": "編成を見る", "url": url_for("build"), "is_post": False, "area_key": None}
     elif task_key == "world_view_1":
         cta = {"label": "世界ログを見る", "url": url_for("comms_world"), "is_post": False, "area_key": None}
@@ -43631,6 +43689,18 @@ def _daily_research_task_view(task):
         "reward_coins": int(task.get("reward_coins") or 0),
         "cta": cta,
     }
+
+
+def _daily_research_update_lines():
+    lines = []
+    for daily_result in getattr(g, "daily_research_updates", []) or []:
+        for item in daily_result.get("updated", []) or []:
+            title = str(item.get("title") or "研究指令")
+            if item.get("completed"):
+                lines.append(f"研究指令「{title}」完了")
+            else:
+                lines.append(f"研究指令「{title}」 {int(item.get('progress') or 0)} / {int(item.get('target') or 1)}")
+    return lines
 
 
 @app.route("/modules/select", methods=["POST"])
@@ -46730,7 +46800,24 @@ def home():
     show_market_menu = _market_can_access(db, user)
     boss_medal_summary = _boss_medal_summary(db, int(user["id"]), user_row=user)
     today_key = get_day_key()
-    daily_task = get_or_create_daily_task(db, int(user["id"]), today_key)
+    daily_research_card = daily_research_home_summary(db, int(user["id"]), today_key)
+    daily_tasks = daily_research_card.get("missions") if daily_research_card else []
+    daily_task = daily_tasks[0] if daily_tasks else None
+    if daily_research_card:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["DAILY_RESEARCH_VIEW"],
+            user_id=int(user["id"]),
+            request_id=getattr(g, "request_id", None),
+            action_key="daily_research.view",
+            entity_type="home",
+            payload={
+                "day_key": today_key,
+                "mission_count": int(daily_research_card.get("total_count") or 0),
+                "completed_count": int(daily_research_card.get("done_count") or 0),
+            },
+            ip=request.remote_addr,
+        )
     claimed_research_rewards = []
     if claimed_research_rewards:
         user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
@@ -46746,9 +46833,8 @@ def home():
     if daily_task:
         daily_research_task_line = (
             f"今日の研究課題：{daily_task['title']} "
-            f"{min(int(daily_task['current_count'] or 0), int(daily_task['target_count'] or 1))}/{int(daily_task['target_count'] or 1)}"
+            f"{min(int(daily_task.get('progress') or 0), int(daily_task.get('target') or daily_task.get('target_count') or 1))}/{int(daily_task.get('target') or daily_task.get('target_count') or 1)}"
         )
-    daily_research_card = _daily_research_task_view(daily_task)
     tower_home_record = get_user_tower_record(db, int(user["id"])) if show_tower_entry else None
     tower_home_record_line = (
         f"{int(tower_home_record['best_floor'] or 0)}階"
@@ -47369,14 +47455,18 @@ def research_daily():
     if not user:
         session.clear()
         return redirect(url_for("login", next=request.path, reason="expired"))
-    task = get_or_create_daily_task(db, user_id, get_day_key())
-    task_view = _daily_research_task_view(task)
+    summary = daily_research_home_summary(db, user_id, get_day_key())
+    task_views = [_daily_research_task_view(task) for task in summary.get("missions", [])]
+    task = task_views[0] if task_views else None
+    task_view = task
     db.commit()
     return render_template(
         "research_daily.html",
         user=user,
         task=task,
         task_view=task_view,
+        task_views=task_views,
+        daily_research_summary=summary,
         message=session.pop("message", None),
     )
 
@@ -56233,6 +56323,7 @@ def explore():
         },
         ip=request.remote_addr,
     )
+    world_bonus_notes.extend(_daily_research_update_lines())
     robot_tuning_result = None
     if active and battle_id:
         tuning_day_key = get_day_key(now)
@@ -56252,7 +56343,7 @@ def explore():
             area_key=area_key,
             won=bool(final_outcome == "win"),
             day_key=tuning_day_key,
-            source_battle_id=int(battle_id),
+            source_battle_id=(int(battle_id) if str(battle_id).isdigit() else None),
             source_request_id=request_id,
             is_admin=bool(int(user["is_admin"] or 0) == 1),
             feature_open=_robot_tuning_open_for_viewer(db, user_row=user),
@@ -56269,7 +56360,7 @@ def explore():
                 entity_id=int(active["id"]),
                 payload={
                     "area_key": area_key,
-                    "battle_id": int(battle_id),
+                    "battle_id": (int(battle_id) if str(battle_id).isdigit() else str(battle_id)),
                     "stat_key": robot_tuning_result.get("stat_key"),
                     "stat_label": robot_tuning_result.get("stat_label"),
                     "level_before": int(robot_tuning_result.get("level_before") or 0),
@@ -56290,7 +56381,7 @@ def explore():
                     action_key="robot_tuning.complete",
                     entity_type="robot_instance",
                     entity_id=int(active["id"]),
-                    payload={"area_key": area_key, "battle_id": int(battle_id)},
+                    payload={"area_key": area_key, "battle_id": (int(battle_id) if str(battle_id).isdigit() else str(battle_id))},
                     ip=request.remote_addr,
                 )
             if robot_tuning_result.get("daily_cap_reached"):
@@ -59077,11 +59168,15 @@ def build_confirm():
         db.rollback()
         session["message"] = str(exc)
         return _build_redirect()
-    session["message"] = (
+    build_message = (
         "機体を更新しました。新しい構成で出撃できます。"
         if first_upgrade_completed
         else ("機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。")
     )
+    daily_lines = _daily_research_update_lines()
+    if daily_lines:
+        build_message = f"{build_message} {daily_lines[0]}"
+    session["message"] = build_message
     return redirect(url_for("robots", build_result_id=int(instance_id)))
 
 
@@ -65015,11 +65110,13 @@ def parts_strengthen():
                             ip=request.remote_addr,
                         )
                         db.commit()
+                        daily_lines = _daily_research_update_lines()
                         flash(
                             f"{int(execute_plan.get('group_count') or 0)}種類を整理しました。"
                             f" 合計{int(execute_plan.get('fuse_count') or 0)}回強化 / "
                             f"素材{int(execute_plan.get('total_material_count') or 0)}個 / "
-                            f"-{int(execute_plan.get('total_coin_cost') or 0)}コイン",
+                            f"-{int(execute_plan.get('total_coin_cost') or 0)}コイン"
+                            + (f" / {daily_lines[0]}" if daily_lines else ""),
                             "notice",
                         )
                         return redirect(
@@ -65203,6 +65300,7 @@ def parts_strengthen():
                         ip=request.remote_addr,
                     )
                 db.commit()
+                daily_lines = _daily_research_update_lines()
                 session["last_fuse_result"] = {
                     "mode": mode,
                     "outcome": result.get("outcome"),
@@ -65229,6 +65327,7 @@ def parts_strengthen():
                     "batch_mode": bool(result.get("batch_mode")),
                     "batch_count": int(result.get("batch_count") or 0),
                     "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
+                    "daily_research_lines": daily_lines,
                 }
                 mode_label = "まとめ強化" if mode == "batch" else "強化"
                 consumed_ids = ",".join([f"#{x}" for x in result.get("consumed_ids", [])])
@@ -66668,11 +66767,13 @@ def admin_metrics():
             else 0.0
         )
     measurement_health = _measurement_health_snapshot(db, rows=rows, window_days=funnel_days)
+    daily_research_summary = daily_research_admin_summary(db, get_day_key())
     return render_template(
         "admin_metrics.html",
         rows=rows,
         daily_explore_rows=daily_explore_rows,
         measurement_health=measurement_health,
+        daily_research_summary=daily_research_summary,
         behavior_snapshot=behavior_snapshot,
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,

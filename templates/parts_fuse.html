@@ -133,6 +133,9 @@
     {% if last_fuse_result.get('power_delta_estimate') %}
     <div class="part-meta-line">推定戦闘力増分 {{ "%+d"|format(last_fuse_result.get('power_delta_estimate')|int) }}</div>
     {% endif %}
+    {% for line in last_fuse_result.get('daily_research_lines', []) %}
+    <div class="part-meta-line">{{ line }}</div>
+    {% endfor %}
     <div class="robot-time">素材に使った個体: {% for cid in last_fuse_result.get('consumed_ids', []) %}#{{ cid }}{% if not loop.last %}, {% endif %}{% endfor %}</div>
     {% if last_fuse_result.get('created_part') %}
       {% set cp = last_fuse_result['created_part'] %}

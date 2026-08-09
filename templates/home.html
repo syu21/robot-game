@@ -597,11 +597,11 @@
       <div class="card daily-research-home-card home-fold-card">
         <div class="home-fold-summary">
           <div>
-            <div class="home-explore-kicker">今日の研究テーマ</div>
+            <div class="home-explore-kicker">今日の研究指令</div>
             <div><b>{% if home_daily_research_collapsed %}▶{% else %}▼{% endif %} {{ daily_research_card['title'] }}</b></div>
           </div>
           <div class="home-fold-actions">
-            <div class="home-explore-status">{% if daily_research_card['is_done'] %}達成済み{% else %}{{ daily_research_card['progress_line'] }}{% endif %}</div>
+            <div class="home-explore-status">研究継続 {{ daily_research_card.get('streak', 0) }}日</div>
             <form method="post" action="{{ url_for('home_daily_research_expand' if home_daily_research_collapsed else 'home_daily_research_collapse') }}" class="inline-form inline-form-top">
               <input type="hidden" name="next" value="{{ request.path }}#home-daily-research-panel" />
               <button type="submit" class="btn-secondary">{{ '開く' if home_daily_research_collapsed else 'ホームから隠す' }}</button>
@@ -610,15 +610,15 @@
         </div>
         {% if not home_daily_research_collapsed %}
         <div class="daily-research-home-body home-fold-body" id="home-daily-research-panel">
-          {% if not daily_research_card['is_done'] %}
-          <div class="home-explore-context">{{ daily_research_card['progress_line'] }}</div>
-          {% endif %}
+          {% for mission in daily_research_card.get('missions', []) %}
+          <div class="home-explore-context">
+            {% if mission['is_done'] %}✓ 完了{% else %}□{% endif %}
+            <b>{{ mission['title'] }}</b>
+            <span>{{ mission['progress_line'] }}</span>
+          </div>
+          {% endfor %}
           <div class="home-inline-actions">
-            {% if daily_research_card['cta']['is_post'] %}
-            <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">確認する</a></p>
-            {% else %}
-            <p class="link"><a class="battle-home-link" href="{{ daily_research_card['cta']['url'] }}">{{ daily_research_card['cta']['label'] }}</a></p>
-            {% endif %}
+            <p class="link"><a class="battle-home-link" href="{{ url_for('research_daily') }}">確認する</a></p>
           </div>
         </div>
         {% endif %}
