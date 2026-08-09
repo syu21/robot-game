@@ -6685,7 +6685,12 @@ def _build_home_primary_explore_cta(
         and (
             bool(next_action_card.get("boss_enter"))
             or (next_action_area_key == "layer_2" and bool(next_action_card.get("layer2_unlock")))
-            or next_action_area_key in {LAYER4_FINAL_AREA_KEY, LAYER5_FINAL_AREA_KEY}
+            or next_action_area_key in {
+                LAYER4_FINAL_AREA_KEY,
+                LAYER5_FINAL_AREA_KEY,
+                LAYER6_FINAL_AREA_KEY,
+                LAYER7_FINAL_AREA_KEY,
+            }
         )
     )
     if next_action_priority:
@@ -6696,8 +6701,8 @@ def _build_home_primary_explore_cta(
         if bool(next_action_card.get("boss_enter")):
             title = "ボス出現！"
             helper_text = "次の出撃でボスと遭遇します。"
-        elif str(next_action_card.get("area_key") or "") == LAYER4_FINAL_AREA_KEY:
-            title = "第4層最終試験"
+        elif str(next_action_card.get("area_key") or "") in SPECIAL_EXPLORE_AREA_KEYS:
+            title = _explore_area_label(str(next_action_card.get("area_key") or ""))
         context_line = "ボス警報や解放直後の目標を優先表示しています。"
         boss_enter = bool(next_action_card.get("boss_enter"))
         area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
@@ -6722,8 +6727,8 @@ def _build_home_primary_explore_cta(
         button_label = str(next_action_card.get("cta_label") or "出撃する")
         helper_text = str(next_action_card.get("desc") or "").strip() or _area_home_desc_line(area["key"] if area else "")
         title = str(next_action_card.get("title") or "次の出撃")
-        if str(next_action_card.get("area_key") or "") == LAYER4_FINAL_AREA_KEY:
-            title = "第4層最終試験"
+        if str(next_action_card.get("area_key") or "") in SPECIAL_EXPLORE_AREA_KEYS:
+            title = _explore_area_label(str(next_action_card.get("area_key") or ""))
         context_line = "ボス警報や解放直後の目標を優先表示しています。"
         boss_enter = bool(next_action_card.get("boss_enter"))
         area_key = str(next_action_card.get("area_key") or (area["key"] if area else "")).strip() or None
@@ -6781,7 +6786,19 @@ def _locked_layer_lines(user_row, db=None):
         and max_layer >= 5
         and (not db or not user_row or "id" not in user_row.keys() or not _is_special_area_unlocked(db, int(user_row["id"]), LAYER5_FINAL_AREA_KEY))
     ):
-        lines.append("🔒 第5層最終試験（Labyrinth / Pinnacle の2ボス撃破で解放）")
+        lines.append("🔒 第5層最終試験（再起動 / 過負荷 の2ボス撃破で解放）")
+    if (
+        release_cap >= 6
+        and max_layer >= 6
+        and (not db or not user_row or "id" not in user_row.keys() or not _is_special_area_unlocked(db, int(user_row["id"]), LAYER6_FINAL_AREA_KEY))
+    ):
+        lines.append("🔒 第6層最終試験（改修深域 / 中核炉心 の2ボス撃破で解放）")
+    if (
+        release_cap >= 7
+        and max_layer >= 7
+        and (not db or not user_row or "id" not in user_row.keys() or not _is_special_area_unlocked(db, int(user_row["id"]), LAYER7_FINAL_AREA_KEY))
+    ):
+        lines.append("🔒 第7層最終試験（深層残響域 / 終端暴走域 の2ボス撃破で解放）")
     return lines
 
 
@@ -19724,7 +19741,7 @@ def _recommend_areas_for_module(module):
     if bonuses["hp_bonus"] >= 8 or bonuses["def_bonus"] >= 6:
         return {
             "reason": "耐久や防御が高めなので、長期戦になりやすいエリアで試しやすいです。",
-            "areas": ["第4層Forge", "第5層Labyrinth"],
+            "areas": ["第4層Forge", "第5層Reboot"],
         }
     if bonuses["atk_bonus"] >= 8 or bonuses["cri_bonus"] >= 6:
         return {
@@ -19734,7 +19751,7 @@ def _recommend_areas_for_module(module):
     if bonuses["spd_bonus"] >= 5:
         return {
             "reason": "素早さが高めなので、先手を取りたいエリアで試しやすいです。",
-            "areas": ["第2層Rush", "第5層Pinnacle"],
+            "areas": ["第2層Rush", "第5層Overdrive"],
         }
     return None
 
@@ -37305,6 +37322,34 @@ def _home_next_action_card(
             "cta_url": url_for("explore"),
             "is_post": True,
             "area_key": LAYER5_FINAL_AREA_KEY,
+            "boss_enter": False,
+        }
+    if (
+        current_layer >= 6
+        and _is_special_area_unlocked(db, int(user["id"]), LAYER6_FINAL_AREA_KEY)
+        and not _has_fixed_boss_defeat_in_area(db, int(user["id"]), LAYER6_FINAL_AREA_KEY)
+    ):
+        return {
+            "title": "Next Action",
+            "desc": "第6層最終試験が解放中",
+            "cta_label": "暴走制御核に挑む",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": LAYER6_FINAL_AREA_KEY,
+            "boss_enter": False,
+        }
+    if (
+        current_layer >= 7
+        and _is_special_area_unlocked(db, int(user["id"]), LAYER7_FINAL_AREA_KEY)
+        and not _has_fixed_boss_defeat_in_area(db, int(user["id"]), LAYER7_FINAL_AREA_KEY)
+    ):
+        return {
+            "title": "Next Action",
+            "desc": "第7層最終試験が解放中",
+            "cta_label": "深層審判核に挑む",
+            "cta_url": url_for("explore"),
+            "is_post": True,
+            "area_key": LAYER7_FINAL_AREA_KEY,
             "boss_enter": False,
         }
     if current_layer == 5:

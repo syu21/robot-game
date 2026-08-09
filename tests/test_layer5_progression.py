@@ -245,6 +245,79 @@ class Layer5ProgressionTests(unittest.TestCase):
             admin = db.execute("SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
             self.assertTrue(game_app._area_visible_for_viewer(db, "layer_7_echo", user_row=admin))
 
+    def test_layer6_release_gate_requires_public_flag_and_layer5_clear(self):
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 5 WHERE id = ?", (self.user_id,))
+            user = db.execute("SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertFalse(game_app._is_area_unlocked(user, "layer_6_rebuild", db=db))
+
+            db.execute("UPDATE release_flags SET is_public = 1 WHERE key = 'layer6'")
+            user = db.execute("SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertFalse(game_app._is_area_unlocked(user, "layer_6_rebuild", db=db))
+
+            db.execute("UPDATE users SET max_unlocked_layer = 6 WHERE id = ?", (self.user_id,))
+            user = db.execute("SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertTrue(game_app._is_area_unlocked(user, "layer_6_rebuild", db=db))
+
+    def test_layer7_stays_hidden_when_layer6_is_public(self):
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE release_flags SET is_public = 1 WHERE key = 'layer6'")
+            db.execute("UPDATE release_flags SET is_public = 0 WHERE key = 'layer7'")
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 7 WHERE id = ?", (self.user_id,))
+            user = db.execute("SELECT id, is_admin, max_unlocked_layer FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertTrue(game_app._is_area_unlocked(user, "layer_6_rebuild", db=db))
+            self.assertFalse(game_app._is_area_unlocked(user, "layer_7_echo", db=db))
+            self.assertEqual(game_app._visible_user_max_unlocked_layer(user, db=db), 6)
+
+    def test_layer6_direct_post_is_blocked_while_admin_only(self):
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 6 WHERE id = ?", (self.user_id,))
+            db.commit()
+        client = game_app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = self.user_id
+            sess["username"] = "layer5_tester"
+        resp = client.post("/explore", data={"area_key": "layer_6_rebuild"}, follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            failed = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_FAILED"]),
+            ).fetchone()
+            self.assertIsNotNone(failed)
+            self.assertEqual(json.loads(failed["payload_json"])["area_key"], "layer_6_rebuild")
+
+    def test_layer6_final_next_action_and_locked_line_are_connected(self):
+        game_app.app.config["BYPASS_RELEASE_GATES_IN_TESTS"] = False
+        self._insert_fixed_boss_defeat("layer_6_rebuild", "deep_boss_layer_6_rebuild_deep_layer_5_reboot_boss_4_forge_elguard")
+        self._insert_fixed_boss_defeat("layer_6_core", "deep_boss_layer_6_core_deep_layer_5_overdrive_boss_4_haze_mirage")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE release_flags SET is_public = 1 WHERE key = 'layer6'")
+            db.execute("UPDATE users SET is_admin = 0, max_unlocked_layer = 6 WHERE id = ?", (self.user_id,))
+            now = int(time.time())
+            cur = db.execute(
+                "INSERT INTO robot_instances (user_id, name, status, created_at, updated_at) VALUES (?, 'Layer6Bot', 'active', ?, ?)",
+                (self.user_id, now, now),
+            )
+            db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (int(cur.lastrowid), self.user_id))
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            with game_app.app.test_request_context("/"):
+                card = game_app._home_next_action_card(db, user, [], 6, None, None, total_explores=10)
+            self.assertEqual(card["area_key"], game_app.LAYER6_FINAL_AREA_KEY)
+            self.assertTrue(game_app._is_area_unlocked(user, game_app.LAYER6_FINAL_AREA_KEY, db=db))
+
+            db.execute("DELETE FROM world_events_log WHERE user_id = ? AND json_extract(payload_json, '$.area_key') = ?", (self.user_id, game_app.LAYER6_SUBAREA_KEYS[0]))
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertTrue(any("第6層最終試験" in line for line in game_app._locked_layer_lines(user, db=db)))
+
     def test_reserved_areas_are_not_general_sortie_targets(self):
         area_keys = {area["key"] for area in game_app.EXPLORE_AREAS}
         for area_key in game_app.RESERVED_FUTURE_LAYER5_AREA_KEYS:

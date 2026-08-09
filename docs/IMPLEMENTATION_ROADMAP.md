@@ -72,7 +72,7 @@
 
 今後の実装では、次を壊さないこと。
 
-- 8ターン戦闘を維持する
+- 第1〜3層は8ターン判定を維持し、第4層以降は現行コードどおりターン上限なしでHP決着を優先する
 - `audit.*` 互換を維持する
 - `turn_logs` 互換を維持する
 - `SYSTEM` 投稿の既存方針を壊さない
@@ -374,7 +374,7 @@
 - 第4層3ボス撃破で `layer_4_final` が解放される
 - growth tendency / records / boss reward が第4層まで揃っている
 - `layer_4_final` 撃破で第5層が解放される
-- 第5層は `layer_5_labyrinth / layer_5_pinnacle / layer_5_final` の構成
+- 第5層は `layer_5_reboot / layer_5_overdrive / layer_5_final` の構成。第6層は `layer_6_rebuild / layer_6_core / layer_6_final`、第7層は `layer_7_echo / layer_7_chaos / layer_7_final` としてrelease flagで公開管理する
 
 ## Phase 3: 競争文化を作る
 

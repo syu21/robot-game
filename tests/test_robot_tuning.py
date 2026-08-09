@@ -80,6 +80,21 @@ class RobotTuningServiceTest(unittest.TestCase):
         self.assertEqual(second["reason"], "duplicate")
         self.assertEqual(xp_total, 1)
 
+    def test_layer6_win_is_eligible_for_tuning_xp(self):
+        result = grant_tuning_xp(
+            self.db,
+            user_id=1,
+            robot_instance_id=10,
+            area_key="layer_6_rebuild",
+            won=True,
+            day_key="2026-08-04",
+            source_battle_id=1060,
+            source_request_id="layer6-win",
+            feature_open=True,
+        )
+        self.assertTrue(result["granted"])
+        self.assertIn(result["stat_key"], {"hp", "def", "atk", "acc"})
+
     def test_daily_gain_limit_is_account_wide(self):
         for idx in range(DAILY_GAIN_LIMIT):
             result = grant_tuning_xp(

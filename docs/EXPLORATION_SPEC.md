@@ -1,6 +1,6 @@
 # 出撃仕様（/explore）
 
-最終更新日: 2026-06-21
+最終更新日: 2026-08-09
 
 ## 1. エンドポイント
 - 実行: `POST /explore`
@@ -15,18 +15,25 @@
   - `layer_4_haze`
   - `layer_4_burst`
   - `layer_4_final`（第4層3ボス撃破後の最終試験）
-  - `layer_5_labyrinth`
-  - `layer_5_pinnacle`
+  - `layer_5_reboot`
+  - `layer_5_overdrive`
   - `layer_5_final`（第5層2ボス撃破後の最終試験）
+  - `layer_6_rebuild`
+  - `layer_6_core`
+  - `layer_6_final`（第6層2ボス撃破後の最終試験）
+  - `layer_7_echo`
+  - `layer_7_chaos`
+  - `layer_7_final`（第7層2ボス撃破後の最終試験）
 
 ## 2. 前提チェック順序
 1. ログイン済み
 2. `area_key` 妥当性
 3. 層解放状態 (`max_unlocked_layer`)
-4. 出撃機体存在（active robot）
-5. 管理者判定
-6. 研究ブースト所持かつ自動使用ONなら1回分を自動消費してCT判定をスキップ
-7. 共通CT判定
+4. release flag 一般公開または管理者
+5. 出撃機体存在（active robot）
+6. 管理者判定
+7. 研究ブースト所持かつ自動使用ONなら1回分を自動消費してCT判定をスキップ
+8. 共通CT判定
 
 ## 3. CT仕様（共通）
 - 一般ユーザー: 40秒
@@ -83,8 +90,13 @@
   - 30/40/50 到達でボス出現率を段階上昇、75以上で次回該当ボス遭遇を保証
   - ボス遭遇時点で該当エリアだけ0にリセット。勝敗ではリセットしない
   - `layer_4_final` / 第5層には適用しない
-- `layer_5_labyrinth` / `layer_5_pinnacle` は各エリア専用の固定ボスを持つ
-- `layer_5_final` は第5層2ボス撃破後に解放される最終試験エリアで、`オメガフレーム` 固定
+- `layer_5_reboot` / `layer_5_overdrive` は各エリア専用の固定ボスを持つ
+- `layer_5_final` は第5層2ボス撃破後に解放される最終試験エリア
+- `layer_6_rebuild` / `layer_6_core` は第5層派生の深層変異体を使う第6層通常エリア
+- `layer_6_final` は第6層2ボス撃破後に解放される最終試験エリア
+- `layer_7_echo` / `layer_7_chaos` は第6層より上位の第7層通常エリア
+- `layer_7_final` は第7層2ボス撃破後に解放される最終試験エリア
+- `layer6` / `layer7` release flag が非公開の場合、一般ユーザーは個人進行が到達済みでも `/map` 表示と `POST /explore` の両方でブロックされる。管理者は確認可能。
 
 ## 6. 報酬決定
 - コイン: 勝敗・環境補正に応じて加算
@@ -122,7 +134,7 @@
 - 恐竜発掘キャンペーン:
   - `campaign_key=dinosaur_debut`
   - 対象は恐竜Nシリーズ7種 x 4部位
-  - 対象エリアは `layer_1 / layer_2 / layer_2_mist / layer_2_rush / layer_3 / layer_4_forge / layer_4_haze / layer_4_burst / layer_5_labyrinth / layer_5_pinnacle`
+  - 対象エリアは `layer_1 / layer_2 / layer_2_mist / layer_2_rush / layer_3 / layer_4_forge / layer_4_haze / layer_4_burst / layer_5_reboot / layer_5_overdrive`
   - 通常ドロップとは別枠で、通常戦勝利時に10%で恐竜Nパーツを1個追加発見する
   - 戦利品では `恐竜発掘！` を付けて表示する
   - `audit.drop` payload には `source=campaign / campaign_key=dinosaur_debut` を残す
@@ -138,9 +150,17 @@
   - 第4層ボス警報戦: `第4層ボス警報`
   - 第4層最終エリア: `第4層 最終試験`
 - 第5層の育成傾向:
-  - `layer_5_labyrinth`: 耐久・命中・安定寄り
-  - `layer_5_pinnacle`: 攻撃・会心・速攻寄り
+  - `layer_5_reboot`: 耐久・防御強化
+  - `layer_5_overdrive`: 速度・命中強化
   - `layer_5_final`: 最終試験（思想完成）
+- 第6層の育成傾向:
+  - `layer_6_rebuild`: 耐久・防御深層
+  - `layer_6_core`: 速度・命中深層
+  - `layer_6_final`: 深層総合試験
+- 第7層の育成傾向:
+  - `layer_7_echo`: 速度・命中最深層
+  - `layer_7_chaos`: 攻撃・会心最深層
+  - `layer_7_final`: 最深層総合試験
 - 第1層固定ボス初突破:
   - 初回撃破時だけ `第1層突破ボーナス` としてコイン `+100`
   - 既存ボスDECOR `boss_emblem_aurix` に加え、初突破DECOR `layer1_clear_emblem_001` を付与

@@ -35,6 +35,12 @@ AREA_TUNING_WEIGHTS = {
     "layer_5_reboot": {"hp": 35, "acc": 35, "def": 30},
     "layer_5_overdrive": {"atk": 40, "cri": 35, "spd": 25},
     "layer_5_final": {key: 1 for key in TUNING_STAT_KEYS},
+    "layer_6_rebuild": {"hp": 38, "def": 34, "atk": 18, "acc": 10},
+    "layer_6_core": {"spd": 36, "acc": 34, "atk": 20, "cri": 10},
+    "layer_6_final": {key: 1 for key in TUNING_STAT_KEYS},
+    "layer_7_echo": {"spd": 36, "acc": 34, "def": 18, "atk": 12},
+    "layer_7_chaos": {"atk": 38, "cri": 34, "spd": 18, "acc": 10},
+    "layer_7_final": {key: 1 for key in TUNING_STAT_KEYS},
 }
 
 

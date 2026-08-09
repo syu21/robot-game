@@ -206,6 +206,15 @@ DAILY_RESEARCH_AREA_TENDENCY = {
     "layer_4_forge": {"defense"},
     "layer_4_haze": {"accuracy"},
     "layer_4_burst": {"attack"},
+    "layer_5_reboot": {"defense"},
+    "layer_5_overdrive": {"accuracy"},
+    "layer_5_final": {"defense", "accuracy", "attack"},
+    "layer_6_rebuild": {"defense"},
+    "layer_6_core": {"accuracy"},
+    "layer_6_final": {"defense", "accuracy", "attack"},
+    "layer_7_echo": {"accuracy"},
+    "layer_7_chaos": {"attack"},
+    "layer_7_final": {"defense", "accuracy", "attack"},
 }
 DAILY_RESEARCH_AREA_LABELS = {
     "layer_1": "第1層",
@@ -219,6 +228,15 @@ DAILY_RESEARCH_AREA_LABELS = {
     "layer_4_forge": "第4層フォージ",
     "layer_4_haze": "第4層ヘイズ",
     "layer_4_burst": "第4層バースト",
+    "layer_5_reboot": "第5層ラビリンス",
+    "layer_5_overdrive": "第5層ピナクル",
+    "layer_5_final": "第5層最終試験",
+    "layer_6_rebuild": "第6層改修深域",
+    "layer_6_core": "第6層中核炉心",
+    "layer_6_final": "第6層最終試験",
+    "layer_7_echo": "第7層深層残響域",
+    "layer_7_chaos": "第7層終端暴走域",
+    "layer_7_final": "第7層最終試験",
 }
 MISSION_KEY_ALIASES = {
     "explore_layer1_2": "patrol_sortie_3",

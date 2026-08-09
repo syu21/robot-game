@@ -89,6 +89,35 @@ class DailyResearchV1Tests(unittest.TestCase):
             text = "\n".join(f"{row['title']} {row['description']}" for row in rows)
             self.assertNotIn("第4層", text)
 
+    def test_layer6_reached_user_gets_layer6_tendency_target(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 6 WHERE id = ?", (self.user_id,))
+            get_or_create_daily_research_missions(db, self.user_id, "2026-08-09")
+            row = db.execute(
+                "SELECT description FROM daily_research_progress WHERE user_id = ? AND mission_type = 'tendency'",
+                (self.user_id,),
+            ).fetchone()
+            self.assertIn("第6層", row["description"])
+
+    def test_layer6_tendency_area_progresses_matching_mission(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            get_or_create_daily_research_missions(db, self.user_id, get_day_key())
+            db.execute(
+                """
+                UPDATE daily_research_progress
+                SET mission_key = 'armor_tendency_win_3', title = '重装試験', condition_key = 'tendency_win', target = 3, progress = 0, completed_at = NULL, reward_claimed_at = NULL
+                WHERE user_id = ? AND mission_type = 'tendency'
+                """,
+                (self.user_id,),
+            )
+            db.commit()
+            audit_log(db, EVENT_EXPLORE_END, user_id=self.user_id, request_id="layer6-defense", payload={"area_key": "layer_6_rebuild", "result": {"win": True}})
+            audit_log(db, EVENT_EXPLORE_END, user_id=self.user_id, request_id="layer6-accuracy", payload={"area_key": "layer_6_core", "result": {"win": True}})
+            row = db.execute("SELECT progress FROM daily_research_progress WHERE user_id = ? AND mission_key = 'armor_tendency_win_3'", (self.user_id,)).fetchone()
+            self.assertEqual(int(row["progress"]), 1)
+
     def test_three_explores_complete_sortie_mission(self):
         with game_app.app.app_context():
             db = game_app.get_db()
