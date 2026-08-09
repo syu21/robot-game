@@ -4405,6 +4405,24 @@ def _normalize_boss_source(value):
     return source if source in allowed else "unknown"
 
 
+def _audit_payload_is_win(payload):
+    if not isinstance(payload, dict):
+        return False
+    result = payload.get("result")
+    if isinstance(result, dict):
+        if "win" in result:
+            return bool(result.get("win"))
+        result = result.get("result") or result.get("outcome")
+    if str(result or "").strip().lower() in {"win", "won", "victory", "勝利"}:
+        return True
+    if "win" in payload:
+        value = payload.get("win")
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "win"}
+    return False
+
+
 def _battle_result_view_payload(*, user_id, area_key, battle_result, summary=None, result_surface="battle_result"):
     summary = dict(summary or {})
     battle_result_value = str(battle_result or summary.get("outcome_base") or summary.get("outcome") or "").strip()
@@ -4685,8 +4703,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             payload = event["payload"]
             user_days.add(_jst_date_from_ts(ts))
             area_key = str(payload.get("area_key") or "")
-            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-            win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
+            win = _audit_payload_is_win(payload)
             if et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
                 step_users["home_first_view"].add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_HOME_READY"):
@@ -4844,8 +4861,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             ts = int(event["created_at"])
             payload = event["payload"]
             area_key = str(payload.get("area_key") or "")
-            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-            win = bool(result.get("win")) if isinstance(result, dict) else str(payload.get("result") or "").lower() == "win"
+            win = _audit_payload_is_win(payload)
             if et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
                 build_complete_ts = ts if build_complete_ts is None else min(build_complete_ts, ts)
             if key == "home_first_view" and et in {AUDIT_EVENT_TYPES["HOME_VIEW"], AUDIT_EVENT_TYPES["ONBOARDING_HOME_FIRST_VIEW"]}:
@@ -46799,7 +46815,7 @@ def home():
                 "area_key": "layer_1",
                 "entry_source": "next_action_first_explore",
                 "show_map_link": False,
-                "context_line": "勝てばロボパーツを持ち帰れます。",
+                "context_line": "まずは第1層でパーツを集めよう。勝てばロボパーツを持ち帰れます。",
             }
         )
         show_beginner_mission = False
