@@ -40,6 +40,9 @@
       <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
+    {% if home_primary_explore_cta.get('context_line') %}
+    <div class="robot-time">{{ home_primary_explore_cta.get('context_line') }}</div>
+    {% endif %}
     {% if user and user['is_admin'] %}
     <div class="robot-time">管理者確認: ボスへ直行</div>
     {% endif %}
