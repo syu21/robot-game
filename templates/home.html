@@ -1357,6 +1357,26 @@
           </div>
         </div>
         {% endif %}
+        {% if layer6_research_brief and layer6_research_brief.get('enabled') %}
+        <div class="home-research-highlights-card">
+          <div><b>第6層研究速報</b></div>
+          <div class="upgrade-cost">今週の第6層攻略記録から最大3件。</div>
+          <div class="home-research-highlight-grid">
+            {% for item in layer6_research_brief['rows'] %}
+            <div class="home-research-highlight-item">
+              <div class="upgrade-cost">{{ item['spotlight_labels']|join(' / ') }}</div>
+              <div class="presence-user-line user-signal">
+                {{ render_user_chip(item, 'layer6', (item.get('display_username') or item['username']) ~ ' robot') }}
+                <div class="user-signal-meta">
+                  <div class="user-signal-name-line">{{ render_user_name_badged_html(item, item.get('display_username') or item['username']) }}</div>
+                  <div class="user-signal-sub">{{ item['record_label'] }}</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
         <div><b>今週のランキング</b></div>
         <div class="upgrade-cost">{{ home_ranking_metric['title'] }}</div>
         {% for row in home_ranking_rows %}

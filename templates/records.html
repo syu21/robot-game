@@ -188,6 +188,71 @@
         {% endfor %}
       </ul>
     </div>
+    <div class="card">
+      <div><b>第6層初到達</b></div>
+      <ul class="timeline-list">
+        {% for row in first_layer6_records %}
+        <li>
+          <div><b>{{ row['title'] }}</b></div>
+          <div class="presence-user-line record-user-line user-signal">
+            {{ render_user_chip(row, 'record', row['username'] ~ ' robot') }}
+            <div class="user-signal-meta">
+              {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
+              <div class="user-signal-sub">第6層の先駆者</div>
+            </div>
+          </div>
+          <div class="robot-time">{{ row['time_jst'] }} JST</div>
+        </li>
+        {% else %}
+        <li>まだ第6層到達記録はありません。</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>第6層研究記録</h2>
+    <div class="world-competition-grid">
+      {% for group in [
+        {'title': '最短攻略', 'rows': layer6_records['fastest'], 'empty': 'まだ第6層の最短攻略記録はありません。'},
+        {'title': '安定攻略', 'rows': layer6_records['stability'], 'empty': '今週はまだ安定攻略の記録条件を満たしていません。'},
+        {'title': '研究熱', 'rows': layer6_records['heat'], 'empty': '今週はまだ第6層研究データがありません。'},
+        {'title': '最終試験', 'rows': layer6_records['boss'], 'empty': 'まだ第6層最終試験の撃破記録はありません。'}
+      ] %}
+      <div class="card">
+        <div><b>{{ group['title'] }}</b></div>
+        <ul class="ranking-mini">
+          {% for row in group['rows'] %}
+          <li class="record-ranking-item{% if loop.index <= 3 %} is-podium{% endif %}">
+            <div class="record-ranking-main">
+              <div class="ranking-robot-cell">
+                {% if row.get('image_url') %}
+                <img class="ranking-robot-thumb{% if loop.index <= 3 %} robo-anim robo-anim-idle{% endif %}" src="{{ row['image_url'] }}" alt="{{ row['robot_name'] }}" loading="lazy" />
+                {% endif %}
+                <div>
+                  <div><b>{{ loop.index }}位 {{ row['record_label'] }}</b></div>
+                  <div class="presence-user-line record-owner-line user-signal{% if loop.index <= 3 %} is-podium{% endif %}">
+                    {{ render_user_chip(row, 'record', (row.get('display_username') or row['username']) ~ ' robot', 'lazy', loop.index <= 3) }}
+                    <div class="user-signal-meta">
+                      {{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}
+                      <div class="user-signal-sub">{{ row.get('presence_label', '探索待機中') }}</div>
+                    </div>
+                  </div>
+                  <div class="robot-time">{{ row['robot_name'] }}{% if row.get('style_label') %} / 思想: {{ row['style_label'] }}{% endif %}</div>
+                  {% if row.get('detail_label') %}
+                  <div class="robot-time">{{ row['detail_label'] }}</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </li>
+          {% else %}
+          <li>{{ group['empty'] }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
   </section>
 
   <section class="panel">

@@ -2081,6 +2081,15 @@ RANKING_METRIC_DEFS = (
         "row_kind": "user",
     },
     {
+        "key": "layer6_research",
+        "tab_label": "第6層研究",
+        "title": "今週の第6層研究ランキング",
+        "metric_label": "第6層研究",
+        "description": "今週の第6層通常戦データ収集回数を表示します。",
+        "is_weekly": True,
+        "row_kind": "user",
+    },
+    {
         "key": "fastest",
         "tab_label": "最速",
         "title": "最速ロボランキング",
@@ -10078,6 +10087,16 @@ def _ranking_rows(db, metric_key, limit=50, week_key=None):
             """,
             (int(start_ts), int(end_ts), int(limit)),
         ).fetchall()
+        return rows, metric
+    if metric["key"] == "layer6_research":
+        rows = [
+            {
+                "id": int(row["user_id"]),
+                "username": row["username"],
+                "metric_value": int(row["sortie_count"]),
+            }
+            for row in _layer_record_heat_rows(db, 6, week_key=wk, limit=limit)
+        ]
         return rows, metric
     return _ranking_rows(db, "wins", limit=limit, week_key=wk)
 
@@ -36645,6 +36664,540 @@ def _record_preview_rows(db, metric_key, *, week_key=None, limit=3):
     }
 
 
+LAYER_RECORD_STABILITY_MIN_SORTIES = 5
+
+
+def _layer_record_area_keys(layer_no, *, include_final=False):
+    layer = int(layer_no or 0)
+    if layer == 6:
+        keys = list(LAYER6_SUBAREA_KEYS)
+        if include_final:
+            keys.append(LAYER6_FINAL_AREA_KEY)
+        return tuple(keys)
+    if layer == 5:
+        keys = list(LAYER5_SUBAREA_KEYS)
+        if include_final:
+            keys.append(LAYER5_FINAL_AREA_KEY)
+        return tuple(keys)
+    if layer == 7:
+        keys = list(LAYER7_SUBAREA_KEYS)
+        if include_final:
+            keys.append(LAYER7_FINAL_AREA_KEY)
+        return tuple(keys)
+    return ()
+
+
+def _layer_record_payload(raw):
+    try:
+        payload = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _layer_record_result(payload):
+    result = payload.get("result")
+    return result if isinstance(result, dict) else {}
+
+
+def _layer_record_player(payload):
+    player = payload.get("player")
+    return player if isinstance(player, dict) else {}
+
+
+def _layer_record_area_key(payload):
+    return str(payload.get("area_key") or "").strip()
+
+
+def _layer_record_is_win(payload):
+    result = _layer_record_result(payload)
+    value = result.get("win", payload.get("win"))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "win", "won", "yes"}
+    return bool(value)
+
+
+def _layer_record_is_boss(payload):
+    result = _layer_record_result(payload)
+    boss = payload.get("boss")
+    boss = boss if isinstance(boss, dict) else {}
+    return bool(
+        result.get("is_area_boss")
+        or result.get("boss_battle")
+        or boss.get("is_area_boss")
+        or boss.get("boss_battle")
+    )
+
+
+def _layer_record_turns(payload):
+    result = _layer_record_result(payload)
+    for value in (result.get("turns"), result.get("turn_count"), payload.get("turns"), payload.get("turn_count")):
+        try:
+            turns = int(value)
+        except (TypeError, ValueError):
+            continue
+        if turns > 0:
+            return turns
+    return 0
+
+
+def _layer_record_robot_id(payload):
+    player = _layer_record_player(payload)
+    for value in (player.get("robot_instance_id"), payload.get("robot_instance_id"), payload.get("active_robot_id")):
+        try:
+            robot_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if robot_id > 0:
+            return robot_id
+    return None
+
+
+def _layer_record_remaining_hp_ratio(payload):
+    result = _layer_record_result(payload)
+    player = _layer_record_player(payload)
+    for key in ("remaining_hp_ratio", "hp_ratio", "player_hp_ratio"):
+        try:
+            value = float(result.get(key, payload.get(key)))
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            return max(0.0, min(1.0, value))
+    hp_max = None
+    for value in (player.get("hp_max"), player.get("max_hp"), payload.get("hp_max"), payload.get("player_max_hp")):
+        try:
+            hp_max = int(value)
+        except (TypeError, ValueError):
+            continue
+        if hp_max and hp_max > 0:
+            break
+    if not hp_max or hp_max <= 0:
+        return None
+    damage = 0
+    for value in (result.get("damage_taken_total"), payload.get("damage_taken_total")):
+        try:
+            damage = int(value)
+            break
+        except (TypeError, ValueError):
+            continue
+    return max(0.0, min(1.0, (hp_max - damage) / hp_max))
+
+
+def _layer_record_dedupe_key(row, payload):
+    request_id = str((row["request_id"] if "request_id" in row.keys() else "") or "").strip()
+    if request_id:
+        return f"request:{request_id}"
+    result = _layer_record_result(payload)
+    battle_id = str(result.get("battle_id") or payload.get("battle_id") or "").strip()
+    if battle_id:
+        return f"battle:{battle_id}"
+    return f"event:{int(row['id'])}"
+
+
+def _layer_record_event_rows(db, layer_no, *, week_key=None, normal_only=True, wins_only=False):
+    area_keys = set(_layer_record_area_keys(layer_no, include_final=not normal_only))
+    if not area_keys:
+        return []
+    where = [
+        "wel.event_type = ?",
+        "wel.user_id IS NOT NULL",
+        "wel.payload_json LIKE ?",
+        _analytics_user_filter_sql("u"),
+    ]
+    params = [AUDIT_EVENT_TYPES["EXPLORE_END"], f"%layer_{int(layer_no)}_%"]
+    if week_key:
+        start_dt, end_dt = _world_week_bounds(str(week_key))
+        where.append("wel.created_at >= ?")
+        where.append("wel.created_at < ?")
+        params.extend([int(start_dt.timestamp()), int(end_dt.timestamp())])
+    rows = db.execute(
+        f"""
+        SELECT wel.id, wel.user_id, wel.created_at, wel.request_id, wel.payload_json,
+               u.username, u.display_name
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE {' AND '.join(where)}
+        ORDER BY wel.created_at ASC, wel.id ASC
+        """,
+        params,
+    ).fetchall()
+    events = []
+    seen = set()
+    for row in rows:
+        payload = _layer_record_payload(row["payload_json"])
+        area_key = _layer_record_area_key(payload)
+        if area_key not in area_keys:
+            continue
+        if normal_only and _layer_record_is_boss(payload):
+            continue
+        win = _layer_record_is_win(payload)
+        if wins_only and not win:
+            continue
+        dedupe_key = (int(row["user_id"]), _layer_record_dedupe_key(row, payload))
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        events.append(
+            {
+                "event_id": int(row["id"]),
+                "user_id": int(row["user_id"]),
+                "username": row["username"],
+                "display_name": row["display_name"] if "display_name" in row.keys() else None,
+                "created_at": int(row["created_at"] or 0),
+                "area_key": area_key,
+                "area_label": _boss_area_label(area_key),
+                "win": win,
+                "turns": _layer_record_turns(payload),
+                "robot_id": _layer_record_robot_id(payload),
+                "remaining_hp_ratio": _layer_record_remaining_hp_ratio(payload),
+                "payload": payload,
+            }
+        )
+    return events
+
+
+def _layer_record_robot_view(db, robot_id, payload=None):
+    rid = int(robot_id or 0)
+    payload = payload or {}
+    if rid <= 0:
+        return {
+            "robot_id": None,
+            "robot_name": str(payload.get("robot_name") or "記録機体").strip() or "記録機体",
+            "image_url": None,
+            "style_label": str(payload.get("style_label") or "研究型").strip() or "研究型",
+            "battle_style_line": "",
+        }
+    row = db.execute(
+        """
+        SELECT id, name, composed_image_path, updated_at, style_current_key, style_key
+        FROM robot_instances
+        WHERE id = ?
+        """,
+        (rid,),
+    ).fetchone()
+    if not row:
+        return {
+            "robot_id": rid,
+            "robot_name": str(payload.get("robot_name") or f"Robot#{rid}").strip() or f"Robot#{rid}",
+            "image_url": None,
+            "style_label": str(payload.get("style_label") or "研究型").strip() or "研究型",
+            "battle_style_line": "",
+        }
+    profile = {}
+    try:
+        stat_obj = _compute_robot_stats_for_instance(db, rid)
+        profile = _robot_profile_view(stat_obj) if stat_obj else {}
+    except Exception:
+        profile = {}
+    style_key = str(row["style_current_key"] or row["style_key"] or "").strip()
+    style_label = str(
+        profile.get("signature_label")
+        or profile.get("style_label")
+        or ROBOT_STYLE_LABELS.get(style_key)
+        or payload.get("style_label")
+        or "研究型"
+    ).strip()
+    return {
+        "robot_id": rid,
+        "robot_name": str(row["name"] or f"Robot#{rid}").strip() or f"Robot#{rid}",
+        "image_url": _composed_image_url(row["composed_image_path"], row["updated_at"]),
+        "style_label": style_label,
+        "battle_style_line": str(profile.get("battle_style_line") or profile.get("focus_line") or "").strip(),
+    }
+
+
+def _decorate_layer_record_rows(db, rows):
+    decorated = _decorate_user_rows(db, rows, user_key="user_id")
+    out = []
+    for row in decorated:
+        item = dict(row)
+        robot_view = _layer_record_robot_view(db, item.get("robot_id"), item.get("payload") or {})
+        item.update(robot_view)
+        item["time_jst"] = _format_jst_ts(item.get("created_at"))
+        out.append(item)
+    return out
+
+
+def _layer_record_fastest_rows(db, layer_no, *, limit=3):
+    events = [
+        event
+        for event in _layer_record_event_rows(db, layer_no, normal_only=True, wins_only=True)
+        if int(event.get("turns") or 0) > 0
+    ]
+    best_by_user = {}
+    for event in events:
+        hp_ratio = event.get("remaining_hp_ratio")
+        sort_key = (
+            int(event["turns"]),
+            int(event["created_at"]),
+            -float(hp_ratio if hp_ratio is not None else 0.0),
+            int(event["event_id"]),
+        )
+        current = best_by_user.get(event["user_id"])
+        if not current or sort_key < current["_sort_key"]:
+            item = dict(event)
+            item["_sort_key"] = sort_key
+            best_by_user[event["user_id"]] = item
+    rows = sorted(
+        best_by_user.values(),
+        key=lambda item: (
+            int(item["turns"]),
+            int(item["created_at"]),
+            -float(item.get("remaining_hp_ratio") or 0.0),
+            int(item["event_id"]),
+        ),
+    )[: int(limit)]
+    for row in rows:
+        row["record_label"] = f"最短攻略 {int(row['turns'])}ターン"
+        row["detail_label"] = row["area_label"]
+        row["sortie_count"] = 1
+    return _decorate_layer_record_rows(db, rows)
+
+
+def _layer_record_stability_rows(db, layer_no, *, week_key=None, limit=3):
+    events = _layer_record_event_rows(db, layer_no, week_key=week_key, normal_only=True, wins_only=False)
+    grouped = {}
+    for event in events:
+        item = grouped.setdefault(
+            int(event["user_id"]),
+            {
+                "user_id": int(event["user_id"]),
+                "username": event["username"],
+                "created_at": int(event["created_at"]),
+                "robot_id": event.get("robot_id"),
+                "payload": event.get("payload") or {},
+                "sortie_count": 0,
+                "win_count": 0,
+                "hp_ratio_total": 0.0,
+                "hp_ratio_count": 0,
+            },
+        )
+        item["sortie_count"] += 1
+        if event["win"]:
+            item["win_count"] += 1
+        if event.get("remaining_hp_ratio") is not None:
+            item["hp_ratio_total"] += float(event["remaining_hp_ratio"])
+            item["hp_ratio_count"] += 1
+        if int(event["created_at"]) >= int(item["created_at"]):
+            item["robot_id"] = event.get("robot_id") or item.get("robot_id")
+            item["payload"] = event.get("payload") or item.get("payload") or {}
+    rows = []
+    for item in grouped.values():
+        if int(item["sortie_count"]) < LAYER_RECORD_STABILITY_MIN_SORTIES:
+            continue
+        win_rate = item["win_count"] / max(1, item["sortie_count"])
+        avg_hp = item["hp_ratio_total"] / item["hp_ratio_count"] if item["hp_ratio_count"] else 0.0
+        item["win_rate"] = win_rate
+        item["avg_remaining_hp_ratio"] = avg_hp
+        item["record_label"] = f"安定攻略 {int(round(win_rate * 100))}%"
+        item["detail_label"] = f"{int(item['win_count'])}/{int(item['sortie_count'])}勝"
+        rows.append(item)
+    rows.sort(
+        key=lambda item: (
+            -float(item["win_rate"]),
+            -int(item["sortie_count"]),
+            -float(item["avg_remaining_hp_ratio"]),
+            int(item["created_at"]),
+            int(item["user_id"]),
+        )
+    )
+    return _decorate_layer_record_rows(db, rows[: int(limit)])
+
+
+def _layer_record_heat_rows(db, layer_no, *, week_key=None, limit=3):
+    events = _layer_record_event_rows(db, layer_no, week_key=week_key, normal_only=True, wins_only=False)
+    grouped = {}
+    for event in events:
+        item = grouped.setdefault(
+            int(event["user_id"]),
+            {
+                "user_id": int(event["user_id"]),
+                "username": event["username"],
+                "created_at": int(event["created_at"]),
+                "robot_id": event.get("robot_id"),
+                "payload": event.get("payload") or {},
+                "sortie_count": 0,
+                "win_count": 0,
+            },
+        )
+        item["sortie_count"] += 1
+        if event["win"]:
+            item["win_count"] += 1
+        if int(event["created_at"]) >= int(item["created_at"]):
+            item["created_at"] = int(event["created_at"])
+            item["robot_id"] = event.get("robot_id") or item.get("robot_id")
+            item["payload"] = event.get("payload") or item.get("payload") or {}
+    rows = sorted(
+        grouped.values(),
+        key=lambda item: (-int(item["sortie_count"]), -int(item["win_count"]), int(item["created_at"]), int(item["user_id"])),
+    )[: int(limit)]
+    for row in rows:
+        row["record_label"] = f"第6層研究 {int(row['sortie_count'])}回"
+        row["detail_label"] = f"{int(row['win_count'])}勝"
+    return _decorate_layer_record_rows(db, rows)
+
+
+def _layer_record_boss_rows(db, layer_no, *, limit=3):
+    if int(layer_no or 0) != 6:
+        return []
+    rows = db.execute(
+        f"""
+        SELECT wel.id, wel.user_id, wel.created_at, wel.payload_json,
+               u.username, u.display_name
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+          AND COALESCE(json_extract(wel.payload_json, '$.area_key'), '') = ?
+          AND {_analytics_user_filter_sql("u")}
+        ORDER BY wel.created_at ASC, wel.id ASC
+        LIMIT ?
+        """,
+        (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], LAYER6_FINAL_AREA_KEY, int(limit)),
+    ).fetchall()
+    out = []
+    for row in rows:
+        payload = _layer_record_payload(row["payload_json"])
+        out.append(
+            {
+                "event_id": int(row["id"]),
+                "user_id": int(row["user_id"]),
+                "username": row["username"],
+                "created_at": int(row["created_at"] or 0),
+                "robot_id": _layer_record_robot_id(payload),
+                "payload": payload,
+                "record_label": "第6層最終試験 初撃破",
+                "detail_label": str(payload.get("enemy_name") or _boss_area_label(LAYER6_FINAL_AREA_KEY)),
+            }
+        )
+    return _decorate_layer_record_rows(db, out)
+
+
+def _layer_record_spotlights(snapshot, *, limit=3):
+    combined = {}
+    for source_key, label in (("fastest", "最速研究"), ("stability", "安定研究"), ("heat", "深層研究")):
+        for row in snapshot.get(source_key) or []:
+            uid = int(row.get("user_id") or 0)
+            if uid <= 0:
+                continue
+            item = combined.setdefault(uid, dict(row, spotlight_labels=[]))
+            if label not in item["spotlight_labels"]:
+                item["spotlight_labels"].append(label)
+            break
+    return list(combined.values())[: int(limit)]
+
+
+def _layer_record_snapshot(db, layer_no, *, week_key=None, limit=3):
+    fastest = _layer_record_fastest_rows(db, layer_no, limit=limit)
+    stability = _layer_record_stability_rows(db, layer_no, week_key=week_key, limit=limit)
+    heat = _layer_record_heat_rows(db, layer_no, week_key=week_key, limit=limit)
+    boss = _layer_record_boss_rows(db, layer_no, limit=limit)
+    snapshot = {
+        "layer_no": int(layer_no),
+        "week_key": str(week_key or _world_week_key()),
+        "fastest": fastest,
+        "stability": stability,
+        "heat": heat,
+        "boss": boss,
+        "has_any": bool(fastest or stability or heat or boss),
+    }
+    snapshot["spotlights"] = _layer_record_spotlights(snapshot, limit=limit)
+    return snapshot
+
+
+def _home_layer6_research_brief(db, week_key):
+    if not _release_flag_is_public(db, "layer6"):
+        return {"enabled": False, "rows": []}
+    snapshot = _layer_record_snapshot(db, 6, week_key=week_key, limit=3)
+    rows = snapshot.get("spotlights") or []
+    return {
+        "enabled": bool(rows),
+        "week_key": str(week_key),
+        "rows": rows,
+    }
+
+
+def _admin_layer6_research_snapshot(db, *, week_key=None):
+    wk = str(week_key or _world_week_key())
+    start_dt, end_dt = _world_week_bounds(wk)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    events = _layer_record_event_rows(db, 6, week_key=wk, normal_only=True, wins_only=False)
+    win_events = [event for event in events if event.get("win")]
+    turn_values = [int(event["turns"]) for event in events if int(event.get("turns") or 0) > 0]
+    active_row = db.execute(
+        f"""
+        SELECT COUNT(DISTINCT wel.user_id) AS c
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.created_at >= ?
+          AND wel.created_at < ?
+          AND wel.user_id IS NOT NULL
+          AND {_analytics_user_filter_sql("u")}
+        """,
+        (start_ts, end_ts),
+    ).fetchone()
+    reached_row = db.execute(
+        f"""
+        SELECT COUNT(DISTINCT u.id) AS c
+        FROM users u
+        WHERE {_analytics_user_filter_sql("u")}
+          AND (
+            COALESCE(u.max_unlocked_layer, 1) >= 6
+            OR EXISTS (
+              SELECT 1
+              FROM world_events_log wel
+              WHERE wel.user_id = u.id
+                AND wel.event_type = ?
+                AND wel.payload_json LIKE '%layer_6_%'
+              LIMIT 1
+            )
+          )
+        """,
+        (AUDIT_EVENT_TYPES["EXPLORE_END"],),
+    ).fetchone()
+    boss_rows = db.execute(
+        f"""
+        SELECT event_type, COUNT(*) AS c, COUNT(DISTINCT wel.user_id) AS users
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type IN (?, ?)
+          AND wel.created_at >= ?
+          AND wel.created_at < ?
+          AND wel.payload_json LIKE '%layer_6_%'
+          AND {_analytics_user_filter_sql("u")}
+        GROUP BY event_type
+        """,
+        (AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], AUDIT_EVENT_TYPES["BOSS_DEFEAT"], start_ts, end_ts),
+    ).fetchall()
+    boss_by_type = {row["event_type"]: row for row in boss_rows}
+    def _metric_int(row, key):
+        return int(row[key] or 0) if row and key in row.keys() else 0
+
+    snapshot = _layer_record_snapshot(db, 6, week_key=wk, limit=3)
+    record_users = {
+        int(row.get("user_id") or 0)
+        for key in ("fastest", "stability", "heat", "boss")
+        for row in (snapshot.get(key) or [])
+        if int(row.get("user_id") or 0) > 0
+    }
+    sortie_users = {int(event["user_id"]) for event in events}
+    active_users = int((active_row or {})["c"] or 0) if active_row else 0
+    return {
+        "week_key": wk,
+        "reached_users": int((reached_row or {})["c"] or 0) if reached_row else 0,
+        "sortie_users": int(len(sortie_users)),
+        "sortie_count": int(len(events)),
+        "avg_sorties_per_dau": (float(len(events)) / float(active_users)) if active_users else 0.0,
+        "win_rate_pct": (float(len(win_events)) / float(len(events)) * 100.0) if events else 0.0,
+        "avg_turns": (float(sum(turn_values)) / float(len(turn_values))) if turn_values else 0.0,
+        "boss_encounters": _metric_int(boss_by_type.get(AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]), "c"),
+        "boss_encounter_users": _metric_int(boss_by_type.get(AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]), "users"),
+        "boss_defeats": _metric_int(boss_by_type.get(AUDIT_EVENT_TYPES["BOSS_DEFEAT"]), "c"),
+        "boss_defeat_users": _metric_int(boss_by_type.get(AUDIT_EVENT_TYPES["BOSS_DEFEAT"]), "users"),
+        "record_update_users": int(len(record_users)),
+    }
+
+
 def _first_boss_record_rows(db, *, user_row=None, user_id=None, is_admin=None):
     out = []
     cache = {}
@@ -46372,6 +46925,7 @@ def home():
     layer4_warning_status = get_layer4_warning_status_for_user(db, int(user["id"]))
     weekly_featured_robot = mvp_cache["weekly_featured_robot"]
     weekly_research_highlights = mvp_cache["weekly_research_highlights"]
+    layer6_research_brief = _home_layer6_research_brief(db, week_key)
     _home_section_log(
         "mvp",
         section_started_at,
@@ -47199,6 +47753,7 @@ def home():
             layer4_warning_status=layer4_warning_status,
             weekly_featured_robot=weekly_featured_robot,
             weekly_research_highlights=weekly_research_highlights,
+            layer6_research_brief=layer6_research_brief,
             research_summary=research_summary,
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,
@@ -51611,6 +52166,12 @@ def records_view():
             [*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY],
             user_row=user,
         ),
+        first_layer6_records=_first_explore_record_rows(
+            db,
+            [*LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY],
+            user_row=user,
+        ),
+        layer6_records=_layer_record_snapshot(db, 6, week_key=week_key, limit=3),
         first_boss_records=_first_boss_record_rows(db, user_row=user),
         first_evolve_records=_first_evolve_record_rows(db),
         weekly_record_groups=weekly_record_groups,
@@ -66774,6 +67335,7 @@ def admin_metrics():
     sample_size = request.args.get("sample", type=int, default=500)
     core_days = request.args.get("core_days", type=int, default=14)
     funnel_days = request.args.get("funnel_days", type=int, default=7)
+    week_key = _world_week_key()
     if request.method == "POST":
         _collect_recent_daily_metrics(db, days=7)
         db.commit()
@@ -66801,6 +67363,7 @@ def admin_metrics():
     first_experience_snapshot = _admin_first_experience_snapshot(db, window_days=funnel_days)
     progression_snapshot = _admin_progression_snapshot(db)
     robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
+    layer6_research_snapshot = _admin_layer6_research_snapshot(db, week_key=week_key)
     analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
     daily_explore_max = 0.0
@@ -66835,6 +67398,7 @@ def admin_metrics():
         daily_explore_rows=daily_explore_rows,
         measurement_health=measurement_health,
         daily_research_summary=daily_research_summary,
+        layer6_research_snapshot=layer6_research_snapshot,
         behavior_snapshot=behavior_snapshot,
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,

@@ -614,3 +614,14 @@
 - `audit.explore.start`
   - `area_key=layer_2` では `is_first_layer2_explore`, `entry_source`, `seconds_from_layer_unlock`, `layer2_explore_count_before` を含める。
   - 初回のみ `is_first_layer2_explore=true`、2回目以降は false。
+
+## 14. 第6層攻略記録
+- 新規イベントは追加しない。v1は既存 `audit.explore.end` と `audit.boss.defeat` を正本にする。
+- `audit.explore.end`
+  - 第6層通常戦記録は payload の `area_key`, `player.robot_instance_id`, `result.win`, `result.turns`, `result.battle_id`, `result.damage_taken_total` を使用する。
+  - `request_id` が同じ探索終了ログは同一操作として扱い、集計時に1件へ重複排除する。
+  - `result.is_area_boss=true` または boss payload があるログは通常戦の最短/安定/研究熱から除外する。
+- `audit.boss.defeat`
+  - `area_key=layer_6_final` を第6層最終試験撃破記録として扱う。
+- 管理メトリクス
+  - `/admin/metrics` は上記auditから第6層到達者、通常戦出撃、勝率、平均ターン、ボス遭遇/撃破、記録掲載者を算出する。

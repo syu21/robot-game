@@ -46,6 +46,42 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">第6層研究記録</div>
+        <div class="admin-metrics-section-sub">{{ layer6_research_snapshot.week_key }} の通常プレイヤー集計です。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第6層到達者</div>
+        <div class="admin-metrics-note-value">{{ layer6_research_snapshot.reached_users }}人</div>
+        <div class="robot-time">max_unlocked_layer または第6層audit</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">通常戦出撃</div>
+        <div class="admin-metrics-note-value">{{ layer6_research_snapshot.sortie_count }}回</div>
+        <div class="robot-time">{{ layer6_research_snapshot.sortie_users }}人 / DAU比 {{ '%.2f'|format(layer6_research_snapshot.avg_sorties_per_dau) }}</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">勝率 / 平均ターン</div>
+        <div class="admin-metrics-note-value">{{ '%.1f'|format(layer6_research_snapshot.win_rate_pct) }}%</div>
+        <div class="robot-time">平均 {{ '%.1f'|format(layer6_research_snapshot.avg_turns) }}ターン</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">ボス遭遇 / 撃破</div>
+        <div class="admin-metrics-note-value">{{ layer6_research_snapshot.boss_encounters }} / {{ layer6_research_snapshot.boss_defeats }}</div>
+        <div class="robot-time">{{ layer6_research_snapshot.boss_encounter_users }}人遭遇 / {{ layer6_research_snapshot.boss_defeat_users }}人撃破</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">記録掲載者</div>
+        <div class="admin-metrics-note-value">{{ layer6_research_snapshot.record_update_users }}人</div>
+        <div class="robot-time">最短・安定・研究熱・最終試験</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">今日の研究指令</div>
         <div class="admin-metrics-section-sub">{{ daily_research_summary.day_key }} の自動生成3件です。</div>
       </div>
