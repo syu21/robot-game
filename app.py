@@ -208,6 +208,26 @@ from services.weekly_champion import (
     list_weekly_champion_battles,
 )
 from services.champion_battle import build_champion_enemy_payload, run_champion_battle
+from services.weekly_anomaly import (
+    ANOMALY_CLEAR_REWARD_COINS,
+    ANOMALY_CLASSES,
+    ANOMALY_FEATURE_KEY,
+    ANOMALY_MAX_TURNS,
+    ANOMALY_RETRY_CT_SECONDS,
+    ANOMALY_TEMPLATES,
+    build_cycle_config as anomaly_build_cycle_config,
+    can_attempt_now as anomaly_can_attempt_now,
+    class_for_layer as anomaly_class_for_layer,
+    class_label as anomaly_class_label,
+    current_week_key as anomaly_current_week_key,
+    cycle_config as anomaly_cycle_config,
+    enemy_payload_for_class as anomaly_enemy_payload_for_class,
+    ensure_schema as ensure_anomaly_schema,
+    get_or_create_cycle as get_or_create_anomaly_cycle,
+    ranking_rows as anomaly_ranking_rows,
+    summarize_battle_result as summarize_anomaly_battle_result,
+    user_best_attempt as anomaly_user_best_attempt,
+)
 from services.battle_affinity import apply_affinity_damage, battle_type_label, get_type_affinity, normalize_battle_type
 from services.faction_war import (
     FACTION_POINTS,
@@ -2189,6 +2209,11 @@ RELEASE_FLAG_DEFS = (
         "key": "weekly_champion",
         "label": "今週のチャンプ機体",
         "summary": "ホームのチャンプカードと /champion の非同期挑戦を一般公開します。管理者は非公開中でも確認できます。",
+    },
+    {
+        "key": ANOMALY_FEATURE_KEY,
+        "label": "週次異常個体",
+        "summary": "週替わりAI敵へ挑戦する横方向の研究チャレンジです。初期状態は管理者確認のみです。",
     },
     {
         "key": "tower",
@@ -6313,6 +6338,8 @@ def _event_release_feature(event_type, payload):
         return "tower"
     if text.startswith("audit.lab.") or text.startswith("LAB_RACE_") or text.startswith("LAB_SUBMISSION_"):
         return "lab"
+    if text.startswith("audit.anomaly.") or text.startswith("ANOMALY_"):
+        return ANOMALY_FEATURE_KEY
     if text in {"CHAMPION_SELECTED", "CHAMPION_DEFEATED", "CHAMP_DEFEAT_FIRST", "CHAMP_DEFEAT_DAILY", "CHAMP_DEFEAT_UPSET"} or text.startswith("audit.champion.") or text.startswith("audit.champ."):
         return "weekly_champion"
     unlocked_layer = int((payload or {}).get("unlocked_layer") or 0)
@@ -15825,6 +15852,61 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS weekly_anomaly_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL UNIQUE,
+            template_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            seed TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            starts_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anomaly_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            challenge_class TEXT NOT NULL,
+            template_key TEXT NOT NULL,
+            result TEXT NOT NULL,
+            turns INTEGER NOT NULL DEFAULT 0,
+            player_hp_remaining INTEGER NOT NULL DEFAULT 0,
+            player_hp_max INTEGER NOT NULL DEFAULT 0,
+            enemy_hp_remaining INTEGER NOT NULL DEFAULT 0,
+            enemy_hp_max INTEGER NOT NULL DEFAULT 0,
+            damage_dealt INTEGER NOT NULL DEFAULT 0,
+            analysis_rate INTEGER NOT NULL DEFAULT 0,
+            request_id TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anomaly_weekly_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            challenge_class TEXT NOT NULL,
+            reward_granted_at INTEGER NOT NULL,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            request_id TEXT,
+            UNIQUE(week_key, user_id, challenge_class),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS champ_defeat_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -17198,6 +17280,10 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_snapshot_created ON weekly_champion_battles(champion_snapshot_id, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_weekly_champion_battles_user_created ON weekly_champion_battles(challenger_user_id, created_at DESC)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_champion_battles_request ON weekly_champion_battles(request_id)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_attempts_request ON anomaly_attempts(request_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_attempts_week_class ON anomaly_attempts(week_key, challenge_class, result, analysis_rate DESC, turns ASC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_attempts_user_week ON anomaly_attempts(user_id, week_key, challenge_class, created_at DESC)")
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_rewards_user_week_class ON anomaly_weekly_rewards(week_key, user_id, challenge_class)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_defeat_records_user_robot ON champ_defeat_records(user_id, champ_robot_id)")
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_champ_daily_bonus_records_user_day ON champ_daily_bonus_records(user_id, day_key)")
     ensure_robot_title_system(db)
@@ -36288,6 +36374,327 @@ def _reset_weekly_champion_battles_for_public_release(db, *, week_key=None):
     return {"week_key": target_week_key, "snapshot_id": snapshot_id, "deleted_battles": deleted_battles}
 
 
+def _anomaly_user_total_explores(db, user_id):
+    row = db.execute(
+        "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"]),
+    ).fetchone()
+    return int((row or {})["c"] or 0)
+
+
+def _anomaly_participation_unlocked(db, user_row, *, total_explores=None):
+    if not user_row:
+        return False
+    if int(user_row["is_admin"] or 0) == 1:
+        return True
+    if total_explores is None:
+        return False
+    return int(total_explores or 0) >= 3
+
+
+def _anomaly_challenge_class_for_user(user_row):
+    return anomaly_class_for_layer(_user_max_unlocked_layer(user_row))
+
+
+def _anomaly_public_record_user(db, user_id):
+    row = db.execute(
+        """
+        SELECT is_admin, is_banned, analytics_excluded, username
+        FROM users
+        WHERE id = ?
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if not row:
+        return False
+    if int(row["is_admin"] or 0) == 1 or int(row["is_banned"] or 0) == 1 or int(row["analytics_excluded"] or 0) == 1:
+        return False
+    if str(row["username"] or "").strip().lower().startswith("test"):
+        return False
+    return True
+
+
+def _anomaly_submission_id():
+    submission_id = uuid.uuid4().hex
+    session["anomaly_submission_id"] = submission_id
+    return submission_id
+
+
+def _anomaly_request_id(submission_id):
+    sid = str(submission_id or "").strip()
+    if not sid:
+        sid = uuid.uuid4().hex
+    return f"anomaly:{sid}"
+
+
+def _anomaly_row_value(row, key, default=None):
+    if not row:
+        return default
+    try:
+        if hasattr(row, "keys") and key not in row.keys():
+            return default
+        value = row[key]
+    except Exception:
+        try:
+            value = row.get(key, default)
+        except Exception:
+            value = default
+    return default if value is None else value
+
+
+def _anomaly_player_payload(db, user_row, active_robot):
+    payload = _build_champion_robot_payload(
+        db,
+        user_id=int(user_row["id"]),
+        robot_instance_id=int(_anomaly_row_value(active_robot, "id", 0) or 0),
+    )
+    if payload:
+        return payload
+    robot_id = int(_anomaly_row_value(active_robot, "id", 0) or 0)
+    robot_name = str(_anomaly_row_value(active_robot, "name", "") or "解析機")
+    style_key = str(_anomaly_row_value(active_robot, "style_key", "") or "stable")
+    return {
+        "user_id": int(user_row["id"]),
+        "robot_instance_id": robot_id,
+        "owner_name": _display_username_for_user_row(db, user_row),
+        "robot_name": robot_name,
+        "robot_image_url": _composed_image_url(
+            _anomaly_row_value(active_robot, "composed_image_path"),
+            _anomaly_row_value(active_robot, "updated_at"),
+        ),
+        "signature_label": "基礎機",
+        "focus_labels": [],
+        "focus_label_line": "",
+        "focus_line": "",
+        "trait_summary": "",
+        "style_key": style_key,
+        "style_label": "基礎",
+        "stats": {
+            "hp": 720,
+            "atk": 105,
+            "def": 80,
+            "spd": 90,
+            "acc": 105,
+            "cri": 8,
+        },
+    }
+
+
+def _ensure_current_anomaly_cycle(db, *, request_id=None, ip=None):
+    result = get_or_create_anomaly_cycle(db, week_key=anomaly_current_week_key(), now_ts=_now_ts())
+    cycle = result.get("cycle")
+    if cycle and result.get("created"):
+        config = anomaly_cycle_config(cycle)
+        audit_log(
+            db,
+            "audit.anomaly.cycle.create",
+            user_id=None,
+            request_id=request_id,
+            action_key="anomaly.cycle.create",
+            entity_type="weekly_anomaly_cycle",
+            entity_id=int(cycle.get("id") or 0),
+            payload={
+                "week_key": str(cycle.get("week_key") or ""),
+                "template_key": str(cycle.get("template_key") or ""),
+                "display_name": str(cycle.get("display_name") or ""),
+                "seed": str(cycle.get("seed") or ""),
+            },
+            ip=ip,
+        )
+        audit_log(
+            db,
+            "ANOMALY_APPEARED",
+            user_id=None,
+            request_id=request_id,
+            action_key="anomaly.appeared",
+            entity_type="weekly_anomaly_cycle",
+            entity_id=int(cycle.get("id") or 0),
+            payload={
+                "week_key": str(cycle.get("week_key") or ""),
+                "template_key": str(cycle.get("template_key") or ""),
+                "display_name": str(config.get("display_name") or cycle.get("display_name") or ""),
+                "text": f"異常信号を検出。{str(config.get('display_name') or cycle.get('display_name') or '異常個体')}が観測領域へ侵入。",
+            },
+            ip=ip,
+        )
+    return cycle
+
+
+def _anomaly_best_delta(before_best, attempt):
+    if not attempt:
+        return ""
+    if not before_best:
+        return "初回記録"
+    if str(attempt.get("result") or "") == "clear":
+        return f"{int(before_best.get('turns') or 0)}T → {int(attempt.get('turns') or 0)}T" if str(before_best.get("result") or "") == "clear" else "解析未完了 → COMPLETE"
+    return f"{int(before_best.get('analysis_rate') or 0)}% → {int(attempt.get('analysis_rate') or 0)}%"
+
+
+def _decorate_anomaly_attempt_rows(db, rows):
+    out = []
+    for idx, row in enumerate(rows, start=1):
+        item = dict(row)
+        user_id = int(item.get("user_id") or 0)
+        robot_id = int(item.get("robot_instance_id") or 0)
+        visuals = _user_visuals(db, user_id, {}) if user_id else {}
+        robot_image_url = None
+        if item.get("composed_image_path"):
+            robot_image_url = _composed_image_url(item.get("composed_image_path"), item.get("robot_updated_at"))
+        profile = {}
+        if robot_id:
+            stat_obj = _compute_robot_stats_for_instance(db, robot_id)
+            profile = _robot_profile_view(stat_obj) if stat_obj else {}
+        item.update(
+            {
+                "rank": idx,
+                "display_username": visuals.get("display_username") or str(item.get("display_name") or item.get("username") or "unknown"),
+                "avatar_path": visuals.get("avatar") or DEFAULT_AVATAR_REL,
+                "avatar_url": visuals.get("avatar_url"),
+                "avatar_kind": visuals.get("avatar_kind", "seed"),
+                "avatar_is_generated": bool(visuals.get("avatar_is_generated")),
+                "badge_path": visuals.get("badge") or DEFAULT_BADGE_REL,
+                "trophy_keys": list(visuals.get("trophy_keys") or []),
+                "trophy_badges": list(visuals.get("trophy_badges") or []),
+                "robot_image_url": robot_image_url,
+                "robot_name": str(item.get("robot_name") or "解析機"),
+                "style_label": str(profile.get("signature_label") or profile.get("style_label") or "無印"),
+                "result_label": "COMPLETE" if str(item.get("result") or "") == "clear" else f"解析率 {int(item.get('analysis_rate') or 0)}%",
+                "hp_rate": int(round((int(item.get("player_hp_remaining") or 0) / max(1, int(item.get("player_hp_max") or 1))) * 100)),
+            }
+        )
+        out.append(item)
+    return out
+
+
+def _anomaly_rankings_view(db, cycle, *, limit=5):
+    week_key = str(cycle.get("week_key") or anomaly_current_week_key())
+    return [
+        {
+            "class_key": class_key,
+            "class_label": anomaly_class_label(class_key),
+            "rows": _decorate_anomaly_attempt_rows(
+                db,
+                anomaly_ranking_rows(db, week_key=week_key, challenge_class=class_key, limit=limit),
+            ),
+        }
+        for class_key in ("observe", "field", "deep")
+    ]
+
+
+def _anomaly_cycle_view(cycle, challenge_class=None):
+    config = anomaly_cycle_config(cycle)
+    cls_key = str(challenge_class or "observe")
+    cls = (config.get("classes") or {}).get(cls_key) or {}
+    return {
+        "id": int(cycle.get("id") or 0),
+        "week_key": str(cycle.get("week_key") or ""),
+        "template_key": str(cycle.get("template_key") or config.get("key") or ""),
+        "display_name": str(config.get("display_name") or cycle.get("display_name") or "異常個体"),
+        "code_name": str(config.get("code_name") or ""),
+        "template_label": str(config.get("template_label") or ""),
+        "theme": str(config.get("theme") or ""),
+        "observation_trait": str(config.get("observation_trait") or ""),
+        "observation_note": str(config.get("observation_note") or ""),
+        "challenge_class": cls_key,
+        "challenge_class_label": anomaly_class_label(cls_key),
+        "class_stats": dict(cls.get("stats") or {}),
+        "starts_at_text": _format_jst_ts(cycle.get("starts_at")),
+        "ends_at_text": _format_jst_ts(cycle.get("ends_at")),
+    }
+
+
+def _anomaly_home_brief(db, user_row, *, total_explores=None):
+    if not _release_open_for_viewer(db, ANOMALY_FEATURE_KEY, user_row=user_row):
+        return None
+    if total_explores is None:
+        total_explores = _anomaly_user_total_explores(db, int(user_row["id"]))
+    if not _anomaly_participation_unlocked(db, user_row, total_explores=total_explores):
+        return None
+    cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    if not cycle:
+        return None
+    challenge_class = _anomaly_challenge_class_for_user(user_row)
+    best = anomaly_user_best_attempt(db, user_id=int(user_row["id"]), week_key=str(cycle["week_key"]), challenge_class=challenge_class)
+    return {
+        "cycle": _anomaly_cycle_view(cycle, challenge_class),
+        "best": best,
+        "analysis_rate": int(best.get("analysis_rate") or 0) if best else 0,
+        "result_label": "COMPLETE" if best and str(best.get("result") or "") == "clear" else f"解析率 {int(best.get('analysis_rate') or 0) if best else 0}%",
+        "url": url_for("anomaly_view"),
+    }
+
+
+def _admin_anomaly_summary(db, cycle):
+    ensure_anomaly_schema(db)
+    week_key = str(cycle.get("week_key") or anomaly_current_week_key())
+    out = []
+    for class_key in ("observe", "field", "deep"):
+        rows = db.execute(
+            """
+            SELECT
+                COUNT(*) AS attempt_count,
+                COUNT(DISTINCT a.user_id) AS user_count,
+                COUNT(DISTINCT CASE WHEN a.result = 'clear' THEN a.user_id END) AS clear_users,
+                COALESCE(AVG(a.analysis_rate), 0) AS avg_analysis_rate,
+                COALESCE(AVG(user_attempts.c), 0) AS avg_attempts_per_user
+            FROM anomaly_attempts a
+            JOIN users u ON u.id = a.user_id
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) AS c
+                FROM anomaly_attempts
+                WHERE week_key = ? AND challenge_class = ?
+                GROUP BY user_id
+            ) user_attempts ON user_attempts.user_id = a.user_id
+            WHERE a.week_key = ? AND a.challenge_class = ?
+              AND COALESCE(u.is_admin, 0) = 0
+              AND COALESCE(u.is_banned, 0) = 0
+              AND COALESCE(u.analytics_excluded, 0) = 0
+              AND LOWER(COALESCE(u.username, '')) NOT LIKE 'test%'
+            """,
+            (week_key, class_key, week_key, class_key),
+        ).fetchone()
+        style_rows = db.execute(
+            """
+            SELECT COALESCE(json_extract(a.payload_json, '$.style_label'), '無印') AS style_label,
+                   COUNT(*) AS attempts,
+                   COALESCE(SUM(CASE WHEN a.result = 'clear' THEN 1 ELSE 0 END), 0) AS clears
+            FROM anomaly_attempts a
+            JOIN users u ON u.id = a.user_id
+            WHERE a.week_key = ? AND a.challenge_class = ?
+              AND COALESCE(u.is_admin, 0) = 0
+              AND COALESCE(u.is_banned, 0) = 0
+              AND COALESCE(u.analytics_excluded, 0) = 0
+              AND LOWER(COALESCE(u.username, '')) NOT LIKE 'test%'
+            GROUP BY style_label
+            ORDER BY clears DESC, attempts DESC
+            LIMIT 8
+            """,
+            (week_key, class_key),
+        ).fetchall()
+        attempt_count = int((rows or {})["attempt_count"] or 0)
+        clear_users = int((rows or {})["clear_users"] or 0)
+        user_count = int((rows or {})["user_count"] or 0)
+        out.append(
+            {
+                "class_key": class_key,
+                "class_label": anomaly_class_label(class_key),
+                "stats": dict((anomaly_cycle_config(cycle).get("classes") or {}).get(class_key, {}).get("stats") or {}),
+                "attempt_count": attempt_count,
+                "user_count": user_count,
+                "clear_users": clear_users,
+                "clear_rate": int(round((clear_users / user_count) * 100)) if user_count else 0,
+                "avg_analysis_rate": round(float((rows or {})["avg_analysis_rate"] or 0), 1),
+                "avg_attempts_per_user": round(float((rows or {})["avg_attempts_per_user"] or 0), 1),
+                "style_rows": [dict(row) for row in style_rows],
+                "fastest_rows": _decorate_anomaly_attempt_rows(
+                    db,
+                    anomaly_ranking_rows(db, week_key=week_key, challenge_class=class_key, limit=3),
+                ),
+            }
+        )
+    return out
+
+
 def _build_champion_reward_summary(*, win):
     reward_coin = int(CHAMPION_CHALLENGE_WIN_COINS if win else CHAMPION_CHALLENGE_LOSE_COINS)
     return {
@@ -46926,6 +47333,7 @@ def home():
     weekly_featured_robot = mvp_cache["weekly_featured_robot"]
     weekly_research_highlights = mvp_cache["weekly_research_highlights"]
     layer6_research_brief = _home_layer6_research_brief(db, week_key)
+    anomaly_home = _anomaly_home_brief(db, user)
     _home_section_log(
         "mvp",
         section_started_at,
@@ -47754,6 +48162,7 @@ def home():
             weekly_featured_robot=weekly_featured_robot,
             weekly_research_highlights=weekly_research_highlights,
             layer6_research_brief=layer6_research_brief,
+            anomaly_home=anomaly_home,
             research_summary=research_summary,
             research_unlock_banner=research_unlock_banner,
             first_win_banner=first_win_banner,
@@ -48788,6 +49197,338 @@ def home_tower_expand():
     )
     db.commit()
     return _safe_home_next_redirect()
+
+
+@app.route("/anomaly")
+@login_required
+def anomaly_view():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    gate_redirect = _release_gate_redirect(db, ANOMALY_FEATURE_KEY, user_row=user, user_id=int(user["id"]))
+    if gate_redirect is not None:
+        db.commit()
+        return gate_redirect
+    total_explores = _anomaly_user_total_explores(db, int(user["id"]))
+    if not _anomaly_participation_unlocked(db, user, total_explores=total_explores):
+        flash("異常信号は初回3出撃後に観測できます。まずは通常出撃を進めてください。", "notice")
+        db.commit()
+        return redirect(url_for("home"))
+    cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    challenge_class = _anomaly_challenge_class_for_user(user)
+    best = anomaly_user_best_attempt(db, user_id=int(user["id"]), week_key=str(cycle["week_key"]), challenge_class=challenge_class)
+    rankings = _anomaly_rankings_view(db, cycle, limit=5)
+    active_robot = _get_active_robot(db, int(user["id"]))
+    active_robot_profile = None
+    if active_robot:
+        stat_obj = _compute_robot_stats_for_instance(db, int(active_robot["id"]))
+        active_robot_profile = _robot_profile_view(stat_obj) if stat_obj else None
+    ct = anomaly_can_attempt_now(db, user_id=int(user["id"]), is_admin=bool(int(user["is_admin"] or 0) == 1), now_ts=_now_ts())
+    submission_id = _anomaly_submission_id()
+    audit_log(
+        db,
+        "audit.anomaly.view",
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="anomaly.view",
+        entity_type="weekly_anomaly_cycle",
+        entity_id=int(cycle.get("id") or 0),
+        payload={
+            "week_key": str(cycle.get("week_key") or ""),
+            "template_key": str(cycle.get("template_key") or ""),
+            "challenge_class": challenge_class,
+            "total_explores": int(total_explores),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return render_template(
+        "anomaly.html",
+        title="週次異常個体",
+        user=user,
+        cycle=_anomaly_cycle_view(cycle, challenge_class),
+        best=best,
+        rankings=rankings,
+        active_robot=active_robot,
+        active_robot_profile=active_robot_profile,
+        ct=ct,
+        submission_id=submission_id,
+        max_turns=ANOMALY_MAX_TURNS,
+    )
+
+
+@app.route("/anomaly/challenge", methods=["POST"])
+@login_required
+def anomaly_challenge():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    gate_redirect = _release_gate_redirect(db, ANOMALY_FEATURE_KEY, user_row=user, user_id=int(user["id"]))
+    if gate_redirect is not None:
+        db.commit()
+        return gate_redirect
+    total_explores = _anomaly_user_total_explores(db, int(user["id"]))
+    if not _anomaly_participation_unlocked(db, user, total_explores=total_explores):
+        flash("異常信号は初回3出撃後に観測できます。", "notice")
+        db.commit()
+        return redirect(url_for("home"))
+    active_robot = _get_active_robot(db, int(user["id"]))
+    if not active_robot:
+        flash("解析に使う機体を編成してください。", "notice")
+        db.commit()
+        return redirect(url_for("build"))
+    now_ts = _now_ts()
+    ct = anomaly_can_attempt_now(db, user_id=int(user["id"]), is_admin=bool(int(user["is_admin"] or 0) == 1), now_ts=now_ts)
+    if not ct.get("allowed"):
+        flash(f"再解析まであと{int(ct.get('remaining') or 0)}秒です。", "notice")
+        db.commit()
+        return redirect(url_for("anomaly_view"))
+    submission_id = str(request.form.get("submission_id") or session.get("anomaly_submission_id") or "").strip()
+    request_id = _anomaly_request_id(submission_id)
+    duplicate = db.execute("SELECT id FROM anomaly_attempts WHERE request_id = ? LIMIT 1", (request_id,)).fetchone()
+    if duplicate:
+        db.commit()
+        return redirect(url_for("anomaly_result", attempt_id=int(duplicate["id"])))
+    cycle = _ensure_current_anomaly_cycle(db, request_id=request_id, ip=request.remote_addr)
+    challenge_class = _anomaly_challenge_class_for_user(user)
+    before_best = anomaly_user_best_attempt(db, user_id=int(user["id"]), week_key=str(cycle["week_key"]), challenge_class=challenge_class)
+    player_payload = _anomaly_player_payload(db, user, active_robot)
+    enemy_payload = anomaly_enemy_payload_for_class(cycle, challenge_class)
+    if not player_payload or not enemy_payload:
+        flash("解析機体の読み込みに失敗しました。", "error")
+        db.commit()
+        return redirect(url_for("anomaly_view"))
+    battle_result = run_champion_battle(
+        {
+            "name": str(player_payload.get("robot_name") or "あなた"),
+            "stats": dict(player_payload.get("stats") or {}),
+            "signature_label": str(player_payload.get("signature_label") or ""),
+            "focus_labels": list(player_payload.get("focus_labels") or []),
+            "style_key": str(player_payload.get("style_key") or "stable"),
+        },
+        enemy_payload,
+        max_turns=ANOMALY_MAX_TURNS,
+        rng=random.Random(f"{cycle.get('seed')}:{request_id}"),
+    )
+    summary = summarize_anomaly_battle_result(battle_result)
+    public_record_user = _anomaly_public_record_user(db, int(user["id"]))
+    had_class_clear = db.execute(
+        """
+        SELECT 1
+        FROM anomaly_attempts a
+        JOIN users u ON u.id = a.user_id
+        WHERE a.week_key = ? AND a.challenge_class = ? AND a.result = 'clear'
+          AND COALESCE(u.is_admin, 0) = 0
+          AND COALESCE(u.is_banned, 0) = 0
+          AND COALESCE(u.analytics_excluded, 0) = 0
+          AND LOWER(COALESCE(u.username, '')) NOT LIKE 'test%'
+        LIMIT 1
+        """,
+        (str(cycle["week_key"]), challenge_class),
+    ).fetchone()
+    prior_fastest = db.execute(
+        """
+        SELECT MIN(turns) AS t
+        FROM anomaly_attempts a
+        JOIN users u ON u.id = a.user_id
+        WHERE a.week_key = ? AND a.challenge_class = ? AND a.result = 'clear'
+          AND COALESCE(u.is_admin, 0) = 0
+          AND COALESCE(u.is_banned, 0) = 0
+          AND COALESCE(u.analytics_excluded, 0) = 0
+          AND LOWER(COALESCE(u.username, '')) NOT LIKE 'test%'
+        """,
+        (str(cycle["week_key"]), challenge_class),
+    ).fetchone()
+    payload = {
+        "week_key": str(cycle["week_key"]),
+        "cycle_id": int(cycle.get("id") or 0),
+        "template_key": str(cycle.get("template_key") or ""),
+        "display_name": str(cycle.get("display_name") or ""),
+        "challenge_class": challenge_class,
+        "challenge_class_label": anomaly_class_label(challenge_class),
+        "user_id": int(user["id"]),
+        "robot_instance_id": int(active_robot["id"]),
+        "robot_name": str(player_payload.get("robot_name") or active_robot.get("name") or "解析機"),
+        "style_key": str(player_payload.get("style_key") or "stable"),
+        "style_label": str(player_payload.get("signature_label") or player_payload.get("style_label") or "無印"),
+        "battle": battle_result,
+        **summary,
+    }
+    try:
+        db.execute(
+            """
+            INSERT INTO anomaly_attempts (
+                week_key, user_id, robot_instance_id, challenge_class, template_key, result,
+                turns, player_hp_remaining, player_hp_max, enemy_hp_remaining, enemy_hp_max,
+                damage_dealt, analysis_rate, request_id, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload["week_key"],
+                int(user["id"]),
+                int(active_robot["id"]),
+                challenge_class,
+                payload["template_key"],
+                summary["result"],
+                summary["turns"],
+                summary["player_hp_remaining"],
+                summary["player_hp_max"],
+                summary["enemy_hp_remaining"],
+                summary["enemy_hp_max"],
+                summary["damage_dealt"],
+                summary["analysis_rate"],
+                request_id,
+                json.dumps(payload, ensure_ascii=False),
+                now_ts,
+            ),
+        )
+    except sqlite3.IntegrityError:
+        duplicate = db.execute("SELECT id FROM anomaly_attempts WHERE request_id = ? LIMIT 1", (request_id,)).fetchone()
+        db.commit()
+        return redirect(url_for("anomaly_result", attempt_id=int(duplicate["id"]))) if duplicate else redirect(url_for("anomaly_view"))
+    attempt_id = int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+    attempt = db.execute("SELECT * FROM anomaly_attempts WHERE id = ?", (attempt_id,)).fetchone()
+    attempt_dict = dict(attempt)
+    best_updated = bool(anomaly_user_best_attempt(db, user_id=int(user["id"]), week_key=payload["week_key"], challenge_class=challenge_class).get("id") == attempt_id)
+    reward_coins = 0
+    if summary["clear"]:
+        cur = db.execute(
+            """
+            INSERT OR IGNORE INTO anomaly_weekly_rewards
+            (week_key, user_id, challenge_class, reward_granted_at, reward_coins, request_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (payload["week_key"], int(user["id"]), challenge_class, now_ts, ANOMALY_CLEAR_REWARD_COINS, request_id),
+        )
+        if int(cur.rowcount or 0) > 0:
+            reward_coins = int(ANOMALY_CLEAR_REWARD_COINS)
+            db.execute("UPDATE users SET coins = COALESCE(coins, 0) + ? WHERE id = ?", (reward_coins, int(user["id"])))
+    payload["attempt_id"] = attempt_id
+    payload["best_updated"] = best_updated
+    payload["best_delta"] = _anomaly_best_delta(before_best, attempt_dict) if best_updated else ""
+    payload["reward_coins"] = reward_coins
+    db.execute("UPDATE anomaly_attempts SET payload_json = ? WHERE id = ?", (json.dumps(payload, ensure_ascii=False), attempt_id))
+    audit_log(
+        db,
+        "audit.anomaly.attempt",
+        user_id=int(user["id"]),
+        request_id=request_id,
+        action_key="anomaly.attempt",
+        entity_type="anomaly_attempt",
+        entity_id=attempt_id,
+        payload={k: v for k, v in payload.items() if k != "battle"},
+        ip=request.remote_addr,
+    )
+    if reward_coins:
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["COIN_DELTA"],
+            user_id=int(user["id"]),
+            request_id=request_id,
+            action_key="anomaly.clear_reward",
+            entity_type="anomaly_attempt",
+            entity_id=attempt_id,
+            delta_coins=reward_coins,
+            payload={"week_key": payload["week_key"], "challenge_class": challenge_class, "reward_coins": reward_coins},
+            ip=request.remote_addr,
+        )
+    if best_updated:
+        audit_log(
+            db,
+            "audit.anomaly.best",
+            user_id=int(user["id"]),
+            request_id=request_id,
+            action_key="anomaly.best",
+            entity_type="anomaly_attempt",
+            entity_id=attempt_id,
+            payload={k: v for k, v in payload.items() if k != "battle"},
+            ip=request.remote_addr,
+        )
+    if summary["clear"] and public_record_user:
+        if not had_class_clear:
+            audit_log(
+                db,
+                "ANOMALY_CLASS_FIRST_CLEAR",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="anomaly.class_first_clear",
+                entity_type="anomaly_attempt",
+                entity_id=attempt_id,
+                payload={k: v for k, v in payload.items() if k != "battle"},
+                ip=request.remote_addr,
+            )
+        prior_turns = int((prior_fastest or {})["t"] or 0)
+        if prior_turns <= 0 or int(summary["turns"]) < prior_turns:
+            audit_log(
+                db,
+                "ANOMALY_FASTEST_RECORD",
+                user_id=int(user["id"]),
+                request_id=request_id,
+                action_key="anomaly.fastest_record",
+                entity_type="anomaly_attempt",
+                entity_id=attempt_id,
+                payload={k: v for k, v in payload.items() if k != "battle"},
+                ip=request.remote_addr,
+            )
+    session.pop("anomaly_submission_id", None)
+    db.commit()
+    return redirect(url_for("anomaly_result", attempt_id=attempt_id))
+
+
+@app.route("/anomaly/result/<int:attempt_id>")
+@login_required
+def anomaly_result(attempt_id):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    row = db.execute("SELECT * FROM anomaly_attempts WHERE id = ?", (int(attempt_id),)).fetchone()
+    if not row:
+        flash("解析結果が見つかりません。", "error")
+        db.commit()
+        return redirect(url_for("anomaly_view"))
+    if int(row["user_id"]) != int(user["id"]) and int(user["is_admin"] or 0) != 1:
+        abort(403)
+    payload = {}
+    try:
+        payload = json.loads(row["payload_json"] or "{}")
+    except Exception:
+        payload = {}
+    cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    rankings = _anomaly_rankings_view(db, cycle, limit=5) if cycle else []
+    db.commit()
+    return render_template(
+        "anomaly_result.html",
+        title="ANALYSIS RESULT",
+        user=user,
+        attempt=dict(row),
+        payload=payload,
+        battle=payload.get("battle") or {},
+        rankings=rankings,
+    )
+
+
+@app.route("/anomaly/rankings")
+@login_required
+def anomaly_rankings():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", reason="expired"))
+    gate_redirect = _release_gate_redirect(db, ANOMALY_FEATURE_KEY, user_row=user, user_id=int(user["id"]))
+    if gate_redirect is not None:
+        db.commit()
+        return gate_redirect
+    cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    rankings = _anomaly_rankings_view(db, cycle, limit=10)
+    db.commit()
+    return render_template("anomaly_rankings.html", title="週次異常個体 研究記録", user=user, cycle=_anomaly_cycle_view(cycle), rankings=rankings)
 
 
 @app.route("/champion")
@@ -67392,6 +68133,8 @@ def admin_metrics():
         )
     measurement_health = _measurement_health_snapshot(db, rows=rows, window_days=funnel_days)
     daily_research_summary = daily_research_admin_summary(db, get_day_key())
+    anomaly_cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    anomaly_summary = _admin_anomaly_summary(db, anomaly_cycle)
     return render_template(
         "admin_metrics.html",
         rows=rows,
@@ -67399,6 +68142,8 @@ def admin_metrics():
         measurement_health=measurement_health,
         daily_research_summary=daily_research_summary,
         layer6_research_snapshot=layer6_research_snapshot,
+        anomaly_cycle=_anomaly_cycle_view(anomaly_cycle),
+        anomaly_summary=anomaly_summary,
         behavior_snapshot=behavior_snapshot,
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,
@@ -67407,6 +68152,36 @@ def admin_metrics():
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),
         selected_core_days=int(core_days or 14),
+    )
+
+
+@app.route("/admin/anomaly")
+@login_required
+def admin_anomaly():
+    if not _is_admin_user(session["user_id"]):
+        return abort(403)
+    db = get_db()
+    cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+    summary = _admin_anomaly_summary(db, cycle)
+    next_week = anomaly_current_week_key(int(_now_ts()) + 7 * 86400)
+    preview_config = anomaly_build_cycle_config(next_week)
+    preview = {
+        "id": 0,
+        "week_key": next_week,
+        "template_key": preview_config["key"],
+        "display_name": preview_config["display_name"],
+        "config_json": json.dumps(preview_config, ensure_ascii=False),
+        "starts_at": int(datetime.fromisocalendar(int(next_week.split("-W")[0]), int(next_week.split("-W")[1]), 1).replace(tzinfo=JST).timestamp()),
+        "ends_at": int((datetime.fromisocalendar(int(next_week.split("-W")[0]), int(next_week.split("-W")[1]), 1).replace(tzinfo=JST) + timedelta(days=7)).timestamp()),
+    }
+    db.commit()
+    return render_template(
+        "admin_anomaly.html",
+        title="週次異常個体 管理",
+        cycle=_anomaly_cycle_view(cycle),
+        summary=summary,
+        next_cycle=_anomaly_cycle_view(preview) if preview else None,
+        templates=ANOMALY_TEMPLATES,
     )
 
 

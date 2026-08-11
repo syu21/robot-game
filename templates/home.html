@@ -560,7 +560,7 @@
         </div>
       {% endif %}
     </section>
-    {% if (factory_base_home and factory_base_home['equipped']) or daily_research_card or show_tower_entry %}
+    {% if (factory_base_home and factory_base_home['equipped']) or daily_research_card or anomaly_home or show_tower_entry %}
     <div class="home-compact-tools" aria-label="研究所関連">
     {% if factory_base_home and factory_base_home['equipped'] %}
     <section class="panel home-base-panel">
@@ -625,6 +625,21 @@
           </div>
         </div>
         {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if anomaly_home %}
+    <section class="panel home-anomaly-panel">
+      <div class="card home-fold-card">
+        <div class="home-fold-summary">
+          <div>
+            <div><span class="weekly-fit-badge">WEEKLY ANOMALY</span></div>
+            <div class="home-explore-kicker">異常信号を検出</div>
+            <div><b>{{ anomaly_home['cycle']['display_name'] }}</b></div>
+            <div class="home-explore-status">{{ anomaly_home['cycle']['challenge_class_label'] }} / {{ anomaly_home['result_label'] }}</div>
+          </div>
+          <a class="battle-home-link" href="{{ anomaly_home['url'] }}">異常個体を解析</a>
+        </div>
       </div>
     </section>
     {% endif %}

@@ -255,7 +255,7 @@ MINI_ROBOT_SPECIES_SEEDS = (
         "is_active": 1,
     },
 )
-RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "layer6", "layer7", "market", "series_system", "insect_r_parts", "research_boost")
+RELEASE_FLAG_KEYS = ("lab", "lab_mini", "layer4", "layer5", "layer6", "layer7", "anomaly", "market", "series_system", "insect_r_parts", "research_boost")
 SUPPORT_PACK_FOUNDER_PRODUCT_KEY = "support_pack_founder"
 SUPPORT_PACK_LAB_PRODUCT_KEY = "support_pack_lab"
 LEGACY_SUPPORT_PACK_PRODUCT_KEY = "support_pack_001"
@@ -3136,6 +3136,61 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS weekly_anomaly_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL UNIQUE,
+            template_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            seed TEXT NOT NULL,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            starts_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anomaly_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            challenge_class TEXT NOT NULL,
+            template_key TEXT NOT NULL,
+            result TEXT NOT NULL,
+            turns INTEGER NOT NULL DEFAULT 0,
+            player_hp_remaining INTEGER NOT NULL DEFAULT 0,
+            player_hp_max INTEGER NOT NULL DEFAULT 0,
+            enemy_hp_remaining INTEGER NOT NULL DEFAULT 0,
+            enemy_hp_max INTEGER NOT NULL DEFAULT 0,
+            damage_dealt INTEGER NOT NULL DEFAULT 0,
+            analysis_rate INTEGER NOT NULL DEFAULT 0,
+            request_id TEXT,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS anomaly_weekly_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            challenge_class TEXT NOT NULL,
+            reward_granted_at INTEGER NOT NULL,
+            reward_coins INTEGER NOT NULL DEFAULT 0,
+            request_id TEXT,
+            UNIQUE(week_key, user_id, challenge_class),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS showcase_votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             robot_id INTEGER NOT NULL,
@@ -4441,6 +4496,10 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_user_event_created ON world_events_log(user_id, event_type, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_user_status_updated ON robot_instances(user_id, status, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_public_status_updated ON robot_instances(status, is_public, updated_at DESC)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_attempts_request ON anomaly_attempts(request_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_attempts_week_class ON anomaly_attempts(week_key, challenge_class, result, analysis_rate DESC, turns ASC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_anomaly_attempts_user_week ON anomaly_attempts(user_id, week_key, challenge_class, created_at DESC)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_anomaly_rewards_user_week_class ON anomaly_weekly_rewards(week_key, user_id, challenge_class)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_showcase_votes_type_created_robot ON showcase_votes(vote_type, created_at, robot_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created ON chat_messages(room_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_room_created ON chat_messages(user_id, room_key, created_at DESC)")

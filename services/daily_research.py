@@ -15,6 +15,7 @@ EVENT_BUILD_VIEW = "audit.daily_research.build_view"
 EVENT_WORLD_VIEW = "audit.daily_research.world_view"
 EVENT_BOSS_ENCOUNTER = "audit.boss.encounter"
 EVENT_BOSS_DEFEAT = "audit.boss.defeat"
+EVENT_ANOMALY_ATTEMPT = "audit.anomaly.attempt"
 
 DAILY_RESEARCH_TASK_CREATE = "audit.daily_research.task.create"
 DAILY_RESEARCH_TASK_PROGRESS = "audit.daily_research.progress"
@@ -35,6 +36,7 @@ DAILY_RESEARCH_TASK_EVENTS = {
     EVENT_BOSS_ENCOUNTER,
     EVENT_BOSS_DEFEAT,
     EVENT_DROP,
+    EVENT_ANOMALY_ATTEMPT,
 }
 DAILY_RESEARCH_REWARD_SOURCE_EVENTS = set()
 
@@ -185,6 +187,17 @@ DAILY_RESEARCH_MISSION_POOLS = {
             "tendency_key": "attack",
             "fallback_area_key": "layer_1",
             "target": 3,
+            "reward_coins": 25,
+        },
+    ],
+    "anomaly": [
+        {
+            "key": "anomaly_observe_1",
+            "title": "異常反応観測",
+            "description": "今週の異常個体へ1回挑戦し、解析ログを提出せよ。",
+            "mission_type": "anomaly",
+            "condition": "anomaly_attempt",
+            "target": 1,
             "reward_coins": 25,
         },
     ],
@@ -387,6 +400,23 @@ def _mission_for_user(db, user_id, mission):
     return item
 
 
+def _anomaly_daily_eligible(db, user_id):
+    try:
+        release = db.execute("SELECT is_public FROM release_flags WHERE key = 'anomaly' LIMIT 1").fetchone()
+        if not release or int(release["is_public"] or 0) != 1:
+            return False
+        user = db.execute("SELECT is_admin FROM users WHERE id = ?", (int(user_id),)).fetchone()
+        if user and int(user["is_admin"] or 0) == 1:
+            return True
+        explores = db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user_id), EVENT_EXPLORE_END),
+        ).fetchone()
+        return int((explores or {})["c"] or 0) >= 3
+    except Exception:
+        return False
+
+
 def ensure_daily_research_progress_schema(db):
     db.execute(
         """
@@ -450,7 +480,10 @@ def get_or_create_daily_research_missions(db, user_id, day_key=None):
     ensure_daily_research_progress_schema(db)
     day_key = str(day_key or get_day_key())
     now_ts = int(time.time())
-    for mission in get_daily_research_missions(day_key):
+    missions = get_daily_research_missions(day_key)
+    if _anomaly_daily_eligible(db, user_id) and _stable_index(f"{day_key}:anomaly", 3) == 0:
+        missions[-1] = dict(DAILY_RESEARCH_MISSION_POOLS["anomaly"][0])
+    for mission in missions:
         item = _mission_for_user(db, user_id, mission)
         db.execute(
             """
@@ -531,6 +564,8 @@ def _mission_event_delta(db, user_id, row, event_type, payload):
         tendencies = DAILY_RESEARCH_AREA_TENDENCY.get(area_key, set())
         target_tendency = str((mission or {}).get("tendency_key") or "")
         return 1 if target_tendency in tendencies else 0
+    if condition == "anomaly_attempt":
+        return 1 if str(event_type) == EVENT_ANOMALY_ATTEMPT else 0
     return 0
 
 

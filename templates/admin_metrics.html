@@ -46,6 +46,25 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">週次異常個体</div>
+        <div class="admin-metrics-section-sub">{{ anomaly_cycle.week_key }} / {{ anomaly_cycle.display_name }}</div>
+      </div>
+      <a class="battle-home-link" href="{{ url_for('admin_anomaly') }}">詳細を見る</a>
+    </div>
+    <div class="admin-metrics-note-grid">
+      {% for group in anomaly_summary %}
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">{{ group.class_label }}</div>
+        <div class="admin-metrics-note-value">{{ group.clear_rate }}%</div>
+        <div class="robot-time">挑戦 {{ group.attempt_count }}回 / {{ group.user_count }}人 / 平均解析 {{ group.avg_analysis_rate }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">第6層研究記録</div>
         <div class="admin-metrics-section-sub">{{ layer6_research_snapshot.week_key }} の通常プレイヤー集計です。</div>
       </div>

@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel home-champion-panel anomaly-result-panel">
+  <div class="world-env-card champion-hero-card champion-page-card">
+    <div class="battle-section-title">ANALYSIS RESULT</div>
+    <h1 class="battle-title champion-page-title">
+      {% if attempt.result == 'clear' %}COMPLETE{% else %}解析未完了{% endif %}
+    </h1>
+    <div class="champion-stats-grid">
+      <div class="card champion-stat-card">
+        <div class="stat-label">解析率</div>
+        <div class="stat-value">{{ attempt.analysis_rate }}%</div>
+      </div>
+      <div class="card champion-stat-card">
+        <div class="stat-label">ターン</div>
+        <div class="stat-value">{{ attempt.turns }}</div>
+      </div>
+      <div class="card champion-stat-card">
+        <div class="stat-label">残存耐久</div>
+        <div class="stat-value">{{ attempt.player_hp_remaining }} / {{ attempt.player_hp_max }}</div>
+      </div>
+      <div class="card champion-stat-card">
+        <div class="stat-label">報酬</div>
+        <div class="stat-value">{{ payload.get('reward_coins', 0) }}C</div>
+      </div>
+    </div>
+    {% if payload.get('best_updated') %}
+    <div class="card champion-active-robot-card">
+      <b>自己記録更新</b>
+      <div class="upgrade-cost">{{ payload.get('best_delta', '更新') }}</div>
+    </div>
+    {% endif %}
+
+    <div class="champion-recent-list">
+      {% for log in battle.get('turn_logs', []) %}
+      <div class="card champion-recent-card">
+        <div><b>{{ log.turn }}T</b> {{ log.player_action }} / {{ log.enemy_action }}</div>
+        <div class="upgrade-cost">敵 {{ log.enemy_before }} → {{ log.enemy_after }} / 自機 {{ log.player_before }} → {{ log.player_after }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="home-inline-actions champion-action-row">
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('anomaly_view') }}">もう一度解析する</a>
+      <a class="battle-home-link" href="{{ url_for('build') }}">機体を調整する</a>
+      <a class="battle-home-link" href="{{ url_for('anomaly_rankings') }}">今週の記録を見る</a>
+      <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

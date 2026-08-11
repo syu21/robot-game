@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h1>週次異常個体 管理</h1>
+  <div class="card">
+    <div><b>{{ cycle.display_name }}</b></div>
+    <div class="upgrade-cost">{{ cycle.week_key }} / {{ cycle.template_label }} / {{ cycle.theme }}</div>
+    <div class="upgrade-cost">{{ cycle.observation_note }}</div>
+  </div>
+  <div class="grid">
+    {% for group in summary %}
+    <div class="card">
+      <h2>{{ group.class_label }}</h2>
+      <div class="upgrade-cost">挑戦 {{ group.attempt_count }} / 人数 {{ group.user_count }}</div>
+      <div class="upgrade-cost">CLEAR {{ group.clear_users }} / {{ group.clear_rate }}%</div>
+      <div class="upgrade-cost">平均解析率 {{ group.avg_analysis_rate }}% / 平均挑戦 {{ group.avg_attempts_per_user }}</div>
+      <div class="upgrade-cost">
+        HP{{ group.stats.hp }} ATK{{ group.stats.atk }} DEF{{ group.stats.def }} SPD{{ group.stats.spd }} ACC{{ group.stats.acc }} CRI{{ group.stats.cri }}
+      </div>
+      <div class="battle-section-title">型別</div>
+      {% for row in group.style_rows %}
+      <div class="home-ranking-row">
+        <span>{{ row.style_label }}</span>
+        <span class="weekly-fit-badge">CLEAR {{ row.clears }} / 挑戦 {{ row.attempts }}</span>
+      </div>
+      {% else %}
+      <div class="upgrade-cost">型別データなし</div>
+      {% endfor %}
+      <div class="battle-section-title">上位記録</div>
+      {% for row in group.fastest_rows %}
+      <div class="home-ranking-row">
+        <span>{{ row.rank }}. {{ row.display_username }} / {{ row.robot_name }}</span>
+        <span class="weekly-fit-badge">{{ row.result_label }} / {{ row.turns }}T</span>
+      </div>
+      {% else %}
+      <div class="upgrade-cost">記録なし</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if next_cycle %}
+  <div class="card">
+    <h2>次週プレビュー</h2>
+    <div>{{ next_cycle.week_key }} / {{ next_cycle.display_name }}</div>
+    <div class="upgrade-cost">{{ next_cycle.template_label }} / {{ next_cycle.theme }}</div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

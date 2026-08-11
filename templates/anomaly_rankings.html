@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
+{% block content %}
+<section class="panel home-champion-panel anomaly-ranking-panel">
+  <div class="world-env-card champion-hero-card champion-page-card">
+    <div class="battle-section-title">WEEKLY ANOMALY RECORDS</div>
+    <h1 class="battle-title champion-page-title">{{ cycle.display_name }}</h1>
+    <div class="upgrade-cost">{{ cycle.week_key }} / {{ cycle.theme }}</div>
+    {% for group in rankings %}
+    <div class="card champion-recent-card">
+      <div><b>{{ group.class_label }}</b></div>
+      {% for row in group.rows %}
+      <div class="home-ranking-row">
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(row, 'anomaly', (row.get('display_username') or row['username']) ~ ' robot') }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name-line"><span class="user-name-inline-note">{{ row.rank }}位</span>{{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}</div>
+            <div class="user-signal-sub">{{ row.robot_name }} / {{ row.style_label }}</div>
+          </div>
+        </div>
+        <span class="weekly-fit-badge">{{ row.result_label }} / {{ row.turns }}T / HP{{ row.hp_rate }}%</span>
+      </div>
+      {% else %}
+      <div class="upgrade-cost">まだ記録なし。</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="home-inline-actions">
+      <a class="battle-home-link" href="{{ url_for('anomaly_view') }}">異常個体へ戻る</a>
+      <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

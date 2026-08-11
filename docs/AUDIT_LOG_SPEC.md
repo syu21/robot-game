@@ -533,6 +533,27 @@
 - `source_key` は `request_id` 優先、なければ元イベントIDまたはbattle_idを使う。
 - 同一操作内のdaily_research auditは元操作と同じ `request_id` を保持する。
 
+## 9.2 週替わり挑戦機《異常個体》
+- `audit.anomaly.cycle.create`
+  - 週次個体が初回生成された記録。payload は `week_key`, `template_key`, `display_name`, `starts_at`, `ends_at`。
+- `ANOMALY_APPEARED`
+  - 週次個体の公開世界ログ。週初回生成時のみ。
+- `audit.anomaly.view`
+  - `/anomaly` 表示。payload は `week_key`, `template_key`, `challenge_class`, `total_explores`。
+- `audit.anomaly.attempt`
+  - 挑戦結果。payload は `week_key`, `cycle_id`, `template_key`, `challenge_class`, `result`, `turns`, `analysis_rate`, `damage_dealt`, `reward_coins`。
+- `audit.anomaly.best`
+  - 自己ベスト更新。payload は `analysis_rate_before/after`, `turns_before/after`, `result_before/after`。
+- `ANOMALY_CLASS_FIRST_CLEAR`
+  - 管理者・テスト・集計除外を除く、級別の週初撃破世界ログ。
+- `ANOMALY_FASTEST_RECORD`
+  - 管理者・テスト・集計除外を除く、級別最速撃破更新世界ログ。
+
+二重加算防止:
+- `anomaly_attempts.request_id` を一意化する。
+- `anomaly_weekly_rewards` は `week_key, user_id, challenge_class` を一意化し、週・級ごとの初回撃破報酬を二重付与しない。
+- 異常個体挑戦は `audit.anomaly.attempt` と同じ `request_id` で今日の研究指令にも進捗反映する。
+
 ## 10. 研究モジュール v2
 - `audit.module.synthesis.preview`
   - 研究合成確認。payload に `origin_module_a_id`, `origin_module_b_id`, `research_policy_key`, `cost_coins` を含める。

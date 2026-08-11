@@ -471,3 +471,14 @@
 - [ ] `audit.layer.unlock`, `audit.layer2.unlock_cta.view`, `audit.layer2.unlock_cta.click` が記録される
 - [ ] `audit.explore.start` に `is_first_layer2_explore` と `seconds_from_layer_unlock` が入る
 - [ ] 管理メトリクスに第1層突破後導線のCTA率、初出撃率、入口別人数が表示される
+
+## 週替わり挑戦機《異常個体》v1
+
+- [ ] `/admin/release` の `週次異常個体` が初期非公開で、管理者だけ確認できる
+- [ ] `/anomaly` は一般ユーザー公開後も初回3出撃未満ではホームへ戻す
+- [ ] `/anomaly/challenge` は同じ `submission_id` の二重POSTで挑戦記録と報酬が二重作成されない
+- [ ] 週・級ごとの初回撃破だけ `anomaly_weekly_rewards` と小額コインが付与される
+- [ ] ランキングは `観測級 / 実戦級 / 深層級` に分かれ、管理者・テスト・集計除外ユーザーを除外する
+- [ ] `audit.anomaly.view / attempt / best / cycle.create` と `ANOMALY_APPEARED / ANOMALY_CLASS_FIRST_CLEAR / ANOMALY_FASTEST_RECORD` が残る
+- [ ] `/admin/anomaly` と `/admin/metrics` で当週テンプレート、級別挑戦数、撃破率、平均解析率、次週プレビューを確認できる
+- [ ] 公開かつ参加可能なユーザーだけ、今日の研究指令に `異常反応観測` が候補として出る

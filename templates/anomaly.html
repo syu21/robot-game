@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% from '_user_chip.html' import render_user_chip %}
+{% block content %}
+<section class="panel home-champion-panel anomaly-page-panel">
+  <div class="world-env-card champion-hero-card champion-page-card">
+    <div class="battle-section-title">WEEKLY ANOMALY</div>
+    <div class="upgrade-cost">週次異常個体</div>
+    <h1 class="battle-title champion-page-title">{{ cycle.display_name }}</h1>
+    <div class="champion-main-row">
+      <div class="champion-robot-visual anomaly-signal-visual">
+        <div class="robot-thumb champion-page-thumb empty anomaly-signal-box">WARNING</div>
+      </div>
+      <div class="champion-copy">
+        <div class="weekly-fit-badge">{{ cycle.challenge_class_label }}</div>
+        <div class="upgrade-cost">攻略テーマ: {{ cycle.theme }}</div>
+        <div class="upgrade-cost">異常特性: {{ cycle.observation_trait }}</div>
+        <p>{{ cycle.observation_note }}</p>
+        <div class="upgrade-cost">最大 {{ max_turns }} ターン / 通常戦利品なし / 層進行なし</div>
+      </div>
+    </div>
+
+    <div class="card champion-active-robot-card">
+      <div><b>あなたの研究結果</b></div>
+      {% if best %}
+      <div>{{ 'COMPLETE' if best['result'] == 'clear' else '解析未完了' }} / 解析率 {{ best['analysis_rate'] }}%</div>
+      <div class="upgrade-cost">{{ best['turns'] }}ターン / 残HP {{ best['player_hp_remaining'] }} / {{ best['player_hp_max'] }}</div>
+      {% else %}
+      <div>今週はまだ未解析です。</div>
+      <div class="upgrade-cost">まず1回挑戦して解析率を記録します。</div>
+      {% endif %}
+    </div>
+
+    {% if active_robot %}
+    <div class="card champion-active-robot-card">
+      <div><b>解析に使う機体</b></div>
+      <div>{{ active_robot.get('name', '出撃機体') }}</div>
+      {% if active_robot_profile %}
+      <div class="upgrade-cost">思想: {{ active_robot_profile.get('signature_label', '無印') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="home-inline-actions champion-action-row">
+      {% if not active_robot %}
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('build') }}">ロボを編成する</a>
+      {% elif not ct.allowed %}
+      <button type="button" disabled>再解析まで {{ ct.remaining }}秒</button>
+      {% else %}
+      <form method="post" action="{{ url_for('anomaly_challenge') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="submission_id" value="{{ submission_id }}" />
+        <button type="submit">解析する</button>
+      </form>
+      {% endif %}
+      <a class="battle-home-link" href="{{ url_for('build') }}">機体を調整する</a>
+      <a class="battle-home-link" href="{{ url_for('anomaly_rankings') }}">今週の記録</a>
+    </div>
+
+    <div class="battle-section-title champion-recent-title">今週の研究記録</div>
+    {% for group in rankings %}
+    <div class="card champion-recent-card">
+      <div><b>{{ group.class_label }}</b></div>
+      {% for row in group.rows[:5] %}
+      <div class="home-ranking-row">
+        <div class="presence-user-line user-signal">
+          {{ render_user_chip(row, 'anomaly', (row.get('display_username') or row['username']) ~ ' robot') }}
+          <div class="user-signal-meta">
+            <div class="user-signal-name-line"><span class="user-name-inline-note">{{ row.rank }}位</span>{{ render_user_name_badged_html(row, row.get('display_username') or row['username']) }}</div>
+            <div class="user-signal-sub">{{ row.robot_name }} / {{ row.style_label }}</div>
+          </div>
+        </div>
+        <span class="weekly-fit-badge">{{ row.result_label }} / {{ row.turns }}T</span>
+      </div>
+      {% else %}
+      <div class="upgrade-cost">まだ記録なし。</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
