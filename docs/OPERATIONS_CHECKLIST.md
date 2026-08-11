@@ -482,3 +482,16 @@
 - [ ] `audit.anomaly.view / attempt / best / cycle.create` と `ANOMALY_APPEARED / ANOMALY_CLASS_FIRST_CLEAR / ANOMALY_FASTEST_RECORD` が残る
 - [ ] `/admin/anomaly` と `/admin/metrics` で当週テンプレート、級別挑戦数、撃破率、平均解析率、次週プレビューを確認できる
 - [ ] 公開かつ参加可能なユーザーだけ、今日の研究指令に `異常反応観測` が候補として出る
+
+## 機体プリセット《戦術セット》v1
+
+- [ ] `python3 init_db.py` 後、`robot_loadout_presets` がある
+- [ ] ロボ詳細に `SET A/B/C` の3枠だけが表示される
+- [ ] 現在構成を保存すると、4部位パーツと研究モジュール最大3個が保存される
+- [ ] 上書き保存、名称変更、削除ができる
+- [ ] 適用時、他機体装備中・売却済み・部位違い・フレーム違い・無効パーツは拒否される
+- [ ] 適用失敗時にパーツ、モジュール、active robot が部分更新されない
+- [ ] 適用成功時に旧パーツが在庫へ戻り、新パーツだけが装備済みになる
+- [ ] 異常個体結果画面から戦術セットへ戻れる
+- [ ] `audit.robot.preset.save/apply/rename/delete` が残る
+- [ ] `/admin/metrics` に保存済みセット数、保存/適用ユーザー、SET別保存数が表示される

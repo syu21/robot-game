@@ -1455,6 +1455,25 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS robot_loadout_presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            preset_slot TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            config_json TEXT,
+            schema_version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(robot_instance_id, preset_slot),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_robot_loadout_presets_user ON robot_loadout_presets(user_id, robot_instance_id)")
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_instances (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

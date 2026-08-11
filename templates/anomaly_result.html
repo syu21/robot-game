@@ -43,6 +43,9 @@
     <div class="home-inline-actions champion-action-row">
       <a class="battle-home-link battle-next-cta" href="{{ url_for('anomaly_view') }}">もう一度解析する</a>
       <a class="battle-home-link" href="{{ url_for('build') }}">機体を調整する</a>
+      {% if tactical_robot_id %}
+      <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=tactical_robot_id, return_to='/anomaly') }}">戦術セット</a>
+      {% endif %}
       <a class="battle-home-link" href="{{ url_for('anomaly_rankings') }}">今週の記録を見る</a>
       <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
     </div>

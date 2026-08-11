@@ -63,6 +63,10 @@
 - `audit.robot.rename`
 - `audit.robot.decompose`
 - `audit.robot.share`
+- `audit.robot.preset.save`
+- `audit.robot.preset.apply`
+- `audit.robot.preset.rename`
+- `audit.robot.preset.delete`
 - `audit.showcase.expand`
 - `audit.showcase.like`
 

@@ -798,3 +798,12 @@
 - `anomaly_attempts` に挑戦記録、`weekly_anomaly_cycles` に週次個体、`anomaly_weekly_rewards` に週・級ごとの報酬受け取りを保存する。
 - `/anomaly/rankings` と `/admin/anomaly` を追加し、ランキングは級別、管理者・テスト・集計除外ユーザーは公開記録から除外する。
 - 監査は `audit.anomaly.view / attempt / best / cycle.create`、世界ログは `ANOMALY_APPEARED / ANOMALY_CLASS_FIRST_CLEAR / ANOMALY_FASTEST_RECORD` を使う。
+
+## 17. 機体プリセット《戦術セット》v1
+- ロボ詳細に固定3枠 `SET A/B/C` を追加し、現在の4部位パーツと研究モジュール最大3個を保存できる。
+- 適用時は部位、所有者、フレーム、パーツ状態、他機体装備中、モジュール状態を検証し、失敗時は部分適用しない。
+- DECOR、見た目調整、ロボ名、称号は保存対象外。
+- 異常個体結果画面から現行機体の戦術セットへ戻れる。
+- DBは `robot_loadout_presets` を追加。UNIQUEは `robot_instance_id, preset_slot`。
+- 監査は `audit.robot.preset.save/apply/rename/delete`。
+- 管理メトリクスに保存済みセット数、保存/適用ユーザー、SET別保存数、直近操作を追加する。

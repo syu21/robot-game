@@ -111,6 +111,73 @@
 </div>
 {% endif %}
 
+{% if tactical_presets %}
+<div class="card">
+  <h2>戦術セット <span class="robot-time">TACTICAL SET</span></h2>
+  <div class="robot-part">現在: {{ tactical_presets['current_label'] }}</div>
+  <div class="robot-time">よく使う機体構成を保存して、すぐ切り替えられます。</div>
+  <div class="stats-grid">
+    {% for preset in tactical_presets['rows'] %}
+    <div class="stat-card">
+      <div class="stat-label">{{ preset['slot_label'] }}</div>
+      <div class="stat-value stat-small">{{ preset['display_name'] }}</div>
+      {% if preset['is_current'] %}
+      <div class="comms-status-badge">使用中</div>
+      {% elif not preset['saved'] %}
+      <div class="comms-status-badge is-muted">未登録</div>
+      {% elif preset['invalid'] %}
+      <div class="comms-status-badge is-muted">使用不可</div>
+      {% else %}
+      <div class="robot-time">{{ preset['profile']['signature_label'] if preset.get('profile') else '構成保存済み' }}{% if preset.get('power') %} / {{ preset['power'] }}{% endif %}</div>
+      {% endif %}
+      {% if preset['saved'] %}
+      <div class="robot-time">モジュール {{ preset['module_count'] }}</div>
+      {% for line in preset['part_lines'] %}
+      <div class="robot-time">{{ line['label'] }}: {{ line['name'] }}</div>
+      {% endfor %}
+      {% endif %}
+      {% if preset['invalid'] %}
+      {% for reason in preset['invalid'][:2] %}
+      <div class="robot-time">⚠ {{ reason }}</div>
+      {% endfor %}
+      {% endif %}
+      <div class="home-inline-actions inline-form-top">
+        {% if preset['saved'] and not preset['invalid'] and not preset['is_current'] %}
+        <form method="post" action="{{ url_for('robot_preset_apply', instance_id=robot['id']) }}" class="inline-form">
+          <input type="hidden" name="preset_slot" value="{{ preset['slot'] }}" />
+          <input type="hidden" name="source" value="robot_detail" />
+          <input type="hidden" name="return_to" value="{{ tactical_return_to }}" />
+          <button type="submit">このセットに変更</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('robot_preset_save', instance_id=robot['id']) }}" class="inline-form" {% if preset['saved'] %}onsubmit="return confirm('この戦術セットを現在の構成で上書きします。');"{% endif %}>
+          <input type="hidden" name="preset_slot" value="{{ preset['slot'] }}" />
+          <input type="hidden" name="source" value="robot_detail" />
+          <input type="hidden" name="return_to" value="{{ tactical_return_to }}" />
+          <button type="submit">{% if preset['saved'] %}現在構成で上書き{% else %}現在の構成を保存{% endif %}</button>
+        </form>
+      </div>
+      <form method="post" action="{{ url_for('robot_preset_rename', instance_id=robot['id']) }}" class="inline-form inline-form-top">
+        <input type="hidden" name="preset_slot" value="{{ preset['slot'] }}" />
+        <input type="hidden" name="source" value="robot_detail" />
+        <input type="hidden" name="return_to" value="{{ tactical_return_to }}" />
+        <input type="text" name="display_name" value="{{ preset['display_name'] }}" maxlength="20" />
+        <button type="submit">名前変更</button>
+      </form>
+      {% if preset['saved'] %}
+      <form method="post" action="{{ url_for('robot_preset_delete', instance_id=robot['id']) }}" class="inline-form inline-form-top" onsubmit="return confirm('この戦術セットを削除します。パーツは削除されません。');">
+        <input type="hidden" name="preset_slot" value="{{ preset['slot'] }}" />
+        <input type="hidden" name="source" value="robot_detail" />
+        <input type="hidden" name="return_to" value="{{ tactical_return_to }}" />
+        <button type="submit">セットを削除</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>思想</h2>
   {{ render_style_gauge(robot.get('style_state')) }}

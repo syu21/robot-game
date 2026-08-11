@@ -890,6 +890,13 @@ ROBOT_MAINTENANCE_SLOT_DEFS = (
     {"slot": "DECOR", "slot_key": "decor", "label": "装飾", "part_type": None, "instance_col": None, "key_col": None},
 )
 ROBOT_MAINTENANCE_SLOT_DEF_BY_KEY = {item["slot"]: item for item in ROBOT_MAINTENANCE_SLOT_DEFS}
+TACTICAL_PRESET_SLOTS = ("A", "B", "C")
+TACTICAL_PRESET_DEFAULT_NAMES = {
+    "A": "通常運用",
+    "B": "ボス攻略",
+    "C": "異常解析",
+}
+TACTICAL_PRESET_NAME_MAX = 20
 MAX_ROBOT_DECOR_SLOTS = 5
 ROBOT_DECOR_SLOT_SPACING = 30
 ROBOT_DECOR_OFFSET_MIN = -32
@@ -13624,6 +13631,25 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS robot_loadout_presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            robot_instance_id INTEGER NOT NULL,
+            preset_slot TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            config_json TEXT,
+            schema_version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(robot_instance_id, preset_slot),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (robot_instance_id) REFERENCES robot_instances(id)
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_robot_loadout_presets_user ON robot_loadout_presets(user_id, robot_instance_id)")
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS user_factory_facilities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -18881,6 +18907,402 @@ def _set_research_module_loadout(db, user_id, module_instance_ids, *, request_id
         ip=ip,
     )
     return {"ok": True, "summary": summary}
+
+
+def _normalize_tactical_preset_slot(value):
+    slot = str(value or "").strip().upper()
+    return slot if slot in TACTICAL_PRESET_SLOTS else ""
+
+
+def _tactical_preset_default_name(slot):
+    slot = _normalize_tactical_preset_slot(slot) or "A"
+    return TACTICAL_PRESET_DEFAULT_NAMES.get(slot, f"SET {slot}")
+
+
+def _sanitize_tactical_preset_name(value, slot):
+    text = re.sub(r"[\x00-\x1f\x7f<>]+", "", str(value or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    if not text:
+        return _tactical_preset_default_name(slot)
+    return text[:TACTICAL_PRESET_NAME_MAX]
+
+
+def _safe_tactical_return_path(value, fallback):
+    text = str(value or "").strip()
+    if text.startswith("/") and not text.startswith("//"):
+        return text
+    return fallback
+
+
+def _current_module_instance_ids(db, user_id):
+    rows = db.execute(
+        """
+        SELECT module_instance_id
+        FROM user_module_loadouts
+        WHERE user_id = ?
+        ORDER BY slot_index ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return [int(row["module_instance_id"]) for row in rows if row["module_instance_id"]]
+
+
+def _robot_current_tactical_config(db, user_id, robot_instance_id):
+    mapping = _ensure_robot_instance_part_instances(db, int(robot_instance_id)) or {}
+    if not all(mapping.get(slot) for slot in ("head", "r_arm", "l_arm", "legs")):
+        return None
+    return {
+        "parts": {
+            "head": int(mapping["head"]),
+            "r_arm": int(mapping["r_arm"]),
+            "l_arm": int(mapping["l_arm"]),
+            "legs": int(mapping["legs"]),
+        },
+        "module_instance_ids": _current_module_instance_ids(db, int(user_id)),
+    }
+
+
+def _normalize_tactical_config(raw):
+    try:
+        data = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    parts = data.get("parts") or {}
+    if not isinstance(parts, dict):
+        return None
+    normalized_parts = {}
+    for slot in ("head", "r_arm", "l_arm", "legs"):
+        try:
+            normalized_parts[slot] = int(parts.get(slot) or 0)
+        except (TypeError, ValueError):
+            normalized_parts[slot] = 0
+    module_ids = []
+    for value in data.get("module_instance_ids") or []:
+        try:
+            module_id = int(value or 0)
+        except (TypeError, ValueError):
+            module_id = 0
+        if module_id > 0:
+            module_ids.append(module_id)
+    return {"parts": normalized_parts, "module_instance_ids": module_ids[:3]}
+
+
+def _tactical_configs_equal(left, right):
+    return _normalize_tactical_config(json.dumps(left or {})) == _normalize_tactical_config(json.dumps(right or {}))
+
+
+def _tactical_preset_part_rows(db, user_id, part_ids):
+    ids = sorted({int(pid) for pid in part_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    rows = db.execute(
+        f"""
+        SELECT
+            pi.id AS instance_id, pi.user_id, pi.status, pi.plus,
+            pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
+            pi.rarity AS instance_rarity, pi.element AS instance_element, pi.series AS instance_series,
+            rp.part_type, rp.key, rp.rarity, rp.element, rp.series, rp.frame_type, rp.display_name_ja,
+            rp.is_active
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.id IN ({placeholders})
+        """,
+        ids,
+    ).fetchall()
+    return {int(row["instance_id"]): dict(row) for row in rows}
+
+
+def _tactical_preset_module_rows(db, user_id, module_ids):
+    ids = sorted({int(mid) for mid in module_ids if int(mid or 0) > 0})
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    rows = db.execute(
+        f"""
+        SELECT urm.id AS instance_id, urm.user_id, urm.module_key, urm.status, urm.sold_at,
+               rm.name_ja, rm.is_active
+        FROM user_research_modules urm
+        JOIN research_modules rm ON rm.module_key = urm.module_key
+        WHERE urm.id IN ({placeholders})
+        """,
+        ids,
+    ).fetchall()
+    return {int(row["instance_id"]): dict(row) for row in rows}
+
+
+def _tactical_stat_obj_from_config(db, user_id, robot, config):
+    config = _normalize_tactical_config(json.dumps(config or {}))
+    if not config:
+        return None
+    rows_by_id = _tactical_preset_part_rows(db, user_id, config["parts"].values())
+    ordered = []
+    for slot in ("head", "r_arm", "l_arm", "legs"):
+        row = rows_by_id.get(int(config["parts"].get(slot) or 0))
+        if not row:
+            return None
+        ordered.append(row)
+    series_progress_layer = _series_progress_layer_for_user(db, user_id)
+    series_bonus_defs = (
+        _load_series_bonus_defs(db, active_only=True)
+        if _series_system_enabled_for_user(db, user_id=user_id)
+        else {}
+    )
+    calc = compute_robot_stats(
+        ordered,
+        series_bonus_defs=series_bonus_defs,
+        series_progress_layer=series_progress_layer,
+        disable_set_bonus=bool(int(robot["is_mixed_frame"] or 0)) if robot and "is_mixed_frame" in robot.keys() else False,
+    )
+    final_stats = dict(calc["stats"])
+    tuning_state = get_or_create_tuning_state(db, int(robot["id"]), int(user_id)) if robot and _robot_tuning_open_for_viewer(db, user_id=user_id) else None
+    if tuning_state:
+        final_stats, _bonus_rows = apply_tuning_bonus(final_stats, tuning_state)
+    return {
+        "stats": final_stats,
+        "power": compute_power(final_stats),
+        "set_bonus": calc.get("set_bonus"),
+        "parts": ordered,
+        "archetype": compute_archetype(ordered),
+        "robot_style": _robot_style_from_final_stats(final_stats),
+    }
+
+
+def _validate_tactical_config(db, user_id, robot, config):
+    config = _normalize_tactical_config(json.dumps(config or {}))
+    if not config:
+        return {"ok": False, "reason": "戦術セットの構成が壊れています。", "invalid": ["構成データが不正です。"]}
+    parts = config["parts"]
+    expected = {"head": "HEAD", "r_arm": "RIGHT_ARM", "l_arm": "LEFT_ARM", "legs": "LEGS"}
+    invalid = []
+    part_ids = [parts.get(slot) for slot in ("head", "r_arm", "l_arm", "legs")]
+    if any(not int(pid or 0) for pid in part_ids):
+        invalid.append("必要な部位が不足しています。")
+    if len(set(int(pid or 0) for pid in part_ids)) != 4:
+        invalid.append("同じパーツ個体が複数部位に指定されています。")
+    rows_by_id = _tactical_preset_part_rows(db, user_id, part_ids)
+    current = _ensure_robot_instance_part_instances(db, int(robot["id"])) or {}
+    current_ids = {int(value) for value in current.values() if value}
+    selected = {}
+    selected_keys = {}
+    label_by_slot_key = {str(defn.get("slot_key")): str(defn.get("label") or defn.get("slot_key")) for defn in ROBOT_MAINTENANCE_SLOT_DEFS}
+    for slot, expected_type in expected.items():
+        pid = int(parts.get(slot) or 0)
+        row = rows_by_id.get(pid)
+        label = label_by_slot_key.get(slot, slot)
+        if not row:
+            invalid.append(f"{label}: 所持していません。")
+            continue
+        if int(row["user_id"]) != int(user_id):
+            invalid.append(f"{label}: 所有者が一致しません。")
+            continue
+        if _norm_part_type(row["part_type"]) != expected_type:
+            invalid.append(f"{label}: 部位種別が一致しません。")
+            continue
+        if int(row["is_active"] or 0) != 1:
+            invalid.append(f"{label}: 現在使用できないパーツです。")
+            continue
+        if _normalize_frame_type(row.get("frame_type")) != _normalize_frame_type(robot["frame_type"]):
+            invalid.append(f"{label}: フレームタイプが一致しません。")
+            continue
+        status = str(row["status"] or "").strip().lower()
+        if status not in {"inventory", "equipped"}:
+            invalid.append(f"{label}: 使用できない状態です。")
+            continue
+        if status == "equipped" and pid not in current_ids:
+            invalid.append(f"{label}: 別の機体で使用中です。")
+            continue
+        selected[slot] = pid
+        selected_keys[slot] = str(row["key"])
+    module_ids = config.get("module_instance_ids") or []
+    if len(module_ids) != len(set(module_ids)):
+        invalid.append("同じ研究モジュールが複数指定されています。")
+    if len(module_ids) > 3:
+        invalid.append("研究モジュールは最大3個です。")
+    module_rows = _tactical_preset_module_rows(db, user_id, module_ids)
+    for module_id in module_ids:
+        row = module_rows.get(int(module_id))
+        if not row:
+            invalid.append("使用できない研究モジュールがあります。")
+            continue
+        if int(row["user_id"]) != int(user_id) or str(row["status"] or "") != "inventory" or row["sold_at"] or int(row["is_active"] or 0) != 1:
+            invalid.append(f"モジュール: {row['name_ja'] or row['module_key']} は使用できません。")
+    if invalid:
+        return {"ok": False, "reason": "この戦術セットは現在使用できません。", "invalid": invalid}
+    return {"ok": True, "selected": selected, "selected_keys": selected_keys, "module_ids": module_ids, "invalid": []}
+
+
+def _tactical_preset_rows_for_robot(db, user_id, robot_instance_id):
+    rows = db.execute(
+        """
+        SELECT *
+        FROM robot_loadout_presets
+        WHERE user_id = ? AND robot_instance_id = ?
+        ORDER BY preset_slot ASC
+        """,
+        (int(user_id), int(robot_instance_id)),
+    ).fetchall()
+    by_slot = {str(row["preset_slot"]): dict(row) for row in rows}
+    current_config = _robot_current_tactical_config(db, user_id, robot_instance_id)
+    all_part_ids = []
+    for row in by_slot.values():
+        config = _normalize_tactical_config(row.get("config_json"))
+        if config:
+            all_part_ids.extend(config["parts"].values())
+    part_rows = _tactical_preset_part_rows(db, user_id, all_part_ids)
+    result = []
+    current_slot = ""
+    robot = db.execute("SELECT * FROM robot_instances WHERE id = ?", (int(robot_instance_id),)).fetchone()
+    for slot in TACTICAL_PRESET_SLOTS:
+        row = by_slot.get(slot) or {
+            "id": None,
+            "preset_slot": slot,
+            "display_name": _tactical_preset_default_name(slot),
+            "config_json": None,
+        }
+        config = _normalize_tactical_config(row.get("config_json"))
+        saved = bool(config and all(config["parts"].values()))
+        validation = _validate_tactical_config(db, user_id, robot, config) if saved and robot else {"ok": False, "invalid": []}
+        part_lines = []
+        if config:
+            for key, label in (("head", "頭部"), ("r_arm", "右腕"), ("l_arm", "左腕"), ("legs", "脚部")):
+                part_id = int(config["parts"].get(key) or 0)
+                prow = part_rows.get(part_id)
+                part_lines.append({"slot": key, "label": label, "name": _part_display_name_ja(prow) if prow else "使用不可", "part_id": part_id})
+        stat_obj = None
+        if saved and validation.get("ok"):
+            stat_obj = _tactical_stat_obj_from_config(db, user_id, robot, config)
+        item = {
+            "id": row.get("id"),
+            "slot": slot,
+            "slot_label": f"SET {slot}",
+            "display_name": row.get("display_name") or _tactical_preset_default_name(slot),
+            "saved": saved,
+            "is_current": bool(saved and current_config and _tactical_configs_equal(config, current_config)),
+            "invalid": list(validation.get("invalid") or []),
+            "part_lines": part_lines,
+            "module_count": len(config.get("module_instance_ids") or []) if config else 0,
+            "profile": _robot_profile_view(stat_obj) if stat_obj else None,
+            "power": int(round(float((stat_obj or {}).get("power") or 0.0))) if stat_obj else None,
+        }
+        if item["is_current"]:
+            current_slot = slot
+        result.append(item)
+    return {"rows": result, "current_slot": current_slot, "current_label": (f"SET {current_slot}" if current_slot else "CUSTOM")}
+
+
+def _save_tactical_preset(db, user_id, robot_instance_id, slot, display_name=None):
+    config = _robot_current_tactical_config(db, user_id, robot_instance_id)
+    if not config:
+        return {"ok": False, "reason": "現在構成を保存できません。"}
+    now_ts = int(time.time())
+    name = _sanitize_tactical_preset_name(display_name, slot) if display_name is not None else None
+    existing = db.execute(
+        "SELECT display_name FROM robot_loadout_presets WHERE user_id = ? AND robot_instance_id = ? AND preset_slot = ?",
+        (int(user_id), int(robot_instance_id), slot),
+    ).fetchone()
+    final_name = name or (existing["display_name"] if existing else _tactical_preset_default_name(slot))
+    db.execute(
+        """
+        INSERT INTO robot_loadout_presets (
+            user_id, robot_instance_id, preset_slot, display_name, config_json, schema_version, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(robot_instance_id, preset_slot) DO UPDATE SET
+            display_name = excluded.display_name,
+            config_json = excluded.config_json,
+            schema_version = excluded.schema_version,
+            updated_at = excluded.updated_at
+        """,
+        (
+            int(user_id),
+            int(robot_instance_id),
+            slot,
+            final_name,
+            json.dumps(config, ensure_ascii=False, sort_keys=True),
+            now_ts,
+            now_ts,
+        ),
+    )
+    return {"ok": True, "config": config, "display_name": final_name}
+
+
+def _apply_tactical_preset(db, user_id, robot, preset, *, source, request_id=None, ip=None):
+    config = _normalize_tactical_config(preset["config_json"])
+    validation = _validate_tactical_config(db, user_id, robot, config)
+    if not validation.get("ok"):
+        return validation
+    current = _ensure_robot_instance_part_instances(db, int(robot["id"])) or {}
+    for current_id in current.values():
+        if current_id:
+            _return_part_instance_to_pool(db, int(user_id), int(current_id))
+    selected = validation["selected"]
+    keys = validation["selected_keys"]
+    db.execute(
+        """
+        UPDATE robot_instance_parts
+        SET head_part_instance_id = ?, r_arm_part_instance_id = ?, l_arm_part_instance_id = ?, legs_part_instance_id = ?,
+            head_key = ?, r_arm_key = ?, l_arm_key = ?, legs_key = ?
+        WHERE robot_instance_id = ?
+        """,
+        (
+            selected["head"],
+            selected["r_arm"],
+            selected["l_arm"],
+            selected["legs"],
+            keys["head"],
+            keys["r_arm"],
+            keys["l_arm"],
+            keys["legs"],
+            int(robot["id"]),
+        ),
+    )
+    for part_id in selected.values():
+        db.execute(
+            "UPDATE part_instances SET status = 'equipped', updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+            (int(part_id), int(user_id)),
+        )
+    refreshed_parts = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(robot["id"]),),
+    ).fetchone()
+    _compose_instance_assets_no_commit(db, int(robot["id"]), refreshed_parts)
+    module_result = _set_research_module_loadout(
+        db,
+        int(user_id),
+        validation.get("module_ids") or [],
+        request_id=request_id,
+        ip=ip,
+    )
+    if not module_result.get("ok"):
+        raise ValueError(module_result.get("reason") or "研究モジュールを設定できませんでした。")
+    _ensure_style_snapshot(
+        db,
+        int(robot["id"]),
+        force=True,
+        audit_context={"user_id": int(user_id), "request_id": request_id, "action_key": "robot_preset_apply", "ip": ip},
+    )
+    db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (int(robot["id"]), int(user_id)))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"],
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="robot_preset_apply",
+        entity_type="robot_instance",
+        entity_id=int(robot["id"]),
+        payload={
+            "robot_instance_id": int(robot["id"]),
+            "preset_slot": str(preset["preset_slot"]),
+            "preset_name": str(preset["display_name"] or ""),
+            "source": source,
+            "module_count": len(validation.get("module_ids") or []),
+        },
+        ip=ip,
+    )
+    return {"ok": True}
 
 
 def _module_loadout_audit_payload(summary, *, user_id, robot_instance_id=None, area_key=None, battle_result_id=None):
@@ -49501,6 +49923,7 @@ def anomaly_result(attempt_id):
         payload = {}
     cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
     rankings = _anomaly_rankings_view(db, cycle, limit=5) if cycle else []
+    active_robot_id = int(user["active_robot_id"] or 0) if "active_robot_id" in user.keys() and user["active_robot_id"] else 0
     db.commit()
     return render_template(
         "anomaly_result.html",
@@ -49510,6 +49933,7 @@ def anomaly_result(attempt_id):
         payload=payload,
         battle=payload.get("battle") or {},
         rankings=rankings,
+        tactical_robot_id=active_robot_id,
     )
 
 
@@ -58815,11 +59239,15 @@ def robot_detail(instance_id):
         """,
         (int(robot["id"]),),
     ).fetchall()
+    tactical_presets_view = _tactical_preset_rows_for_robot(db, user_id, int(robot["id"])) if int(robot["user_id"]) == user_id else None
+    tactical_return_to = _safe_tactical_return_path(request.args.get("return_to"), url_for("robot_detail", instance_id=int(robot["id"])))
     db.commit()
     return render_template(
         "robot_detail.html",
         robot=robot,
         blueprint=blueprint,
+        tactical_presets=tactical_presets_view,
+        tactical_return_to=tactical_return_to,
         robot_detail_contests=robot_detail_contests,
         robot_composition=robot_composition,
         history=history,
@@ -58833,6 +59261,180 @@ def robot_detail(instance_id):
         can_share=(int(robot["user_id"]) == user_id),
         can_maintain=(int(robot["user_id"]) == user_id),
     )
+
+
+def _owned_active_robot_or_404(db, user_id, instance_id):
+    row = db.execute(
+        """
+        SELECT *
+        FROM robot_instances
+        WHERE id = ? AND user_id = ? AND status = 'active'
+        LIMIT 1
+        """,
+        (int(instance_id), int(user_id)),
+    ).fetchone()
+    if not row:
+        abort(404)
+    return row
+
+
+@app.route("/robots/<int:instance_id>/presets/save", methods=["POST"])
+@login_required
+def robot_preset_save(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = _owned_active_robot_or_404(db, user_id, instance_id)
+    slot = _normalize_tactical_preset_slot(request.form.get("preset_slot"))
+    if not slot:
+        session["message"] = "戦術セットの指定が不正です。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    if getattr(db, "in_transaction", False):
+        db.commit()
+    result = _save_tactical_preset(db, user_id, int(robot["id"]), slot)
+    if not result.get("ok"):
+        db.rollback()
+        session["message"] = result.get("reason") or "戦術セットを保存できませんでした。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_preset_save",
+        entity_type="robot_instance",
+        entity_id=int(robot["id"]),
+        payload={
+            "robot_instance_id": int(robot["id"]),
+            "preset_slot": slot,
+            "preset_name": result.get("display_name"),
+            "source": request.form.get("source") or "robot_detail",
+            "module_count": len((result.get("config") or {}).get("module_instance_ids") or []),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"現在の機体構成をSET {slot}へ保存しました。"
+    return redirect(_safe_tactical_return_path(request.form.get("return_to"), url_for("robot_detail", instance_id=int(instance_id))))
+
+
+@app.route("/robots/<int:instance_id>/presets/apply", methods=["POST"])
+@login_required
+def robot_preset_apply(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = _owned_active_robot_or_404(db, user_id, instance_id)
+    slot = _normalize_tactical_preset_slot(request.form.get("preset_slot"))
+    return_to = _safe_tactical_return_path(request.form.get("return_to"), url_for("robot_detail", instance_id=int(instance_id)))
+    if not slot:
+        session["message"] = "戦術セットの指定が不正です。"
+        return redirect(return_to)
+    preset = db.execute(
+        """
+        SELECT *
+        FROM robot_loadout_presets
+        WHERE user_id = ? AND robot_instance_id = ? AND preset_slot = ?
+        LIMIT 1
+        """,
+        (user_id, int(robot["id"]), slot),
+    ).fetchone()
+    if not preset or not preset["config_json"]:
+        session["message"] = "未登録の戦術セットです。"
+        return redirect(return_to)
+    if getattr(db, "in_transaction", False):
+        db.commit()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        result = _apply_tactical_preset(
+            db,
+            user_id,
+            robot,
+            preset,
+            source=str(request.form.get("source") or "robot_detail"),
+            request_id=getattr(g, "request_id", None),
+            ip=request.remote_addr,
+        )
+        if not result.get("ok"):
+            db.rollback()
+            session["message"] = result.get("reason") or "この戦術セットは現在使用できません。"
+            return redirect(return_to)
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("robot_preset.apply_failed robot_id=%s slot=%s", instance_id, slot)
+        session["message"] = "この戦術セットは現在使用できません。"
+        return redirect(return_to)
+    session["message"] = f"SET {slot}「{preset['display_name']}」を適用しました。"
+    return redirect(return_to)
+
+
+@app.route("/robots/<int:instance_id>/presets/rename", methods=["POST"])
+@login_required
+def robot_preset_rename(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = _owned_active_robot_or_404(db, user_id, instance_id)
+    slot = _normalize_tactical_preset_slot(request.form.get("preset_slot"))
+    if not slot:
+        session["message"] = "戦術セットの指定が不正です。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    name = _sanitize_tactical_preset_name(request.form.get("display_name"), slot)
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO robot_loadout_presets (
+            user_id, robot_instance_id, preset_slot, display_name, config_json, schema_version, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, NULL, 1, ?, ?)
+        ON CONFLICT(robot_instance_id, preset_slot) DO UPDATE SET
+            display_name = excluded.display_name,
+            updated_at = excluded.updated_at
+        """,
+        (user_id, int(robot["id"]), slot, name, now_ts, now_ts),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_PRESET_RENAME"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_preset_rename",
+        entity_type="robot_instance",
+        entity_id=int(robot["id"]),
+        payload={"robot_instance_id": int(robot["id"]), "preset_slot": slot, "preset_name": name, "source": request.form.get("source") or "robot_detail"},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"SET {slot}の名前を変更しました。"
+    return redirect(_safe_tactical_return_path(request.form.get("return_to"), url_for("robot_detail", instance_id=int(instance_id))))
+
+
+@app.route("/robots/<int:instance_id>/presets/delete", methods=["POST"])
+@login_required
+def robot_preset_delete(instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    robot = _owned_active_robot_or_404(db, user_id, instance_id)
+    slot = _normalize_tactical_preset_slot(request.form.get("preset_slot"))
+    if not slot:
+        session["message"] = "戦術セットの指定が不正です。"
+        return redirect(url_for("robot_detail", instance_id=int(instance_id)))
+    db.execute(
+        "DELETE FROM robot_loadout_presets WHERE user_id = ? AND robot_instance_id = ? AND preset_slot = ?",
+        (user_id, int(robot["id"]), slot),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["ROBOT_PRESET_DELETE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="robot_preset_delete",
+        entity_type="robot_instance",
+        entity_id=int(robot["id"]),
+        payload={"robot_instance_id": int(robot["id"]), "preset_slot": slot, "source": request.form.get("source") or "robot_detail"},
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = f"SET {slot}を削除しました。"
+    return redirect(_safe_tactical_return_path(request.form.get("return_to"), url_for("robot_detail", instance_id=int(instance_id))))
 
 
 @app.route("/robots/<int:instance_id>/tuning/reset", methods=["GET", "POST"])
@@ -68067,6 +68669,74 @@ def _admin_robot_tuning_snapshot(db, *, window_days=7):
     }
 
 
+def _admin_tactical_presets_snapshot(db, *, window_days=7):
+    since_ts = _now_ts() - max(1, int(window_days or 7)) * 86400
+    base_user_where = """
+        COALESCE(u.is_admin, 0) = 0
+        AND COALESCE(u.is_banned, 0) = 0
+        AND COALESCE(u.analytics_excluded, 0) = 0
+        AND LOWER(COALESCE(u.username, '')) NOT LIKE '%test%'
+        AND LOWER(COALESCE(u.display_name, '')) NOT LIKE '%test%'
+    """
+    total = db.execute(
+        f"""
+        SELECT
+            COUNT(*) AS preset_count,
+            COUNT(DISTINCT rlp.user_id) AS saved_users,
+            COUNT(DISTINCT rlp.robot_instance_id) AS saved_robots
+        FROM robot_loadout_presets rlp
+        JOIN users u ON u.id = rlp.user_id
+        WHERE {base_user_where}
+        """
+    ).fetchone()
+    slot_rows = db.execute(
+        f"""
+        SELECT rlp.preset_slot, COUNT(*) AS count
+        FROM robot_loadout_presets rlp
+        JOIN users u ON u.id = rlp.user_id
+        WHERE {base_user_where}
+        GROUP BY rlp.preset_slot
+        ORDER BY rlp.preset_slot ASC
+        """
+    ).fetchall()
+    event_rows = db.execute(
+        f"""
+        SELECT
+            wel.event_type,
+            COUNT(*) AS event_count,
+            COUNT(DISTINCT wel.user_id) AS user_count
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE {base_user_where}
+          AND wel.created_at >= ?
+          AND wel.event_type IN (?, ?, ?, ?)
+        GROUP BY wel.event_type
+        """,
+        (
+            int(since_ts),
+            AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"],
+            AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"],
+            AUDIT_EVENT_TYPES["ROBOT_PRESET_RENAME"],
+            AUDIT_EVENT_TYPES["ROBOT_PRESET_DELETE"],
+        ),
+    ).fetchall()
+    slot_counts = {str(row["preset_slot"]): int(row["count"] or 0) for row in slot_rows}
+    by_event = {str(row["event_type"]): row for row in event_rows}
+    return {
+        "window_days": int(window_days or 7),
+        "preset_count": int((total or {})["preset_count"] or 0) if total else 0,
+        "saved_users": int((total or {})["saved_users"] or 0) if total else 0,
+        "saved_robots": int((total or {})["saved_robots"] or 0) if total else 0,
+        "slot_rows": [{"slot": f"SET {slot}", "count": int(slot_counts.get(slot, 0))} for slot in TACTICAL_PRESET_SLOTS],
+        "recent_save_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"]) or {})["event_count"] or 0),
+        "recent_save_users": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"]) or {})["user_count"] or 0),
+        "recent_apply_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"]) or {})["event_count"] or 0),
+        "recent_apply_users": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"]) or {})["user_count"] or 0),
+        "recent_rename_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_RENAME"]) or {})["event_count"] or 0),
+        "recent_delete_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_DELETE"]) or {})["event_count"] or 0),
+    }
+
+
 @app.route("/admin/metrics", methods=["GET", "POST"])
 @login_required
 def admin_metrics():
@@ -68104,6 +68774,7 @@ def admin_metrics():
     first_experience_snapshot = _admin_first_experience_snapshot(db, window_days=funnel_days)
     progression_snapshot = _admin_progression_snapshot(db)
     robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
+    tactical_presets_snapshot = _admin_tactical_presets_snapshot(db, window_days=funnel_days)
     layer6_research_snapshot = _admin_layer6_research_snapshot(db, week_key=week_key)
     analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
@@ -68148,6 +68819,7 @@ def admin_metrics():
         first_experience_snapshot=first_experience_snapshot,
         progression_snapshot=progression_snapshot,
         robot_tuning_snapshot=robot_tuning_snapshot,
+        tactical_presets_snapshot=tactical_presets_snapshot,
         analytics_counts=analytics_counts,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),

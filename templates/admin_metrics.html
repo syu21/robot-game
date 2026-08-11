@@ -179,6 +179,44 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">戦術セット</div>
+        <div class="admin-metrics-section-sub">通常プレイヤーの保存・適用状況です。直近{{ tactical_presets_snapshot.window_days }}日auditを参照します。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">保存済みセット</div>
+        <div class="admin-metrics-note-value">{{ tactical_presets_snapshot.preset_count }}件</div>
+        <div class="robot-time">{{ tactical_presets_snapshot.saved_users }}人 / {{ tactical_presets_snapshot.saved_robots }}機</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">直近保存</div>
+        <div class="admin-metrics-note-value">{{ tactical_presets_snapshot.recent_save_events }}件</div>
+        <div class="robot-time">{{ tactical_presets_snapshot.recent_save_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">直近適用</div>
+        <div class="admin-metrics-note-value">{{ tactical_presets_snapshot.recent_apply_events }}件</div>
+        <div class="robot-time">{{ tactical_presets_snapshot.recent_apply_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">名前変更 / 削除</div>
+        <div class="admin-metrics-note-value">{{ tactical_presets_snapshot.recent_rename_events }} / {{ tactical_presets_snapshot.recent_delete_events }}</div>
+        <div class="robot-time">直近操作</div>
+      </div>
+      {% for row in tactical_presets_snapshot.slot_rows %}
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">{{ row.slot }}</div>
+        <div class="admin-metrics-note-value">{{ row.count }}件</div>
+        <div class="robot-time">保存済み</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">計測健全性</div>
         <div class="admin-metrics-section-sub">探索監査とdaily_metricsの整合性を確認します。</div>
       </div>
