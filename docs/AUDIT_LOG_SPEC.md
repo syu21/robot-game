@@ -650,3 +650,18 @@
   - `area_key=layer_6_final` を第6層最終試験撃破記録として扱う。
 - 管理メトリクス
   - `/admin/metrics` は上記auditから第6層到達者、通常戦出撃、勝率、平均ターン、ボス遭遇/撃破、記録掲載者を算出する。
+
+## 15. パーツ機構特性
+- 新規イベントは追加しない。v1は既存イベントのpayload拡張で扱う。
+- `audit.explore.end`
+  - payload `player.active_trait_keys`: 装備中R以上パーツの有効機構特性key一覧。
+  - payload `player.triggered_trait_keys`: その出撃中に発動した機構特性key一覧。
+  - payload `player.active_mechanism_traits`: `{key, label, slot}` の表示補助情報。
+- `audit.anomaly.attempt`
+  - payload `part_mechanism.active_trait_keys`
+  - payload `part_mechanism.triggered_trait_keys`
+  - payload `part_mechanism.triggered_labels`
+  - payload `part_mechanism.enemy_trait_key`
+  - payload `part_mechanism.observation_lines`
+- `/admin/metrics` は上記payloadからR+装備ユーザー、発動戦闘数、特性別勝率、第6層勝率、異常個体CLEAR率を算出する。
+- 特性発動ごとの個別auditは出さない。1出撃/1挑戦の集約payloadを正本にする。

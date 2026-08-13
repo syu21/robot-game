@@ -46,6 +46,35 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">パーツ機構特性</div>
+        <div class="admin-metrics-section-sub">R以上装備と直近{{ part_mechanism_snapshot.window_days }}日audit / 異常個体結果を参照します。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">R+特性装備ユーザー</div>
+        <div class="admin-metrics-note-value">{{ part_mechanism_snapshot.r_plus_equipped_users }}人</div>
+        <div class="robot-time">通常プレイヤーのみ</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">発動戦闘</div>
+        <div class="admin-metrics-note-value">{{ part_mechanism_snapshot.triggered_battle_count }}件</div>
+        <div class="robot-time">通常探索audit</div>
+      </div>
+      {% for row in part_mechanism_snapshot.rows %}
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">{{ row.label }}</div>
+        <div class="admin-metrics-note-value">{{ row.equipped_count }}件</div>
+        <div class="robot-time">発動 {{ row.triggered_battles }} / 勝率 {{ row.win_rate }}%</div>
+        <div class="robot-time">第6層 {{ row.layer6_win_rate }}% / 異常CLEAR {{ row.anomaly_clear_rate }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">週次異常個体</div>
         <div class="admin-metrics-section-sub">{{ anomaly_cycle.week_key }} / {{ anomaly_cycle.display_name }}</div>
       </div>

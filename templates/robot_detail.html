@@ -132,8 +132,11 @@
       {% endif %}
       {% if preset['saved'] %}
       <div class="robot-time">モジュール {{ preset['module_count'] }}</div>
+      {% if preset.get('mechanism_traits') %}
+      <div class="robot-time">有効機構: {% for trait in preset['mechanism_traits'] %}{{ trait['label'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
+      {% endif %}
       {% for line in preset['part_lines'] %}
-      <div class="robot-time">{{ line['label'] }}: {{ line['name'] }}</div>
+      <div class="robot-time">{{ line['label'] }}: {{ line['name'] }}{% if line.get('mechanism_trait') %} / 機構 {{ line['mechanism_trait']['display_label'] }}{% endif %}</div>
       {% endfor %}
       {% endif %}
       {% if preset['invalid'] %}

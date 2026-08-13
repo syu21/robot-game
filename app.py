@@ -43,7 +43,9 @@ from series_catalog import (
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
     INSECT_R_PART_DEFINITIONS,
     LEGACY_GENERIC_SERIES_KEYS,
+    MECHANISM_TRAIT_KEYS,
     PART_KEY_SERIES_ASSIGNMENTS,
+    PART_MECHANISM_TRAIT_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
     SERIES_DEFINITIONS,
     SERIES_METADATA_BY_KEY,
@@ -1218,6 +1220,55 @@ ENEMY_TRAIT_DEFS = {
     "berserk": {"label": "狂戦", "desc": "耐久半分以下で攻撃上昇"},
     "unstable": {"label": "不安定", "desc": "攻撃時に反動"},
 }
+PART_MECHANISM_TRAIT_DEFS = {
+    "precision_processor": {
+        "label": "精密演算",
+        "slot": "HEAD",
+        "desc": "高速機への照準補正",
+    },
+    "defense_processor": {
+        "label": "防衛演算",
+        "slot": "HEAD",
+        "desc": "戦闘序盤の被害を軽減",
+    },
+    "armor_piercer": {
+        "label": "装甲穿孔",
+        "slot": "RIGHT_ARM",
+        "desc": "重装機への攻撃性能上昇",
+    },
+    "opening_overdrive": {
+        "label": "初動過給",
+        "slot": "RIGHT_ARM",
+        "desc": "戦闘序盤の攻撃性能上昇",
+    },
+    "tracking_array": {
+        "label": "追尾補正",
+        "slot": "LEFT_ARM",
+        "desc": "高速対象への追尾性能上昇",
+    },
+    "reactive_guard": {
+        "label": "反応防壁",
+        "slot": "LEFT_ARM",
+        "desc": "暴走機からの被害を軽減",
+    },
+    "quickstart_servo": {
+        "label": "瞬発駆動",
+        "slot": "LEGS",
+        "desc": "戦闘序盤の機動性能上昇",
+    },
+    "stability_drive": {
+        "label": "姿勢制御",
+        "slot": "LEGS",
+        "desc": "不安定機との戦闘を安定化",
+    },
+}
+PART_MECHANISM_ACTIVE_RARITIES = {"R", "SR", "SSR", "UR"}
+PART_MECHANISM_OPENING_TURNS = 2
+PART_MECHANISM_ACC_CAP = 0.12
+PART_MECHANISM_ATK_CAP = 0.12
+PART_MECHANISM_SPEED_CAP = 0.10
+PART_MECHANISM_DAMAGE_BONUS_CAP = 0.15
+PART_MECHANISM_INCOMING_REDUCTION_CAP = 0.15
 DEFAULT_NORMAL_ENEMY_TRAITS = {
     "enemy12": "fast",
     "enemy23": "fast",
@@ -9018,6 +9069,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     item["frame_label"] = _frame_type_label(item["frame_type"])
     item["display_name"] = _part_display_name_ja(item)
     item["series_badge"] = _series_badge_payload(item.get("instance_series") or item.get("series"))
+    item["mechanism_trait"] = _part_mechanism_trait_view(item)
     item["series_n_only"] = bool(
         item.get("series_badge")
         and str(item["series_badge"].get("max_rarity") or "N").upper() == "N"
@@ -9084,7 +9136,7 @@ def _part_instance_display_rows(db, instance_ids):
             pi.element AS instance_element,
             pi.series AS instance_series,
             rp.part_type, rp.key, rp.series, rp.frame_type, rp.series_key, rp.series_label, rp.image_path, rp.offset_x, rp.offset_y,
-            rp.rarity, rp.element, rp.display_name_ja
+            rp.rarity, rp.element, rp.display_name_ja, rp.mechanism_trait_key
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.id IN ({marks}) AND rp.is_active = 1
@@ -9144,6 +9196,7 @@ def _build_picker_part_item(part_row, *, compare_item=None):
     item["focus_line"] = card["focus_line"]
     item["total_value"] = card["total_value"]
     item["extreme_title"] = card["extreme_title"]
+    item["mechanism_trait"] = card.get("mechanism_trait")
     compare_stats = compare_item.get("estimate_stats") if compare_item else None
     item["summary_total"] = _build_picker_total_summary(item["estimate_stats"], compare_stats=compare_stats)
     item["summary_rows"] = _build_picker_summary_rows(item["estimate_stats"], compare_stats=compare_stats, limit=2)
@@ -11044,6 +11097,240 @@ def _enemy_trait_desc(trait):
     if not key:
         return None
     return ENEMY_TRAIT_DEFS[key]["desc"]
+
+
+def _row_value(row, key, default=None):
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    try:
+        if hasattr(row, "keys") and key not in row.keys():
+            return default
+        return row[key]
+    except Exception:
+        return default
+
+
+def _normalize_part_mechanism_trait_key(value):
+    key = str(value or "").strip()
+    return key if key in PART_MECHANISM_TRAIT_DEFS and key in MECHANISM_TRAIT_KEYS else ""
+
+
+def _part_mechanism_trait_key_for_row(row):
+    key = _normalize_part_mechanism_trait_key(_row_value(row, "mechanism_trait_key"))
+    if key:
+        return key
+    return _normalize_part_mechanism_trait_key(
+        PART_MECHANISM_TRAIT_ASSIGNMENTS.get(
+            str(_row_value(row, "key") or _row_value(row, "part_key") or "").strip()
+        )
+    )
+
+
+def _part_mechanism_active_for_rarity(rarity):
+    return str(rarity or "N").strip().upper() in PART_MECHANISM_ACTIVE_RARITIES
+
+
+def _part_mechanism_trait_view(row):
+    key = _part_mechanism_trait_key_for_row(row)
+    if not key:
+        return None
+    rarity = _row_value(row, "instance_rarity") or _row_value(row, "rarity") or "N"
+    active = _part_mechanism_active_for_rarity(rarity)
+    meta = PART_MECHANISM_TRAIT_DEFS[key]
+    return {
+        "key": key,
+        "label": meta["label"],
+        "description": meta["desc"],
+        "slot": meta["slot"],
+        "active": bool(active),
+        "display_label": meta["label"] if active else "進化で解放",
+        "status_label": "有効" if active else "進化で解放",
+    }
+
+
+def _part_mechanism_snapshot(parts):
+    rows = []
+    seen_slots = set()
+    for raw in parts or []:
+        view = _part_mechanism_trait_view(raw)
+        if not view or not view["active"]:
+            continue
+        slot = str(view.get("slot") or "")
+        if slot in seen_slots:
+            continue
+        seen_slots.add(slot)
+        rows.append(dict(view))
+    return {
+        "active": rows[:4],
+        "active_trait_keys": sorted({row["key"] for row in rows[:4]}),
+        "triggered_trait_keys": [],
+        "triggered_labels": [],
+    }
+
+
+def _part_mechanism_register(state, trait_key):
+    key = _normalize_part_mechanism_trait_key(trait_key)
+    if not key:
+        return []
+    if key in state["triggered"]:
+        return []
+    state["triggered"].add(key)
+    meta = PART_MECHANISM_TRAIT_DEFS[key]
+    return [f"機構特性《{meta['label']}》発動: {meta['desc']}"]
+
+
+def _part_mechanism_battle_state(snapshot, enemy_trait_key=None):
+    active = [dict(row) for row in (snapshot or {}).get("active") or []]
+    return {
+        "active": active,
+        "active_keys": {row["key"] for row in active},
+        "enemy_trait_key": _normalize_enemy_trait(enemy_trait_key),
+        "triggered": set(),
+    }
+
+
+def _part_mechanism_finish_battle(snapshot, state):
+    keys = set((snapshot or {}).get("triggered_trait_keys") or [])
+    keys.update((state or {}).get("triggered") or [])
+    labels = [PART_MECHANISM_TRAIT_DEFS[key]["label"] for key in sorted(keys) if key in PART_MECHANISM_TRAIT_DEFS]
+    if snapshot is not None:
+        snapshot["triggered_trait_keys"] = sorted(keys)
+        snapshot["triggered_labels"] = labels
+
+
+def _part_mechanism_multiplier(value, multiplier):
+    return max(1, int(round(max(1, int(value)) * float(multiplier))))
+
+
+def _part_mechanism_effective_speed(state, speed, turn):
+    if int(turn or 0) > PART_MECHANISM_OPENING_TURNS:
+        return int(speed), []
+    if "quickstart_servo" not in state.get("active_keys", set()):
+        return int(speed), []
+    lines = _part_mechanism_register(state, "quickstart_servo")
+    return _part_mechanism_multiplier(speed, 1.0 + min(0.08, PART_MECHANISM_SPEED_CAP)), lines
+
+
+def _part_mechanism_before_player_attack(state, *, turn, enemy_trait_key, atk, acc):
+    active = state.get("active_keys", set())
+    enemy_key = _normalize_enemy_trait(enemy_trait_key)
+    atk_bonus = 0.0
+    acc_bonus = 0.0
+    lines = []
+    if int(turn or 0) <= PART_MECHANISM_OPENING_TURNS and "opening_overdrive" in active:
+        atk_bonus += 0.07
+        lines.extend(_part_mechanism_register(state, "opening_overdrive"))
+    if enemy_key == "fast":
+        if "precision_processor" in active:
+            acc_bonus += 0.06
+            lines.extend(_part_mechanism_register(state, "precision_processor"))
+        if "tracking_array" in active:
+            acc_bonus += 0.06
+            lines.extend(_part_mechanism_register(state, "tracking_array"))
+    if enemy_key == "unstable" and "stability_drive" in active:
+        acc_bonus += 0.04
+        lines.extend(_part_mechanism_register(state, "stability_drive"))
+    atk_bonus = min(atk_bonus, PART_MECHANISM_ATK_CAP)
+    acc_bonus = min(acc_bonus, PART_MECHANISM_ACC_CAP)
+    next_atk = _part_mechanism_multiplier(atk, 1.0 + atk_bonus) if atk_bonus > 0 else int(atk)
+    next_acc = _part_mechanism_multiplier(acc, 1.0 + acc_bonus) if acc_bonus > 0 else int(acc)
+    return next_atk, next_acc, lines
+
+
+def _part_mechanism_apply_outgoing_damage(state, damage, *, enemy_trait_key):
+    if int(damage or 0) <= 0:
+        return int(damage or 0), []
+    if _normalize_enemy_trait(enemy_trait_key) != "heavy" or "armor_piercer" not in state.get("active_keys", set()):
+        return int(damage), []
+    lines = _part_mechanism_register(state, "armor_piercer")
+    bonus = min(0.07, PART_MECHANISM_DAMAGE_BONUS_CAP)
+    return max(1, int(round(int(damage) * (1.0 + bonus)))), lines
+
+
+def _part_mechanism_apply_incoming_damage(state, damage, *, turn, enemy_trait_key):
+    if int(damage or 0) <= 0:
+        return int(damage or 0), []
+    active = state.get("active_keys", set())
+    enemy_key = _normalize_enemy_trait(enemy_trait_key)
+    reduction = 0.0
+    lines = []
+    if int(turn or 0) <= PART_MECHANISM_OPENING_TURNS and "defense_processor" in active:
+        reduction += 0.07
+        lines.extend(_part_mechanism_register(state, "defense_processor"))
+    if enemy_key == "berserk" and "reactive_guard" in active:
+        reduction += 0.07
+        lines.extend(_part_mechanism_register(state, "reactive_guard"))
+    if enemy_key == "unstable" and "stability_drive" in active:
+        reduction += 0.04
+        lines.extend(_part_mechanism_register(state, "stability_drive"))
+    if reduction <= 0:
+        return int(damage), lines
+    reduction = min(reduction, PART_MECHANISM_INCOMING_REDUCTION_CAP)
+    return max(1, int(math.floor(int(damage) * (1.0 - reduction)))), lines
+
+
+def _enemy_trait_for_mechanism(value):
+    raw = str(value or "").strip().lower()
+    if raw.endswith("_anomaly"):
+        raw = raw[:-8]
+    return _normalize_enemy_trait(raw)
+
+
+def _part_mechanism_apply_anomaly_player_stats(snapshot, player_stats, enemy_payload):
+    stats = {key: int((player_stats or {}).get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")}
+    enemy_stats = dict((enemy_payload or {}).get("stats") or {})
+    enemy_key = _enemy_trait_for_mechanism(enemy_stats.get("trait") or (enemy_payload or {}).get("trait"))
+    state = _part_mechanism_battle_state(snapshot, enemy_trait_key=enemy_key)
+    atk_bonus = 0.0
+    acc_bonus = 0.0
+    spd_bonus = 0.0
+    def_bonus = 0.0
+    lines = []
+    active = state.get("active_keys", set())
+    if "opening_overdrive" in active:
+        atk_bonus += 0.07
+        lines.extend(_part_mechanism_register(state, "opening_overdrive"))
+    if "quickstart_servo" in active:
+        spd_bonus += 0.08
+        lines.extend(_part_mechanism_register(state, "quickstart_servo"))
+    if enemy_key == "heavy" and "armor_piercer" in active:
+        atk_bonus += 0.07
+        lines.extend(_part_mechanism_register(state, "armor_piercer"))
+    if enemy_key == "fast":
+        if "precision_processor" in active:
+            acc_bonus += 0.06
+            lines.extend(_part_mechanism_register(state, "precision_processor"))
+        if "tracking_array" in active:
+            acc_bonus += 0.06
+            lines.extend(_part_mechanism_register(state, "tracking_array"))
+    if "defense_processor" in active:
+        def_bonus += 0.06
+        lines.extend(_part_mechanism_register(state, "defense_processor"))
+    if enemy_key == "berserk" and "reactive_guard" in active:
+        def_bonus += 0.07
+        lines.extend(_part_mechanism_register(state, "reactive_guard"))
+    if enemy_key == "unstable" and "stability_drive" in active:
+        acc_bonus += 0.04
+        def_bonus += 0.04
+        lines.extend(_part_mechanism_register(state, "stability_drive"))
+    if atk_bonus > 0:
+        stats["atk"] = _part_mechanism_multiplier(stats["atk"], 1.0 + min(atk_bonus, PART_MECHANISM_ATK_CAP))
+    if acc_bonus > 0:
+        stats["acc"] = _part_mechanism_multiplier(stats["acc"], 1.0 + min(acc_bonus, PART_MECHANISM_ACC_CAP))
+    if spd_bonus > 0:
+        stats["spd"] = _part_mechanism_multiplier(stats["spd"], 1.0 + min(spd_bonus, PART_MECHANISM_SPEED_CAP))
+    if def_bonus > 0:
+        stats["def"] = _part_mechanism_multiplier(stats["def"], 1.0 + min(def_bonus, PART_MECHANISM_INCOMING_REDUCTION_CAP))
+    _part_mechanism_finish_battle(snapshot, state)
+    return {
+        "stats": stats,
+        "enemy_trait_key": enemy_key,
+        "trigger_lines": lines,
+        "triggered_trait_keys": list(snapshot.get("triggered_trait_keys") or []),
+        "triggered_labels": list(snapshot.get("triggered_labels") or []),
+    }
 
 
 def _enemy_deep_variant_class(enemy):
@@ -13233,6 +13520,7 @@ def ensure_schema(db):
             series_key TEXT,
             series_label TEXT,
             display_name_ja TEXT,
+            mechanism_trait_key TEXT,
             offset_x INTEGER NOT NULL DEFAULT 0,
             offset_y INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -16735,6 +17023,8 @@ def ensure_schema(db):
         db.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
     if "is_admin_only" not in rp_cols:
         db.execute("ALTER TABLE robot_parts ADD COLUMN is_admin_only INTEGER NOT NULL DEFAULT 0")
+    if "mechanism_trait_key" not in rp_cols:
+        db.execute("ALTER TABLE robot_parts ADD COLUMN mechanism_trait_key TEXT")
     db.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")
     db.execute("UPDATE robot_parts SET element = 'NORMAL' WHERE element IS NULL OR element = ''")
     db.execute("UPDATE robot_parts SET series = 'S1' WHERE series IS NULL OR series = ''")
@@ -17924,6 +18214,7 @@ def _sync_series_catalog(db):
             """,
             (series_key, series_key, series_key, series_key, part_key),
         )
+    _sync_part_mechanism_traits(db)
     db.execute(
         """
         UPDATE robot_parts
@@ -18013,6 +18304,43 @@ def _sync_insect_part_display_names(db):
               AND COALESCE(display_name_ja, '') != ?
             """,
             (display_name, part_key, display_name),
+        )
+        changed += int(cur.rowcount or 0)
+    return changed
+
+
+def _sync_part_mechanism_traits(db):
+    if not _seed_table_exists(db, "robot_parts"):
+        return 0
+    if "mechanism_trait_key" not in _seed_table_columns(db, "robot_parts"):
+        db.execute("ALTER TABLE robot_parts ADD COLUMN mechanism_trait_key TEXT")
+    allowed = tuple(str(key) for key in MECHANISM_TRAIT_KEYS)
+    if not allowed:
+        return 0
+    changed = 0
+    placeholders = ",".join("?" for _ in allowed)
+    cur = db.execute(
+        f"""
+        UPDATE robot_parts
+        SET mechanism_trait_key = NULL
+        WHERE mechanism_trait_key IS NOT NULL
+          AND TRIM(mechanism_trait_key) != ''
+          AND mechanism_trait_key NOT IN ({placeholders})
+        """,
+        allowed,
+    )
+    changed += int(cur.rowcount or 0)
+    for part_key, trait_key in PART_MECHANISM_TRAIT_ASSIGNMENTS.items():
+        if trait_key not in allowed:
+            continue
+        cur = db.execute(
+            """
+            UPDATE robot_parts
+            SET mechanism_trait_key = ?
+            WHERE key = ?
+              AND COALESCE(mechanism_trait_key, '') != ?
+            """,
+            (trait_key, part_key, trait_key),
         )
         changed += int(cur.rowcount or 0)
     return changed
@@ -19005,7 +19333,7 @@ def _tactical_preset_part_rows(db, user_id, part_ids):
             pi.w_hp, pi.w_atk, pi.w_def, pi.w_spd, pi.w_acc, pi.w_cri,
             pi.rarity AS instance_rarity, pi.element AS instance_element, pi.series AS instance_series,
             rp.part_type, rp.key, rp.rarity, rp.element, rp.series, rp.frame_type, rp.display_name_ja,
-            rp.is_active
+            rp.mechanism_trait_key, rp.is_active
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.id IN ({placeholders})
@@ -19170,7 +19498,14 @@ def _tactical_preset_rows_for_robot(db, user_id, robot_instance_id):
             for key, label in (("head", "頭部"), ("r_arm", "右腕"), ("l_arm", "左腕"), ("legs", "脚部")):
                 part_id = int(config["parts"].get(key) or 0)
                 prow = part_rows.get(part_id)
-                part_lines.append({"slot": key, "label": label, "name": _part_display_name_ja(prow) if prow else "使用不可", "part_id": part_id})
+                trait_view = _part_mechanism_trait_view(prow) if prow else None
+                part_lines.append({
+                    "slot": key,
+                    "label": label,
+                    "name": _part_display_name_ja(prow) if prow else "使用不可",
+                    "part_id": part_id,
+                    "mechanism_trait": trait_view,
+                })
         stat_obj = None
         if saved and validation.get("ok"):
             stat_obj = _tactical_stat_obj_from_config(db, user_id, robot, config)
@@ -19186,6 +19521,14 @@ def _tactical_preset_rows_for_robot(db, user_id, robot_instance_id):
             "module_count": len(config.get("module_instance_ids") or []) if config else 0,
             "profile": _robot_profile_view(stat_obj) if stat_obj else None,
             "power": int(round(float((stat_obj or {}).get("power") or 0.0))) if stat_obj else None,
+            "mechanism_traits": [
+                view
+                for view in (
+                    _part_mechanism_trait_view(part_rows.get(int(pid or 0)))
+                    for pid in ((config or {}).get("parts") or {}).values()
+                )
+                if view and view.get("active")
+            ] if config else [],
         }
         if item["is_current"]:
             current_slot = slot
@@ -24811,7 +25154,7 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
     )
     rows = db.execute(
         f"""
-        SELECT pi.*, rp.part_type, rp.key
+        SELECT pi.*, rp.part_type, rp.key, rp.mechanism_trait_key, rp.display_name_ja, rp.frame_type, rp.series_key
         FROM part_instances pi
         JOIN robot_parts rp ON rp.id = pi.part_id
         WHERE pi.id IN ({",".join(["?"] * 4)})
@@ -49724,10 +50067,18 @@ def anomaly_challenge():
         flash("解析機体の読み込みに失敗しました。", "error")
         db.commit()
         return redirect(url_for("anomaly_view"))
+    stat_obj_for_mechanism = _compute_robot_stats_for_instance(db, int(active_robot["id"]))
+    part_mechanism_snapshot = _part_mechanism_snapshot((stat_obj_for_mechanism or {}).get("parts") or [])
+    anomaly_mechanism = _part_mechanism_apply_anomaly_player_stats(
+        part_mechanism_snapshot,
+        dict(player_payload.get("stats") or {}),
+        enemy_payload,
+    )
+    player_stats_for_battle = dict(anomaly_mechanism.get("stats") or player_payload.get("stats") or {})
     battle_result = run_champion_battle(
         {
             "name": str(player_payload.get("robot_name") or "あなた"),
-            "stats": dict(player_payload.get("stats") or {}),
+            "stats": player_stats_for_battle,
             "signature_label": str(player_payload.get("signature_label") or ""),
             "focus_labels": list(player_payload.get("focus_labels") or []),
             "style_key": str(player_payload.get("style_key") or "stable"),
@@ -49778,6 +50129,14 @@ def anomaly_challenge():
         "style_key": str(player_payload.get("style_key") or "stable"),
         "style_label": str(player_payload.get("signature_label") or player_payload.get("style_label") or "無印"),
         "battle": battle_result,
+        "part_mechanism": {
+            "active": list(part_mechanism_snapshot.get("active") or []),
+            "active_trait_keys": list(part_mechanism_snapshot.get("active_trait_keys") or []),
+            "triggered_trait_keys": list(part_mechanism_snapshot.get("triggered_trait_keys") or []),
+            "triggered_labels": list(part_mechanism_snapshot.get("triggered_labels") or []),
+            "enemy_trait_key": anomaly_mechanism.get("enemy_trait_key"),
+            "observation_lines": list(anomaly_mechanism.get("trigger_lines") or []),
+        },
         **summary,
     }
     try:
@@ -55150,6 +55509,7 @@ def explore():
     build_type = "BERSERK" if combat_mode == "berserk" else _build_type_from_parts(robot_stats.get("parts") or [])
     player_damage_noise_range = _damage_noise_range_for_build_type(build_type)
     module_trait_state = _module_trait_state(active_research_module)
+    part_mechanism_snapshot = _part_mechanism_snapshot((robot_stats or {}).get("parts") or [])
     module_protocol_state = None
     battle_code_state = battle_codes.init_state(active_battle_code)
     battle_code_started = False
@@ -56025,6 +56385,7 @@ def explore():
         )
         last_enemy_trait_label = enemy_trait_label
         last_enemy_trait_desc = enemy_trait_desc
+        part_mechanism_state = _part_mechanism_battle_state(part_mechanism_snapshot, enemy_trait_key=enemy_trait_key)
         if isinstance(enemy, dict) and _enemy_deep_variant_class(enemy) and not str(enemy.get("_variant_label") or "").strip():
             enemy["_variant_label"] = "深層変異体"
         enemy_variant_label = (enemy.get("_variant_label") or "").strip() if isinstance(enemy, dict) else ""
@@ -56179,6 +56540,8 @@ def explore():
             player_berserk_line = None
             enemy_trait_trigger_line = None
             enemy_trait_triggers = []
+            part_mechanism_trigger_line = None
+            part_mechanism_triggers = []
             module_trait_trigger_line = None
             module_trait_triggers = []
             module_protocol_trigger_line = None
@@ -56218,6 +56581,8 @@ def explore():
 
             protocol_player_spd = module_protocols.effective_speed(module_protocol_state, player_spd, turn)
             code_player_spd = battle_codes.effective_speed(battle_code_state, protocol_player_spd, turn)
+            code_player_spd, trait_lines = _part_mechanism_effective_speed(part_mechanism_state, code_player_spd, turn)
+            part_mechanism_triggers.extend(trait_lines)
             player_first = code_player_spd >= enemy_spd
             if player_first:
                 force_player_hit = relief_miss_enabled and (player_miss_streak >= 2)
@@ -56234,6 +56599,14 @@ def explore():
                     acc=player_acc,
                 )
                 module_trait_triggers.extend(trait_lines)
+                player_effective_atk, player_effective_acc, trait_lines = _part_mechanism_before_player_attack(
+                    part_mechanism_state,
+                    turn=turn,
+                    enemy_trait_key=enemy_trait_key,
+                    atk=player_effective_atk,
+                    acc=player_effective_acc,
+                )
+                part_mechanism_triggers.extend(trait_lines)
                 player_effective_atk, player_effective_acc, player_effective_cri, force_player_hit, protocol_lines = module_protocols.apply_attack_modifiers(
                     module_protocol_state,
                     atk=player_effective_atk,
@@ -56289,6 +56662,12 @@ def explore():
                 ):
                     player_damage = 0
                     enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                player_damage, trait_lines = _part_mechanism_apply_outgoing_damage(
+                    part_mechanism_state,
+                    player_damage,
+                    enemy_trait_key=enemy_trait_key,
+                )
+                part_mechanism_triggers.extend(trait_lines)
                 player_damage, protocol_recoil, protocol_lines = module_protocols.apply_outgoing_damage(
                     module_protocol_state,
                     player_damage,
@@ -56363,6 +56742,13 @@ def explore():
                         damage_noise_range=None,
                     )
                     enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
+                    enemy_damage, trait_lines = _part_mechanism_apply_incoming_damage(
+                        part_mechanism_state,
+                        enemy_damage,
+                        turn=turn,
+                        enemy_trait_key=enemy_trait_key,
+                    )
+                    part_mechanism_triggers.extend(trait_lines)
                     enemy_damage, protocol_lines = module_protocols.apply_incoming_damage(
                         module_protocol_state,
                         enemy_damage,
@@ -56427,6 +56813,13 @@ def explore():
                     damage_noise_range=None,
                 )
                 enemy_damage = apply_affinity_damage(enemy_damage, enemy_type_affinity)
+                enemy_damage, trait_lines = _part_mechanism_apply_incoming_damage(
+                    part_mechanism_state,
+                    enemy_damage,
+                    turn=turn,
+                    enemy_trait_key=enemy_trait_key,
+                )
+                part_mechanism_triggers.extend(trait_lines)
                 enemy_damage, protocol_lines = module_protocols.apply_incoming_damage(
                     module_protocol_state,
                     enemy_damage,
@@ -56472,6 +56865,14 @@ def explore():
                         acc=player_acc,
                     )
                     module_trait_triggers.extend(trait_lines)
+                    player_effective_atk, player_effective_acc, trait_lines = _part_mechanism_before_player_attack(
+                        part_mechanism_state,
+                        turn=turn,
+                        enemy_trait_key=enemy_trait_key,
+                        atk=player_effective_atk,
+                        acc=player_effective_acc,
+                    )
+                    part_mechanism_triggers.extend(trait_lines)
                     player_effective_atk, player_effective_acc, player_effective_cri, force_player_hit, protocol_lines = module_protocols.apply_attack_modifiers(
                         module_protocol_state,
                         atk=player_effective_atk,
@@ -56527,6 +56928,12 @@ def explore():
                     ):
                         player_damage = 0
                         enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                    player_damage, trait_lines = _part_mechanism_apply_outgoing_damage(
+                        part_mechanism_state,
+                        player_damage,
+                        enemy_trait_key=enemy_trait_key,
+                    )
+                    part_mechanism_triggers.extend(trait_lines)
                     player_damage, protocol_recoil, protocol_lines = module_protocols.apply_outgoing_damage(
                         module_protocol_state,
                         player_damage,
@@ -56579,6 +56986,8 @@ def explore():
 
             if enemy_trait_triggers:
                 enemy_trait_trigger_line = " / ".join(enemy_trait_triggers)
+            if part_mechanism_triggers:
+                part_mechanism_trigger_line = " / ".join(part_mechanism_triggers)
             if module_trait_triggers:
                 module_trait_trigger_line = " / ".join(module_trait_triggers)
             if module_protocol_triggers:
@@ -56616,6 +57025,7 @@ def explore():
                     "player_attack_note": player_attack_note,
                     "enemy_attack_note": enemy_attack_note,
                     "enemy_trait_trigger_line": enemy_trait_trigger_line,
+                    "part_mechanism_trigger_line": part_mechanism_trigger_line,
                     "module_trait_trigger_line": module_trait_trigger_line,
                     "module_protocol_trigger_line": module_protocol_trigger_line,
                     "battle_code_trigger_line": battle_code_trigger_line,
@@ -56625,6 +57035,7 @@ def explore():
             )
             if enemy_hp == 0 or player_hp == 0:
                 break
+        _part_mechanism_finish_battle(part_mechanism_snapshot, part_mechanism_state)
         timeout_decision = None
         if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= current_max_turns:
             battle_timeout = True
@@ -57941,6 +58352,12 @@ def explore():
                         if str(part.get("series_key") or part.get("series") or "").strip()
                     }
                 ),
+                "active_trait_keys": list(part_mechanism_snapshot.get("active_trait_keys") or []),
+                "triggered_trait_keys": list(part_mechanism_snapshot.get("triggered_trait_keys") or []),
+                "active_mechanism_traits": [
+                    {"key": row["key"], "label": row["label"], "slot": row["slot"]}
+                    for row in (part_mechanism_snapshot.get("active") or [])
+                ],
             },
             "module": (
                 {
@@ -58624,6 +59041,12 @@ def explore():
         "module_loadout": module_loadout_summary,
         "module_protocol": module_protocol_summary,
         "battle_code": battle_code_summary,
+        "part_mechanism": {
+            "active": list(part_mechanism_snapshot.get("active") or []),
+            "active_trait_keys": list(part_mechanism_snapshot.get("active_trait_keys") or []),
+            "triggered_trait_keys": list(part_mechanism_snapshot.get("triggered_trait_keys") or []),
+            "triggered_labels": list(part_mechanism_snapshot.get("triggered_labels") or []),
+        },
         "module_snapshot": (
             {
                 "module_instance_id": int(active_research_module.get("instance_id") or 0),
@@ -68722,18 +69145,155 @@ def _admin_tactical_presets_snapshot(db, *, window_days=7):
     ).fetchall()
     slot_counts = {str(row["preset_slot"]): int(row["count"] or 0) for row in slot_rows}
     by_event = {str(row["event_type"]): row for row in event_rows}
+    def _event_count(event_type, key):
+        row = by_event.get(event_type)
+        return int(row[key] or 0) if row else 0
     return {
         "window_days": int(window_days or 7),
         "preset_count": int((total or {})["preset_count"] or 0) if total else 0,
         "saved_users": int((total or {})["saved_users"] or 0) if total else 0,
         "saved_robots": int((total or {})["saved_robots"] or 0) if total else 0,
         "slot_rows": [{"slot": f"SET {slot}", "count": int(slot_counts.get(slot, 0))} for slot in TACTICAL_PRESET_SLOTS],
-        "recent_save_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"]) or {})["event_count"] or 0),
-        "recent_save_users": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"]) or {})["user_count"] or 0),
-        "recent_apply_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"]) or {})["event_count"] or 0),
-        "recent_apply_users": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"]) or {})["user_count"] or 0),
-        "recent_rename_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_RENAME"]) or {})["event_count"] or 0),
-        "recent_delete_events": int((by_event.get(AUDIT_EVENT_TYPES["ROBOT_PRESET_DELETE"]) or {})["event_count"] or 0),
+        "recent_save_events": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"], "event_count"),
+        "recent_save_users": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_SAVE"], "user_count"),
+        "recent_apply_events": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"], "event_count"),
+        "recent_apply_users": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_APPLY"], "user_count"),
+        "recent_rename_events": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_RENAME"], "event_count"),
+        "recent_delete_events": _event_count(AUDIT_EVENT_TYPES["ROBOT_PRESET_DELETE"], "event_count"),
+    }
+
+
+def _admin_part_mechanism_snapshot(db, *, window_days=7):
+    since_ts = _now_ts() - max(1, int(window_days or 7)) * 86400
+    base_user_where = """
+        COALESCE(u.is_admin, 0) = 0
+        AND COALESCE(u.is_banned, 0) = 0
+        AND COALESCE(u.analytics_excluded, 0) = 0
+        AND LOWER(COALESCE(u.username, '')) NOT LIKE '%test%'
+        AND LOWER(COALESCE(u.display_name, '')) NOT LIKE '%test%'
+    """
+    equipped = db.execute(
+        f"""
+        SELECT COUNT(DISTINCT pi.user_id) AS users_count
+        FROM part_instances pi
+        JOIN users u ON u.id = pi.user_id
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE {base_user_where}
+          AND pi.status = 'equipped'
+          AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) IN ('R', 'SR', 'SSR', 'UR')
+          AND COALESCE(rp.mechanism_trait_key, '') != ''
+        """
+    ).fetchone()
+    usage_rows_raw = db.execute(
+        f"""
+        SELECT rp.mechanism_trait_key AS trait_key, COUNT(*) AS equipped_count, COUNT(DISTINCT pi.user_id) AS users_count
+        FROM part_instances pi
+        JOIN users u ON u.id = pi.user_id
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE {base_user_where}
+          AND pi.status = 'equipped'
+          AND UPPER(COALESCE(pi.rarity, rp.rarity, 'N')) IN ('R', 'SR', 'SSR', 'UR')
+          AND COALESCE(rp.mechanism_trait_key, '') != ''
+        GROUP BY rp.mechanism_trait_key
+        ORDER BY equipped_count DESC, trait_key ASC
+        """
+    ).fetchall()
+    trait_stats = {
+        key: {
+            "trait_key": key,
+            "label": PART_MECHANISM_TRAIT_DEFS[key]["label"],
+            "equipped_count": 0,
+            "equipped_users": 0,
+            "triggered_battles": 0,
+            "wins": 0,
+            "layer6_battles": 0,
+            "layer6_wins": 0,
+            "anomaly_attempts": 0,
+            "anomaly_clears": 0,
+        }
+        for key in PART_MECHANISM_TRAIT_DEFS
+    }
+    for row in usage_rows_raw:
+        key = _normalize_part_mechanism_trait_key(row["trait_key"])
+        if key in trait_stats:
+            trait_stats[key]["equipped_count"] = int(row["equipped_count"] or 0)
+            trait_stats[key]["equipped_users"] = int(row["users_count"] or 0)
+    triggered_battle_count = 0
+    explore_rows = db.execute(
+        f"""
+        SELECT wel.payload_json
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE {base_user_where}
+          AND wel.event_type = ?
+          AND wel.created_at >= ?
+          AND wel.payload_json LIKE '%triggered_trait_keys%'
+        """,
+        (AUDIT_EVENT_TYPES["EXPLORE_END"], int(since_ts)),
+    ).fetchall()
+    for row in explore_rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except Exception:
+            continue
+        player = payload.get("player") or {}
+        keys = [
+            key
+            for key in (_normalize_part_mechanism_trait_key(value) for value in (player.get("triggered_trait_keys") or []))
+            if key
+        ]
+        if not keys:
+            continue
+        triggered_battle_count += 1
+        win = bool((payload.get("result") or {}).get("win"))
+        area_key = str(payload.get("area_key") or "")
+        is_layer6 = area_key.startswith("layer_6")
+        for key in set(keys):
+            trait_stats[key]["triggered_battles"] += 1
+            trait_stats[key]["wins"] += 1 if win else 0
+            if is_layer6:
+                trait_stats[key]["layer6_battles"] += 1
+                trait_stats[key]["layer6_wins"] += 1 if win else 0
+    anomaly_rows = db.execute(
+        f"""
+        SELECT a.result, a.payload_json
+        FROM anomaly_attempts a
+        JOIN users u ON u.id = a.user_id
+        WHERE {base_user_where}
+          AND a.created_at >= ?
+          AND a.payload_json LIKE '%triggered_trait_keys%'
+        """,
+        (int(since_ts),),
+    ).fetchall() if _seed_table_exists(db, "anomaly_attempts") else []
+    for row in anomaly_rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except Exception:
+            continue
+        mechanism = payload.get("part_mechanism") or {}
+        keys = [
+            key
+            for key in (_normalize_part_mechanism_trait_key(value) for value in (mechanism.get("triggered_trait_keys") or []))
+            if key
+        ]
+        for key in set(keys):
+            trait_stats[key]["anomaly_attempts"] += 1
+            trait_stats[key]["anomaly_clears"] += 1 if str(row["result"] or "") == "clear" else 0
+    rows = []
+    for row in trait_stats.values():
+        battles = int(row["triggered_battles"] or 0)
+        layer6_battles = int(row["layer6_battles"] or 0)
+        anomaly_attempts = int(row["anomaly_attempts"] or 0)
+        row["win_rate"] = round(float(row["wins"]) / float(battles) * 100.0, 1) if battles else 0.0
+        row["layer6_win_rate"] = round(float(row["layer6_wins"]) / float(layer6_battles) * 100.0, 1) if layer6_battles else 0.0
+        row["anomaly_clear_rate"] = round(float(row["anomaly_clears"]) / float(anomaly_attempts) * 100.0, 1) if anomaly_attempts else 0.0
+        rows.append(row)
+    rows.sort(key=lambda item: (-int(item["equipped_count"]), -int(item["triggered_battles"]), item["trait_key"]))
+    return {
+        "window_days": int(window_days or 7),
+        "r_plus_equipped_users": int((equipped or {})["users_count"] or 0) if equipped else 0,
+        "triggered_battle_count": int(triggered_battle_count),
+        "rows": rows,
     }
 
 
@@ -68775,6 +69335,7 @@ def admin_metrics():
     progression_snapshot = _admin_progression_snapshot(db)
     robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
     tactical_presets_snapshot = _admin_tactical_presets_snapshot(db, window_days=funnel_days)
+    part_mechanism_snapshot = _admin_part_mechanism_snapshot(db, window_days=funnel_days)
     layer6_research_snapshot = _admin_layer6_research_snapshot(db, week_key=week_key)
     analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
@@ -68820,6 +69381,7 @@ def admin_metrics():
         progression_snapshot=progression_snapshot,
         robot_tuning_snapshot=robot_tuning_snapshot,
         tactical_presets_snapshot=tactical_presets_snapshot,
+        part_mechanism_snapshot=part_mechanism_snapshot,
         analytics_counts=analytics_counts,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),

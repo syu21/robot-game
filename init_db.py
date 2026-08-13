@@ -8,7 +8,9 @@ from series_catalog import (
     APPLIANCE_LEGACY_PART_KEY_ALIASES,
     INSECT_PART_DISPLAY_NAME_OVERRIDES,
     INSECT_R_PART_DEFINITIONS,
+    MECHANISM_TRAIT_KEYS,
     PART_KEY_SERIES_ASSIGNMENTS,
+    PART_MECHANISM_TRAIT_ASSIGNMENTS,
     SERIES_BONUS_DEFINITIONS,
     SERIES_DEFINITIONS,
     SERIES_PART_DEFINITIONS,
@@ -595,6 +597,35 @@ def _apply_series_part_assignments(cur):
            )
         """
     )
+    _sync_part_mechanism_traits(cur)
+
+
+def _sync_part_mechanism_traits(cur):
+    allowed = tuple(str(key) for key in MECHANISM_TRAIT_KEYS)
+    if not allowed:
+        return
+    placeholders = ",".join("?" for _ in allowed)
+    cur.execute(
+        f"""
+        UPDATE robot_parts
+        SET mechanism_trait_key = NULL
+        WHERE mechanism_trait_key IS NOT NULL
+          AND TRIM(mechanism_trait_key) != ''
+          AND mechanism_trait_key NOT IN ({placeholders})
+        """,
+        allowed,
+    )
+    for part_key, trait_key in PART_MECHANISM_TRAIT_ASSIGNMENTS.items():
+        if trait_key not in allowed:
+            continue
+        cur.execute(
+            """
+            UPDATE robot_parts
+            SET mechanism_trait_key = ?
+            WHERE key = ?
+            """,
+            (trait_key, part_key),
+        )
 
 
 def _sync_insect_part_display_names(cur):
@@ -1258,6 +1289,7 @@ def main():
             series_key TEXT,
             series_label TEXT,
             display_name_ja TEXT,
+            mechanism_trait_key TEXT,
             offset_x INTEGER NOT NULL DEFAULT 0,
             offset_y INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -4116,6 +4148,8 @@ def main():
         cur.execute("ALTER TABLE robot_parts ADD COLUMN series_label TEXT")
     if "display_name_ja" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN display_name_ja TEXT")
+    if "mechanism_trait_key" not in rp_cols:
+        cur.execute("ALTER TABLE robot_parts ADD COLUMN mechanism_trait_key TEXT")
     if "is_admin_only" not in rp_cols:
         cur.execute("ALTER TABLE robot_parts ADD COLUMN is_admin_only INTEGER NOT NULL DEFAULT 0")
     cur.execute("UPDATE robot_parts SET rarity = 'N' WHERE rarity IS NULL OR rarity = ''")

@@ -150,6 +150,9 @@
               <span class="part-chip">+{{ cp['plus'] }}</span>
             </div>
             <div class="part-meta-line">総合値 {{ cp['total_value'] }}{% if cp.get('focus_line') %} / 注目 {{ cp['focus_line'] }}{% endif %}</div>
+            {% if cp.get('mechanism_trait') %}
+            <div class="part-meta-line">機構特性：{{ cp['mechanism_trait']['display_label'] }} / {{ cp['mechanism_trait']['description'] }}</div>
+            {% endif %}
           </div>
         </div>
         {{ stat_grid(cp['stat_rows']) }}
@@ -460,6 +463,9 @@
                   <span>総合 {{ candidate['total_value'] }}</span>
                 </div>
                 <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
+                {% if candidate.get('mechanism_trait') %}
+                <div class="part-meta-line">機構特性：{{ candidate['mechanism_trait']['display_label'] }} / {{ candidate['mechanism_trait']['description'] }}</div>
+                {% endif %}
                 <div class="part-meta-line">{% if candidate.get('focus_line') %}主要 {{ candidate['focus_line'] }} / {% endif %}所持 {{ candidate['qty_total'] }}個</div>
                 <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
               </div>

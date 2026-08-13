@@ -60,6 +60,9 @@
 	  <div class="card battle-outcome-banner {% if summary.get('outcome_is_win') %}win{% else %}lose{% endif %}">
 	    <div class="battle-outcome-label">{% if summary.get('outcome_is_win') %}WIN{% else %}LOSE{% endif %}</div>
 	    <div class="battle-outcome-sub">{{ summary['outcome'] }}</div>
+	    {% if summary.get('part_mechanism') and summary['part_mechanism'].get('triggered_labels') %}
+	    <div class="upgrade-cost">機構特性: {{ summary['part_mechanism']['triggered_labels']|join(' / ') }}</div>
+	    {% endif %}
 	    {% if summary.get('timeout_decision_line') %}
 	    <div class="upgrade-cost">{{ summary.get('timeout_decision_line') }}</div>
 	    {% endif %}
@@ -704,6 +707,9 @@
             {% endif %}
             {% if t.get('enemy_trait_trigger_line') %}
               <div class="battle-line drop">{{ t['enemy_trait_trigger_line'] }}</div>
+            {% endif %}
+            {% if t.get('part_mechanism_trigger_line') %}
+              <div class="battle-line drop">{{ t['part_mechanism_trigger_line'] }}</div>
             {% endif %}
             {% if t.get('module_trait_trigger_line') %}
               <div class="battle-line drop">{{ t['module_trait_trigger_line'] }}</div>

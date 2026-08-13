@@ -807,3 +807,13 @@
 - DBは `robot_loadout_presets` を追加。UNIQUEは `robot_instance_id, preset_slot`。
 - 監査は `audit.robot.preset.save/apply/rename/delete`。
 - 管理メトリクスに保存済みセット数、保存/適用ユーザー、SET別保存数、直近操作を追加する。
+
+## 18. パーツ機構特性 v1
+- `robot_parts.mechanism_trait_key` を追加し、同じパーツマスタの個体は同じ機構特性を持つ。
+- `part_instances` にはコピーしない。既存の `w_*`、plus、進化引き継ぎ、シリーズ効果は変更しない。
+- Nは `進化で解放` 表示のみ、R/SR/SSR/URで発動する。効果量はレアリティで変えない。
+- 通常戦闘では `heavy / fast / berserk / unstable` への軽い対策効果として発動し、結果画面とターンログに表示する。
+- 異常個体は同じ機構特性定義から挑戦開始時補正と観測メモを作る。
+- `/parts`、`/parts/strengthen`、`/build`、ロボ詳細の戦術セット、通常戦闘結果、異常個体結果へ表示を追加した。
+- 監査は `audit.explore.end` の `player.active_trait_keys / triggered_trait_keys` と、`audit.anomaly.attempt` の `part_mechanism`。
+- 管理メトリクスにR+特性装備ユーザー、発動戦闘数、特性別勝率、第6層勝率、異常個体CLEAR率を追加した。

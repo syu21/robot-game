@@ -50,3 +50,9 @@
 - 同一入力で決定的に同一結果
 - plus上昇で総合値が単調増加
 - 進化前後で `plus/w_*` 一致
+
+## 8. パーツ機構特性
+- v1詳細は `docs/PART_MECHANISM_TRAIT_SPEC.md`。
+- 正本は `robot_parts.mechanism_trait_key` で、`part_instances` へはコピーしない。
+- Nでは非発動、R以上で発動する。進化時も `plus` と `w_*` は従来通り維持する。
+- 機構特性は戦闘時補正であり、通常のパーツ総合値、思想、シリーズ効果の計算には加算しない。

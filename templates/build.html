@@ -48,6 +48,9 @@
           <div class="picker-total-note">{{ p['summary_total']['note_text'] }}</div>
         {% endif %}
         <div class="picker-total-note">フレーム: {{ p['frame_label'] }}</div>
+        {% if p.get('mechanism_trait') %}
+          <div class="picker-total-note">機構特性: {{ p['mechanism_trait']['display_label'] }} / {{ p['mechanism_trait']['description'] }}</div>
+        {% endif %}
         <div class="picker-diff-row">
           {% for row in p['summary_rows'] %}
             <span class="picker-diff-chip is-{{ row['delta_class'] }}">{{ row['display_text'] }}</span>
@@ -87,6 +90,9 @@
           <span class="part-chip">{{ p['series_badge']['display_name'] }}</span>
           <span class="part-chip">{{ p['series_badge']['role_label'] }}</span>
         {% endif %}
+        {% if p.get('mechanism_trait') %}
+          <span class="part-chip">機構: {{ p['mechanism_trait']['display_label'] }}</span>
+        {% endif %}
         {% if p.get('extreme_title') %}
           <span class="part-chip">{{ p['extreme_title'] }}</span>
         {% endif %}
@@ -105,6 +111,9 @@
         {% for row in part['summary_rows'] %}
           <span class="part-chip">{{ row['display_text'] }}</span>
         {% endfor %}
+        {% if part.get('mechanism_trait') %}
+          <span class="part-chip">機構: {{ part['mechanism_trait']['display_label'] }}</span>
+        {% endif %}
       </div>
     {% else %}
       <div class="picker-current-name">なし</div>

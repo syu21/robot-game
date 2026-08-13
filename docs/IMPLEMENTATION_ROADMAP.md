@@ -670,3 +670,14 @@
 - 管理: `/admin/metrics` で保存済みセット数、保存/適用ユーザー、SET別保存数、直近操作auditを確認する。
 - 監査: `audit.robot.preset.save/apply/rename/delete` を記録する。
 - 非目標: 自動最適化、戦術セット専用パーツ、枠課金、戦闘中自動切替。
+
+## Phase 4.1: パーツ機構特性 v1
+
+- 目的: パーツに敵特性対策の判断軸を追加し、同じ総合値でも出撃先や相手で構成を考え直す理由を作る。
+- データ: `robot_parts.mechanism_trait_key` を正本にする。`part_instances` へコピーせず、個体差・強化・進化引き継ぎを壊さない。
+- 発動: Nは非発動、R以上で発動。効果量は全レアリティ共通。
+- 対象: HEAD / RIGHT_ARM / LEFT_ARM / LEGSに最大1つずつ、合計最大4つ。DECORは対象外。
+- 戦闘: 既存敵特性 `heavy / fast / berserk / unstable` に小さな補正を与える。HPだけを伸ばす調整やシリーズボーナス追加はしない。
+- UI: `/parts`、強化・進化、`/build`、戦術セット、通常戦闘結果、異常個体結果へ表示する。
+- 管理: `/admin/metrics` でR+装備、発動戦闘、特性別勝率、第6層勝率、異常個体CLEAR率を確認する。
+- 監査: 既存 `audit.explore.end` と `audit.anomaly.attempt` に集約payloadを追加する。

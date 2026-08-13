@@ -735,6 +735,125 @@ DINO_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in DINO_PART_
 APPLIANCE_PART_KEYS = tuple(part["key"] for part in APPLIANCE_PART_DEFINITIONS)
 APPLIANCE_PART_STAT_BY_KEY = {part["key"]: dict(part["stats"]) for part in APPLIANCE_PART_DEFINITIONS}
 
+MECHANISM_TRAIT_KEYS = (
+    "precision_processor",
+    "defense_processor",
+    "armor_piercer",
+    "opening_overdrive",
+    "tracking_array",
+    "reactive_guard",
+    "quickstart_servo",
+    "stability_drive",
+)
+
+MECHANISM_TRAIT_BY_SERIES_SLOT = {
+    "insect_kabuto": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "insect_kuwagata": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "quickstart_servo",
+    },
+    "insect_batta": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "quickstart_servo",
+    },
+    "insect_scorpion": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "insect_bee": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "quickstart_servo",
+    },
+    "insect_ant": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "insect_butterfly": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "stability_drive",
+    },
+    "dino_tyranno": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "quickstart_servo",
+    },
+    "dino_raptor": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "quickstart_servo",
+    },
+    "dino_ptera": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "quickstart_servo",
+    },
+    "dino_parasa": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "dino_tricera": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "dino_ankylo": {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+    "dino_spino": {
+        "HEAD": "precision_processor",
+        "RIGHT_ARM": "armor_piercer",
+        "LEFT_ARM": "tracking_array",
+        "LEGS": "stability_drive",
+    },
+    APPLIANCE_SERIES_KEY: {
+        "HEAD": "defense_processor",
+        "RIGHT_ARM": "opening_overdrive",
+        "LEFT_ARM": "reactive_guard",
+        "LEGS": "stability_drive",
+    },
+}
+
+DEFAULT_NORMAL_PART_MECHANISM_TRAITS = {}
+for i in range(1, 11):
+    DEFAULT_NORMAL_PART_MECHANISM_TRAITS[f"head_{i}"] = "precision_processor" if i % 2 else "defense_processor"
+    DEFAULT_NORMAL_PART_MECHANISM_TRAITS[f"r_arm_{i}"] = "armor_piercer" if i % 2 else "opening_overdrive"
+    DEFAULT_NORMAL_PART_MECHANISM_TRAITS[f"l_arm_{i}"] = "tracking_array" if i % 2 else "reactive_guard"
+    DEFAULT_NORMAL_PART_MECHANISM_TRAITS[f"legs_{i}"] = "quickstart_servo" if i % 2 else "stability_drive"
+
+PART_MECHANISM_TRAIT_ASSIGNMENTS = dict(DEFAULT_NORMAL_PART_MECHANISM_TRAITS)
+for part in [*SERIES_PART_DEFINITIONS, *INSECT_R_PART_DEFINITIONS]:
+    series_key = part.get("series_key") or part.get("series")
+    slot_map = MECHANISM_TRAIT_BY_SERIES_SLOT.get(series_key) or {}
+    trait_key = slot_map.get(part.get("part_type"))
+    if trait_key:
+        PART_MECHANISM_TRAIT_ASSIGNMENTS[part["key"]] = trait_key
+
 LEGACY_GENERIC_SERIES_KEYS = {"", "S1", "n1"}
 
 SERIES_METADATA_BY_KEY = {

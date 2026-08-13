@@ -118,6 +118,10 @@
               {% if p.get('series_n_only') %}
               <div class="part-meta-line">このシリーズは現在Nパーツのみです</div>
               {% endif %}
+              {% if p.get('mechanism_trait') %}
+              <div class="part-meta-line">機構特性：{{ p['mechanism_trait']['display_label'] }}</div>
+              <div class="part-meta-line">{{ p['mechanism_trait']['description'] }}</div>
+              {% endif %}
               <div class="part-meta-line">{{ p['material_hint'] }}</div>
             </div>
           </div>
@@ -200,6 +204,10 @@
               {% endif %}
               {% if p.get('series_n_only') %}
               <div class="part-meta-line">このシリーズは現在Nパーツのみです</div>
+              {% endif %}
+              {% if p.get('mechanism_trait') %}
+              <div class="part-meta-line">機構特性：{{ p['mechanism_trait']['display_label'] }}</div>
+              <div class="part-meta-line">{{ p['mechanism_trait']['description'] }}</div>
               {% endif %}
               <div class="part-meta-line">{{ p['material_hint'] }}</div>
               {% if p.get('locked') %}

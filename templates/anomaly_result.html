@@ -30,6 +30,15 @@
       <div class="upgrade-cost">{{ payload.get('best_delta', '更新') }}</div>
     </div>
     {% endif %}
+    {% if payload.get('part_mechanism') and payload['part_mechanism'].get('triggered_labels') %}
+    <div class="card champion-active-robot-card">
+      <b>機構特性 観測</b>
+      <div class="upgrade-cost">{{ payload['part_mechanism']['triggered_labels']|join(' / ') }}</div>
+      {% for line in payload['part_mechanism'].get('observation_lines', [])[:3] %}
+      <div class="robot-time">{{ line }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     <div class="champion-recent-list">
       {% for log in battle.get('turn_logs', []) %}
