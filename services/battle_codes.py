@@ -49,12 +49,47 @@ def validate_selection(condition_key, effect_key):
     return {"ok": True, "condition": condition, "effect": effect}
 
 
+def validate_dual_selection(condition_key, effect_key, condition_key_b=None, effect_key_b=None):
+    first = validate_selection(condition_key, effect_key)
+    if not first.get("ok"):
+        return first
+    condition_key_b = str(condition_key_b or "").strip()
+    effect_key_b = str(effect_key_b or "").strip()
+    if not condition_key_b and not effect_key_b:
+        return {**first, "condition_b": None, "effect_b": None, "is_dual": False}
+    second = validate_selection(condition_key_b, effect_key_b)
+    if not second.get("ok"):
+        return second
+    if str(condition_key or "").strip() == condition_key_b:
+        return {"ok": False, "reason": "LOGIC A/Bに同じ条件コードは設定できません。"}
+    return {
+        "ok": True,
+        "condition": first.get("condition"),
+        "effect": first.get("effect"),
+        "condition_b": second.get("condition"),
+        "effect_b": second.get("effect"),
+        "is_dual": True,
+    }
+
+
 def display_name(condition_key, effect_key):
     condition = condition_definition(condition_key)
     effect = effect_definition(effect_key)
     if not condition or not effect:
         return ""
     return f"{condition['prefix_ja']}《{condition['prefix_en']}-{effect['code_name']}》"
+
+
+def display_name_dual(condition_key, effect_key, condition_key_b=None, effect_key_b=None):
+    if not condition_key_b and not effect_key_b:
+        return display_name(condition_key, effect_key)
+    condition_a = condition_definition(condition_key)
+    condition_b = condition_definition(condition_key_b)
+    effect_a = effect_definition(effect_key)
+    effect_b = effect_definition(effect_key_b)
+    if not condition_a or not condition_b or not effect_a or not effect_b:
+        return ""
+    return f"二重戦術式《{condition_a['prefix_en']}-{condition_b['prefix_en']}》"
 
 
 def duration_policy(condition_key, effect_key):
@@ -68,6 +103,8 @@ def duration_policy(condition_key, effect_key):
     if condition_key in {"battle_start", "turn_4_start"}:
         start_turn = 1 if condition_key == "battle_start" else 4
         return {"kind": "turn_window", "start_turn": start_turn, "duration_turns": 2, "max_activations": 1, "label": "2ターン有効"}
+    if str(condition_key or "").startswith("enemy_"):
+        return {"kind": "turn_window", "start_turn": 1, "duration_turns": 2, "max_activations": 1, "label": "2ターン有効"}
     if condition_key == "low_hp_30":
         return {"kind": "hp_threshold", "max_activations": 0, "label": "耐久30%以下の間だけ有効"}
     if condition_key in {"after_miss", "after_critical"}:
@@ -126,13 +163,73 @@ def snapshot(condition_key, effect_key):
     effect = effect_definition(effect_key)
     return {
         **summary,
+        "code_version": "single",
+        "logic_count": 1,
+        "logic_entries": [
+            {
+                "slot": "A",
+                "priority": 1,
+                "condition_key": condition_key,
+                "effect_key": effect_key,
+                "condition_name": summary["condition_name"],
+                "effect_name": summary["effect_name"],
+                "specific_description": summary["specific_description"],
+            }
+        ],
         "condition": condition,
         "effect": effect,
         "duration": duration_policy(condition_key, effect_key),
     }
 
 
-def init_state(code_snapshot):
+def snapshot_dual(condition_key, effect_key, condition_key_b=None, effect_key_b=None):
+    validation = validate_dual_selection(condition_key, effect_key, condition_key_b, effect_key_b)
+    if not validation.get("ok"):
+        return None
+    base = snapshot(condition_key, effect_key)
+    if not base:
+        return None
+    if not condition_key_b and not effect_key_b:
+        return base
+    second = combination_summary(condition_key_b, effect_key_b)
+    if not second:
+        return None
+    display = display_name_dual(condition_key, effect_key, condition_key_b, effect_key_b)
+    logic_entries = [
+        {
+            "slot": "A",
+            "priority": 1,
+            "condition_key": condition_key,
+            "effect_key": effect_key,
+            "condition_name": base["condition_name"],
+            "effect_name": base["effect_name"],
+            "specific_description": base["specific_description"],
+        },
+        {
+            "slot": "B",
+            "priority": 2,
+            "condition_key": condition_key_b,
+            "effect_key": effect_key_b,
+            "condition_name": second["condition_name"],
+            "effect_name": second["effect_name"],
+            "specific_description": second["specific_description"],
+        },
+    ]
+    return {
+        **base,
+        "condition_key_b": condition_key_b,
+        "effect_key_b": effect_key_b,
+        "display_name": display,
+        "specific_description": "先に成立したロジックを1度だけ実行します。",
+        "code_version": "dual",
+        "logic_count": 2,
+        "logic_entries": logic_entries,
+        "logic_a": logic_entries[0],
+        "logic_b": logic_entries[1],
+    }
+
+
+def _init_single_state(code_snapshot, *, logic_slot=None):
     if not code_snapshot:
         return None
     condition = dict(code_snapshot["condition"])
@@ -142,6 +239,8 @@ def init_state(code_snapshot):
         "condition_key": condition["condition_key"],
         "effect_key": effect["effect_key"],
         "display_name": code_snapshot["display_name"],
+        "code_version": code_snapshot.get("code_version") or "single",
+        "logic_slot": logic_slot,
         "condition_name": condition["name_ja"],
         "effect_name": effect["name_ja"],
         "library_id": code_snapshot.get("library_id"),
@@ -178,17 +277,103 @@ def init_state(code_snapshot):
     }
 
 
+def init_state(code_snapshot):
+    if not code_snapshot:
+        return None
+    logic_entries = list(code_snapshot.get("logic_entries") or [])
+    if len(logic_entries) <= 1:
+        return _init_single_state(code_snapshot, logic_slot=(logic_entries[0].get("slot") if logic_entries else None))
+    logic_states = []
+    for entry in logic_entries[:2]:
+        snap = snapshot(entry.get("condition_key"), entry.get("effect_key"))
+        if not snap:
+            continue
+        state = _init_single_state(snap, logic_slot=entry.get("slot"))
+        state["display_name"] = code_snapshot.get("display_name") or state.get("display_name")
+        logic_states.append(state)
+    if not logic_states:
+        return None
+    return {
+        "is_dual_logic": True,
+        "code_version": "dual",
+        "display_name": code_snapshot.get("display_name"),
+        "library_id": code_snapshot.get("library_id"),
+        "slot_number": code_snapshot.get("slot_number"),
+        "usage_label": code_snapshot.get("usage_label"),
+        "usage_label_name": code_snapshot.get("usage_label_name"),
+        "logic_entries": logic_entries[:2],
+        "logic_states": logic_states,
+        "activation_count": 0,
+        "condition_event_count": 0,
+        "activation_turns": [],
+        "resolved_logic_slot": None,
+    }
+
+
+def _is_dual_state(state):
+    return bool(state and state.get("is_dual_logic") and state.get("logic_states"))
+
+
+def _active_dual_logic_state(state):
+    if not _is_dual_state(state):
+        return None
+    slot = state.get("resolved_logic_slot")
+    if slot:
+        for logic_state in state.get("logic_states") or []:
+            if logic_state.get("logic_slot") == slot:
+                return logic_state
+    return None
+
+
+def _sync_dual_state(state):
+    if not _is_dual_state(state):
+        return
+    state["condition_event_count"] = sum(int(s.get("condition_event_count") or 0) for s in state.get("logic_states") or [])
+    triggered = None
+    for logic_state in state.get("logic_states") or []:
+        if int(logic_state.get("activation_count") or 0) > 0:
+            triggered = logic_state
+            break
+    if triggered:
+        state["activation_count"] = 1
+        state["resolved_logic_slot"] = triggered.get("logic_slot")
+        turns = list(triggered.get("activation_turns") or [])
+        state["activation_turns"] = turns[:1]
+
+
+def _run_dual_hook(state, hook, current_player_hp):
+    if int(state.get("activation_count") or 0) > 0:
+        return int(current_player_hp), []
+    all_lines = []
+    result_hp = None
+    for logic_state in state.get("logic_states") or []:
+        before = int(logic_state.get("activation_count") or 0)
+        hp, lines = hook(logic_state)
+        result_hp = hp
+        all_lines.extend(lines)
+        if int(logic_state.get("activation_count") or 0) > before:
+            break
+    _sync_dual_state(state)
+    return int(result_hp if result_hp is not None else current_player_hp), all_lines
+
+
 def start_lines(state):
     if not state:
         return []
     code = str(state.get("display_name") or "")
     inner = code.split("《", 1)[1].rstrip("》") if "《" in code else code
+    if _is_dual_state(state):
+        return [f"BATTLE CODE《{inner}》――DUAL LOGIC接続完了。"]
     return [f"BATTLE CODE《{inner}》――接続完了。"]
 
 
 def _record_condition(state, turn, reason):
     state["condition_event_count"] = int(state.get("condition_event_count") or 0) + 1
     event = {"turn": int(turn), "text": reason, "condition_event_index": int(state["condition_event_count"])}
+    if state.get("logic_slot"):
+        event["logic_slot"] = state.get("logic_slot")
+        event["condition_key"] = state.get("condition_key")
+        event["effect_key"] = state.get("effect_key")
     state.setdefault("condition_events", []).append(event)
     return event
 
@@ -208,6 +393,10 @@ def _record_trigger(state, turn, text, *, effect_type=None, effect_value=None, *
         "effect_type": effect_type or state["effect"].get("effect_type"),
         "effect_value": effect_value if effect_value is not None else state["effect"].get("value"),
     }
+    if state.get("logic_slot"):
+        event["logic_slot"] = state.get("logic_slot")
+        event["condition_key"] = state.get("condition_key")
+        event["effect_key"] = state.get("effect_key")
     event.update(extra)
     state.setdefault("events", []).append(event)
     return text
@@ -215,6 +404,10 @@ def _record_trigger(state, turn, text, *, effect_type=None, effect_value=None, *
 
 def _record_consume(state, turn, text, **extra):
     event = {"turn": int(turn), "text": text}
+    if state.get("logic_slot"):
+        event["logic_slot"] = state.get("logic_slot")
+        event["condition_key"] = state.get("condition_key")
+        event["effect_key"] = state.get("effect_key")
     event.update(extra)
     state.setdefault("consume_events", []).append(event)
     return text
@@ -272,16 +465,44 @@ def _activate(state, turn, player_hp, player_max_hp):
     return int(player_hp), lines
 
 
-def battle_start(state, player_hp, player_max_hp):
+def _enemy_trait_matches(condition_key, enemy_trait_key):
+    condition = condition_definition(condition_key) or {}
+    return str(condition.get("trigger_type") or "") == "enemy_trait" and str(condition.get("trigger_value") or "") == str(enemy_trait_key or "")
+
+
+def battle_start(state, player_hp, player_max_hp, enemy_trait_key=None):
+    if _is_dual_state(state):
+        return _run_dual_hook(
+            state,
+            lambda logic_state: battle_start(logic_state, player_hp, player_max_hp, enemy_trait_key=enemy_trait_key),
+            player_hp,
+        )
     if not state or state["condition_key"] != "battle_start":
+        if state and _enemy_trait_matches(state.get("condition_key"), enemy_trait_key):
+            _record_condition(state, 1, "敵特性反応を受理。")
+            return _activate(state, 1, player_hp, player_max_hp)
         return int(player_hp), []
     _record_condition(state, 1, "開戦宣言を受理。")
     return _activate(state, 1, player_hp, player_max_hp)
 
 
-def turn_start(state, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp):
+def turn_start(state, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp, enemy_trait_key=None):
     if not state:
         return int(player_hp), []
+    if _is_dual_state(state):
+        return _run_dual_hook(
+            state,
+            lambda logic_state: turn_start(
+                logic_state,
+                turn,
+                player_hp,
+                player_max_hp,
+                enemy_hp,
+                enemy_max_hp,
+                enemy_trait_key=enemy_trait_key,
+            ),
+            player_hp,
+        )
     lines = []
     if state["condition_key"] == "turn_4_start" and int(turn) == 4:
         _record_condition(state, turn, "長期戦移行を検出。")
@@ -309,6 +530,8 @@ def effective_speed(state, base_spd, turn):
     spd = int(base_spd)
     if not state:
         return max(1, spd)
+    if _is_dual_state(state):
+        return effective_speed(_active_dual_logic_state(state), base_spd, turn)
     if _stat_effect_active(state, "speed_multiplier", int(turn)):
         spd = max(1, int(round(spd * (1.0 + float(state["effect"].get("value") or 0)))))
     return max(1, spd)
@@ -332,6 +555,8 @@ def apply_attack_modifiers(state, *, atk, cri, force_hit, turn):
     lines = []
     if not state:
         return atk, cri, force_hit, lines
+    if _is_dual_state(state):
+        return apply_attack_modifiers(_active_dual_logic_state(state), atk=atk, cri=cri, force_hit=force_hit, turn=turn)
     value = state["effect"].get("value") or 0
     if _stat_effect_active(state, "attack_multiplier", turn):
         before = atk
@@ -366,6 +591,8 @@ def apply_defense_modifiers(state, defense, turn):
     defense = int(defense)
     if not state:
         return max(1, defense)
+    if _is_dual_state(state):
+        return apply_defense_modifiers(_active_dual_logic_state(state), defense, turn)
     if _stat_effect_active(state, "defense_multiplier", turn):
         defense = max(1, int(round(defense * (1.0 + float(state["effect"].get("value") or 0)))))
     if state.get("pending_defense_multiplier") and str(state["effect"].get("effect_type")) == "defense_multiplier":
@@ -376,6 +603,8 @@ def apply_defense_modifiers(state, defense, turn):
 def after_incoming_damage(state, *, turn, damage):
     if not state or int(damage) <= 0:
         return []
+    if _is_dual_state(state):
+        return after_incoming_damage(_active_dual_logic_state(state), turn=turn, damage=damage)
     if not state.get("pending_defense_multiplier"):
         return []
     state["pending_defense_multiplier"] = False
@@ -388,6 +617,21 @@ def after_incoming_damage(state, *, turn, damage):
 def after_player_attack(state, *, turn, missed, critical, enemy_hp, enemy_max_hp, player_hp, player_max_hp):
     if not state:
         return int(player_hp), []
+    if _is_dual_state(state):
+        return _run_dual_hook(
+            state,
+            lambda logic_state: after_player_attack(
+                logic_state,
+                turn=turn,
+                missed=missed,
+                critical=critical,
+                enemy_hp=enemy_hp,
+                enemy_max_hp=enemy_max_hp,
+                player_hp=player_hp,
+                player_max_hp=player_max_hp,
+            ),
+            player_hp,
+        )
     lines = []
     if state["condition_key"] == "after_miss" and bool(missed):
         _record_condition(state, turn, "攻撃誤差を検出。")
@@ -412,12 +656,85 @@ def after_player_attack(state, *, turn, missed, critical, enemy_hp, enemy_max_hp
 def after_player_damage(state, *, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp):
     if not state:
         return int(player_hp), []
+    if _is_dual_state(state):
+        return _run_dual_hook(
+            state,
+            lambda logic_state: after_player_damage(
+                logic_state,
+                turn=turn,
+                player_hp=player_hp,
+                player_max_hp=player_max_hp,
+                enemy_hp=enemy_hp,
+                enemy_max_hp=enemy_max_hp,
+            ),
+            player_hp,
+        )
     return turn_start(state, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp)
 
 
 def summary(state):
     if not state:
         return None
+    if _is_dual_state(state):
+        logic_summaries = []
+        events = []
+        condition_events = []
+        consume_events = []
+        totals = {
+            "healing_amount": 0,
+            "damage_reduced": 0,
+            "bonus_damage": 0,
+            "guaranteed_hit": 0,
+            "critical_bonus": 0,
+            "active_turns": 0,
+        }
+        for logic_state in state.get("logic_states") or []:
+            item = summary(logic_state)
+            if not item:
+                continue
+            logic_summaries.append(item)
+            events.extend(item.get("events") or [])
+            condition_events.extend(item.get("condition_events") or [])
+            consume_events.extend(item.get("consume_events") or [])
+            for key, value in (item.get("effect_totals") or {}).items():
+                totals[key] = int(totals.get(key) or 0) + int(value or 0)
+        effect_parts = []
+        if totals.get("healing_amount"):
+            effect_parts.append(f"実回復 {int(totals['healing_amount'])}")
+        if totals.get("guaranteed_hit"):
+            effect_parts.append(f"必中適用 {int(totals['guaranteed_hit'])}回")
+        if totals.get("critical_bonus"):
+            effect_parts.append(f"会心補正 {int(totals['critical_bonus'])}回")
+        if totals.get("damage_reduced"):
+            effect_parts.append(f"軽減相当 {int(totals['damage_reduced'])}")
+        if totals.get("bonus_damage"):
+            effect_parts.append(f"追加出力相当 {int(totals['bonus_damage'])}")
+        triggered_logic = state.get("resolved_logic_slot")
+        triggered_summary = next((item for item in logic_summaries if item.get("logic_slot") == triggered_logic), None)
+        return {
+            "code_version": "dual",
+            "logic_count": 2,
+            "display_name": state.get("display_name"),
+            "library_id": state.get("library_id"),
+            "slot_number": state.get("slot_number"),
+            "usage_label": state.get("usage_label"),
+            "usage_label_name": state.get("usage_label_name"),
+            "logic_entries": list(state.get("logic_entries") or []),
+            "logic_summaries": logic_summaries,
+            "triggered_logic": triggered_logic,
+            "triggered_condition_key": (triggered_summary or {}).get("condition_key"),
+            "triggered_effect_key": (triggered_summary or {}).get("effect_key"),
+            "activation_count": int(state.get("activation_count") or 0),
+            "condition_event_count": sum(int(item.get("condition_event_count") or 0) for item in logic_summaries),
+            "activation_turns": list(state.get("activation_turns") or []),
+            "events": events,
+            "condition_events": condition_events,
+            "consume_events": consume_events,
+            "effect_totals": totals,
+            "effect_summary": " / ".join(effect_parts),
+            "not_triggered": int(state.get("activation_count") or 0) <= 0,
+            "fallback_success": bool(triggered_logic == "B"),
+        }
     totals = dict(state.get("effect_totals") or {})
     effect_parts = []
     if totals.get("healing_amount"):
@@ -433,6 +750,9 @@ def summary(state):
     return {
         "condition_key": state.get("condition_key"),
         "effect_key": state.get("effect_key"),
+        "code_version": state.get("code_version") or "single",
+        "logic_count": 1,
+        "logic_slot": state.get("logic_slot"),
         "display_name": state.get("display_name"),
         "condition_name": state.get("condition_name"),
         "effect_name": state.get("effect_name"),

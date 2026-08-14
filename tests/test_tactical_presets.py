@@ -192,6 +192,48 @@ class TacticalPresetTests(unittest.TestCase):
             after_count = int(db.execute("SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ?", (self.user_id,)).fetchone()["c"])
             self.assertEqual(after_count, before_count + 4)
 
+    def test_apply_restores_protocol_and_battle_code_atomically(self):
+        module_a = self._grant_module("heavy_prototype")
+        module_b = self._grant_module("heavy_prototype")
+        client = self._client()
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app._set_research_module_loadout(db, self.user_id, [module_a, module_b])
+            loadout = game_app._active_research_module_loadout_for_user(db, self.user_id)
+            protocol_result = game_app._set_module_protocol(db, self.user_id, "fortress_guard", loadout)
+            self.assertTrue(protocol_result["ok"])
+            code_result = game_app._battle_code_library_save(
+                db,
+                self.user_id,
+                1,
+                "enemy_fast",
+                "guaranteed_hit",
+                "boss",
+                condition_key_b="enemy_heavy",
+                effect_key_b="attack_up_15",
+            )
+            self.assertTrue(code_result["ok"])
+            select_result = game_app._battle_code_library_select(db, self.user_id, code_result["code"]["id"])
+            self.assertTrue(select_result["ok"])
+            db.commit()
+        client.post(f"/robots/{self.robot_id}/presets/save", data={"preset_slot": "A"})
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app._set_research_module_loadout(db, self.user_id, [])
+            game_app._clear_module_protocol(db, self.user_id)
+            game_app._battle_code_library_unselect(db, self.user_id)
+            db.commit()
+        with mock.patch.object(game_app, "_compose_instance_assets_no_commit", return_value=("robot_composed/test.png", "robot_icons/test.png")):
+            resp = client.post(f"/robots/{self.robot_id}/presets/apply", data={"preset_slot": "A"})
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT selected_module_protocol_key FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            active_code = game_app._active_battle_code_for_user(db, self.user_id)
+            self.assertEqual(user["selected_module_protocol_key"], "fortress_guard")
+            self.assertEqual(active_code["condition_key_b"], "enemy_heavy")
+            self.assertEqual(active_code["code_version"], "dual")
+
     def test_invalid_part_rolls_back_without_partial_apply(self):
         client = self._client()
         client.post(f"/robots/{self.robot_id}/presets/save", data={"preset_slot": "A"})

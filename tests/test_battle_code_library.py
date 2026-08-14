@@ -77,6 +77,62 @@ class BattleCodeLibraryTests(unittest.TestCase):
             row = db.execute("SELECT is_selected FROM battle_code_library WHERE id = ?", (code_id,)).fetchone()
             self.assertEqual(row["is_selected"], 0)
 
+    def test_library_saves_dual_logic_and_tracks_logic_stats(self):
+        client = self._client()
+        resp = client.post(
+            "/modules/battle-codes/save",
+            data={
+                "slot_number": "1",
+                "condition_key": "enemy_fast",
+                "effect_key": "guaranteed_hit",
+                "condition_key_b": "enemy_heavy",
+                "effect_key_b": "attack_up_15",
+                "usage_label": "boss",
+            },
+            follow_redirects=True,
+        )
+        body = resp.get_data(as_text=True)
+        self.assertIn("DUAL LOGIC", body)
+        self.assertIn("LOGIC B", body)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute("SELECT * FROM battle_code_library WHERE user_id = ? AND deleted_at IS NULL", (self.user_id,)).fetchone()
+            self.assertEqual(row["condition_key"], "enemy_fast")
+            self.assertEqual(row["condition_key_b"], "enemy_heavy")
+            self.assertEqual(row["code_version"], "dual")
+            code = game_app._battle_code_library_row_view(row)
+            summary = {
+                "code_version": "dual",
+                "condition_event_count": 1,
+                "activation_count": 1,
+                "triggered_logic": "B",
+                "fallback_success": True,
+                "effect_totals": {"bonus_damage": 10, "healing_amount": 0, "guaranteed_hit": 0, "damage_reduced": 0, "critical_bonus": 0},
+            }
+            self.assertTrue(game_app._battle_code_library_stats_update(db, self.user_id, code, summary, battle_result_id="battle-dual", result_win=True, is_boss=False, turn_count=4))
+            stats = db.execute("SELECT * FROM battle_code_stats WHERE battle_code_library_id = ?", (code["id"],)).fetchone()
+            self.assertEqual(stats["dual_use_count"], 1)
+            self.assertEqual(stats["logic_b_activation_count"], 1)
+            self.assertEqual(stats["fallback_success_count"], 1)
+
+    def test_library_rejects_duplicate_dual_condition(self):
+        resp = self._client().post(
+            "/modules/battle-codes/save",
+            data={
+                "slot_number": "1",
+                "condition_key": "low_hp_30",
+                "effect_key": "heal_8",
+                "condition_key_b": "low_hp_30",
+                "effect_key_b": "defense_up_15",
+                "usage_label": "stable",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("同じ条件", resp.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self.assertEqual(int(db.execute("SELECT COUNT(*) AS c FROM battle_code_library").fetchone()["c"]), 0)
+
     def test_overwrite_keeps_old_stats_separate_and_label_update_does_not_replace(self):
         client = self._client()
         client.post(

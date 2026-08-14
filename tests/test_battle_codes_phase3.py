@@ -76,7 +76,7 @@ class BattleCodePhase3Tests(unittest.TestCase):
             return int(cur.lastrowid)
 
     def test_defines_six_conditions_six_effects_and_names_all_pairs(self):
-        self.assertEqual(len(battle_codes.active_conditions()), 6)
+        self.assertEqual(len(battle_codes.active_conditions()), 10)
         self.assertEqual(len(battle_codes.active_effects()), 6)
         for condition in battle_codes.active_conditions():
             for effect in battle_codes.active_effects():
@@ -139,12 +139,44 @@ class BattleCodePhase3Tests(unittest.TestCase):
         hp0, _ = battle_codes.turn_start(battle_codes.init_state(battle_codes.snapshot("battle_start", "heal_8")), 1, 0, 100, 100, 100)
         self.assertEqual(hp0, 0)
 
+    def test_dual_logic_prioritizes_a_and_locks_after_first_activation(self):
+        state = battle_codes.init_state(
+            battle_codes.snapshot_dual("battle_start", "attack_up_15", "enemy_heavy", "defense_up_15")
+        )
+        hp, lines = battle_codes.battle_start(state, 100, 100, enemy_trait_key="heavy")
+        self.assertEqual(hp, 100)
+        self.assertTrue(lines)
+        summary = battle_codes.summary(state)
+        self.assertEqual(summary["code_version"], "dual")
+        self.assertEqual(summary["activation_count"], 1)
+        self.assertEqual(summary["triggered_logic"], "A")
+        self.assertEqual(summary["triggered_condition_key"], "battle_start")
+        hp, lines = battle_codes.turn_start(state, 2, 20, 100, 100, 100)
+        self.assertEqual(hp, 20)
+        self.assertEqual(lines, [])
+
+    def test_dual_logic_uses_b_when_a_does_not_match_enemy_trait(self):
+        state = battle_codes.init_state(
+            battle_codes.snapshot_dual("enemy_fast", "guaranteed_hit", "enemy_heavy", "attack_up_15")
+        )
+        hp, lines = battle_codes.battle_start(state, 100, 100, enemy_trait_key="heavy")
+        self.assertEqual(hp, 100)
+        self.assertTrue(lines)
+        summary = battle_codes.summary(state)
+        self.assertEqual(summary["triggered_logic"], "B")
+        self.assertTrue(summary["fallback_success"])
+
+    def test_dual_selection_rejects_same_condition(self):
+        result = battle_codes.validate_dual_selection("low_hp_30", "heal_8", "low_hp_30", "defense_up_15")
+        self.assertFalse(result["ok"])
+        self.assertIn("同じ条件", result["reason"])
+
     def test_modules_page_shows_cards_preview_and_current_code(self):
         self._grant()
         client = self._client()
         html = client.get("/modules").get_data(as_text=True)
         self.assertIn("戦闘命令構築 / BATTLE CODE", html)
-        self.assertEqual(html.count("IF "), 6)
+        self.assertEqual(html.count("IF "), 10)
         self.assertEqual(html.count("THEN "), 6)
         self.assertIn("誤差修正式《REWRITE-FATE-LOCK》", html)
         client.post("/modules/battle-code", data={"action": "save", "condition_key": "after_miss", "effect_key": "guaranteed_hit"})

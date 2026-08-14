@@ -664,12 +664,20 @@
 
 - 目的: 通常探索、高層攻略、ボス、異常個体ごとの構成切替を軽くし、構成を考えて遊ぶ頻度を上げる。
 - UI: ロボ詳細に固定3枠 `SET A/B/C` を表示し、現在構成の保存、上書き、適用、名称変更、削除を行う。
-- 対象: 4部位パーツと研究モジュール最大3個。DECOR、見た目調整、名前、称号は保存対象外。
+- 対象: 4部位パーツ、研究モジュール最大3個、特殊プロトコル、active BATTLE CODE。DECOR、見た目調整、名前、称号は保存対象外。
 - 安全性: 保存時のPOST値から構成を受け取らず、サーバー上の現在装備だけを保存する。適用時は所有、部位、フレーム、状態、他機体装備中を検証する。
 - 接続: 異常個体結果画面から戦術セットへ戻れる導線を追加する。
 - 管理: `/admin/metrics` で保存済みセット数、保存/適用ユーザー、SET別保存数、直近操作auditを確認する。
 - 監査: `audit.robot.preset.save/apply/rename/delete` を記録する。
 - 非目標: 自動最適化、戦術セット専用パーツ、枠課金、戦闘中自動切替。
+
+## Phase 4.2: BATTLE CODE v2《DUAL LOGIC》
+
+- 目的: BATTLE CODEをSINGLE/DUAL対応にし、2つの戦術条件のうち先に成立した命令を1度だけ実行する。
+- 条件: 既存conditionを維持し、敵trait条件 `enemy_heavy/fast/berserk/unstable` を追加する。
+- 保存: 既存3枠を維持。v1 rowはLOGIC Aのみとして読む。LOGIC Bは任意。
+- 接続: 戦術セット保存/適用でactive BATTLE CODEを一括復元する。削除済みCODEは適用中止。
+- 監査: 既存BATTLE CODE audit payloadへ `code_version`, `logic_entries`, `triggered_logic`, `fallback_success` を追加する。
 
 ## Phase 4.1: パーツ機構特性 v1
 

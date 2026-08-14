@@ -1971,6 +1971,9 @@ def main():
             slot_number INTEGER NOT NULL,
             condition_key TEXT NOT NULL,
             effect_key TEXT NOT NULL,
+            condition_key_b TEXT,
+            effect_key_b TEXT,
+            code_version TEXT NOT NULL DEFAULT 'single',
             display_name_snapshot TEXT NOT NULL,
             usage_label TEXT NOT NULL DEFAULT 'unset',
             is_selected INTEGER NOT NULL DEFAULT 0,
@@ -1996,6 +1999,10 @@ def main():
             boss_win_count INTEGER NOT NULL DEFAULT 0,
             condition_event_count INTEGER NOT NULL DEFAULT 0,
             activation_count INTEGER NOT NULL DEFAULT 0,
+            logic_a_activation_count INTEGER NOT NULL DEFAULT 0,
+            logic_b_activation_count INTEGER NOT NULL DEFAULT 0,
+            dual_use_count INTEGER NOT NULL DEFAULT 0,
+            fallback_success_count INTEGER NOT NULL DEFAULT 0,
             total_turns INTEGER NOT NULL DEFAULT 0,
             total_healing INTEGER NOT NULL DEFAULT 0,
             total_guaranteed_hits INTEGER NOT NULL DEFAULT 0,
@@ -2018,6 +2025,17 @@ def main():
         )
         """
     )
+    battle_code_cols = {row[1] for row in cur.execute("PRAGMA table_info(battle_code_library)").fetchall()}
+    if "condition_key_b" not in battle_code_cols:
+        cur.execute("ALTER TABLE battle_code_library ADD COLUMN condition_key_b TEXT")
+    if "effect_key_b" not in battle_code_cols:
+        cur.execute("ALTER TABLE battle_code_library ADD COLUMN effect_key_b TEXT")
+    if "code_version" not in battle_code_cols:
+        cur.execute("ALTER TABLE battle_code_library ADD COLUMN code_version TEXT NOT NULL DEFAULT 'single'")
+    battle_code_stats_cols = {row[1] for row in cur.execute("PRAGMA table_info(battle_code_stats)").fetchall()}
+    for col_name in ("logic_a_activation_count", "logic_b_activation_count", "dual_use_count", "fallback_success_count"):
+        if col_name not in battle_code_stats_cols:
+            cur.execute(f"ALTER TABLE battle_code_stats ADD COLUMN {col_name} INTEGER NOT NULL DEFAULT 0")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS daily_research_tasks (

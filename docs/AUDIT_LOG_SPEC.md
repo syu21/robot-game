@@ -578,20 +578,20 @@
 - `audit.module.protocol.finish`
   - 1出撃1回。payload に `protocol_activation_count`, `protocol_summary_json`, `result_win`, `turn_count` を含める。
 - `audit.module.battle_code.set` / `audit.module.battle_code.clear`
-  - 次回出撃用BATTLE CODE設定。payload に `condition_key`, `effect_key`, `battle_code_name`, `os_name`, `protocol_key` を含める。
+  - 次回出撃用BATTLE CODE設定。payload に `condition_key`, `effect_key`, `condition_key_b`, `effect_key_b`, `code_version`, `logic_entries`, `battle_code_name`, `os_name`, `protocol_key` を含める。
 - `audit.module.battle_code.start`
   - 出撃開始時のBATTLE CODEスナップショット。
 - `audit.module.battle_code.condition`
-  - 条件成立。payload に `condition_event_index`, `activation_turn`, `trigger_reason` を含める。
+  - 条件成立。payload に `condition_event_index`, `activation_turn`, `trigger_reason`, `triggered_logic`, `triggered_condition`, `triggered_effect` を含める。
 - `audit.module.battle_code.trigger`
-  - 実際の効果付与。payload に `activation_index`, `effect_type`, `effect_value`, `duration_turns`, `healing_amount`, `guaranteed_hit` などを含める。
+  - 実際の効果付与。payload に `activation_index`, `triggered_logic`, `effect_type`, `effect_value`, `duration_turns`, `healing_amount`, `guaranteed_hit` などを含める。
 - `audit.module.battle_code.consume`
   - 次撃・次回被弾などの消費。payload に `consume_index`, `trigger_reason` を含める。
 - `audit.module.battle_code.finish`
-  - 1出撃1回。payload に `battle_code_activation_count`, `battle_code_condition_event_count`, `battle_code_summary_json`, `result_win`, `turn_count` を含める。
+  - 1出撃1回。payload に `battle_code_activation_count`, `battle_code_condition_event_count`, `triggered_logic`, `fallback_success`, `battle_code_summary_json`, `result_win`, `turn_count` を含める。
 - `audit.module.battle_code.library.*`
   - 保存ライブラリの作成、上書き、削除、選択、解除、用途更新、共有文作成、旧設定移行、無効コードfallback、統計更新。
-  - payload に `battle_code_library_id`, `slot_number`, `condition_key`, `effect_key`, `usage_label`, `is_selected`, `is_usable` を含める。
+  - payload に `battle_code_library_id`, `slot_number`, `condition_key`, `effect_key`, `condition_key_b`, `effect_key_b`, `code_version`, `logic_entries`, `usage_label`, `is_selected`, `is_usable` を含める。
 
 ## 11. 第1層 初回体験改善
 - `audit.onboarding.first_three_progress`

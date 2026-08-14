@@ -15935,6 +15935,9 @@ def ensure_schema(db):
             slot_number INTEGER NOT NULL,
             condition_key TEXT NOT NULL,
             effect_key TEXT NOT NULL,
+            condition_key_b TEXT,
+            effect_key_b TEXT,
+            code_version TEXT NOT NULL DEFAULT 'single',
             display_name_snapshot TEXT NOT NULL,
             usage_label TEXT NOT NULL DEFAULT 'unset',
             is_selected INTEGER NOT NULL DEFAULT 0,
@@ -15960,6 +15963,10 @@ def ensure_schema(db):
             boss_win_count INTEGER NOT NULL DEFAULT 0,
             condition_event_count INTEGER NOT NULL DEFAULT 0,
             activation_count INTEGER NOT NULL DEFAULT 0,
+            logic_a_activation_count INTEGER NOT NULL DEFAULT 0,
+            logic_b_activation_count INTEGER NOT NULL DEFAULT 0,
+            dual_use_count INTEGER NOT NULL DEFAULT 0,
+            fallback_success_count INTEGER NOT NULL DEFAULT 0,
             total_turns INTEGER NOT NULL DEFAULT 0,
             total_healing INTEGER NOT NULL DEFAULT 0,
             total_guaranteed_hits INTEGER NOT NULL DEFAULT 0,
@@ -15982,6 +15989,17 @@ def ensure_schema(db):
         )
         """
     )
+    battle_code_cols = {row[1] for row in db.execute("PRAGMA table_info(battle_code_library)").fetchall()}
+    if "condition_key_b" not in battle_code_cols:
+        db.execute("ALTER TABLE battle_code_library ADD COLUMN condition_key_b TEXT")
+    if "effect_key_b" not in battle_code_cols:
+        db.execute("ALTER TABLE battle_code_library ADD COLUMN effect_key_b TEXT")
+    if "code_version" not in battle_code_cols:
+        db.execute("ALTER TABLE battle_code_library ADD COLUMN code_version TEXT NOT NULL DEFAULT 'single'")
+    battle_code_stats_cols = {row[1] for row in db.execute("PRAGMA table_info(battle_code_stats)").fetchall()}
+    for col_name in ("logic_a_activation_count", "logic_b_activation_count", "dual_use_count", "fallback_success_count"):
+        if col_name not in battle_code_stats_cols:
+            db.execute(f"ALTER TABLE battle_code_stats ADD COLUMN {col_name} INTEGER NOT NULL DEFAULT 0")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS user_referrals (
@@ -19279,6 +19297,8 @@ def _robot_current_tactical_config(db, user_id, robot_instance_id):
     mapping = _ensure_robot_instance_part_instances(db, int(robot_instance_id)) or {}
     if not all(mapping.get(slot) for slot in ("head", "r_arm", "l_arm", "legs")):
         return None
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    active_code_row = _active_battle_code_library_row(db, int(user_id))
     return {
         "parts": {
             "head": int(mapping["head"]),
@@ -19287,6 +19307,8 @@ def _robot_current_tactical_config(db, user_id, robot_instance_id):
             "legs": int(mapping["legs"]),
         },
         "module_instance_ids": _current_module_instance_ids(db, int(user_id)),
+        "module_protocol_key": _selected_module_protocol_key(user),
+        "battle_code_library_id": int(active_code_row["id"]) if active_code_row else None,
     }
 
 
@@ -19314,7 +19336,16 @@ def _normalize_tactical_config(raw):
             module_id = 0
         if module_id > 0:
             module_ids.append(module_id)
-    return {"parts": normalized_parts, "module_instance_ids": module_ids[:3]}
+    try:
+        battle_code_library_id = int(data.get("battle_code_library_id") or 0)
+    except (TypeError, ValueError):
+        battle_code_library_id = 0
+    return {
+        "parts": normalized_parts,
+        "module_instance_ids": module_ids[:3],
+        "module_protocol_key": str(data.get("module_protocol_key") or "").strip(),
+        "battle_code_library_id": battle_code_library_id if battle_code_library_id > 0 else None,
+    }
 
 
 def _tactical_configs_equal(left, right):
@@ -19457,9 +19488,34 @@ def _validate_tactical_config(db, user_id, robot, config):
             continue
         if int(row["user_id"]) != int(user_id) or str(row["status"] or "") != "inventory" or row["sold_at"] or int(row["is_active"] or 0) != 1:
             invalid.append(f"モジュール: {row['name_ja'] or row['module_key']} は使用できません。")
+    protocol_key = str(config.get("module_protocol_key") or "").strip()
+    if protocol_key:
+        protocol = _module_protocol_view(protocol_key)
+        if not protocol:
+            invalid.append("保存された秘匿命令は現在使用できません。")
+        elif not module_ids:
+            invalid.append("保存された秘匿命令を使う研究モジュール構成がありません。")
+    battle_code_library_id = int(config.get("battle_code_library_id") or 0)
+    battle_code = None
+    if battle_code_library_id:
+        battle_code_row = db.execute(
+            "SELECT * FROM battle_code_library WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+            (battle_code_library_id, int(user_id)),
+        ).fetchone()
+        battle_code = _battle_code_library_row_view(battle_code_row) if battle_code_row else None
+        if not battle_code or not battle_code.get("is_usable"):
+            invalid.append("保存されたBATTLE CODEは現在使用できません。")
     if invalid:
         return {"ok": False, "reason": "この戦術セットは現在使用できません。", "invalid": invalid}
-    return {"ok": True, "selected": selected, "selected_keys": selected_keys, "module_ids": module_ids, "invalid": []}
+    return {
+        "ok": True,
+        "selected": selected,
+        "selected_keys": selected_keys,
+        "module_ids": module_ids,
+        "module_protocol_key": protocol_key,
+        "battle_code": battle_code,
+        "invalid": [],
+    }
 
 
 def _tactical_preset_rows_for_robot(db, user_id, robot_instance_id):
@@ -19519,6 +19575,9 @@ def _tactical_preset_rows_for_robot(db, user_id, robot_instance_id):
             "invalid": list(validation.get("invalid") or []),
             "part_lines": part_lines,
             "module_count": len(config.get("module_instance_ids") or []) if config else 0,
+            "module_protocol_key": (config or {}).get("module_protocol_key") if config else "",
+            "battle_code_library_id": (config or {}).get("battle_code_library_id") if config else None,
+            "battle_code_name": ((validation.get("battle_code") or {}).get("display_name") if validation.get("ok") else None),
             "profile": _robot_profile_view(stat_obj) if stat_obj else None,
             "power": int(round(float((stat_obj or {}).get("power") or 0.0))) if stat_obj else None,
             "mechanism_traits": [
@@ -19621,6 +19680,41 @@ def _apply_tactical_preset(db, user_id, robot, preset, *, source, request_id=Non
     )
     if not module_result.get("ok"):
         raise ValueError(module_result.get("reason") or "研究モジュールを設定できませんでした。")
+    refreshed_loadout = _active_research_module_loadout_for_user(db, int(user_id))
+    protocol_key = str(validation.get("module_protocol_key") or "").strip()
+    if protocol_key:
+        protocol_result = _set_module_protocol(
+            db,
+            int(user_id),
+            protocol_key,
+            refreshed_loadout,
+            request_id=request_id,
+            ip=ip,
+        )
+        if not protocol_result.get("ok"):
+            raise ValueError(protocol_result.get("reason") or "秘匿命令を設定できませんでした。")
+    else:
+        _clear_module_protocol(
+            db,
+            int(user_id),
+            request_id=request_id,
+            ip=ip,
+            reason="tactical_preset_apply",
+            loadout_summary=refreshed_loadout,
+        )
+    battle_code = validation.get("battle_code")
+    if battle_code:
+        select_result = _battle_code_library_select(
+            db,
+            int(user_id),
+            battle_code.get("id") or battle_code.get("library_id"),
+            request_id=request_id,
+            ip=ip,
+        )
+        if not select_result.get("ok"):
+            raise ValueError(select_result.get("reason") or "BATTLE CODEを設定できませんでした。")
+    else:
+        _battle_code_library_unselect(db, int(user_id), request_id=request_id, ip=ip)
     _ensure_style_snapshot(
         db,
         int(robot["id"]),
@@ -19642,6 +19736,9 @@ def _apply_tactical_preset(db, user_id, robot, preset, *, source, request_id=Non
             "preset_name": str(preset["display_name"] or ""),
             "source": source,
             "module_count": len(validation.get("module_ids") or []),
+            "module_protocol_key": protocol_key or None,
+            "battle_code_library_id": (battle_code or {}).get("id") or (battle_code or {}).get("library_id"),
+            "battle_code_version": (battle_code or {}).get("code_version"),
         },
         ip=ip,
     )
@@ -19802,8 +19899,12 @@ def _selected_battle_code_keys(user_row):
     return condition_key, effect_key
 
 
-def _battle_code_view(condition_key, effect_key):
-    return battle_codes.snapshot(condition_key, effect_key)
+def _row_has(row, key):
+    return bool(row is not None and key in row.keys())
+
+
+def _battle_code_view(condition_key, effect_key, condition_key_b=None, effect_key_b=None):
+    return battle_codes.snapshot_dual(condition_key, effect_key, condition_key_b, effect_key_b)
 
 
 def _battle_code_usage_label_name(label_key):
@@ -19818,7 +19919,9 @@ def _normalize_battle_code_usage_label(label_key):
 def _battle_code_library_row_view(row, stats=None):
     if not row:
         return None
-    code = _battle_code_view(row["condition_key"], row["effect_key"])
+    condition_key_b = str(row["condition_key_b"] or "").strip() if _row_has(row, "condition_key_b") else ""
+    effect_key_b = str(row["effect_key_b"] or "").strip() if _row_has(row, "effect_key_b") else ""
+    code = _battle_code_view(row["condition_key"], row["effect_key"], condition_key_b, effect_key_b)
     usable = bool(code)
     label_key = _normalize_battle_code_usage_label(row["usage_label"])
     view = {
@@ -19829,6 +19932,9 @@ def _battle_code_library_row_view(row, stats=None):
         "slot_number": int(row["slot_number"]),
         "condition_key": row["condition_key"],
         "effect_key": row["effect_key"],
+        "condition_key_b": condition_key_b or None,
+        "effect_key_b": effect_key_b or None,
+        "code_version": (str(row["code_version"] or "single") if _row_has(row, "code_version") else ("dual" if condition_key_b and effect_key_b else "single")),
         "display_name": row["display_name_snapshot"] or (code or {}).get("display_name") or "",
         "display_name_snapshot": row["display_name_snapshot"] or "",
         "usage_label": label_key,
@@ -19857,6 +19963,9 @@ def _battle_code_library_row_view(row, stats=None):
                 "condition": code.get("condition"),
                 "effect": code.get("effect"),
                 "duration": code.get("duration"),
+                "code_version": code.get("code_version") or view.get("code_version"),
+                "logic_count": int(code.get("logic_count") or 1),
+                "logic_entries": list(code.get("logic_entries") or []),
             }
         )
     else:
@@ -19872,6 +19981,11 @@ def _battle_code_library_payload(code, *, user_id, **extra):
         "slot_number": int(code.get("slot_number") or 0) or None,
         "condition_key": code.get("condition_key"),
         "effect_key": code.get("effect_key"),
+        "condition_key_b": code.get("condition_key_b"),
+        "effect_key_b": code.get("effect_key_b"),
+        "code_version": code.get("code_version") or ("dual" if code.get("condition_key_b") and code.get("effect_key_b") else "single"),
+        "logic_count": int(code.get("logic_count") or (2 if code.get("condition_key_b") and code.get("effect_key_b") else 1)),
+        "logic_entries": code.get("logic_entries") or [],
         "battle_code_name": code.get("display_name"),
         "usage_label": code.get("usage_label"),
         "usage_label_name": code.get("usage_label_name"),
@@ -20031,19 +20145,36 @@ def _migrate_battle_code_library_for_user(db, user_id, user_row=None, *, request
     return migrated
 
 
-def _battle_code_library_save(db, user_id, slot_number, condition_key, effect_key, usage_label, *, request_id=None, ip=None):
+def _battle_code_library_save(
+    db,
+    user_id,
+    slot_number,
+    condition_key,
+    effect_key,
+    usage_label,
+    *,
+    condition_key_b=None,
+    effect_key_b=None,
+    request_id=None,
+    ip=None,
+):
     try:
         slot_number = int(slot_number)
     except (TypeError, ValueError):
         return {"ok": False, "reason": "スロット指定が不正です"}
     if slot_number < 1 or slot_number > int(BATTLE_CODE_LIBRARY_DEFAULT_SLOTS):
         return {"ok": False, "reason": "使用できないスロットです"}
-    validation = battle_codes.validate_selection(condition_key, effect_key)
+    condition_key = str(condition_key or "").strip()
+    effect_key = str(effect_key or "").strip()
+    condition_key_b = str(condition_key_b or "").strip()
+    effect_key_b = str(effect_key_b or "").strip()
+    validation = battle_codes.validate_dual_selection(condition_key, effect_key, condition_key_b, effect_key_b)
     if not validation.get("ok"):
         return {"ok": False, "reason": validation.get("reason") or "BATTLE CODEを保存できませんでした"}
     usage_label = _normalize_battle_code_usage_label(usage_label)
     now_ts = int(time.time())
-    code = _battle_code_view(condition_key, effect_key)
+    code = _battle_code_view(condition_key, effect_key, condition_key_b, effect_key_b)
+    code_version = "dual" if condition_key_b and effect_key_b else "single"
     current = db.execute(
         """
         SELECT *
@@ -20056,7 +20187,15 @@ def _battle_code_library_save(db, user_id, slot_number, condition_key, effect_ke
         """,
         (int(user_id), slot_number),
     ).fetchone()
-    if current and current["condition_key"] == condition_key and current["effect_key"] == effect_key:
+    current_condition_b = str(current["condition_key_b"] or "").strip() if current and _row_has(current, "condition_key_b") else ""
+    current_effect_b = str(current["effect_key_b"] or "").strip() if current and _row_has(current, "effect_key_b") else ""
+    if (
+        current
+        and current["condition_key"] == condition_key
+        and current["effect_key"] == effect_key
+        and current_condition_b == condition_key_b
+        and current_effect_b == effect_key_b
+    ):
         db.execute(
             "UPDATE battle_code_library SET usage_label = ?, updated_at = ? WHERE id = ?",
             (usage_label, now_ts, int(current["id"])),
@@ -20080,11 +20219,25 @@ def _battle_code_library_save(db, user_id, slot_number, condition_key, effect_ke
     cur = db.execute(
         """
         INSERT INTO battle_code_library
-            (user_id, slot_number, condition_key, effect_key, display_name_snapshot,
+            (user_id, slot_number, condition_key, effect_key, condition_key_b, effect_key_b, code_version, display_name_snapshot,
              usage_label, is_selected, is_public, created_at, updated_at, last_selected_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         """,
-        (int(user_id), slot_number, condition_key, effect_key, code["display_name"], usage_label, 1 if was_selected else 0, now_ts, now_ts, now_ts if was_selected else None),
+        (
+            int(user_id),
+            slot_number,
+            condition_key,
+            effect_key,
+            condition_key_b or None,
+            effect_key_b or None,
+            code_version,
+            code["display_name"],
+            usage_label,
+            1 if was_selected else 0,
+            now_ts,
+            now_ts,
+            now_ts if was_selected else None,
+        ),
     )
     if was_selected:
         _sync_selected_battle_code_columns(db, user_id, condition_key, effect_key)
@@ -20210,6 +20363,10 @@ def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_resu
         "boss_win_count": 1 if is_boss and result_win else 0,
         "condition_event_count": int(summary.get("condition_event_count") or 0),
         "activation_count": int(summary.get("activation_count") or 0),
+        "logic_a_activation_count": 1 if str(summary.get("triggered_logic") or "") == "A" else 0,
+        "logic_b_activation_count": 1 if str(summary.get("triggered_logic") or "") == "B" else 0,
+        "dual_use_count": 1 if str(summary.get("code_version") or "") == "dual" else 0,
+        "fallback_success_count": 1 if bool(summary.get("fallback_success")) and bool(result_win) else 0,
         "total_turns": int(turn_count or 0),
         "total_healing": int(totals.get("healing_amount") or 0),
         "total_guaranteed_hits": int(totals.get("guaranteed_hit") or 0),
@@ -20221,10 +20378,11 @@ def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_resu
         """
         INSERT INTO battle_code_stats (
             battle_code_library_id, use_count, win_count, loss_count, boss_use_count, boss_win_count,
-            condition_event_count, activation_count, total_turns, total_healing, total_guaranteed_hits,
+            condition_event_count, activation_count, logic_a_activation_count, logic_b_activation_count,
+            dual_use_count, fallback_success_count, total_turns, total_healing, total_guaranteed_hits,
             total_bonus_damage, total_damage_reduced, total_critical_bonus_uses, last_used_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(battle_code_library_id) DO UPDATE SET
             use_count = use_count + excluded.use_count,
             win_count = win_count + excluded.win_count,
@@ -20233,6 +20391,10 @@ def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_resu
             boss_win_count = boss_win_count + excluded.boss_win_count,
             condition_event_count = condition_event_count + excluded.condition_event_count,
             activation_count = activation_count + excluded.activation_count,
+            logic_a_activation_count = logic_a_activation_count + excluded.logic_a_activation_count,
+            logic_b_activation_count = logic_b_activation_count + excluded.logic_b_activation_count,
+            dual_use_count = dual_use_count + excluded.dual_use_count,
+            fallback_success_count = fallback_success_count + excluded.fallback_success_count,
             total_turns = total_turns + excluded.total_turns,
             total_healing = total_healing + excluded.total_healing,
             total_guaranteed_hits = total_guaranteed_hits + excluded.total_guaranteed_hits,
@@ -20251,6 +20413,10 @@ def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_resu
             values["boss_win_count"],
             values["condition_event_count"],
             values["activation_count"],
+            values["logic_a_activation_count"],
+            values["logic_b_activation_count"],
+            values["dual_use_count"],
+            values["fallback_success_count"],
             values["total_turns"],
             values["total_healing"],
             values["total_guaranteed_hits"],
@@ -20275,22 +20441,25 @@ def _battle_code_library_stats_update(db, user_id, code, summary, *, battle_resu
     return True
 
 
-def _battle_code_preview(condition_key, effect_key):
+def _battle_code_preview(condition_key, effect_key, condition_key_b=None, effect_key_b=None):
     selected_condition = condition_key or "after_miss"
     selected_effect = effect_key or "guaranteed_hit"
-    preview = battle_codes.combination_summary(selected_condition, selected_effect)
-    return preview or battle_codes.combination_summary("after_miss", "guaranteed_hit")
+    preview = battle_codes.snapshot_dual(selected_condition, selected_effect, condition_key_b, effect_key_b)
+    return preview or battle_codes.snapshot("after_miss", "guaranteed_hit")
 
 
-def _battle_code_options(selected_condition_key="", selected_effect_key=""):
+def _battle_code_options(selected_condition_key="", selected_effect_key="", selected_condition_key_b="", selected_effect_key_b=""):
     selected_condition_key = str(selected_condition_key or "").strip() or "after_miss"
     selected_effect_key = str(selected_effect_key or "").strip() or "guaranteed_hit"
+    selected_condition_key_b = str(selected_condition_key_b or "").strip()
+    selected_effect_key_b = str(selected_effect_key_b or "").strip()
     conditions = []
     for item in battle_codes.active_conditions():
         conditions.append(
             {
                 **item,
                 "is_selected": item["condition_key"] == selected_condition_key,
+                "is_selected_b": item["condition_key"] == selected_condition_key_b,
             }
         )
     effects = []
@@ -20299,16 +20468,23 @@ def _battle_code_options(selected_condition_key="", selected_effect_key=""):
             {
                 **item,
                 "is_selected": item["effect_key"] == selected_effect_key,
+                "is_selected_b": item["effect_key"] == selected_effect_key_b,
                 "effect_value_label": battle_codes.effect_value_label(item),
                 "duration_label": battle_codes.duration_policy(selected_condition_key, item["effect_key"])["label"],
+                "duration_label_b": battle_codes.duration_policy(selected_condition_key_b or selected_condition_key, item["effect_key"])["label"],
             }
         )
+    preview = _battle_code_preview(selected_condition_key, selected_effect_key, selected_condition_key_b, selected_effect_key_b)
     return {
         "selected_condition_key": selected_condition_key,
         "selected_effect_key": selected_effect_key,
+        "selected_condition_key_b": selected_condition_key_b,
+        "selected_effect_key_b": selected_effect_key_b,
+        "is_dual": bool(selected_condition_key_b and selected_effect_key_b),
         "conditions": conditions,
         "effects": effects,
-        "preview": _battle_code_preview(selected_condition_key, selected_effect_key),
+        "preview": preview,
+        "validation": battle_codes.validate_dual_selection(selected_condition_key, selected_effect_key, selected_condition_key_b, selected_effect_key_b),
     }
 
 
@@ -20330,6 +20506,10 @@ def _battle_code_audit_payload(code, loadout_summary=None, protocol=None, *, use
         "battle_code_usage_label_name": code.get("usage_label_name"),
         "condition_key": code.get("condition_key"),
         "effect_key": code.get("effect_key"),
+        "condition_key_b": code.get("condition_key_b"),
+        "effect_key_b": code.get("effect_key_b"),
+        "code_version": code.get("code_version"),
+        "logic_entries": code.get("logic_entries") or [],
         "battle_code_name": code.get("display_name"),
         "condition_name": code.get("condition_name"),
         "effect_name": code.get("effect_name"),
@@ -45691,6 +45871,11 @@ def modules_battle_codes():
         db.commit()
     selected_condition = str(request.args.get("condition_key") or "").strip()
     selected_effect = str(request.args.get("effect_key") or "").strip()
+    selected_condition_b = str(request.args.get("condition_key_b") or "").strip()
+    selected_effect_b = str(request.args.get("effect_key_b") or "").strip()
+    if str(request.args.get("swap") or "").strip() == "1" and selected_condition_b and selected_effect_b:
+        selected_condition, selected_condition_b = selected_condition_b, selected_condition
+        selected_effect, selected_effect_b = selected_effect_b, selected_effect
     try:
         selected_slot = int(request.args.get("slot") or 1)
     except ValueError:
@@ -45705,6 +45890,8 @@ def modules_battle_codes():
     if slot_code and (not selected_condition or not selected_effect):
         selected_condition = selected_condition or slot_code.get("condition_key") or ""
         selected_effect = selected_effect or slot_code.get("effect_key") or ""
+        selected_condition_b = selected_condition_b or slot_code.get("condition_key_b") or ""
+        selected_effect_b = selected_effect_b or slot_code.get("effect_key_b") or ""
     if not selected_condition:
         selected_condition = "after_miss"
     if not selected_effect:
@@ -45718,7 +45905,7 @@ def modules_battle_codes():
         message=message,
         slots=slots,
         active_battle_code=active_battle_code,
-        battle_code_options=_battle_code_options(selected_condition, selected_effect),
+        battle_code_options=_battle_code_options(selected_condition, selected_effect, selected_condition_b, selected_effect_b),
         usage_labels=BATTLE_CODE_USAGE_LABELS,
         selected_slot=selected_slot,
         selected_usage_label=(slot_code or {}).get("usage_label", "unset"),
@@ -45738,6 +45925,8 @@ def modules_battle_codes_save():
         str(request.form.get("condition_key") or "").strip(),
         str(request.form.get("effect_key") or "").strip(),
         request.form.get("usage_label"),
+        condition_key_b=str(request.form.get("condition_key_b") or "").strip(),
+        effect_key_b=str(request.form.get("effect_key_b") or "").strip(),
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
@@ -45747,7 +45936,16 @@ def modules_battle_codes_save():
         session["message"] = "用途ラベルを更新しました" if mode == "label_update" else "BATTLE CODEをライブラリへ保存しました"
         return _battle_code_library_redirect()
     session["message"] = result.get("reason") or "BATTLE CODEを保存できませんでした"
-    return redirect(url_for("modules_battle_codes"))
+    return redirect(
+        url_for(
+            "modules_battle_codes",
+            slot=request.form.get("slot_number") or 1,
+            condition_key=str(request.form.get("condition_key") or "").strip(),
+            effect_key=str(request.form.get("effect_key") or "").strip(),
+            condition_key_b=str(request.form.get("condition_key_b") or "").strip(),
+            effect_key_b=str(request.form.get("effect_key_b") or "").strip(),
+        )
+    )
 
 
 @app.route("/modules/battle-codes/select", methods=["POST"])
@@ -45823,7 +46021,15 @@ def modules_battle_codes_share():
     if not code:
         session["message"] = "共有できないBATTLE CODEです"
         return redirect(url_for("modules_battle_codes"))
-    share_text = f"BATTLE CODE {code['display_name']} / {code['usage_label_name']} / IF {code.get('condition_name')} THEN {code.get('effect_name')}"
+    logic_entries = list(code.get("logic_entries") or [])
+    if len(logic_entries) > 1:
+        logic_text = " / ".join(
+            f"{entry.get('slot')}: {entry.get('condition_name')} -> {entry.get('effect_name')}"
+            for entry in logic_entries[:2]
+        )
+        share_text = f"BATTLE CODE {code['display_name']} / {code['usage_label_name']} / {logic_text}"
+    else:
+        share_text = f"BATTLE CODE {code['display_name']} / {code['usage_label_name']} / IF {code.get('condition_name')} THEN {code.get('effect_name')}"
     audit_log(
         db,
         AUDIT_EVENT_TYPES["MODULE_BATTLE_CODE_LIBRARY_SHARE"],
@@ -56491,7 +56697,12 @@ def explore():
         if active_battle_code and battle_code_state and not battle_code_started:
             battle_code_started = True
             battle_code_start_lines.extend(battle_codes.start_lines(battle_code_state))
-            player_hp, code_lines = battle_codes.battle_start(battle_code_state, player_hp, player_max_hp)
+            player_hp, code_lines = battle_codes.battle_start(
+                battle_code_state,
+                player_hp,
+                player_max_hp,
+                enemy_trait_key=enemy_trait_key,
+            )
             battle_code_start_lines.extend(code_lines)
             audit_log(
                 db,
@@ -58155,6 +58366,9 @@ def explore():
                     condition_event_index=index,
                     activation_turn=event.get("turn"),
                     trigger_reason=event.get("text"),
+                    triggered_logic=event.get("logic_slot"),
+                    triggered_condition=event.get("condition_key"),
+                    triggered_effect=event.get("effect_key"),
                 ),
                 ip=request.remote_addr,
             )
@@ -58179,6 +58393,9 @@ def explore():
                     activation_index=index,
                     activation_turn=event.get("turn"),
                     trigger_reason=event.get("text"),
+                    triggered_logic=event.get("logic_slot"),
+                    triggered_condition=event.get("condition_key"),
+                    triggered_effect=event.get("effect_key"),
                     effect_type=event.get("effect_type"),
                     effect_value=event.get("effect_value"),
                     duration_turns=event.get("duration_turns"),
@@ -58211,6 +58428,9 @@ def explore():
                     activation_turn=event.get("turn"),
                     trigger_reason=event.get("text"),
                     consume_index=index,
+                    triggered_logic=event.get("logic_slot"),
+                    triggered_condition=event.get("condition_key"),
+                    triggered_effect=event.get("effect_key"),
                     damage_reduced=event.get("damage_reduced"),
                     guaranteed_hit=event.get("guaranteed_hit"),
                 ),
@@ -58235,6 +58455,10 @@ def explore():
                 is_boss=bool(area_boss_active),
                 battle_code_activation_count=int(battle_code_summary.get("activation_count") or 0),
                 battle_code_condition_event_count=int(battle_code_summary.get("condition_event_count") or 0),
+                triggered_logic=battle_code_summary.get("triggered_logic"),
+                triggered_condition=battle_code_summary.get("triggered_condition_key"),
+                triggered_effect=battle_code_summary.get("triggered_effect_key"),
+                fallback_success=bool(battle_code_summary.get("fallback_success")),
                 battle_code_summary_json=battle_code_summary,
                 result_win=bool(final_outcome == "win"),
                 turn_count=len(all_turn_logs),
@@ -58392,6 +58616,10 @@ def explore():
                 {
                     "battle_code_condition_key": active_battle_code.get("condition_key"),
                     "battle_code_effect_key": active_battle_code.get("effect_key"),
+                    "battle_code_condition_key_b": active_battle_code.get("condition_key_b"),
+                    "battle_code_effect_key_b": active_battle_code.get("effect_key_b"),
+                    "battle_code_version": active_battle_code.get("code_version"),
+                    "battle_code_logic_entries": list(active_battle_code.get("logic_entries") or []),
                     "battle_code_library_id": active_battle_code.get("id") or active_battle_code.get("library_id"),
                     "battle_code_slot_number": active_battle_code.get("slot_number"),
                     "battle_code_usage_label": active_battle_code.get("usage_label"),
@@ -58401,6 +58629,8 @@ def explore():
                     "battle_code_effect_name": active_battle_code.get("effect_name"),
                     "battle_code_activation_count": int((battle_code_summary or {}).get("activation_count") or 0),
                     "battle_code_condition_event_count": int((battle_code_summary or {}).get("condition_event_count") or 0),
+                    "battle_code_triggered_logic": (battle_code_summary or {}).get("triggered_logic"),
+                    "battle_code_fallback_success": bool((battle_code_summary or {}).get("fallback_success")),
                     "battle_code_activation_turns": list((battle_code_summary or {}).get("activation_turns") or []),
                     "battle_code_summary_json": battle_code_summary,
                 }

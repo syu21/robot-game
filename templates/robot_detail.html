@@ -132,6 +132,12 @@
       {% endif %}
       {% if preset['saved'] %}
       <div class="robot-time">モジュール {{ preset['module_count'] }}</div>
+      {% if preset.get('module_protocol_key') %}
+      <div class="robot-time">秘匿命令 {{ preset['module_protocol_key'] }}</div>
+      {% endif %}
+      {% if preset.get('battle_code_name') %}
+      <div class="robot-time">BATTLE CODE {{ preset['battle_code_name'] }}</div>
+      {% endif %}
       {% if preset.get('mechanism_traits') %}
       <div class="robot-time">有効機構: {% for trait in preset['mechanism_traits'] %}{{ trait['label'] }}{% if not loop.last %} / {% endif %}{% endfor %}</div>
       {% endif %}
