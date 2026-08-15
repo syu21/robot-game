@@ -43,6 +43,11 @@
 - `audit.tutorial.layer1_boss_help.consume`
 - `audit.tutorial.layer1_boss_bonus.grant`
 
+COMBAT SIGNAL v1:
+- 専用audit eventは追加しない。
+- `audit.explore.end` / `audit.battle.result.view` 系payloadの `summary.combat_signal` に、発生した戦術、予兆/発動イベント、発動回数を含める。
+- `request_id` は探索操作の既存IDをそのまま使う。
+
 ### 4.2 経済/在庫
 - `audit.coin.delta`
 - `audit.streak.bonus`

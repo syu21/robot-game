@@ -1220,6 +1220,80 @@ ENEMY_TRAIT_DEFS = {
     "berserk": {"label": "狂戦", "desc": "耐久半分以下で攻撃上昇"},
     "unstable": {"label": "不安定", "desc": "攻撃時に反動"},
 }
+COMBAT_SIGNAL_DEFS = {
+    "overcharge": {
+        "label": "OVERCHARGE",
+        "name_ja": "過充填",
+        "short": "次ターンの敵攻撃が強化される",
+        "telegraph_turn": 2,
+        "trigger_turn": 3,
+        "attack_multiplier": 1.20,
+        "cooling_damage_multiplier": 1.08,
+        "cooling_turns": 1,
+        "telegraph_line": "敵機の炉心出力が急上昇している。",
+        "trigger_line": "OVERCHARGE: 高出力攻撃を開始。",
+        "effect_line": "過充填攻撃で被害が拡大。",
+        "cooling_line": "過充填後の冷却で装甲応答が鈍っている。",
+    },
+    "aegis": {
+        "label": "AEGIS",
+        "name_ja": "装甲展開",
+        "short": "次ターンの敵被ダメージが軽減される",
+        "telegraph_turn": 2,
+        "trigger_turn": 3,
+        "damage_multiplier": 0.80,
+        "telegraph_line": "敵機の装甲板が展開準備に入った。",
+        "trigger_line": "AEGIS: 防御姿勢を固定。",
+        "effect_line": "AEGISで敵装甲に阻まれた。",
+    },
+    "lock_on": {
+        "label": "LOCK-ON",
+        "name_ja": "照準固定",
+        "short": "次ターンの敵命中と会心が上昇する",
+        "telegraph_turn": 2,
+        "trigger_turn": 3,
+        "acc_bonus": 15,
+        "cri_bonus": 4,
+        "telegraph_line": "敵機の照準光がこちらを追尾している。",
+        "trigger_line": "LOCK-ON: 精密射撃を実行。",
+        "effect_line": "照準固定で敵攻撃の精度が上昇。",
+    },
+    "phase_shift": {
+        "label": "PHASE SHIFT",
+        "name_ja": "位相変調",
+        "short": "次ターンの敵速度と回避が上昇する",
+        "telegraph_turn": 2,
+        "trigger_turn": 3,
+        "spd_bonus": 10,
+        "evasion_acc_bonus": 14,
+        "telegraph_line": "敵機の輪郭が揺らぎ始めた。",
+        "trigger_line": "PHASE SHIFT: 位相変調機動へ移行。",
+        "effect_line": "位相変調で照準が乱された。",
+    },
+}
+COMBAT_SIGNAL_ENEMY_PATTERNS = {
+    "deep_layer_5_reboot_fort_ironbulk": "aegis",
+    "deep_layer_5_overdrive_haze_mirage_mite": "phase_shift",
+    "deep_layer_5_final_burst_coreling": "overcharge",
+    "deep_layer_6_rebuild_deep_layer_5_reboot_fort_ironbulk": "aegis",
+    "deep_layer_6_rebuild_deep_layer_5_reboot_fort_platehound": "lock_on",
+    "deep_layer_6_rebuild_deep_layer_5_reboot_fort_bastion_eye": "aegis",
+    "deep_layer_6_rebuild_deep_layer_5_reboot_enemy_insect_kabuto": "aegis",
+    "deep_layer_6_core_deep_layer_5_overdrive_haze_mirage_mite": "phase_shift",
+    "deep_layer_6_core_deep_layer_5_overdrive_haze_fog_lancer": "lock_on",
+    "deep_layer_6_core_deep_layer_5_overdrive_haze_glint_drone": "phase_shift",
+    "deep_layer_6_core_deep_layer_5_overdrive_enemy_insect_bee": "phase_shift",
+    "deep_layer_6_final_deep_layer_5_final_burst_coreling": "overcharge",
+    "deep_layer_6_final_deep_layer_5_final_burst_shockfang": "overcharge",
+    "deep_layer_6_final_deep_layer_5_final_burst_ruptgear": "lock_on",
+    "deep_layer_6_final_deep_layer_5_final_enemy_insect_scorpion": "overcharge",
+    "deep_boss_layer_6_rebuild_deep_boss_layer_5_reboot_boss_4_forge_elguard": "aegis",
+    "deep_boss_layer_6_core_deep_boss_layer_5_overdrive_boss_4_haze_mirage": "phase_shift",
+    "deep_boss_layer_6_final_deep_boss_layer_5_final_boss_4_final_ark_zero": "overcharge",
+    "deep_layer_7_echo_enemy16": "phase_shift",
+    "deep_layer_7_chaos_burst_coreling": "overcharge",
+    "deep_layer_7_final_boss_4_final_ark_zero": "lock_on",
+}
 PART_MECHANISM_TRAIT_DEFS = {
     "precision_processor": {
         "label": "精密演算",
@@ -7572,6 +7646,12 @@ def _build_battle_replay_summary(
         return None
 
     def _turn_tactical(row, step_effect):
+        signal_line = str((row or {}).get("enemy_signal_line") or "").strip()
+        if signal_line:
+            return signal_line
+        tactic_line = str((row or {}).get("enemy_tactic_trigger_line") or "").strip()
+        if tactic_line:
+            return tactic_line
         if step_effect and step_effect.get("tactical"):
             return str(step_effect.get("tactical"))
         player_damage = int((row or {}).get("player_damage") or 0)
@@ -7750,6 +7830,13 @@ def _build_battle_replay_summary(
             "status_label": effect_meta.get("label"),
             "status_target": (turn_effect or {}).get("target"),
             "tactical_label": turn_tactical,
+            "enemy_signal": {
+                "key": str(row.get("enemy_signal_key") or row.get("enemy_tactic_key") or ""),
+                "label": str(row.get("enemy_signal_label") or ""),
+                "phase": str(row.get("enemy_signal_phase") or ""),
+            }
+            if row.get("enemy_signal_line") or row.get("enemy_tactic_trigger_line")
+            else None,
             "player_hp_ratio_after": _ratio(_row_int(row, "player_after", player_hp_start), player_hp_max),
             "enemy_hp_ratio_after": _ratio(_row_int(row, "enemy_after", enemy_hp_start), enemy_hp_max),
             "player_hp_after": _row_int(row, "player_after", player_hp_start),
@@ -11097,6 +11184,174 @@ def _enemy_trait_desc(trait):
     if not key:
         return None
     return ENEMY_TRAIT_DEFS[key]["desc"]
+
+
+def _normalize_combat_signal_key(value):
+    key = str(value or "").strip().lower()
+    return key if key in COMBAT_SIGNAL_DEFS else ""
+
+
+def _combat_signal_meta(signal_key):
+    key = _normalize_combat_signal_key(signal_key)
+    return dict(COMBAT_SIGNAL_DEFS.get(key) or {}) if key else {}
+
+
+def _combat_signal_pattern_for_enemy(enemy_row):
+    enemy_key = str(_row_value(enemy_row, "key") or "").strip()
+    explicit_key = _normalize_combat_signal_key(_row_value(enemy_row, "combat_signal_key"))
+    if explicit_key:
+        return explicit_key
+    return _normalize_combat_signal_key(COMBAT_SIGNAL_ENEMY_PATTERNS.get(enemy_key))
+
+
+def _combat_signal_view(enemy_row):
+    key = _combat_signal_pattern_for_enemy(enemy_row)
+    meta = _combat_signal_meta(key)
+    if not meta:
+        return None
+    return {
+        "key": key,
+        "label": meta["label"],
+        "name_ja": meta["name_ja"],
+        "short": meta["short"],
+        "telegraph_turn": int(meta["telegraph_turn"]),
+        "trigger_turn": int(meta["trigger_turn"]),
+    }
+
+
+def _combat_signal_battle_state(signal_key):
+    key = _normalize_combat_signal_key(signal_key)
+    meta = _combat_signal_meta(key)
+    if not meta:
+        return None
+    return {
+        "key": key,
+        "label": meta["label"],
+        "name_ja": meta["name_ja"],
+        "meta": meta,
+        "telegraphed": False,
+        "triggered": False,
+        "cooling_until": 0,
+        "events": [],
+    }
+
+
+def _combat_signal_turn_start(state, turn):
+    if not state:
+        return None
+    meta = state.get("meta") or {}
+    turn = int(turn or 0)
+    if turn == int(meta.get("telegraph_turn") or 0) and not state.get("telegraphed"):
+        state["telegraphed"] = True
+        event = {
+            "turn": turn,
+            "phase": "telegraph",
+            "key": state["key"],
+            "label": state["label"],
+            "line": f"⚠ {state['label']}: {meta.get('telegraph_line')}",
+        }
+        state.setdefault("events", []).append(event)
+        return event
+    if turn == int(meta.get("trigger_turn") or 0) and state.get("telegraphed") and not state.get("triggered"):
+        state["triggered"] = True
+        event = {
+            "turn": turn,
+            "phase": "trigger",
+            "key": state["key"],
+            "label": state["label"],
+            "line": str(meta.get("trigger_line") or ""),
+        }
+        state.setdefault("events", []).append(event)
+        return event
+    return None
+
+
+def _combat_signal_is_active(state, turn):
+    if not state or not state.get("triggered"):
+        return False
+    meta = state.get("meta") or {}
+    return int(turn or 0) == int(meta.get("trigger_turn") or 0)
+
+
+def _combat_signal_effective_enemy_speed(state, enemy_spd, turn):
+    if not _combat_signal_is_active(state, turn) or state.get("key") != "phase_shift":
+        return int(enemy_spd), []
+    bonus = int((state.get("meta") or {}).get("spd_bonus") or 0)
+    return int(enemy_spd) + bonus, [str((state.get("meta") or {}).get("effect_line") or "")]
+
+
+def _combat_signal_enemy_defender_acc(state, enemy_acc, turn):
+    if not _combat_signal_is_active(state, turn) or state.get("key") != "phase_shift":
+        return int(enemy_acc)
+    bonus = int((state.get("meta") or {}).get("evasion_acc_bonus") or 0)
+    return int(enemy_acc) + bonus
+
+
+def _combat_signal_apply_player_damage(state, damage, turn):
+    damage = int(damage or 0)
+    if damage <= 0 or not state:
+        return damage, []
+    meta = state.get("meta") or {}
+    lines = []
+    if _combat_signal_is_active(state, turn) and state.get("key") == "aegis":
+        next_damage = max(1, int(math.floor(damage * float(meta.get("damage_multiplier") or 1.0))))
+        if next_damage < damage:
+            damage = next_damage
+            lines.append(str(meta.get("effect_line") or "AEGISで敵装甲に阻まれた。"))
+    if state.get("key") == "overcharge" and int(turn or 0) <= int(state.get("cooling_until") or 0):
+        next_damage = max(1, int(round(damage * float(meta.get("cooling_damage_multiplier") or 1.0))))
+        if next_damage > damage:
+            damage = next_damage
+            lines.append(str(meta.get("cooling_line") or "過充填後の冷却で装甲応答が鈍っている。"))
+    return damage, lines
+
+
+def _combat_signal_apply_enemy_attack_stats(state, *, atk, acc, cri, turn):
+    if not _combat_signal_is_active(state, turn):
+        return int(atk), int(acc), int(cri), []
+    meta = state.get("meta") or {}
+    key = state.get("key")
+    lines = []
+    if key == "overcharge":
+        lines.append(str(meta.get("effect_line") or "過充填攻撃で被害が拡大。"))
+        return max(1, int(round(int(atk) * float(meta.get("attack_multiplier") or 1.0)))), int(acc), int(cri), lines
+    if key == "lock_on":
+        lines.append(str(meta.get("effect_line") or "照準固定で敵攻撃の精度が上昇。"))
+        return int(atk), int(acc) + int(meta.get("acc_bonus") or 0), int(cri) + int(meta.get("cri_bonus") or 0), lines
+    return int(atk), int(acc), int(cri), lines
+
+
+def _combat_signal_after_enemy_attack(state, turn):
+    if not _combat_signal_is_active(state, turn) or state.get("key") != "overcharge":
+        return
+    meta = state.get("meta") or {}
+    state["cooling_until"] = int(turn or 0) + int(meta.get("cooling_turns") or 1)
+
+
+def _combat_signal_finish_battle(summary_state, battle_state):
+    if summary_state is None or not battle_state:
+        return
+    for event in battle_state.get("events") or []:
+        summary_state.setdefault("events", []).append(dict(event))
+        if event.get("phase") == "trigger":
+            key = str(event.get("key") or "")
+            summary_state.setdefault("trigger_counts", {})[key] = int(summary_state.setdefault("trigger_counts", {}).get(key) or 0) + 1
+
+
+def _combat_signal_summary(summary_state):
+    events = list((summary_state or {}).get("events") or [])
+    keys = sorted({str(event.get("key") or "") for event in events if event.get("key")})
+    signals = []
+    for key in keys:
+        meta = _combat_signal_meta(key)
+        if meta:
+            signals.append({"key": key, "label": meta["label"], "name_ja": meta["name_ja"], "short": meta["short"]})
+    return {
+        "occurred": bool(events),
+        "events": events,
+        "signals": signals,
+        "trigger_counts": dict((summary_state or {}).get("trigger_counts") or {}),
+    }
 
 
 def _row_value(row, key, default=None):
@@ -55720,6 +55975,7 @@ def explore():
     battle_code_state = battle_codes.init_state(active_battle_code)
     battle_code_started = False
     all_turn_logs = []
+    combat_signal_summary_state = {"events": [], "trigger_counts": {}}
     reward_coin = 0
     reward_exp = 0
     reward_core = 0
@@ -56592,6 +56848,13 @@ def explore():
         last_enemy_trait_label = enemy_trait_label
         last_enemy_trait_desc = enemy_trait_desc
         part_mechanism_state = _part_mechanism_battle_state(part_mechanism_snapshot, enemy_trait_key=enemy_trait_key)
+        combat_signal = _combat_signal_view(enemy)
+        combat_signal_state = _combat_signal_battle_state((combat_signal or {}).get("key"))
+        combat_signal_line = (
+            f"敵戦術：{combat_signal['label']}（{combat_signal['short']}）"
+            if combat_signal
+            else None
+        )
         if isinstance(enemy, dict) and _enemy_deep_variant_class(enemy) and not str(enemy.get("_variant_label") or "").strip():
             enemy["_variant_label"] = "深層変異体"
         enemy_variant_label = (enemy.get("_variant_label") or "").strip() if isinstance(enemy, dict) else ""
@@ -56759,6 +57022,13 @@ def explore():
             module_protocol_triggers = []
             battle_code_trigger_line = None
             battle_code_triggers = []
+            enemy_signal_line = None
+            enemy_tactic_trigger_line = None
+            enemy_tactic_triggers = []
+            enemy_signal_key = None
+            enemy_signal_label = None
+            enemy_signal_phase = None
+            enemy_tactic_effect = None
             player_skill = random.choice(["スラッシュ", "バースト", "ドライブ"])
             if turn == 1 and protocol_start_lines:
                 module_protocol_triggers.extend(protocol_start_lines)
@@ -56780,6 +57050,23 @@ def explore():
                 player_max_hp,
             )
             module_protocol_triggers.extend(protocol_heal_lines)
+            signal_event = _combat_signal_turn_start(combat_signal_state, turn)
+            if signal_event:
+                enemy_signal_key = signal_event.get("key")
+                enemy_signal_label = signal_event.get("label")
+                enemy_signal_phase = signal_event.get("phase")
+                if signal_event.get("phase") == "telegraph":
+                    enemy_signal_line = signal_event.get("line")
+                    player_hp, code_lines = battle_codes.enemy_signal(
+                        battle_code_state,
+                        turn,
+                        enemy_signal_key,
+                        player_hp,
+                        player_max_hp,
+                    )
+                    battle_code_triggers.extend(code_lines)
+                elif signal_event.get("phase") == "trigger":
+                    enemy_tactic_triggers.append(str(signal_event.get("line") or ""))
             player_hp, code_lines = battle_codes.turn_start(
                 battle_code_state,
                 turn,
@@ -56794,7 +57081,9 @@ def explore():
             code_player_spd = battle_codes.effective_speed(battle_code_state, protocol_player_spd, turn)
             code_player_spd, trait_lines = _part_mechanism_effective_speed(part_mechanism_state, code_player_spd, turn)
             part_mechanism_triggers.extend(trait_lines)
-            player_first = code_player_spd >= enemy_spd
+            signal_enemy_spd, tactic_lines = _combat_signal_effective_enemy_speed(combat_signal_state, enemy_spd, turn)
+            enemy_tactic_triggers.extend([line for line in tactic_lines if line])
+            player_first = code_player_spd >= signal_enemy_spd
             if player_first:
                 force_player_hit = relief_miss_enabled and (player_miss_streak >= 2)
                 player_effective_atk = player_atk
@@ -56835,12 +57124,13 @@ def explore():
                     turn=turn,
                 )
                 battle_code_triggers.extend(code_lines)
+                enemy_defender_acc = _combat_signal_enemy_defender_acc(combat_signal_state, enemy_acc, turn)
                 player_damage, critical, player_attack_detail = _resolve_attack_logged(
                     player_effective_atk,
                     player_effective_acc,
                     player_effective_cri,
                     enemy_def,
-                    enemy_acc,
+                    enemy_defender_acc,
                     rng=random,
                     attacker_archetype=player_archetype,
                     defender_archetype=None,
@@ -56871,8 +57161,10 @@ def explore():
                     and player_damage > 0
                     and random.random() < 0.12
                 ):
-                    player_damage = 0
-                    enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                        player_damage = 0
+                        enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                player_damage, tactic_lines = _combat_signal_apply_player_damage(combat_signal_state, player_damage, turn)
+                enemy_tactic_triggers.extend(tactic_lines)
                 player_damage, trait_lines = _part_mechanism_apply_outgoing_damage(
                     part_mechanism_state,
                     player_damage,
@@ -56924,6 +57216,8 @@ def explore():
                     crit_finisher_kills += 1
                 if enemy_hp > 0 and player_hp > 0:
                     enemy_effective_atk = enemy_atk
+                    enemy_effective_acc = enemy_acc
+                    enemy_effective_cri = enemy_cri
                     player_effective_def, trait_lines = _module_before_enemy_attack(
                         module_trait_state,
                         is_boss=is_boss_battle,
@@ -56939,10 +57233,18 @@ def explore():
                         if not berserk_triggered:
                             enemy_trait_triggers.append("特徴発動: 狂戦で攻撃上昇")
                             berserk_triggered = True
+                    enemy_effective_atk, enemy_effective_acc, enemy_effective_cri, tactic_lines = _combat_signal_apply_enemy_attack_stats(
+                        combat_signal_state,
+                        atk=enemy_effective_atk,
+                        acc=enemy_effective_acc,
+                        cri=enemy_effective_cri,
+                        turn=turn,
+                    )
+                    enemy_tactic_triggers.extend(tactic_lines)
                     enemy_damage, _, enemy_attack_detail = _resolve_attack_logged(
                         enemy_effective_atk,
-                        enemy_acc,
-                        enemy_cri,
+                        enemy_effective_acc,
+                        enemy_effective_cri,
                         player_effective_def,
                         player_acc,
                         rng=random,
@@ -56967,6 +57269,7 @@ def explore():
                     )
                     module_protocol_triggers.extend(protocol_lines)
                     battle_code_triggers.extend(battle_codes.after_incoming_damage(battle_code_state, turn=turn, damage=enemy_damage))
+                    _combat_signal_after_enemy_attack(combat_signal_state, turn)
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                     player_hp = max(0, player_hp - enemy_damage)
                     damage_taken_total += max(0, int(enemy_damage))
@@ -56995,6 +57298,8 @@ def explore():
                     enemy_attack_note = _attack_note(enemy_action, enemy_damage, {}, debug=battle_debug)
             else:
                 enemy_effective_atk = enemy_atk
+                enemy_effective_acc = enemy_acc
+                enemy_effective_cri = enemy_cri
                 player_effective_def, trait_lines = _module_before_enemy_attack(
                     module_trait_state,
                     is_boss=is_boss_battle,
@@ -57010,10 +57315,18 @@ def explore():
                     if not berserk_triggered:
                         enemy_trait_triggers.append("特徴発動: 狂戦で攻撃上昇")
                         berserk_triggered = True
+                enemy_effective_atk, enemy_effective_acc, enemy_effective_cri, tactic_lines = _combat_signal_apply_enemy_attack_stats(
+                    combat_signal_state,
+                    atk=enemy_effective_atk,
+                    acc=enemy_effective_acc,
+                    cri=enemy_effective_cri,
+                    turn=turn,
+                )
+                enemy_tactic_triggers.extend(tactic_lines)
                 enemy_damage, _, enemy_attack_detail = _resolve_attack_logged(
                     enemy_effective_atk,
-                    enemy_acc,
-                    enemy_cri,
+                    enemy_effective_acc,
+                    enemy_effective_cri,
                     player_effective_def,
                     player_acc,
                     rng=random,
@@ -57038,6 +57351,7 @@ def explore():
                 )
                 module_protocol_triggers.extend(protocol_lines)
                 battle_code_triggers.extend(battle_codes.after_incoming_damage(battle_code_state, turn=turn, damage=enemy_damage))
+                _combat_signal_after_enemy_attack(combat_signal_state, turn)
                 enemy_attack_note = _attack_note(enemy_action, enemy_damage, enemy_attack_detail, debug=battle_debug)
                 player_hp = max(0, player_hp - enemy_damage)
                 damage_taken_total += max(0, int(enemy_damage))
@@ -57101,12 +57415,13 @@ def explore():
                         turn=turn,
                     )
                     battle_code_triggers.extend(code_lines)
+                    enemy_defender_acc = _combat_signal_enemy_defender_acc(combat_signal_state, enemy_acc, turn)
                     player_damage, critical, player_attack_detail = _resolve_attack_logged(
                         player_effective_atk,
                         player_effective_acc,
                         player_effective_cri,
                         enemy_def,
-                        enemy_acc,
+                        enemy_defender_acc,
                         rng=random,
                         attacker_archetype=player_archetype,
                         defender_archetype=None,
@@ -57137,8 +57452,10 @@ def explore():
                         and player_damage > 0
                         and random.random() < 0.12
                     ):
-                        player_damage = 0
-                        enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                            player_damage = 0
+                            enemy_trait_triggers.append("特徴発動: 高速機動で回避")
+                    player_damage, tactic_lines = _combat_signal_apply_player_damage(combat_signal_state, player_damage, turn)
+                    enemy_tactic_triggers.extend(tactic_lines)
                     player_damage, trait_lines = _part_mechanism_apply_outgoing_damage(
                         part_mechanism_state,
                         player_damage,
@@ -57197,6 +57514,9 @@ def explore():
 
             if enemy_trait_triggers:
                 enemy_trait_trigger_line = " / ".join(enemy_trait_triggers)
+            if enemy_tactic_triggers:
+                enemy_tactic_trigger_line = " / ".join([line for line in enemy_tactic_triggers if line])
+                enemy_tactic_effect = enemy_tactic_trigger_line
             if part_mechanism_triggers:
                 part_mechanism_trigger_line = " / ".join(part_mechanism_triggers)
             if module_trait_triggers:
@@ -57215,6 +57535,8 @@ def explore():
                     "enemy_tendency_line": enemy_tendency_line if turn == 1 and enemy_tendency_line else None,
                     "enemy_variant_line": enemy_variant_line if turn == 1 and enemy_variant_line else None,
                     "enemy_trait_line": enemy_trait_line if turn == 1 and enemy_trait_line else None,
+                    "enemy_signal_intro_line": combat_signal_line if turn == 1 and combat_signal_line else None,
+                    "enemy_signal_line": enemy_signal_line,
                     "archetype_line": archetype_note if turn == 1 and archetype_note else None,
                     "build_profile_line": build_profile_line if turn == 1 and battle_no == 1 else None,
                     "affinity_line": player_type_affinity["message"] if turn == 1 else None,
@@ -57236,6 +57558,13 @@ def explore():
                     "player_attack_note": player_attack_note,
                     "enemy_attack_note": enemy_attack_note,
                     "enemy_trait_trigger_line": enemy_trait_trigger_line,
+                    "enemy_tactic_trigger_line": enemy_tactic_trigger_line,
+                    "enemy_signal_key": enemy_signal_key or ((combat_signal or {}).get("key") if enemy_tactic_trigger_line else None),
+                    "enemy_signal_label": enemy_signal_label or ((combat_signal or {}).get("label") if enemy_tactic_trigger_line else None),
+                    "enemy_signal_phase": enemy_signal_phase,
+                    "enemy_tactic_key": (combat_signal or {}).get("key") if enemy_tactic_trigger_line else None,
+                    "enemy_tactic_triggered": bool(enemy_tactic_trigger_line),
+                    "enemy_tactic_effect": enemy_tactic_effect,
                     "part_mechanism_trigger_line": part_mechanism_trigger_line,
                     "module_trait_trigger_line": module_trait_trigger_line,
                     "module_protocol_trigger_line": module_protocol_trigger_line,
@@ -57247,6 +57576,7 @@ def explore():
             if enemy_hp == 0 or player_hp == 0:
                 break
         _part_mechanism_finish_battle(part_mechanism_snapshot, part_mechanism_state)
+        _combat_signal_finish_battle(combat_signal_summary_state, combat_signal_state)
         timeout_decision = None
         if enemy_hp > 0 and player_hp > 0 and len(battle_logs) >= current_max_turns:
             battle_timeout = True
@@ -58637,6 +58967,7 @@ def explore():
                 if active_battle_code
                 else None
             ),
+            "combat_signal": _combat_signal_summary(combat_signal_summary_state),
             "stage_modifier": {
                 "enabled": bool(STAGE_MODIFIERS_ENABLED),
                 "summary_line": stage_modifier_line,
@@ -59159,6 +59490,7 @@ def explore():
         battle_kind_label = "ボス警報"
     else:
         battle_kind_label = "通常出撃"
+    combat_signal_result_summary = _combat_signal_summary(combat_signal_summary_state)
 
     summary = {
         "outcome": outcome_display,
@@ -59271,6 +59603,7 @@ def explore():
         "module_loadout": module_loadout_summary,
         "module_protocol": module_protocol_summary,
         "battle_code": battle_code_summary,
+        "combat_signal": combat_signal_result_summary,
         "part_mechanism": {
             "active": list(part_mechanism_snapshot.get("active") or []),
             "active_trait_keys": list(part_mechanism_snapshot.get("active_trait_keys") or []),
@@ -65993,6 +66326,7 @@ def enemy_dex_detail(enemy_key):
         return abort(404)
     enemy_dict = dict(enemy)
     enemy_dict["display_key"] = str(enemy_key or enemy_dict.get("key") or "").strip()
+    enemy_dict["combat_signal"] = _combat_signal_view(enemy_dict)
     show_stats = int(dex_row["defeat_count"] or 0) > 0
     image_url = _enemy_static_url(enemy_dict["image_path"])
     return render_template(
@@ -70406,6 +70740,7 @@ def admin_enemies():
             d.get("image_path"),
             fallback_url=url_for("static", filename="enemies/_placeholder.png"),
         )
+        d["combat_signal"] = _combat_signal_view(d)
         enemies.append(d)
     return render_template(
         "admin_enemies.html",

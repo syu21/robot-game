@@ -6,6 +6,9 @@
   <div class="robot-part">キー: {{ enemy.get('display_key', enemy['key']) }}</div>
   <div class="robot-part">遭遇: {{ dex['seen_count'] }} / 撃破: {{ dex['defeat_count'] }}</div>
   {% if enemy['is_boss'] %}<div class="robot-part">BOSS</div>{% endif %}
+  {% if show_stats and enemy.get('combat_signal') %}
+  <div class="robot-part">戦術: {{ enemy['combat_signal']['label'] }} / {{ enemy['combat_signal']['short'] }}</div>
+  {% endif %}
   <div class="enemy-sprite-frame enemy-dex-thumb-frame">
     <img class="robot-thumb enemy-dex-thumb" src="{{ image_url }}" alt="{{ enemy.get('display_key', enemy['key']) }}" loading="lazy" decoding="async" />
   </div>

@@ -76,7 +76,7 @@ class BattleCodePhase3Tests(unittest.TestCase):
             return int(cur.lastrowid)
 
     def test_defines_six_conditions_six_effects_and_names_all_pairs(self):
-        self.assertEqual(len(battle_codes.active_conditions()), 10)
+        self.assertEqual(len(battle_codes.active_conditions()), 14)
         self.assertEqual(len(battle_codes.active_effects()), 6)
         for condition in battle_codes.active_conditions():
             for effect in battle_codes.active_effects():
@@ -86,6 +86,10 @@ class BattleCodePhase3Tests(unittest.TestCase):
         self.assertEqual(
             battle_codes.display_name("after_miss", "guaranteed_hit"),
             "誤差修正式《REWRITE-FATE-LOCK》",
+        )
+        self.assertEqual(
+            battle_codes.display_name("enemy_signal_overcharge", "defense_up_15"),
+            "過充填反応式《SENTINEL-AEGIS-CODE》",
         )
 
     def test_save_rejects_partial_invalid_and_clear(self):
@@ -176,7 +180,7 @@ class BattleCodePhase3Tests(unittest.TestCase):
         client = self._client()
         html = client.get("/modules").get_data(as_text=True)
         self.assertIn("戦闘命令構築 / BATTLE CODE", html)
-        self.assertEqual(html.count("IF "), 10)
+        self.assertEqual(html.count("IF "), 14)
         self.assertEqual(html.count("THEN "), 6)
         self.assertIn("誤差修正式《REWRITE-FATE-LOCK》", html)
         client.post("/modules/battle-code", data={"action": "save", "condition_key": "after_miss", "effect_key": "guaranteed_hit"})

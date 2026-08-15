@@ -299,10 +299,18 @@
       </div>
     {% endif %}
   </div>
-  {% if summary.get('module_strategy') or summary.get('module_protocol') or summary.get('battle_code') %}
+  {% if summary.get('module_strategy') or summary.get('module_protocol') or summary.get('battle_code') or summary.get('combat_signal') %}
   {% set strategy = summary.get('module_strategy') or {} %}
   <section class="card module-strategy-card">
     <div class="section-kicker">今回の作戦</div>
+    {% if summary.get('combat_signal') and summary['combat_signal'].get('occurred') %}
+    <div class="module-protocol-result">
+      <p class="upgrade-cost">敵戦術パターン</p>
+      {% for signal in summary['combat_signal'].get('signals', []) %}
+      <p class="robot-time">{{ signal.get('label') }} / {{ signal.get('short') }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if summary.get('module_loadout') %}
     {% set loadout = summary.get('module_loadout') %}
     <p class="upgrade-cost">搭載戦闘OS<br>{{ loadout.get('os_label_ja', '無装演算型《ブランク・コア》') }}</p>
@@ -684,6 +692,9 @@
             {% if t.get('enemy_trait_line') %}
               <div class="battle-line">{{ t['enemy_trait_line'] }}</div>
             {% endif %}
+            {% if t.get('enemy_signal_intro_line') %}
+              <div class="battle-line">{{ t['enemy_signal_intro_line'] }}</div>
+            {% endif %}
             {% if t.get('archetype_line') %}
               <div class="battle-line">{{ t['archetype_line'] }}</div>
             {% endif %}
@@ -707,6 +718,12 @@
             {% endif %}
             {% if t.get('enemy_trait_trigger_line') %}
               <div class="battle-line drop">{{ t['enemy_trait_trigger_line'] }}</div>
+            {% endif %}
+            {% if t.get('enemy_signal_line') %}
+              <div class="battle-line drop">{{ t['enemy_signal_line'] }}</div>
+            {% endif %}
+            {% if t.get('enemy_tactic_trigger_line') %}
+              <div class="battle-line drop">{{ t['enemy_tactic_trigger_line'] }}</div>
             {% endif %}
             {% if t.get('part_mechanism_trigger_line') %}
               <div class="battle-line drop">{{ t['part_mechanism_trigger_line'] }}</div>

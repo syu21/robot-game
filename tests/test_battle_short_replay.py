@@ -164,6 +164,43 @@ class BattleShortReplayHelperTests(unittest.TestCase):
         self.assertEqual(steps[1]["actor"], "enemy")
         self.assertEqual(steps[1]["element"], "dark")
 
+    def test_replay_turn_uses_enemy_signal_tactical_label_when_present(self):
+        replay = game_app._build_battle_replay_summary(
+            area_key="layer_6_final",
+            area_label="第6層最終試験",
+            enemy_name="深層核",
+            enemy_image_url="/static/assets/placeholder_enemy.png",
+            player_name="テスト機",
+            player_image_url="/static/assets/placeholder_player.png",
+            player_stats={"hp": 30, "atk": 14, "def": 11, "spd": 14, "acc": 13, "cri": 9},
+            enemy_stats={"hp": 40, "atk": 10, "def": 9, "spd": 9, "acc": 8, "cri": 5, "trait": "berserk"},
+            robot_style={"style_key": "stable"},
+            turn_logs=[
+                {
+                    "turn": 2,
+                    "player_action": "射撃",
+                    "enemy_action": "攻撃",
+                    "player_damage": 4,
+                    "enemy_damage": 2,
+                    "player_before": 30,
+                    "enemy_before": 40,
+                    "player_after": 28,
+                    "enemy_after": 36,
+                    "player_max": 30,
+                    "enemy_max": 40,
+                    "critical": False,
+                    "enemy_signal_line": "⚠ OVERCHARGE: 敵機の炉心出力が急上昇している。",
+                    "enemy_signal_key": "overcharge",
+                    "enemy_signal_label": "OVERCHARGE",
+                    "enemy_signal_phase": "telegraph",
+                }
+            ],
+            outcome="勝利",
+            is_boss=False,
+        )
+        self.assertEqual(replay["turns"][0]["tactical_label"], "⚠ OVERCHARGE: 敵機の炉心出力が急上昇している。")
+        self.assertEqual(replay["turns"][0]["enemy_signal"]["key"], "overcharge")
+
     def test_replay_steps_default_to_neutral_without_element(self):
         replay = game_app._build_battle_replay_summary(
             area_key="layer_1",
@@ -287,4 +324,3 @@ class BattleShortReplayRouteTests(unittest.TestCase):
     def _create_user(self, username, is_admin=0):
         with game_app.app.app_context():
             db = game_app.get_db()
-           

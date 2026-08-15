@@ -70,6 +70,7 @@
           <th>tier</th>
           <th>element</th>
           <th>faction</th>
+          <th>戦術</th>
           <th>boss</th>
           <th>状態</th>
           <th>操作</th>
@@ -84,6 +85,13 @@
           <td>{{ e['tier'] }}</td>
           <td>{{ e['element'] }}</td>
           <td>{{ faction_options.get(e['faction'], e['faction']) }}</td>
+          <td>
+            {% if e.get('combat_signal') %}
+              {{ e['combat_signal']['label'] }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
           <td>
             {% if e.get('is_boss', 0) == 1 %}
               はい{% if e.get('boss_area_key') %} ({{ e['boss_area_key'] }}){% endif %}

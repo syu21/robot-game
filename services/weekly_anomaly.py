@@ -11,6 +11,12 @@ ANOMALY_FEATURE_KEY = "anomaly"
 ANOMALY_MAX_TURNS = 8
 ANOMALY_RETRY_CT_SECONDS = 10
 ANOMALY_CLEAR_REWARD_COINS = 60
+ANOMALY_COMBAT_SIGNAL_PATTERNS = {
+    "veil_runner": {"key": "phase_shift", "label": "PHASE SHIFT"},
+    "gravemass": {"key": "aegis", "label": "AEGIS"},
+    "redline": {"key": "overcharge", "label": "OVERCHARGE"},
+    "paradox": {"key": "lock_on", "label": "LOCK-ON"},
+}
 
 ANOMALY_CLASSES = {
     "observe": {"label": "観測級", "min_layer": 1, "max_layer": 2, "stat_scale": 0.52},
@@ -128,6 +134,7 @@ def build_cycle_config(week_key):
         **template,
         "week_key": str(week_key),
         "seed": seed,
+        "combat_signal": dict(ANOMALY_COMBAT_SIGNAL_PATTERNS.get(template["key"]) or {}),
         "max_turns": ANOMALY_MAX_TURNS,
         "classes": {
             key: {

@@ -470,6 +470,11 @@ def _enemy_trait_matches(condition_key, enemy_trait_key):
     return str(condition.get("trigger_type") or "") == "enemy_trait" and str(condition.get("trigger_value") or "") == str(enemy_trait_key or "")
 
 
+def _enemy_signal_matches(condition_key, signal_key):
+    condition = condition_definition(condition_key) or {}
+    return str(condition.get("trigger_type") or "") == "enemy_signal" and str(condition.get("trigger_value") or "") == str(signal_key or "")
+
+
 def battle_start(state, player_hp, player_max_hp, enemy_trait_key=None):
     if _is_dual_state(state):
         return _run_dual_hook(
@@ -484,6 +489,21 @@ def battle_start(state, player_hp, player_max_hp, enemy_trait_key=None):
         return int(player_hp), []
     _record_condition(state, 1, "開戦宣言を受理。")
     return _activate(state, 1, player_hp, player_max_hp)
+
+
+def enemy_signal(state, turn, signal_key, player_hp, player_max_hp):
+    if not state or not signal_key:
+        return int(player_hp), []
+    if _is_dual_state(state):
+        return _run_dual_hook(
+            state,
+            lambda logic_state: enemy_signal(logic_state, turn, signal_key, player_hp, player_max_hp),
+            player_hp,
+        )
+    if not _enemy_signal_matches(state.get("condition_key"), signal_key):
+        return int(player_hp), []
+    _record_condition(state, turn, "敵戦術予兆を検出。")
+    return _activate(state, turn, player_hp, player_max_hp)
 
 
 def turn_start(state, turn, player_hp, player_max_hp, enemy_hp, enemy_max_hp, enemy_trait_key=None):

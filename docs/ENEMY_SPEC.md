@@ -40,6 +40,16 @@
 - `berserk`: 耐久半分以下で攻撃上昇
 - `unstable`: 反動挙動
 
+## 4.1 COMBAT SIGNAL v1
+- 詳細: `docs/COMBAT_SIGNAL_SPEC.md`
+- trait は常時性質、COMBAT SIGNAL は予兆付きの一時戦術として扱う。
+- v1パターン:
+  - `overcharge`: 予兆後に敵攻撃上昇、攻撃後に短い冷却弱点
+  - `aegis`: 予兆後に敵被ダメージ軽減
+  - `lock_on`: 予兆後に敵命中 / 会心上昇
+  - `phase_shift`: 予兆後に敵速度 / 回避側補正上昇
+- 第1〜3層には付与しない。第5層は一部、第6層を主対象、第7層は管理者確認用の準備枠。
+
 ## 5. ボス仕様
 - 抽選入口は出撃側（0.5%）
 - 固定ボスは `boss_area_key` 一致で抽選
