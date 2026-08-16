@@ -12438,9 +12438,10 @@ def _onboarding_first_upgrade_should_show(db, user_row):
 def _onboarding_first_upgrade_view(db, user_row, *, source):
     completed = _count_user_completed_explores(db, int(user_row["id"]))
     recommendation = _first_upgrade_recommendation(db, user_row)
-    build_url = "/build?guide=first_upgrade&mode=modify"
+    source_key = str(source or "")
+    build_url = "/parts?onboarding=first_upgrade"
     if has_request_context():
-        build_url = url_for("build", guide="first_upgrade", mode="modify")
+        build_url = url_for("parts", onboarding="first_upgrade", source=source_key or "home_next_action")
         if recommendation:
             build_url = url_for(
                 "build",
@@ -12449,6 +12450,7 @@ def _onboarding_first_upgrade_view(db, user_row, *, source):
                 base_robot_id=int(user_row["active_robot_id"] or 0),
                 frame_type=recommendation.get("build_frame_type") or "normal",
                 recommended_part_id=int(recommendation["recommended_part_instance_id"]),
+                source=source_key or "home_next_action",
             )
     return {
         "title": "解析完了：交換可能なパーツを検出",
@@ -12460,7 +12462,7 @@ def _onboarding_first_upgrade_view(db, user_row, *, source):
         "cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
         "home_cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
         "skip_label": "このまま出撃する",
-        "source": str(source or ""),
+        "source": source_key,
         "explore_end_count": int(completed),
         "recommendation": recommendation,
         "build_url": build_url,

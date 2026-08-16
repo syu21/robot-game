@@ -438,6 +438,7 @@
 - [ ] 戦闘結果直表示でも `audit.battle.result.view` が記録される
 - [ ] 初回3出撃後の通常ユーザーに `解析完了：交換可能なパーツを検出` が表示される
 - [ ] `/build?guide=first_upgrade` は推奨パーツの所有・在庫・部位・改善値を再検証し、候補だけを `今回の交換候補` として表示する
+- [ ] 改善候補がない初回更新ガイドは `/parts?onboarding=first_upgrade` に戻り、ガイドが消えない
 - [ ] `/build/confirm` 後に `機体更新完了！` と `新しい機体で出撃する` が表示され、再出撃は `entry_source=first_robot_upgrade_result` になる
 
 ## 13. ホーム出撃導線統合

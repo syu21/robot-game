@@ -146,6 +146,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
                 )
         self.assertEqual(card["title"], "解析完了：交換可能なパーツを検出")
         self.assertEqual(card["cta_label"], "回収したパーツを見る")
+        self.assertIn("/parts?onboarding=first_upgrade", card["cta_url"])
         self.assertEqual(card["secondary_actions"][0]["label"], "そのまま出撃する")
 
     def test_parts_guide_shows_single_recommendation_when_better_part_exists(self):
@@ -185,6 +186,14 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
                 """,
                 (better_id,),
             )
+            db.execute(
+                """
+                UPDATE part_instances
+                SET w_hp = -120, w_atk = -120, w_def = -120, w_spd = -120, w_acc = -120, w_cri = -120
+                WHERE id = ?
+                """,
+                (weak_id,),
+            )
             db.commit()
         client = self._client()
         response = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={better_id}")
@@ -194,6 +203,13 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         self.assertIn("今回の交換候補", body)
         self.assertIn(f'value="{better_id}"', body)
         self.assertIn("checked", body)
+        with game_app.app.test_request_context("/home"):
+            build_url = game_app._onboarding_first_upgrade_view(
+                self._db(),
+                self._user(),
+                source="home_next_action",
+            )["build_url"]
+        self.assertIn("source=home_next_action", build_url)
 
         invalid = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={weak_id}")
         invalid_body = invalid.get_data(as_text=True)
