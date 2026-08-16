@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import app as game_app
 import init_db
@@ -73,6 +74,15 @@ class RobotUniquenessFeatureTests(unittest.TestCase):
         self.assertIn("コンテストを見る", html)
         self.assertIn("head_rotate_degrees", html)
         self.assertIn("head_flip_x", html)
+
+    def test_robot_detail_does_not_recompose_existing_image_on_view(self):
+        with (
+            mock.patch.object(game_app, "_render_matches_placeholder_image", return_value=False),
+            mock.patch.object(game_app, "_compose_instance_image", wraps=game_app._compose_instance_image) as compose_mock,
+        ):
+            response = self._client(self.admin_id).get(f"/robots/{self.robot_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(compose_mock.call_count, 0)
 
     def test_home_customize_cta_logs_click(self):
         client = self._client(self.admin_id)

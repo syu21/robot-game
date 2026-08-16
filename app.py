@@ -981,6 +981,7 @@ COMMS_WORLD_VIEW_AUDIT_INTERVAL_SECONDS = max(
 PERF_DIAGNOSTICS = str(os.getenv("PERF_DIAGNOSTICS", "0")).strip().lower() in {"1", "true", "yes", "on"}
 PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "500")))
 PERF_SLOW_SQL_MS = max(1, int(os.getenv("PERF_SLOW_SQL_MS", "50")))
+HOME_SECTION_LOG_ENABLED = str(os.getenv("HOME_SECTION_LOG_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
 PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
 HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
@@ -5975,8 +5976,10 @@ def _now_ts():
 
 def _home_section_log(section_key, started_at, *, extra=None):
     elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+    if not (HOME_SECTION_LOG_ENABLED or PERF_DIAGNOSTICS):
+        return elapsed_ms
     message_extra = f" {extra}" if extra else ""
-    app.logger.warning(
+    app.logger.info(
         "home.section.%s elapsed_ms=%s path=%s request_id=%s%s",
         section_key,
         elapsed_ms,
@@ -28687,17 +28690,52 @@ def _static_abs(rel_path):
     return os.path.join(STATIC_ROOT, rel_path)
 
 
+def _request_local_cache(name):
+    if not has_request_context():
+        return None
+    cache_name = f"_perf_cache_{name}"
+    cache = getattr(g, cache_name, None)
+    if cache is None:
+        cache = {}
+        setattr(g, cache_name, cache)
+    return cache
+
+
+def _static_rel_can_cache_missing(rel):
+    rel = str(rel or "").strip()
+    if not rel:
+        return False
+    dynamic_prefixes = (
+        "robot_composed/",
+        "robot_icons/",
+        "generated_avatars/",
+        "lab_scene_sprites/",
+    )
+    return not rel.startswith(dynamic_prefixes)
+
+
 def _versioned_static_url(rel_path, fallback_url=None):
     rel = str(rel_path or "").strip()
     if not rel:
         return fallback_url
+    cache = _request_local_cache("versioned_static_url")
+    cache_key = (rel, fallback_url)
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
     abs_path = _static_abs(rel)
     if not os.path.exists(abs_path):
-        return fallback_url if fallback_url is not None else url_for("static", filename=rel)
+        result = fallback_url if fallback_url is not None else url_for("static", filename=rel)
+        if cache is not None and _static_rel_can_cache_missing(rel):
+            cache[cache_key] = result
+        return result
     version = int(os.path.getmtime(abs_path) or 0)
     if version > 0:
-        return url_for("static", filename=rel, v=version)
-    return url_for("static", filename=rel)
+        result = url_for("static", filename=rel, v=version)
+    else:
+        result = url_for("static", filename=rel)
+    if cache is not None:
+        cache[cache_key] = result
+    return result
 
 
 def _enemy_static_url(image_path, fallback_url=None):
@@ -28744,11 +28782,18 @@ def _safe_static_rel(path_value, *, warn_key=None):
     rel = path_value.replace("\\", "/").lstrip("/")
     if rel.startswith("static/"):
         rel = rel[len("static/") :]
+    cache = _request_local_cache("safe_static_rel")
+    if cache is not None and rel in cache:
+        return cache[rel]
     abs_path = _static_abs(rel)
     if os.path.exists(abs_path):
+        if cache is not None:
+            cache[rel] = rel
         return rel
     if warn_key:
         _warn_missing_asset_once(warn_key, detail=rel)
+    if cache is not None and _static_rel_can_cache_missing(rel):
+        cache[rel] = None
     return None
 
 
@@ -29050,7 +29095,14 @@ def _replace_robot_enemy_placeholder_render(rel_path):
         return False
 
 
-def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_render", preserve_updated_at=False):
+def _refresh_robot_instance_render_assets(
+    db,
+    robot_row,
+    *,
+    log_label="robot_render",
+    preserve_updated_at=False,
+    refresh_stale=False,
+):
     if not robot_row:
         return None
     data = dict(robot_row)
@@ -29062,7 +29114,7 @@ def _refresh_robot_instance_render_assets(db, robot_row, *, log_label="robot_ren
     icon_rel = _safe_static_rel(data.get("icon_32_path")) if data.get("icon_32_path") else None
     composed_missing = not composed_rel or not os.path.exists(_static_abs(composed_rel))
     icon_missing = not icon_rel or not os.path.exists(_static_abs(icon_rel))
-    render_stale = updated_at < render_rev
+    render_stale = bool(refresh_stale and updated_at < render_rev)
     composed_placeholder = bool(composed_rel and _render_matches_placeholder_image(composed_rel))
 
     if composed_missing or render_stale or composed_placeholder:
@@ -60267,21 +60319,7 @@ def robot_detail(instance_id):
     robot = dict(row)
     robot["frame_type"] = _normalize_frame_type(robot.get("frame_type"))
     robot["frame_label"] = _frame_type_label(robot["frame_type"])
-    # Robot detail should always reflect latest part offsets/alignment.
-    # Re-compose here to avoid stale composed_image_path from prior cache states.
-    try:
-        rel = _compose_instance_image(db, robot, robot)
-        if rel:
-            robot["composed_image_path"] = rel
-            latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (robot["id"],)).fetchone()
-            robot["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
-    except Exception:
-        app.logger.exception("robot_detail.compose_failed instance_id=%s", instance_id)
-        if not robot.get("composed_image_path"):
-            rel = _compose_instance_image(db, robot, robot)
-            robot["composed_image_path"] = rel
-            latest = db.execute("SELECT updated_at FROM robot_instances WHERE id = ?", (robot["id"],)).fetchone()
-            robot["updated_at"] = int(latest["updated_at"] or 0) if latest else int(time.time())
+    robot = _refresh_robot_instance_render_assets(db, robot, log_label="robot_detail") or robot
     robot["image_url"] = _composed_image_url(robot.get("composed_image_path"), robot.get("updated_at"))
     stat_obj = _compute_robot_stats_for_instance(db, int(robot["id"]))
     robot["final_stats"] = stat_obj["stats"] if stat_obj else None

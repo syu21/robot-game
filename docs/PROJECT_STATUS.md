@@ -824,3 +824,9 @@
 - `/parts`、`/parts/strengthen`、`/build`、ロボ詳細の戦術セット、通常戦闘結果、異常個体結果へ表示を追加した。
 - 監査は `audit.explore.end` の `player.active_trait_keys / triggered_trait_keys` と、`audit.anomaly.attempt` の `part_mechanism`。
 - 管理メトリクスにR+特性装備ユーザー、発動戦闘数、特性別勝率、第6層勝率、異常個体CLEAR率を追加した。
+
+## 19. 全体パフォーマンス改善 v1
+- `home.section.*` の常時warningログを停止し、`HOME_SECTION_LOG_ENABLED=1` または `PERF_DIAGNOSTICS=1` の時だけsection計測ログを出す。
+- 静的ファイルURL生成と存在確認をrequest内でキャッシュし、パーツ/ロボ/通信/ランキング表示時の重複 `os.path.exists` / `getmtime` を減らした。
+- ロボ詳細・一覧・共有用の画像補完は「欠損またはプレースホルダー時のみ」に限定し、閲覧だけで既存ロボ画像を毎回再合成しない。
+- DBスキーマ、ゲームバランス、ドロップ、CT、戦闘、audit仕様は変更なし。

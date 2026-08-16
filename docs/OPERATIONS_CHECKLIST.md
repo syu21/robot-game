@@ -498,3 +498,11 @@
 - [ ] 異常個体結果画面から戦術セットへ戻れる
 - [ ] `audit.robot.preset.save/apply/rename/delete` が残る
 - [ ] `/admin/metrics` に保存済みセット数、保存/適用ユーザー、SET別保存数が表示される
+
+## 全体パフォーマンス改善 v1
+
+- [ ] `PERF_DIAGNOSTICS=1` で `X-Robolabo-Sql-Count`, `X-Robolabo-Sql-Total-Ms`, `X-Robolabo-Render-Ms` が返る
+- [ ] 通常運用では `home.section.*` がwarningへ常時出ない
+- [ ] `HOME_SECTION_LOG_ENABLED=1` でホームsection計測ログを再有効化できる
+- [ ] `/robots/<id>` を開くだけで、既存の `composed_image_path` があるロボ画像を毎回再合成しない
+- [ ] `/home`, `/parts`, `/build`, `/robots`, `/ranking`, `/world`, `/records`, `/comms/world` のstatus codeと主要表示が維持される

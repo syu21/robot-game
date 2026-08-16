@@ -691,3 +691,10 @@
 - UI: `/parts`、強化・進化、`/build`、戦術セット、通常戦闘結果、異常個体結果へ表示する。
 - 管理: `/admin/metrics` でR+装備、発動戦闘、特性別勝率、第6層勝率、異常個体CLEAR率を確認する。
 - 監査: 既存 `audit.explore.end` と `audit.anomaly.attempt` に集約payloadを追加する。
+
+## Phase 4.3: 全体パフォーマンス改善 v1
+
+- 目的: ゲーム挙動・画面情報・URL・auditを変えずに、ページ表示と通常操作の体感待ち時間を減らす。
+- 実装範囲: request内キャッシュ、ログ出力抑制、静的ファイル存在確認の重複削減、既存ロボ画像の不要再合成抑制。
+- 計測: `X-Robolabo-Elapsed-Ms` と `PERF_DIAGNOSTICS=1` のSQL/テンプレート計測を継続利用する。ホームsectionログは通常停止し、必要時だけ `HOME_SECTION_LOG_ENABLED=1` で出す。
+- 非目標: 戦闘ロジック、乱数順、ドロップ率、CT、報酬、決済、URL、画面情報の削減。
