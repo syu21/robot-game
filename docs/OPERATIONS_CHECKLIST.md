@@ -436,6 +436,9 @@
 - [ ] 初回勝利後、3出撃未満の通常ユーザーは `/home` 主CTAから第1層へ再出撃できる
 - [ ] 初回CTA経由の `EXPLORE_START` payload に `entry_source=next_action_first_explore`, `home_session_id`, `seconds_from_home_view`, `is_first_explore=true` が入る
 - [ ] 戦闘結果直表示でも `audit.battle.result.view` が記録される
+- [ ] 初回3出撃後の通常ユーザーに `解析完了：交換可能なパーツを検出` が表示される
+- [ ] `/build?guide=first_upgrade` は推奨パーツの所有・在庫・部位・改善値を再検証し、候補だけを `今回の交換候補` として表示する
+- [ ] `/build/confirm` 後に `機体更新完了！` と `新しい機体で出撃する` が表示され、再出撃は `entry_source=first_robot_upgrade_result` になる
 
 ## 13. ホーム出撃導線統合
 - [ ] `/home` 上部に統合 `NEXT ACTION` が表示される
@@ -456,7 +459,7 @@
 - [ ] 第1層ボス撃破で `retry_status=defeated` になり、CTAが消える
 - [ ] `/boss/retry/layer-1` は POST のみで、未遭遇/撃破済み/active robotなし/CT中を安全に戻す
 - [ ] 再挑戦の `EXPLORE_START` に `entry_source=boss_retry`, `boss_source=guaranteed_retry` が入る
-- [ ] 再挑戦敗北結果に `もう一度ボスへ挑む`、`パーツを見直す`、簡易敗因が1件だけ表示される
+- [ ] 再挑戦敗北結果に `入手パーツで機体を更新`、`もう一度ボスへ挑む`、簡易敗因が1件だけ表示される
 - [ ] 管理メトリクスに再挑戦可能、CTA表示/クリック、実行、再挑戦経由撃破、24h撃破率、パーツ確認、編成完了が表示される
 
 ## 15. 第2層解放・次目標導線

@@ -30,13 +30,18 @@
     <label class="part-picker-main" for="{{ input_id }}">
       <img class="part-thumb picker-thumb" src="{{ p['display_image_url'] }}" alt="{{ p['key'] }}" loading="lazy" decoding="async" />
       <div class="picker-copy">
-        <div class="picker-head">
-          <div class="picker-heading">
-            <div class="picker-title">{{ p['display_name'] }}</div>
-            <div class="picker-submeta">{{ p['display_plus_text'] }} / {{ p['instance_short_label'] }}</div>
+          <div class="picker-head">
+            <div class="picker-heading">
+              <div class="picker-title">{{ p['display_name'] }}</div>
+              <div class="picker-submeta">{{ p['display_plus_text'] }} / {{ p['instance_short_label'] }}</div>
+            </div>
+            <span class="picker-selected-badge">選択中</span>
           </div>
-          <span class="picker-selected-badge">選択中</span>
-        </div>
+          {% if p.get('first_upgrade_recommended') %}
+            <div class="part-chip-row">
+              <span class="part-chip is-recommended">今回の交換候補</span>
+            </div>
+          {% endif %}
         <div class="picker-total-row">
           <span class="picker-total-label">{{ p['summary_total']['label'] }}</span>
           <span class="picker-total-value is-{{ p['summary_total']['value_class'] }}">{{ p['summary_total']['value_text'] }}</span>
@@ -46,6 +51,9 @@
         {% endif %}
         {% if p['summary_total']['note_text'] %}
           <div class="picker-total-note">{{ p['summary_total']['note_text'] }}</div>
+        {% endif %}
+        {% if p.get('first_upgrade_recommended_note') %}
+          <div class="picker-total-note">{{ p.get('first_upgrade_recommended_note') }}</div>
         {% endif %}
         <div class="picker-total-note">フレーム: {{ p['frame_label'] }}</div>
         {% if p.get('mechanism_trait') %}
@@ -126,6 +134,24 @@
 <div class="card">
   <div><b>{{ message }}</b></div>
 </div>
+{% endif %}
+{% if first_upgrade_guide %}
+<section class="card first-upgrade-guide-card">
+  <div class="section-kicker">最初の育成</div>
+  <h3>{{ first_upgrade_guide.get('title') }}</h3>
+  <p class="upgrade-cost">{{ first_upgrade_guide.get('desc') }}</p>
+  {% if first_upgrade_recommendation %}
+  <div class="part-meta-line">
+    おすすめ：{{ first_upgrade_recommendation.get('recommended_part_type_label') }}
+    / 総合 {{ first_upgrade_recommendation.get('current_total') }} → {{ first_upgrade_recommendation.get('recommended_total') }}
+  </div>
+  {% for row in first_upgrade_recommendation.get('positive_rows', []) %}
+  <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
+  {% endfor %}
+  {% else %}
+  <div class="part-meta-line">回収したパーツを見比べてみましょう。</div>
+  {% endif %}
+</section>
 {% endif %}
 <section class="card">
   <h2>ロボの作り方を選んでください</h2>

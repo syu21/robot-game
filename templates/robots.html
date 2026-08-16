@@ -14,7 +14,7 @@
 
 {% if build_result %}
 <div class="card">
-  <h2>ロボ完成</h2>
+  <h2>{% if build_result.get('first_upgrade') %}機体更新完了！{% else %}ロボ完成{% endif %}</h2>
   <div class="robot-part">{{ build_result['robot']['name'] or '無名ロボ' }}</div>
   {% if build_result['robot'].get('image_url') %}
     <img class="robot-thumb" src="{{ build_result['robot']['image_url'] }}" alt="{{ build_result['robot']['name'] }}" loading="lazy" />
@@ -22,8 +22,22 @@
   {% if build_result.get('blueprint') %}
   <div class="robot-part">設計番号: <b>{{ build_result['blueprint']['blueprint_code'] }}</b></div>
   {% endif %}
+  {% if build_result.get('first_upgrade') %}
+  <div class="part-chip-row">
+    {% for row in build_result['first_upgrade'].get('positive_rows', []) %}
+      <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+    <input type="hidden" name="area_key" value="layer_1" />
+    <input type="hidden" name="entry_source" value="first_robot_upgrade_result" />
+    <button type="submit" class="battle-home-link battle-next-cta">新しい機体で出撃する</button>
+  </form>
+  {% endif %}
   <div class="home-inline-actions">
     <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=build_result['robot']['id']) }}">ロボ詳細を見る</a>
+    <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
+    {% if not build_result.get('first_upgrade') %}
     <form method="post" action="{{ url_for('robot_share', instance_id=build_result['robot']['id']) }}" class="inline-form">
       <button type="submit">画像を共有する</button>
     </form>
@@ -32,6 +46,7 @@
       <button type="submit">人気ロボに投稿する</button>
     </form>
     <a class="battle-home-link" href="{{ url_for('robot_contests') }}">コンテストを見る</a>
+    {% endif %}
   </div>
   {% if build_result.get('contests') %}
   <form method="post" action="{{ url_for('robot_contest_submit') }}" class="inline-form inline-form-top">

@@ -11,6 +11,7 @@
     <p class="upgrade-cost">{{ first_upgrade_guide.get('parts_desc', '') }}</p>
     {% if recommended_part_instance_id %}
     <div class="part-meta-line">おすすめ候補を1件だけ表示しています。</div>
+    <p class="link"><a class="battle-home-link battle-next-cta" href="{{ first_upgrade_guide.get('build_url') }}">このパーツを試す</a></p>
     {% endif %}
   </section>
   {% endif %}

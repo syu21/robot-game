@@ -128,7 +128,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             user = self._user()
             guide = game_app._start_onboarding_first_upgrade_guide(self._db(), user, source="battle_result")
             self.assertIsNotNone(guide)
-            self.assertIn("新しいパーツ", guide["title"])
+            self.assertEqual(guide["title"], "解析完了：交換可能なパーツを検出")
 
     def test_home_next_action_switches_to_first_upgrade_and_keeps_sortie(self):
         with game_app.app.app_context():
@@ -144,8 +144,8 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
                     unlocked_layer_recent=None,
                     total_explores=3,
                 )
-        self.assertEqual(card["title"], "持ち帰ったパーツを機体に使おう")
-        self.assertEqual(card["cta_label"], "パーツを見比べる")
+        self.assertEqual(card["title"], "解析完了：交換可能なパーツを検出")
+        self.assertEqual(card["cta_label"], "回収したパーツを見る")
         self.assertEqual(card["secondary_actions"][0]["label"], "そのまま出撃する")
 
     def test_parts_guide_shows_single_recommendation_when_better_part_exists(self):
@@ -167,7 +167,76 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("今の装備と、拾ったパーツを見比べよう", body)
+        self.assertIn("このパーツを試す", body)
         self.assertEqual(body.count("part-chip is-recommended"), 1)
+
+    def test_build_guide_validates_and_highlights_recommended_part(self):
+        with game_app.app.app_context():
+            db = self._db()
+            self._complete_explores(3)
+            self._start_guide()
+            better_id = self._drop(db, "HEAD", plus=0)
+            weak_id = self._drop(db, "HEAD", plus=0)
+            db.execute(
+                """
+                UPDATE part_instances
+                SET w_hp = 140, w_atk = 140, w_def = 140, w_spd = 140, w_acc = 140, w_cri = 140
+                WHERE id = ?
+                """,
+                (better_id,),
+            )
+            db.commit()
+        client = self._client()
+        response = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={better_id}")
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("解析完了：交換可能なパーツを検出", body)
+        self.assertIn("今回の交換候補", body)
+        self.assertIn(f'value="{better_id}"', body)
+        self.assertIn("checked", body)
+
+        invalid = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={weak_id}")
+        invalid_body = invalid.get_data(as_text=True)
+        self.assertEqual(invalid.status_code, 200)
+        self.assertNotIn("解析完了：交換可能なパーツを検出", invalid_body)
+        self.assertNotIn("今回の交換候補", invalid_body)
+
+    def test_build_confirm_completes_first_upgrade_and_shows_result_cta(self):
+        with game_app.app.app_context():
+            db = self._db()
+            self._complete_explores(3)
+            self._start_guide()
+            better_id = self._drop(db, "HEAD", plus=0)
+            db.execute(
+                """
+                UPDATE part_instances
+                SET w_hp = 140, w_atk = 140, w_def = 140, w_spd = 140, w_acc = 140, w_cri = 140
+                WHERE id = ?
+                """,
+                (better_id,),
+            )
+            db.commit()
+        client = self._client()
+        response = client.post(
+            "/build/confirm",
+            data={
+                "mode": "modify",
+                "base_robot_id": str(self.robot_id),
+                "frame_type": "normal",
+                "build_mode": "normal",
+                "robot_name": "GuideBot v2",
+                "head_key": str(better_id),
+            },
+            follow_redirects=True,
+        )
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("機体更新完了！", body)
+        self.assertIn("新しい機体で出撃する", body)
+        self.assertIn('name="entry_source" value="first_robot_upgrade_result"', body)
+        with game_app.app.app_context():
+            user = self._user()
+            self.assertGreater(int(user["first_upgrade_guide_completed_at"] or 0), 0)
 
     def test_parts_guide_does_not_recommend_without_better_part_and_does_not_complete(self):
         with game_app.app.app_context():
@@ -214,6 +283,13 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             payload = json.loads(rows[0]["payload_json"])
             self.assertEqual(payload["source"], "build_confirm")
             self.assertEqual(payload["changed_part_types"], ["HEAD"])
+            self.assertEqual(payload["changed_part_type"], "HEAD")
+
+    def test_first_robot_upgrade_result_entry_source_is_preserved(self):
+        self.assertEqual(
+            game_app._normalize_entry_source("first_robot_upgrade_result"),
+            "first_robot_upgrade_result",
+        )
 
     def test_admin_test_and_analytics_excluded_are_not_targets(self):
         with game_app.app.app_context():

@@ -605,6 +605,16 @@ COMBAT SIGNAL v1:
   - 初回3出撃完了。payload は `user_id`, `completed_explore_count`, `reward_coins`, `area_key`。
 - `audit.onboarding.first_three_reward`
   - 初回3出撃報酬付与。`delta_coins=100`。
+- `audit.onboarding.first_upgrade.shown`
+  - 初回3出撃後の機体更新導線表示。payload は `user_id`, `source`, `explore_end_count`, `active_robot_id_before`, `recommended_part_instance_id`, `recommended_part_type`, `current_total`, `recommended_total`, `delta_total`, `entry_source`。
+- `audit.onboarding.first_upgrade.click`
+  - 推奨パーツ/編成導線クリック。payload は `user_id`, `source`, `recommended_part_instance_id`, `recommended_part_type`, `entry_source`。
+- `audit.onboarding.first_upgrade.skip`
+  - 初回機体更新導線をスキップして出撃した記録。payload は `user_id`, `source`, `area_key`, `active_robot_id_before`。
+- `audit.onboarding.first_upgrade.complete`
+  - `/build/confirm` で初回機体更新が完了した記録。payload は `robot_instance_id`, `changed_part_type`, `changed_part_types`, `before_part_instance_ids`, `after_part_instance_ids`, `before_total`, `after_total`, `delta_total`, `before_stats`, `after_stats`。
+- `audit.explore.start`
+  - 初回更新結果画面からの再出撃は `entry_source=first_robot_upgrade_result` を使う。
 - `audit.boss.alert.progress`
   - 第1層通常勝利で警報値が進んだ記録。payload は `user_id`, `area_key`, `boss_key`, `before`, `after`, `threshold`, `source`。
 - `audit.boss.alert.ready`

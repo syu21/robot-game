@@ -4551,6 +4551,7 @@ def _normalize_entry_source(value):
         "boss_retry",
         "layer2_unlock_result",
         "layer2_unlock_home",
+        "first_robot_upgrade_result",
         "unknown",
     }
     return source if source in allowed else "unknown"
@@ -12433,18 +12434,33 @@ def _onboarding_first_upgrade_should_show(db, user_row):
 
 def _onboarding_first_upgrade_view(db, user_row, *, source):
     completed = _count_user_completed_explores(db, int(user_row["id"]))
+    recommendation = _first_upgrade_recommendation(db, user_row)
+    build_url = "/build?guide=first_upgrade&mode=modify"
+    if has_request_context():
+        build_url = url_for("build", guide="first_upgrade", mode="modify")
+        if recommendation:
+            build_url = url_for(
+                "build",
+                guide="first_upgrade",
+                mode="modify",
+                base_robot_id=int(user_row["active_robot_id"] or 0),
+                frame_type=recommendation.get("build_frame_type") or "normal",
+                recommended_part_id=int(recommendation["recommended_part_instance_id"]),
+            )
     return {
-        "title": "新しいパーツで機体を更新できます",
-        "desc": "持ち帰ったパーツを使うと、ロボの見た目や能力を変えられます。ボスへ挑む前に機体を確認してみましょう。",
-        "home_title": "持ち帰ったパーツを機体に使おう",
-        "home_desc": "パーツを見比べて、最初の機体更新をしてみましょう。",
+        "title": "解析完了：交換可能なパーツを検出",
+        "desc": "出撃で回収したパーツを使って、現在の機体を1か所更新してみましょう。",
+        "home_title": "解析完了：交換可能なパーツを検出",
+        "home_desc": "出撃で回収したパーツを使って、現在の機体を1か所更新してみましょう。",
         "parts_title": "今の装備と、拾ったパーツを見比べよう",
         "parts_desc": "能力が高いだけでなく、見た目や得意分野も変わります。気になるパーツを選んで確認してください。",
-        "cta_label": "入手したパーツを見比べる",
-        "home_cta_label": "パーツを見比べる",
+        "cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
+        "home_cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
         "skip_label": "このまま出撃する",
         "source": str(source or ""),
         "explore_end_count": int(completed),
+        "recommendation": recommendation,
+        "build_url": build_url,
     }
 
 
@@ -12499,6 +12515,9 @@ def _audit_onboarding_first_upgrade_event(
 
 
 def _audit_onboarding_first_upgrade_shown(db, user_row, *, source, recommended_part_instance_id=None, request_id=None, ip=None):
+    recommendation = _first_upgrade_recommendation(db, user_row, requested_part_instance_id=recommended_part_instance_id)
+    if not recommendation:
+        recommendation = _first_upgrade_recommendation(db, user_row)
     return _audit_onboarding_first_upgrade_event(
         db,
         "ONBOARDING_FIRST_UPGRADE_SHOWN",
@@ -12510,12 +12529,20 @@ def _audit_onboarding_first_upgrade_shown(db, user_row, *, source, recommended_p
         payload={
             "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
             "active_robot_id_before": int(user_row["active_robot_id"] or 0) if "active_robot_id" in user_row.keys() and user_row["active_robot_id"] else None,
-            "recommended_part_instance_id": recommended_part_instance_id,
+            "recommended_part_instance_id": (int(recommendation["recommended_part_instance_id"]) if recommendation else recommended_part_instance_id),
+            "recommended_part_type": ((recommendation or {}).get("recommended_part_type")),
+            "current_total": ((recommendation or {}).get("current_total")),
+            "recommended_total": ((recommendation or {}).get("recommended_total")),
+            "delta_total": ((recommendation or {}).get("delta_total")),
+            "entry_source": str(source or ""),
         },
     )
 
 
 def _audit_onboarding_first_upgrade_click(db, user_row, *, source, recommended_part_instance_id=None, request_id=None, ip=None):
+    recommendation = _first_upgrade_recommendation(db, user_row, requested_part_instance_id=recommended_part_instance_id)
+    if not recommendation:
+        recommendation = _first_upgrade_recommendation(db, user_row)
     return _audit_onboarding_first_upgrade_event(
         db,
         "ONBOARDING_FIRST_UPGRADE_CLICK",
@@ -12526,7 +12553,9 @@ def _audit_onboarding_first_upgrade_click(db, user_row, *, source, recommended_p
         payload={
             "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
             "active_robot_id_before": int(user_row["active_robot_id"] or 0) if "active_robot_id" in user_row.keys() and user_row["active_robot_id"] else None,
-            "recommended_part_instance_id": recommended_part_instance_id,
+            "recommended_part_instance_id": (int(recommendation["recommended_part_instance_id"]) if recommendation else recommended_part_instance_id),
+            "recommended_part_type": ((recommendation or {}).get("recommended_part_type")),
+            "entry_source": str(source or ""),
         },
     )
 
@@ -12597,29 +12626,124 @@ def _first_upgrade_current_equipped_totals(db, active_robot_id):
     return total_by_type, id_by_slot
 
 
-def _first_upgrade_recommended_part_instance_id(db, user_row, items):
+def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=None):
     if not user_row or "active_robot_id" not in user_row.keys() or not user_row["active_robot_id"]:
         return None
-    equipped_totals, equipped_ids_by_slot = _first_upgrade_current_equipped_totals(db, int(user_row["active_robot_id"]))
-    equipped_ids = set(equipped_ids_by_slot.values())
+    active_robot_id = int(user_row["active_robot_id"])
+    current_stat_obj = _compute_robot_stats_for_instance(db, active_robot_id)
+    if not current_stat_obj:
+        return None
+    current_parts = {
+        _norm_part_type(row.get("part_type")): dict(row)
+        for row in (current_stat_obj.get("parts") or [])
+    }
+    if not all(part_type in current_parts for part_type in ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS")):
+        return None
+    equipped_ids = {int(row.get("id") or 0) for row in current_parts.values() if row.get("id")}
+    params = [int(user_row["id"])]
+    requested_id = int(requested_part_instance_id or 0)
+    requested_filter = ""
+    if requested_id > 0:
+        requested_filter = "AND pi.id = ?"
+        params.append(requested_id)
+    rows = db.execute(
+        f"""
+        SELECT pi.*, rp.part_type, rp.key, rp.mechanism_trait_key, rp.display_name_ja, rp.frame_type, rp.series_key
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ?
+          AND pi.status = 'inventory'
+          AND rp.is_active = 1
+          AND rp.part_type IN ('HEAD', 'RIGHT_ARM', 'LEFT_ARM', 'LEGS')
+          {requested_filter}
+        """,
+        params,
+    ).fetchall()
+    if not rows:
+        return None
+    series_progress_layer = _series_progress_layer_for_user(db, int(user_row["id"]))
+    series_bonus_defs = (
+        _load_series_bonus_defs(db, active_only=True)
+        if _series_system_enabled_for_user(db, user_id=int(user_row["id"]))
+        else {}
+    )
+    current_stats = dict(current_stat_obj.get("stats") or {})
+    current_power = float(current_stat_obj.get("power") or compute_power(current_stats))
+    current_frames = {str(row.get("frame_type") or "normal") for row in current_parts.values()}
+    stat_order = ("atk", "hp", "def", "acc", "spd", "cri")
+    slot_by_type = {"HEAD": "head", "RIGHT_ARM": "r_arm", "LEFT_ARM": "l_arm", "LEGS": "legs"}
+    label_by_type = {"HEAD": "頭", "RIGHT_ARM": "右腕", "LEFT_ARM": "左腕", "LEGS": "脚"}
     best = None
-    for item in items or []:
-        if not item.get("is_inventory"):
+    for raw in rows:
+        row = dict(raw)
+        part_id = int(row.get("id") or 0)
+        if part_id <= 0 or part_id in equipped_ids:
             continue
-        item_id = int(item.get("id") or 0)
-        if item_id <= 0 or item_id in equipped_ids:
+        part_type = _norm_part_type(row.get("part_type"))
+        if part_type not in current_parts:
             continue
-        ptype = _norm_part_type(item.get("part_type"))
-        current_total = equipped_totals.get(ptype)
-        if current_total is None:
+        candidate_parts = dict(current_parts)
+        candidate_parts[part_type] = row
+        ordered = [candidate_parts["HEAD"], candidate_parts["RIGHT_ARM"], candidate_parts["LEFT_ARM"], candidate_parts["LEGS"]]
+        candidate_frames = {str(part.get("frame_type") or "normal") for part in ordered}
+        calc = compute_robot_stats(
+            ordered,
+            series_bonus_defs=series_bonus_defs,
+            series_progress_layer=series_progress_layer,
+            disable_set_bonus=len(candidate_frames) > 1,
+        )
+        after_stats = dict(calc.get("stats") or {})
+        after_power = float(compute_power(after_stats))
+        stat_deltas = {
+            key: int(after_stats.get(key) or 0) - int(current_stats.get(key) or 0)
+            for key in ("hp", "atk", "def", "spd", "acc", "cri")
+        }
+        delta_total = round(after_power - current_power, 1)
+        if delta_total <= 0:
             continue
-        delta = int(item.get("total_value") or 0) - int(current_total)
-        if delta <= 0:
-            continue
-        candidate = (delta, -item_id, item_id)
-        if best is None or candidate > best:
-            best = candidate
-    return int(best[2]) if best else None
+        sort_key = (
+            float(delta_total),
+            *[int(stat_deltas[key]) for key in stat_order],
+            -part_id,
+        )
+        positive_rows = [
+            {
+                "key": key,
+                "label": _stat_label(key),
+                "delta": int(delta),
+                "delta_text": f"+{int(delta)}" if int(delta) > 0 else str(int(delta)),
+            }
+            for key, delta in sorted(
+                stat_deltas.items(),
+                key=lambda item: (-int(item[1]), stat_order.index(item[0]) if item[0] in stat_order else 99),
+            )
+            if int(delta) > 0
+        ][:3]
+        recommendation = {
+            "recommended_part_instance_id": part_id,
+            "recommended_part_type": part_type,
+            "recommended_part_type_label": label_by_type.get(part_type, _part_type_ui_label(part_type)),
+            "recommended_slot": slot_by_type.get(part_type),
+            "recommended_part_name": _part_display_name_ja(row),
+            "current_part_instance_id": int(current_parts[part_type].get("id") or 0),
+            "current_part_name": _part_display_name_ja(current_parts[part_type]),
+            "current_total": round(current_power, 1),
+            "recommended_total": round(after_power, 1),
+            "delta_total": float(delta_total),
+            "current_stats": {key: int(current_stats.get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")},
+            "recommended_stats": {key: int(after_stats.get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")},
+            "stat_deltas": stat_deltas,
+            "positive_rows": positive_rows,
+            "build_frame_type": FREE_BUILD_FRAME_MODE if len(candidate_frames) > 1 else next(iter(candidate_frames or current_frames or {"normal"})),
+        }
+        if best is None or sort_key > best[0]:
+            best = (sort_key, recommendation)
+    return best[1] if best else None
+
+
+def _first_upgrade_recommended_part_instance_id(db, user_row, items=None):
+    recommendation = _first_upgrade_recommendation(db, user_row)
+    return int(recommendation["recommended_part_instance_id"]) if recommendation else None
 
 
 def _first_upgrade_changed_part_types(db, before_slot_ids, after_slot_ids):
@@ -12639,7 +12763,22 @@ def _first_upgrade_changed_part_types(db, before_slot_ids, after_slot_ids):
     return [labels[slot] for slot in changed_slots]
 
 
-def _complete_onboarding_first_upgrade(db, user_row, *, active_robot_id_before, active_robot_id_after, changed_part_types, request_id=None, ip=None):
+def _complete_onboarding_first_upgrade(
+    db,
+    user_row,
+    *,
+    active_robot_id_before,
+    active_robot_id_after,
+    changed_part_types,
+    before_part_ids=None,
+    after_part_ids=None,
+    before_stats=None,
+    after_stats=None,
+    before_total=None,
+    after_total=None,
+    request_id=None,
+    ip=None,
+):
     if not _onboarding_first_upgrade_should_show(db, user_row):
         return False
     if not changed_part_types:
@@ -12668,7 +12807,20 @@ def _complete_onboarding_first_upgrade(db, user_row, *, active_robot_id_before, 
             "explore_end_count": _count_user_completed_explores(db, int(user_row["id"])),
             "active_robot_id_before": int(active_robot_id_before or 0) or None,
             "active_robot_id_after": int(active_robot_id_after or 0) or None,
+            "robot_instance_id": int(active_robot_id_after or 0) or None,
             "changed_part_types": list(changed_part_types),
+            "changed_part_type": (list(changed_part_types)[0] if changed_part_types else None),
+            "before_part_instance_ids": dict(before_part_ids or {}),
+            "after_part_instance_ids": dict(after_part_ids or {}),
+            "before_total": before_total,
+            "after_total": after_total,
+            "delta_total": (
+                round(float(after_total) - float(before_total), 1)
+                if before_total is not None and after_total is not None
+                else None
+            ),
+            "before_stats": dict(before_stats or {}),
+            "after_stats": dict(after_stats or {}),
         },
     )
     return True
@@ -39369,17 +39521,23 @@ def _home_next_action_card(
         }
     if _onboarding_first_upgrade_should_show(db, user):
         area_key = str(user["last_explore_area_key"] or "").strip() or "layer_1"
+        first_upgrade = _onboarding_first_upgrade_view(db, user, source="home_next_action")
         return {
-            "title": "持ち帰ったパーツを機体に使おう",
-            "desc": "パーツを見比べて、最初の機体更新をしてみましょう。",
-            "cta_label": "パーツを見比べる",
-            "cta_url": url_for("parts", onboarding="first_upgrade", source="home_next_action"),
+            "title": first_upgrade["home_title"],
+            "desc": first_upgrade["home_desc"],
+            "cta_label": first_upgrade["home_cta_label"],
+            "cta_url": first_upgrade["build_url"],
             "is_post": False,
             "area_key": None,
             "boss_enter": False,
             "home_primary": True,
             "destination_label": "機体更新",
-            "context_line": "出撃はそのまま続けられます。",
+            "context_line": (
+                f"おすすめ：{first_upgrade['recommendation']['recommended_part_type_label']} / 総合 {first_upgrade['recommendation']['current_total']} → {first_upgrade['recommendation']['recommended_total']}"
+                if first_upgrade.get("recommendation")
+                else "回収したパーツを見比べてみましょう。"
+            ),
+            "first_upgrade_guide": first_upgrade,
             "secondary_actions": [
                 {
                     "label": "そのまま出撃する",
@@ -60027,6 +60185,7 @@ def robots():
     overflow = max(0, used_all - limits["robot_slots"])
     message = session.pop("message", None)
     decompose_blocked = bool(session.pop("robot_decompose_blocked", None))
+    first_upgrade_build_result = session.pop("first_upgrade_build_result", None)
     build_result = None
     build_result_id_raw = (request.args.get("build_result_id") or "").strip()
     if build_result_id_raw.isdigit():
@@ -60048,6 +60207,12 @@ def robots():
                 "robot": result_robot,
                 "blueprint": blueprint,
                 "contests": _active_robot_contests(db),
+                "first_upgrade": (
+                    dict(first_upgrade_build_result)
+                    if first_upgrade_build_result
+                    and int((first_upgrade_build_result or {}).get("robot_instance_id") or 0) == int(result_robot["id"])
+                    else None
+                ),
             }
     return render_template(
         "robots.html",
@@ -61388,6 +61553,28 @@ def build():
     db.commit()
     requested_frame_type = (request.args.get("build_mode") or request.args.get("frame_type") or "").strip()
     selected_frame_type = _normalize_build_frame_mode(requested_frame_type or "normal")
+    user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
+    first_upgrade_guide = None
+    first_upgrade_recommendation = None
+    if (request.args.get("guide") or "").strip() == "first_upgrade" and _onboarding_first_upgrade_should_show(db, user_row):
+        requested_part_raw = (request.args.get("recommended_part_id") or "").strip()
+        requested_part_id = int(requested_part_raw) if requested_part_raw.isdigit() else None
+        first_upgrade_recommendation = _first_upgrade_recommendation(
+            db,
+            user_row,
+            requested_part_instance_id=requested_part_id,
+        )
+        if first_upgrade_recommendation:
+            first_upgrade_guide = _onboarding_first_upgrade_view(db, user_row, source=(request.args.get("source") or "build"))
+            _audit_onboarding_first_upgrade_click(
+                db,
+                user_row,
+                source=(request.args.get("source") or "build"),
+                recommended_part_instance_id=int(first_upgrade_recommendation["recommended_part_instance_id"]),
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            )
+            db.commit()
     series_progress_layer = _series_progress_layer_for_user(db, user_id)
     series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
@@ -61514,6 +61701,9 @@ def build():
     for row in owned_rows:
         compare_item = current_part_items.get(str(row["part_type"] or "").strip())
         item = _build_picker_part_item(row, compare_item=compare_item)
+        if first_upgrade_recommendation and int(item["instance_id"]) == int(first_upgrade_recommendation["recommended_part_instance_id"]):
+            item["first_upgrade_recommended"] = True
+            item["first_upgrade_recommended_note"] = "今回の交換候補"
         part_groups[row["part_type"]].append(item)
 
     slot_param_map = {
@@ -61535,6 +61725,12 @@ def build():
     for part_type, param in slot_param_map.items():
         options = part_groups[part_type]
         picked_raw = (request.values.get(param) or "").strip()
+        if (
+            not picked_raw
+            and first_upgrade_recommendation
+            and str(first_upgrade_recommendation.get("recommended_part_type") or "") == part_type
+        ):
+            picked_raw = str(first_upgrade_recommendation.get("recommended_part_instance_id") or "")
         picked_id = int(picked_raw) if picked_raw.isdigit() else None
         option = next((o for o in options if int(o["instance_id"]) == picked_id), None) if picked_id is not None else None
         if option is None and options and build_mode == "new":
@@ -61675,7 +61871,6 @@ def build():
     boss_alert_hint = _boss_alert_recommendation_context(boss_alert_status)
     if current_style_state:
         db.commit()
-    user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
     build_limits = _effective_limits(db, user_row)
     robot_instance_count = int(
         db.execute(
@@ -61741,6 +61936,8 @@ def build():
         robot_slot_full=robot_slot_full,
         set_bonus_table=SET_BONUS_TABLE,
         element_label_map=ELEMENT_LABEL_MAP,
+        first_upgrade_guide=first_upgrade_guide,
+        first_upgrade_recommendation=first_upgrade_recommendation,
     )
 
 
@@ -61754,6 +61951,11 @@ def build_confirm():
         _ensure_robot_instance_part_instances(db, first_upgrade_active_robot_id_before) or {}
         if first_upgrade_active_robot_id_before
         else {}
+    )
+    first_upgrade_before_stat_obj = (
+        _compute_robot_stats_for_instance(db, first_upgrade_active_robot_id_before)
+        if first_upgrade_active_robot_id_before
+        else None
     )
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
@@ -61950,6 +62152,8 @@ def build_confirm():
             "error",
         )
         return _build_redirect()
+    if getattr(db, "in_transaction", False):
+        db.commit()
     try:
         db.execute("BEGIN IMMEDIATE")
         selected = {
@@ -62091,12 +62295,20 @@ def build_confirm():
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
+        first_upgrade_changed_part_types = _first_upgrade_changed_part_types(db, first_upgrade_parts_before, selected)
+        first_upgrade_after_stat_obj = _compute_robot_stats_for_instance(db, int(instance_id))
         first_upgrade_completed = _complete_onboarding_first_upgrade(
             db,
             user,
             active_robot_id_before=first_upgrade_active_robot_id_before,
             active_robot_id_after=instance_id,
-            changed_part_types=_first_upgrade_changed_part_types(db, first_upgrade_parts_before, selected),
+            changed_part_types=first_upgrade_changed_part_types,
+            before_part_ids=first_upgrade_parts_before,
+            after_part_ids=selected,
+            before_stats=((first_upgrade_before_stat_obj or {}).get("stats") or {}),
+            after_stats=((first_upgrade_after_stat_obj or {}).get("stats") or {}),
+            before_total=((first_upgrade_before_stat_obj or {}).get("power") if first_upgrade_before_stat_obj else None),
+            after_total=((first_upgrade_after_stat_obj or {}).get("power") if first_upgrade_after_stat_obj else None),
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
@@ -62128,6 +62340,30 @@ def build_confirm():
     if daily_lines:
         build_message = f"{build_message} {daily_lines[0]}"
     session["message"] = build_message
+    if first_upgrade_completed:
+        before_stats = dict((first_upgrade_before_stat_obj or {}).get("stats") or {})
+        after_stats = dict((first_upgrade_after_stat_obj or {}).get("stats") or {})
+        deltas = {
+            key: int(after_stats.get(key) or 0) - int(before_stats.get(key) or 0)
+            for key in ("hp", "atk", "def", "spd", "acc", "cri")
+        }
+        positive_rows = [
+            {"label": _stat_label(key), "delta_text": f"+{delta}", "delta": int(delta)}
+            for key, delta in sorted(deltas.items(), key=lambda item: -int(item[1]))
+            if int(delta) > 0
+        ][:2]
+        before_total = float((first_upgrade_before_stat_obj or {}).get("power") or 0.0)
+        after_total = float((first_upgrade_after_stat_obj or {}).get("power") or 0.0)
+        if round(after_total - before_total, 1) > 0:
+            positive_rows.append({"label": "総合値", "delta_text": f"+{round(after_total - before_total, 1)}", "delta": round(after_total - before_total, 1)})
+        session["first_upgrade_build_result"] = {
+            "robot_instance_id": int(instance_id),
+            "changed_part_types": list(first_upgrade_changed_part_types),
+            "before_total": round(before_total, 1),
+            "after_total": round(after_total, 1),
+            "delta_total": round(after_total - before_total, 1),
+            "positive_rows": positive_rows[:3],
+        }
     return redirect(url_for("robots", build_result_id=int(instance_id)))
 
 

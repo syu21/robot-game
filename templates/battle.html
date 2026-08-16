@@ -395,8 +395,14 @@
     <div class="section-kicker">最初の育成</div>
     <h3>{{ first_upgrade.get('title', '新しいパーツで機体を更新できます') }}</h3>
     <p class="upgrade-cost">{{ first_upgrade.get('desc', '') }}</p>
+    {% if first_upgrade.get('recommendation') %}
+    <div class="part-meta-line">
+      おすすめ：{{ first_upgrade['recommendation'].get('recommended_part_type_label') }}
+      / 総合 {{ first_upgrade['recommendation'].get('current_total') }} → {{ first_upgrade['recommendation'].get('recommended_total') }}
+    </div>
+    {% endif %}
     <div class="home-inline-actions">
-      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ url_for('parts', onboarding='first_upgrade', source='battle_result') }}">{{ first_upgrade.get('cta_label', '入手したパーツを見比べる') }}</a></p>
+      <p class="link"><a class="battle-home-link battle-next-cta" href="{{ first_upgrade.get('build_url') or url_for('parts', onboarding='first_upgrade', source='battle_result') }}">{{ first_upgrade.get('cta_label', '入手したパーツを見比べる') }}</a></p>
       <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
         <input type="hidden" name="area_key" value="{{ explore_area_key }}" />
         <input type="hidden" name="entry_source" value="battle_retry" />
@@ -426,6 +432,10 @@
         <div>{{ boss_retry['failure'].get('text', 'パーツ構成を見直して、もう一度挑戦しましょう。') }}</div>
       </div>
       {% endif %}
+      <form method="post" action="{{ boss_retry.get('parts_action_url') or url_for('boss_retry_layer1_parts') }}" class="inline-form inline-form-top">
+        <input type="hidden" name="surface" value="battle_result" />
+        <button type="submit" class="battle-home-link battle-next-cta">入手パーツで機体を更新</button>
+      </form>
       <form method="post" action="{{ boss_retry.get('action_url') or url_for('boss_retry_layer1') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="layer_1" />
         <input type="hidden" name="entry_source" value="boss_retry" />
@@ -454,10 +464,6 @@
         {% endif %}
       </form>
       <div class="home-inline-actions">
-        <form method="post" action="{{ boss_retry.get('parts_action_url') or url_for('boss_retry_layer1_parts') }}" class="inline-form inline-form-top">
-          <input type="hidden" name="surface" value="battle_result" />
-          <button type="submit" class="btn-secondary">パーツを見直す</button>
-        </form>
         <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
       </div>
       {% elif tutorial_next %}
