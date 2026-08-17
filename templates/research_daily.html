@@ -10,11 +10,17 @@
   <div class="robot-time">研究継続 {{ daily_research_summary.get('streak', 0) }}日</div>
   {% for row in task_views %}
   <div class="daily-research-task-row">
-    <h3>{{ row['title'] }}</h3>
+    <h3>{% if row.get('is_recommended') %}おすすめ研究：{% endif %}{{ row['title'] }}</h3>
     <div class="upgrade-cost">{{ row['description'] }}</div>
     <div class="robot-time">進捗: {{ row['progress_line'] }} / 報酬: {{ row['reward_coins'] }}コイン / {% if row['is_done'] %}✓ 完了{% else %}進行中{% endif %}</div>
   </div>
   {% endfor %}
+  {% if daily_research_summary.get('done_count') == daily_research_summary.get('total_count') %}
+  <div class="notice">
+    <b>本日の研究完了</b>
+    <div>3件の試験データを取得しました。研究記録に保存されました。</div>
+  </div>
+  {% endif %}
   <div class="home-inline-actions">
     <p class="link"><a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を見る</a></p>
     <p class="link"><a class="battle-home-link" href="{{ url_for('parts_strengthen') }}">強化へ</a></p>

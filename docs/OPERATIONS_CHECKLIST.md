@@ -507,3 +507,13 @@
 - [ ] `HOME_SECTION_LOG_ENABLED=1` でホームsection計測ログを再有効化できる
 - [ ] `/robots/<id>` を開くだけで、既存の `composed_image_path` があるロボ画像を毎回再合成しない
 - [ ] `/home`, `/parts`, `/build`, `/robots`, `/ranking`, `/world`, `/records`, `/comms/world` のstatus codeと主要表示が維持される
+
+## 今日の研究指令 v2
+
+- [ ] 同じ user/day では同じ3件が生成され、reloadで変わらない
+- [ ] 未解放area、強化不能、進化未解放を要求しない
+- [ ] active robotなしでも研究指令生成が500にならない
+- [ ] 第4層ユーザーにフォージ/ヘイズ/バースト系、第5層ユーザーにLabyrinth/Pinnacle系が候補化される
+- [ ] ホームと `/research/daily` で `おすすめ研究` が1件だけ表示される
+- [ ] `audit.daily_research.task.create/progress/complete/reward/all_complete` が残る
+- [ ] `/admin/metrics` に表示→進行、進行→1件完了、1件完了→全完了、翌日再訪が人数付きで表示される

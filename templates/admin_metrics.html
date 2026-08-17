@@ -151,6 +151,26 @@
         <div class="admin-metrics-note-label">3件完了</div>
         <div class="admin-metrics-note-value">{{ daily_research_summary.all_complete_users }}人</div>
       </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">表示→進行</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.progressed_users }} / {{ daily_research_summary.viewed_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(daily_research_summary.view_to_progress_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">進行→1件完了</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.one_complete_users }} / {{ daily_research_summary.progressed_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(daily_research_summary.progress_to_complete_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">1件完了→全完了</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.all_complete_users }} / {{ daily_research_summary.one_complete_users }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(daily_research_summary.complete_to_all_rate_pct) }}%</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">翌日再訪</div>
+        <div class="admin-metrics-note-value">{{ daily_research_summary.viewed_next_day_return_users }} / {{ daily_research_summary.viewed_users }}人</div>
+        <div class="robot-time">進行者 {{ daily_research_summary.progressed_next_day_return_users }} / {{ daily_research_summary.progressed_users }}人</div>
+      </div>
     </div>
     <table class="admin-table">
       <thead>

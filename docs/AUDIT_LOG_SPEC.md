@@ -536,6 +536,10 @@ COMBAT SIGNAL v1:
   - 指令または2件達成記録の完了。payload は progress と同形式。
 - `audit.daily_research.reward`
   - 指令報酬または3件完了報酬。payload は progress と同形式に加え、全完了時は `streak`。
+- `audit.daily_research.task.create`
+  - 当日3件の生成。payload は `day_key`, `mission_key`, `category`, `condition_key`, `target_area_key`, `target`, `recommended`。
+- `audit.daily_research.all_complete`
+  - 3件すべて完了。payload は `day_key`, `mission_key=daily_research_all_complete`, `progress_before`, `progress_after`, `target=3`, `source`, `all_complete`。
 
 二重加算防止:
 - `daily_research_progress_receipts` で `user_id, day_key, mission_key, source_key` を一意化する。

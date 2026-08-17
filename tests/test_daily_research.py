@@ -9,10 +9,12 @@ import init_db
 from services.audit import audit_log
 from services.daily_research import (
     DAILY_RESEARCH_ALL_COMPLETE_COIN_REWARD,
+    DAILY_RESEARCH_ALL_COMPLETE,
     DAILY_RESEARCH_TASK_CLAIM,
     EVENT_BUILD_CONFIRM,
     EVENT_EXPLORE_END,
     EVENT_FUSE,
+    EVENT_PART_EVOLVE,
     daily_research_admin_summary,
     get_daily_research_missions,
     get_day_key,
@@ -89,6 +91,28 @@ class DailyResearchV1Tests(unittest.TestCase):
             text = "\n".join(f"{row['title']} {row['description']}" for row in rows)
             self.assertNotIn("第4層", text)
 
+    def test_user_day_generation_is_fixed_and_user_context_aware(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            first = get_or_create_daily_research_missions(db, self.user_id, "2026-08-17")
+            second = get_or_create_daily_research_missions(db, self.user_id, "2026-08-17")
+            self.assertEqual([m["mission_key"] for m in first], [m["mission_key"] for m in second])
+            self.assertEqual(len(first), 3)
+            self.assertEqual(sum(1 for m in first if m["is_recommended"]), 1)
+
+    def test_strengthen_mission_not_generated_when_no_strengthen_candidate(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            missions = get_or_create_daily_research_missions(db, self.user_id, "2026-08-17")
+            self.assertNotIn("strengthen_process_1", [m["mission_key"] for m in missions])
+
+    def test_active_robot_missing_does_not_break_generation(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET active_robot_id = NULL WHERE id = ?", (self.user_id,))
+            missions = get_or_create_daily_research_missions(db, self.user_id, "2026-08-18")
+            self.assertEqual(len(missions), 3)
+
     def test_layer6_reached_user_gets_layer6_tendency_target(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -99,6 +123,18 @@ class DailyResearchV1Tests(unittest.TestCase):
                 (self.user_id,),
             ).fetchone()
             self.assertIn("第6層", row["description"])
+
+    def test_layer4_user_gets_high_layer_tendency_candidate(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET max_unlocked_layer = 4 WHERE id = ?", (self.user_id,))
+            found = False
+            for day in ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20"]:
+                missions = get_or_create_daily_research_missions(db, self.user_id, day)
+                if any((m.get("target_area_key") or "").startswith("layer_4") for m in missions):
+                    found = True
+                    break
+            self.assertTrue(found)
 
     def test_layer6_tendency_area_progresses_matching_mission(self):
         with game_app.app.app_context():
@@ -152,6 +188,24 @@ class DailyResearchV1Tests(unittest.TestCase):
             db.commit()
             audit_log(db, EVENT_FUSE, user_id=self.user_id, request_id="strengthen-1", payload={"success": True})
             row = db.execute("SELECT progress, completed_at FROM daily_research_progress WHERE user_id = ? AND mission_key = 'strengthen_process_1'", (self.user_id,)).fetchone()
+            self.assertEqual(int(row["progress"]), 1)
+            self.assertIsNotNone(row["completed_at"])
+
+    def test_evolve_once_completes_evolve_mission(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            get_or_create_daily_research_missions(db, self.user_id, get_day_key())
+            db.execute(
+                """
+                UPDATE daily_research_progress
+                SET mission_key = 'evolve_check_1', title = '進化確認試験', condition_key = 'evolve', target = 1, progress = 0, completed_at = NULL, reward_claimed_at = NULL
+                WHERE user_id = ? AND mission_type = 'training'
+                """,
+                (self.user_id,),
+            )
+            db.commit()
+            audit_log(db, EVENT_PART_EVOLVE, user_id=self.user_id, request_id="evolve-1", payload={"target_part_key": "head_r_plus"})
+            row = db.execute("SELECT progress, completed_at FROM daily_research_progress WHERE user_id = ? AND mission_key = 'evolve_check_1'", (self.user_id,)).fetchone()
             self.assertEqual(int(row["progress"]), 1)
             self.assertIsNotNone(row["completed_at"])
 
@@ -222,6 +276,35 @@ class DailyResearchV1Tests(unittest.TestCase):
                 ).fetchone()["c"]
             )
             self.assertEqual(reward_events, 1)
+            all_complete_events = int(
+                db.execute(
+                    "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+                    (self.user_id, DAILY_RESEARCH_ALL_COMPLETE),
+                ).fetchone()["c"]
+            )
+            self.assertEqual(all_complete_events, 1)
+
+    def test_admin_summary_rates_and_next_day_return(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            day = "2026-08-17"
+            next_ts = int(datetime(2026, 8, 18, 1, 0, tzinfo=timezone.utc).timestamp())
+            get_or_create_daily_research_missions(db, self.user_id, day)
+            row = db.execute(
+                "SELECT id FROM daily_research_progress WHERE user_id = ? AND day_key = ? ORDER BY id ASC LIMIT 1",
+                (self.user_id, day),
+            ).fetchone()
+            db.execute("UPDATE daily_research_progress SET progress = 1 WHERE id = ?", (int(row["id"]),))
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id) VALUES (?, ?, '{}', ?)",
+                (next_ts, EVENT_EXPLORE_END, self.user_id),
+            )
+            db.commit()
+            summary = daily_research_admin_summary(db, day)
+            self.assertEqual(summary["viewed_users"], 1)
+            self.assertEqual(summary["progressed_users"], 1)
+            self.assertEqual(summary["view_to_progress_rate_pct"], 100.0)
+            self.assertEqual(summary["viewed_next_day_return_users"], 1)
 
     def test_admin_metrics_is_admin_only_and_summary_counts(self):
         with game_app.app.app_context():

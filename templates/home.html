@@ -616,7 +616,7 @@
           {% for mission in daily_research_card.get('missions', []) %}
           <div class="home-explore-context">
             {% if mission['is_done'] %}✓ 完了{% else %}□{% endif %}
-            <b>{{ mission['title'] }}</b>
+            <b>{% if mission.get('is_recommended') %}おすすめ研究：{% endif %}{{ mission['title'] }}</b>
             <span>{{ mission['progress_line'] }}</span>
           </div>
           {% endfor %}

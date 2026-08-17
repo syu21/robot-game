@@ -835,3 +835,10 @@
 - 初回3出撃後の機体更新ガイドは、改善候補がある場合だけ `/build?guide=first_upgrade` へ誘導する。
 - 改善候補がない場合は `/parts?onboarding=first_upgrade` へ誘導し、ガイドが消える空振りを避ける。
 - `source` を初回更新導線URLへ引き継ぎ、`home_next_action` などの流入元をauditで追える状態にした。
+
+## 21. 今日の研究指令 v2
+- 当日3件は `sortie / training / tendency` を維持しつつ、ユーザー進行度、解放層、active robot、強化/進化候補に応じて達成可能な候補から生成する。
+- 第4・第5層到達者にはフォージ/ヘイズ/バースト、Labyrinth/Pinnacleなど高層思想研究を候補化した。
+- ホーム/研究詳細では1件だけ `おすすめ研究` として軽く強調する。
+- 管理メトリクスに表示→進行、進行→1件完了、1件完了→全完了、翌日再訪を人数付きで追加した。
+- DBは `daily_research_progress.target_area_key / recommended` を追加。戦闘、CT、ドロップ、報酬バランスは変更なし。
