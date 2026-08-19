@@ -642,6 +642,12 @@ COMBAT SIGNAL v1:
 - `audit.boss.retry.cta.view` / `audit.boss.retry.cta.click` / `audit.boss.retry.parts_click`
   - payload は `boss_key`, `surface`, `attempt_number`, `ct_remaining_seconds`。
   - `surface` は `home_next_action`、`battle_result`、`parts_return` を想定する。
+- `audit.onboarding.boss_retry.guide_view` / `audit.onboarding.boss_retry.guide_click`
+  - 第1層ボス敗北後の調整ガイド表示/クリック。payload は `boss_key`, `area_key`, `surface`, `attempt_number`, `diagnosis_key`, `recommended_part_instance_id`, `recommended_part_type`。
+- `audit.onboarding.boss_retry.adjust_complete`
+  - `/build?guide=boss_retry` 経由で1部位以上を調整した記録。payload は `changed_part_types`, `before_part_instance_ids`, `after_part_instance_ids`, `before_stats`, `after_stats`, `delta_total`。
+- `audit.onboarding.boss_retry.start` / `audit.onboarding.boss_retry.success`
+  - 再挑戦開始と再挑戦経由撃破の記録。payload は `entry_source=boss_retry`, `diagnosis_key`, `turn_count`, `player_hp`, `player_max_hp` など。
 
 ## 13. 第2層解放・次目標導線
 - `audit.boss.defeat`

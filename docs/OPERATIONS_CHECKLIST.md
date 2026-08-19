@@ -460,8 +460,10 @@
 - [ ] 第1層ボス撃破で `retry_status=defeated` になり、CTAが消える
 - [ ] `/boss/retry/layer-1` は POST のみで、未遭遇/撃破済み/active robotなし/CT中を安全に戻す
 - [ ] 再挑戦の `EXPLORE_START` に `entry_source=boss_retry`, `boss_source=guaranteed_retry` が入る
-- [ ] 再挑戦敗北結果に `入手パーツで機体を更新`、`もう一度ボスへ挑む`、簡易敗因が1件だけ表示される
-- [ ] 管理メトリクスに再挑戦可能、CTA表示/クリック、実行、再挑戦経由撃破、24h撃破率、パーツ確認、編成完了が表示される
+- [ ] 再挑戦敗北結果に `戦闘データを解析しました`、`機体を調整する`、`このまま再挑戦`、簡易敗因が1件だけ表示される
+- [ ] `/boss/retry/layer-1/build` から `/build?guide=boss_retry` へ遷移し、候補がある場合は `再挑戦おすすめ` が表示される
+- [ ] 調整保存後に `再挑戦準備完了` と `第1層ボスへ再挑戦` が表示される
+- [ ] 管理メトリクスに再挑戦可能、CTA表示/クリック、実行、調整開始/完了、再挑戦経由撃破、24h撃破率が表示される
 
 ## 15. 第2層解放・次目標導線
 - [ ] `python3 init_db.py` 後、`users` に `layer2_unlocked_at`, `layer2_unlock_notice_seen_at`, `layer2_first_explore_at` がある

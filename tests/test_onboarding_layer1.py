@@ -65,6 +65,25 @@ class Layer1OnboardingTests(unittest.TestCase):
         )
         db.commit()
 
+    def _enable_boss_retry(self):
+        db = self._db()
+        game_app.initialize_new_user(db, self.user_id)
+        now = int(time.time())
+        game_app._boss_retry_mark_encounter(
+            db,
+            self.user_id,
+            boss_key=game_app._layer1_boss_retry_boss_key(),
+            now_ts=now,
+        )
+        db.commit()
+
+    def _client(self):
+        client = game_app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = self.user_id
+            sess["username"] = "onboarding_layer1"
+        return client
+
     def test_first_three_reward_is_idempotent(self):
         with game_app.app.app_context():
             for i in range(3):
@@ -222,6 +241,100 @@ class Layer1OnboardingTests(unittest.TestCase):
             )
             self.assertNotIn("初勝利！", html)
             self.assertNotIn("ロボの調査が進みました。", html)
+
+    def test_boss_retry_failure_diagnosis_categories(self):
+        self.assertEqual(
+            game_app._boss_retry_failure_reason(
+                [{"actor": "player", "enemy_damage": 0, "text": "MISS"}, {"actor": "player", "enemy_damage": 0, "text": "MISS"}],
+                player_hp=10,
+                player_max_hp=30,
+                timeout=False,
+            ),
+            "low_accuracy",
+        )
+        self.assertEqual(
+            game_app._boss_retry_failure_reason([], player_hp=0, player_max_hp=30, timeout=False),
+            "low_durability",
+        )
+        self.assertEqual(
+            game_app._boss_retry_failure_reason(
+                [{"actor": "player", "enemy_damage": 3}],
+                player_hp=12,
+                player_max_hp=30,
+                timeout=True,
+            ),
+            "low_damage",
+        )
+
+    def test_boss_retry_result_template_prioritizes_adjust_cta(self):
+        with game_app.app.test_request_context("/battle/result"):
+            html = game_app.render_template(
+                "battle.html",
+                state={"active": 0, "enemy_name": "敵", "enemy_hp": 1},
+                log=[],
+                log_entries=[],
+                message=None,
+                new_robot=None,
+                explore_mode=True,
+                explore_area_key="layer_1",
+                explore_area_label="第一層",
+                active_robot={"name": "ロボ"},
+                no_active_robot=False,
+                turn_logs=[],
+                summary={
+                    "outcome": "敗北",
+                    "outcome_is_win": False,
+                    "explore_ct_remain": 0,
+                    "explore_ct_ready_at": 0,
+                    "explore_ct_is_admin": False,
+                    "explore_ct_button_label": "もう一度出撃",
+                    "explore_ct_status_label": "出撃可能",
+                    "reward_front": {"coin": 0},
+                    "next_explore_submission_id": "x",
+                    "boss_retry": {
+                        "title": "戦闘データを解析しました",
+                        "desc": "機体を少し調整すれば、突破できる可能性があります。",
+                        "cta_label": "このまま再挑戦",
+                        "action_url": game_app.url_for("boss_retry_layer1"),
+                        "build_action_url": game_app.url_for("boss_retry_layer1_build"),
+                        "diagnosis_key": "accuracy",
+                        "failure": game_app._boss_retry_failure_advice("low_accuracy"),
+                    },
+                },
+                battle_log_mode="collapsed",
+                battle_ritual_overlay_enabled=False,
+                battle_short_replay_enabled=False,
+            )
+            self.assertIn("戦闘データを解析しました", html)
+            self.assertIn("機体を調整する", html)
+            self.assertIn("このまま再挑戦", html)
+            self.assertIn('name="diagnosis_key" value="accuracy"', html)
+
+    def test_boss_retry_build_route_logs_guide_click(self):
+        with game_app.app.app_context():
+            self._enable_boss_retry()
+        resp = self._client().post(
+            "/boss/retry/layer-1/build",
+            data={"surface": "battle_result", "diagnosis_key": "accuracy"},
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/build?", resp.headers["Location"])
+        with game_app.app.app_context():
+            row = self._db().execute(
+                """
+                SELECT payload_json
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["ONBOARDING_BOSS_RETRY_GUIDE_CLICK"]),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            payload = json.loads(row["payload_json"])
+            self.assertEqual(payload["area_key"], "layer_1")
+            self.assertEqual(payload["diagnosis_key"], "accuracy")
 
 
 if __name__ == "__main__":

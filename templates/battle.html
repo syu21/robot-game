@@ -417,6 +417,12 @@
   </section>
   {% endif %}
 
+  {% if summary.get('boss_retry_success') %}
+  <section class="card">
+    <div><b>{{ summary['boss_retry_success'].get('title', '再調整成功') }}</b></div>
+    <div class="upgrade-cost">{{ summary['boss_retry_success'].get('desc', '') }}</div>
+  </section>
+  {% endif %}
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
@@ -432,15 +438,17 @@
         <div>{{ boss_retry['failure'].get('text', 'パーツ構成を見直して、もう一度挑戦しましょう。') }}</div>
       </div>
       {% endif %}
-      <form method="post" action="{{ boss_retry.get('parts_action_url') or url_for('boss_retry_layer1_parts') }}" class="inline-form inline-form-top">
+      <form method="post" action="{{ boss_retry.get('build_action_url') or url_for('boss_retry_layer1_build') }}" class="inline-form inline-form-top">
         <input type="hidden" name="surface" value="battle_result" />
-        <button type="submit" class="battle-home-link battle-next-cta">入手パーツで機体を更新</button>
+        <input type="hidden" name="diagnosis_key" value="{{ boss_retry.get('diagnosis_key', 'generic') }}" />
+        <button type="submit" class="battle-home-link battle-next-cta">機体を調整する</button>
       </form>
       <form method="post" action="{{ boss_retry.get('action_url') or url_for('boss_retry_layer1') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="layer_1" />
         <input type="hidden" name="entry_source" value="boss_retry" />
         <input type="hidden" name="boss_enter" value="1" />
         <input type="hidden" name="surface" value="battle_result" />
+        <input type="hidden" name="diagnosis_key" value="{{ boss_retry.get('diagnosis_key', 'generic') }}" />
         {% if summary.get('next_explore_submission_id') %}
         <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
         {% endif %}

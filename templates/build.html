@@ -39,7 +39,7 @@
           </div>
           {% if p.get('first_upgrade_recommended') %}
             <div class="part-chip-row">
-              <span class="part-chip is-recommended">今回の交換候補</span>
+              <span class="part-chip is-recommended">{{ p.get('first_upgrade_recommended_label', '今回の交換候補') }}</span>
             </div>
           {% endif %}
         <div class="picker-total-row">
@@ -137,7 +137,7 @@
 {% endif %}
 {% if first_upgrade_guide %}
 <section class="card first-upgrade-guide-card">
-  <div class="section-kicker">最初の育成</div>
+  <div class="section-kicker">{{ first_upgrade_guide.get('kicker', '最初の育成') }}</div>
   <h3>{{ first_upgrade_guide.get('title') }}</h3>
   <p class="upgrade-cost">{{ first_upgrade_guide.get('desc') }}</p>
   {% if first_upgrade_recommendation %}
@@ -225,6 +225,11 @@
   <input type="hidden" name="base_robot_id" value="{{ base_robot_id or '' }}" />
   <input type="hidden" name="frame_type" value="{{ selected_frame_type }}" />
   <input type="hidden" name="build_mode" value="{{ selected_frame_type }}" />
+  {% if first_upgrade_guide %}
+  <input type="hidden" name="guide" value="{{ first_upgrade_guide.get('guide_key', '') }}" />
+  <input type="hidden" name="guide_source" value="{{ first_upgrade_guide.get('source', '') }}" />
+  <input type="hidden" name="diagnosis_key" value="{{ first_upgrade_guide.get('diagnosis_key', '') }}" />
+  {% endif %}
   <div class="build-grid">
     <section class="card build-preview build-preview-primary">
       <h2>プレビュー</h2>

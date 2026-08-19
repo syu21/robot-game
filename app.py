@@ -4744,6 +4744,12 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 "defeat_within_24h_rate_pct": 0.0,
                 "parts_click_users": 0,
                 "build_complete_users": 0,
+                "guide_view_users": 0,
+                "guide_click_users": 0,
+                "adjust_complete_users": 0,
+                "success_users": 0,
+                "guide_click_rate_pct": 0.0,
+                "adjust_complete_rate_pct": 0.0,
             },
             "layer2_unlock": {
                 "layer1_first_defeat_users": 0,
@@ -4845,6 +4851,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     layer1_boss_retry_defeat_users = set()
     layer1_boss_retry_parts_click_users = set()
     layer1_boss_retry_build_complete_users = set()
+    layer1_boss_retry_guide_view_users = set()
+    layer1_boss_retry_guide_click_users = set()
+    layer1_boss_retry_adjust_complete_users = set()
+    layer1_boss_retry_success_users = set()
     layer1_boss_defeat_ts_by_user = {}
     layer2_unlock_users = set()
     layer2_result_cta_view_users = set()
@@ -4976,6 +4986,15 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 layer1_boss_retry_parts_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_RESULT") and area_key == "layer_1" and bool(payload.get("defeated")):
                 layer1_boss_retry_defeat_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_GUIDE_VIEW") and area_key == "layer_1":
+                layer1_boss_retry_guide_view_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_GUIDE_CLICK") and area_key == "layer_1":
+                layer1_boss_retry_guide_click_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_ADJUST_COMPLETE") and area_key == "layer_1":
+                layer1_boss_retry_adjust_complete_users.add(uid)
+                layer1_boss_retry_build_complete_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_SUCCESS") and area_key == "layer_1":
+                layer1_boss_retry_success_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
                 step_users["first_three_complete"].add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
@@ -5364,6 +5383,16 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             ),
             "parts_click_users": int(len(layer1_boss_retry_parts_click_users)),
             "build_complete_users": int(len(layer1_boss_retry_build_complete_users)),
+            "guide_view_users": int(len(layer1_boss_retry_guide_view_users)),
+            "guide_click_users": int(len(layer1_boss_retry_guide_click_users)),
+            "adjust_complete_users": int(len(layer1_boss_retry_adjust_complete_users)),
+            "success_users": int(len(layer1_boss_retry_success_users)),
+            "guide_click_rate_pct": (
+                float(len(layer1_boss_retry_guide_click_users)) / float(max(1, len(layer1_boss_retry_guide_view_users))) * 100.0
+            ),
+            "adjust_complete_rate_pct": (
+                float(len(layer1_boss_retry_adjust_complete_users)) / float(max(1, len(layer1_boss_retry_guide_click_users))) * 100.0
+            ),
         },
         "layer2_unlock": {
             "layer1_first_defeat_users": int(len(layer1_boss_defeat_ts_by_user)),
@@ -12007,7 +12036,7 @@ def _boss_retry_failure_reason(turn_logs, *, player_hp=0, player_max_hp=0, timeo
     miss_rate = float(misses) / float(max(1, attempts))
     if attempts >= 2 and (miss_rate >= 0.45 or (misses >= 2 and dealt <= 0)):
         return "low_accuracy"
-    if int(player_hp or 0) <= 0 and dealt > 0 and not timeout:
+    if int(player_hp or 0) <= 0 and not timeout and (dealt > 0 or attempts <= 1):
         return "low_durability"
     if bool(timeout) or int(player_hp or 0) > 0:
         return "low_damage"
@@ -12017,13 +12046,29 @@ def _boss_retry_failure_reason(turn_logs, *, player_hp=0, player_max_hp=0, timeo
 def _boss_retry_failure_advice(reason):
     reason = str(reason or "unknown")
     labels = {
-        "low_accuracy": ("命中不足", "攻撃が当たりにくい状態です。命中の高いパーツを試してみましょう。"),
-        "low_durability": ("耐久不足", "攻撃は通っています。耐久や防御の高いパーツを試してみましょう。"),
-        "low_damage": ("火力不足", "攻撃には耐えられています。攻撃や会心の高い右腕を試してみましょう。"),
+        "low_accuracy": ("照準が安定していません", "命中が高いパーツを試すと戦いやすくなります。"),
+        "low_durability": ("機体の耐久が不足しています", "耐久や防御の高いパーツを試してみましょう。"),
+        "low_damage": ("決定力が不足しています", "攻撃や会心が高いパーツを試してみましょう。"),
         "unknown": ("構成見直し", "パーツ構成を見直して、もう一度挑戦しましょう。"),
     }
     label, text = labels.get(reason, labels["unknown"])
     return {"reason": reason, "label": label, "text": text}
+
+
+def _boss_retry_diagnosis_key(reason):
+    return {
+        "low_accuracy": "accuracy",
+        "low_durability": "durability",
+        "low_damage": "offense",
+    }.get(str(reason or ""), "generic")
+
+
+def _boss_retry_focus_stats(diagnosis_key):
+    return {
+        "accuracy": ("acc", "spd"),
+        "durability": ("hp", "def"),
+        "offense": ("atk", "cri"),
+    }.get(str(diagnosis_key or ""), ())
 
 
 def _area_boss_spawn_profile(area_key, streak_before):
@@ -12631,7 +12676,7 @@ def _first_upgrade_current_equipped_totals(db, active_robot_id):
     return total_by_type, id_by_slot
 
 
-def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=None):
+def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=None, focus_stats=None):
     if not user_row or "active_robot_id" not in user_row.keys() or not user_row["active_robot_id"]:
         return None
     active_robot_id = int(user_row["active_robot_id"])
@@ -12676,6 +12721,7 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
     current_power = float(current_stat_obj.get("power") or compute_power(current_stats))
     current_frames = {str(row.get("frame_type") or "normal") for row in current_parts.values()}
     stat_order = ("atk", "hp", "def", "acc", "spd", "cri")
+    focus_stats = tuple(key for key in (focus_stats or ()) if key in stat_order)
     slot_by_type = {"HEAD": "head", "RIGHT_ARM": "r_arm", "LEFT_ARM": "l_arm", "LEGS": "legs"}
     label_by_type = {"HEAD": "頭", "RIGHT_ARM": "右腕", "LEFT_ARM": "左腕", "LEGS": "脚"}
     best = None
@@ -12706,7 +12752,9 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
         delta_total = round(after_power - current_power, 1)
         if delta_total <= 0:
             continue
+        focus_score = sum(max(0, int(stat_deltas.get(key) or 0)) for key in focus_stats)
         sort_key = (
+            int(focus_score),
             float(delta_total),
             *[int(stat_deltas[key]) for key in stat_order],
             -part_id,
@@ -12735,6 +12783,8 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
             "current_total": round(current_power, 1),
             "recommended_total": round(after_power, 1),
             "delta_total": float(delta_total),
+            "focus_stats": list(focus_stats),
+            "focus_score": int(focus_score),
             "current_stats": {key: int(current_stats.get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")},
             "recommended_stats": {key: int(after_stats.get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")},
             "stat_deltas": stat_deltas,
@@ -12749,6 +12799,85 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
 def _first_upgrade_recommended_part_instance_id(db, user_row, items=None):
     recommendation = _first_upgrade_recommendation(db, user_row)
     return int(recommendation["recommended_part_instance_id"]) if recommendation else None
+
+
+def _boss_retry_recommendation(db, user_row, *, diagnosis_key=None, requested_part_instance_id=None):
+    diagnosis_key = str(diagnosis_key or "generic")
+    recommendation = _first_upgrade_recommendation(
+        db,
+        user_row,
+        requested_part_instance_id=requested_part_instance_id,
+        focus_stats=_boss_retry_focus_stats(diagnosis_key),
+    )
+    if recommendation:
+        recommendation["diagnosis_key"] = diagnosis_key
+    return recommendation
+
+
+def _boss_retry_build_guide_view(db, user_row, *, source, diagnosis_key=None, recommended_part_instance_id=None):
+    if not user_row or not user_row["active_robot_id"]:
+        return None
+    state = _layer1_boss_retry_state(db, int(user_row["id"]))
+    if state.get("status") == "defeated" or not state.get("available"):
+        return None
+    diagnosis_key = str(diagnosis_key or "generic")
+    recommendation = _boss_retry_recommendation(
+        db,
+        user_row,
+        diagnosis_key=diagnosis_key,
+        requested_part_instance_id=recommended_part_instance_id,
+    )
+    return {
+        "guide_key": "boss_retry",
+        "kind": "boss_retry",
+        "kicker": "第1層ボス再挑戦",
+        "title": "第1層ボス再挑戦準備",
+        "desc": "戦闘データを参考に、機体を1か所調整してみましょう。",
+        "cta_label": "この構成で準備する",
+        "source": str(source or "build"),
+        "diagnosis_key": diagnosis_key,
+        "recommendation": recommendation,
+        "state": state,
+    }
+
+
+def _audit_onboarding_boss_retry_event(
+    db,
+    event_key,
+    user_id,
+    *,
+    state=None,
+    source=None,
+    diagnosis_key=None,
+    payload=None,
+    request_id=None,
+    ip=None,
+):
+    event_type = AUDIT_EVENT_TYPES.get(event_key)
+    if not event_type:
+        return False
+    base_payload = _boss_retry_audit_payload(state or _layer1_boss_retry_state(db, int(user_id)), surface=source)
+    base_payload.update(
+        {
+            "user_id": int(user_id),
+            "source": str(source or ""),
+            "diagnosis_key": str(diagnosis_key or "generic"),
+            "entry_source": "boss_retry",
+        }
+    )
+    base_payload.update(payload or {})
+    audit_log(
+        db,
+        event_type,
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="onboarding_boss_retry",
+        entity_type="user_boss_progress",
+        entity_id=None,
+        payload=base_payload,
+        ip=ip,
+    )
+    return True
 
 
 def _first_upgrade_changed_part_types(db, before_slot_ids, after_slot_ids):
@@ -49171,12 +49300,12 @@ def home():
         retry_ready = bool(int(ct_remain or 0) <= 0 or int(user["is_admin"] or 0) == 1)
         home_primary_explore_cta.update(
             {
-                "title": "第1層ボスに再挑戦しよう",
+                "title": "機体を調整して第1層ボスへ",
                 "destination_label": "第1層ボス",
-                "helper_text": "第1層ボスを再捕捉しました。前回の戦闘記録により、次は少し有利に戦えます。機体を整えて、もう一度挑戦できます。",
+                "helper_text": "第1層ボスを再捕捉しました。機体を1か所調整して、もう一度挑戦できます。",
                 "status_text": "再挑戦可能" if retry_ready else f"CT中: あと{int(ct_remain)}秒",
-                "button_label": "ボスへ再挑戦",
-                "button_current_label": "ボスへ再挑戦" if retry_ready else f"再挑戦まで あと{int(ct_remain)}秒",
+                "button_label": "第1層ボスへ再挑戦",
+                "button_current_label": "第1層ボスへ再挑戦" if retry_ready else f"再挑戦まで あと{int(ct_remain)}秒",
                 "cta_url": url_for("boss_retry_layer1"),
                 "area_key": "layer_1",
                 "entry_source": "boss_retry",
@@ -49186,8 +49315,8 @@ def home():
                 "context_line": "第1層ボス再挑戦を優先表示しています。",
                 "secondary_actions": [
                     {
-                        "label": "パーツを見直す",
-                        "url": url_for("boss_retry_layer1_parts"),
+                        "label": "機体を調整する",
+                        "url": url_for("boss_retry_layer1_build"),
                         "is_post": True,
                         "entry_source": "boss_retry",
                         "surface": "home_next_action",
@@ -55718,8 +55847,73 @@ def boss_retry_layer1():
         ),
         ip=request.remote_addr,
     )
+    _audit_onboarding_boss_retry_event(
+        db,
+        "ONBOARDING_BOSS_RETRY_START",
+        user_id,
+        state=state,
+        source=str(request.form.get("surface") or "home_next_action"),
+        diagnosis_key=(request.form.get("diagnosis_key") or "generic"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
     db.commit()
     return redirect(url_for("explore"), code=307)
+
+
+@app.route("/boss/retry/layer-1/build", methods=["POST"])
+@login_required
+def boss_retry_layer1_build():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    state = _layer1_boss_retry_state(db, user_id)
+    if not user or not user["active_robot_id"] or not state.get("available") or state.get("status") == "defeated":
+        session["message"] = "ボス再挑戦の調整条件を満たしていません。"
+        return redirect(url_for("home"))
+    diagnosis_key = str(request.form.get("diagnosis_key") or "generic")
+    recommendation = _boss_retry_recommendation(db, user, diagnosis_key=diagnosis_key)
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["BOSS_RETRY_PARTS_CLICK"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="boss_retry_parts_click",
+        entity_type="user_boss_progress",
+        payload=_boss_retry_audit_payload(
+            state,
+            surface=str(request.form.get("surface") or "battle_result"),
+        ),
+        ip=request.remote_addr,
+    )
+    _audit_onboarding_boss_retry_event(
+        db,
+        "ONBOARDING_BOSS_RETRY_GUIDE_CLICK",
+        user_id,
+        state=state,
+        source=str(request.form.get("surface") or "battle_result"),
+        diagnosis_key=diagnosis_key,
+        payload={
+            "recommended_part_instance_id": (
+                int(recommendation["recommended_part_instance_id"]) if recommendation else None
+            ),
+            "recommended_part_type": ((recommendation or {}).get("recommended_part_type")),
+        },
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    db.commit()
+    params = {
+        "guide": "boss_retry",
+        "mode": "modify",
+        "base_robot_id": int(user["active_robot_id"]),
+        "source": str(request.form.get("surface") or "battle_result"),
+        "diagnosis": diagnosis_key,
+    }
+    if recommendation:
+        params["frame_type"] = recommendation.get("build_frame_type") or "normal"
+        params["recommended_part_id"] = int(recommendation["recommended_part_instance_id"])
+    return redirect(url_for("build", **params))
 
 
 @app.route("/boss/retry/layer-1/parts", methods=["POST"])
@@ -58381,6 +58575,7 @@ def explore():
         world_bonus_notes.append(f"第4層試験助言: {LAYER4_WARNING_BOSS_ADVICE[area_key]}")
 
     boss_retry_summary = None
+    boss_retry_success_summary = None
     boss_retry_failure_reason = None
     boss_retry_state_after_result = None
     if (
@@ -58424,6 +58619,26 @@ def explore():
                 },
                 ip=request.remote_addr,
             )
+            if final_outcome == "win":
+                _audit_onboarding_boss_retry_event(
+                    db,
+                    "ONBOARDING_BOSS_RETRY_SUCCESS",
+                    user_id,
+                    state=boss_retry_state_after_result,
+                    source="battle_result",
+                    diagnosis_key=(request.form.get("diagnosis_key") or "generic"),
+                    payload={
+                        "turn_count": int(len(all_turn_logs)),
+                        "player_hp": int(player_hp or 0),
+                        "player_max_hp": int(player_max_hp or 0),
+                    },
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                )
+                boss_retry_success_summary = {
+                    "title": "再調整成功",
+                    "desc": "機体調整後の再挑戦で第1層ボスを撃破しました。",
+                }
         if final_outcome != "win" and boss_retry_state_after_result.get("available"):
             if not boss_retry_failure_reason:
                 boss_retry_failure_reason = _boss_retry_failure_reason(
@@ -58432,14 +58647,17 @@ def explore():
                     player_max_hp=player_max_hp,
                     timeout=final_battle_timeout,
                 )
+            boss_retry_diagnosis_key = _boss_retry_diagnosis_key(boss_retry_failure_reason)
             boss_retry_summary = {
-                "title": "ボス警報 継続中",
-                "desc": "第1層ボスを再捕捉しました。機体を整えて、もう一度挑戦できます。",
-                "cta_label": "もう一度ボスへ挑む",
+                "title": "戦闘データを解析しました",
+                "desc": "機体を少し調整すれば、突破できる可能性があります。",
+                "cta_label": "このまま再挑戦",
                 "action_url": url_for("boss_retry_layer1"),
+                "build_action_url": url_for("boss_retry_layer1_build"),
                 "parts_action_url": url_for("boss_retry_layer1_parts"),
                 "attempt_number": int(boss_retry_state_after_result.get("attempt_number") or 1),
                 "failure": _boss_retry_failure_advice(boss_retry_failure_reason),
+                "diagnosis_key": boss_retry_diagnosis_key,
             }
             _audit_boss_retry_cta_view_once(
                 db,
@@ -59860,6 +60078,7 @@ def explore():
         "first_upgrade_guide": first_upgrade_guide_result,
         "layer1_boss_alert": layer1_boss_alert_status_after,
         "boss_retry": boss_retry_summary,
+        "boss_retry_success": boss_retry_success_summary,
         "layer2_unlock_result": layer2_unlock_result_card,
         "next_action_primary_label": (
             "もう一度、第1層へ出撃"
@@ -60242,6 +60461,7 @@ def robots():
     message = session.pop("message", None)
     decompose_blocked = bool(session.pop("robot_decompose_blocked", None))
     first_upgrade_build_result = session.pop("first_upgrade_build_result", None)
+    boss_retry_build_result = session.pop("boss_retry_build_result", None)
     build_result = None
     build_result_id_raw = (request.args.get("build_result_id") or "").strip()
     if build_result_id_raw.isdigit():
@@ -60267,6 +60487,15 @@ def robots():
                     dict(first_upgrade_build_result)
                     if first_upgrade_build_result
                     and int((first_upgrade_build_result or {}).get("robot_instance_id") or 0) == int(result_robot["id"])
+                    else None
+                ),
+                "boss_retry": (
+                    {
+                        **dict(boss_retry_build_result),
+                        "submission_id": str(uuid.uuid4()),
+                    }
+                    if boss_retry_build_result
+                    and int((boss_retry_build_result or {}).get("robot_instance_id") or 0) == int(result_robot["id"])
                     else None
                 ),
             }
@@ -61598,7 +61827,40 @@ def build():
     user_row = db.execute("SELECT * FROM users WHERE id = ?", (int(user_id),)).fetchone()
     first_upgrade_guide = None
     first_upgrade_recommendation = None
-    if (request.args.get("guide") or "").strip() == "first_upgrade" and _onboarding_first_upgrade_should_show(db, user_row):
+    guide_key = (request.args.get("guide") or "").strip()
+    if guide_key == "boss_retry":
+        requested_part_raw = (request.args.get("recommended_part_id") or "").strip()
+        requested_part_id = int(requested_part_raw) if requested_part_raw.isdigit() else None
+        diagnosis_key = str(request.args.get("diagnosis") or "generic")
+        first_upgrade_guide = _boss_retry_build_guide_view(
+            db,
+            user_row,
+            source=(request.args.get("source") or "build"),
+            diagnosis_key=diagnosis_key,
+            recommended_part_instance_id=requested_part_id,
+        )
+        if first_upgrade_guide:
+            first_upgrade_recommendation = first_upgrade_guide.get("recommendation")
+            _audit_onboarding_boss_retry_event(
+                db,
+                "ONBOARDING_BOSS_RETRY_GUIDE_VIEW",
+                int(user_id),
+                state=first_upgrade_guide.get("state"),
+                source=(request.args.get("source") or "build"),
+                diagnosis_key=diagnosis_key,
+                payload={
+                    "recommended_part_instance_id": (
+                        int(first_upgrade_recommendation["recommended_part_instance_id"])
+                        if first_upgrade_recommendation
+                        else None
+                    ),
+                    "recommended_part_type": ((first_upgrade_recommendation or {}).get("recommended_part_type")),
+                },
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            )
+            db.commit()
+    elif guide_key == "first_upgrade" and _onboarding_first_upgrade_should_show(db, user_row):
         requested_part_raw = (request.args.get("recommended_part_id") or "").strip()
         requested_part_id = int(requested_part_raw) if requested_part_raw.isdigit() else None
         first_upgrade_recommendation = _first_upgrade_recommendation(
@@ -61745,7 +62007,12 @@ def build():
         item = _build_picker_part_item(row, compare_item=compare_item)
         if first_upgrade_recommendation and int(item["instance_id"]) == int(first_upgrade_recommendation["recommended_part_instance_id"]):
             item["first_upgrade_recommended"] = True
-            item["first_upgrade_recommended_note"] = "今回の交換候補"
+            item["first_upgrade_recommended_label"] = (
+                "再挑戦おすすめ"
+                if (first_upgrade_guide or {}).get("kind") == "boss_retry"
+                else "今回の交換候補"
+            )
+            item["first_upgrade_recommended_note"] = item["first_upgrade_recommended_label"]
         part_groups[row["part_type"]].append(item)
 
     slot_param_map = {
@@ -61999,6 +62266,14 @@ def build_confirm():
         if first_upgrade_active_robot_id_before
         else None
     )
+    guide_key = (request.form.get("guide") or "").strip()
+    boss_retry_guide_active = guide_key == "boss_retry"
+    boss_retry_diagnosis_key = str(request.form.get("diagnosis_key") or "generic")
+    boss_retry_state_before = (
+        _layer1_boss_retry_state(db, int(user["id"]))
+        if boss_retry_guide_active and user
+        else None
+    )
     robot_name = request.form.get("robot_name", "").strip()
     selected_offsets = _build_offset_payload_from_values(request.form)
     selected_frame_type = _normalize_build_frame_mode(request.form.get("build_mode") or request.form.get("frame_type"))
@@ -62016,9 +62291,15 @@ def build_confirm():
     combat_mode = _normalize_combat_mode(request.form.get("combat_mode"))
 
     def _build_redirect():
+        extra = {}
+        if guide_key:
+            extra["guide"] = guide_key
+        if boss_retry_guide_active:
+            extra["diagnosis"] = boss_retry_diagnosis_key
+            extra["source"] = (request.form.get("guide_source") or "build_confirm")
         if build_mode == "modify":
-            return redirect(url_for("build", mode="modify", base_robot_id=base_robot_id or "", frame_type=selected_frame_type))
-        return redirect(url_for("build", mode="new", frame_type=selected_frame_type))
+            return redirect(url_for("build", mode="modify", base_robot_id=base_robot_id or "", frame_type=selected_frame_type, **extra))
+        return redirect(url_for("build", mode="new", frame_type=selected_frame_type, **extra))
 
     base_robot = None
     base_mapping = {}
@@ -62354,6 +62635,46 @@ def build_confirm():
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
         )
+        boss_retry_adjust_completed = bool(
+            boss_retry_guide_active
+            and boss_retry_state_before
+            and boss_retry_state_before.get("available")
+            and boss_retry_state_before.get("status") != "defeated"
+            and first_upgrade_changed_part_types
+        )
+        if boss_retry_adjust_completed:
+            _audit_onboarding_boss_retry_event(
+                db,
+                "ONBOARDING_BOSS_RETRY_ADJUST_COMPLETE",
+                int(user["id"]),
+                state=boss_retry_state_before,
+                source=(request.form.get("guide_source") or "build_confirm"),
+                diagnosis_key=boss_retry_diagnosis_key,
+                payload={
+                    "active_robot_id_before": int(first_upgrade_active_robot_id_before or 0) or None,
+                    "active_robot_id_after": int(instance_id),
+                    "robot_instance_id": int(instance_id),
+                    "changed_part_types": list(first_upgrade_changed_part_types),
+                    "changed_part_type": (list(first_upgrade_changed_part_types)[0] if first_upgrade_changed_part_types else None),
+                    "before_part_instance_ids": dict(first_upgrade_parts_before or {}),
+                    "after_part_instance_ids": dict(selected or {}),
+                    "before_total": ((first_upgrade_before_stat_obj or {}).get("power") if first_upgrade_before_stat_obj else None),
+                    "after_total": ((first_upgrade_after_stat_obj or {}).get("power") if first_upgrade_after_stat_obj else None),
+                    "delta_total": (
+                        round(
+                            float((first_upgrade_after_stat_obj or {}).get("power") or 0.0)
+                            - float((first_upgrade_before_stat_obj or {}).get("power") or 0.0),
+                            1,
+                        )
+                        if first_upgrade_before_stat_obj and first_upgrade_after_stat_obj
+                        else None
+                    ),
+                    "before_stats": dict((first_upgrade_before_stat_obj or {}).get("stats") or {}),
+                    "after_stats": dict((first_upgrade_after_stat_obj or {}).get("stats") or {}),
+                },
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            )
         for pid in consumed_ids:
             audit_log(
                 db,
@@ -62374,7 +62695,12 @@ def build_confirm():
         session["message"] = str(exc)
         return _build_redirect()
     build_message = (
-        "機体を更新しました。新しい構成で出撃できます。"
+        "再挑戦準備完了。第1層ボスへ再挑戦できます。"
+        if boss_retry_guide_active
+        and boss_retry_state_before
+        and boss_retry_state_before.get("available")
+        and first_upgrade_changed_part_types
+        else "機体を更新しました。新しい構成で出撃できます。"
         if first_upgrade_completed
         else ("機体を改造しました。" if build_mode == "modify" else "完成ロボを登録し、出撃機体に設定しました。")
     )
@@ -62400,6 +62726,36 @@ def build_confirm():
             positive_rows.append({"label": "総合値", "delta_text": f"+{round(after_total - before_total, 1)}", "delta": round(after_total - before_total, 1)})
         session["first_upgrade_build_result"] = {
             "robot_instance_id": int(instance_id),
+            "changed_part_types": list(first_upgrade_changed_part_types),
+            "before_total": round(before_total, 1),
+            "after_total": round(after_total, 1),
+            "delta_total": round(after_total - before_total, 1),
+            "positive_rows": positive_rows[:3],
+        }
+    if (
+        boss_retry_guide_active
+        and boss_retry_state_before
+        and boss_retry_state_before.get("available")
+        and first_upgrade_changed_part_types
+    ):
+        before_stats = dict((first_upgrade_before_stat_obj or {}).get("stats") or {})
+        after_stats = dict((first_upgrade_after_stat_obj or {}).get("stats") or {})
+        deltas = {
+            key: int(after_stats.get(key) or 0) - int(before_stats.get(key) or 0)
+            for key in ("hp", "atk", "def", "spd", "acc", "cri")
+        }
+        positive_rows = [
+            {"label": _stat_label(key), "delta_text": f"+{delta}", "delta": int(delta)}
+            for key, delta in sorted(deltas.items(), key=lambda item: -int(item[1]))
+            if int(delta) > 0
+        ][:2]
+        before_total = float((first_upgrade_before_stat_obj or {}).get("power") or 0.0)
+        after_total = float((first_upgrade_after_stat_obj or {}).get("power") or 0.0)
+        if round(after_total - before_total, 1) > 0:
+            positive_rows.append({"label": "総合値", "delta_text": f"+{round(after_total - before_total, 1)}", "delta": round(after_total - before_total, 1)})
+        session["boss_retry_build_result"] = {
+            "robot_instance_id": int(instance_id),
+            "diagnosis_key": boss_retry_diagnosis_key,
             "changed_part_types": list(first_upgrade_changed_part_types),
             "before_total": round(before_total, 1),
             "after_total": round(after_total, 1),
