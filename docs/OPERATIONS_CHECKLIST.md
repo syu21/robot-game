@@ -467,9 +467,12 @@
 
 ## 15. 第2層解放・次目標導線
 - [ ] `python3 init_db.py` 後、`users` に `layer2_unlocked_at`, `layer2_unlock_notice_seen_at`, `layer2_first_explore_at` がある
-- [ ] 第1層固定ボス初撃破で第2層が解放され、結果画面に `第1層 突破` が出る
-- [ ] 結果画面の主CTA `第2層へ進む` は `area_key=layer_2`, `entry_source=layer2_unlock_result` でPOSTする
+- [ ] 第1層固定ボス初撃破で第2層が解放され、結果画面に `第2層 解放` と `NEW` が出る
+- [ ] 結果画面に撃破した機体名/ボス名、第2層の特徴、観測しやすいパーツ傾向が短く表示される
+- [ ] 結果画面の主CTA `第2層へ出撃する` は `area_key=layer_2`, `entry_source=layer2_unlock_result` でPOSTする
+- [ ] 結果画面の補助CTAは `入手したパーツを見る` と `基地へ戻る`
 - [ ] CT中は第2層CTAが残り時間表示になる
+- [ ] 第2層初出撃結果に `第2層 初回調査` が短く表示される
 - [ ] 第2層未出撃中の基地 `NEXT ACTION` は `新区域 解放` / `第2層へ出撃` になる
 - [ ] 基地CTAは `entry_source=layer2_unlock_home` を残す
 - [ ] 第2層初出撃後、専用NEXT ACTIONは消える

@@ -222,6 +222,97 @@ class Layer2UnlockFlowTests(unittest.TestCase):
             self.assertEqual(snapshot["layer2_unlock"]["unlocked_users"], 1)
             self.assertEqual(snapshot["layer2_unlock"]["first_explore_users"], 1)
 
+    def test_battle_result_layer2_unlock_card_is_primary_cta(self):
+        with game_app.app.test_request_context("/battle/result"):
+            html = game_app.render_template(
+                "battle.html",
+                state={"active": 0, "enemy_name": "ボス", "enemy_hp": 0},
+                log=[],
+                log_entries=[],
+                message=None,
+                new_robot=None,
+                explore_mode=True,
+                explore_area_key="layer_1",
+                explore_area_label="第一層",
+                active_robot={"name": "Layer2Bot"},
+                no_active_robot=False,
+                turn_logs=[],
+                summary={
+                    "outcome": "勝利",
+                    "outcome_is_win": True,
+                    "explore_ct_remain": 18,
+                    "explore_ct_ready_at": int(time.time()) + 18,
+                    "explore_ct_is_admin": False,
+                    "explore_ct_button_label": "もう一度出撃（あと18秒）",
+                    "explore_ct_status_label": "CT中: あと18秒",
+                    "reward_front": {"coin": 1},
+                    "next_explore_submission_id": "layer2-result",
+                    "layer2_unlock_result": {
+                        "title": "第2層 解放",
+                        "badge": "NEW",
+                        "desc": "第1層の戦闘データを突破しました。新しい探索区画へ出撃できます。",
+                        "area_label": "第二層: 放電ノイズ帯",
+                        "area_desc": "より精密な戦闘データが要求される区画。",
+                        "area_tendency": "攻撃寄りのパーツを観測しやすい区域です。",
+                        "cta_label": "第2層へ出撃する",
+                        "entry_source": "layer2_unlock_result",
+                        "parts_label": "入手したパーツを見る",
+                        "secondary_label": "基地へ戻る",
+                        "robot_name": "Layer2Bot",
+                        "boss_name": "第1層固定ボス",
+                        "ct_label": "第2層へ出撃 あと 00:18",
+                        "helper": "敵の反応傾向が変化します。今の機体でまず調査を始めましょう。",
+                    },
+                },
+                battle_log_mode="collapsed",
+                battle_ritual_overlay_enabled=False,
+                battle_short_replay_enabled=False,
+            )
+            self.assertIn("第2層 解放", html)
+            self.assertIn("Layer2Bot", html)
+            self.assertIn("第二層: 放電ノイズ帯", html)
+            self.assertIn("攻撃寄りのパーツを観測しやすい", html)
+            self.assertIn("第2層へ出撃 あと 00:18", html)
+            self.assertIn("入手したパーツを見る", html)
+            self.assertEqual(html.count('name="entry_source" value="layer2_unlock_result"'), 1)
+            self.assertNotIn("第1層へもう一度", html)
+
+    def test_battle_result_shows_first_layer2_intro_once(self):
+        with game_app.app.test_request_context("/battle/result"):
+            html = game_app.render_template(
+                "battle.html",
+                state={"active": 0, "enemy_name": "敵", "enemy_hp": 0},
+                log=[],
+                log_entries=[],
+                message=None,
+                new_robot=None,
+                explore_mode=True,
+                explore_area_key="layer_2",
+                explore_area_label="第二層",
+                active_robot={"name": "Layer2Bot"},
+                no_active_robot=False,
+                turn_logs=[],
+                summary={
+                    "outcome": "勝利",
+                    "outcome_is_win": True,
+                    "explore_ct_remain": 0,
+                    "explore_ct_ready_at": 0,
+                    "explore_ct_is_admin": False,
+                    "explore_ct_button_label": "もう一度出撃",
+                    "explore_ct_status_label": "出撃可能",
+                    "reward_front": {"coin": 1},
+                    "layer2_first_explore_intro": {
+                        "title": "第2層 初回調査",
+                        "desc": "ここから敵の反応傾向が変化します。",
+                    },
+                },
+                battle_log_mode="collapsed",
+                battle_ritual_overlay_enabled=False,
+                battle_short_replay_enabled=False,
+            )
+            self.assertIn("第2層 初回調査", html)
+            self.assertIn("ここから敵の反応傾向が変化します。", html)
+
 
 if __name__ == "__main__":
     unittest.main()

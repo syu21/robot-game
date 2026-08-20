@@ -59872,16 +59872,23 @@ def explore():
     if int(unlocked_layer or 0) == 2:
         layer2_unlock_state_after = _layer2_unlock_state(db, db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
         layer2_unlock_result_card = {
-            "title": "第1層 突破",
-            "desc": "封鎖されていた経路が開きました。第2層への出撃が可能になりました。",
+            "title": "第2層 解放",
+            "badge": "NEW",
+            "desc": "第1層の戦闘データを突破しました。新しい探索区画へ出撃できます。",
             "area_key": "layer_2",
-            "area_label": "第2層",
-            "cta_label": "第2層へ進む",
+            "area_label": "第二層: 放電ノイズ帯",
+            "area_short_label": "第2層",
+            "area_desc": "より精密な戦闘データが要求される区画。",
+            "area_tendency": "攻撃寄りのパーツを観測しやすい区域です。",
+            "cta_label": "第2層へ出撃する",
             "entry_source": "layer2_unlock_result",
-            "secondary_label": "基地で機体を整える",
+            "secondary_label": "基地へ戻る",
+            "parts_label": "入手したパーツを見る",
+            "robot_name": (active["name"] if active and "name" in active.keys() and active["name"] else "現在の機体"),
+            "boss_name": (last_enemy["name_ja"] if last_enemy and "name_ja" in last_enemy.keys() else "第1層固定ボス"),
             "ct_remaining_seconds": int(explore_ct_remain),
-            "ct_label": f"第2層出撃まで あと {'%02d:%02d' % (int(explore_ct_remain) // 60, int(explore_ct_remain) % 60)}" if int(explore_ct_remain) > 0 and not explore_ct_is_admin else "",
-            "helper": "第1層より少し手強い敵が現れます。今の機体でまず挑戦してみましょう。",
+            "ct_label": f"第2層へ出撃 あと {'%02d:%02d' % (int(explore_ct_remain) // 60, int(explore_ct_remain) % 60)}" if int(explore_ct_remain) > 0 and not explore_ct_is_admin else "",
+            "helper": "敵の反応傾向が変化します。今の機体でまず調査を始めましょう。",
         }
         db.execute(
             "UPDATE users SET layer2_unlock_notice_seen_at = COALESCE(layer2_unlock_notice_seen_at, ?) WHERE id = ?",
@@ -60080,6 +60087,14 @@ def explore():
         "boss_retry": boss_retry_summary,
         "boss_retry_success": boss_retry_success_summary,
         "layer2_unlock_result": layer2_unlock_result_card,
+        "layer2_first_explore_intro": (
+            {
+                "title": "第2層 初回調査",
+                "desc": "ここから敵の反応傾向が変化します。",
+            }
+            if area_key == "layer_2" and is_first_layer2_explore
+            else None
+        ),
         "next_action_primary_label": (
             "もう一度、第1層へ出撃"
             if area_key == "layer_1"

@@ -664,6 +664,7 @@ COMBAT SIGNAL v1:
 - `audit.explore.start`
   - `area_key=layer_2` では `is_first_layer2_explore`, `entry_source`, `seconds_from_layer_unlock`, `layer2_explore_count_before` を含める。
   - 初回のみ `is_first_layer2_explore=true`、2回目以降は false。
+  - 結果画面CTA経由は既存 `entry_source=layer2_unlock_result` を使い、新しい同義sourceは追加しない。
 
 ## 14. 第6層攻略記録
 - 新規イベントは追加しない。v1は既存 `audit.explore.end` と `audit.boss.defeat` を正本にする。

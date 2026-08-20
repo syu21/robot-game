@@ -785,7 +785,9 @@
 - 監査は `boss_source=guaranteed_retry`、`audit.boss.retry.*`、`audit.onboarding.boss_retry.*`、管理メトリクスで追跡する。
 
 ## 14. 第2層解放・次目標導線 v1
-- 第1層固定ボス初撃破時、結果画面に `第1層 突破` と `第2層へ進む` を表示する。
+- 第1層固定ボス初撃破時、結果画面に `第2層 解放` と `第2層へ出撃する` を表示する。
+- 解放カードには `NEW`、撃破した機体名/ボス名、第2層の短い特徴、観測しやすいパーツ傾向を表示する。
+- 第2層初出撃時は結果画面に `第2層 初回調査` を短く表示する。
 - 第2層未出撃中は基地 `NEXT ACTION` を `新区域 解放` / `第2層へ出撃` に切り替える。
 - 結果画面は `entry_source=layer2_unlock_result`、基地は `entry_source=layer2_unlock_home` で既存 `/explore` へPOSTする。
 - `users.layer2_unlocked_at`, `layer2_unlock_notice_seen_at`, `layer2_first_explore_at` で一度だけ表示・初回出撃を補助管理する。

@@ -69,9 +69,20 @@
 	  </div>
 	  {% if summary.get('layer2_unlock_result') %}
 	  {% set layer2_unlock = summary.get('layer2_unlock_result') %}
-	  <div class="card notice battle-next-card-primary">
-	    <div><b>{{ layer2_unlock.get('title', '第1層 突破') }}</b></div>
+	  <div class="card notice battle-next-card-primary layer2-unlock-card">
+	    <div class="layer2-unlock-head">
+	      <span class="layer2-unlock-badge">{{ layer2_unlock.get('badge', 'NEW') }}</span>
+	      <b>{{ layer2_unlock.get('title', '第2層 解放') }}</b>
+	    </div>
+	    <div class="layer2-unlock-breakthrough">
+	      機体「{{ layer2_unlock.get('robot_name', '現在の機体') }}」が {{ layer2_unlock.get('boss_name', '第1層固定ボス') }} を撃破。
+	    </div>
 	    <div class="upgrade-cost">{{ layer2_unlock.get('desc') }}</div>
+	    <div class="layer2-unlock-zone">
+	      <b>{{ layer2_unlock.get('area_label', '第二層: 放電ノイズ帯') }}</b>
+	      <span>{{ layer2_unlock.get('area_desc', '') }}</span>
+	      <span>{{ layer2_unlock.get('area_tendency', '') }}</span>
+	    </div>
 	    <div class="robot-time">{{ layer2_unlock.get('helper') }}</div>
 	    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
 	      <input type="hidden" name="area_key" value="layer_2" />
@@ -91,9 +102,15 @@
 	    <div class="battle-return-ct js-explore-return-label">{{ layer2_unlock.get('ct_label') }}</div>
 	    {% endif %}
 	    <div class="home-inline-actions">
-	      <a class="battle-home-link" href="{{ url_for('parts') }}">入手した報酬を見る</a>
+	      <a class="battle-home-link" href="{{ url_for('parts') }}">{{ layer2_unlock.get('parts_label', '入手したパーツを見る') }}</a>
 	      <a class="battle-home-link" href="{{ url_for('home') }}">{{ layer2_unlock.get('secondary_label', '基地で機体を整える') }}</a>
 	    </div>
+	  </div>
+	  {% endif %}
+	  {% if summary.get('layer2_first_explore_intro') %}
+	  <div class="card notice layer2-first-entry-card">
+	    <div><b>{{ summary['layer2_first_explore_intro'].get('title', '第2層 初回調査') }}</b></div>
+	    <div class="upgrade-cost">{{ summary['layer2_first_explore_intro'].get('desc', '') }}</div>
 	  </div>
 	  {% endif %}
 	  {% if summary.get('layer1_first_win_result') %}
@@ -423,6 +440,7 @@
     <div class="upgrade-cost">{{ summary['boss_retry_success'].get('desc', '') }}</div>
   </section>
   {% endif %}
+  {% if not summary.get('layer2_unlock_result') %}
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
@@ -561,10 +579,11 @@
       <div class="upgrade-cost">ホームで次の行動や今週のランキング、世界の動きを確認できます。</div>
       <a class="battle-home-link" href="{{ url_for('home') }}">ホームへ戻る</a>
     </section>
-  </div>
-  </div>
+	  </div>
+  {% endif %}
+	  </div>
 
-  {% if summary.get('enemy_image_url') or turn_logs or (summary.get('is_area_boss') and summary.get('outcome') == '勝利') %}
+	  {% if summary.get('enemy_image_url') or turn_logs or (summary.get('is_area_boss') and summary.get('outcome') == '勝利') %}
   <details class="battle-detail-fold"{% if battle_log_mode == 'expanded' %} open{% endif %}>
     <summary>敵情報と詳細ログを見る</summary>
     {% if summary.get('enemy_image_url') %}
@@ -686,9 +705,9 @@
               <div class="hp-line">
                 <div class="hp-text">耐久: {{ t['enemy_after'] }} / {{ e_max }}</div>
                 <progress class="hpbar-meter" max="{{ e_max }}" value="{{ t['enemy_after'] }}"></progress>
-              </div>
-            </div>
-          </div>
+	  </div>
+	  </div>
+	</div>
 
           <div class="battle-text">
             {% if t.get('premonition_line') %}

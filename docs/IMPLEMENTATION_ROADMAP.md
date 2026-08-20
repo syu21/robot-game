@@ -638,7 +638,8 @@
 
 - 目的: 第1層ボス撃破後に、解放達成を認識し、そのまま第2層初出撃へ進める導線を作る。
 - 実装範囲: 第1層固定ボス初撃破、第2層初解放、第2層初出撃前のみ。
-- UI: 結果画面に `第1層 突破` カード、基地 `NEXT ACTION` に `新区域 解放` を出す。
+- UI: 結果画面に `第2層 解放` カード、基地 `NEXT ACTION` に `新区域 解放` を出す。
+- v2 UI: 結果画面カードは `NEW`、撃破した機体/ボス名、第2層の短い特徴、主CTA `第2層へ出撃する` を表示する。
 - 入口: 結果画面は `entry_source=layer2_unlock_result`、基地は `entry_source=layer2_unlock_home`。
 - 監査: `audit.layer.unlock`, `audit.layer2.unlock_cta.*`, `audit.explore.start.is_first_layer2_explore` で到達を追う。
 - 非目標: 第2層以降の解放演出拡張、戦闘バランス変更、報酬変更、CT変更、強制チュートリアル。
