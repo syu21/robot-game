@@ -45,7 +45,7 @@
       <img class="evolve-compare-image" src="{{ last_evolve_result.get('source_image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="source part" loading="lazy" />
       <div class="evolve-compare-name">{{ last_evolve_result['source_name'] }}</div>
       <div class="evolve-compare-plus">+{{ last_evolve_result['source_plus'] }}</div>
-      <div class="robot-time">総合値 {{ last_evolve_result.get('source_total_value') or 0 }}</div>
+      <div class="robot-time">総合性能 {{ (last_evolve_result.get('source_total_value') or 0)|display_stat }}</div>
     </div>
     <div class="evolve-compare-arrow">進化 →</div>
     <div class="evolve-compare-item evolve-target">
@@ -53,7 +53,7 @@
       <img class="evolve-compare-image" src="{{ last_evolve_result.get('target_image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="evolved part" loading="lazy" />
       <div class="evolve-compare-name">{{ last_evolve_result['target_name'] }}</div>
       <div class="evolve-compare-plus">+{{ last_evolve_result['target_plus'] }}</div>
-      <div class="robot-time">総合値 {{ last_evolve_result.get('target_total_value') or 0 }} ({{ last_evolve_result.get('total_delta_text') or '±0' }})</div>
+      <div class="robot-time">総合性能 {{ (last_evolve_result.get('target_total_value') or 0)|display_stat }} ({{ (last_evolve_result.get('total_delta') or 0)|display_delta }})</div>
     </div>
   </div>
   {% if last_evolve_result.get('stat_rows') %}
@@ -100,7 +100,7 @@
               <span class="part-chip">所持中</span>
             {% endif %}
           </div>
-          <div class="part-meta-line">総合値 {{ p['total_value'] }}</div>
+          <div class="part-meta-line">総合性能 {{ p.get('total_value_display', p['total_value']|display_stat) }}</div>
         </div>
         <div class="part-compare-arrow">進化 →</div>
         <div class="part-compare-column">
@@ -111,7 +111,7 @@
             <span class="part-chip rarity-r">R</span>
             <span class="part-chip">+{{ p['plus'] }}</span>
           </div>
-          <div class="part-meta-line">総合値 {{ p['compare_total_value'] }} ({{ p['compare_total_delta_text'] }})</div>
+          <div class="part-meta-line">総合性能 {{ p['compare_total_value']|display_stat }} ({{ p.get('compare_total_delta_display_text', p.get('compare_total_delta')|display_delta) }})</div>
         </div>
       </div>
       {{ stat_grid(p['stat_rows'], 'is-compare') }}

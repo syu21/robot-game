@@ -212,6 +212,8 @@
     const setBonusTable = configEl ? JSON.parse(configEl.value || "{}") : {};
     const elementLabelEl = document.getElementById("build-element-label-map");
     const elementLabelMap = elementLabelEl ? JSON.parse(elementLabelEl.value || "{}") : {};
+    const displayScaleEl = document.getElementById("build-display-stat-scale");
+    const displayStatScale = Math.max(1, Number((displayScaleEl || {}).value || 100));
     const elements = slots.map((s) => (s.dataset.element || "").toUpperCase());
     const frameTypes = new Set(slots.map((s) => String(s.dataset.frameType || "normal").trim()).filter(Boolean));
     const isMixedFrame = frameTypes.size > 1;
@@ -230,8 +232,8 @@
           const boosted = Math.max(before + 1, Math.ceil(before * (1 + rate)));
           total[stat] = boosted;
           bonusStatus = "発動中";
-          bonusEffect = `${STAT_LABELS[stat] || stat} +${boosted - before}`;
-          bonusDetail = `${elementLabelMap[elements[0]] || elements[0]}統一で ${STAT_LABELS[stat] || stat} が ${before} → ${boosted}`;
+          bonusEffect = `${STAT_LABELS[stat] || stat} ${formatDisplayDelta(boosted - before, displayStatScale)}`;
+          bonusDetail = `${elementLabelMap[elements[0]] || elements[0]}統一で ${STAT_LABELS[stat] || stat} が ${formatDisplayStat(before, displayStatScale)} → ${formatDisplayStat(boosted, displayStatScale)}`;
         }
       }
     }
@@ -246,7 +248,7 @@
 
     const bind = (id, val) => {
       const el = document.getElementById(id);
-      if (el) el.textContent = String(val);
+      if (el) el.textContent = formatDisplayStat(val, displayStatScale);
     };
     bind("est-hp", total.hp);
     bind("est-atk", total.atk);
@@ -417,10 +419,32 @@
       const showCurrent = key === "power" ? Math.round(currentValue * 10) / 10 : Math.round(currentValue);
       const showCandidate = key === "power" ? Math.round(candidateValue * 10) / 10 : Math.round(candidateValue);
       const showDelta = key === "power" ? Math.round(delta * 10) / 10 : Math.round(delta);
-      setText(`cmp-${key}-current`, showCurrent);
-      setText(`cmp-${key}-candidate`, showCandidate);
-      setText(`cmp-${key}-delta`, showDelta > 0 ? `+${showDelta}` : `${showDelta}`);
+      setText(`cmp-${key}-current`, formatDisplayStat(showCurrent));
+      setText(`cmp-${key}-candidate`, formatDisplayStat(showCandidate));
+      setText(`cmp-${key}-delta`, formatDisplayDelta(showDelta));
     }
+  }
+
+  function currentDisplayStatScale() {
+    const displayScaleEl = document.getElementById("build-display-stat-scale");
+    return Math.max(1, Number((displayScaleEl || {}).value || 100));
+  }
+
+  function formatDisplayStat(value, scale) {
+    const numeric = Number(value || 0);
+    const useScale = Math.max(1, Number(scale || currentDisplayStatScale()));
+    if (!Number.isFinite(numeric)) return "0";
+    return String(Math.round(numeric * useScale)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function formatDisplayDelta(value, scale) {
+    const numeric = Number(value || 0);
+    const useScale = Math.max(1, Number(scale || currentDisplayStatScale()));
+    if (!Number.isFinite(numeric)) return "±0";
+    const scaled = Math.round(numeric * useScale);
+    if (scaled === 0) return "±0";
+    const body = String(Math.abs(scaled)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return scaled > 0 ? `+${body}` : `-${body}`;
   }
 
   function openPickerSection(sectionName) {

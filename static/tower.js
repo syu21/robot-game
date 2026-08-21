@@ -54,6 +54,13 @@
       };
       var timers = [];
       var finished = false;
+      var displayStatScale = Math.max(1, Number(root.dataset.displayStatScale || 100));
+
+      function formatDisplayStat(value) {
+        var numeric = Number(value || 0);
+        if (!Number.isFinite(numeric)) numeric = 0;
+        return String(Math.round(numeric * displayStatScale)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      }
 
       function setStatus(text) {
         if (status) status.textContent = text;
@@ -98,7 +105,7 @@
         var max = Math.max(1, Number(meter.max || 1));
         var next = Math.max(0, Math.min(max, Number(value || 0)));
         meter.value = next;
-        if (text) text.textContent = String(Math.round(next));
+        if (text) text.textContent = formatDisplayStat(next);
       }
 
       function setFinalHp(side) {

@@ -825,6 +825,7 @@ BUILD_PART_ROTATE_STEP = 5
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
 DROP_PART_UPDATE_TOTAL_THRESHOLD = 3
+DISPLAY_STAT_SCALE = 100
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
 R_PART_PLUS_CAP_UNLOCK_LAYER = 4
 R_PART_PLUS_CAP_AFTER_LAYER4 = 7
@@ -1363,7 +1364,7 @@ STAT_UI_LABELS = {
     "spd": "素早さ",
     "acc": "命中",
     "cri": "会心",
-    "power": "総合",
+    "power": "総合性能",
 }
 STAT_ABBR_TO_KEY = {
     "HP": "hp",
@@ -7567,14 +7568,15 @@ def _build_battle_replay_summary(
 
     def _result_label(hit_type, damage_value, *, actor, target):
         damage = int(damage_value or 0)
+        damage_label = format_display_stat(damage)
         if hit_type == "miss":
             return f"{target} は回避"
         if hit_type == "block":
             return f"{target} が受け切った"
         if hit_type == "crit":
-            return f"{target} に会心 -{damage}"
+            return f"{target} に会心 -{damage_label}"
         if damage > 0:
-            return f"{target} に -{damage}"
+            return f"{target} に -{damage_label}"
         return f"{actor} が仕掛けた"
 
     def _value_label(hit_type, damage_value):
@@ -7584,7 +7586,7 @@ def _build_battle_replay_summary(
         if hit_type == "block":
             return "BLOCK"
         if damage > 0:
-            return f"-{damage}"
+            return f"-{format_display_stat(damage)}"
         return ""
 
     def _row_int(row, key, fallback=0):
@@ -7812,6 +7814,7 @@ def _build_battle_replay_summary(
             "action_name": str(row.get(f"{side}_action") or "攻撃"),
             "action_label": _action_label(side, row.get(f"{side}_action"), hit_type, crit=crit, finisher=is_finisher),
             "result_label": _result_label(hit_type, damage, actor=actor_name, target=target_name),
+            "damage": int(damage),
             "value_label": _value_label(hit_type, damage),
             "element": _step_element(side, row),
             "hit_type": hit_type,
@@ -8845,7 +8848,7 @@ PARTS_SORT_DEFS = (
     {"key": "recommended", "label": "おすすめ順"},
     {"key": "new", "label": "新しい順"},
     {"key": "old", "label": "古い順"},
-    {"key": "total", "label": "総合値が高い順"},
+    {"key": "total", "label": "総合性能が高い順"},
     {"key": "plus", "label": "+値が高い順"},
     {"key": "rarity", "label": "レアリティ順"},
     {"key": "part_type", "label": "部位・種類順"},
@@ -8990,6 +8993,31 @@ def _part_total_value(stat_map):
     return sum(int(stats.get(key) or 0) for key in PART_STAT_KEYS)
 
 
+def scale_display_stat(value, *, scale=DISPLAY_STAT_SCALE):
+    if value is None:
+        return 0
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(numeric):
+        return 0
+    return int(round(numeric * int(scale or 1)))
+
+
+def format_display_stat(value):
+    return f"{scale_display_stat(value):,}"
+
+
+def format_display_delta(value):
+    scaled = scale_display_stat(value)
+    if scaled > 0:
+        return f"+{scaled:,}"
+    if scaled < 0:
+        return f"-{abs(scaled):,}"
+    return "±0"
+
+
 def _part_instance_owned_display_row(db, user_id, part_instance_id, *, statuses=None):
     try:
         instance_id = int(part_instance_id or 0)
@@ -9130,6 +9158,7 @@ def _build_drop_part_evaluation(db, user_id, dropped_part, *, area_key=None):
                     "label": _stat_label(key),
                     "delta": delta,
                     "delta_text": _delta_text(delta),
+                    "display_delta_text": format_display_delta(delta),
                     "delta_class": _delta_class(delta),
                     "_sort_abs": abs(delta),
                     "_sort_index": index,
@@ -9169,9 +9198,12 @@ def _build_drop_part_evaluation(db, user_id, dropped_part, *, area_key=None):
         "part_type": part_type,
         "part_type_label": _part_type_ui_label(part_type),
         "current_total": int(_part_total_value(equipped_stats)) if equipped_stats is not None else None,
+        "current_total_display": format_display_stat(_part_total_value(equipped_stats)) if equipped_stats is not None else None,
         "dropped_total": int(_part_total_value(dropped_stats)),
+        "dropped_total_display": format_display_stat(_part_total_value(dropped_stats)),
         "total_delta": total_delta,
         "total_delta_text": _delta_text(total_delta) if total_delta is not None else None,
+        "total_delta_display_text": format_display_delta(total_delta) if total_delta is not None else None,
         "stat_rows": compare_rows,
         "standout_stat": ((character or {}).get("standout_stat")),
         "standout_stat_label": _stat_label((character or {}).get("standout_stat")) if character else None,
@@ -9233,9 +9265,12 @@ def _part_stat_rows(stats, compare_stats=None, *, focus_limit=2):
                 "key": key,
                 "label": _stat_label(key),
                 "value": value,
+                "display_value": format_display_stat(value),
                 "after_value": after_value,
+                "display_after_value": format_display_stat(after_value) if after_value is not None else None,
                 "delta": delta,
                 "delta_text": delta_text,
+                "display_delta_text": format_display_delta(delta) if delta is not None else None,
                 "delta_class": delta_class,
                 "is_focus": key in focus_keys,
             }
@@ -9262,8 +9297,10 @@ def _build_picker_stat_pair_rows(stats, compare_stats=None):
                 "key": key,
                 "label": _stat_label(key),
                 "value": value,
+                "display_value": format_display_stat(value),
                 "delta": delta,
                 "delta_text": delta_text,
+                "display_delta_text": format_display_delta(delta) if delta is not None else None,
                 "delta_class": delta_class,
             }
         rows.append(pair)
@@ -9278,10 +9315,12 @@ def _build_picker_summary_rows(stats, compare_stats=None, *, limit=2):
                 "key": row["key"],
                 "label": row["label"],
                 "value": int(row["value"]),
+                "display_value": format_display_stat(row["value"]),
                 "delta": None,
                 "delta_text": None,
+                "display_delta_text": None,
                 "delta_class": "flat",
-                "display_text": f"{row['label']} {int(row['value'])}",
+                "display_text": f"{row['label']} {format_display_stat(row['value'])}",
             }
             for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(limit or 2)))
         ]
@@ -9300,10 +9339,12 @@ def _build_picker_summary_rows(stats, compare_stats=None, *, limit=2):
                 "key": key,
                 "label": _stat_label(key),
                 "value": int(stat_map.get(key) or 0),
+                "display_value": format_display_stat(stat_map.get(key) or 0),
                 "delta": delta,
                 "delta_text": _delta_text(delta),
+                "display_delta_text": format_display_delta(delta),
                 "delta_class": _delta_class(delta),
-                "display_text": f"{_stat_label(key)} {_delta_text(delta)}",
+                "display_text": f"{_stat_label(key)} {format_display_delta(delta)}",
                 "_sort_abs": abs(delta),
                 "_sort_focus": 0 if key in focus_keys else 1,
                 "_sort_index": index,
@@ -9322,10 +9363,12 @@ def _build_picker_summary_rows(stats, compare_stats=None, *, limit=2):
             "key": row["key"],
             "label": row["label"],
             "value": int(row["value"]),
+            "display_value": format_display_stat(row["value"]),
             "delta": 0,
             "delta_text": "±0",
+            "display_delta_text": "±0",
             "delta_class": "flat",
-            "display_text": f"{row['label']} {int(row['value'])}",
+            "display_text": f"{row['label']} {format_display_stat(row['value'])}",
         }
         for row in _robot_focus_stat_rows(stat_map, limit=max(1, int(limit or 2)))
     ]
@@ -9335,19 +9378,19 @@ def _build_picker_total_summary(stats, compare_stats=None):
     total_value = int(_part_total_value(stats))
     if compare_stats is None:
         return {
-            "label": "総合",
+            "label": "総合性能",
             "value": total_value,
-            "value_text": str(total_value),
+            "value_text": format_display_stat(total_value),
             "value_class": "flat",
             "note_text": None,
         }
     delta = int(total_value - int(_part_total_value(compare_stats)))
     return {
-        "label": "総合差分",
+        "label": "総合性能差分",
         "value": total_value,
-        "value_text": _delta_text(delta),
+        "value_text": format_display_delta(delta),
         "value_class": _delta_class(delta),
-        "note_text": f"候補総合 {total_value}",
+        "note_text": f"候補総合性能 {format_display_stat(total_value)}",
     }
 
 
@@ -9421,6 +9464,7 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
     item["image_url"] = url_for("static", filename=_part_image_rel(item), v=APP_VERSION)
     item["stats"] = stats
     item["total_value"] = int(_part_total_value(stats))
+    item["total_value_display"] = format_display_stat(item["total_value"])
     item["focus_rows"] = _robot_focus_stat_rows(stats, limit=2)
     item["focus_line"] = " / ".join(row["label"] for row in item["focus_rows"])
     item["extreme_title"] = _extract_part_extreme_title(item)
@@ -9432,8 +9476,10 @@ def _part_card_payload(part_row, *, compare_row=None, can_discard=None):
         item["compare_image_url"] = url_for("static", filename=_part_image_rel(compare_item), v=APP_VERSION)
         item["compare_stats"] = compare_stats
         item["compare_total_value"] = int(_part_total_value(compare_stats))
+        item["compare_total_value_display"] = format_display_stat(item["compare_total_value"])
         item["compare_total_delta"] = int(item["compare_total_value"] - item["total_value"])
         item["compare_total_delta_text"] = _delta_text(item["compare_total_delta"])
+        item["compare_total_delta_display_text"] = format_display_delta(item["compare_total_delta"])
     item["stat_rows"] = _part_stat_rows(stats, compare_stats)
     return item
 
@@ -9513,6 +9559,7 @@ def _build_picker_part_item(part_row, *, compare_item=None):
     item["focus_rows"] = card["focus_rows"]
     item["focus_line"] = card["focus_line"]
     item["total_value"] = card["total_value"]
+    item["total_value_display"] = card["total_value_display"]
     item["extreme_title"] = card["extreme_title"]
     item["mechanism_trait"] = card.get("mechanism_trait")
     compare_stats = compare_item.get("estimate_stats") if compare_item else None
@@ -11885,8 +11932,8 @@ def _attack_note(action, damage, detail, debug=False):
             return "→ MISS（命中不足）"
         return "→ 0ダメ（装甲が硬い）"
     if detail.get("miss", False):
-        return f"→ MISS（命中率 {hit_pct}% / {_stat_label('acc')} {acc} vs EVA {eva} / 補正 {bonus_pct:+d}%）"
-    return f"→ 0ダメ（防御で軽減 / {_stat_label('acc')} {acc} vs EVA {eva}）"
+        return f"→ MISS（命中率 {hit_pct}% / {_stat_label('acc')} {format_display_stat(acc)} vs EVA {format_display_stat(eva)} / 補正 {bonus_pct:+d}%）"
+    return f"→ 0ダメ（防御で軽減 / {_stat_label('acc')} {format_display_stat(acc)} vs EVA {format_display_stat(eva)}）"
 
 
 def _has_area_boss_candidates(db, area_key):
@@ -21538,7 +21585,7 @@ def _research_module_strategy_card(module, turn_logs, *, result_win=False):
     metric_lines.append(f"会心 {int(metrics['player_crit_count'])}回")
     metric_lines.append(f"MISS {int(metrics['player_miss_count'])}回")
     if int(metrics["player_max_damage"]) > 0:
-        metric_lines.append(f"最大ダメージ {int(metrics['player_max_damage'])}")
+        metric_lines.append(f"最大ダメージ {format_display_stat(metrics['player_max_damage'])}")
     return {
         "module_instance_id": int(module_view.get("instance_id") or 0),
         "module_key": str(module_view.get("module_key") or ""),
@@ -43634,12 +43681,23 @@ def inject_app_meta():
         "legal_brand_name": LEGAL_BRAND_NAME,
         "legal_disclosure_policy": LEGAL_DISCLOSURE_POLICY,
         "stat_ui_labels": STAT_UI_LABELS,
+        "display_stat_scale": int(DISPLAY_STAT_SCALE),
         "maintenance_mode": maintenance_mode,
         "maintenance_is_partial": maintenance_mode == "partial",
         "maintenance_is_full": maintenance_mode == "full",
         "maintenance_banner_text": _maintenance_banner_text(),
         "trial_mode": _is_trial_session(),
     }
+
+
+@app.template_filter("display_stat")
+def display_stat_filter(value):
+    return format_display_stat(value)
+
+
+@app.template_filter("display_delta")
+def display_delta_filter(value):
+    return format_display_delta(value)
 
 
 @app.context_processor
@@ -44124,7 +44182,7 @@ def _public_changelog_entries():
             "title": "メンテモードと育成UIの分かりやすさを改善",
             "notes": [
                 "`/admin/release` から `通常運用 / 軽量メンテ / 全面メンテ` を管理者が切り替えられるようにし、必要なら `MAINTENANCE_MODE=partial/full` で緊急上書きできる軽量メンテ運用に対応",
-                "ヘッダー左上の `ロボらぼ` ロゴ全体からホームへ戻れるようにし、`/parts` には `新しい順 / 総合値順 / +値順` などのソートを追加して探しやすく改善",
+                "ヘッダー左上の `ロボらぼ` ロゴ全体からホームへ戻れるようにし、`/parts` には `新しい順 / 総合性能順 / +値順` などのソートを追加して探しやすく改善",
                 "`/guide / home / build / ロボ個別 / ロボ展示` で `思想の戦い方` と `セットボーナスの条件・効果` を短く分かりやすく表示するよう整理",
             ],
         },
@@ -47827,18 +47885,19 @@ def _tower_battle_log_items(battle, robot_name):
         for item in turn_events:
             turn = max(1, int(item.get("turn") or 1))
             damage = max(0, int(item.get("damage") or 0))
+            damage_label = format_display_stat(damage)
             if str(item.get("actor") or "") == "enemy":
-                items.append({"actor": "enemy", "text": f"{turn}T: {enemy_name} の攻撃。{robot_name} に合計 {damage} ダメージ。"})
+                items.append({"actor": "enemy", "text": f"{turn}T: {enemy_name} の攻撃。{robot_name} に合計 {damage_label} ダメージ。"})
             else:
-                items.append({"actor": "player", "text": f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage} ダメージ。"})
+                items.append({"actor": "player", "text": f"{turn}T: {robot_name} の攻撃。{enemy_name} に合計 {damage_label} ダメージ。"})
                 if int(item.get("target_hp_after") or 0) <= 0:
                     items.append({"actor": "system", "text": "敵を撃破！"})
                     return items
         items.append({"actor": "system", "text": "敵を撃破！" if result == "win" else "挑戦終了。"})
         return items
-    items = [{"actor": "player", "text": f"1T: {robot_name} の攻撃。{enemy_name} に合計 {dealt} ダメージ。"}]
+    items = [{"actor": "player", "text": f"1T: {robot_name} の攻撃。{enemy_name} に合計 {format_display_stat(dealt)} ダメージ。"}]
     if taken > 0:
-        items.append({"actor": "enemy", "text": f"{enemy_name} の反撃。{robot_name} に合計 {taken} ダメージ。"})
+        items.append({"actor": "enemy", "text": f"{enemy_name} の反撃。{robot_name} に合計 {format_display_stat(taken)} ダメージ。"})
     else:
         items.append({"actor": "system", "text": f"{enemy_name} の反撃を受けずに押し切った。"})
     if turns > 1:
@@ -62949,14 +63008,14 @@ def build_confirm():
             for key in ("hp", "atk", "def", "spd", "acc", "cri")
         }
         positive_rows = [
-            {"label": _stat_label(key), "delta_text": f"+{delta}", "delta": int(delta)}
+            {"label": _stat_label(key), "delta_text": format_display_delta(delta), "delta": int(delta)}
             for key, delta in sorted(deltas.items(), key=lambda item: -int(item[1]))
             if int(delta) > 0
         ][:2]
         before_total = float((first_upgrade_before_stat_obj or {}).get("power") or 0.0)
         after_total = float((first_upgrade_after_stat_obj or {}).get("power") or 0.0)
         if round(after_total - before_total, 1) > 0:
-            positive_rows.append({"label": "総合値", "delta_text": f"+{round(after_total - before_total, 1)}", "delta": round(after_total - before_total, 1)})
+            positive_rows.append({"label": "総合性能", "delta_text": format_display_delta(after_total - before_total), "delta": round(after_total - before_total, 1)})
         session["first_upgrade_build_result"] = {
             "robot_instance_id": int(instance_id),
             "changed_part_types": list(first_upgrade_changed_part_types),
@@ -62978,14 +63037,14 @@ def build_confirm():
             for key in ("hp", "atk", "def", "spd", "acc", "cri")
         }
         positive_rows = [
-            {"label": _stat_label(key), "delta_text": f"+{delta}", "delta": int(delta)}
+            {"label": _stat_label(key), "delta_text": format_display_delta(delta), "delta": int(delta)}
             for key, delta in sorted(deltas.items(), key=lambda item: -int(item[1]))
             if int(delta) > 0
         ][:2]
         before_total = float((first_upgrade_before_stat_obj or {}).get("power") or 0.0)
         after_total = float((first_upgrade_after_stat_obj or {}).get("power") or 0.0)
         if round(after_total - before_total, 1) > 0:
-            positive_rows.append({"label": "総合値", "delta_text": f"+{round(after_total - before_total, 1)}", "delta": round(after_total - before_total, 1)})
+            positive_rows.append({"label": "総合性能", "delta_text": format_display_delta(after_total - before_total), "delta": round(after_total - before_total, 1)})
         session["boss_retry_build_result"] = {
             "robot_instance_id": int(instance_id),
             "diagnosis_key": boss_retry_diagnosis_key,
@@ -67299,7 +67358,7 @@ def parts():
         for item in all_items:
             if int(item.get("id") or 0) == int(recommended_part_instance_id or 0):
                 item["first_upgrade_recommended"] = True
-                item["first_upgrade_recommended_note"] = "現在の装備より総合値が高いパーツです"
+                item["first_upgrade_recommended_note"] = "現在の装備より総合性能が高いパーツです"
                 break
         if recommended_part_instance_id:
             all_items.sort(key=lambda item: 0 if int(item.get("id") or 0) == int(recommended_part_instance_id) else 1)
@@ -67358,6 +67417,9 @@ def parts():
                     equipped_stats = compute_part_stats(dict(equipped_row))
                     item["drop_focus_compare_label"] = _part_display_name_ja(equipped_row)
                     item["drop_focus_total_delta_text"] = _delta_text(
+                        int(item["total_value"]) - int(_part_total_value(equipped_stats))
+                    )
+                    item["drop_focus_total_delta_display_text"] = format_display_delta(
                         int(item["total_value"]) - int(_part_total_value(equipped_stats))
                     )
                     item["drop_focus_delta_rows"] = _build_picker_summary_rows(
@@ -67761,7 +67823,9 @@ def evolve_parts():
                 "part_type_label": compare_payload["part_type_label"],
                 "source_total_value": compare_payload["total_value"],
                 "target_total_value": compare_payload["compare_total_value"],
+                "total_delta": int(compare_payload["compare_total_delta"]),
                 "total_delta_text": compare_payload["compare_total_delta_text"],
+                "total_delta_display_text": compare_payload["compare_total_delta_display_text"],
                 "stat_rows": compare_payload["stat_rows"],
             }
             flash("✨ 進化成功！", "notice")

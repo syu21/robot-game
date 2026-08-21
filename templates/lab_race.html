@@ -11,7 +11,7 @@
     <select id="robot_instance_id" name="robot_instance_id" required>
       {% for row in robot_choices %}
       <option value="{{ row['id'] }}">
-        {{ row['name'] }} / 総合 {{ row['power'] }} / SPD {{ row['stats']['spd'] }} / DEF {{ row['stats']['def'] }}
+        {{ row['name'] }} / 総合性能 {{ row['power']|display_stat }} / SPD {{ row['stats']['spd']|display_stat }} / DEF {{ row['stats']['def']|display_stat }}
       </option>
       {% endfor %}
     </select>

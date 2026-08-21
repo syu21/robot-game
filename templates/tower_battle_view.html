@@ -14,7 +14,7 @@
 {% endif %}
 
 <section class="panel tower-battle-panel">
-  <div class="tower-combat-card tower-spire-card tower-battle-card is-replay-pending" data-tower-battle-replay>
+  <div class="tower-combat-card tower-spire-card tower-battle-card is-replay-pending" data-tower-battle-replay data-display-stat-scale="{{ display_stat_scale }}">
     <div class="home-explore-card-head tower-battle-card-head">
       <div>
         <div class="home-explore-kicker">観測塔 -ASTRAL SPIRE-</div>
@@ -43,7 +43,7 @@
         <div class="home-explore-kicker">使用ロボ</div>
         <b>{{ battle['robot_name'] }}</b>
         <div class="tower-hp-panel">
-          <div class="tower-hp-text">HP <span data-tower-hp-text="player">{{ battle['robot_hp_start'] }}</span> / {{ battle['robot_hp_max'] }}</div>
+          <div class="tower-hp-text">HP <span data-tower-hp-text="player">{{ battle['robot_hp_start']|display_stat }}</span> / {{ battle['robot_hp_max']|display_stat }}</div>
           <progress class="tower-hp-meter" max="{{ battle['robot_hp_max'] }}" value="{{ battle['robot_hp_start'] }}" data-tower-hp-meter="player" data-final-value="{{ battle['robot_hp_end'] }}"></progress>
         </div>
       </div>
@@ -53,7 +53,7 @@
         <div class="home-explore-kicker">敵</div>
         <b>{{ battle['enemy_name'] }}</b>
         <div class="tower-hp-panel">
-          <div class="tower-hp-text">HP <span data-tower-hp-text="enemy">{{ battle['enemy_hp_start'] }}</span> / {{ battle['enemy_hp_max'] }}</div>
+          <div class="tower-hp-text">HP <span data-tower-hp-text="enemy">{{ battle['enemy_hp_start']|display_stat }}</span> / {{ battle['enemy_hp_max']|display_stat }}</div>
           <progress class="tower-hp-meter" max="{{ battle['enemy_hp_max'] }}" value="{{ battle['enemy_hp_start'] }}" data-tower-hp-meter="enemy" data-final-value="{{ battle['enemy_hp_end'] }}"></progress>
         </div>
       </div>

@@ -38,12 +38,12 @@
     <div class="card">
       <div><b>機体ステータス</b></div>
       <div class="stats">
-        <div>耐久 {{ trial_robot_stats['hp'] }}</div>
-        <div>攻撃 {{ trial_robot_stats['atk'] }}</div>
-        <div>防御 {{ trial_robot_stats['def'] }}</div>
-        <div>素早さ {{ trial_robot_stats['spd'] }}</div>
-        <div>命中 {{ trial_robot_stats['acc'] }}</div>
-        <div>会心 {{ trial_robot_stats['cri'] }}</div>
+        <div>耐久 {{ trial_robot_stats['hp']|display_stat }}</div>
+        <div>攻撃 {{ trial_robot_stats['atk']|display_stat }}</div>
+        <div>防御 {{ trial_robot_stats['def']|display_stat }}</div>
+        <div>素早さ {{ trial_robot_stats['spd']|display_stat }}</div>
+        <div>命中 {{ trial_robot_stats['acc']|display_stat }}</div>
+        <div>会心 {{ trial_robot_stats['cri']|display_stat }}</div>
       </div>
       <p class="robot-time">所持コイン {{ trial_state['coins'] }}</p>
       <p class="link"><a href="{{ url_for('parts') }}">貸与パーツを見る</a></p>

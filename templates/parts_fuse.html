@@ -97,7 +97,7 @@
         並び替え
         <select name="base_sort">
           <option value="plus" {% if selected_base_sort == 'plus' %}selected{% endif %}>+値順</option>
-          <option value="total" {% if selected_base_sort == 'total' %}selected{% endif %}>総合値順</option>
+          <option value="total" {% if selected_base_sort == 'total' %}selected{% endif %}>総合性能順</option>
           <option value="new" {% if selected_base_sort == 'new' %}selected{% endif %}>新しい順</option>
         </select>
       </label>
@@ -131,7 +131,7 @@
       {% endif %}
     </div>
     {% if last_fuse_result.get('power_delta_estimate') %}
-    <div class="part-meta-line">推定戦闘力増分 {{ "%+d"|format(last_fuse_result.get('power_delta_estimate')|int) }}</div>
+    <div class="part-meta-line">推定戦闘力増分 {{ last_fuse_result.get('power_delta_estimate')|display_delta }}</div>
     {% endif %}
     {% for line in last_fuse_result.get('daily_research_lines', []) %}
     <div class="part-meta-line">{{ line }}</div>
@@ -149,7 +149,7 @@
               <span class="part-chip rarity-{{ cp['rarity_label']|lower }}">{{ cp['rarity_label'] }}</span>
               <span class="part-chip">+{{ cp['plus'] }}</span>
             </div>
-            <div class="part-meta-line">総合値 {{ cp['total_value'] }}{% if cp.get('focus_line') %} / 注目 {{ cp['focus_line'] }}{% endif %}</div>
+            <div class="part-meta-line">総合性能 {{ cp.get('total_value_display', cp['total_value']|display_stat) }}{% if cp.get('focus_line') %} / 注目 {{ cp['focus_line'] }}{% endif %}</div>
             {% if cp.get('mechanism_trait') %}
             <div class="part-meta-line">機構特性：{{ cp['mechanism_trait']['display_label'] }} / {{ cp['mechanism_trait']['description'] }}</div>
             {% endif %}
@@ -204,7 +204,7 @@
             </div>
             <div class="part-meta-line">対象 {{ group['target_count_before'] }}個 / 消える素材 {{ group['consumed_count'] }}個 / -{{ group['coin_cost'] }}コイン</div>
             {% if group.get('compare_total_value') is not none %}
-            <div class="part-meta-line">総合値 {{ group['total_value'] }} → {{ group['compare_total_value'] }} ({{ group['compare_total_delta_text'] }})</div>
+            <div class="part-meta-line">総合性能 {{ group['total_value']|display_stat }} → {{ group['compare_total_value']|display_stat }} ({{ group.get('compare_total_delta_display_text', group.get('compare_total_delta_text') or (group.get('compare_total_delta')|display_delta)) }})</div>
             {% endif %}
           </div>
         </div>
@@ -263,7 +263,7 @@
             </div>
             <div class="part-meta-line">対象 {{ group['target_count_before'] }}個 / 所持 {{ group['inventory_count_before'] }} / 装備 {{ group['equipped_count_before'] }}</div>
             <div class="part-meta-line">消える素材 {{ group['consumed_count'] }}個 / 残る個体 {{ group['remaining_count_after'] }}個 / -{{ group['cost_total'] }}コイン</div>
-            <div class="part-meta-line">総合値 {{ group['total_value'] }} → {{ group['compare_total_value'] }} ({{ group['compare_total_delta_text'] }})</div>
+            <div class="part-meta-line">総合性能 {{ group['total_value']|display_stat }} → {{ group['compare_total_value']|display_stat }} ({{ group.get('compare_total_delta_display_text', group.get('compare_total_delta_text') or (group.get('compare_total_delta')|display_delta)) }})</div>
           </div>
         </div>
         {{ stat_grid(group['stat_rows']) }}
@@ -362,7 +362,7 @@
               {% endif %}
             </div>
             <div class="part-meta-line">消える個体 {{ candidate['consumed_count'] }} / -{{ candidate['cost_total'] }}コイン</div>
-            <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
+            <div class="part-meta-line">総合性能 {{ candidate['total_value']|display_stat }} → {{ candidate['compare_total_value']|display_stat }} ({{ candidate.get('compare_total_delta_display_text', candidate.get('compare_total_delta_text') or (candidate.get('compare_total_delta')|display_delta)) }})</div>
             <div class="part-meta-line">{{ candidate['material_notice'] }}</div>
           </div>
         </div>
@@ -460,9 +460,9 @@
                   <span>部位 {{ candidate['part_type_label'] }}</span>
                   <span>レア {{ candidate['rarity_label'] }}</span>
                   <span>+{{ candidate['plus'] }}</span>
-                  <span>総合 {{ candidate['total_value'] }}</span>
+                  <span>総合性能 {{ candidate.get('total_value_display', candidate['total_value']|display_stat) }}</span>
                 </div>
-                <div class="part-meta-line">総合値 {{ candidate['total_value'] }} → {{ candidate['compare_total_value'] }} ({{ candidate['compare_total_delta_text'] }})</div>
+                <div class="part-meta-line">総合性能 {{ candidate['total_value']|display_stat }} → {{ candidate['compare_total_value']|display_stat }} ({{ candidate.get('compare_total_delta_display_text', candidate.get('compare_total_delta_text') or (candidate.get('compare_total_delta')|display_delta)) }})</div>
                 {% if candidate.get('mechanism_trait') %}
                 <div class="part-meta-line">機構特性：{{ candidate['mechanism_trait']['display_label'] }} / {{ candidate['mechanism_trait']['description'] }}</div>
                 {% endif %}

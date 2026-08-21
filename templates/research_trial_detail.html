@@ -30,8 +30,8 @@
       {% if active_robot and stats %}
       <div class="upgrade-cost">{{ active_robot['name'] }} / {{ robot_type_label }}</div>
       <div class="robot-time">
-        HP {{ stats['stats']['hp'] }} / ATK {{ stats['stats']['atk'] }} / DEF {{ stats['stats']['def'] }}
-        / SPD {{ stats['stats']['spd'] }} / ACC {{ stats['stats']['acc'] }} / CRI {{ stats['stats']['cri'] }}
+        HP {{ stats['stats']['hp']|display_stat }} / ATK {{ stats['stats']['atk']|display_stat }} / DEF {{ stats['stats']['def']|display_stat }}
+        / SPD {{ stats['stats']['spd']|display_stat }} / ACC {{ stats['stats']['acc']|display_stat }} / CRI {{ stats['stats']['cri']|display_stat }}
       </div>
       {% if requirement['ok'] %}
       <div class="module-card-meta"><span class="module-badge ok">挑戦可能</span></div>

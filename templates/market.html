@@ -90,7 +90,7 @@
           <span>{{ preview['part_type_label'] }}</span>
           <span>{{ preview['rarity_label'] }}</span>
           <span>{{ preview['plus_label'] }}</span>
-          <span>総合 {{ preview['total_value'] }}</span>
+          <span>総合性能 {{ preview['total_value']|display_stat }}</span>
         </div>
         {% if preview.get('focus_line') %}
         <div class="market-part-focus">注目 {{ preview['focus_line'] }}</div>
@@ -98,7 +98,7 @@
         {% if preview.get('stat_rows') %}
         <div class="market-part-stat-grid">
           {% for stat in preview['stat_rows'] %}
-          <span><b>{{ stat['label'] }}</b> {{ stat['value'] }}</span>
+          <span><b>{{ stat['label'] }}</b> {{ stat['value']|display_stat }}</span>
           {% endfor %}
         </div>
         {% endif %}

@@ -128,7 +128,7 @@
       {% elif preset['invalid'] %}
       <div class="comms-status-badge is-muted">使用不可</div>
       {% else %}
-      <div class="robot-time">{{ preset['profile']['signature_label'] if preset.get('profile') else '構成保存済み' }}{% if preset.get('power') %} / {{ preset['power'] }}{% endif %}</div>
+      <div class="robot-time">{{ preset['profile']['signature_label'] if preset.get('profile') else '構成保存済み' }}{% if preset.get('power') %} / {{ preset['power']|display_stat }}{% endif %}</div>
       {% endif %}
       {% if preset['saved'] %}
       <div class="robot-time">モジュール {{ preset['module_count'] }}</div>
@@ -305,13 +305,13 @@
   <h2>ステータス</h2>
   {% if robot['final_stats'] %}
   <div class="stats-grid">
-    <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ robot['power'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ robot['final_stats']['hp'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ robot['final_stats']['atk'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ robot['final_stats']['def'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ robot['final_stats']['spd'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ robot['final_stats']['acc'] }}</div></div>
-    <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ robot['final_stats']['cri'] }}</div></div>
+    <div class="stat-card"><div class="stat-label">総合性能</div><div class="stat-value">{{ robot['power']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ robot['final_stats']['hp']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ robot['final_stats']['atk']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ robot['final_stats']['def']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ robot['final_stats']['spd']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ robot['final_stats']['acc']|display_stat }}</div></div>
+    <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ robot['final_stats']['cri']|display_stat }}</div></div>
   </div>
   {% else %}
   <div class="robot-part">ステータスを取得できません。</div>

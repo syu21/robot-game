@@ -77,13 +77,13 @@
             <span>
               {{ pair['left']['label'] }} {{ pair['left']['value'] }}
               {% if p['has_compare_target'] and pair['left']['delta'] %}
-                <em class="picker-mini-delta is-{{ pair['left']['delta_class'] }}">{{ pair['left']['delta_text'] }}</em>
+                <em class="picker-mini-delta is-{{ pair['left']['delta_class'] }}">{{ pair['left'].get('display_delta_text', pair['left']['delta_text']) }}</em>
               {% endif %}
             </span>
             <span>
               {{ pair['right']['label'] }} {{ pair['right']['value'] }}
               {% if p['has_compare_target'] and pair['right']['delta'] %}
-                <em class="picker-mini-delta is-{{ pair['right']['delta_class'] }}">{{ pair['right']['delta_text'] }}</em>
+                <em class="picker-mini-delta is-{{ pair['right']['delta_class'] }}">{{ pair['right'].get('display_delta_text', pair['right']['delta_text']) }}</em>
               {% endif %}
             </span>
           </div>
@@ -115,7 +115,7 @@
       <div class="picker-current-name">{{ part['display_name_with_plus'] }}</div>
       <div class="part-chip-row">
         <span class="part-chip">{{ part['frame_label'] }}</span>
-        <span class="part-chip is-equipped">総合 {{ part['total_value'] }}</span>
+        <span class="part-chip is-equipped">総合性能 {{ part.get('total_value_display', part['total_value']) }}</span>
         {% for row in part['summary_rows'] %}
           <span class="part-chip">{{ row['display_text'] }}</span>
         {% endfor %}
@@ -143,10 +143,10 @@
   {% if first_upgrade_recommendation %}
   <div class="part-meta-line">
     おすすめ：{{ first_upgrade_recommendation.get('recommended_part_type_label') }}
-    / 総合 {{ first_upgrade_recommendation.get('current_total') }} → {{ first_upgrade_recommendation.get('recommended_total') }}
+    / 総合性能 {{ first_upgrade_recommendation.get('current_total')|display_stat }} → {{ first_upgrade_recommendation.get('recommended_total')|display_stat }}
   </div>
   {% for row in first_upgrade_recommendation.get('positive_rows', []) %}
-  <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
+  <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta')|display_delta }}</span>
   {% endfor %}
   {% else %}
   <div class="part-meta-line">回収したパーツを見比べてみましょう。</div>
@@ -337,14 +337,14 @@
         <h3>ステータス比較</h3>
         <div class="upgrade-cost"><b>組み立て中（プレビュー）</b></div>
         <div class="estimate-grid">
-          <div class="estimate-item">耐久 <b id="est-hp">{{ estimate['stats']['hp'] if estimate else 0 }}</b></div>
-          <div class="estimate-item">攻撃 <b id="est-atk">{{ estimate['stats']['atk'] if estimate else 0 }}</b></div>
-          <div class="estimate-item">防御 <b id="est-def">{{ estimate['stats']['def'] if estimate else 0 }}</b></div>
-          <div class="estimate-item">素早さ <b id="est-spd">{{ estimate['stats']['spd'] if estimate else 0 }}</b></div>
-          <div class="estimate-item">命中 <b id="est-acc">{{ estimate['stats']['acc'] if estimate else 0 }}</b></div>
-          <div class="estimate-item">会心 <b id="est-cri">{{ estimate['stats']['cri'] if estimate else 0 }}</b></div>
+          <div class="estimate-item">耐久 <b id="est-hp">{{ (estimate['stats']['hp'] if estimate else 0)|display_stat }}</b></div>
+          <div class="estimate-item">攻撃 <b id="est-atk">{{ (estimate['stats']['atk'] if estimate else 0)|display_stat }}</b></div>
+          <div class="estimate-item">防御 <b id="est-def">{{ (estimate['stats']['def'] if estimate else 0)|display_stat }}</b></div>
+          <div class="estimate-item">素早さ <b id="est-spd">{{ (estimate['stats']['spd'] if estimate else 0)|display_stat }}</b></div>
+          <div class="estimate-item">命中 <b id="est-acc">{{ (estimate['stats']['acc'] if estimate else 0)|display_stat }}</b></div>
+          <div class="estimate-item">会心 <b id="est-cri">{{ (estimate['stats']['cri'] if estimate else 0)|display_stat }}</b></div>
         </div>
-        <div class="upgrade-cost">総合: <b id="est-power">{{ estimate['power'] if estimate else 0 }}</b></div>
+        <div class="upgrade-cost">総合性能: <b id="est-power">{{ (estimate['power'] if estimate else 0)|display_stat }}</b></div>
         {% if candidate_is_mixed_frame %}
         <div class="estimate-bonus">
           <div><b>実験機</b></div>
@@ -380,14 +380,14 @@
         <hr />
         <div class="upgrade-cost"><b>現装備（起動中ロボ）</b></div>
         <div class="estimate-grid">
-          <div class="estimate-item">耐久 <b id="cur-hp">{{ current_robot_stats['hp'] }}</b></div>
-          <div class="estimate-item">攻撃 <b id="cur-atk">{{ current_robot_stats['atk'] }}</b></div>
-          <div class="estimate-item">防御 <b id="cur-def">{{ current_robot_stats['def'] }}</b></div>
-          <div class="estimate-item">素早さ <b id="cur-spd">{{ current_robot_stats['spd'] }}</b></div>
-          <div class="estimate-item">命中 <b id="cur-acc">{{ current_robot_stats['acc'] }}</b></div>
-          <div class="estimate-item">会心 <b id="cur-cri">{{ current_robot_stats['cri'] }}</b></div>
+          <div class="estimate-item">耐久 <b id="cur-hp">{{ current_robot_stats['hp']|display_stat }}</b></div>
+          <div class="estimate-item">攻撃 <b id="cur-atk">{{ current_robot_stats['atk']|display_stat }}</b></div>
+          <div class="estimate-item">防御 <b id="cur-def">{{ current_robot_stats['def']|display_stat }}</b></div>
+          <div class="estimate-item">素早さ <b id="cur-spd">{{ current_robot_stats['spd']|display_stat }}</b></div>
+          <div class="estimate-item">命中 <b id="cur-acc">{{ current_robot_stats['acc']|display_stat }}</b></div>
+          <div class="estimate-item">会心 <b id="cur-cri">{{ current_robot_stats['cri']|display_stat }}</b></div>
         </div>
-        <div class="upgrade-cost">総合: <b id="cur-power">{{ current_robot_stats['power'] }}</b></div>
+        <div class="upgrade-cost">総合性能: <b id="cur-power">{{ current_robot_stats['power']|display_stat }}</b></div>
         <div class="estimate-bonus is-current">
           <div><b>セットボーナス: {{ current_set_bonus_view['status_label'] }}</b></div>
           <div>{{ current_set_bonus_view['condition_text'] }}</div>
@@ -413,12 +413,12 @@
         <div class="robot-time">{{ current_style_state['current_support_line'] }}</div>
         {% endif %}
         <hr />
-        <div class="upgrade-cost"><b>総合差分</b></div>
+        <div class="upgrade-cost"><b>総合性能差分</b></div>
         {% for row in stat_comparison_rows %}
         <div class="upgrade-cost">
-          {{ row['label'] }} <span id="cmp-{{ row['key'] }}-current">{{ row['current'] }}</span> →
-          <span id="cmp-{{ row['key'] }}-candidate">{{ row['candidate'] }}</span>
-          (<span id="cmp-{{ row['key'] }}-delta">{{ row['delta_text'] }}</span>)
+          {{ row['label'] }} <span id="cmp-{{ row['key'] }}-current">{{ row['current']|display_stat }}</span> →
+          <span id="cmp-{{ row['key'] }}-candidate">{{ row['candidate']|display_stat }}</span>
+          (<span id="cmp-{{ row['key'] }}-delta">{{ row['delta']|display_delta }}</span>)
         </div>
         {% endfor %}
       </div>
@@ -510,6 +510,7 @@
 </form>
 <input type="hidden" id="build-set-bonus-table" value='{{ set_bonus_table | tojson }}' />
 <input type="hidden" id="build-element-label-map" value='{{ element_label_map | tojson }}' />
+<input type="hidden" id="build-display-stat-scale" value="{{ display_stat_scale }}" />
 <input type="hidden" id="build-current-hp" value="{{ current_robot_stats['hp'] }}" />
 <input type="hidden" id="build-current-atk" value="{{ current_robot_stats['atk'] }}" />
 <input type="hidden" id="build-current-def" value="{{ current_robot_stats['def'] }}" />

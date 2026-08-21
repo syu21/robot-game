@@ -62,6 +62,40 @@ class PartsUiTests(unittest.TestCase):
             session["username"] = "parts_ui_tester"
         return client
 
+    def test_display_stat_helpers_scale_without_changing_raw_values(self):
+        self.assertEqual(game_app.DISPLAY_STAT_SCALE, 100)
+        self.assertEqual(game_app.scale_display_stat(12), 1200)
+        self.assertEqual(game_app.scale_display_stat(12.5), 1250)
+        self.assertEqual(game_app.scale_display_stat(None), 0)
+        self.assertEqual(game_app.format_display_stat(1234), "123,400")
+        self.assertEqual(game_app.format_display_delta(3), "+300")
+        self.assertEqual(game_app.format_display_delta(-2), "-200")
+        self.assertEqual(game_app.format_display_delta(0), "±0")
+
+    def test_part_payload_keeps_internal_stats_raw_and_adds_scaled_display_values(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            row = db.execute(
+                """
+                SELECT pi.*, rp.part_type, rp.key, rp.image_path, rp.rarity, rp.element, rp.series,
+                       rp.frame_type, rp.display_name_ja, rp.offset_x, rp.offset_y
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.user_id = ? AND pi.status = 'equipped'
+                ORDER BY pi.id ASC
+                LIMIT 1
+                """,
+                (self.user_id,),
+            ).fetchone()
+            with game_app.app.test_request_context("/parts"):
+                payload = game_app._part_card_payload(row)
+
+        self.assertIsInstance(payload["total_value"], int)
+        self.assertEqual(payload["total_value_display"], game_app.format_display_stat(payload["total_value"]))
+        for stat_row in payload["stat_rows"]:
+            self.assertEqual(stat_row["display_value"], game_app.format_display_stat(stat_row["value"]))
+            self.assertIsInstance(stat_row["value"], int)
+
     def _unlock_evolution(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -914,7 +948,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("HEAD（頭）", html)
         self.assertIn("RIGHT_ARM（右腕）", html)
         self.assertIn("現在装備", html)
-        self.assertIn("総合差分", html)
+        self.assertIn("総合性能差分", html)
         self.assertIn("詳細を開く", html)
         self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):

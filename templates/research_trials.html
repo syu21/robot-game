@@ -17,7 +17,7 @@
     <div class="robot-time">
       出撃ロボ: {{ trial_view['active_robot']['name'] }} / 型: {{ trial_view['robot_type_label'] }}
       {% if trial_view['stats'] %}
-      / HP {{ trial_view['stats']['stats']['hp'] }} ATK {{ trial_view['stats']['stats']['atk'] }} DEF {{ trial_view['stats']['stats']['def'] }} SPD {{ trial_view['stats']['stats']['spd'] }} ACC {{ trial_view['stats']['stats']['acc'] }}
+      / HP {{ trial_view['stats']['stats']['hp']|display_stat }} ATK {{ trial_view['stats']['stats']['atk']|display_stat }} DEF {{ trial_view['stats']['stats']['def']|display_stat }} SPD {{ trial_view['stats']['stats']['spd']|display_stat }} ACC {{ trial_view['stats']['stats']['acc']|display_stat }}
       {% endif %}
     </div>
     {% else %}

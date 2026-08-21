@@ -38,10 +38,10 @@
       <span class="weekly-fit-badge">倍率 {{ row['odds_text'] }}</span>
     </div>
     <div class="lab-entry-bet-stats">
-      <span>素早さ {{ row['spd'] }}</span>
-      <span>安定 {{ row['def'] }}</span>
-      <span>器用さ {{ row['acc'] }}</span>
-      <span>ひらめき {{ row['cri'] }}</span>
+      <span>素早さ {{ row['spd']|display_stat }}</span>
+      <span>安定 {{ row['def']|display_stat }}</span>
+      <span>器用さ {{ row['acc']|display_stat }}</span>
+      <span>ひらめき {{ row['cri']|display_stat }}</span>
       <span>運 {{ row['luck'] }}</span>
     </div>
     <form method="post" action="{{ url_for('lab_race_place_bet') }}" class="post-form lab-entry-bet-form">

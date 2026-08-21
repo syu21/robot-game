@@ -21,11 +21,11 @@
         <span class="part-stat-label">{{ row['label'] }}</span>
         {% if row.get('after_value') is not none %}
           <span class="part-stat-value compare">
-            {{ row['value'] }} <span class="part-stat-arrow">→</span> {{ row['after_value'] }}
+            {{ row.get('display_value', row['value']) }} <span class="part-stat-arrow">→</span> {{ row.get('display_after_value', row['after_value']) }}
           </span>
-          <span class="part-stat-delta is-{{ row.get('delta_class') or 'flat' }}">{{ row['delta_text'] }}</span>
+          <span class="part-stat-delta is-{{ row.get('delta_class') or 'flat' }}">{{ row.get('display_delta_text', row['delta_text']) }}</span>
         {% else %}
-          <span class="part-stat-value">{{ row['value'] }}</span>
+          <span class="part-stat-value">{{ row.get('display_value', row['value']) }}</span>
         {% endif %}
       </div>
     {% endfor %}

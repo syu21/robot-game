@@ -28,7 +28,7 @@
         <input type="radio" name="build_key" value="{{ option['key'] }}" {% if loop.first %}checked{% endif %} />
         <div class="action-title">{{ option['title'] }}</div>
         <div class="action-desc">{{ option['desc'] }}</div>
-        <div class="robot-time">総合 {{ option['stat_delta'] }}</div>
+        <div class="robot-time">総合性能 {{ option['stat_delta']|display_delta }}</div>
       </label>
       {% endfor %}
     </div>
@@ -40,12 +40,12 @@
   <h2>{{ trial_state['robot']['name'] }}</h2>
   <div class="upgrade-cost">{{ trial_state['robot']['summary'] }}</div>
   <div class="stats">
-    <div>耐久 {{ trial_robot_stats['hp'] }}</div>
-    <div>攻撃 {{ trial_robot_stats['atk'] }}</div>
-    <div>防御 {{ trial_robot_stats['def'] }}</div>
-    <div>素早さ {{ trial_robot_stats['spd'] }}</div>
-    <div>命中 {{ trial_robot_stats['acc'] }}</div>
-    <div>会心 {{ trial_robot_stats['cri'] }}</div>
+    <div>耐久 {{ trial_robot_stats['hp']|display_stat }}</div>
+    <div>攻撃 {{ trial_robot_stats['atk']|display_stat }}</div>
+    <div>防御 {{ trial_robot_stats['def']|display_stat }}</div>
+    <div>素早さ {{ trial_robot_stats['spd']|display_stat }}</div>
+    <div>命中 {{ trial_robot_stats['acc']|display_stat }}</div>
+    <div>会心 {{ trial_robot_stats['cri']|display_stat }}</div>
   </div>
 </section>
 

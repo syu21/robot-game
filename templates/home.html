@@ -399,7 +399,7 @@
                 </div>
                 {% endif %}
                 <div class="robot-overview-meta">
-                  <span>総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</span>
+                  <span>総合性能: {{ main_robot_stats['power']|display_stat if main_robot_stats else '-' }}</span>
                   <span>勝利: {{ user['wins'] }}</span>
                   <span>戦闘OS: {{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</span>
                   <span>秘匿命令: {{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</span>
@@ -409,7 +409,7 @@
             </div>
           </div>
           <div class="stat-grid home-robot-compact-grid">
-            <div class="stat-card"><div class="stat-label">総合</div><div class="stat-value">{{ main_robot_stats['power'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">総合性能</div><div class="stat-value">{{ main_robot_stats['power']|display_stat if main_robot_stats else '-' }}</div></div>
             <div class="stat-card"><div class="stat-label">勝利数</div><div class="stat-value">{{ user['wins'] }}</div></div>
             <div class="stat-card"><div class="stat-label">戦闘OS</div><div class="stat-value stat-small">{{ active_module_loadout['os_label_ja'] if active_module_loadout else '無装演算型《ブランク・コア》' }}</div></div>
             <div class="stat-card"><div class="stat-label">秘匿命令</div><div class="stat-value stat-small">{{ active_module_protocol['name_ja'] if active_module_protocol else '機体本来の演算のみ' }}</div></div>
@@ -465,12 +465,12 @@
           <details class="home-robot-details">
             <summary>詳細を見る</summary>
           <div class="stat-grid main-robot-stat-grid robot-status-grid">
-            <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ main_robot_stats['stats']['hp'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ main_robot_stats['stats']['atk'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ main_robot_stats['stats']['def'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ main_robot_stats['stats']['spd'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc'] if main_robot_stats else '-' }}</div></div>
-            <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri'] if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">耐久</div><div class="stat-value">{{ main_robot_stats['stats']['hp']|display_stat if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">攻撃</div><div class="stat-value">{{ main_robot_stats['stats']['atk']|display_stat if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">防御</div><div class="stat-value">{{ main_robot_stats['stats']['def']|display_stat if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">素早さ</div><div class="stat-value">{{ main_robot_stats['stats']['spd']|display_stat if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">命中</div><div class="stat-value">{{ main_robot_stats['stats']['acc']|display_stat if main_robot_stats else '-' }}</div></div>
+            <div class="stat-card"><div class="stat-label">会心</div><div class="stat-value">{{ main_robot_stats['stats']['cri']|display_stat if main_robot_stats else '-' }}</div></div>
           </div>
           {% if active_research_module and active_research_module.get('stat_line') %}
           <div class="upgrade-cost">共鳴領域: {{ active_module_loadout['synergy_label'] }} / 最終演算出力: {{ active_module_loadout['final_bonus_line'] }}</div>
@@ -531,7 +531,7 @@
             {% endif %}
             {{ render_style_gauge(main_robot_style_state, compact=True) }}
             {{ render_style_rank(main_robot_style_state, compact=True) }}
-            <div class="upgrade-cost">総合: {{ main_robot_stats['power'] if main_robot_stats else '-' }}</div>
+            <div class="upgrade-cost">総合性能: {{ main_robot_stats['power']|display_stat if main_robot_stats else '-' }}</div>
             {% if main_robot_weekly_fit %}
               <div class="upgrade-cost"><span class="weekly-fit-badge">WEEK適合</span></div>
             {% endif %}

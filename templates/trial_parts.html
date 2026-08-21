@@ -17,12 +17,12 @@
       <div class="robot-part">{{ part['part_type_label'] }} / {{ part['rarity'] }}</div>
       <div class="upgrade-cost">{{ part['role'] }}</div>
       <div class="stats">
-        <div>耐久 {{ part['stats']['hp'] }}</div>
-        <div>攻撃 {{ part['stats']['atk'] }}</div>
-        <div>防御 {{ part['stats']['def'] }}</div>
-        <div>素早さ {{ part['stats']['spd'] }}</div>
-        <div>命中 {{ part['stats']['acc'] }}</div>
-        <div>会心 {{ part['stats']['cri'] }}</div>
+        <div>耐久 {{ part['stats']['hp']|display_stat }}</div>
+        <div>攻撃 {{ part['stats']['atk']|display_stat }}</div>
+        <div>防御 {{ part['stats']['def']|display_stat }}</div>
+        <div>素早さ {{ part['stats']['spd']|display_stat }}</div>
+        <div>命中 {{ part['stats']['acc']|display_stat }}</div>
+        <div>会心 {{ part['stats']['cri']|display_stat }}</div>
       </div>
     </article>
     {% endfor %}

@@ -280,12 +280,12 @@
           <div class="battle-drop-eval-head">
             {% if eval.get('growth_line') %}<span>{{ eval.get('growth_line') }}</span>{% endif %}
             {% if eval.get('recommendation_label') %}<span class="part-chip {% if eval.get('is_update_candidate') %}is-recommended{% endif %}">{{ eval.get('recommendation_label') }}</span>{% endif %}
-            {% if eval.get('total_delta_text') %}<span>総合 {{ eval.get('total_delta_text') }}</span>{% endif %}
+            {% if eval.get('total_delta_text') %}<span>総合性能 {{ eval.get('total_delta_display_text', eval.get('total_delta_text')) }}</span>{% endif %}
           </div>
           {% if eval.get('stat_rows') %}
           <div class="battle-drop-deltas">
             {% for stat in eval.get('stat_rows', [])[:3] %}
-            <span class="battle-drop-delta {{ stat.get('delta_class', 'flat') }}">{{ stat.get('label') }} {{ stat.get('delta_text') }}</span>
+            <span class="battle-drop-delta {{ stat.get('delta_class', 'flat') }}">{{ stat.get('label') }} {{ stat.get('display_delta_text', stat.get('delta_text')) }}</span>
             {% endfor %}
           </div>
           {% endif %}
@@ -442,7 +442,7 @@
     {% if first_upgrade.get('recommendation') %}
     <div class="part-meta-line">
       おすすめ：{{ first_upgrade['recommendation'].get('recommended_part_type_label') }}
-      / 総合 {{ first_upgrade['recommendation'].get('current_total') }} → {{ first_upgrade['recommendation'].get('recommended_total') }}
+      / 総合性能 {{ first_upgrade['recommendation'].get('current_total')|display_stat }} → {{ first_upgrade['recommendation'].get('recommended_total')|display_stat }}
     </div>
     {% endif %}
     <div class="home-inline-actions">
@@ -717,7 +717,7 @@
                 <div class="battle-name">{{ player_name }}</div>
               </div>
               <div class="hp-line">
-                <div class="hp-text">耐久: {{ t['player_after'] }} / {{ p_max }}</div>
+                <div class="hp-text">耐久: {{ t['player_after']|display_stat }} / {{ p_max|display_stat }}</div>
                 <progress class="hpbar-meter" max="{{ p_max }}" value="{{ t['player_after'] }}"></progress>
               </div>
             </div>
@@ -730,7 +730,7 @@
                 <div class="battle-name">{{ enemy_name }}</div>
               </div>
               <div class="hp-line">
-                <div class="hp-text">耐久: {{ t['enemy_after'] }} / {{ e_max }}</div>
+                <div class="hp-text">耐久: {{ t['enemy_after']|display_stat }} / {{ e_max|display_stat }}</div>
                 <progress class="hpbar-meter" max="{{ e_max }}" value="{{ t['enemy_after'] }}"></progress>
 	  </div>
 	  </div>
@@ -804,7 +804,7 @@
               <span class="who">{{ player_name }}</span>は
               <span class="act">{{ t['player_action'] }}</span>
               {% if t.get('player_damage') %}
-                <span class="dmg {% if t.get('critical') %}crit{% endif %}">{{ t['player_damage'] }}</span>
+                <span class="dmg {% if t.get('critical') %}crit{% endif %}">{{ t['player_damage']|display_stat }}</span>
                 <span class="unit">のダメージ！</span>
               {% endif %}
               {% if t.get('player_attack_note') %}
@@ -821,7 +821,7 @@
               <span class="who">{{ enemy_name }}</span>は
               <span class="act">{{ t['enemy_action'] }}</span>
               {% if t.get('enemy_damage') %}
-                <span class="dmg">{{ t['enemy_damage'] }}</span>
+                <span class="dmg">{{ t['enemy_damage']|display_stat }}</span>
                 <span class="unit">のダメージ！</span>
               {% endif %}
               {% if t.get('enemy_attack_note') %}

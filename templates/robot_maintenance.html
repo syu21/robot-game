@@ -13,7 +13,7 @@
       {% if current_profile and current_profile.get('focus_line') %}
       <div class="robot-time">注目能力: {{ current_profile['focus_line'] }}</div>
       {% endif %}
-      <div class="robot-part">総合値 {{ robot['power']|int }}</div>
+      <div class="robot-part">総合性能 {{ robot['power']|display_stat }}</div>
       <div class="upgrade-cost">部位ごとの差分を見ながら、今の機体を壊さずに整えていけます。</div>
       <div class="home-inline-actions">
         <a class="battle-home-link" href="{{ url_for('robot_detail', instance_id=robot['id']) }}">個別ページへ戻る</a>
@@ -34,7 +34,7 @@
         <div class="robot-time">{{ slot_label }}</div>
         {% if item %}
         <div class="robot-part">{{ item['display_name_with_plus'] }}</div>
-        <div class="upgrade-cost">総合値 {{ item['total_value'] }} / {{ item['focus_line'] }}</div>
+        <div class="upgrade-cost">総合性能 {{ item.get('total_value_display', item['total_value']|display_stat) }} / {{ item['focus_line'] }}</div>
         {% else %}
         <div class="robot-part">未装備</div>
         {% endif %}
@@ -117,7 +117,7 @@
           <img class="part-card-image" src="{{ current_item['display_image_url'] }}" alt="{{ current_item['display_name'] }}" loading="lazy" decoding="async" />
           <div class="part-card-copy">
             <div class="robot-id">{{ current_item['display_name_with_plus'] }}</div>
-            <div class="part-meta-line">総合値 {{ current_item['total_value'] }} / 注目 {{ current_item['focus_line'] }}</div>
+            <div class="part-meta-line">総合性能 {{ current_item.get('total_value_display', current_item['total_value']|display_stat) }} / 注目 {{ current_item['focus_line'] }}</div>
           </div>
         </div>
         {{ stat_grid(current_item['stat_rows']) }}
@@ -146,7 +146,7 @@
                 <span class="part-chip">+{{ candidate['plus'] }}</span>
               </div>
               <div class="part-meta-line">
-                総合値 {{ candidate['total_value'] }}
+                総合性能 {{ candidate.get('total_value_display', candidate['total_value']|display_stat) }}
                 {% if candidate.get('summary_total') and candidate['summary_total'].get('value_text') %}
                 / {{ candidate['summary_total']['value_text'] }}
                 {% elif candidate.get('compare_total_delta_text') %}

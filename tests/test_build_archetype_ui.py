@@ -92,7 +92,7 @@ class BuildArchetypeUiTests(unittest.TestCase):
         self.assertIn("組み立て中（プレビュー）", build_html)
         self.assertIn("現装備（起動中ロボ）", build_html)
         self.assertIn("現在装備", build_html)
-        self.assertIn("総合差分", build_html)
+        self.assertIn("総合性能差分", build_html)
         self.assertIn("位置と大きさの調整", build_html)
         self.assertIn("セットボーナス:", build_html)
         self.assertIn("同属性パーツ 4部位で発動", build_html)

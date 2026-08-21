@@ -37,7 +37,7 @@
         <div class="tower-card-status">{% if robot['cooling'] %}休憩中{% else %}出撃できます{% endif %}</div>
         <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
         <span class="tower-robot-name">{{ robot['name'] }}</span>
-        <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
+        <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合性能 {{ robot['power']|display_stat }} / +{{ robot['plus_total'] }}</span>
         <span class="tower-stat-line">
           {% for item in robot['top_stats'] %}
           {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
@@ -88,7 +88,7 @@
           <input type="checkbox" name="robot_{{ loop.index }}" value="{{ robot['id'] }}" data-tower-robot-checkbox />
           <img src="{{ robot['image_url'] }}" alt="{{ robot['name'] }}" loading="lazy" />
           <span class="tower-robot-name">{{ robot['name'] }}</span>
-          <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合 {{ robot['power'] }} / +{{ robot['plus_total'] }}</span>
+          <span class="tower-stat-line">{{ robot['archetype'].get('label') or robot['archetype'].get('key') or '標準型' }} / 総合性能 {{ robot['power']|display_stat }} / +{{ robot['plus_total'] }}</span>
           <span class="tower-stat-line">
             {% for item in robot['top_stats'] %}
             {{ item['label'] }} {{ item['value'] }}{% if not loop.last %} / {% endif %}
