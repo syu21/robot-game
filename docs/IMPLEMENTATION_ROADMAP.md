@@ -709,3 +709,13 @@
 - 高層: 第4層はフォージ/ヘイズ/バースト、第5層はLabyrinth/Pinnacle系の思想研究を候補化する。
 - UI: ホームは3行表示のまま、1件だけ `おすすめ研究` として軽く強調する。
 - 計測: 表示→進行、進行→完了、完了→全完了、翌日再訪を管理メトリクスへ追加する。
+
+## Phase 4.5: 戦利品パーツ即時評価・更新候補 v1
+
+- 目的: 通常出撃で拾ったパーツを、その場で現在装備と比べたくなる導線にする。
+- 対象: 通常出撃で入手した HEAD / RIGHT_ARM / LEFT_ARM / LEGS の `part_instance`。DECOR、進化コア、自動装備は対象外。
+- UI: battle result のドロップ行に `更新候補` または個性ラベル、総合差分、最大3ステ差分、`このパーツを見比べる` を小さく表示する。
+- `/parts`: `focus_part_id` は本人所有の inventory/equipped だけ受け付け、対象に `今回入手` を付けて比較欄へ自動表示する。
+- 編成接続: focusパーツには既存 `/build` の部位選択クエリで `このパーツで編成を試す` を出す。交換はユーザーが手動で確定する。
+- 監査: 新規イベントは追加せず、既存 `audit.drop` payload に `dropped_part_instance_id / compared_equipped_part_instance_id / total_delta / standout_stat / recommendation_key` を追加する。
+- 非目標: 自動装備、絶対的な強弱判定、強力報酬、新DBテーブル、周回を止めるモーダル。

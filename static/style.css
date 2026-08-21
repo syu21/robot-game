@@ -1473,6 +1473,11 @@ body.lightbox-open .lightbox-overlay {
   border-color: rgba(196, 128, 24, 0.42);
   color: #6d4300;
 }
+.part-chip.is-drop-focus {
+  background: rgba(213, 244, 238, 0.96);
+  border-color: rgba(43, 168, 145, 0.42);
+  color: #0b5e55;
+}
 .part-chip.is-locked,
 .part-lock-badge {
   background: rgba(255, 244, 214, 0.98);
@@ -5820,6 +5825,16 @@ body.battle-page.battle-short-replay-active #battle-replay-followup {
   flex-wrap: wrap;
 }
 
+.battle-drop-row.is-update-candidate {
+  border-left: 3px solid rgba(240, 184, 64, 0.72);
+  padding-left: 8px;
+}
+
+.battle-drop-row.is-characteristic {
+  border-left: 3px solid rgba(90, 184, 168, 0.52);
+  padding-left: 8px;
+}
+
 .battle-drop-mini {
   width: 22px;
   height: 22px;
@@ -5836,6 +5851,44 @@ body.battle-page.battle-short-replay-active #battle-replay-followup {
 
 .battle-drop-count-mini {
   font-weight: 700;
+}
+
+.battle-drop-eval {
+  display: grid;
+  gap: 4px;
+  flex-basis: 100%;
+  margin-left: 30px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.battle-drop-eval-head,
+.battle-drop-deltas,
+.battle-drop-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.battle-drop-delta {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+}
+
+.battle-drop-delta.up {
+  color: #b9f0c9;
+  border-color: rgba(99, 209, 131, 0.32);
+}
+
+.battle-drop-delta.down {
+  color: #f1b7b7;
+  border-color: rgba(224, 109, 109, 0.28);
 }
 
 .battle-drop-lock-form {

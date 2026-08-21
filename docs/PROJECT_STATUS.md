@@ -177,6 +177,9 @@
 - 第4層以降は通常敵・ボスともターン上限なし（内部安全上限あり）
 - ボス抽選・通常敵抽選・報酬抽選を実装
 - 戦利品結果では `獲得コイン / ドロップ結果 / 保証やボス報酬の短い結果` を最小表示で見せ、下部に `もう一度出撃 / 入手したパーツを見る` を置く
+- 通常出撃でHEAD/RIGHT_ARM/LEFT_ARM/LEGSの個体パーツを拾った場合、現在装備との差分を最大3ステだけ表示し、明確な改善時だけ `更新候補` を付ける
+- 突出能力がある個体は `攻撃寄り / 耐久寄り / 命中寄り / 速攻寄り / 個性あり` の短いラベルで見せる。自動装備や絶対評価はしない
+- `このパーツを見比べる` は `/parts?focus_part_id=...` へつなぎ、本人所有の対象だけ `今回入手` として強調する
 - 戦利品結果の `次の行動` はカード化し、`再出撃 / パーツ確認 / 基地へ戻る` をスマホでも押しやすくする
 - battle結果の followup は `結果 / 戦利品 / 次の行動` を先頭に寄せ、敵情報と詳細ログは折りたたみへ逃がしてスマホで再出撃ボタンが初期表示に入りやすいよう調整
 - battle結果の `もう一度出撃` は `ready_at` ベースで残秒を再同期し、CT中も `あと mm:ss で出撃可能` と分かる表示にする
@@ -488,6 +491,11 @@
 - `world_events_log.audit.drop.payload`
   - `growth_tendency_key`
   - `growth_tendency_label`
+  - `dropped_part_instance_id`
+  - `compared_equipped_part_instance_id`
+  - `total_delta`
+  - `standout_stat`
+  - `recommendation_key`
 - `payment_orders`
   - `stripe_checkout_session_id` UNIQUE
   - `stripe_event_id` UNIQUE

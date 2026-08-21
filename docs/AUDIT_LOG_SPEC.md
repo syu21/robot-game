@@ -52,6 +52,9 @@ COMBAT SIGNAL v1:
 - `audit.coin.delta`
 - `audit.streak.bonus`
 - `audit.drop`
+  - 通常出撃のパーツドロップ。payload は既存 `area_key / battle_no / drop_type / part_type / part_key / rarity / plus / storage_status / auto_sold / growth_tendency_key / growth_tendency_label` を維持する。
+  - 戦利品即時評価として `dropped_part_instance_id`, `compared_equipped_part_instance_id`, `total_delta`, `standout_stat`, `recommendation_key` を追加する。
+  - `recommendation_key=update_candidate` は現在装備より総合値が閾値以上改善する場合のみ。自動装備や報酬付与は行わない。
 - `audit.inventory.delta`
 
 ### 4.3 育成

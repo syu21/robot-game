@@ -16,6 +16,14 @@
   </section>
   {% endif %}
 
+  {% if focus_part_id %}
+  <section class="card drop-focus-guide-card">
+    <div class="section-kicker">今回入手</div>
+    <h3>拾ったパーツを見比べる</h3>
+    <p class="upgrade-cost">現在装備との差だけを確認できます。交換は編成画面で手動で選びます。</p>
+  </section>
+  {% endif %}
+
   <div class="card part-page-summary">
     <div class="part-page-summary-head">
       <div>
@@ -104,11 +112,25 @@
                 {% if p.get('first_upgrade_recommended') %}
                   <span class="part-chip is-recommended">おすすめ</span>
                 {% endif %}
+                {% if p.get('is_drop_focus') %}
+                  <span class="part-chip is-drop-focus">{{ p.get('drop_focus_label', '今回入手') }}</span>
+                {% endif %}
                 {% if p.get('locked') %}
                   <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              {% if p.get('is_drop_focus') and p.get('drop_focus_delta_rows') %}
+              <div class="part-meta-line">現在装備との差分{% if p.get('drop_focus_total_delta_text') %}: 総合 {{ p.get('drop_focus_total_delta_text') }}{% endif %}</div>
+              <div class="battle-drop-deltas">
+                {% for stat in p.get('drop_focus_delta_rows', []) %}
+                <span class="battle-drop-delta {{ stat.get('delta_class', 'flat') }}">{{ stat.get('label') }} {{ stat.get('delta_text') }}</span>
+                {% endfor %}
+              </div>
+              {% if p.get('build_try_url') %}
+              <p class="link"><a class="battle-home-link battle-next-cta" href="{{ p.get('build_try_url') }}">このパーツで編成を試す</a></p>
+              {% endif %}
+              {% endif %}
               {% if p.get('first_upgrade_recommended_note') %}
               <div class="part-meta-line first-upgrade-recommended-note">{{ p.get('first_upgrade_recommended_note') }}</div>
               {% endif %}
@@ -191,11 +213,17 @@
                 {% if p.get('first_upgrade_recommended') %}
                   <span class="part-chip is-recommended">おすすめ</span>
                 {% endif %}
+                {% if p.get('is_drop_focus') %}
+                  <span class="part-chip is-drop-focus">{{ p.get('drop_focus_label', '今回入手') }}</span>
+                {% endif %}
                 {% if p.get('locked') %}
                   <span class="part-chip is-locked">保護中</span>
                 {% endif %}
               </div>
               <div class="part-meta-line">総合値 {{ p['total_value'] }}{% if p.get('focus_line') %} / 注目 {{ p['focus_line'] }}{% endif %}</div>
+              {% if p.get('is_drop_focus') and p.get('build_try_url') %}
+              <p class="link"><a class="battle-home-link" href="{{ p.get('build_try_url') }}">このパーツで編成を試す</a></p>
+              {% endif %}
               {% if p.get('first_upgrade_recommended_note') %}
               <div class="part-meta-line first-upgrade-recommended-note">{{ p.get('first_upgrade_recommended_note') }}</div>
               {% endif %}

@@ -268,11 +268,38 @@
     <div class="battle-summary-row">ドロップ:</div>
     <div class="battle-drop-list">
       {% for row in reward_front.get('part_rows', []) %}
-      <div class="battle-drop-row"{% if row.get('part_instance_id') %} id="part-{{ row.get('part_instance_id') }}"{% endif %}>
+      {% set eval = row.get('drop_evaluation') %}
+      <div class="battle-drop-row{% if eval and eval.get('is_update_candidate') %} is-update-candidate{% elif eval and eval.get('is_characteristic') %} is-characteristic{% endif %}"{% if row.get('part_instance_id') %} id="part-{{ row.get('part_instance_id') }}"{% endif %}>
         <img class="battle-drop-mini" src="{{ row.get('image_url') or url_for('static', filename='assets/placeholder_enemy.png') }}" alt="{{ row.get('label', 'パーツ') }}" loading="lazy" />
         <span class="battle-drop-name">{{ row.get('label', '不明パーツ') }}</span>
         {% if (row.get('count') or 1) > 1 %}
         <span class="battle-drop-count-mini">×{{ row.get('count') }}</span>
+        {% endif %}
+        {% if eval %}
+        <div class="battle-drop-eval">
+          <div class="battle-drop-eval-head">
+            {% if eval.get('growth_line') %}<span>{{ eval.get('growth_line') }}</span>{% endif %}
+            {% if eval.get('recommendation_label') %}<span class="part-chip {% if eval.get('is_update_candidate') %}is-recommended{% endif %}">{{ eval.get('recommendation_label') }}</span>{% endif %}
+            {% if eval.get('total_delta_text') %}<span>総合 {{ eval.get('total_delta_text') }}</span>{% endif %}
+          </div>
+          {% if eval.get('stat_rows') %}
+          <div class="battle-drop-deltas">
+            {% for stat in eval.get('stat_rows', [])[:3] %}
+            <span class="battle-drop-delta {{ stat.get('delta_class', 'flat') }}">{{ stat.get('label') }} {{ stat.get('delta_text') }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div class="battle-drop-actions">
+            {% if eval.get('compare_url') %}
+            <a class="battle-home-link" href="{{ eval.get('compare_url') }}">このパーツを見比べる</a>
+            {% endif %}
+            {% if eval.get('build_try_url') %}
+            <a class="battle-home-link" href="{{ eval.get('build_try_url') }}">編成で試す</a>
+            {% elif row.get('auto_sold') %}
+            <span class="robot-time">自動売却済み</span>
+            {% endif %}
+          </div>
+        </div>
         {% endif %}
         {% if row.get('locked') %}
         <span class="part-chip is-locked">保護中</span>

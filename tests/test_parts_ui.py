@@ -85,7 +85,24 @@ class PartsUiTests(unittest.TestCase):
     def _create_extra_instance(self, part_row, *, plus=0, status="inventory"):
         with game_app.app.app_context():
             db = game_app.get_db()
-            game_app._create_part_instance_from_master(db, self.user_id, part_row, plus=plus, status=status)
+            part_instance_id = game_app._create_part_instance_from_master(db, self.user_id, part_row, plus=plus, status=status)
+            db.commit()
+            return part_instance_id
+
+    def _set_part_weights(self, part_instance_id, **weights):
+        columns = []
+        params = []
+        for key, value in weights.items():
+            columns.append(f"w_{key} = ?")
+            params.append(float(value))
+        if not columns:
+            return
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                f"UPDATE part_instances SET {', '.join(columns)} WHERE id = ? AND user_id = ?",
+                [*params, int(part_instance_id), self.user_id],
+            )
             db.commit()
 
     def _create_custom_part(self, part_type, key, name, *, rarity="N", frame_type="normal"):
@@ -650,6 +667,139 @@ class PartsUiTests(unittest.TestCase):
                 )
             self.assertNotIn("/parts/456/lock", sold_html)
             self.assertNotIn("保護する</button>", sold_html)
+
+    def test_drop_part_evaluation_marks_update_candidate_and_battle_cta(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            active_robot_id = db.execute(
+                "SELECT active_robot_id FROM users WHERE id = ?",
+                (self.user_id,),
+            ).fetchone()["active_robot_id"]
+            current = game_app._ensure_robot_instance_part_instances(db, int(active_robot_id))
+            current_arm_id = int(current["r_arm"])
+            db.execute(
+                """
+                UPDATE part_instances
+                SET w_hp = 0.05, w_atk = 0.20, w_def = 0.10, w_spd = 0.20, w_acc = 0.20, w_cri = 0.25
+                WHERE id = ?
+                """,
+                (current_arm_id,),
+            )
+            dropped_id = game_app._create_part_instance_from_master(
+                db,
+                self.user_id,
+                self.starter_rows["RIGHT_ARM"],
+                plus=2,
+                status="inventory",
+                area_key="layer_2",
+            )
+            db.execute(
+                """
+                UPDATE part_instances
+                SET w_hp = 0.05, w_atk = 0.55, w_def = 0.05, w_spd = 0.10, w_acc = 0.10, w_cri = 0.15
+                WHERE id = ?
+                """,
+                (dropped_id,),
+            )
+            evaluation = game_app._build_drop_part_evaluation(
+                db,
+                self.user_id,
+                {
+                    "part_instance_id": dropped_id,
+                    "part_type": "RIGHT_ARM",
+                    "storage_status": "inventory",
+                    "growth_tendency_label": "攻撃寄り",
+                },
+                area_key="layer_2",
+            )
+            self.assertEqual(evaluation["recommendation_key"], "update_candidate")
+            self.assertEqual(evaluation["recommendation_label"], "更新候補")
+            self.assertEqual(evaluation["compared_equipped_part_instance_id"], current_arm_id)
+            self.assertTrue(evaluation["total_delta"] >= game_app.DROP_PART_UPDATE_TOTAL_THRESHOLD)
+            self.assertLessEqual(len(evaluation["stat_rows"]), 3)
+            self.assertIn(f"focus_part_id={dropped_id}", evaluation["compare_url"])
+            self.assertIn(f"r_arm_key={dropped_id}", evaluation["build_try_url"])
+
+            front = game_app._build_battle_reward_front(
+                reward_coin=1,
+                reward_core=0,
+                dropped_core_name=None,
+                drop_items=[
+                    {
+                        "part_instance_id": dropped_id,
+                        "part_key": self.starter_rows["RIGHT_ARM"]["key"],
+                        "part_display_name": "評価アーム",
+                        "plus": 2,
+                        "storage_status": "inventory",
+                        "auto_sold": False,
+                        "drop_evaluation": evaluation,
+                    }
+                ],
+            )
+            self.assertEqual(front["part_rows"][0]["drop_evaluation"]["recommendation_label"], "更新候補")
+
+        with game_app.app.test_request_context("/explore"):
+            html = game_app.render_template(
+                "battle.html",
+                summary={
+                    "enemy_name": "敵",
+                    "outcome": "勝利",
+                    "outcome_is_win": True,
+                    "reward_coin": 1,
+                    "reward_front": front,
+                    "highlight_core_drop": False,
+                },
+                state={},
+                active_robot={"name": "R", "image_url": ""},
+                explore_mode=True,
+                explore_area_key="layer_1",
+                message=None,
+                ui_effects_enabled=False,
+                battle_ritual_overlay_enabled=False,
+                battle_short_replay_enabled=False,
+            )
+        self.assertIn("更新候補", html)
+        self.assertIn("このパーツを見比べる", html)
+        self.assertIn(f"/parts?focus_part_id={dropped_id}", html)
+        self.assertIn("編成で試す", html)
+
+    def test_parts_focus_part_id_highlights_owned_part_and_ignores_other_user(self):
+        dropped_id = self._create_extra_instance(self.starter_rows["HEAD"], plus=1)
+        self._set_part_weights(dropped_id, **{"hp": 0.60, "atk": 0.05, "def": 0.20, "spd": 0.05, "acc": 0.05, "cri": 0.05})
+        client = self._client()
+        resp = client.get(f"/parts?focus_part_id={dropped_id}")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("今回入手", html)
+        self.assertIn("拾ったパーツを見比べる", html)
+        self.assertIn("このパーツで編成を試す", html)
+        self.assertIn(f"head_key={dropped_id}", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            db.execute(
+                """
+                INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
+                VALUES (?, ?, ?, 0, 0, 1)
+                """,
+                ("parts_ui_other", "x", now),
+            )
+            other_id = int(db.execute("SELECT id FROM users WHERE username = ?", ("parts_ui_other",)).fetchone()["id"])
+            game_app.initialize_new_user(db, other_id)
+            other_part_id = game_app._create_part_instance_from_master(
+                db,
+                other_id,
+                self.starter_rows["HEAD"],
+                plus=3,
+                status="inventory",
+            )
+            db.commit()
+
+        other_resp = client.get(f"/parts?focus_part_id={other_part_id}")
+        self.assertEqual(other_resp.status_code, 200)
+        other_html = other_resp.get_data(as_text=True)
+        self.assertNotIn("拾ったパーツを見比べる", other_html)
 
     def test_legacy_materialization_respects_capacity_and_does_not_create_overflow(self):
         with game_app.app.app_context():

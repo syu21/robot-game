@@ -824,6 +824,7 @@ BUILD_PART_ROTATE_DEFAULT = 0
 BUILD_PART_ROTATE_STEP = 5
 MAX_PART_DROPS_NORMAL = 1
 MAX_PART_DROPS_CHAIN = 2
+DROP_PART_UPDATE_TOTAL_THRESHOLD = 3
 MAX_PART_PLUS = int(os.getenv("MAX_PART_PLUS", "5"))
 R_PART_PLUS_CAP_UNLOCK_LAYER = 4
 R_PART_PLUS_CAP_AFTER_LAYER4 = 7
@@ -8989,6 +8990,203 @@ def _part_total_value(stat_map):
     return sum(int(stats.get(key) or 0) for key in PART_STAT_KEYS)
 
 
+def _part_instance_owned_display_row(db, user_id, part_instance_id, *, statuses=None):
+    try:
+        instance_id = int(part_instance_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if instance_id <= 0:
+        return None
+    status_filter = ""
+    params = [int(user_id), instance_id]
+    normalized_statuses = [
+        str(status or "").strip().lower()
+        for status in (statuses or ())
+        if str(status or "").strip()
+    ]
+    if normalized_statuses:
+        marks = ",".join("?" for _ in normalized_statuses)
+        status_filter = f" AND LOWER(COALESCE(pi.status, 'inventory')) IN ({marks})"
+        params.extend(normalized_statuses)
+    return db.execute(
+        f"""
+        SELECT
+            pi.*,
+            pi.rarity AS instance_rarity,
+            pi.element AS instance_element,
+            pi.series AS instance_series,
+            rp.part_type, rp.key AS part_key, rp.key, rp.image_path, rp.display_name_ja,
+            rp.frame_type, rp.series_key, rp.series_label, rp.mechanism_trait_key
+        FROM part_instances pi
+        JOIN robot_parts rp ON rp.id = pi.part_id
+        WHERE pi.user_id = ? AND pi.id = ?{status_filter}
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+
+
+def _active_equipped_part_instance_id_for_type(db, user_id, part_type):
+    normalized_type = _normalize_part_type_filter(part_type)
+    if normalized_type not in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}:
+        return None
+    user_row = db.execute(
+        "SELECT active_robot_id FROM users WHERE id = ?",
+        (int(user_id),),
+    ).fetchone()
+    if not user_row or not user_row["active_robot_id"]:
+        return None
+    mapping = _ensure_robot_instance_part_instances(db, int(user_row["active_robot_id"])) or {}
+    slot_key = {
+        "HEAD": "head",
+        "RIGHT_ARM": "r_arm",
+        "LEFT_ARM": "l_arm",
+        "LEGS": "legs",
+    }.get(normalized_type)
+    equipped_id = mapping.get(slot_key) if slot_key else None
+    return int(equipped_id) if equipped_id else None
+
+
+def _drop_part_character_label(stats, *, stat_deltas=None):
+    data = {key: int((stats or {}).get(key) or 0) for key in PART_STAT_KEYS}
+    deltas = {key: int((stat_deltas or {}).get(key) or 0) for key in PART_STAT_KEYS}
+    positive_deltas = {key: value for key, value in deltas.items() if value > 0}
+    if positive_deltas:
+        key, value = max(positive_deltas.items(), key=lambda item: (int(item[1]), -PART_STAT_KEYS.index(item[0])))
+        if int(value) >= 3:
+            if key in {"hp", "def"}:
+                return {"key": "durable", "label": "耐久寄り", "standout_stat": key}
+            if key in {"atk"}:
+                return {"key": "attack", "label": "攻撃寄り", "standout_stat": key}
+            if key == "acc":
+                return {"key": "accuracy", "label": "命中寄り", "standout_stat": key}
+            if key in {"spd", "cri"}:
+                return {"key": "rush", "label": "速攻寄り", "standout_stat": key}
+
+    scores = {
+        "durable": {"label": "耐久寄り", "value": int(data["hp"]) + int(data["def"]), "stat": "hp" if data["hp"] >= data["def"] else "def"},
+        "attack": {"label": "攻撃寄り", "value": int(data["atk"]) + int(data["cri"]), "stat": "atk" if data["atk"] >= data["cri"] else "cri"},
+        "accuracy": {"label": "命中寄り", "value": int(data["acc"]) * 2, "stat": "acc"},
+        "rush": {"label": "速攻寄り", "value": int(data["spd"]) + int(data["cri"]), "stat": "spd" if data["spd"] >= data["cri"] else "cri"},
+    }
+    ordered = sorted(scores.items(), key=lambda item: (-int(item[1]["value"]), item[0]))
+    if not ordered:
+        return None
+    top_key, top = ordered[0]
+    second_value = int(ordered[1][1]["value"]) if len(ordered) > 1 else 0
+    if int(top["value"]) >= max(8, second_value + 4):
+        return {"key": top_key, "label": top["label"], "standout_stat": top["stat"]}
+    focus_rows = _robot_focus_stat_rows(data, limit=2)
+    if focus_rows and int(focus_rows[0]["value"]) >= 9:
+        return {"key": "individual", "label": "個性あり", "standout_stat": focus_rows[0]["key"]}
+    return None
+
+
+def _build_try_url_for_part_instance_item(item):
+    part_type = _normalize_part_type_filter((item or {}).get("part_type"))
+    slot_param = {
+        "HEAD": "head_key",
+        "RIGHT_ARM": "r_arm_key",
+        "LEFT_ARM": "l_arm_key",
+        "LEGS": "legs_key",
+    }.get(part_type)
+    part_instance_id = int((item or {}).get("id") or (item or {}).get("instance_id") or 0)
+    if not slot_param or part_instance_id <= 0:
+        return None
+    return f"/build?mode=modify&build_mode={FREE_BUILD_FRAME_MODE}&{slot_param}={part_instance_id}"
+
+
+def _build_drop_part_evaluation(db, user_id, dropped_part, *, area_key=None):
+    row = dict(dropped_part or {})
+    part_type = _normalize_part_type_filter(row.get("part_type"))
+    part_instance_id = int(row.get("part_instance_id") or 0)
+    if part_type not in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"} or part_instance_id <= 0:
+        return None
+    dropped_row = _part_instance_owned_display_row(db, user_id, part_instance_id)
+    if not dropped_row:
+        return None
+    dropped = dict(dropped_row)
+    dropped_stats = compute_part_stats(dropped)
+    equipped_id = _active_equipped_part_instance_id_for_type(db, user_id, part_type)
+    equipped_row = (
+        _part_instance_owned_display_row(db, user_id, equipped_id)
+        if equipped_id and int(equipped_id) != part_instance_id
+        else None
+    )
+    equipped_stats = compute_part_stats(dict(equipped_row)) if equipped_row else None
+    total_delta = None
+    stat_deltas = {}
+    compare_rows = []
+    if equipped_stats is not None:
+        total_delta = int(_part_total_value(dropped_stats) - _part_total_value(equipped_stats))
+        for index, key in enumerate(PART_STAT_KEYS):
+            delta = int(dropped_stats.get(key) or 0) - int(equipped_stats.get(key) or 0)
+            stat_deltas[key] = delta
+            if delta == 0:
+                continue
+            compare_rows.append(
+                {
+                    "key": key,
+                    "label": _stat_label(key),
+                    "delta": delta,
+                    "delta_text": _delta_text(delta),
+                    "delta_class": _delta_class(delta),
+                    "_sort_abs": abs(delta),
+                    "_sort_index": index,
+                }
+            )
+        compare_rows.sort(key=lambda item: (-int(item["_sort_abs"]), int(item["_sort_index"])))
+        compare_rows = [
+            {k: v for k, v in item.items() if not k.startswith("_")}
+            for item in compare_rows[:3]
+        ]
+    character = _drop_part_character_label(dropped_stats, stat_deltas=stat_deltas)
+    recommendation_key = ""
+    recommendation_label = ""
+    if total_delta is not None and total_delta >= int(DROP_PART_UPDATE_TOTAL_THRESHOLD):
+        recommendation_key = "update_candidate"
+        recommendation_label = "更新候補"
+    elif character:
+        recommendation_key = str(character["key"])
+        recommendation_label = str(character["label"])
+
+    tendency = _area_growth_tendency(area_key)
+    tendency_label = str(row.get("growth_tendency_label") or _area_growth_tendency_label(area_key) or "").strip()
+    slot_param = {
+        "HEAD": "head_key",
+        "RIGHT_ARM": "r_arm_key",
+        "LEFT_ARM": "l_arm_key",
+        "LEGS": "legs_key",
+    }.get(part_type)
+    storage_status = str(row.get("storage_status") or dropped.get("status") or "").strip().lower()
+    auto_sold = bool(row.get("auto_sold") or storage_status == "sold")
+    build_try_url = None
+    if slot_param and not auto_sold and storage_status in {"", "inventory"}:
+        build_try_url = _build_try_url_for_part_instance_item({"id": part_instance_id, "part_type": part_type})
+    return {
+        "part_instance_id": part_instance_id,
+        "compared_equipped_part_instance_id": int(equipped_id or 0) or None,
+        "part_type": part_type,
+        "part_type_label": _part_type_ui_label(part_type),
+        "current_total": int(_part_total_value(equipped_stats)) if equipped_stats is not None else None,
+        "dropped_total": int(_part_total_value(dropped_stats)),
+        "total_delta": total_delta,
+        "total_delta_text": _delta_text(total_delta) if total_delta is not None else None,
+        "stat_rows": compare_rows,
+        "standout_stat": ((character or {}).get("standout_stat")),
+        "standout_stat_label": _stat_label((character or {}).get("standout_stat")) if character else None,
+        "recommendation_key": recommendation_key,
+        "recommendation_label": recommendation_label,
+        "is_update_candidate": recommendation_key == "update_candidate",
+        "is_characteristic": bool(recommendation_key and recommendation_key != "update_candidate"),
+        "growth_tendency_key": str(tendency.get("key") or row.get("growth_tendency_key") or "").strip(),
+        "growth_tendency_label": tendency_label,
+        "growth_line": f"{tendency_label}個体" if tendency_label and tendency_label != "通常探索" else "",
+        "compare_url": f"/parts?focus_part_id={part_instance_id}",
+        "build_try_url": build_try_url,
+    }
+
+
 def _delta_text(delta_value):
     delta = int(delta_value or 0)
     if delta > 0:
@@ -13589,6 +13787,7 @@ def _build_battle_reward_front(*, reward_coin, reward_core, dropped_core_name, d
                 "storage_status": str(item.get("storage_status") or "").strip().lower(),
                 "auto_sold": bool(item.get("auto_sold")),
                 "locked": bool(int(item.get("locked") or 0)),
+                "drop_evaluation": item.get("drop_evaluation"),
             }
         part_row_map[row_key]["count"] += 1
     for label, count in drop_counter.items():
@@ -19270,6 +19469,19 @@ def _add_part_drop(
                 },
                 ip=request_ip,
             )
+        evaluation = _build_drop_part_evaluation(
+            db,
+            user_id,
+            {
+                "part_instance_id": pi_id,
+                "part_type": part["part_type"],
+                "storage_status": storage_status,
+                "auto_sold": auto_sold,
+                "growth_tendency_key": (tendency.get("key") if tendency else None),
+                "growth_tendency_label": (tendency.get("label") if tendency else None),
+            },
+            area_key=area_key,
+        )
         return {
             "part_type": part["part_type"],
             "part_key": part["key"],
@@ -19284,6 +19496,7 @@ def _add_part_drop(
             "auto_sell_price": int(auto_sell_price),
             "growth_tendency_key": (tendency.get("key") if tendency else None),
             "growth_tendency_label": (tendency.get("label") if tendency else None),
+            "drop_evaluation": evaluation,
         }
     db.execute(
         """
@@ -19313,6 +19526,11 @@ def _drop_audit_payload(area_key, battle_no, dropped_part):
         "auto_sell_price": int(row.get("auto_sell_price") or 0),
         "growth_tendency_key": row.get("growth_tendency_key"),
         "growth_tendency_label": row.get("growth_tendency_label"),
+        "dropped_part_instance_id": row.get("part_instance_id"),
+        "compared_equipped_part_instance_id": ((row.get("drop_evaluation") or {}).get("compared_equipped_part_instance_id")),
+        "total_delta": ((row.get("drop_evaluation") or {}).get("total_delta")),
+        "standout_stat": ((row.get("drop_evaluation") or {}).get("standout_stat")),
+        "recommendation_key": ((row.get("drop_evaluation") or {}).get("recommendation_key")),
     }
 
 
@@ -67007,6 +67225,8 @@ def parts():
     if selected_frame_type not in {"", *FRAME_TYPE_DEF_BY_KEY.keys()}:
         selected_frame_type = ""
     selected_compare_ids = _normalize_instance_id_values((request.args.get("compare_ids"),), limit=6)
+    focus_ids = _normalize_instance_id_values((request.args.get("focus_part_id"),), limit=1)
+    focus_part_id = focus_ids[0] if focus_ids else None
     selected_sort = _normalize_parts_sort(request.args.get("sort"))
     try:
         page = max(1, int(request.args.get("page", "1")))
@@ -67035,6 +67255,16 @@ def parts():
         """,
         params,
     ).fetchall()
+    valid_focus_part_id = None
+    if focus_part_id:
+        focus_row = _part_instance_owned_display_row(
+            db,
+            user_id,
+            focus_part_id,
+            statuses=("inventory", "equipped"),
+        )
+        if focus_row:
+            valid_focus_part_id = int(focus_part_id)
     summary = db.execute(
         """
         SELECT
@@ -67047,6 +67277,21 @@ def parts():
         params,
     ).fetchone()
     all_items = _sort_part_card_items([_part_card_payload(r) for r in rows], selected_sort)
+    if valid_focus_part_id:
+        focus_found = False
+        for item in all_items:
+            if int(item.get("id") or 0) == int(valid_focus_part_id):
+                item["is_drop_focus"] = True
+                item["drop_focus_label"] = "今回入手"
+                item["build_try_url"] = _build_try_url_for_part_instance_item(item)
+                focus_found = True
+                break
+        if focus_found:
+            all_items.sort(key=lambda item: 0 if int(item.get("id") or 0) == int(valid_focus_part_id) else 1)
+            if valid_focus_part_id not in selected_compare_ids:
+                selected_compare_ids = [valid_focus_part_id, *selected_compare_ids][:6]
+        else:
+            valid_focus_part_id = None
     first_upgrade_guide = None
     recommended_part_instance_id = None
     if onboarding_mode == "first_upgrade" and _onboarding_first_upgrade_should_show(db, user_row):
@@ -67091,11 +67336,36 @@ def parts():
             [user_id, *selected_compare_ids],
         ).fetchall()
         compare_rows_by_id = {int(row["id"]): row for row in compare_rows}
-        compare_items = [
-            _part_card_payload(compare_rows_by_id[part_instance_id])
-            for part_instance_id in selected_compare_ids
-            if part_instance_id in compare_rows_by_id
-        ]
+        for part_instance_id in selected_compare_ids:
+            row = compare_rows_by_id.get(part_instance_id)
+            if not row:
+                continue
+            equipped_id = _active_equipped_part_instance_id_for_type(db, user_id, row["part_type"])
+            equipped_row = None
+            if equipped_id and int(equipped_id) != int(row["id"]):
+                equipped_row = _part_instance_owned_display_row(
+                    db,
+                    user_id,
+                    equipped_id,
+                    statuses=("equipped",),
+                )
+            item = _part_card_payload(row)
+            if valid_focus_part_id and int(item.get("id") or 0) == int(valid_focus_part_id):
+                item["is_drop_focus"] = True
+                item["drop_focus_label"] = "今回入手"
+                item["build_try_url"] = _build_try_url_for_part_instance_item(item)
+                if equipped_row:
+                    equipped_stats = compute_part_stats(dict(equipped_row))
+                    item["drop_focus_compare_label"] = _part_display_name_ja(equipped_row)
+                    item["drop_focus_total_delta_text"] = _delta_text(
+                        int(item["total_value"]) - int(_part_total_value(equipped_stats))
+                    )
+                    item["drop_focus_delta_rows"] = _build_picker_summary_rows(
+                        item["stats"],
+                        compare_stats=equipped_stats,
+                        limit=3,
+                    )
+            compare_items.append(item)
     protect_core = _get_user_item_qty(db, user_id, "protect_core")
     inventory_space_remaining = _inventory_space_remaining(db, user_id, user_row=user_row)
     overflow_rows = db.execute(
@@ -67173,6 +67443,8 @@ def parts():
         list_params["frame_type"] = selected_frame_type
     if selected_sort != "recommended":
         list_params["sort"] = selected_sort
+    if valid_focus_part_id:
+        list_params["focus_part_id"] = valid_focus_part_id
     if first_upgrade_guide:
         list_params["onboarding"] = "first_upgrade"
         list_params["source"] = "parts"
@@ -67207,6 +67479,7 @@ def parts():
         selected_sort=selected_sort,
         first_upgrade_guide=first_upgrade_guide,
         recommended_part_instance_id=recommended_part_instance_id,
+        focus_part_id=valid_focus_part_id,
         parts_sort_defs=PARTS_SORT_DEFS,
         part_type_filters=_part_type_filter_rows(
             selected_part_type,
