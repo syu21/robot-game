@@ -70,7 +70,7 @@ class BuildIndividualInstanceSelectionTests(unittest.TestCase):
         self.assertIn(f"ID {self.head_ids[0]}", html)
         self.assertIn(f"ID {self.head_ids[1]}", html)
         self.assertIn("現在装備", html)
-        self.assertIn("総合差分", html)
+        self.assertIn("総合性能差分", html)
         self.assertIn("詳細を開く", html)
         self.assertNotIn("所持 2", html)
 

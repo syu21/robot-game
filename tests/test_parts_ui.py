@@ -420,7 +420,7 @@ class PartsUiTests(unittest.TestCase):
         self.assertIn("保護解除", html)
         self.assertIn("btn-unlock", html)
         self.assertIn("保護中：売却・素材消費に使われません", html)
-        self.assertIn("現在値は今の強さ、注目能力は伸びやすい傾向です。迷ったら両方を見て選んでください。", html)
+        self.assertIn("同名パーツでも個体性能に差があります。", html)
 
         resp = client.post(
             "/parts/discard",
@@ -899,10 +899,40 @@ class PartsUiTests(unittest.TestCase):
         for label in ("耐久", "攻撃", "防御", "素早さ", "命中", "会心"):
             self.assertIn(label, html)
 
+    def test_same_master_same_rarity_and_plus_can_have_different_individual_stats(self):
+        head_part = self.starter_rows["HEAD"]
+        first_id = self._create_extra_instance(head_part, plus=4)
+        second_id = self._create_extra_instance(head_part, plus=4)
+        self._set_part_weights(first_id, **{"hp": 0.70, "atk": 0.05, "def": 0.10, "spd": 0.05, "acc": 0.05, "cri": 0.05})
+        self._set_part_weights(second_id, **{"hp": 0.05, "atk": 0.70, "def": 0.05, "spd": 0.05, "acc": 0.10, "cri": 0.05})
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                """
+                SELECT pi.*, rp.part_type, rp.key, rp.image_path, rp.rarity, rp.element, rp.series,
+                       rp.frame_type, rp.display_name_ja, rp.offset_x, rp.offset_y
+                FROM part_instances pi
+                JOIN robot_parts rp ON rp.id = pi.part_id
+                WHERE pi.id IN (?, ?)
+                ORDER BY pi.id ASC
+                """,
+                (first_id, second_id),
+            ).fetchall()
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(int(rows[0]["part_id"]), int(rows[1]["part_id"]))
+        self.assertEqual(str(rows[0]["rarity"]), str(rows[1]["rarity"]))
+        self.assertEqual(int(rows[0]["plus"]), int(rows[1]["plus"]))
+        first_stats = game_app.compute_part_stats(dict(rows[0]))
+        second_stats = game_app.compute_part_stats(dict(rows[1]))
+        differing = [key for key in game_app.PART_STAT_KEYS if int(first_stats[key]) != int(second_stats[key])]
+        self.assertTrue(differing)
+
     def test_evolve_keeps_weight_tendency(self):
         self._unlock_evolution()
         head_part = self._seed_evolvable_pair("HEAD", "weight_head", "傾向ヘッド")
-        self._create_extra_instance(head_part, plus=1)
+        self._create_extra_instance(head_part, plus=3)
         with game_app.app.app_context():
             db = game_app.get_db()
             source = db.execute(
@@ -917,6 +947,7 @@ class PartsUiTests(unittest.TestCase):
                 (self.user_id, "weight_head_n_proto"),
             ).fetchone()
             source_id = int(source["id"])
+            before_plus = int(source["plus"])
             before_weights = tuple(float(source[f"w_{key}"]) for key in game_app.PART_STAT_KEYS)
 
         client = self._client()
@@ -936,6 +967,7 @@ class PartsUiTests(unittest.TestCase):
                 (self.user_id, "weight_head_r_proto"),
             ).fetchone()
             self.assertIsNotNone(evolved)
+            self.assertEqual(int(evolved["plus"]), before_plus)
             after_weights = tuple(float(evolved[f"w_{key}"]) for key in game_app.PART_STAT_KEYS)
             self.assertEqual(after_weights, before_weights)
 

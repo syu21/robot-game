@@ -523,3 +523,12 @@
 - [ ] ホームと `/research/daily` で `おすすめ研究` が1件だけ表示される
 - [ ] `audit.daily_research.task.create/progress/complete/reward/all_complete` が残る
 - [ ] `/admin/metrics` に表示→進行、進行→1件完了、1件完了→全完了、翌日再訪が人数付きで表示される
+
+## 会議室フィードバック確認 2026-08-22
+
+- [ ] `/robots/customize/start` からの既存ロボ調整は、保存枠満杯でも同じ `robot_instance_id` のまま保存できる
+- [ ] 新規ロボ作成だけが保存枠を1枠消費し、満杯時にブロックされる
+- [ ] 既存ロボ調整後、差し替え前パーツは所持中へ戻り、差し替え後パーツは装備中になる
+- [ ] `/parts` に同名パーツでも個体性能差がある旨が表示される
+- [ ] 実験室投稿は `pending` 保存後、管理者承認まで `/lab/showcase` に出ない
+- [ ] `/admin/lab/submissions` で approve / reject / disable ができ、各auditが残る

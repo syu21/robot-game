@@ -67,8 +67,11 @@
 
 ### 3.4 保存
 - `robot_instances` + `robot_instance_parts` に保存
-- 保存枠超過時は保存ブロック
+- 新規作成: 保存枠を1枠消費。満杯なら作成不可
+- 既存ロボ調整: 既存 `robot_instances` / `robot_instance_parts` を更新するため保存枠を追加消費しない。保存枠満杯でも調整可能
 - 保存済みロボは `/robots` から確認し、`users.active_robot_id` を出撃機体として切り替える
+- 既存ロボ調整後も `robot_instance_id` は維持し、差し替えた旧パーツだけ所持中へ戻す
+- 編成確定時は `composed_image_path / icon_32_path` を再生成する
 
 ### 3.5 小型ユーザー機体アイコン
 - `robot_instances.icon_32_path` に 32x32 の小型機体画像を保持する

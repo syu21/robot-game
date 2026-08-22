@@ -67,6 +67,28 @@ class BuildModeTests(unittest.TestCase):
             sess["username"] = "build_mode_user"
         return client
 
+    def _create_inventory_part_for_slot(self, part_type, *, plus=0):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            base_frame = db.execute(
+                "SELECT COALESCE(frame_type, 'normal') AS frame_type FROM robot_instances WHERE id = ?",
+                (self.base_robot_id,),
+            ).fetchone()["frame_type"]
+            part = db.execute(
+                """
+                SELECT *
+                FROM robot_parts
+                WHERE part_type = ? AND is_active = 1
+                  AND COALESCE(frame_type, 'normal') = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (part_type, base_frame),
+            ).fetchone()
+            part_instance_id = int(game_app._create_part_instance_from_master(db, self.user_id, part, plus=plus))
+            db.commit()
+            return part_instance_id
+
     def test_build_defaults_to_modify_when_active_robot_exists(self):
         resp = self._client().get("/build")
         self.assertEqual(resp.status_code, 200)
@@ -102,7 +124,7 @@ class BuildModeTests(unittest.TestCase):
         self.assertIn("build-base-robot", html)
         self.assertIn("未選択の部位は現在のパーツ", html)
 
-    def test_build_modify_one_part_completes_with_base_parts_and_updates_active_robot(self):
+    def test_build_modify_one_part_updates_existing_robot_without_consuming_slot(self):
         with game_app.app.app_context():
             db = game_app.get_db()
             before_count = int(db.execute(
@@ -110,11 +132,7 @@ class BuildModeTests(unittest.TestCase):
                 (self.user_id,),
             ).fetchone()["c"])
             base_mapping = game_app._ensure_robot_instance_part_instances(db, self.base_robot_id)
-            base_rows = db.execute(
-                f"SELECT pi.id, rp.key FROM part_instances pi JOIN robot_parts rp ON rp.id = pi.part_id WHERE pi.id IN ({','.join(['?'] * 4)})",
-                [base_mapping["head"], base_mapping["r_arm"], base_mapping["l_arm"], base_mapping["legs"]],
-            ).fetchall()
-            base_keys = {int(row["id"]): row["key"] for row in base_rows}
+            old_head_id = int(base_mapping["head"])
 
         resp = self._client().post(
             "/build/confirm",
@@ -131,27 +149,28 @@ class BuildModeTests(unittest.TestCase):
         with game_app.app.app_context():
             db = game_app.get_db()
             user = db.execute("SELECT active_robot_id FROM users WHERE id = ?", (self.user_id,)).fetchone()
-            new_robot_id = int(user["active_robot_id"])
-            self.assertNotEqual(new_robot_id, self.base_robot_id)
+            self.assertEqual(int(user["active_robot_id"]), self.base_robot_id)
             after_count = int(db.execute(
                 "SELECT COUNT(*) AS c FROM robot_instances WHERE user_id = ? AND status != 'decomposed'",
                 (self.user_id,),
             ).fetchone()["c"])
-            self.assertEqual(after_count, before_count + 1)
-            old_robot = db.execute("SELECT status FROM robot_instances WHERE id = ?", (self.base_robot_id,)).fetchone()
-            self.assertEqual(old_robot["status"], "active")
-            new_robot = db.execute("SELECT composed_image_path, icon_32_path FROM robot_instances WHERE id = ?", (new_robot_id,)).fetchone()
-            self.assertTrue(new_robot["composed_image_path"])
-            self.assertTrue(new_robot["icon_32_path"])
-            new_mapping = game_app._ensure_robot_instance_part_instances(db, new_robot_id)
+            self.assertEqual(after_count, before_count)
+            robot = db.execute(
+                "SELECT name, status, composed_image_path, icon_32_path FROM robot_instances WHERE id = ?",
+                (self.base_robot_id,),
+            ).fetchone()
+            self.assertEqual(robot["name"], "Modified One")
+            self.assertEqual(robot["status"], "active")
+            self.assertTrue(robot["composed_image_path"])
+            self.assertTrue(robot["icon_32_path"])
+            new_mapping = game_app._ensure_robot_instance_part_instances(db, self.base_robot_id)
             self.assertEqual(int(new_mapping["head"]), self.new_head_id)
             for slot in ("r_arm", "l_arm", "legs"):
-                self.assertNotEqual(int(new_mapping[slot]), int(base_mapping[slot]))
-                cloned = db.execute(
-                    "SELECT rp.key FROM part_instances pi JOIN robot_parts rp ON rp.id = pi.part_id WHERE pi.id = ?",
-                    (int(new_mapping[slot]),),
-                ).fetchone()
-                self.assertEqual(cloned["key"], base_keys[int(base_mapping[slot])])
+                self.assertEqual(int(new_mapping[slot]), int(base_mapping[slot]))
+            old_head = db.execute("SELECT status FROM part_instances WHERE id = ?", (old_head_id,)).fetchone()
+            new_head = db.execute("SELECT status FROM part_instances WHERE id = ?", (self.new_head_id,)).fetchone()
+            self.assertEqual(old_head["status"], "inventory")
+            self.assertEqual(new_head["status"], "equipped")
 
     def test_build_modify_rejects_other_users_base_robot(self):
         resp = self._client().post(
@@ -167,7 +186,47 @@ class BuildModeTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("改造する保存中ロボが見つかりません", resp.get_data(as_text=True))
 
-    def test_build_modify_blocks_when_robot_slots_are_full(self):
+    def test_build_modify_allows_existing_robot_when_robot_slots_are_full(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            active_count = int(db.execute(
+                "SELECT COUNT(*) AS c FROM robot_instances WHERE user_id = ? AND status != 'decomposed'",
+                (self.user_id,),
+            ).fetchone()["c"])
+            before_mapping = game_app._ensure_robot_instance_part_instances(db, self.base_robot_id)
+            db.execute("UPDATE users SET robot_slot_limit = ? WHERE id = ?", (active_count, self.user_id))
+            db.commit()
+
+        resp = self._client().post(
+            "/build/confirm",
+            data={
+                "mode": "modify",
+                "base_robot_id": str(self.base_robot_id),
+                "robot_name": "Full Slot",
+                "head_key": str(self.new_head_id),
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT active_robot_id FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(int(user["active_robot_id"]), self.base_robot_id)
+            after_count = int(db.execute(
+                "SELECT COUNT(*) AS c FROM robot_instances WHERE user_id = ? AND status != 'decomposed'",
+                (self.user_id,),
+            ).fetchone()["c"])
+            self.assertEqual(after_count, active_count)
+            after_mapping = game_app._ensure_robot_instance_part_instances(db, self.base_robot_id)
+            self.assertEqual(int(after_mapping["head"]), self.new_head_id)
+            for slot in ("r_arm", "l_arm", "legs"):
+                self.assertEqual(int(after_mapping[slot]), int(before_mapping[slot]))
+
+    def test_build_new_still_blocks_when_robot_slots_are_full(self):
+        head_id = self._create_inventory_part_for_slot("HEAD", plus=1)
+        r_arm_id = self._create_inventory_part_for_slot("RIGHT_ARM", plus=1)
+        l_arm_id = self._create_inventory_part_for_slot("LEFT_ARM", plus=1)
+        legs_id = self._create_inventory_part_for_slot("LEGS", plus=1)
         with game_app.app.app_context():
             db = game_app.get_db()
             active_count = int(db.execute(
@@ -180,10 +239,12 @@ class BuildModeTests(unittest.TestCase):
         resp = self._client().post(
             "/build/confirm",
             data={
-                "mode": "modify",
-                "base_robot_id": str(self.base_robot_id),
-                "robot_name": "Full Slot",
-                "head_key": str(self.new_head_id),
+                "mode": "new",
+                "robot_name": "New Full Slot",
+                "head_key": str(head_id),
+                "r_arm_key": str(r_arm_id),
+                "l_arm_key": str(l_arm_id),
+                "legs_key": str(legs_id),
             },
             follow_redirects=True,
         )

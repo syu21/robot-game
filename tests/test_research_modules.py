@@ -525,7 +525,9 @@ class ResearchModuleTests(unittest.TestCase):
     def test_battle_result_hides_strategy_card_without_active_module(self):
         resp = self._run_explore("layer_2")
         html = resp.get_data(as_text=True)
-        self.assertNotIn("今回の作戦", html)
+        self.assertIn("今回の作戦", html)
+        self.assertIn("無装演算型《ブランク・コア》", html)
+        self.assertNotIn("狙撃モジュール 完成型", html)
 
     def test_synthesized_module_strategy_card_uses_instance_bonus(self):
         with game_app.app.app_context():

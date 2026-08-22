@@ -242,8 +242,8 @@ class TutorialLayer1FlowTests(unittest.TestCase):
         home = self._client().get("/home")
         self.assertEqual(home.status_code, 200)
         home_html = home.get_data(as_text=True)
-        self.assertIn("第1層ボスに再挑戦しよう", home_html)
-        self.assertIn("前回の戦闘記録により、次は少し有利に戦えます。", home_html)
+        self.assertIn("機体を調整して第1層ボスへ", home_html)
+        self.assertIn("第1層ボスを再捕捉しました。機体を1か所調整して、もう一度挑戦できます。", home_html)
 
     def test_fuse_after_boss_fail_guarantees_retry_and_clear(self):
         self._explore(self._resolve_player_win)

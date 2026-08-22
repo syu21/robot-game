@@ -175,9 +175,9 @@ class BossRetryTests(unittest.TestCase):
         with mock.patch.object(game_app, "_enforce_explore_cooldown_or_wait", return_value=0):
             res = client.get("/home")
         body = res.get_data(as_text=True)
-        self.assertIn("第1層ボスに再挑戦しよう", body)
+        self.assertIn("機体を調整して第1層ボスへ", body)
         self.assertIn("ボスへ再挑戦", body)
-        self.assertIn("パーツを見直す", body)
+        self.assertIn("機体を調整する", body)
 
     def test_failure_reason_categories(self):
         accuracy = game_app._boss_retry_failure_reason(

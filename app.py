@@ -26032,6 +26032,85 @@ def _equip_part_instances_on_robot(db, robot_instance_id, part_instance_ids):
         db.execute("UPDATE part_instances SET status = 'equipped' WHERE id = ?", (pi_id,))
 
 
+def _update_robot_instance_loadout(
+    db,
+    robot_instance_id,
+    part_instance_ids,
+    part_keys,
+    *,
+    decor_asset_id=None,
+    offsets=None,
+):
+    offsets = offsets or {}
+    db.execute(
+        """
+        UPDATE robot_instance_parts
+        SET head_part_instance_id = ?,
+            r_arm_part_instance_id = ?,
+            l_arm_part_instance_id = ?,
+            legs_part_instance_id = ?,
+            head_key = ?,
+            r_arm_key = ?,
+            l_arm_key = ?,
+            legs_key = ?,
+            head_offset_x = ?,
+            head_offset_y = ?,
+            r_arm_offset_x = ?,
+            r_arm_offset_y = ?,
+            l_arm_offset_x = ?,
+            l_arm_offset_y = ?,
+            legs_offset_x = ?,
+            legs_offset_y = ?,
+            head_scale_percent = ?,
+            r_arm_scale_percent = ?,
+            l_arm_scale_percent = ?,
+            legs_scale_percent = ?,
+            head_rotate_degrees = ?,
+            r_arm_rotate_degrees = ?,
+            l_arm_rotate_degrees = ?,
+            legs_rotate_degrees = ?,
+            head_flip_x = ?,
+            r_arm_flip_x = ?,
+            l_arm_flip_x = ?,
+            legs_flip_x = ?,
+            decor_asset_id = ?
+        WHERE robot_instance_id = ?
+        """,
+        (
+            part_instance_ids["head"],
+            part_instance_ids["r_arm"],
+            part_instance_ids["l_arm"],
+            part_instance_ids["legs"],
+            part_keys["head"],
+            part_keys["r_arm"],
+            part_keys["l_arm"],
+            part_keys["legs"],
+            int(offsets.get("head_offset_x", 0)),
+            int(offsets.get("head_offset_y", 0)),
+            int(offsets.get("r_arm_offset_x", 0)),
+            int(offsets.get("r_arm_offset_y", 0)),
+            int(offsets.get("l_arm_offset_x", 0)),
+            int(offsets.get("l_arm_offset_y", 0)),
+            int(offsets.get("legs_offset_x", 0)),
+            int(offsets.get("legs_offset_y", 0)),
+            _normalize_build_scale_percent(offsets.get("head_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("r_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("l_arm_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_scale_percent(offsets.get("legs_scale_percent", BUILD_PART_SCALE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("head_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("r_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("l_arm_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_rotate_degrees(offsets.get("legs_rotate_degrees", BUILD_PART_ROTATE_DEFAULT)),
+            _normalize_build_flip_x(offsets.get("head_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("r_arm_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("l_arm_flip_x", 0)),
+            _normalize_build_flip_x(offsets.get("legs_flip_x", 0)),
+            decor_asset_id,
+            int(robot_instance_id),
+        ),
+    )
+
+
 def _clone_part_instance_for_user(db, source_part_instance_id, user_id, *, status="inventory"):
     source = db.execute(
         """
@@ -55680,7 +55759,7 @@ def _get_active_robot(db, user_id):
             (active_id, user_id),
         ).fetchone()
         if row:
-            return _refresh_robot_instance_render_assets(db, row, log_label="get_active_robot")
+            return _refresh_robot_instance_render_assets(db, row, log_label="get_active_robot", refresh_stale=True)
     return None
 
 
@@ -62223,6 +62302,12 @@ def build():
                 default=selected_frame_type,
             )
         )
+    compare_parts_row = None
+    if compare_robot:
+        compare_parts_row = db.execute(
+            "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+            (int(compare_robot["id"]),),
+        ).fetchone()
     current_part_items = {"HEAD": None, "RIGHT_ARM": None, "LEFT_ARM": None, "LEGS": None}
     if compare_robot:
         active_mapping = _ensure_robot_instance_part_instances(db, int(compare_robot["id"])) or {}
@@ -62322,6 +62407,16 @@ def build():
     selected_parts = {}
     selected_payloads = []
     selected_offsets = _build_offset_payload_from_values(request.values)
+    if build_mode == "modify" and compare_parts_row and not any(
+        str(key) in request.values
+        for key in (
+            "head_offset_x", "head_offset_y", "head_scale_percent", "head_rotate_degrees", "head_flip_x",
+            "r_arm_offset_x", "r_arm_offset_y", "r_arm_scale_percent", "r_arm_rotate_degrees", "r_arm_flip_x",
+            "l_arm_offset_x", "l_arm_offset_y", "l_arm_scale_percent", "l_arm_rotate_degrees", "l_arm_flip_x",
+            "legs_offset_x", "legs_offset_y", "legs_scale_percent", "legs_rotate_degrees", "legs_flip_x",
+        )
+    ):
+        selected_offsets = _robot_instance_part_offsets(compare_parts_row)
     message = session.pop("message", None)
     for part_type, param in slot_param_map.items():
         options = part_groups[part_type]
@@ -62389,6 +62484,14 @@ def build():
     ]
     decor_id_raw = (request.values.get("decor_asset_id") or "").strip()
     selected_decor_id = int(decor_id_raw) if decor_id_raw.isdigit() else None
+    if (
+        build_mode == "modify"
+        and not str(request.values.get("decor_asset_id") or "").strip()
+        and compare_parts_row
+        and "decor_asset_id" in compare_parts_row.keys()
+        and compare_parts_row["decor_asset_id"]
+    ):
+        selected_decor_id = int(compare_parts_row["decor_asset_id"])
     if selected_decor_id and not any(int(d["id"]) == selected_decor_id for d in decor_assets):
         selected_decor_id = None
     selected_decor = next((d for d in decor_assets if int(d["id"]) == int(selected_decor_id)), None) if selected_decor_id else None
@@ -62761,7 +62864,7 @@ def build_confirm():
         "SELECT COUNT(*) AS c FROM robot_instances WHERE user_id = ? AND status != 'decomposed'",
         (user["id"],),
     ).fetchone()["c"]
-    if active_count >= limits["robot_slots"]:
+    if build_mode == "new" and active_count >= limits["robot_slots"]:
         flash(
             f"保存枠がいっぱいです。不要なロボを整理してください（{int(active_count)}/{int(limits['robot_slots'])}）。",
             "error",
@@ -62777,34 +62880,83 @@ def build_confirm():
             "l_arm": int(resolved_slots["l_arm"]["id"]),
             "legs": int(resolved_slots["legs"]["id"]),
         }
-        if build_mode == "modify":
-            for slot_name in ("head", "r_arm", "l_arm", "legs"):
-                if resolved_slots[slot_name].get("clone_from_base"):
-                    cloned_id = _clone_part_instance_for_user(db, int(resolved_slots[slot_name]["id"]), int(user["id"]))
-                    if not cloned_id:
-                        raise ValueError("改造元パーツの複製に失敗しました。")
-                    selected[slot_name] = int(cloned_id)
         if not all(selected.values()):
             missing = [k for k, v in selected.items() if not v]
             raise ValueError(f"在庫不足: {', '.join(missing)}")
 
-        instance_id = _create_robot_instance(
-            db,
-            user["id"],
-            robot_name,
-            head_key,
-            r_arm_key,
-            l_arm_key,
-            legs_key,
-            decor_asset_id=decor_asset_id,
-            status="active",
-            combat_mode=combat_mode,
-            frame_type=robot_frame_type,
-            is_mixed_frame=is_mixed_frame,
-            build_frame_mode=selected_frame_type,
-            offsets=selected_offsets,
-        )
-        _equip_part_instances_on_robot(db, instance_id, selected)
+        selected_keys = {
+            "head": head_key,
+            "r_arm": r_arm_key,
+            "l_arm": l_arm_key,
+            "legs": legs_key,
+        }
+        returned_ids = []
+        if build_mode == "modify":
+            instance_id = int(base_robot["id"])
+            current_selected_ids = {
+                slot_name: int(base_mapping.get(slot_name) or 0)
+                for slot_name in ("head", "r_arm", "l_arm", "legs")
+            }
+            for slot_name, current_id in current_selected_ids.items():
+                next_id = int(selected[slot_name])
+                if current_id and current_id != next_id:
+                    _return_part_instance_to_pool(db, int(user["id"]), current_id)
+                    returned_ids.append(current_id)
+            _update_robot_instance_loadout(
+                db,
+                instance_id,
+                selected,
+                selected_keys,
+                decor_asset_id=decor_asset_id,
+                offsets=selected_offsets,
+            )
+            for slot_name, part_id in selected.items():
+                if int(current_selected_ids.get(slot_name) or 0) != int(part_id):
+                    db.execute(
+                        "UPDATE part_instances SET status = 'equipped', updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+                        (int(part_id), int(user["id"])),
+                    )
+            db.execute(
+                """
+                UPDATE robot_instances
+                SET name = ?,
+                    status = 'active',
+                    combat_mode = ?,
+                    frame_type = ?,
+                    is_mixed_frame = ?,
+                    build_frame_mode = ?,
+                    updated_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    robot_name,
+                    _normalize_combat_mode(combat_mode),
+                    _normalize_frame_type(robot_frame_type),
+                    1 if is_mixed_frame else 0,
+                    _normalize_build_frame_mode(selected_frame_type),
+                    int(time.time()),
+                    instance_id,
+                    int(user["id"]),
+                ),
+            )
+        else:
+            instance_id = _create_robot_instance(
+                db,
+                user["id"],
+                robot_name,
+                head_key,
+                r_arm_key,
+                l_arm_key,
+                legs_key,
+                decor_asset_id=decor_asset_id,
+                status="active",
+                combat_mode=combat_mode,
+                frame_type=robot_frame_type,
+                is_mixed_frame=is_mixed_frame,
+                build_frame_mode=selected_frame_type,
+                offsets=selected_offsets,
+            )
+            _equip_part_instances_on_robot(db, instance_id, selected)
         parts = {
             "head_key": head_key,
             "r_arm_key": r_arm_key,
@@ -62831,7 +62983,14 @@ def build_confirm():
         week_key = _world_week_key()
         build_element = _build_element_from_keys(db, head_key, r_arm_key, l_arm_key, legs_key)
         _world_counter_inc(db, week_key, f"builds_{build_element}", 1)
-        consumed_ids = [selected["head"], selected["r_arm"], selected["l_arm"], selected["legs"]]
+        if build_mode == "modify":
+            consumed_ids = [
+                int(selected[slot_name])
+                for slot_name in ("head", "r_arm", "l_arm", "legs")
+                if int(selected[slot_name]) != int(base_mapping.get(slot_name) or 0)
+            ]
+        else:
+            consumed_ids = [selected["head"], selected["r_arm"], selected["l_arm"], selected["legs"]]
         audit_log(
             db,
             AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
@@ -62850,11 +63009,14 @@ def build_confirm():
                 "decor_asset_id": decor_asset_id,
                 "combat_mode": combat_mode,
                 "build_mode": selected_frame_type,
+                "operation": "modify_existing" if build_mode == "modify" else "create",
+                "base_robot_id": int(base_robot["id"]) if base_robot else None,
                 "frame_types": sorted(selected_frame_types),
                 "is_mixed_frame": bool(is_mixed_frame),
                 "set_bonus_enabled": not bool(is_mixed_frame),
                 "offsets": dict(selected_offsets),
                 "consumed_part_instance_ids": consumed_ids,
+                "returned_part_instance_ids": returned_ids,
                 "style": {
                     "current_key": style_state.get("current_key"),
                     "next_key": style_state.get("next_key"),
@@ -62978,6 +63140,19 @@ def build_confirm():
                 entity_id=pid,
                 delta_count=-1,
                 payload={"reason": "build_confirm_consume", "robot_instance_id": instance_id},
+                ip=request.remote_addr,
+            )
+        for pid in returned_ids:
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
+                user_id=user["id"],
+                request_id=getattr(g, "request_id", None),
+                action_key="build_confirm",
+                entity_type="part_instance",
+                entity_id=pid,
+                delta_count=1,
+                payload={"reason": "build_confirm_return_replaced", "robot_instance_id": instance_id},
                 ip=request.remote_addr,
             )
         evaluate_referral_qualification(db, user["id"], request_ip=request.remote_addr)
@@ -65582,7 +65757,7 @@ def lab_upload():
                     _grant_lab_small_boost_if_available(db, user_id, "lab_participation")
                 )
                 db.commit()
-                flash("投稿を受け付けました。公開は承認後です。", "notice")
+                flash("投稿を受け付けました。公開は承認後です。確認まで少しお時間をいただく場合があります。", "notice")
                 return redirect(url_for("lab_upload"))
     return render_template(
         "lab_upload.html",

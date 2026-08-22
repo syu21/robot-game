@@ -190,9 +190,13 @@
   <div class="part-summary-pills">
     <span class="part-summary-pill">保存中のロボ：{{ robot_slot_used }} / {{ robot_slot_limit }}</span>
   </div>
-  {% if robot_slot_full %}
+  {% if robot_slot_full and build_mode == 'new' %}
   <div class="error">
     保存枠がいっぱいです。新しいロボを作るには、不要なロボを整理してください。
+  </div>
+  {% elif robot_slot_full and build_mode == 'modify' %}
+  <div class="notice">
+    保存枠はいっぱいですが、既存ロボの改造は保存枠を追加消費しないため実行できます。
   </div>
   {% endif %}
 </section>

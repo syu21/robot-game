@@ -591,6 +591,7 @@ class LabRouteTests(unittest.TestCase):
         )
         self.assertEqual(good_resp.status_code, 200)
         self.assertIn("投稿を受け付けました", good_resp.get_data(as_text=True))
+        self.assertIn("確認まで少しお時間をいただく場合があります", good_resp.get_data(as_text=True))
 
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -607,6 +608,9 @@ class LabRouteTests(unittest.TestCase):
         self.assertNotIn("GlassBot", showcase_before.get_data(as_text=True))
 
         admin_client = self._client(admin=True)
+        admin_pending = admin_client.get("/admin/lab/submissions")
+        self.assertEqual(admin_pending.status_code, 200)
+        self.assertIn("GlassBot", admin_pending.get_data(as_text=True))
         approve_resp = admin_client.post(
             f"/admin/lab/submissions/{row['id']}/approve",
             data={
@@ -679,6 +683,51 @@ class LabRouteTests(unittest.TestCase):
             self.assertIsNotNone(adoption)
             self.assertEqual(adoption["status"], "candidate")
             self.assertEqual(adoption["adoption_type"], "enemy")
+            audit_types = {
+                item["event_type"]
+                for item in db.execute(
+                    "SELECT event_type FROM world_events_log WHERE entity_type = 'lab_submission' AND entity_id = ?",
+                    (row["id"],),
+                ).fetchall()
+            }
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_SUBMISSION_CREATE"], audit_types)
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAB_SUBMISSION_APPROVE"], audit_types)
+
+            now = int(time.time())
+            reject_cur = db.execute(
+                """
+                INSERT INTO lab_robot_submissions
+                (user_id, title, comment, image_path, thumb_path, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (
+                    self.user_id,
+                    "RejectBot",
+                    "pending",
+                    game_app.DEFAULT_BADGE_REL,
+                    game_app.DEFAULT_BADGE_REL,
+                    now,
+                    now,
+                ),
+            )
+            reject_id = int(reject_cur.lastrowid)
+            db.commit()
+
+        reject_resp = admin_client.post(
+            f"/admin/lab/submissions/{reject_id}/reject",
+            data={"moderation_note": "revise", "reject_reason_key": "guideline", "status": "pending"},
+            follow_redirects=True,
+        )
+        self.assertEqual(reject_resp.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rejected = db.execute("SELECT status FROM lab_robot_submissions WHERE id = ?", (reject_id,)).fetchone()
+            self.assertEqual(rejected["status"], "rejected")
+            reject_audit = db.execute(
+                "SELECT id FROM world_events_log WHERE event_type = ? AND entity_type = 'lab_submission' AND entity_id = ?",
+                (game_app.AUDIT_EVENT_TYPES["LAB_SUBMISSION_REJECT"], reject_id),
+            ).fetchone()
+            self.assertIsNotNone(reject_audit)
 
         disable_resp = admin_client.post(
             f"/admin/lab/submissions/{row['id']}/disable",
@@ -688,6 +737,13 @@ class LabRouteTests(unittest.TestCase):
         self.assertEqual(disable_resp.status_code, 200)
         showcase_disabled = client.get("/lab/showcase")
         self.assertNotIn("GlassBot", showcase_disabled.get_data(as_text=True))
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            disable_audit = db.execute(
+                "SELECT id FROM world_events_log WHERE event_type = ? AND entity_type = 'lab_submission' AND entity_id = ?",
+                (game_app.AUDIT_EVENT_TYPES["LAB_SUBMISSION_DISABLE"], int(row["id"])),
+            ).fetchone()
+            self.assertIsNotNone(disable_audit)
 
     def test_lab_like_is_not_duplicated_and_report_is_saved(self):
         with game_app.app.app_context():

@@ -22,7 +22,7 @@ class RobotRenderRefreshTests(unittest.TestCase):
 
         with game_app.app.app_context():
             db = game_app.get_db()
-            now = int(time.time())
+            now = 1_700_000_000
             db.execute(
                 """
                 INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer)
@@ -89,6 +89,12 @@ class RobotRenderRefreshTests(unittest.TestCase):
             composed_abs = game_app._static_abs(composed_rel)
             with open(composed_abs, "rb") as fh:
                 old_bytes = fh.read()
+            old_updated_at = old_updated_at - 60
+            db.execute(
+                "UPDATE robot_instances SET updated_at = ? WHERE id = ?",
+                (old_updated_at, self.robot_id),
+            )
+            db.commit()
 
             db.execute(
                 "UPDATE robot_parts SET offset_y = offset_y + 18 WHERE key = ?",

@@ -142,7 +142,18 @@ class AnalyticsSecurityTests(unittest.TestCase):
             excluded_id = self._create_user(db, "excluded_player", analytics_excluded=1, created_at=now)
             admin_id = self._create_user(db, "metric_admin", is_admin=1, created_at=now)
             test_id = self._create_user(db, "test_metric", created_at=now)
-            for uid in (normal_id, excluded_id, admin_id, test_id):
+            suspicious_id = self._create_user(db, "x' OR 1=1--", created_at=now)
+            noise_only_id = self._create_user(db, "noise_only_player", created_at=now - 86400 * 10)
+            self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"], created_at=now)
+            self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], created_at=now + 1, payload={"area_key": "layer_1"})
+            self._insert_event(
+                db,
+                normal_id,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                created_at=now + 2,
+                payload={"area_key": "layer_1", "result": {"win": True}},
+            )
+            for uid in (excluded_id, admin_id, test_id):
                 self._insert_event(db, uid, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"], created_at=now)
                 self._insert_event(
                     db,
@@ -151,10 +162,12 @@ class AnalyticsSecurityTests(unittest.TestCase):
                     created_at=now + 1,
                     payload={"area_key": "layer_1", "result": {"win": True}},
                 )
-            self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], created_at=now + 2, payload={"area_key": "layer_1"})
             self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], created_at=now + 3, payload={"area_key": "layer_1"})
             self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"], created_at=now + 4, payload={"area_key": "layer_1"})
             self._insert_event(db, normal_id, game_app.AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"], created_at=now + 5)
+            self._insert_event(db, suspicious_id, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"], created_at=now)
+            self._insert_event(db, suspicious_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], created_at=now + 1, payload={"area_key": "layer_1"})
+            self._insert_event(db, noise_only_id, "audit.system.batch", created_at=now)
             db.commit()
 
             daily = game_app._collect_daily_metrics(db, day_key)
@@ -167,6 +180,23 @@ class AnalyticsSecurityTests(unittest.TestCase):
         by_key = {row["key"]: row for row in snapshot["rows"]}
         self.assertEqual(by_key["layer1_first_win"]["count"], 1)
         self.assertEqual(snapshot["retry_10m"]["numerator"], 1)
+
+    def test_first_experience_funnel_is_ordered_and_capped(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "ordered_funnel_player", created_at=now)
+            self._insert_event(db, user_id, game_app.AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"], created_at=now + 1)
+            self._insert_event(db, user_id, game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], created_at=now + 10, payload={"area_key": "layer_1"})
+            db.commit()
+
+            snapshot = game_app._admin_first_experience_snapshot(db, window_days=7)
+
+        by_key = {row["key"]: row for row in snapshot["rows"]}
+        self.assertEqual(by_key["registered"]["count"], 1)
+        self.assertEqual(by_key["battle_result_view"]["count"], 0)
+        for row in snapshot["rows"]:
+            self.assertLessEqual(float(row["pct_of_previous"]), 100.0)
 
     def test_registration_input_defense_detects_blocked_payloads(self):
         with self.assertRaises(game_app.AccountInputError):

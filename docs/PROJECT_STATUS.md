@@ -860,3 +860,10 @@
 - DB、戦闘計算、強化、進化、ドロップ、ソート、ランキング、audit payload は内部値のまま。
 - `+値`、ターン、コイン、確率、CT、所持数、新規通貨は表示倍率の対象外。
 - UI文言は `総合値` から `総合性能` へ寄せる。
+
+## 23. 会議室フィードバック修正 2026-08-22
+- `/robots/customize/start` からの既存ロボ調整は、保存枠を追加消費せず同じ `robot_instance_id` を更新する。
+- 新規ロボ作成だけが保存枠を消費し、満杯時に作成不可になる。
+- 調整保存時は `robot_instance_parts` を更新し、差し替えた旧パーツを所持中へ戻し、`composed_image_path / icon_32_path` を再生成する。
+- `/parts` に同名パーツでも個体性能差がある旨を表示する。
+- 実験室投稿は pending から管理者 approve / reject / disable を経由し、approved のみ `/lab/showcase` へ表示する。
