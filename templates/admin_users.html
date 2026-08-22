@@ -5,13 +5,6 @@
 <div class="notice">{{ message }}</div>
 {% endif %}
 <div class="card">
-  <p class="link">
-    {% if show_suspicious %}
-    <a class="battle-home-link" href="{{ url_for('admin_users') }}">不審候補を隠す</a>
-    {% else %}
-    <a class="battle-home-link" href="{{ url_for('admin_users', show_suspicious=1) }}">不審候補を表示</a>
-    {% endif %}
-  </p>
   <form method="post" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <input type="hidden" name="action" value="bulk_suspicious_exclude" />

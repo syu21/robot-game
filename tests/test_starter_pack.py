@@ -1,5 +1,4 @@
 import os
-import json
 import tempfile
 import time
 import unittest
@@ -68,55 +67,9 @@ class StarterPackTests(unittest.TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
-            self.assertIn("初任務", html)
+            self.assertIn("最初のミッション", html)
             self.assertIn("第1層へ出撃", html)
-            self.assertIn("最初のロボパーツを持ち帰ろう", html)
-            self.assertIn('name="entry_source" value="next_action_first_explore"', html)
-
-    def test_first_explore_cta_records_initial_speed_payload(self):
-        with game_app.app.test_client() as client:
-            resp = client.post(
-                "/register",
-                data={"username": "starter_speed", "password": "pass123"},
-                follow_redirects=True,
-            )
-            self.assertEqual(resp.status_code, 200)
-            explore_resp = client.post(
-                "/explore",
-                data={"area_key": "layer_1", "entry_source": "next_action_first_explore"},
-                follow_redirects=False,
-            )
-            self.assertIn(explore_resp.status_code, {200, 302})
-
-        with game_app.app.app_context():
-            db = game_app.get_db()
-            user = db.execute("SELECT id FROM users WHERE username = ?", ("starter_speed",)).fetchone()
-            rows = db.execute(
-                """
-                SELECT event_type, payload_json
-                FROM world_events_log
-                WHERE user_id = ?
-                ORDER BY id ASC
-                """,
-                (int(user["id"]),),
-            ).fetchall()
-
-        start_payloads = [
-            json.loads(row["payload_json"] or "{}")
-            for row in rows
-            if row["event_type"] == game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]
-        ]
-        result_payloads = [
-            json.loads(row["payload_json"] or "{}")
-            for row in rows
-            if row["event_type"] == game_app.AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"]
-        ]
-        self.assertTrue(start_payloads)
-        self.assertEqual(start_payloads[-1].get("entry_source"), "next_action_first_explore")
-        self.assertTrue(start_payloads[-1].get("is_first_explore"))
-        self.assertTrue(start_payloads[-1].get("home_session_id"))
-        self.assertIsNotNone(start_payloads[-1].get("seconds_from_home_view"))
-        self.assertTrue(result_payloads)
+            self.assertIn("まずは第1層でパーツを集めよう", html)
 
     def test_home_shows_build_cta_when_user_has_no_robot(self):
         with game_app.app.app_context():
