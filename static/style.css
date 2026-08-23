@@ -3833,6 +3833,15 @@ body.battle-page .layer-boss-victory-sub {
   text-transform: uppercase;
 }
 
+.first-sortie-focus-card {
+  border-color: rgba(103, 232, 249, 0.42);
+  background: rgba(15, 23, 42, 0.92);
+}
+
+.first-sortie-focus-card .home-explore-kicker {
+  color: #bff7ff;
+}
+
 .home-explore-status {
   flex: 0 0 auto;
   padding: 6px 10px;

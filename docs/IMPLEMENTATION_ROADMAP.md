@@ -96,9 +96,10 @@
 
 定点観測修正:
 
-- 登録直後から初回出撃前まではホーム主CTAを `初任務` / `第1層へ出撃` に統一する
+- 登録直後から初回出撃前まではホーム主CTAを `出撃準備完了` / `第1層へ出撃する` に統一し、案内モーダルや重複CTAよりこの1ボタンを優先する
 - 初回勝利後から3出撃未満までは同じ主CTA位置で第1層再出撃を促す
 - `EXPLORE_START` は `entry_source`, `home_session_id`, `seconds_from_home_view`, `is_first_explore`, `explore_count_before` を記録する
+- `entry_source` が空の第1層初回POSTでも、直前ホーム表示がある場合だけ `next_action_first_explore` として安全に補完する
 - 戦闘結果直表示でも `BATTLE_RESULT_VIEW` を必ず記録し、結果表示率とretry率が分断されないようにする
 - DAU は実ユーザー操作イベントだけで集計し、管理者、BAN、集計除外、攻撃風登録名を除外する
 - ボス遭遇は `boss_source=normal/pity/guaranteed/guaranteed_retry/fixed/admin_test/unknown` で分類する

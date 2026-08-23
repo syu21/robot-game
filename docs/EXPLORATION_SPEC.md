@@ -5,6 +5,10 @@
 ## 1. エンドポイント
 - 実行: `POST /explore`
 - 主入力: `area_key`
+- 任意入力: `entry_source`
+  - 初回出撃フォーカスCTAは `area_key=layer_1`, `entry_source=next_action_first_explore`
+  - `entry_source` が空でも、直前ホーム表示があり、通常ユーザーの第1層初回出撃と判定できる場合だけ `next_action_first_explore` へ補完する
+  - 推定不能な流入は `unknown` として残す
 - エリア:
   - `layer_1`
   - `layer_2`

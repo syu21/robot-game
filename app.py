@@ -4560,6 +4560,16 @@ def _normalize_entry_source(value):
     return source if source in allowed else "unknown"
 
 
+def _explore_start_count_for_user(db, user_id):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
+            (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
+        ).fetchone()["c"]
+        or 0
+    )
+
+
 def _normalize_boss_source(value):
     source = str(value or "").strip().lower()
     aliases = {
@@ -5161,7 +5171,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "home_previous_area": "ホーム前回出撃先",
         "home_layer1_cta": "ホーム第1層CTA",
         "battle_retry": "結果画面から再出撃",
-        "next_action_first_explore": "初任務NEXT ACTIONから出撃",
+        "next_action_first_explore": "初回出撃フォーカスから出撃",
         "next_action": "NEXT ACTIONから出撃",
         "previous_area": "基地の前回出撃先から再出撃",
         "layer1_primary_cta": "基地の第1層CTAから出撃",
@@ -49645,6 +49655,8 @@ def home():
         and 0 < int(explore_start_total or 0) < int(ONBOARDING_FIRST_THREE_TARGET)
         and int(first_victory_total or 0) > 0
     )
+    if first_explore_before_user:
+        show_intro_modal = False
     layer1_boss_retry_state = _layer1_boss_retry_state(db, int(user["id"]))
     layer1_boss_retry_home_visible = bool(
         home_primary_explore_cta
@@ -49694,15 +49706,17 @@ def home():
     elif home_primary_explore_cta and first_explore_before_user and not (next_action_card and next_action_card.get("layer2_unlock")):
         home_primary_explore_cta.update(
             {
-                "title": "初任務",
+                "title": "出撃準備完了",
                 "destination_label": "第1層",
-                "helper_text": "最初のミッションです。第1層へ出撃して、最初のロボパーツを持ち帰ろう。",
-                "button_label": "第1層へ出撃",
-                "button_current_label": "第1層へ出撃" if int(ct_remain or 0) <= 0 else f"クールタイム中 あと{int(ct_remain)}秒",
+                "helper_text": "まずは第1層で1勝して、最初のパーツを持ち帰ろう。",
+                "button_label": "第1層へ出撃する",
+                "button_current_label": "第1層へ出撃する" if int(ct_remain or 0) <= 0 else f"クールタイム中 あと{int(ct_remain)}秒",
                 "area_key": "layer_1",
                 "entry_source": "next_action_first_explore",
+                "surface": "first_sortie_focus",
+                "first_sortie_focus": True,
                 "show_map_link": False,
-                "context_line": "まずは第1層でパーツを集めよう。勝てばロボパーツを持ち帰れます。",
+                "context_line": "",
             }
         )
         show_beginner_mission = False
@@ -49920,7 +49934,7 @@ def home():
                 action_key="onboarding_first_explore_cta_view",
                 entity_type="home",
                 payload={
-                    "surface": "next_action",
+                    "surface": "first_sortie_focus" if home_primary_explore_cta.get("first_sortie_focus") else "next_action",
                     "area_key": "layer_1",
                     "disabled": disabled,
                     "disabled_reason": "cooldown" if disabled else "",
@@ -56319,7 +56333,8 @@ def explore():
     user_id = session["user_id"]
     request_id = getattr(g, "request_id", None) or str(uuid.uuid4())
     area_key = (request.form.get("area_key") or "").strip()
-    entry_source = _normalize_entry_source(request.form.get("entry_source"))
+    entry_source_raw = request.form.get("entry_source")
+    entry_source = _normalize_entry_source(entry_source_raw)
     explore_submission_id = (request.form.get("explore_submission_id") or "").strip()
     battle_id = _battle_id_for_explore_submission(explore_submission_id)
     battle_debug = (request.args.get("debug") or "").strip() == "1"
@@ -56373,6 +56388,15 @@ def explore():
 
     now = _now_ts()
     home_view_context = _home_recent_view_context(db, user_id, now)
+    explore_start_count_before = _explore_start_count_for_user(db, user_id)
+    if (
+        entry_source == "unknown"
+        and not str(entry_source_raw or "").strip()
+        and area_key == "layer_1"
+        and int(explore_start_count_before) == 0
+        and home_view_context.get("home_session_id")
+    ):
+        entry_source = "next_action_first_explore"
     ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
     newbie_boost_active = _is_newbie_boost_active(user, now_ts=now)
     research_boost_result = _consume_research_boost_if_available(
@@ -56500,13 +56524,6 @@ def explore():
             ).fetchone()["c"]
             or 0
         )
-    explore_start_count_before = int(
-        db.execute(
-            "SELECT COUNT(*) AS c FROM world_events_log WHERE user_id = ? AND event_type = ?",
-            (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_START"]),
-        ).fetchone()["c"]
-        or 0
-    )
     if area_key == "layer_1" and explore_start_count_before == 0:
         surface = {
             "next_action_first_explore": "next_action",

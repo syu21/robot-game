@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import time
 import unittest
@@ -67,9 +68,66 @@ class StarterPackTests(unittest.TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
-            self.assertIn("最初のミッション", html)
-            self.assertIn("第1層へ出撃", html)
-            self.assertIn("まずは第1層でパーツを集めよう", html)
+            self.assertIn("出撃準備完了", html)
+            self.assertIn("まずは第1層で1勝して、最初のパーツを持ち帰ろう。", html)
+            self.assertIn("第1層へ出撃する", html)
+            self.assertIn('name="area_key" value="layer_1"', html)
+            self.assertIn('name="entry_source" value="next_action_first_explore"', html)
+            self.assertEqual(html.count('data-explore-cta="1"'), 1)
+            self.assertNotIn('id="intro-guide-modal"', html)
+
+    def test_first_sortie_focus_missing_entry_source_is_inferred_from_home(self):
+        with game_app.app.test_client() as client:
+            resp = client.post(
+                "/register",
+                data={"username": "starter_source", "password": "pass123"},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            explore = client.post(
+                "/explore",
+                data={"area_key": "layer_1"},
+                follow_redirects=False,
+            )
+            self.assertIn(explore.status_code, {200, 302})
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT id FROM users WHERE username = ?", ("starter_source",)).fetchone()
+            rows = db.execute(
+                """
+                SELECT event_type, payload_json
+                FROM world_events_log
+                WHERE user_id = ?
+                """,
+                (int(user["id"]),),
+            ).fetchall()
+        payloads = [
+            json.loads(row["payload_json"] or "{}")
+            for row in rows
+            if row["event_type"] == game_app.AUDIT_EVENT_TYPES["EXPLORE_START"]
+        ]
+        self.assertTrue(any(payload.get("entry_source") == "next_action_first_explore" for payload in payloads))
+
+    def test_first_sortie_focus_ends_after_explore_start(self):
+        with game_app.app.test_client() as client:
+            resp = client.post(
+                "/register",
+                data={"username": "starter_done", "password": "pass123"},
+                follow_redirects=True,
+            )
+            self.assertEqual(resp.status_code, 200)
+            explore = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "next_action_first_explore"},
+                follow_redirects=False,
+            )
+            self.assertIn(explore.status_code, {200, 302})
+            home = client.get("/home")
+            self.assertEqual(home.status_code, 200)
+            html = home.get_data(as_text=True)
+            self.assertNotIn("出撃準備完了", html)
+            self.assertNotIn('name="entry_source" value="next_action_first_explore"', html)
 
     def test_home_shows_build_cta_when_user_has_no_robot(self):
         with game_app.app.app_context():

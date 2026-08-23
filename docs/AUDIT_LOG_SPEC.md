@@ -514,8 +514,12 @@ COMBAT SIGNAL v1:
   - 初回ホーム準備状態。payload は `user_id`, `has_active_robot`, `layer1_available`, `explore_ct_seconds`, `next_action_type`, `next_action_visible`, `first_mission_visible`, `first_explore_cta_visible`, `home_session_id`。
 - `audit.onboarding.first_explore_cta_view`
   - 第1層初出撃CTA表示。payload は `surface`, `area_key`, `disabled`, `disabled_reason`, `entry_source`, `home_session_id`。
+  - 初回出撃フォーカスの surface は `first_sortie_focus`、entry_source は `next_action_first_explore`。
 - `audit.onboarding.first_explore_cta_click`
   - 第1層初出撃CTAクリック。payload は `surface`, `area_key`, `entry_source`, `home_session_id`, `seconds_from_home_view`。
+- `audit.explore.start`
+  - 初回出撃フォーカスCTAは `entry_source=next_action_first_explore` を使う。
+  - `entry_source` が空の第1層初回POSTは、直前ホーム表示が確認できる場合のみ `next_action_first_explore` へ補完する。推定不能な流入は `unknown` のまま残す。
 - `audit.onboarding.layer1.first_start`
 - `audit.onboarding.layer1.first_complete`
 - `audit.onboarding.layer1.first_win`

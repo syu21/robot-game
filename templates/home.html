@@ -30,10 +30,11 @@
 <div class="home-priority-stack">
 {% if home_primary_explore_cta %}
 <div class="panel home-explore-card">
-  <div class="card next-action-card home-next-action-unified">
+  {% set first_sortie_focus = home_primary_explore_cta.get('first_sortie_focus') %}
+  <div class="card next-action-card home-next-action-unified{% if first_sortie_focus %} first-sortie-focus-card{% endif %}">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">NEXT ACTION</div>
+        <div class="home-explore-kicker">{{ '初回出撃' if first_sortie_focus else 'NEXT ACTION' }}</div>
         <div><b>{{ home_primary_explore_cta['title'] }}</b></div>
         <div class="home-next-action-destination">{{ home_primary_explore_cta['destination_label'] }}</div>
       </div>
@@ -43,26 +44,26 @@
     {% if home_primary_explore_cta.get('context_line') %}
     <div class="robot-time">{{ home_primary_explore_cta.get('context_line') }}</div>
     {% endif %}
-    {% if user and user['is_admin'] %}
+    {% if user and user['is_admin'] and not first_sortie_focus %}
     <div class="robot-time">管理者確認: ボスへ直行</div>
     {% endif %}
-    {% if boss_alert_status %}
+    {% if boss_alert_status and not first_sortie_focus %}
     <div class="upgrade-cost">ボス警報中は自動表示されます。</div>
     {% endif %}
-    {% if boss_goal_hint %}
+    {% if boss_goal_hint and not first_sortie_focus %}
     <div class="home-next-action-goal">現在の目標: {{ boss_goal_hint }}</div>
     {% endif %}
-    {% if layer1_boss_alert %}
+    {% if layer1_boss_alert and not first_sortie_focus %}
     <div class="home-next-action-goal">{{ layer1_boss_alert['line'] }} / {{ layer1_boss_alert['desc'] }}</div>
     {% endif %}
-    {% if boss_unlock_guide_lines %}
+    {% if boss_unlock_guide_lines and not first_sortie_focus %}
     <div class="boss-unlock-inline" aria-label="ボス解放条件">
       {% for line in boss_unlock_guide_lines %}
       <span>{{ line }}</span>
       {% endfor %}
     </div>
     {% endif %}
-    {% if part_inventory_status %}
+    {% if part_inventory_status and not first_sortie_focus %}
     <div class="home-part-inventory-status is-{{ part_inventory_status['level'] }} inventory-{{ part_inventory_status['level'] }}">
       {{ part_inventory_status['line'] }}
     </div>
