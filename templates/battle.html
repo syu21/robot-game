@@ -477,17 +477,41 @@
 	      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif layer2_unlock %}第2層へ進む{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
 	      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif layer2_unlock %}新しく解放された第2層へ初出撃しよう。{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
       {% if boss_retry %}
+      {% set recovery_action = boss_retry.get('recommended_action') %}
       {% if boss_retry.get('failure') %}
       <div class="notice">
         <div><b>{{ boss_retry['failure'].get('label', '構成見直し') }}</b></div>
         <div>{{ boss_retry['failure'].get('text', 'パーツ構成を見直して、もう一度挑戦しましょう。') }}</div>
       </div>
       {% endif %}
+      {% if recovery_action %}
+      <div class="notice">
+        <div><b>おすすめ：{{ recovery_action.get('title') }}</b></div>
+        <div>{{ recovery_action.get('desc') }}</div>
+      </div>
+      <form method="post" action="{{ recovery_action.get('url') }}" class="inline-form inline-form-top">
+        {% if recovery_action.get('area_key') %}
+        <input type="hidden" name="area_key" value="{{ recovery_action.get('area_key') }}" />
+        {% endif %}
+        <input type="hidden" name="entry_source" value="{{ recovery_action.get('entry_source', 'boss_retry') }}" />
+        {% if recovery_action.get('boss_enter') %}
+        <input type="hidden" name="boss_enter" value="1" />
+        {% endif %}
+        <input type="hidden" name="surface" value="battle_result" />
+        <input type="hidden" name="diagnosis_key" value="{{ recovery_action.get('diagnosis_key', boss_retry.get('diagnosis_key', 'generic')) }}" />
+        {% if summary.get('next_explore_submission_id') %}
+        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+        {% endif %}
+        <button type="submit" class="battle-home-link battle-next-cta">{{ recovery_action.get('cta_label', '次の準備をする') }}</button>
+      </form>
+      {% else %}
       <form method="post" action="{{ boss_retry.get('build_action_url') or url_for('boss_retry_layer1_build') }}" class="inline-form inline-form-top">
         <input type="hidden" name="surface" value="battle_result" />
         <input type="hidden" name="diagnosis_key" value="{{ boss_retry.get('diagnosis_key', 'generic') }}" />
         <button type="submit" class="battle-home-link battle-next-cta">機体を調整する</button>
       </form>
+      {% endif %}
+      {% if not boss_retry.get('hide_retry_secondary') %}
       <form method="post" action="{{ boss_retry.get('action_url') or url_for('boss_retry_layer1') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="layer_1" />
         <input type="hidden" name="entry_source" value="boss_retry" />
@@ -516,6 +540,7 @@
         <span id="explore-return-ct-label" class="battle-return-ct js-explore-return-label">{{ summary.get('explore_ct_status_label', '') }}</span>
         {% endif %}
       </form>
+      {% endif %}
       <div class="home-inline-actions">
         <p class="link"><a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a></p>
       </div>

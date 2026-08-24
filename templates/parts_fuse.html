@@ -159,6 +159,18 @@
       </div>
     {% endif %}
     <div class="actions-grid">
+      {% if last_fuse_result.get('boss_retry') %}
+      <form method="post" action="{{ url_for('boss_retry_layer1') }}" class="action-card">
+        <input type="hidden" name="area_key" value="layer_1" />
+        <input type="hidden" name="entry_source" value="boss_retry" />
+        <input type="hidden" name="boss_enter" value="1" />
+        <input type="hidden" name="surface" value="strengthen_result" />
+        <input type="hidden" name="diagnosis_key" value="{{ last_fuse_result['boss_retry'].get('diagnosis_key', 'generic') }}" />
+        <input type="hidden" name="explore_submission_id" value="{{ last_fuse_result['boss_retry'].get('submission_id') }}" />
+        <button type="submit" class="battle-next-cta">ボスへ再挑戦する</button>
+        <div class="action-desc">強化した機体で第1層ボスに戻る</div>
+      </form>
+      {% endif %}
       <a class="action-card" href="{{ last_fuse_result.get('retry_url') or url_for('parts_strengthen') }}">
         <div class="action-title">もう一度強化する</div>
         <div class="action-desc">候補一覧に戻る</div>

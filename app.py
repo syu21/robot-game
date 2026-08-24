@@ -4555,6 +4555,7 @@ def _normalize_entry_source(value):
         "layer2_unlock_result",
         "layer2_unlock_home",
         "first_robot_upgrade_result",
+        "boss_recovery_normal",
         "unknown",
     }
     return source if source in allowed else "unknown"
@@ -4838,6 +4839,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "layer1_primary_cta": set(),
         "area_select": set(),
         "boss_retry": set(),
+        "boss_recovery_normal": set(),
         "layer2_unlock_result": set(),
         "layer2_unlock_home": set(),
         "unknown": set(),
@@ -4862,6 +4864,12 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     layer1_boss_retry_executed_users = set()
     layer1_boss_retry_defeat_users = set()
     layer1_boss_retry_parts_click_users = set()
+    layer1_boss_recovery_view_users = set()
+    layer1_boss_recovery_recommend_click_users = set()
+    layer1_boss_recovery_strengthen_click_users = set()
+    layer1_boss_recovery_build_click_users = set()
+    layer1_boss_recovery_normal_users = set()
+    layer1_boss_recovery_strengthen_complete_users = set()
     layer1_boss_retry_build_complete_users = set()
     layer1_boss_retry_guide_view_users = set()
     layer1_boss_retry_guide_click_users = set()
@@ -4926,13 +4934,16 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 if area_key == "layer_2" and uid not in layer2_first_explore_ts_by_user:
                     layer2_first_explore_ts_by_user[uid] = ts
                     layer2_first_explore_source_by_user[uid] = entry_source
-                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home"}:
+                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home", "boss_recovery_normal"}:
                     home_direct_start_users.add(uid)
                 if area_key == "layer_1":
                     step_users["layer1_first_start"].add(uid)
                     layer1_start_count_by_user[uid] = int(layer1_start_count_by_user.get(uid, 0)) + 1
                     if entry_source == "boss_retry":
                         layer1_boss_retry_executed_users.add(uid)
+                    if entry_source == "boss_recovery_normal":
+                        layer1_boss_recovery_normal_users.add(uid)
+                        layer1_boss_recovery_recommend_click_users.add(uid)
                 if start_count >= 2:
                     step_users["second_start"].add(uid)
                 if start_count >= 3:
@@ -4957,6 +4968,9 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 step_users["build_first_complete"].add(uid)
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
                     layer1_boss_retry_build_complete_users.add(uid)
+            if et == AUDIT_EVENT_TYPES["FUSE"]:
+                if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
+                    layer1_boss_recovery_strengthen_complete_users.add(uid)
             if et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
                 boss_source = _normalize_boss_source(payload.get("boss_source") or payload.get("encounter_source") or "unknown")
                 if bool(payload.get("retry_available")):
@@ -4992,10 +5006,18 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                     layer2_home_cta_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_VIEW") and area_key == "layer_1":
                 layer1_boss_retry_cta_view_users.add(uid)
+                if str(payload.get("recovery_key") or "") == "first_boss_recovery":
+                    layer1_boss_recovery_view_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_CTA_CLICK") and area_key == "layer_1":
                 layer1_boss_retry_cta_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_PARTS_CLICK") and area_key == "layer_1":
                 layer1_boss_retry_parts_click_users.add(uid)
+                if str(payload.get("recovery_key") or "") == "first_boss_recovery":
+                    layer1_boss_recovery_recommend_click_users.add(uid)
+                    if str(payload.get("recommended_action") or "") == "strengthen":
+                        layer1_boss_recovery_strengthen_click_users.add(uid)
+                    if str(payload.get("recommended_action") or "") == "build":
+                        layer1_boss_recovery_build_click_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("BOSS_RETRY_RESULT") and area_key == "layer_1" and bool(payload.get("defeated")):
                 layer1_boss_retry_defeat_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_GUIDE_VIEW") and area_key == "layer_1":
@@ -5177,6 +5199,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "layer1_primary_cta": "基地の第1層CTAから出撃",
         "area_select": "エリア選択から出撃",
         "boss_retry": "ボス再挑戦から出撃",
+        "boss_recovery_normal": "ボス敗北リカバリーから通常戦",
         "layer2_unlock_result": "ボス撃破結果から第2層",
         "layer2_unlock_home": "基地NEXT ACTIONから第2層",
         "unknown": "不明",
@@ -5394,6 +5417,12 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 float(len(layer1_boss_24h_defeat_users)) / float(max(1, len(layer1_boss_24h_judged_users))) * 100.0
             ),
             "parts_click_users": int(len(layer1_boss_retry_parts_click_users)),
+            "recovery_ui_view_users": int(len(layer1_boss_recovery_view_users)),
+            "recommend_cta_click_users": int(len(layer1_boss_recovery_recommend_click_users)),
+            "recommend_strengthen_click_users": int(len(layer1_boss_recovery_strengthen_click_users)),
+            "recommend_build_click_users": int(len(layer1_boss_recovery_build_click_users)),
+            "normal_sortie_users": int(len(layer1_boss_recovery_normal_users)),
+            "strengthen_complete_users": int(len(layer1_boss_recovery_strengthen_complete_users)),
             "build_complete_users": int(len(layer1_boss_retry_build_complete_users)),
             "guide_view_users": int(len(layer1_boss_retry_guide_view_users)),
             "guide_click_users": int(len(layer1_boss_retry_guide_click_users)),
@@ -12238,7 +12267,7 @@ def _boss_retry_mark_defeated(db, user_id, *, boss_key=None, now_ts=None):
 
 def _boss_retry_audit_payload(state, *, surface=None, ct_remaining_seconds=None):
     state = dict(state or {})
-    return {
+    payload = {
         "boss_key": state.get("boss_key") or _layer1_boss_retry_boss_key(),
         "area_key": "layer_1",
         "surface": surface,
@@ -12246,13 +12275,18 @@ def _boss_retry_audit_payload(state, *, surface=None, ct_remaining_seconds=None)
         "retry_state": str(state.get("status") or "none"),
         "ct_remaining_seconds": int(ct_remaining_seconds or 0),
     }
+    if state.get("recovery_key"):
+        payload["recovery_key"] = str(state.get("recovery_key"))
+    if state.get("recommended_action"):
+        payload["recommended_action"] = str(state.get("recommended_action"))
+    return payload
 
 
 def _audit_boss_retry_cta_view_once(db, user_id, *, state, surface, request_id=None, ip=None):
     payload = _boss_retry_audit_payload(state, surface=surface)
     key = "boss_retry_cta_viewed"
     viewed = set(session.get(key) or [])
-    marker = f"{surface}:{payload['boss_key']}:{payload['attempt_number']}"
+    marker = f"{surface}:{payload.get('recovery_key', 'retry')}:{payload['boss_key']}:{payload['attempt_number']}"
     if marker in viewed:
         return
     audit_log(
@@ -13067,6 +13101,51 @@ def _boss_retry_recommendation(db, user_row, *, diagnosis_key=None, requested_pa
     if recommendation:
         recommendation["diagnosis_key"] = diagnosis_key
     return recommendation
+
+
+def _first_boss_recovery_recommendation(db, user_row, *, diagnosis_key=None, surface="battle_result"):
+    if not user_row or "id" not in user_row.keys():
+        return None
+    state = _layer1_boss_retry_state(db, int(user_row["id"]))
+    if not state.get("available") or state.get("status") == "defeated":
+        return None
+    diagnosis_key = str(diagnosis_key or "generic")
+    if get_strengthen_candidate_count(db, int(user_row["id"])) > 0:
+        return {
+            "key": "strengthen",
+            "title": "パーツを強化する",
+            "desc": "素材がそろっています。まず1か所強化してみよう。",
+            "cta_label": "パーツを強化する",
+            "is_post": True,
+            "url": url_for("boss_retry_layer1_strengthen"),
+            "surface": str(surface or "battle_result"),
+            "diagnosis_key": diagnosis_key,
+            "entry_source": "boss_retry",
+        }
+    if _boss_retry_recommendation(db, user_row, diagnosis_key=diagnosis_key):
+        return {
+            "key": "build",
+            "title": "機体を調整する",
+            "desc": "手持ちのパーツを見直して、機体を組み替えてみよう。",
+            "cta_label": "機体を調整する",
+            "is_post": True,
+            "url": url_for("boss_retry_layer1_build"),
+            "surface": str(surface or "battle_result"),
+            "diagnosis_key": diagnosis_key,
+            "entry_source": "boss_retry",
+        }
+    return {
+        "key": "normal_sortie",
+        "title": "第1層でもう1戦する",
+        "desc": "もう一度戦って、強化用のパーツを集めよう。",
+        "cta_label": "第1層へ出撃する",
+        "is_post": True,
+        "url": url_for("explore"),
+        "area_key": "layer_1",
+        "entry_source": "boss_recovery_normal",
+        "surface": str(surface or "battle_result"),
+        "diagnosis_key": diagnosis_key,
+    }
 
 
 def _boss_retry_build_guide_view(db, user_row, *, source, diagnosis_key=None, recommended_part_instance_id=None):
@@ -49666,28 +49745,49 @@ def home():
     )
     if home_primary_explore_cta and layer1_boss_retry_home_visible:
         retry_ready = bool(int(ct_remain or 0) <= 0 or int(user["is_admin"] or 0) == 1)
+        recovery_action = _first_boss_recovery_recommendation(
+            db,
+            user,
+            diagnosis_key="generic",
+            surface="home_next_action",
+        )
+        recovery_action_key = str((recovery_action or {}).get("key") or "build")
+        recovery_action_ready = bool(retry_ready or recovery_action_key in {"strengthen", "build"})
         home_primary_explore_cta.update(
             {
-                "title": "機体を調整して第1層ボスへ",
+                "title": "第1層ボス再攻略",
                 "destination_label": "第1層ボス",
-                "helper_text": "第1層ボスを再捕捉しました。機体を1か所調整して、もう一度挑戦できます。",
+                "helper_text": "機体を整えて、もう一度挑戦しよう。",
                 "status_text": "再挑戦可能" if retry_ready else f"CT中: あと{int(ct_remain)}秒",
-                "button_label": "第1層ボスへ再挑戦",
-                "button_current_label": "第1層ボスへ再挑戦" if retry_ready else f"再挑戦まで あと{int(ct_remain)}秒",
-                "cta_url": url_for("boss_retry_layer1"),
-                "area_key": "layer_1",
-                "entry_source": "boss_retry",
+                "button_label": (recovery_action or {}).get("cta_label") or "機体を調整する",
+                "button_current_label": (
+                    (recovery_action or {}).get("cta_label") or "機体を調整する"
+                    if recovery_action_ready
+                    else f"次の行動まで あと{int(ct_remain)}秒"
+                ),
+                "cta_url": (recovery_action or {}).get("url") or url_for("boss_retry_layer1_build"),
+                "area_key": (recovery_action or {}).get("area_key"),
+                "entry_source": (recovery_action or {}).get("entry_source") or "boss_retry",
                 "surface": "home_next_action",
-                "boss_enter": True,
+                "boss_enter": bool(((recovery_action or {}).get("entry_source") or "") == "boss_retry"),
+                "is_post": bool((recovery_action or {}).get("is_post", True)),
+                "disabled": not recovery_action_ready,
                 "show_map_link": False,
-                "context_line": "第1層ボス再挑戦を優先表示しています。",
+                "context_line": (recovery_action or {}).get("desc") or "手持ちのパーツを見直して、機体を組み替えてみよう。",
+                "diagnosis_key": (recovery_action or {}).get("diagnosis_key") or "generic",
+                "first_boss_recovery": True,
+                "recommended_action": recovery_action_key,
                 "secondary_actions": [
                     {
-                        "label": "機体を調整する",
-                        "url": url_for("boss_retry_layer1_build"),
+                        "label": "ボスへ再挑戦",
+                        "url": url_for("boss_retry_layer1"),
                         "is_post": True,
                         "entry_source": "boss_retry",
                         "surface": "home_next_action",
+                        "area_key": "layer_1",
+                        "boss_enter": True,
+                        "diagnosis_key": (recovery_action or {}).get("diagnosis_key") or "generic",
+                        "disabled": not retry_ready,
                     }
                 ],
             }
@@ -49698,7 +49798,11 @@ def home():
         _audit_boss_retry_cta_view_once(
             db,
             int(user["id"]),
-            state=layer1_boss_retry_state,
+            state={
+                **dict(layer1_boss_retry_state),
+                "recovery_key": "first_boss_recovery",
+                "recommended_action": (recovery_action or {}).get("key") or "build",
+            },
             surface="home_next_action",
             request_id=getattr(g, "request_id", None),
             ip=request.remote_addr,
@@ -56231,6 +56335,39 @@ def boss_retry_layer1():
     return redirect(url_for("explore"), code=307)
 
 
+@app.route("/boss/retry/layer-1/strengthen", methods=["POST"])
+@login_required
+def boss_retry_layer1_strengthen():
+    db = get_db()
+    user_id = int(session["user_id"])
+    state = _layer1_boss_retry_state(db, user_id)
+    if state.get("available") and state.get("status") != "defeated":
+        diagnosis_key = str(request.form.get("diagnosis_key") or "generic")
+        session["first_boss_recovery_strengthen"] = {
+            "diagnosis_key": diagnosis_key,
+            "source": str(request.form.get("surface") or "first_boss_recovery"),
+        }
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["BOSS_RETRY_PARTS_CLICK"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="boss_retry_parts_click",
+            entity_type="user_boss_progress",
+            payload={
+                **_boss_retry_audit_payload(
+                    state,
+                    surface=str(request.form.get("surface") or "first_boss_recovery"),
+                ),
+                "recommended_action": "strengthen",
+                "recovery_key": "first_boss_recovery",
+            },
+            ip=request.remote_addr,
+        )
+        db.commit()
+    return redirect(url_for("parts_strengthen", mode="select", source="first_boss_recovery"))
+
+
 @app.route("/boss/retry/layer-1/build", methods=["POST"])
 @login_required
 def boss_retry_layer1_build():
@@ -56268,6 +56405,8 @@ def boss_retry_layer1_build():
                 int(recommendation["recommended_part_instance_id"]) if recommendation else None
             ),
             "recommended_part_type": ((recommendation or {}).get("recommended_part_type")),
+            "recommended_action": "build",
+            "recovery_key": "first_boss_recovery",
         },
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
@@ -56447,7 +56586,7 @@ def explore():
             payload={"area_key": area_key, "entry_source": entry_source},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action", "next_action_first_explore", "layer2_unlock_home"}:
+    if entry_source in {"next_action", "next_action_first_explore", "layer2_unlock_home", "boss_recovery_normal"}:
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
@@ -56486,7 +56625,7 @@ def explore():
             payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source, **home_view_context},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home"}:
+    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home", "boss_recovery_normal"}:
         home_elapsed = home_view_context.get("seconds_from_home_view")
         if home_elapsed is not None and int(home_elapsed) <= 60:
             audit_log(
@@ -59021,21 +59160,68 @@ def explore():
                     timeout=final_battle_timeout,
                 )
             boss_retry_diagnosis_key = _boss_retry_diagnosis_key(boss_retry_failure_reason)
+            boss_recovery_action = _first_boss_recovery_recommendation(
+                db,
+                user,
+                diagnosis_key=boss_retry_diagnosis_key,
+                surface="battle_result",
+            )
             boss_retry_summary = {
-                "title": "戦闘データを解析しました",
-                "desc": "機体を少し調整すれば、突破できる可能性があります。",
-                "cta_label": "このまま再挑戦",
+                "title": "ボス解析完了",
+                "desc": "あと一歩です。機体を整えて、もう一度挑戦しよう。",
+                "cta_label": "今の機体で再挑戦する",
                 "action_url": url_for("boss_retry_layer1"),
                 "build_action_url": url_for("boss_retry_layer1_build"),
                 "parts_action_url": url_for("boss_retry_layer1_parts"),
                 "attempt_number": int(boss_retry_state_after_result.get("attempt_number") or 1),
                 "failure": _boss_retry_failure_advice(boss_retry_failure_reason),
                 "diagnosis_key": boss_retry_diagnosis_key,
+                "recommended_action": boss_recovery_action,
             }
             _audit_boss_retry_cta_view_once(
                 db,
                 user_id,
-                state=boss_retry_state_after_result,
+                state={
+                    **dict(boss_retry_state_after_result),
+                    "recovery_key": "first_boss_recovery",
+                    "recommended_action": (boss_recovery_action or {}).get("key") or "build",
+                },
+                surface="battle_result",
+                request_id=request_id,
+                ip=request.remote_addr,
+            )
+    if not boss_retry_summary and entry_source == "boss_recovery_normal":
+        recovery_retry_state = _layer1_boss_retry_state(db, user_id)
+        if recovery_retry_state.get("available") and recovery_retry_state.get("status") != "defeated":
+            boss_retry_summary = {
+                "title": "ボス警報 継続中",
+                "desc": "準備できたら、第1層ボスへ再挑戦できます。",
+                "cta_label": "ボスへ再挑戦する",
+                "action_url": url_for("boss_retry_layer1"),
+                "attempt_number": int(recovery_retry_state.get("attempt_number") or 1),
+                "diagnosis_key": "generic",
+                "hide_retry_secondary": True,
+                "recommended_action": {
+                    "key": "boss_retry",
+                    "title": "ボスへ再挑戦する",
+                    "desc": "今の機体で第1層ボスに戻ります。",
+                    "cta_label": "ボスへ再挑戦する",
+                    "is_post": True,
+                    "url": url_for("boss_retry_layer1"),
+                    "area_key": "layer_1",
+                    "entry_source": "boss_retry",
+                    "boss_enter": True,
+                    "diagnosis_key": "generic",
+                },
+            }
+            _audit_boss_retry_cta_view_once(
+                db,
+                user_id,
+                state={
+                    **dict(recovery_retry_state),
+                    "recovery_key": "first_boss_recovery",
+                    "recommended_action": "boss_retry",
+                },
                 surface="battle_result",
                 request_id=request_id,
                 ip=request.remote_addr,
@@ -69459,6 +69645,21 @@ def parts_strengthen():
                     "power_delta_estimate": int(result.get("power_delta_estimate") or 0),
                     "daily_research_lines": daily_lines,
                 }
+                recovery_ctx = session.get("first_boss_recovery_strengthen")
+                recovery_state = _layer1_boss_retry_state(db, int(user_id)) if recovery_ctx else None
+                if (
+                    recovery_ctx
+                    and recovery_state
+                    and recovery_state.get("available")
+                    and recovery_state.get("status") != "defeated"
+                    and bool(result.get("ok"))
+                    and str(result.get("outcome") or "") in {"success", "great"}
+                ):
+                    session["last_fuse_result"]["boss_retry"] = {
+                        "diagnosis_key": str((recovery_ctx or {}).get("diagnosis_key") or "generic"),
+                        "submission_id": str(uuid.uuid4()),
+                    }
+                    session.pop("first_boss_recovery_strengthen", None)
                 mode_label = "まとめ強化" if mode == "batch" else "強化"
                 consumed_ids = ",".join([f"#{x}" for x in result.get("consumed_ids", [])])
                 part_type = result.get("part_type") or "-"

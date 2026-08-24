@@ -645,13 +645,16 @@ COMBAT SIGNAL v1:
   - 再挑戦開始時は `entry_source=boss_retry`, `boss_source=guaranteed_retry`, `attempt_number`, `retry_state` を含める。
 - `audit.explore.start`
   - 再挑戦時は `entry_source=boss_retry`, `boss_key`, `boss_source=guaranteed_retry`, `retry_state` を含める。
+  - ボス敗北リカバリーから第1層通常戦へ戻る場合は `entry_source=boss_recovery_normal` を使う。
 - `audit.boss.retry.result`
   - payload は `boss_key`, `area_key`, `attempt_number`, `result`, `defeated`, `turn_count`, `failure_reason`, `first_encountered_at`, `elapsed_seconds_from_first_encounter`。
 - `audit.boss.retry.cta.view` / `audit.boss.retry.cta.click` / `audit.boss.retry.parts_click`
   - payload は `boss_key`, `surface`, `attempt_number`, `ct_remaining_seconds`。
   - `surface` は `home_next_action`、`battle_result`、`parts_return` を想定する。
+  - 初敗北リカバリーUI経由の場合は `recovery_key=first_boss_recovery` と `recommended_action=strengthen/build/boss_retry` を含める。
 - `audit.onboarding.boss_retry.guide_view` / `audit.onboarding.boss_retry.guide_click`
   - 第1層ボス敗北後の調整ガイド表示/クリック。payload は `boss_key`, `area_key`, `surface`, `attempt_number`, `diagnosis_key`, `recommended_part_instance_id`, `recommended_part_type`。
+  - 初敗北リカバリーUI経由の場合は `recovery_key=first_boss_recovery` と `recommended_action=build` を含める。
 - `audit.onboarding.boss_retry.adjust_complete`
   - `/build?guide=boss_retry` 経由で1部位以上を調整した記録。payload は `changed_part_types`, `before_part_instance_ids`, `after_part_instance_ids`, `before_stats`, `after_stats`, `delta_total`。
 - `audit.onboarding.boss_retry.start` / `audit.onboarding.boss_retry.success`

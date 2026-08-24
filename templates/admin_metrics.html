@@ -474,6 +474,16 @@
         <div class="admin-metrics-note-value">調整開始 {{ boss_retry.guide_click_users }}人</div>
         <div class="robot-time">調整完了 {{ boss_retry.adjust_complete_users }}人 / 成功 {{ boss_retry.success_users }}人</div>
 	      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">リカバリーUI</div>
+        <div class="admin-metrics-note-value">表示 {{ boss_retry.recovery_ui_view_users }}人</div>
+        <div class="robot-time">おすすめクリック {{ boss_retry.recommend_cta_click_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">敗北後の次行動</div>
+        <div class="admin-metrics-note-value">強化 {{ boss_retry.recommend_strengthen_click_users }} / 編成 {{ boss_retry.recommend_build_click_users }}</div>
+        <div class="robot-time">通常戦 {{ boss_retry.normal_sortie_users }} / 強化完了 {{ boss_retry.strengthen_complete_users }}</div>
+      </div>
 	    </div>
 	    <div class="admin-metrics-note-grid">
 	      {% set layer2_unlock = first_experience_snapshot.layer2_unlock %}

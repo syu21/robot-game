@@ -77,6 +77,9 @@
       {% if home_primary_explore_cta.get('surface') %}
       <input type="hidden" name="surface" value="{{ home_primary_explore_cta.get('surface') }}" />
       {% endif %}
+      {% if home_primary_explore_cta.get('diagnosis_key') %}
+      <input type="hidden" name="diagnosis_key" value="{{ home_primary_explore_cta.get('diagnosis_key') }}" />
+      {% endif %}
       {% if explore_submission_id %}
       <input type="hidden" name="explore_submission_id" value="{{ explore_submission_id }}" />
       {% endif %}
@@ -105,6 +108,12 @@
           <input type="hidden" name="entry_source" value="{{ action.get('entry_source', 'home_next_action') }}" />
           {% if action.get('surface') %}
           <input type="hidden" name="surface" value="{{ action.get('surface') }}" />
+          {% endif %}
+          {% if action.get('diagnosis_key') %}
+          <input type="hidden" name="diagnosis_key" value="{{ action.get('diagnosis_key') }}" />
+          {% endif %}
+          {% if action.get('boss_enter') %}
+          <input type="hidden" name="boss_enter" value="1" />
           {% endif %}
           {% if action.get('first_upgrade_skip') %}
           <input type="hidden" name="onboarding_first_upgrade_skip" value="1" />

@@ -72,6 +72,56 @@ class BossRetryTests(unittest.TestCase):
         db.execute("UPDATE users SET active_robot_id = ? WHERE id = ?", (robot_id, int(user_id)))
         return robot_id
 
+    def _part_row(self, db, part_type):
+        row = db.execute(
+            "SELECT id, key FROM robot_parts WHERE part_type = ? AND is_active = 1 ORDER BY id ASC LIMIT 1",
+            (part_type,),
+        ).fetchone()
+        self.assertIsNotNone(row)
+        return row
+
+    def _add_part_instance(self, db, part_type, *, status="inventory", plus=0, weights=None):
+        row = self._part_row(db, part_type)
+        weights = dict(weights or {})
+        now = int(time.time())
+        db.execute(
+            """
+            INSERT INTO part_instances
+            (part_id, user_id, part_type, rarity, element, series, plus,
+             w_hp, w_atk, w_def, w_spd, w_acc, w_cri, locked, status, created_at)
+            VALUES (?, ?, ?, 'N', 'NORMAL', 'standard', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+            """,
+            (
+                int(row["id"]),
+                self.user_id,
+                part_type,
+                int(plus),
+                float(weights.get("hp", 5)),
+                float(weights.get("atk", 5)),
+                float(weights.get("def", 5)),
+                float(weights.get("spd", 5)),
+                float(weights.get("acc", 5)),
+                float(weights.get("cri", 5)),
+                status,
+                now,
+            ),
+        )
+        return int(db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+
+    def _make_retry_available(self, db):
+        game_app._boss_retry_mark_encounter(
+            db,
+            self.user_id,
+            boss_key=game_app.LAYER_BOSS_KEY_BY_LAYER[1],
+            now_ts=int(time.time()) - 60,
+        )
+        self._event(
+            db,
+            game_app.AUDIT_EVENT_TYPES["EXPLORE_START"],
+            {"area_key": "layer_1"},
+            created_at=int(time.time()) - 120,
+        )
+
     def _event(self, db, event_type, payload, created_at=None):
         db.execute(
             """
@@ -175,9 +225,98 @@ class BossRetryTests(unittest.TestCase):
         with mock.patch.object(game_app, "_enforce_explore_cooldown_or_wait", return_value=0):
             res = client.get("/home")
         body = res.get_data(as_text=True)
-        self.assertIn("機体を調整して第1層ボスへ", body)
+        self.assertIn("第1層ボス再攻略", body)
         self.assertIn("ボスへ再挑戦", body)
-        self.assertIn("機体を調整する", body)
+        self.assertIn("第1層へ出撃する", body)
+        self.assertIn('name="entry_source" value="boss_recovery_normal"', body)
+
+    def test_first_boss_recovery_recommends_strengthen_when_candidate_exists(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self._make_retry_available(db)
+            for _ in range(3):
+                self._add_part_instance(db, "HEAD", status="inventory", plus=0)
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            with game_app.app.test_request_context("/"):
+                action = game_app._first_boss_recovery_recommendation(db, user)
+        self.assertEqual(action["key"], "strengthen")
+        self.assertEqual(action["cta_label"], "パーツを強化する")
+
+    def test_first_boss_recovery_recommends_build_when_no_strengthen_candidate(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self._make_retry_available(db)
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            game_app._ensure_robot_instance_part_instances(db, int(user["active_robot_id"]))
+            self._add_part_instance(
+                db,
+                "HEAD",
+                status="inventory",
+                plus=0,
+                weights={"hp": 100, "atk": 100, "def": 100, "spd": 100, "acc": 100, "cri": 100},
+            )
+            with game_app.app.test_request_context("/"):
+                action = game_app._first_boss_recovery_recommendation(db, user)
+        self.assertEqual(action["key"], "build")
+        self.assertEqual(action["cta_label"], "機体を調整する")
+
+    def test_first_boss_recovery_recommends_normal_sortie_without_options(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self._make_retry_available(db)
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            with game_app.app.test_request_context("/"):
+                action = game_app._first_boss_recovery_recommendation(db, user)
+        self.assertEqual(action["key"], "normal_sortie")
+        self.assertEqual(action["entry_source"], "boss_recovery_normal")
+
+    def test_first_boss_recovery_hidden_after_boss_defeat(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            self._make_retry_available(db)
+            game_app._boss_retry_mark_defeated(
+                db,
+                self.user_id,
+                boss_key=game_app.LAYER_BOSS_KEY_BY_LAYER[1],
+                now_ts=int(time.time()),
+            )
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            action = game_app._first_boss_recovery_recommendation(db, user)
+        self.assertIsNone(action)
+
+    def test_first_sortie_focus_still_wins_before_any_explore_start(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            game_app._boss_retry_mark_encounter(
+                db,
+                self.user_id,
+                boss_key=game_app.LAYER_BOSS_KEY_BY_LAYER[1],
+                now_ts=int(time.time()) - 60,
+            )
+            db.commit()
+        client = self._client()
+        body = client.get("/home").get_data(as_text=True)
+        self.assertIn("出撃準備完了", body)
+        self.assertNotIn("第1層ボス再攻略", body)
+
+    def test_strengthen_result_from_recovery_shows_boss_retry_cta(self):
+        client = self._client()
+        with client.session_transaction() as sess:
+            sess["last_fuse_result"] = {
+                "mode": "select",
+                "outcome": "success",
+                "message": "強化成功",
+                "part_type": "HEAD",
+                "rarity": "N",
+                "from_plus": 0,
+                "to_plus": 1,
+                "coin_cost": 0,
+                "consumed_ids": [1, 2],
+                "boss_retry": {"diagnosis_key": "generic", "submission_id": "strengthen-retry-1"},
+            }
+        body = client.get("/parts/strengthen?mode=result").get_data(as_text=True)
+        self.assertIn("ボスへ再挑戦する", body)
+        self.assertIn('name="entry_source" value="boss_retry"', body)
 
     def test_failure_reason_categories(self):
         accuracy = game_app._boss_retry_failure_reason(
