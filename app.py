@@ -12760,6 +12760,8 @@ def _onboarding_first_upgrade_should_show(db, user_row):
     if not _onboarding_first_upgrade_normal_user(user_row):
         return False
     keys = user_row.keys()
+    if "active_robot_id" not in keys or not user_row["active_robot_id"]:
+        return False
     if "first_upgrade_guide_started_at" not in keys or int(user_row["first_upgrade_guide_started_at"] or 0) <= 0:
         return False
     if "first_upgrade_guide_completed_at" in keys and int(user_row["first_upgrade_guide_completed_at"] or 0) > 0:
@@ -12787,14 +12789,29 @@ def _onboarding_first_upgrade_view(db, user_row, *, source):
                 source=source_key or "home_next_action",
             )
     return {
-        "title": "解析完了：交換可能なパーツを検出",
-        "desc": "出撃で回収したパーツを使って、現在の機体を1か所更新してみましょう。",
-        "home_title": "解析完了：交換可能なパーツを検出",
-        "home_desc": "出撃で回収したパーツを使って、現在の機体を1か所更新してみましょう。",
-        "parts_title": "今の装備と、拾ったパーツを見比べよう",
-        "parts_desc": "能力が高いだけでなく、見た目や得意分野も変わります。気になるパーツを選んで確認してください。",
-        "cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
-        "home_cta_label": "このパーツを試す" if recommendation else "回収したパーツを見る",
+        "guide_key": "first_upgrade",
+        "kicker": "最初の育成",
+        "title": "はじめての機体更新" if recommendation else "交換用パーツを探そう",
+        "desc": (
+            "持ち帰ったパーツを1つ選んで、ロボを変えてみよう。"
+            if recommendation
+            else "もう少し出撃して、付け替えられるパーツを持ち帰ろう。"
+        ),
+        "sub_desc": "変えない部位は、今のパーツのままでOKです。" if recommendation else "",
+        "home_title": "はじめての機体更新" if recommendation else "交換用パーツを探そう",
+        "home_desc": (
+            "持ち帰ったパーツを1つ選んで、ロボを変えてみよう。"
+            if recommendation
+            else "もう少し出撃して、付け替えられるパーツを持ち帰ろう。"
+        ),
+        "parts_title": "はじめての機体更新" if recommendation else "交換用パーツを探そう",
+        "parts_desc": (
+            "持ち帰ったパーツを1つ選んで、ロボを変えてみよう。"
+            if recommendation
+            else "もう少し出撃して、付け替えられるパーツを持ち帰ろう。"
+        ),
+        "cta_label": "機体を更新する" if recommendation else "第1層へ出撃する",
+        "home_cta_label": "機体を更新する" if recommendation else "第1層へ出撃する",
         "skip_label": "このまま出撃する",
         "source": source_key,
         "explore_end_count": int(completed),
@@ -13039,10 +13056,10 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
             for key in ("hp", "atk", "def", "spd", "acc", "cri")
         }
         delta_total = round(after_power - current_power, 1)
-        if delta_total <= 0:
-            continue
+        is_improvement = delta_total > 0
         focus_score = sum(max(0, int(stat_deltas.get(key) or 0)) for key in focus_stats)
         sort_key = (
+            1 if is_improvement else 0,
             int(focus_score),
             float(delta_total),
             *[int(stat_deltas[key]) for key in stat_order],
@@ -13072,6 +13089,7 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
             "current_total": round(current_power, 1),
             "recommended_total": round(after_power, 1),
             "delta_total": float(delta_total),
+            "is_improvement": bool(is_improvement),
             "focus_stats": list(focus_stats),
             "focus_score": int(focus_score),
             "current_stats": {key: int(current_stats.get(key) or 0) for key in ("hp", "atk", "def", "spd", "acc", "cri")},
@@ -40140,6 +40158,23 @@ def _home_next_action_card(
     if _onboarding_first_upgrade_should_show(db, user):
         area_key = str(user["last_explore_area_key"] or "").strip() or "layer_1"
         first_upgrade = _onboarding_first_upgrade_view(db, user, source="home_next_action")
+        if not first_upgrade.get("recommendation"):
+            return {
+                "title": first_upgrade["home_title"],
+                "desc": first_upgrade["home_desc"],
+                "cta_label": first_upgrade["home_cta_label"],
+                "cta_url": url_for("explore"),
+                "is_post": True,
+                "area_key": "layer_1",
+                "boss_enter": False,
+                "entry_source": "home_next_action",
+                "home_primary": True,
+                "destination_label": "第1層",
+                "context_line": "交換できるパーツがないため、まず第1層でもう一度パーツを集めよう。",
+                "secondary_actions": [],
+                "force_open": True,
+                "onboarding_first_upgrade": True,
+            }
         return {
             "title": first_upgrade["home_title"],
             "desc": first_upgrade["home_desc"],
@@ -40151,7 +40186,7 @@ def _home_next_action_card(
             "home_primary": True,
             "destination_label": "機体更新",
             "context_line": (
-                f"おすすめ：{first_upgrade['recommendation']['recommended_part_type_label']} / 総合 {first_upgrade['recommendation']['current_total']} → {first_upgrade['recommendation']['recommended_total']}"
+                f"交換候補：{first_upgrade['recommendation']['recommended_part_type_label']} / 総合 {first_upgrade['recommendation']['current_total']} → {first_upgrade['recommendation']['recommended_total']}"
                 if first_upgrade.get("recommendation")
                 else "回収したパーツを見比べてみましょう。"
             ),
@@ -62453,6 +62488,9 @@ def build():
                 ip=request.remote_addr,
             )
             db.commit()
+        else:
+            session["message"] = "交換できるパーツがありません。もう一度出撃してパーツを集めよう。"
+            return redirect(url_for("home"))
     series_progress_layer = _series_progress_layer_for_user(db, user_id)
     series_system_enabled = _series_system_enabled_for_user(db, user_id=user_id)
     series_bonus_defs = _load_series_bonus_defs(db, active_only=True) if series_system_enabled else {}
@@ -62594,6 +62632,13 @@ def build():
             )
             item["first_upgrade_recommended_note"] = item["first_upgrade_recommended_label"]
         part_groups[row["part_type"]].append(item)
+    first_upgrade_exchangeable_part_types = []
+    if first_upgrade_guide:
+        for part_type in ("HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"):
+            if part_groups.get(part_type):
+                first_upgrade_exchangeable_part_types.append(
+                    {"part_type": part_type, "label": _part_type_ui_label(part_type)}
+                )
 
     slot_param_map = {
         "HEAD": "head_key",
@@ -62845,6 +62890,7 @@ def build():
         element_label_map=ELEMENT_LABEL_MAP,
         first_upgrade_guide=first_upgrade_guide,
         first_upgrade_recommendation=first_upgrade_recommendation,
+        first_upgrade_exchangeable_part_types=first_upgrade_exchangeable_part_types,
     )
 
 
@@ -62878,6 +62924,11 @@ def build_confirm():
     build_mode = (request.form.get("mode") or "new").strip().lower()
     if build_mode not in {"new", "modify"}:
         build_mode = "new"
+    first_upgrade_flow_active = (
+        guide_key == "first_upgrade"
+        and build_mode == "modify"
+        and _onboarding_first_upgrade_should_show(db, user)
+    )
     base_robot_id_raw = (request.form.get("base_robot_id") or "").strip()
     base_robot_id = int(base_robot_id_raw) if base_robot_id_raw.isdigit() else None
     head_choice = (request.form.get("head_key") or "").strip()
@@ -62894,6 +62945,8 @@ def build_confirm():
             extra["guide"] = guide_key
         if boss_retry_guide_active:
             extra["diagnosis"] = boss_retry_diagnosis_key
+            extra["source"] = (request.form.get("guide_source") or "build_confirm")
+        elif guide_key == "first_upgrade":
             extra["source"] = (request.form.get("guide_source") or "build_confirm")
         if build_mode == "modify":
             return redirect(url_for("build", mode="modify", base_robot_id=base_robot_id or "", frame_type=selected_frame_type, **extra))
@@ -63026,6 +63079,15 @@ def build_confirm():
             session["message"] = "無効化されたパーツは組み立てに使用できません。"
             return _build_redirect()
         resolved_slots[slot_name] = resolved
+    preview_selected_ids = {
+        "head": int(resolved_slots["head"]["id"]),
+        "r_arm": int(resolved_slots["r_arm"]["id"]),
+        "l_arm": int(resolved_slots["l_arm"]["id"]),
+        "legs": int(resolved_slots["legs"]["id"]),
+    }
+    if first_upgrade_flow_active and not _first_upgrade_changed_part_types(db, base_mapping, preview_selected_ids):
+        session["message"] = "変更するパーツを1つ選んでください。"
+        return _build_redirect()
     if len({resolved_slots["head"]["id"], resolved_slots["r_arm"]["id"], resolved_slots["l_arm"]["id"], resolved_slots["legs"]["id"]}) != 4:
         session["message"] = "同じ個体を複数部位へは設定できません。"
         return _build_redirect()
@@ -63194,6 +63256,11 @@ def build_confirm():
             ]
         else:
             consumed_ids = [selected["head"], selected["r_arm"], selected["l_arm"], selected["legs"]]
+        changed_part_types_for_audit = (
+            _first_upgrade_changed_part_types(db, base_mapping, selected)
+            if build_mode == "modify"
+            else ["HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"]
+        )
         audit_log(
             db,
             AUDIT_EVENT_TYPES["BUILD_CONFIRM"],
@@ -63220,6 +63287,11 @@ def build_confirm():
                 "offsets": dict(selected_offsets),
                 "consumed_part_instance_ids": consumed_ids,
                 "returned_part_instance_ids": returned_ids,
+                "mode": build_mode,
+                "changed_part_types": list(changed_part_types_for_audit),
+                "changed_count": len(changed_part_types_for_audit),
+                "first_update_flow": bool(first_upgrade_flow_active),
+                "source": str(request.form.get("guide_source") or "build_confirm"),
                 "style": {
                     "current_key": style_state.get("current_key"),
                     "next_key": style_state.get("next_key"),
@@ -63277,21 +63349,23 @@ def build_confirm():
         )
         first_upgrade_changed_part_types = _first_upgrade_changed_part_types(db, first_upgrade_parts_before, selected)
         first_upgrade_after_stat_obj = _compute_robot_stats_for_instance(db, int(instance_id))
-        first_upgrade_completed = _complete_onboarding_first_upgrade(
-            db,
-            user,
-            active_robot_id_before=first_upgrade_active_robot_id_before,
-            active_robot_id_after=instance_id,
-            changed_part_types=first_upgrade_changed_part_types,
-            before_part_ids=first_upgrade_parts_before,
-            after_part_ids=selected,
-            before_stats=((first_upgrade_before_stat_obj or {}).get("stats") or {}),
-            after_stats=((first_upgrade_after_stat_obj or {}).get("stats") or {}),
-            before_total=((first_upgrade_before_stat_obj or {}).get("power") if first_upgrade_before_stat_obj else None),
-            after_total=((first_upgrade_after_stat_obj or {}).get("power") if first_upgrade_after_stat_obj else None),
-            request_id=getattr(g, "request_id", None),
-            ip=request.remote_addr,
-        )
+        first_upgrade_completed = False
+        if first_upgrade_flow_active:
+            first_upgrade_completed = _complete_onboarding_first_upgrade(
+                db,
+                user,
+                active_robot_id_before=first_upgrade_active_robot_id_before,
+                active_robot_id_after=instance_id,
+                changed_part_types=first_upgrade_changed_part_types,
+                before_part_ids=first_upgrade_parts_before,
+                after_part_ids=selected,
+                before_stats=((first_upgrade_before_stat_obj or {}).get("stats") or {}),
+                after_stats=((first_upgrade_after_stat_obj or {}).get("stats") or {}),
+                before_total=((first_upgrade_before_stat_obj or {}).get("power") if first_upgrade_before_stat_obj else None),
+                after_total=((first_upgrade_after_stat_obj or {}).get("power") if first_upgrade_after_stat_obj else None),
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            )
         boss_retry_adjust_completed = bool(
             boss_retry_guide_active
             and boss_retry_state_before

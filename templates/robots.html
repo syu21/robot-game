@@ -23,6 +23,7 @@
   <div class="robot-part">設計番号: <b>{{ build_result['blueprint']['blueprint_code'] }}</b></div>
   {% endif %}
   {% if build_result.get('first_upgrade') %}
+  <div class="upgrade-cost">新しい構成を戦場で試してみよう。</div>
   <div class="part-chip-row">
     {% for row in build_result['first_upgrade'].get('positive_rows', []) %}
       <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
@@ -31,7 +32,7 @@
   <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
     <input type="hidden" name="area_key" value="layer_1" />
     <input type="hidden" name="entry_source" value="first_robot_upgrade_result" />
-    <button type="submit" class="battle-home-link battle-next-cta">新しい機体で出撃する</button>
+    <button type="submit" class="battle-home-link battle-next-cta">更新した機体で出撃する</button>
   </form>
   {% endif %}
   {% if build_result.get('boss_retry') %}

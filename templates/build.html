@@ -140,21 +140,39 @@
   <div class="section-kicker">{{ first_upgrade_guide.get('kicker', '最初の育成') }}</div>
   <h3>{{ first_upgrade_guide.get('title') }}</h3>
   <p class="upgrade-cost">{{ first_upgrade_guide.get('desc') }}</p>
+  {% if first_upgrade_guide.get('sub_desc') %}
+  <div class="robot-time">{{ first_upgrade_guide.get('sub_desc') }}</div>
+  {% endif %}
   {% if first_upgrade_recommendation %}
   <div class="part-meta-line">
-    おすすめ：{{ first_upgrade_recommendation.get('recommended_part_type_label') }}
+    変更前：{{ first_upgrade_recommendation.get('current_part_name') }}
+    →
+    変更後：{{ first_upgrade_recommendation.get('recommended_part_name') }}
+  </div>
+  <div class="part-meta-line">
+    交換候補：{{ first_upgrade_recommendation.get('recommended_part_type_label') }}
     / 総合性能 {{ first_upgrade_recommendation.get('current_total')|display_stat }} → {{ first_upgrade_recommendation.get('recommended_total')|display_stat }}
   </div>
   {% for row in first_upgrade_recommendation.get('positive_rows', []) %}
   <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta')|display_delta }}</span>
   {% endfor %}
+  {% if first_upgrade_exchangeable_part_types %}
+  <div class="part-chip-row">
+    {% for item in first_upgrade_exchangeable_part_types %}
+    <span class="part-chip is-recommended">{{ item['label'] }} 交換できるパーツがあります</span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% else %}
   <div class="part-meta-line">回収したパーツを見比べてみましょう。</div>
   {% endif %}
 </section>
 {% endif %}
 <section class="card">
-  <h2>ロボの作り方を選んでください</h2>
+  <h2>{% if first_upgrade_guide %}現在のロボを1か所変える{% else %}ロボの作り方を選んでください{% endif %}</h2>
+  {% if first_upgrade_guide %}
+  <div class="upgrade-cost">現在の出撃機体を改造します。変えない部位は今のままでOKです。</div>
+  {% else %}
   <div class="build-mode-tabs">
     <a class="fuse-mode-tab {% if build_mode == 'new' %}is-active{% endif %}" href="{{ url_for('build', mode='new', frame_type=selected_frame_type) }}">
       新しく組み立てる
@@ -163,6 +181,7 @@
       保存中ロボを改造する
     </a>
   </div>
+  {% endif %}
   {% if build_mode == 'modify' %}
   <h3>保存中ロボを改造する</h3>
   <div class="upgrade-cost">今あるロボをベースに、変えたいパーツだけ入れ替えます。未変更の部位は、選んだロボの現在パーツをそのまま使います。</div>
@@ -507,7 +526,7 @@
       <div class="card build-submit-card">
         <label>ロボ名（空欄なら自動命名）</label>
         <input type="text" name="robot_name" maxlength="40" />
-        <button type="submit">{% if build_mode == 'modify' %}この構成で機体を改造する{% else %}この構成でロボを組み立てる{% endif %}</button>
+        <button type="submit">{% if first_upgrade_guide %}この内容で機体を更新する{% elif build_mode == 'modify' %}この構成で機体を改造する{% else %}この構成でロボを組み立てる{% endif %}</button>
       </div>
     </section>
   </div>

@@ -721,3 +721,13 @@
 - 編成接続: focusパーツには既存 `/build` の部位選択クエリで `このパーツで編成を試す` を出す。交換はユーザーが手動で確定する。
 - 監査: 新規イベントは追加せず、既存 `audit.drop` payload に `dropped_part_instance_id / compared_equipped_part_instance_id / total_delta / standout_stat / recommendation_key` を追加する。
 - 非目標: 自動装備、絶対的な強弱判定、強力報酬、新DBテーブル、周回を止めるモーダル。
+
+## Phase 4.6: 初回3出撃後「はじめての機体更新」導線
+
+- 目的: 初回3出撃後に、拾ったパーツで active robot を1部位だけ更新し、その機体で再出撃する最初の育成ループを成立させる。
+- 対象: 正常ユーザー、3回以上の正常出撃完了、active robotあり、初回機体更新未完了。
+- 分岐: 交換可能な inventory パーツがある場合は `/build?guide=first_upgrade&mode=modify&base_robot_id=<active>`、ない場合は第1層出撃CTA。
+- UI: 初回ガイドは `はじめての機体更新`、補助文は `変えない部位は、今のパーツのままでOKです。`。部位ごとに交換可能バッジを出す。
+- 安全性: 既存 modify 処理だけを使う。新規 `robot_instances` を増やさず、保存枠満杯でも既存ロボ改造は許可する。
+- 完了条件: `guide=first_upgrade`、`mode=modify`、build confirm成功、1部位以上の実変更。
+- 計測: `audit.onboarding.first_upgrade.*` と `audit.build.confirm` payload の `mode / base_robot_id / changed_part_types / changed_count / first_update_flow / source` を使う。

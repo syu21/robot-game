@@ -192,3 +192,11 @@
 - 編成画面では4部位パーツのみ機構特性を表示し、DECORには表示しない。
 - 戦術セットには保存構成の有効機構を表示する。保存対象は従来通り4部位パーツと研究モジュールのみで、機構特性を別保存しない。
 - Nは `進化で解放`、R以上は特性名と短い説明を表示する。
+
+## 9. 初回機体更新
+- 初回3出撃後の `first_upgrade` ガイドは、active robot を `mode=modify` の base robot として開く。
+- 交換対象は `part_instances.status='inventory'` の HEAD / RIGHT_ARM / LEFT_ARM / LEGS。自動装備や自動最適化は行わない。
+- 初回ガイド中も通常の modify 処理を使い、未選択部位は `robot_instance_parts` の現在装備をそのまま維持する。
+- 確定時に状態遷移するのは変更部位だけ。旧パーツは `inventory` へ戻し、新パーツだけ `equipped` にする。
+- `guide=first_upgrade` で変更部位が0件の場合は保存せず、`変更するパーツを1つ選んでください。` を表示する。
+- 既存ロボ改造のため、新しい `robot_instances` や保存枠は消費しない。

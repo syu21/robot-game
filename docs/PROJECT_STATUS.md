@@ -869,3 +869,10 @@
 - 調整保存時は `robot_instance_parts` を更新し、差し替えた旧パーツを所持中へ戻し、`composed_image_path / icon_32_path` を再生成する。
 - `/parts` に同名パーツでも個体性能差がある旨を表示する。
 - 実験室投稿は pending から管理者 approve / reject / disable を経由し、approved のみ `/lab/showcase` へ表示する。
+
+## 24. 初回3出撃後「はじめての機体更新」導線
+- 初回3出撃後、active robot と交換可能な inventory パーツがある場合は `/build?guide=first_upgrade&mode=modify` へ直接誘導する。
+- 交換可能パーツがない場合は `/build` へ送らず、`交換用パーツを探そう` として第1層出撃へ戻す。
+- 初回ガイド中は active robot を base robot にし、1部位だけ選び替えれば確定できる。未変更部位は現在装備を維持する。
+- 変更なし confirm は `変更するパーツを1つ選んでください。` と案内し、初回機体更新完了にはしない。
+- 更新成功後は `/robots` の結果カードから `更新した機体で出撃する` を表示し、`entry_source=first_robot_upgrade_result` で再出撃を計測する。

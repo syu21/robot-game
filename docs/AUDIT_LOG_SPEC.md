@@ -625,6 +625,9 @@ COMBAT SIGNAL v1:
   - 初回機体更新導線をスキップして出撃した記録。payload は `user_id`, `source`, `area_key`, `active_robot_id_before`。
 - `audit.onboarding.first_upgrade.complete`
   - `/build/confirm` で初回機体更新が完了した記録。payload は `robot_instance_id`, `changed_part_type`, `changed_part_types`, `before_part_instance_ids`, `after_part_instance_ids`, `before_total`, `after_total`, `delta_total`, `before_stats`, `after_stats`。
+- `audit.build.confirm`
+  - 初回機体更新導線では既存payloadに `mode`, `base_robot_id`, `changed_part_types`, `changed_count`, `first_update_flow`, `source` を追加する。
+  - `first_update_flow=true` は `guide=first_upgrade`、`mode=modify`、初回更新対象ユーザーのconfirmを表す。
 - `audit.explore.start`
   - 初回更新結果画面からの再出撃は `entry_source=first_robot_upgrade_result` を使う。
 - `audit.boss.alert.progress`
