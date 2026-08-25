@@ -731,3 +731,13 @@
 - 安全性: 既存 modify 処理だけを使う。新規 `robot_instances` を増やさず、保存枠満杯でも既存ロボ改造は許可する。
 - 完了条件: `guide=first_upgrade`、`mode=modify`、build confirm成功、1部位以上の実変更。
 - 計測: `audit.onboarding.first_upgrade.*` と `audit.build.confirm` payload の `mode / base_robot_id / changed_part_types / changed_count / first_update_flow / source` を使う。
+
+## Phase 4.7: モジュール研究システム Phase 1-2
+
+- 目的: モジュールを合成結果だけでなく、由来・世代・投入素材を研究する対象にする。
+- 非変更: 合成アルゴリズム、継承、抽選、ステータス、世代計算、戦闘効果、BATTLE CODEは変更しない。
+- DB: `module_fusion_records` に合成結果snapshot、`module_fusion_inputs` に投入素材snapshotを保存する。
+- 系譜: `/modules/<module_id>/lineage` で本人所有モジュールの研究タイムラインを表示する。履歴不足は推測せず未観測として扱う。
+- 研究記録: `/modules/research` で合成実験数、観測済み系統、最高確認世代、初観測、自己最高世代更新、系統フィルター、ページングを表示する。
+- 表示制御: 通常カードの由来は圧縮し、内部確率・重み・score・seed・レシピ推定は出さない。
+- 監査: 既存 `audit.module.synthesis.*` payload に `fusion_record_id`, `generation`, `primary_lineage_key`, `input_count`, `provenance_version` を追加する。

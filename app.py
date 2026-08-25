@@ -367,6 +367,8 @@ RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
     "great": "研究大成功",
     "anomaly": "異常反応",
 }
+MODULE_FUSION_PROVENANCE_VERSION = 1
+MODULE_LINEAGE_MAX_DEPTH = 8
 RESEARCH_MODULE_REROLL_RULES = {
     "N": {"cost": 100, "slots": 1, "min": 1, "max": 3},
     "R": {"cost": 300, "slots": 2, "min": 2, "max": 5},
@@ -14815,6 +14817,49 @@ def ensure_schema(db):
     )
     db.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_fusion_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            result_module_instance_id INTEGER NOT NULL,
+            result_module_key TEXT NOT NULL,
+            result_name TEXT NOT NULL,
+            result_generation INTEGER NOT NULL DEFAULT 0,
+            result_primary_lineage_key TEXT,
+            result_primary_lineage_label TEXT,
+            result_snapshot_json TEXT NOT NULL,
+            provenance_quality TEXT NOT NULL DEFAULT 'full',
+            provenance_version INTEGER NOT NULL DEFAULT 1,
+            request_id TEXT,
+            created_at INTEGER NOT NULL,
+            UNIQUE(result_module_instance_id)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_fusion_inputs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fusion_record_id INTEGER NOT NULL,
+            input_index INTEGER NOT NULL,
+            source_module_instance_id INTEGER,
+            source_module_key TEXT,
+            source_name TEXT NOT NULL,
+            source_generation INTEGER NOT NULL DEFAULT 0,
+            source_primary_lineage_key TEXT,
+            source_primary_lineage_label TEXT,
+            source_snapshot_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(fusion_record_id, input_index),
+            FOREIGN KEY (fusion_record_id) REFERENCES module_fusion_records(id)
+        )
+        """
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_inputs_record ON module_fusion_inputs(fusion_record_id, input_index)")
+    db.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -15463,6 +15508,7 @@ def ensure_schema(db):
         GROUP BY user_id, module_key
         """
     )
+    _backfill_module_fusion_records(db)
     db.execute("UPDATE users SET is_admin = 0 WHERE is_admin IS NULL")
     db.execute("UPDATE users SET wins = 0 WHERE wins IS NULL")
     db.execute("UPDATE users SET click_power = 1 WHERE click_power IS NULL")
@@ -19998,14 +20044,24 @@ def _research_module_view(row):
     if module.get("module_key") == RESEARCH_MODULE_SYNTHESIS_KEY:
         family_parts = [part for part in str(module.get("synthesis_family") or "").split("_") if part and part.lower() != "none"]
         if family_parts:
-            module["family_label"] = " × ".join(RESEARCH_MODULE_FAMILY_LABELS.get(part, _research_module_family_label(part)) for part in family_parts)
+            family_labels = [RESEARCH_MODULE_FAMILY_LABELS.get(part, _research_module_family_label(part)) for part in family_parts]
+            module["family_label_full"] = " × ".join(family_labels)
+            if len(family_labels) > 3:
+                module["family_label_compact"] = "・".join(family_labels[:3]) + f" ほか{len(family_labels) - 3}"
+            else:
+                module["family_label_compact"] = "・".join(family_labels)
+            module["family_label"] = module["family_label_full"]
         else:
             module["family_label"] = "合成"
+            module["family_label_full"] = "合成"
+            module["family_label_compact"] = "合成"
         grade_label = module.get("synthesis_grade_label") or RESEARCH_MODULE_RARITY_LABELS.get(str(module.get("synthesis_grade") or ""), "")
         module["type_label"] = f"研究合成・{grade_label}" if grade_label else "研究合成"
         module["source_label"] = "研究合成"
     else:
         module["type_label"] = f"{module['rarity_label']}・{module['family_label']}系"
+        module["family_label_full"] = module["family_label"]
+        module["family_label_compact"] = module["family_label"]
     module["source_label"] = _research_module_source_label(module)
     module["select_label"] = f"{module['name_ja']}｜{module['stat_line'] or module['effect_text']}"
     return module
@@ -20024,6 +20080,343 @@ def _research_module_source_label(module):
             return f"{source_name} x3 合成"
         return "試作型 x3 合成"
     return RESEARCH_MODULE_SOURCE_LABELS.get(module_key, "通常戦ドロップ / 研究ゲージ保証")
+
+
+def _module_generation_label(generation):
+    value = int(generation or 0)
+    return f"第{value}世代" if value > 0 else "初代"
+
+
+def _module_lineage_snapshot(module):
+    module = dict(module or {})
+    bonuses = {key: int(module.get(key) or 0) for key in ("hp_bonus", "atk_bonus", "def_bonus", "spd_bonus", "acc_bonus", "cri_bonus")}
+    return {
+        "module_instance_id": int(module.get("instance_id") or 0) or None,
+        "module_key": str(module.get("module_key") or ""),
+        "name": str(module.get("name_ja") or "研究モジュール"),
+        "generation": int(module.get("synthesis_generation") or module.get("generation") or 0),
+        "generation_label": _module_generation_label(module.get("synthesis_generation") or module.get("generation") or 0),
+        "primary_lineage_key": str(module.get("brand_key") or ""),
+        "primary_lineage_label": str(module.get("brand_alias_ja") or module.get("brand_label") or module.get("family_label_compact") or "研究"),
+        "family_label": str(module.get("family_label") or ""),
+        "family_label_compact": str(module.get("family_label_compact") or module.get("family_label") or ""),
+        "result_label": str(module.get("result_label") or ""),
+        "type_label": str(module.get("type_label") or ""),
+        "trait_label": str(module.get("trait_label") or ""),
+        "trait_description": str(module.get("trait_description") or ""),
+        "usage_labels": list(module.get("usage_labels") or []),
+        "stat_chips": list(module.get("stat_chips") or []),
+        "bonuses": bonuses,
+    }
+
+
+def _module_lineage_snapshot_json(module):
+    return json.dumps(_module_lineage_snapshot(module), ensure_ascii=False, sort_keys=True)
+
+
+def _create_module_fusion_record(
+    db,
+    *,
+    user_id,
+    result_module,
+    input_modules,
+    request_id=None,
+    created_at=None,
+    provenance_quality="full",
+):
+    if not result_module:
+        return None
+    result_snapshot = _module_lineage_snapshot(result_module)
+    result_id = int(result_snapshot.get("module_instance_id") or 0)
+    if result_id <= 0:
+        return None
+    now_ts = int(created_at or time.time())
+    cur = db.execute(
+        """
+        INSERT OR IGNORE INTO module_fusion_records (
+            user_id, result_module_instance_id, result_module_key, result_name, result_generation,
+            result_primary_lineage_key, result_primary_lineage_label, result_snapshot_json,
+            provenance_quality, provenance_version, request_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(user_id),
+            result_id,
+            str(result_snapshot.get("module_key") or ""),
+            str(result_snapshot.get("name") or "研究モジュール"),
+            int(result_snapshot.get("generation") or 0),
+            str(result_snapshot.get("primary_lineage_key") or ""),
+            str(result_snapshot.get("primary_lineage_label") or ""),
+            json.dumps(result_snapshot, ensure_ascii=False, sort_keys=True),
+            str(provenance_quality or "full"),
+            int(MODULE_FUSION_PROVENANCE_VERSION),
+            str(request_id or ""),
+            now_ts,
+        ),
+    )
+    record = db.execute(
+        "SELECT * FROM module_fusion_records WHERE result_module_instance_id = ?",
+        (result_id,),
+    ).fetchone()
+    if not record:
+        return None
+    record_id = int(record["id"])
+    if int(cur.rowcount or 0) > 0:
+        for index, input_module in enumerate(input_modules or [], start=1):
+            source_snapshot = _module_lineage_snapshot(input_module)
+            db.execute(
+                """
+                INSERT OR IGNORE INTO module_fusion_inputs (
+                    fusion_record_id, input_index, source_module_instance_id, source_module_key,
+                    source_name, source_generation, source_primary_lineage_key,
+                    source_primary_lineage_label, source_snapshot_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    int(index),
+                    source_snapshot.get("module_instance_id"),
+                    str(source_snapshot.get("module_key") or ""),
+                    str(source_snapshot.get("name") or "研究モジュール"),
+                    int(source_snapshot.get("generation") or 0),
+                    str(source_snapshot.get("primary_lineage_key") or ""),
+                    str(source_snapshot.get("primary_lineage_label") or ""),
+                    json.dumps(source_snapshot, ensure_ascii=False, sort_keys=True),
+                    now_ts,
+                ),
+            )
+    return record_id
+
+
+def _backfill_module_fusion_records(db, *, limit=500):
+    rows = db.execute(
+        """
+        SELECT id, user_id, origin_module_a_id, origin_module_b_id, created_at
+        FROM user_research_modules
+        WHERE module_key = ?
+          AND origin_module_a_id IS NOT NULL
+          AND origin_module_b_id IS NOT NULL
+          AND id NOT IN (SELECT result_module_instance_id FROM module_fusion_records)
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (RESEARCH_MODULE_SYNTHESIS_KEY, int(limit)),
+    ).fetchall()
+    created = 0
+    partial = 0
+    for row in rows:
+        result_module = _research_module_instance_row(db, int(row["id"]), int(row["user_id"]))
+        input_modules = [
+            _research_module_instance_row(db, int(row["origin_module_a_id"])),
+            _research_module_instance_row(db, int(row["origin_module_b_id"])),
+        ]
+        input_modules = [module for module in input_modules if module]
+        quality = "full" if len(input_modules) == 2 else "partial"
+        record_id = _create_module_fusion_record(
+            db,
+            user_id=int(row["user_id"]),
+            result_module=result_module,
+            input_modules=input_modules,
+            request_id=None,
+            created_at=int(row["created_at"] or time.time()),
+            provenance_quality=quality,
+        )
+        if record_id:
+            created += 1
+            if quality != "full":
+                partial += 1
+    return {"created": created, "partial": partial, "legacy": 0}
+
+
+def _module_fusion_record_view(row, input_rows=None):
+    record = dict(row or {})
+    try:
+        snapshot = json.loads(record.get("result_snapshot_json") or "{}")
+    except (TypeError, ValueError):
+        snapshot = {}
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+    inputs = []
+    for input_row in input_rows or []:
+        item = dict(input_row)
+        try:
+            source_snapshot = json.loads(item.get("source_snapshot_json") or "{}")
+        except (TypeError, ValueError):
+            source_snapshot = {}
+        if not isinstance(source_snapshot, dict):
+            source_snapshot = {}
+        inputs.append(
+            {
+                **item,
+                "snapshot": source_snapshot,
+                "generation_label": _module_generation_label(item.get("source_generation")),
+            }
+        )
+    return {
+        **record,
+        "snapshot": snapshot,
+        "inputs": inputs,
+        "created_text": _format_jst_ts(record.get("created_at")) if record.get("created_at") else "",
+        "generation_label": _module_generation_label(record.get("result_generation")),
+        "is_legacy": str(record.get("provenance_quality") or "") != "full",
+    }
+
+
+def _module_research_summary(db, user_id):
+    row = db.execute(
+        """
+        SELECT COUNT(*) AS experiment_count,
+               COUNT(DISTINCT NULLIF(result_primary_lineage_key, '')) AS observed_lineage_count,
+               COALESCE(MAX(result_generation), 0) AS max_generation
+        FROM module_fusion_records
+        WHERE user_id = ?
+        """,
+        (int(user_id),),
+    ).fetchone()
+    return {
+        "experiment_count": int(row["experiment_count"] or 0) if row else 0,
+        "observed_lineage_count": int(row["observed_lineage_count"] or 0) if row else 0,
+        "max_generation": int(row["max_generation"] or 0) if row else 0,
+        "max_generation_label": _module_generation_label(int(row["max_generation"] or 0) if row else 0),
+    }
+
+
+def _module_research_lineage_filter_options(db, user_id):
+    rows = db.execute(
+        """
+        SELECT result_primary_lineage_key AS key, result_primary_lineage_label AS label, COUNT(*) AS count
+        FROM module_fusion_records
+        WHERE user_id = ? AND COALESCE(result_primary_lineage_key, '') != ''
+        GROUP BY result_primary_lineage_key, result_primary_lineage_label
+        ORDER BY count DESC, label ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _module_research_records_page(db, user_id, *, lineage_key="", sort_key="new", page=1, per_page=20):
+    lineage_key = str(lineage_key or "").strip()
+    sort_key = sort_key if sort_key in {"new", "old", "generation"} else "new"
+    page = max(1, int(page or 1))
+    per_page = max(1, min(50, int(per_page or 20)))
+    where = ["user_id = ?"]
+    params = [int(user_id)]
+    if lineage_key:
+        where.append("result_primary_lineage_key = ?")
+        params.append(lineage_key)
+    order_sql = "created_at DESC, id DESC"
+    if sort_key == "old":
+        order_sql = "created_at ASC, id ASC"
+    elif sort_key == "generation":
+        order_sql = "result_generation DESC, created_at DESC, id DESC"
+    total = int(db.execute(f"SELECT COUNT(*) AS c FROM module_fusion_records WHERE {' AND '.join(where)}", params).fetchone()["c"] or 0)
+    offset = (page - 1) * per_page
+    rows = db.execute(
+        f"""
+        SELECT *
+        FROM module_fusion_records
+        WHERE {' AND '.join(where)}
+        ORDER BY {order_sql}
+        LIMIT ? OFFSET ?
+        """,
+        (*params, per_page, offset),
+    ).fetchall()
+    record_ids = [int(row["id"]) for row in rows]
+    inputs_by_record = {record_id: [] for record_id in record_ids}
+    if record_ids:
+        placeholders = ",".join(["?"] * len(record_ids))
+        input_rows = db.execute(
+            f"""
+            SELECT *
+            FROM module_fusion_inputs
+            WHERE fusion_record_id IN ({placeholders})
+            ORDER BY fusion_record_id ASC, input_index ASC
+            """,
+            record_ids,
+        ).fetchall()
+        for input_row in input_rows:
+            inputs_by_record.setdefault(int(input_row["fusion_record_id"]), []).append(input_row)
+    viewed = [_module_fusion_record_view(row, inputs_by_record.get(int(row["id"]), [])) for row in rows]
+    prior_lineages = set()
+    prior_max = -1
+    chronological = db.execute(
+        """
+        SELECT id, result_primary_lineage_key, result_generation
+        FROM module_fusion_records
+        WHERE user_id = ?
+        ORDER BY created_at ASC, id ASC
+        """,
+        (int(user_id),),
+    ).fetchall()
+    flags_by_id = {}
+    for row in chronological:
+        key = str(row["result_primary_lineage_key"] or "")
+        generation = int(row["result_generation"] or 0)
+        flags_by_id[int(row["id"])] = {
+            "first_observation": bool(key and key not in prior_lineages),
+            "best_generation": generation > prior_max,
+        }
+        if key:
+            prior_lineages.add(key)
+        prior_max = max(prior_max, generation)
+    for item in viewed:
+        item.update(flags_by_id.get(int(item["id"]), {}))
+    return {
+        "records": viewed,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "has_prev": page > 1,
+        "has_next": offset + per_page < total,
+        "prev_page": max(1, page - 1),
+        "next_page": page + 1,
+        "lineage_key": lineage_key,
+        "sort_key": sort_key,
+    }
+
+
+def _module_lineage_timeline(db, user_id, module_instance_id, *, max_depth=MODULE_LINEAGE_MAX_DEPTH):
+    seen_modules = set()
+    timeline = []
+
+    def walk(current_module_id, depth):
+        current_module_id = int(current_module_id or 0)
+        if current_module_id <= 0 or depth > int(max_depth) or current_module_id in seen_modules:
+            return
+        seen_modules.add(current_module_id)
+        record = db.execute(
+            """
+            SELECT *
+            FROM module_fusion_records
+            WHERE user_id = ? AND result_module_instance_id = ?
+            LIMIT 1
+            """,
+            (int(user_id), current_module_id),
+        ).fetchone()
+        if not record:
+            return
+        inputs = db.execute(
+            """
+            SELECT *
+            FROM module_fusion_inputs
+            WHERE fusion_record_id = ?
+            ORDER BY input_index ASC
+            """,
+            (int(record["id"]),),
+        ).fetchall()
+        viewed = _module_fusion_record_view(record, inputs)
+        viewed["depth"] = int(depth)
+        timeline.append(viewed)
+        for input_row in inputs:
+            source_id = int(input_row["source_module_instance_id"] or 0)
+            if source_id > 0:
+                walk(source_id, depth + 1)
+
+    walk(int(module_instance_id), 0)
+    return timeline
 
 
 def _active_research_module_for_user(db, user_id, user_row=None):
@@ -47676,6 +48069,16 @@ def modules_synthesis_create():
         request_id=getattr(g, "request_id", None),
         ip=request.remote_addr,
     )
+    result_module_for_record = _research_module_instance_row(db, result_module_id, user_id)
+    fusion_record_id = _create_module_fusion_record(
+        db,
+        user_id=user_id,
+        result_module=result_module_for_record,
+        input_modules=[module_a, module_b],
+        request_id=getattr(g, "request_id", None),
+        created_at=now_ts,
+        provenance_quality="full",
+    )
     coins_after = coins_before - cost
     db.execute("UPDATE users SET coins = ? WHERE id = ?", (coins_after, user_id))
     payload = {
@@ -47705,6 +48108,12 @@ def modules_synthesis_create():
         "trait_value": int(trait.get("trait_value") or 0),
         "trait_grade": trait.get("trait_grade"),
         "synthesis_score": int(result["synthesis_score"]),
+        "fusion_record_id": int(fusion_record_id or 0) or None,
+        "result_module_instance_id": int(result_module_id),
+        "generation": int(result["generation"]),
+        "primary_lineage_key": (result_module_for_record or {}).get("brand_key") if result_module_for_record else result_brand_key,
+        "input_count": 2,
+        "provenance_version": int(MODULE_FUSION_PROVENANCE_VERSION),
         "cost_coins": int(cost),
         "coins_before": int(coins_before),
         "coins_after": int(coins_after),
@@ -47904,6 +48313,64 @@ def modules_reroll_reject(candidate_id=None):
     )
     session["message"] = "現在の補正を維持しました。" if result.get("ok") else result.get("reason") or "候補を破棄できませんでした。"
     return redirect(url_for("modules"))
+
+
+@app.route("/modules/research")
+@login_required
+def modules_research():
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    try:
+        page = int(request.args.get("page") or 1)
+    except ValueError:
+        page = 1
+    lineage_key = str(request.args.get("lineage") or "").strip()
+    sort_key = str(request.args.get("sort") or "new").strip()
+    summary = _module_research_summary(db, user_id)
+    page_data = _module_research_records_page(
+        db,
+        user_id,
+        lineage_key=lineage_key,
+        sort_key=sort_key,
+        page=page,
+        per_page=20,
+    )
+    return render_template(
+        "modules_research.html",
+        user=user,
+        summary=summary,
+        page_data=page_data,
+        lineage_options=_module_research_lineage_filter_options(db, user_id),
+    )
+
+
+@app.route("/modules/<int:module_instance_id>/lineage")
+@login_required
+def module_lineage(module_instance_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    module = _research_module_instance_row(db, int(module_instance_id), user_id)
+    if not module:
+        session["message"] = "閲覧できない研究モジュールです"
+        return redirect(url_for("modules"))
+    timeline = _module_lineage_timeline(db, user_id, int(module_instance_id))
+    return render_template(
+        "module_lineage.html",
+        user=user,
+        module=module,
+        module_snapshot=_module_lineage_snapshot(module),
+        timeline=timeline,
+        max_depth=MODULE_LINEAGE_MAX_DEPTH,
+        legacy_missing=not bool(timeline),
+    )
 
 
 @app.route("/modules")

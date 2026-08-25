@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>モジュール研究記録</h1>
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('modules') }}">モジュール</a>
+    <a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成</a>
+  </div>
+
+  <section class="card module-summary-card">
+    <div><b>合成実験</b></div>
+    <div class="module-card-meta">
+      <span class="module-badge active">{{ summary.experiment_count }}回</span>
+      <span class="module-badge">観測済み系統 {{ summary.observed_lineage_count }}種</span>
+      <span class="module-badge">{{ summary.max_generation_label }}</span>
+    </div>
+    <div class="robot-time">自分の合成結果として生成された系統だけを観測済みとして記録します。</div>
+  </section>
+
+  <section class="card module-section">
+    <div><b>表示</b></div>
+    <div class="module-card-meta">
+      <a class="module-badge {{ 'active' if not page_data.lineage_key else 'muted' }}" href="{{ url_for('modules_research', sort=page_data.sort_key) }}">すべて</a>
+      {% for option in lineage_options %}
+      <a class="module-badge {{ 'active' if page_data.lineage_key == option.key else 'muted' }}" href="{{ url_for('modules_research', lineage=option.key, sort=page_data.sort_key) }}">{{ option.label }} {{ option.count }}</a>
+      {% endfor %}
+    </div>
+    <div class="module-card-meta">
+      {% for key, label in [('new','新しい順'),('old','古い順'),('generation','世代が高い順')] %}
+      <a class="module-badge {{ 'active' if page_data.sort_key == key else 'muted' }}" href="{{ url_for('modules_research', lineage=page_data.lineage_key, sort=key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if page_data.records %}
+  <div class="module-card-grid">
+    {% for record in page_data.records %}
+    <article class="module-card">
+      <div class="module-card-title">研究記録 #{{ record.id }}</div>
+      <div class="robot-time">{{ record.created_text }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge active">{{ record.result_primary_lineage_label }}</span>
+        <span class="module-badge">{{ record.generation_label }}</span>
+        {% if record.first_observation %}<span class="module-badge ok">初観測</span>{% endif %}
+        {% if record.best_generation %}<span class="module-badge ok">自己最高世代更新</span>{% endif %}
+      </div>
+      <div class="upgrade-cost">投入</div>
+      {% for input in record.inputs %}
+      <div class="robot-time">{{ input.source_name }} / {{ input.source_primary_lineage_label }} / {{ input.generation_label }}</div>
+      {% else %}
+      <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+      {% endfor %}
+      <div class="upgrade-cost">結果: {{ record.result_name }}</div>
+      <div class="module-stat-chips">
+        {% for chip in record.snapshot.get('stat_chips', []) %}
+        <span class="module-stat-chip {{ chip.get('tone', 'neutral') }}">{{ chip.get('text') }}</span>
+        {% endfor %}
+      </div>
+      {% if record.snapshot.get('trait_label') %}
+      <div class="robot-time">作戦特性: {{ record.snapshot.get('trait_label') }}</div>
+      {% else %}
+      <div class="robot-time">作戦特性: なし</div>
+      {% endif %}
+      {% if record.snapshot.get('usage_labels') %}
+      <div class="robot-time">向いている戦い: {{ record.snapshot.get('usage_labels')|join('・') }}</div>
+      {% endif %}
+      <p class="link"><a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">系譜を見る</a></p>
+    </article>
+    {% endfor %}
+  </div>
+  <div class="home-inline-actions">
+    {% if page_data.has_prev %}
+    <a class="battle-home-link" href="{{ url_for('modules_research', lineage=page_data.lineage_key, sort=page_data.sort_key, page=page_data.prev_page) }}">前へ</a>
+    {% endif %}
+    <span class="robot-time">{{ page_data.page }}ページ / {{ page_data.total }}件</span>
+    {% if page_data.has_next %}
+    <a class="battle-home-link" href="{{ url_for('modules_research', lineage=page_data.lineage_key, sort=page_data.sort_key, page=page_data.next_page) }}">次へ</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <section class="card">
+    <div class="upgrade-cost">まだ研究記録がありません。</div>
+    <div class="robot-time">研究合成を行うと、投入素材と結果がここに残ります。</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -144,6 +144,15 @@ class ResearchModuleTests(unittest.TestCase):
             db.commit()
             return ids
 
+    def _synthesize_modules(self, module_a_id, module_b_id, *, random_value=0.50, randint_value=1):
+        with mock.patch.object(game_app.random, "random", return_value=random_value), \
+             mock.patch.object(game_app.random, "randint", return_value=randint_value):
+            return self._client().post(
+                "/modules/synthesis",
+                data={"module_a_id": module_a_id, "module_b_id": module_b_id},
+                follow_redirects=False,
+            )
+
     def test_research_module_pity_column_exists(self):
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -158,6 +167,8 @@ class ResearchModuleTests(unittest.TestCase):
             db = game_app.get_db()
             module_cols = {row["name"] for row in db.execute("PRAGMA table_info(research_modules)").fetchall()}
             instance_cols = {row["name"] for row in db.execute("PRAGMA table_info(user_research_modules)").fetchall()}
+            fusion_cols = {row["name"] for row in db.execute("PRAGMA table_info(module_fusion_records)").fetchall()}
+            input_cols = {row["name"] for row in db.execute("PRAGMA table_info(module_fusion_inputs)").fetchall()}
             for col in ("tier", "trade_policy", "source_type", "is_limited", "npc_sell_price"):
                 self.assertIn(col, module_cols)
             for col in (
@@ -179,6 +190,25 @@ class ResearchModuleTests(unittest.TestCase):
                 "generated_name_ja",
             ):
                 self.assertIn(col, instance_cols)
+            for col in (
+                "result_module_instance_id",
+                "result_generation",
+                "result_primary_lineage_key",
+                "result_snapshot_json",
+                "provenance_version",
+                "request_id",
+            ):
+                self.assertIn(col, fusion_cols)
+            for col in (
+                "fusion_record_id",
+                "input_index",
+                "source_module_instance_id",
+                "source_name",
+                "source_generation",
+                "source_primary_lineage_label",
+                "source_snapshot_json",
+            ):
+                self.assertIn(col, input_cols)
             proto = db.execute("SELECT tier, trade_policy, source_type, is_limited, npc_sell_price FROM research_modules WHERE module_key = 'sniper_prototype'").fetchone()
             self.assertEqual(int(proto["tier"]), 1)
             self.assertEqual(proto["trade_policy"], "tradable")
@@ -350,6 +380,8 @@ class ResearchModuleTests(unittest.TestCase):
         html = self._client().get("/modules").get_data(as_text=True)
         self.assertIn("研究合成へ", html)
         self.assertIn("/modules/synthesis", html)
+        self.assertIn("研究記録", html)
+        self.assertIn("/modules/research", html)
 
     def test_synthesis_consumes_two_modules_and_creates_inventory_result(self):
         ids = self._grant_module(self.user_id, "sniper_prototype", count=1) + self._grant_module(self.user_id, "assault_prototype", count=1)
@@ -357,17 +389,15 @@ class ResearchModuleTests(unittest.TestCase):
             db = game_app.get_db()
             db.execute("UPDATE users SET coins = 1000 WHERE id = ?", (self.user_id,))
             db.commit()
-        with mock.patch.object(game_app.random, "random", return_value=0.50), \
-             mock.patch.object(game_app.random, "randint", return_value=1):
-            resp = self._client().post(
-                "/modules/synthesis",
-                data={"module_a_id": ids[0], "module_b_id": ids[1]},
-                follow_redirects=False,
-            )
+        resp = self._synthesize_modules(ids[0], ids[1])
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("成功", html)
         self.assertIn("精密突撃モジュール", html)
+        self.assertIn("系譜を見る", html)
+        self.assertIn("研究記録を見る", html)
+        self.assertNotIn("評価値", html)
+        self.assertNotIn("synthesis_score", html)
         with game_app.app.app_context():
             db = game_app.get_db()
             consumed = int(
@@ -391,6 +421,24 @@ class ResearchModuleTests(unittest.TestCase):
             self.assertEqual(result["synthesis_family"], "sniper_assault")
             self.assertEqual(int(result["generation"]), 1)
             self.assertEqual(int(db.execute("SELECT coins FROM users WHERE id = ?", (self.user_id,)).fetchone()["coins"]), 500)
+            fusion = db.execute(
+                "SELECT * FROM module_fusion_records WHERE user_id = ? AND result_module_instance_id = ?",
+                (self.user_id, int(result["id"])),
+            ).fetchone()
+            self.assertIsNotNone(fusion)
+            self.assertEqual(int(fusion["result_generation"]), 1)
+            self.assertTrue(fusion["result_primary_lineage_key"])
+            self.assertEqual(int(fusion["provenance_version"]), game_app.MODULE_FUSION_PROVENANCE_VERSION)
+            snapshot = json.loads(fusion["result_snapshot_json"])
+            self.assertEqual(snapshot["name"], "精密突撃モジュール")
+            self.assertNotIn("synthesis_score", snapshot)
+            inputs = db.execute(
+                "SELECT * FROM module_fusion_inputs WHERE fusion_record_id = ? ORDER BY input_index ASC",
+                (int(fusion["id"]),),
+            ).fetchall()
+            self.assertEqual(len(inputs), 2)
+            self.assertEqual([int(row["source_module_instance_id"]) for row in inputs], ids)
+            self.assertEqual([int(row["source_generation"]) for row in inputs], [0, 0])
             for event_type in (
                 game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_CONSUME"],
                 game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_CREATE"],
@@ -403,6 +451,15 @@ class ResearchModuleTests(unittest.TestCase):
                         (self.user_id, event_type),
                     ).fetchone()
                 )
+            result_event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["MODULE_SYNTHESIS_RESULT"]),
+            ).fetchone()
+            payload = json.loads(result_event["payload_json"] or "{}")
+            self.assertEqual(payload["fusion_record_id"], int(fusion["id"]))
+            self.assertEqual(payload["result_module_instance_id"], int(result["id"]))
+            self.assertEqual(payload["generation"], 1)
+            self.assertEqual(payload["input_count"], 2)
 
     def test_synthesis_rejects_locked_active_other_user_and_insufficient_coins(self):
         locked_id = self._grant_module(self.user_id, "stable_prototype", count=1)[0]
@@ -437,6 +494,141 @@ class ResearchModuleTests(unittest.TestCase):
                     (self.user_id,),
                 ).fetchone()
             )
+            self.assertEqual(
+                int(db.execute("SELECT COUNT(*) AS c FROM module_fusion_records WHERE user_id = ?", (self.user_id,)).fetchone()["c"]),
+                0,
+            )
+
+    def test_module_lineage_survives_consumed_sources_and_hides_internal_values(self):
+        ids = self._grant_module(self.user_id, "sniper_prototype", count=1) + self._grant_module(self.user_id, "assault_prototype", count=1)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 1000 WHERE id = ?", (self.user_id,))
+            db.commit()
+        self.assertEqual(self._synthesize_modules(ids[0], ids[1]).status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            result_id = int(
+                db.execute(
+                    "SELECT id FROM user_research_modules WHERE user_id = ? AND module_key = 'synthesized_module' ORDER BY id DESC LIMIT 1",
+                    (self.user_id,),
+                ).fetchone()["id"]
+            )
+            self.assertEqual(
+                int(
+                    db.execute(
+                        f"SELECT COUNT(*) AS c FROM user_research_modules WHERE id IN ({','.join(['?'] * len(ids))}) AND status = 'consumed'",
+                        ids,
+                    ).fetchone()["c"]
+                ),
+                2,
+            )
+        html = self._client().get(f"/modules/{result_id}/lineage").get_data(as_text=True)
+        self.assertIn("モジュール系譜", html)
+        self.assertIn("精密突撃モジュール", html)
+        self.assertIn("狙撃モジュール 試作型", html)
+        self.assertIn("強襲モジュール 試作型", html)
+        self.assertIn("第1世代", html)
+        for secret in ("synthesis_score", "weight", "probability", "seed", "RNG", "coefficient"):
+            self.assertNotIn(secret, html)
+
+    def test_module_research_page_summary_filters_pagination_and_flags(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for idx in range(25):
+                lineage_key = "volt" if idx % 2 else "eden"
+                lineage_label = "ヴォルト" if lineage_key == "volt" else "エデン"
+                generation = idx + 1
+                snapshot = {
+                    "name": f"研究モジュール{idx}",
+                    "generation": generation,
+                    "generation_label": game_app._module_generation_label(generation),
+                    "primary_lineage_key": lineage_key,
+                    "primary_lineage_label": lineage_label,
+                    "stat_chips": [{"text": "攻撃 +1", "tone": "positive"}],
+                }
+                db.execute(
+                    """
+                    INSERT INTO module_fusion_records (
+                        user_id, result_module_instance_id, result_module_key, result_name, result_generation,
+                        result_primary_lineage_key, result_primary_lineage_label, result_snapshot_json,
+                        provenance_quality, provenance_version, request_id, created_at
+                    )
+                    VALUES (?, ?, 'synthesized_module', ?, ?, ?, ?, ?, 'full', ?, ?, ?)
+                    """,
+                    (
+                        self.user_id,
+                        10000 + idx,
+                        f"研究モジュール{idx}",
+                        generation,
+                        lineage_key,
+                        lineage_label,
+                        json.dumps(snapshot, ensure_ascii=False),
+                        game_app.MODULE_FUSION_PROVENANCE_VERSION,
+                        f"page-{idx}",
+                        now + idx,
+                    ),
+                )
+            db.commit()
+        html = self._client().get("/modules/research").get_data(as_text=True)
+        self.assertIn("合成実験", html)
+        self.assertIn("25回", html)
+        self.assertIn("観測済み系統 2種", html)
+        self.assertIn("第25世代", html)
+        self.assertIn("自己最高世代更新", html)
+        self.assertIn("次へ", html)
+        old_html = self._client().get("/modules/research?sort=old").get_data(as_text=True)
+        self.assertIn("初観測", old_html)
+
+        filtered = self._client().get("/modules/research?lineage=volt&sort=generation").get_data(as_text=True)
+        self.assertIn("ヴォルト", filtered)
+        self.assertIn("第24世代", filtered)
+        self.assertNotIn("研究記録 #25", filtered)
+
+    def test_continuous_synthesis_lineage_tracks_ancestors_without_guessing(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET coins = 4000 WHERE id = ?", (self.user_id,))
+            db.commit()
+        first_ids = self._grant_module(self.user_id, "sniper_prototype", count=1) + self._grant_module(self.user_id, "assault_prototype", count=1)
+        self.assertEqual(self._synthesize_modules(first_ids[0], first_ids[1]).status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            gen1_id = int(db.execute("SELECT id FROM user_research_modules WHERE user_id = ? ORDER BY id DESC LIMIT 1", (self.user_id,)).fetchone()["id"])
+        second_source = self._grant_module(self.user_id, "heavy_prototype", count=1)[0]
+        self.assertEqual(self._synthesize_modules(gen1_id, second_source).status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            gen2_id = int(db.execute("SELECT id FROM user_research_modules WHERE user_id = ? ORDER BY id DESC LIMIT 1", (self.user_id,)).fetchone()["id"])
+        third_source = self._grant_module(self.user_id, "stable_prototype", count=1)[0]
+        self.assertEqual(self._synthesize_modules(gen2_id, third_source).status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            gen3 = db.execute("SELECT id, generation FROM user_research_modules WHERE user_id = ? ORDER BY id DESC LIMIT 1", (self.user_id,)).fetchone()
+            self.assertEqual(int(gen3["generation"]), 3)
+            records = int(db.execute("SELECT COUNT(*) AS c FROM module_fusion_records WHERE user_id = ?", (self.user_id,)).fetchone()["c"])
+            inputs = int(db.execute("SELECT COUNT(*) AS c FROM module_fusion_inputs").fetchone()["c"])
+            self.assertEqual(records, 3)
+            self.assertEqual(inputs, 6)
+        html = self._client().get(f"/modules/{int(gen3['id'])}/lineage").get_data(as_text=True)
+        self.assertIn("第3世代", html)
+        self.assertIn("第2世代", html)
+        self.assertIn("第1世代", html)
+        self.assertIn("狙撃モジュール 試作型", html)
+        self.assertIn("重装モジュール 試作型", html)
+        self.assertIn("安定モジュール 試作型", html)
+
+    def test_lineage_rejects_other_user_and_legacy_module_does_not_500(self):
+        own_legacy = self._grant_module(self.user_id, "sniper_prototype", count=1)[0]
+        other_module = self._grant_module(self.other_user_id, "assault_prototype", count=1)[0]
+        client = self._client()
+        resp = client.get(f"/modules/{other_module}/lineage", follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("閲覧できない研究モジュールです", resp.get_data(as_text=True))
+        legacy = client.get(f"/modules/{own_legacy}/lineage")
+        self.assertEqual(legacy.status_code, 200)
+        self.assertIn("旧研究記録のため、一部データ未観測", legacy.get_data(as_text=True))
 
     def test_synthesis_roll_bounds_and_anomaly_negative_stats(self):
         module_a = {"family": "berserk", "generation": 0, "hp_bonus": 0, "atk_bonus": 12, "def_bonus": 0, "spd_bonus": 0, "acc_bonus": -8, "cri_bonus": 6}

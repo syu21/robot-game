@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>モジュール系譜</h1>
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('modules') }}">モジュール</a>
+    <a class="battle-home-link" href="{{ url_for('modules_research') }}">研究記録</a>
+  </div>
+
+  <section class="card module-summary-card">
+    <div class="section-kicker">現在</div>
+    <h2>{{ module_snapshot.name }}</h2>
+    <div class="module-card-meta">
+      <span class="module-badge active">{{ module_snapshot.primary_lineage_label }}</span>
+      <span class="module-badge">{{ module_snapshot.generation_label }}</span>
+      <span class="module-badge">{{ module_snapshot.type_label }}</span>
+    </div>
+    {% if module_snapshot.family_label_compact %}
+    <div class="robot-time">由来: {{ module_snapshot.family_label_compact }}</div>
+    {% endif %}
+    <div class="module-stat-chips">
+      {% for chip in module_snapshot.stat_chips %}
+      <span class="module-stat-chip {{ chip.get('tone', 'neutral') }}">{{ chip.get('text') }}</span>
+      {% endfor %}
+    </div>
+    {% if module_snapshot.trait_label %}
+    <div class="robot-time">作戦特性: {{ module_snapshot.trait_label }}</div>
+    {% else %}
+    <div class="robot-time">作戦特性: なし</div>
+    {% endif %}
+    {% if module_snapshot.usage_labels %}
+    <div class="robot-time">向いている戦い: {{ module_snapshot.usage_labels|join('・') }}</div>
+    {% endif %}
+  </section>
+
+  {% if legacy_missing %}
+  <section class="card">
+    <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+  </section>
+  {% endif %}
+
+  {% if timeline %}
+  <section class="card module-section">
+    <div><b>研究タイムライン</b></div>
+    {% for record in timeline %}
+    <article class="module-card">
+      <div class="module-card-title">{{ '直前の合成' if loop.first else '過去の合成' }}</div>
+      <div class="robot-time">{{ record.created_text }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge active">{{ record.result_primary_lineage_label }}</span>
+        <span class="module-badge">{{ record.generation_label }}</span>
+      </div>
+      <div class="upgrade-cost">投入</div>
+      {% for input in record.inputs %}
+      <div class="robot-time">{{ input.source_name }} / {{ input.source_primary_lineage_label }} / {{ input.generation_label }}</div>
+      {% else %}
+      <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+      {% endfor %}
+      <div class="upgrade-cost">結果: {{ record.result_name }}</div>
+      {% if record.is_legacy %}
+      <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% if timeline|length >= max_depth %}
+    <div class="robot-time">さらに古い記録は省略しています。</div>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

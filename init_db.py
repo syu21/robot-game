@@ -1487,6 +1487,45 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_fusion_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            result_module_instance_id INTEGER NOT NULL,
+            result_module_key TEXT NOT NULL,
+            result_name TEXT NOT NULL,
+            result_generation INTEGER NOT NULL DEFAULT 0,
+            result_primary_lineage_key TEXT,
+            result_primary_lineage_label TEXT,
+            result_snapshot_json TEXT NOT NULL,
+            provenance_quality TEXT NOT NULL DEFAULT 'full',
+            provenance_version INTEGER NOT NULL DEFAULT 1,
+            request_id TEXT,
+            created_at INTEGER NOT NULL,
+            UNIQUE(result_module_instance_id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_fusion_inputs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fusion_record_id INTEGER NOT NULL,
+            input_index INTEGER NOT NULL,
+            source_module_instance_id INTEGER,
+            source_module_key TEXT,
+            source_name TEXT NOT NULL,
+            source_generation INTEGER NOT NULL DEFAULT 0,
+            source_primary_lineage_key TEXT,
+            source_primary_lineage_label TEXT,
+            source_snapshot_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(fusion_record_id, input_index),
+            FOREIGN KEY (fusion_record_id) REFERENCES module_fusion_records(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -4545,6 +4584,10 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_reroll_candidates_user_module_status ON module_reroll_candidates(user_id, module_id, status, expires_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_inputs_record ON module_fusion_inputs(fusion_record_id, input_index)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")

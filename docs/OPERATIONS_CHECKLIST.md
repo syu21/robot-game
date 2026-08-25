@@ -532,3 +532,16 @@
 - [ ] `/parts` に同名パーツでも個体性能差がある旨が表示される
 - [ ] 実験室投稿は `pending` 保存後、管理者承認まで `/lab/showcase` に出ない
 - [ ] `/admin/lab/submissions` で approve / reject / disable ができ、各auditが残る
+
+## モジュール研究システム Phase 1-2
+
+- [ ] `python3 init_db.py` 後、`module_fusion_records` と `module_fusion_inputs` がある
+- [ ] 正常な研究合成で結果モジュール1件、fusion record 1件、input record 2件が作成される
+- [ ] 合成素材が `consumed` になっても `/modules/research` と `/modules/<id>/lineage` で投入素材名・世代・主系統が見える
+- [ ] 連続合成した高世代モジュールから過去の合成を辿れる
+- [ ] 旧モジュールや履歴不足モジュールで500にならず、未観測表示になる
+- [ ] 他人のモジュールIDを直接指定しても系譜を閲覧できない
+- [ ] `/modules/research` は本人の合成実験数、観測済み系統、最高確認世代、初観測、自己最高世代更新を表示する
+- [ ] 研究記録は20件単位でページングし、系統フィルターと並び替えが動く
+- [ ] UIに内部確率、重み、score、seed、レシピ推定が表示されない
+- [ ] 既存 `audit.module.synthesis.*` に `fusion_record_id`, `generation`, `primary_lineage_key`, `input_count`, `provenance_version` が入る

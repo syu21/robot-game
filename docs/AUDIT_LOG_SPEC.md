@@ -705,3 +705,14 @@ COMBAT SIGNAL v1:
   - payload `part_mechanism.observation_lines`
 - `/admin/metrics` は上記payloadからR+装備ユーザー、発動戦闘数、特性別勝率、第6層勝率、異常個体CLEAR率を算出する。
 - 特性発動ごとの個別auditは出さない。1出撃/1挑戦の集約payloadを正本にする。
+
+## 16. モジュール研究
+- 新規auditイベントは追加しない。既存 `audit.module.synthesis.consume/create/result` と `audit.coin.delta` を維持する。
+- 合成成功時の既存payloadへ以下を追加する。
+  - `fusion_record_id`: `module_fusion_records.id`
+  - `result_module_instance_id`: 合成結果の `user_research_modules.id`
+  - `generation`: 既存合成結果の世代
+  - `primary_lineage_key`: 結果モジュールの公開主系統key
+  - `input_count`: v1では `2`
+  - `provenance_version`: 系譜記録snapshot形式の版
+- payloadには内部確率、内部重み、乱数seed、継承scoreを追加しない。
