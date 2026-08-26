@@ -716,3 +716,11 @@ COMBAT SIGNAL v1:
   - `input_count`: v1では `2`
   - `provenance_version`: 系譜記録snapshot形式の版
 - payloadには内部確率、内部重み、乱数seed、継承scoreを追加しない。
+
+## 17. モジュール研究メモ
+- 観測帳の本人用研究メモ更新時に `audit.module.research.note.update` を記録する。
+- payload:
+  - `lineage_key`: メモ対象の観測系統key
+  - `note_length`: 保存後メモ文字数
+- payloadにはメモ本文、内部確率、内部重み、乱数seed、レシピ推定を追加しない。
+- 観測帳閲覧、系統詳細閲覧、Phase 3共有詳細閲覧では新規auditを出さない。

@@ -9,7 +9,56 @@
     <a class="battle-home-link" href="{{ url_for('modules') }}">モジュール</a>
     <a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成</a>
   </div>
+  <div class="home-inline-actions">
+    <a class="battle-home-link{% if active_tab == 'records' %} active{% endif %}" href="{{ url_for('modules_research') }}">実験記録</a>
+    <a class="battle-home-link{% if active_tab == 'observations' %} active{% endif %}" href="{{ url_for('modules_research', tab='observations') }}">観測帳</a>
+  </div>
 
+  {% if active_tab == 'observations' %}
+  <section class="card module-summary-card">
+    <div><b>あなたの観測記録</b></div>
+    <div class="module-card-meta">
+      <span class="module-badge active">観測済み {{ observation_atlas.summary.observed_lineage_count }}系統</span>
+      <span class="module-badge">{{ observation_atlas.summary.total_observation_count }}回観測</span>
+      <span class="module-badge">最高確認 {{ observation_atlas.summary.max_generation_label }}</span>
+      {% if observation_atlas.summary.latest_lineage_label %}
+      <span class="module-badge">{{ observation_atlas.summary.latest_lineage_label }}</span>
+      {% endif %}
+    </div>
+    <div class="robot-time">合成実験で確認した系統が記録されています。</div>
+  </section>
+
+  <section class="card module-section">
+    <div><b>表示</b></div>
+    <div class="module-card-meta">
+      {% for key, label in [('recent','最近観測'),('first','初観測が新しい順'),('count','観測回数順'),('generation','最高世代順')] %}
+      <a class="module-badge {{ 'active' if observation_atlas.sort_key == key else 'muted' }}" href="{{ url_for('modules_research', tab='observations', observation_sort=key) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if observation_atlas.observations %}
+  <div class="module-card-grid">
+    {% for observation in observation_atlas.observations %}
+    <article class="module-card">
+      <div class="module-card-title">{{ observation.lineage_label }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge active">{{ observation.observation_count }}回観測</span>
+        <span class="module-badge">最高確認 {{ observation.max_generation_label }}</span>
+      </div>
+      <div class="robot-time">初観測 {{ observation.first_observed_text }} JST</div>
+      <div class="robot-time">最終観測 {{ observation.last_observed_text }} JST</div>
+      <p class="link"><a class="battle-home-link" href="{{ url_for('module_observation_detail', lineage_key=observation.lineage_key) }}">観測履歴を見る</a></p>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <section class="card">
+    <div class="upgrade-cost">まだ観測記録がありません。</div>
+    <div class="robot-time">研究合成で結果系統が確認されると、ここに追加されます。</div>
+  </section>
+  {% endif %}
+  {% else %}
   <section class="card module-summary-card">
     <div><b>合成実験</b></div>
     <div class="module-card-meta">
@@ -111,6 +160,7 @@
     <div class="robot-time">研究合成を行うと、投入素材と結果がここに残ります。</div>
     <p class="link"><a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成へ</a></p>
   </section>
+  {% endif %}
   {% endif %}
 </div>
 {% endblock %}

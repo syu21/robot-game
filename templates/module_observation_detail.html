@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>{{ observation.lineage_label }} 観測帳</h1>
+  {% if message %}
+  <div class="card">{{ message }}</div>
+  {% endif %}
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('modules_research', tab='observations') }}">観測帳へ戻る</a>
+    <a class="battle-home-link" href="{{ url_for('modules_research', lineage=observation.lineage_key) }}">実験記録で絞り込む</a>
+  </div>
+
+  <section class="card module-summary-card">
+    <div class="section-kicker">あなたの観測記録</div>
+    <div class="module-card-meta">
+      <span class="module-badge active">{{ observation.observation_count }}回観測</span>
+      <span class="module-badge">最高確認 {{ observation.max_generation_label }}</span>
+      <span class="module-badge">初観測 {{ observation.first_observed_text }} JST</span>
+      <span class="module-badge">最新観測 {{ observation.last_observed_text }} JST</span>
+    </div>
+  </section>
+
+  <section class="card module-section">
+    <div><b>研究メモ</b></div>
+    <form method="post" action="{{ url_for('module_observation_note_update', lineage_key=observation.lineage_key) }}" class="post-form comms-room-form" novalidate>
+      <textarea name="note_text" maxlength="{{ note_max_chars }}" rows="4" placeholder="自分用メモ">{{ note.note_text }}</textarea>
+      <button type="submit">保存</button>
+    </form>
+    {% if note.updated_text %}
+    <div class="robot-time">更新 {{ note.updated_text }} JST</div>
+    {% endif %}
+  </section>
+
+  <section class="card module-section">
+    <div><b>観測履歴</b></div>
+    {% for record in page_data.records %}
+    <article class="module-card">
+      <div class="module-card-title">{{ record.created_text }} JST / {{ record.generation_label }} / {{ record.result_name }}</div>
+      <div class="upgrade-cost">投入</div>
+      {% for input in record.inputs %}
+      <div class="robot-time">{{ input.source_name }} / {{ input.source_primary_lineage_label }} / {{ input.generation_label }}</div>
+      {% else %}
+      <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+      {% endfor %}
+      {% if record.is_legacy %}
+      <div class="robot-time">旧研究記録のため、一部データ未観測</div>
+      {% endif %}
+      <p class="link"><a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">実験記録を見る</a></p>
+    </article>
+    {% endfor %}
+    <div class="home-inline-actions">
+      {% if page_data.has_prev %}
+      <a class="battle-home-link" href="{{ url_for('module_observation_detail', lineage_key=observation.lineage_key, page=page_data.prev_page) }}">前へ</a>
+      {% endif %}
+      <span class="robot-time">{{ page_data.page }}ページ / {{ page_data.total }}件</span>
+      {% if page_data.has_next %}
+      <a class="battle-home-link" href="{{ url_for('module_observation_detail', lineage_key=observation.lineage_key, page=page_data.next_page) }}">次へ</a>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -369,6 +369,7 @@ RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
 }
 MODULE_FUSION_PROVENANCE_VERSION = 1
 MODULE_LINEAGE_MAX_DEPTH = 8
+MODULE_RESEARCH_NOTE_MAX_CHARS = 280
 RESEARCH_MODULE_REROLL_RULES = {
     "N": {"cost": 100, "slots": 1, "min": 1, "max": 3},
     "R": {"cost": 300, "slots": 2, "min": 2, "max": 5},
@@ -14876,12 +14877,28 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_research_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            lineage_key TEXT NOT NULL,
+            note_text TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, lineage_key),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_observation ON module_fusion_records(user_id, result_primary_lineage_key, result_generation DESC, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_inputs_record ON module_fusion_inputs(fusion_record_id, input_index)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_room_created ON module_research_shares(room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_fusion_record ON module_research_shares(fusion_record_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_notes_user_lineage ON module_research_notes(user_id, lineage_key)")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
@@ -20505,6 +20522,144 @@ def _module_research_records_page(db, user_id, *, lineage_key="", sort_key="new"
         "next_page": page + 1,
         "lineage_key": lineage_key,
         "sort_key": sort_key,
+    }
+
+
+def _module_observation_atlas(db, user_id, *, sort_key="recent"):
+    sort_key = sort_key if sort_key in {"recent", "first", "count", "generation"} else "recent"
+    order_sql = {
+        "recent": "last_observed_at DESC, lineage_label ASC",
+        "first": "first_observed_at DESC, lineage_label ASC",
+        "count": "observation_count DESC, last_observed_at DESC, lineage_label ASC",
+        "generation": "max_generation DESC, last_observed_at DESC, lineage_label ASC",
+    }[sort_key]
+    rows = db.execute(
+        f"""
+        SELECT result_primary_lineage_key AS lineage_key,
+               COALESCE(MAX(NULLIF(result_primary_lineage_label, '')), result_primary_lineage_key) AS lineage_label,
+               COUNT(*) AS observation_count,
+               MIN(created_at) AS first_observed_at,
+               MAX(created_at) AS last_observed_at,
+               MAX(result_generation) AS max_generation
+        FROM module_fusion_records
+        WHERE user_id = ?
+          AND COALESCE(result_primary_lineage_key, '') != ''
+        GROUP BY result_primary_lineage_key
+        ORDER BY {order_sql}
+        """,
+        (int(user_id),),
+    ).fetchall()
+    observations = []
+    for row in rows:
+        observations.append(
+            {
+                "lineage_key": str(row["lineage_key"] or ""),
+                "lineage_label": str(row["lineage_label"] or "研究"),
+                "observation_count": int(row["observation_count"] or 0),
+                "experiment_count": int(row["observation_count"] or 0),
+                "first_observed_at": int(row["first_observed_at"] or 0),
+                "last_observed_at": int(row["last_observed_at"] or 0),
+                "first_observed_text": _format_jst_ts(row["first_observed_at"]) if row["first_observed_at"] else "",
+                "last_observed_text": _format_jst_ts(row["last_observed_at"]) if row["last_observed_at"] else "",
+                "max_generation": int(row["max_generation"] or 0),
+                "max_generation_label": _module_generation_label(row["max_generation"]),
+            }
+        )
+    summary = {
+        "observed_lineage_count": len(observations),
+        "total_observation_count": sum(int(item["observation_count"]) for item in observations),
+        "max_generation": max((int(item["max_generation"]) for item in observations), default=0),
+        "max_generation_label": _module_generation_label(max((int(item["max_generation"]) for item in observations), default=0)),
+        "latest_lineage_label": observations[0]["lineage_label"] if observations and sort_key == "recent" else "",
+    }
+    if observations and not summary["latest_lineage_label"]:
+        latest = max(observations, key=lambda item: int(item["last_observed_at"] or 0))
+        summary["latest_lineage_label"] = latest["lineage_label"]
+    return {"observations": observations, "summary": summary, "sort_key": sort_key}
+
+
+def _module_observation_for_lineage(db, user_id, lineage_key):
+    lineage_key = str(lineage_key or "").strip()
+    if not lineage_key:
+        return None
+    atlas = _module_observation_atlas(db, user_id)
+    for item in atlas["observations"]:
+        if item["lineage_key"] == lineage_key:
+            return item
+    return None
+
+
+def _module_observation_records_page(db, user_id, lineage_key, *, page=1, per_page=20):
+    lineage_key = str(lineage_key or "").strip()
+    page = max(1, int(page or 1))
+    per_page = max(1, min(50, int(per_page or 20)))
+    total = int(
+        db.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM module_fusion_records
+            WHERE user_id = ?
+              AND result_primary_lineage_key = ?
+            """,
+            (int(user_id), lineage_key),
+        ).fetchone()["c"]
+        or 0
+    )
+    offset = (page - 1) * per_page
+    rows = db.execute(
+        """
+        SELECT *
+        FROM module_fusion_records
+        WHERE user_id = ?
+          AND result_primary_lineage_key = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (int(user_id), lineage_key, per_page, offset),
+    ).fetchall()
+    record_ids = [int(row["id"]) for row in rows]
+    inputs_by_record = {record_id: [] for record_id in record_ids}
+    if record_ids:
+        placeholders = ",".join(["?"] * len(record_ids))
+        input_rows = db.execute(
+            f"""
+            SELECT *
+            FROM module_fusion_inputs
+            WHERE fusion_record_id IN ({placeholders})
+            ORDER BY fusion_record_id ASC, input_index ASC
+            """,
+            record_ids,
+        ).fetchall()
+        for input_row in input_rows:
+            inputs_by_record.setdefault(int(input_row["fusion_record_id"]), []).append(input_row)
+    return {
+        "records": [_module_fusion_record_view(row, inputs_by_record.get(int(row["id"]), [])) for row in rows],
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "has_prev": page > 1,
+        "has_next": offset + per_page < total,
+        "prev_page": max(1, page - 1),
+        "next_page": page + 1,
+        "lineage_key": lineage_key,
+    }
+
+
+def _module_research_note_for_lineage(db, user_id, lineage_key):
+    row = db.execute(
+        """
+        SELECT note_text, updated_at
+        FROM module_research_notes
+        WHERE user_id = ? AND lineage_key = ?
+        LIMIT 1
+        """,
+        (int(user_id), str(lineage_key or "").strip()),
+    ).fetchone()
+    if not row:
+        return {"note_text": "", "updated_text": ""}
+    return {
+        "note_text": str(row["note_text"] or ""),
+        "updated_text": _format_jst_ts(row["updated_at"]) if row["updated_at"] else "",
     }
 
 
@@ -48462,6 +48617,9 @@ def modules_research():
     lineage_key = str(request.args.get("lineage") or "").strip()
     sort_key = str(request.args.get("sort") or "new").strip()
     summary = _module_research_summary(db, user_id)
+    tab = str(request.args.get("tab") or "records").strip()
+    tab = tab if tab in {"records", "observations"} else "records"
+    observation_sort = str(request.args.get("observation_sort") or "recent").strip()
     page_data = _module_research_records_page(
         db,
         user_id,
@@ -48475,10 +48633,81 @@ def modules_research():
         user=user,
         summary=summary,
         page_data=page_data,
+        active_tab=tab,
+        observation_atlas=_module_observation_atlas(db, user_id, sort_key=observation_sort),
         lineage_options=_module_research_lineage_filter_options(db, user_id),
         share_room_settings=_chat_room_settings("global_room"),
         message=session.pop("message", None),
     )
+
+
+@app.route("/modules/research/observations/<lineage_key>")
+@login_required
+def module_observation_detail(lineage_key):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    observation = _module_observation_for_lineage(db, user_id, lineage_key)
+    if not observation:
+        session["message"] = "観測記録が見つかりません。"
+        return redirect(url_for("modules_research", tab="observations"))
+    try:
+        page = int(request.args.get("page") or 1)
+    except ValueError:
+        page = 1
+    return render_template(
+        "module_observation_detail.html",
+        user=user,
+        observation=observation,
+        page_data=_module_observation_records_page(db, user_id, lineage_key, page=page, per_page=20),
+        note=_module_research_note_for_lineage(db, user_id, lineage_key),
+        note_max_chars=MODULE_RESEARCH_NOTE_MAX_CHARS,
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/modules/research/observations/<lineage_key>/note", methods=["POST"])
+@login_required
+def module_observation_note_update(lineage_key):
+    db = get_db()
+    user_id = int(session["user_id"])
+    observation = _module_observation_for_lineage(db, user_id, lineage_key)
+    if not observation:
+        session["message"] = "観測記録が見つかりません。"
+        return redirect(url_for("modules_research", tab="observations"))
+    note_text = str(request.form.get("note_text") or "").strip()
+    if len(note_text) > MODULE_RESEARCH_NOTE_MAX_CHARS:
+        session["message"] = f"研究メモは{MODULE_RESEARCH_NOTE_MAX_CHARS}文字以内で入力してください。"
+        return redirect(url_for("module_observation_detail", lineage_key=lineage_key))
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO module_research_notes (user_id, lineage_key, note_text, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, lineage_key)
+        DO UPDATE SET note_text = excluded.note_text, updated_at = excluded.updated_at
+        """,
+        (user_id, str(lineage_key or "").strip(), note_text, now_ts, now_ts),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_RESEARCH_NOTE_UPDATE"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_research_note_update",
+        entity_type="module_research_note",
+        payload={
+            "lineage_key": str(lineage_key or "").strip(),
+            "note_length": len(note_text),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "研究メモを保存しました。"
+    return redirect(url_for("module_observation_detail", lineage_key=lineage_key))
 
 
 @app.route("/modules/research/<int:fusion_record_id>/share", methods=["POST"])

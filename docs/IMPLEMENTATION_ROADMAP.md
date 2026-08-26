@@ -741,3 +741,14 @@
 - 研究記録: `/modules/research` で合成実験数、観測済み系統、最高確認世代、初観測、自己最高世代更新、系統フィルター、ページングを表示する。
 - 表示制御: 通常カードの由来は圧縮し、内部確率・重み・score・seed・レシピ推定は出さない。
 - 監査: 既存 `audit.module.synthesis.*` payload に `fusion_record_id`, `generation`, `primary_lineage_key`, `input_count`, `provenance_version` を追加する。
+
+## Phase 4.8: モジュール研究システム Phase 4 観測帳
+
+- 目的: 時系列の実験記録とは別に、本人がどの結果系統をどこまで観測したかを振り返れる個人研究面を作る。
+- UI: `/modules/research` に `実験記録 / 観測帳` タブを追加し、観測帳トップは系統カードを表示する。
+- 集計: `module_fusion_records` を正本に、結果主系統ごとに `COUNT / MIN(created_at) / MAX(created_at) / MAX(result_generation)` を `GROUP BY` で集計する。
+- 詳細: `/modules/research/observations/<lineage_key>` で該当系統を結果として生成した実験履歴をページング表示する。
+- メモ: `module_research_notes` に本人専用メモを保存し、`audit.module.research.note.update` を記録する。
+- 非公開: 観測帳は本人だけ。Phase 3共有詳細は共有された1実験のsnapshotだけを表示する。
+- 非目標: 発現率、成功率、内部重み、最適レシピ、おすすめ合成、世界ランキング、観測報酬。
+- 非変更: 合成アルゴリズム、世代計算、ステータス、戦闘性能、BATTLE CODE。
