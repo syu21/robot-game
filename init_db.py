@@ -1526,6 +1526,24 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_research_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_message_id INTEGER NOT NULL UNIQUE,
+            fusion_record_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            room_key TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            share_version INTEGER NOT NULL DEFAULT 1,
+            provenance_version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (chat_message_id) REFERENCES chat_messages(id),
+            FOREIGN KEY (fusion_record_id) REFERENCES module_fusion_records(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -4588,6 +4606,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_inputs_record ON module_fusion_inputs(fusion_record_id, input_index)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_room_created ON module_research_shares(room_key, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_fusion_record ON module_research_shares(fusion_record_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")

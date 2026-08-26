@@ -9842,11 +9842,15 @@ def _chat_room_rows(db, room_key, *, limit):
     room_value = _chat_normalize_room_key(room_key) or COMM_WORLD_ROOM_KEY
     return db.execute(
         """
-        SELECT id, user_id, username, room_key, message, created_at
-        FROM chat_messages
-        WHERE COALESCE(room_key, ?) = ?
-          AND deleted_at IS NULL
-        ORDER BY created_at DESC, id DESC
+        SELECT cm.id, cm.user_id, cm.username, cm.room_key, cm.message, cm.created_at,
+               mrs.id AS share_id,
+               mrs.fusion_record_id AS share_fusion_record_id,
+               mrs.snapshot_json AS share_snapshot_json
+        FROM chat_messages cm
+        LEFT JOIN module_research_shares mrs ON mrs.chat_message_id = cm.id
+        WHERE COALESCE(cm.room_key, ?) = ?
+          AND cm.deleted_at IS NULL
+        ORDER BY cm.created_at DESC, cm.id DESC
         LIMIT ?
         """,
         (COMM_WORLD_ROOM_KEY, room_value, int(limit)),
@@ -14854,10 +14858,30 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_research_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_message_id INTEGER NOT NULL UNIQUE,
+            fusion_record_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            room_key TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL,
+            share_version INTEGER NOT NULL DEFAULT 1,
+            provenance_version INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (chat_message_id) REFERENCES chat_messages(id),
+            FOREIGN KEY (fusion_record_id) REFERENCES module_fusion_records(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_inputs_record ON module_fusion_inputs(fusion_record_id, input_index)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_room_created ON module_research_shares(room_key, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_fusion_record ON module_research_shares(fusion_record_id)")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
@@ -20261,6 +20285,112 @@ def _module_fusion_record_view(row, input_rows=None):
         "created_text": _format_jst_ts(record.get("created_at")) if record.get("created_at") else "",
         "generation_label": _module_generation_label(record.get("result_generation")),
         "is_legacy": str(record.get("provenance_quality") or "") != "full",
+    }
+
+
+def _module_research_share_snapshot_from_record(record_view):
+    if not record_view or record_view.get("is_legacy"):
+        return None
+    result_snapshot = record_view.get("snapshot") or {}
+    if not isinstance(result_snapshot, dict) or not result_snapshot:
+        return None
+    inputs = []
+    for item in record_view.get("inputs") or []:
+        if not item.get("snapshot"):
+            return None
+        inputs.append(
+            {
+                "display_name": str(item.get("source_name") or "研究モジュール"),
+                "generation": int(item.get("source_generation") or 0),
+                "generation_label": _module_generation_label(item.get("source_generation")),
+                "lineage_key": str(item.get("source_primary_lineage_key") or ""),
+                "lineage_label": str(item.get("source_primary_lineage_label") or "研究"),
+            }
+        )
+    if not inputs:
+        return None
+    return {
+        "share_version": 1,
+        "fusion_record_id": int(record_view["id"]),
+        "fusion_created_at": int(record_view.get("created_at") or 0),
+        "result": {
+            "display_name": str(record_view.get("result_name") or result_snapshot.get("name") or "研究モジュール"),
+            "generation": int(record_view.get("result_generation") or 0),
+            "generation_label": _module_generation_label(record_view.get("result_generation")),
+            "primary_lineage_key": str(record_view.get("result_primary_lineage_key") or ""),
+            "primary_lineage_label": str(record_view.get("result_primary_lineage_label") or "研究"),
+            "family_label": str(result_snapshot.get("family_label") or ""),
+            "family_label_compact": str(result_snapshot.get("family_label_compact") or ""),
+            "trait_label": str(result_snapshot.get("trait_label") or ""),
+            "usage_labels": list(result_snapshot.get("usage_labels") or []),
+            "stat_chips": list(result_snapshot.get("stat_chips") or []),
+            "bonuses": dict(result_snapshot.get("bonuses") or {}),
+        },
+        "inputs": inputs,
+    }
+
+
+def _module_research_share_preview(snapshot):
+    snapshot = snapshot or {}
+    result = snapshot.get("result") or {}
+    inputs = list(snapshot.get("inputs") or [])
+    input_parts = []
+    for item in inputs[:2]:
+        input_parts.append(
+            f"{item.get('lineage_label') or item.get('display_name') or '研究'} {item.get('generation_label') or ''}".strip()
+        )
+    if len(inputs) > 2:
+        input_parts.append(f"ほか{len(inputs) - 2}")
+    return {
+        "title": str(result.get("display_name") or "研究モジュール"),
+        "lineage": str(result.get("primary_lineage_label") or "研究"),
+        "generation": str(result.get("generation_label") or ""),
+        "inputs_line": " + ".join(input_parts),
+    }
+
+
+def _module_research_share_for_record(db, user_id, fusion_record_id):
+    record = db.execute(
+        """
+        SELECT *
+        FROM module_fusion_records
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+        """,
+        (int(fusion_record_id), int(user_id)),
+    ).fetchone()
+    if not record:
+        return None
+    inputs = db.execute(
+        """
+        SELECT *
+        FROM module_fusion_inputs
+        WHERE fusion_record_id = ?
+        ORDER BY input_index ASC
+        """,
+        (int(record["id"]),),
+    ).fetchall()
+    view = _module_fusion_record_view(record, inputs)
+    snapshot = _module_research_share_snapshot_from_record(view)
+    if not snapshot:
+        return None
+    return {"record": view, "snapshot": snapshot, "preview": _module_research_share_preview(snapshot)}
+
+
+def _module_research_share_from_row(row):
+    if not row or not row.get("share_id"):
+        return None
+    try:
+        snapshot = json.loads(row.get("share_snapshot_json") or "{}")
+    except (TypeError, ValueError):
+        snapshot = {}
+    if not isinstance(snapshot, dict) or not snapshot:
+        return None
+    return {
+        "id": int(row["share_id"]),
+        "fusion_record_id": int(row.get("share_fusion_record_id") or 0),
+        "snapshot": snapshot,
+        "preview": _module_research_share_preview(snapshot),
     }
 
 
@@ -41911,6 +42041,7 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
                 "user_id": (int(row["user_id"]) if row.get("user_id") else None),
                 "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
                 "message": str(row.get("message") or "").strip(),
+                "research_share": _module_research_share_from_row(row),
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
                 "avatar_url": row.get("avatar_url"),
@@ -48345,6 +48476,118 @@ def modules_research():
         summary=summary,
         page_data=page_data,
         lineage_options=_module_research_lineage_filter_options(db, user_id),
+        share_room_settings=_chat_room_settings("global_room"),
+        message=session.pop("message", None),
+    )
+
+
+@app.route("/modules/research/<int:fusion_record_id>/share", methods=["POST"])
+@login_required
+def modules_research_share(fusion_record_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    share_source = _module_research_share_for_record(db, user_id, int(fusion_record_id))
+    if not share_source:
+        session["message"] = "共有できない研究記録です。"
+        return redirect(url_for("modules_research"))
+    settings = _chat_room_settings("global_room")
+    text = str(request.form.get("message") or "").strip()
+    if len(text) > int(settings["max_chars"]):
+        session["message"] = f"{int(settings['max_chars'])}文字以内で入力してください。"
+        return redirect(url_for("modules_research"))
+    remaining = _chat_room_cooldown_remaining(
+        db,
+        user_id=user_id,
+        room_key=settings["key"],
+        cooldown_seconds=int(settings["cooldown_seconds"]),
+    )
+    if remaining > 0:
+        session["message"] = f"連投はあと{int(remaining)}秒待ってください。"
+        return redirect(url_for("modules_research"))
+    message_id = _insert_chat_message(
+        db,
+        user_id=user_id,
+        username=session.get("username") or user["username"] or "unknown",
+        message=(text or "研究成果を共有しました"),
+        room_key=settings["key"],
+    )
+    now_ts = int(time.time())
+    db.execute(
+        """
+        INSERT INTO module_research_shares (
+            chat_message_id, fusion_record_id, user_id, room_key,
+            snapshot_json, share_version, provenance_version, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            int(message_id),
+            int(fusion_record_id),
+            user_id,
+            settings["key"],
+            json.dumps(share_source["snapshot"], ensure_ascii=False, sort_keys=True),
+            int(share_source["record"].get("provenance_version") or 1),
+            now_ts,
+        ),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["CHAT_POST"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="chat_post",
+        entity_type="chat_message",
+        entity_id=int(message_id),
+        payload={
+            "room_key": settings["key"],
+            "surface": "module_research_share",
+            "message_length": len(text),
+            "preview": text[:60],
+            "fusion_record_id": int(fusion_record_id),
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "研究成果を会議室へ共有しました。"
+    return redirect(url_for("comms_rooms", room=settings["key"]))
+
+
+@app.route("/modules/research/shares/<int:share_id>")
+@login_required
+def module_research_share_detail(share_id):
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT mrs.*, cm.message, cm.username, cm.created_at AS chat_created_at, cm.deleted_at,
+               u.display_name, u.username AS account_username
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        LEFT JOIN users u ON u.id = mrs.user_id
+        WHERE mrs.id = ?
+        LIMIT 1
+        """,
+        (int(share_id),),
+    ).fetchone()
+    share = _module_research_share_from_row(
+        {
+            "share_id": row["id"],
+            "share_fusion_record_id": row["fusion_record_id"],
+            "share_snapshot_json": row["snapshot_json"],
+        }
+    ) if row and not row["deleted_at"] else None
+    if not share:
+        abort(404)
+    user_label = str((row["display_name"] if "display_name" in row.keys() else "") or row["account_username"] or row["username"] or "研究員").strip()
+    return render_template(
+        "module_research_share.html",
+        share=share,
+        message=str(row["message"] or "").strip(),
+        user_label=user_label,
+        shared_at=_format_jst_ts(_chat_created_at_ts(row["chat_created_at"])) if row["chat_created_at"] else "",
     )
 
 

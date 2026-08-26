@@ -57,7 +57,25 @@
         </div>
         <div class="feed-time">{{ item['time_jst'] }} JST</div>
       </div>
+      {% if item.research_share %}
+      <div class="comms-research-card">
+        <div class="section-kicker">研究成果</div>
+        {% if item['message'] and item['message'] != '研究成果を共有しました' %}
+        <div class="comms-message-body">「{{ item['message'] }}」</div>
+        {% endif %}
+        <div class="module-card-title">{{ item.research_share.preview.title }}</div>
+        <div class="module-card-meta">
+          <span class="module-badge active">{{ item.research_share.preview.lineage }}</span>
+          <span class="module-badge">{{ item.research_share.preview.generation }}</span>
+        </div>
+        {% if item.research_share.preview.inputs_line %}
+        <div class="robot-time">投入 {{ item.research_share.preview.inputs_line }}</div>
+        {% endif %}
+        <a class="battle-home-link" href="{{ url_for('module_research_share_detail', share_id=item.research_share.id) }}">研究記録を見る</a>
+      </div>
+      {% else %}
       <div class="comms-message-body">{{ item['message'] }}</div>
+      {% endif %}
       {% if can_manage_comms %}
       <form method="post" action="{{ url_for('admin_comms_message_delete', message_id=item['id']) }}" class="inline-form">
         <input type="hidden" name="next" value="{{ url_for('comms_rooms', room=selected_room_key) }}" />

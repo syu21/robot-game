@@ -2,6 +2,9 @@
 {% block content %}
 <div class="panel">
   <h1>モジュール研究記録</h1>
+  {% if message %}
+  <div class="card">{{ message }}</div>
+  {% endif %}
   <div class="home-inline-actions">
     <a class="battle-home-link" href="{{ url_for('modules') }}">モジュール</a>
     <a class="battle-home-link" href="{{ url_for('modules_synthesis') }}">研究合成</a>
@@ -64,7 +67,32 @@
       {% if record.snapshot.get('usage_labels') %}
       <div class="robot-time">向いている戦い: {{ record.snapshot.get('usage_labels')|join('・') }}</div>
       {% endif %}
-      <p class="link"><a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">系譜を見る</a></p>
+      <div class="home-inline-actions">
+        <a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">系譜を見る</a>
+      </div>
+      {% if not record.is_legacy and record.inputs %}
+      <details class="module-share-panel">
+        <summary class="battle-home-link">会議室に共有</summary>
+        <div class="module-share-preview">
+          <div class="section-kicker">研究成果</div>
+          <div class="module-card-title">{{ record.result_name }} / {{ record.generation_label }}</div>
+          <div class="upgrade-cost">投入</div>
+          {% for input in record.inputs %}
+          <div class="robot-time">{{ input.source_primary_lineage_label }} / {{ input.generation_label }}</div>
+          {% endfor %}
+          <div class="upgrade-cost">結果</div>
+          <div class="module-stat-chips">
+            {% for chip in record.snapshot.get('stat_chips', []) %}
+            <span class="module-stat-chip {{ chip.get('tone', 'neutral') }}">{{ chip.get('text') }}</span>
+            {% endfor %}
+          </div>
+          <form method="post" action="{{ url_for('modules_research_share', fusion_record_id=record.id) }}" class="post-form comms-room-form" novalidate>
+            <textarea name="message" maxlength="{{ share_room_settings.max_chars }}" rows="2" placeholder="ひとこと（任意）"></textarea>
+            <button type="submit">共有する</button>
+          </form>
+        </div>
+      </details>
+      {% endif %}
     </article>
     {% endfor %}
   </div>

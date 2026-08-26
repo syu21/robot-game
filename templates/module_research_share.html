@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="panel">
+  <h1>共有研究記録</h1>
+  <div class="home-inline-actions">
+    <a class="battle-home-link" href="{{ url_for('comms_rooms', room='global_room') }}">会議室へ戻る</a>
+    <a class="battle-home-link" href="{{ url_for('modules_research') }}">自分の研究記録</a>
+  </div>
+
+  <section class="card module-summary-card">
+    <div class="section-kicker">研究成果</div>
+    <h2>{{ share.snapshot.result.display_name }}</h2>
+    <div class="robot-time">研究員 {{ user_label }} / {{ shared_at }} JST</div>
+    {% if message and message != '研究成果を共有しました' %}
+    <div class="comms-message-body">「{{ message }}」</div>
+    {% endif %}
+    <div class="module-card-meta">
+      <span class="module-badge active">{{ share.snapshot.result.primary_lineage_label }}</span>
+      <span class="module-badge">{{ share.snapshot.result.generation_label }}</span>
+      {% if share.snapshot.result.family_label_compact %}
+      <span class="module-badge">{{ share.snapshot.result.family_label_compact }}</span>
+      {% endif %}
+    </div>
+    <div class="module-stat-chips">
+      {% for chip in share.snapshot.result.stat_chips %}
+      <span class="module-stat-chip {{ chip.get('tone', 'neutral') }}">{{ chip.get('text') }}</span>
+      {% endfor %}
+    </div>
+    {% if share.snapshot.result.trait_label %}
+    <div class="robot-time">作戦特性: {{ share.snapshot.result.trait_label }}</div>
+    {% else %}
+    <div class="robot-time">作戦特性: なし</div>
+    {% endif %}
+    {% if share.snapshot.result.usage_labels %}
+    <div class="robot-time">向いている戦い: {{ share.snapshot.result.usage_labels|join('・') }}</div>
+    {% endif %}
+  </section>
+
+  <section class="card module-section">
+    <div><b>投入</b></div>
+    {% for input in share.snapshot.inputs %}
+    <div class="robot-time">{{ input.display_name }} / {{ input.lineage_label }} / {{ input.generation_label }}</div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}
