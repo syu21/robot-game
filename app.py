@@ -370,6 +370,11 @@ RESEARCH_MODULE_SYNTHESIS_RESULT_LABELS = {
 MODULE_FUSION_PROVENANCE_VERSION = 1
 MODULE_LINEAGE_MAX_DEPTH = 8
 MODULE_RESEARCH_NOTE_MAX_CHARS = 280
+MODULE_RESEARCH_RECENT_SHARE_LIMIT = 20
+MODULE_RESEARCH_REACTION_TYPES = {
+    "interesting": "気になる",
+    "replicate": "追試したい",
+}
 RESEARCH_MODULE_REROLL_RULES = {
     "N": {"cost": 100, "slots": 1, "min": 1, "max": 3},
     "R": {"cost": 300, "slots": 2, "min": 2, "max": 5},
@@ -9846,6 +9851,7 @@ def _chat_room_rows(db, room_key, *, limit):
         SELECT cm.id, cm.user_id, cm.username, cm.room_key, cm.message, cm.created_at,
                mrs.id AS share_id,
                mrs.fusion_record_id AS share_fusion_record_id,
+               mrs.user_id AS share_owner_user_id,
                mrs.snapshot_json AS share_snapshot_json
         FROM chat_messages cm
         LEFT JOIN module_research_shares mrs ON mrs.chat_message_id = cm.id
@@ -14891,6 +14897,20 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_research_share_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_share_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            reaction_type TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(research_share_id, user_id, reaction_type),
+            FOREIGN KEY (research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
@@ -14899,6 +14919,8 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_room_created ON module_research_shares(room_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_fusion_record ON module_research_shares(fusion_record_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_notes_user_lineage ON module_research_notes(user_id, lineage_key)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_share_type ON module_research_share_reactions(research_share_id, reaction_type)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_user_created ON module_research_share_reactions(user_id, created_at DESC)")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
@@ -20395,6 +20417,7 @@ def _module_research_share_for_record(db, user_id, fusion_record_id):
 
 
 def _module_research_share_from_row(row):
+    row = dict(row or {})
     if not row or not row.get("share_id"):
         return None
     try:
@@ -20406,9 +20429,75 @@ def _module_research_share_from_row(row):
     return {
         "id": int(row["share_id"]),
         "fusion_record_id": int(row.get("share_fusion_record_id") or 0),
+        "owner_user_id": int(row.get("share_owner_user_id") or row.get("user_id") or 0),
         "snapshot": snapshot,
         "preview": _module_research_share_preview(snapshot),
+        "reactions": {
+            key: {"label": label, "count": 0, "pressed": False}
+            for key, label in MODULE_RESEARCH_REACTION_TYPES.items()
+        },
+        "can_react": False,
     }
+
+
+def _module_research_share_reaction_counts(db, share_ids, *, viewer_user_id=None):
+    ids = [int(share_id) for share_id in (share_ids or []) if int(share_id or 0) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    counts = {
+        share_id: {
+            key: {"label": label, "count": 0, "pressed": False}
+            for key, label in MODULE_RESEARCH_REACTION_TYPES.items()
+        }
+        for share_id in ids
+    }
+    rows = db.execute(
+        f"""
+        SELECT research_share_id, reaction_type, COUNT(*) AS c
+        FROM module_research_share_reactions
+        WHERE research_share_id IN ({placeholders})
+          AND reaction_type IN ('interesting', 'replicate')
+        GROUP BY research_share_id, reaction_type
+        """,
+        ids,
+    ).fetchall()
+    for row in rows:
+        share_id = int(row["research_share_id"] or 0)
+        reaction_type = str(row["reaction_type"] or "")
+        if share_id in counts and reaction_type in counts[share_id]:
+            counts[share_id][reaction_type]["count"] = int(row["c"] or 0)
+    if viewer_user_id:
+        pressed_rows = db.execute(
+            f"""
+            SELECT research_share_id, reaction_type
+            FROM module_research_share_reactions
+            WHERE user_id = ?
+              AND research_share_id IN ({placeholders})
+              AND reaction_type IN ('interesting', 'replicate')
+            """,
+            (int(viewer_user_id), *ids),
+        ).fetchall()
+        for row in pressed_rows:
+            share_id = int(row["research_share_id"] or 0)
+            reaction_type = str(row["reaction_type"] or "")
+            if share_id in counts and reaction_type in counts[share_id]:
+                counts[share_id][reaction_type]["pressed"] = True
+    return counts
+
+
+def _attach_module_research_share_reactions(db, shares, *, viewer_user_id=None):
+    share_list = [share for share in (shares or []) if share]
+    counts_by_share = _module_research_share_reaction_counts(
+        db,
+        [share.get("id") for share in share_list],
+        viewer_user_id=viewer_user_id,
+    )
+    for share in share_list:
+        share["reactions"] = counts_by_share.get(int(share["id"]), share.get("reactions") or {})
+        owner_user_id = int(share.get("owner_user_id") or 0)
+        share["can_react"] = bool(viewer_user_id and int(viewer_user_id) != owner_user_id)
+    return share_list
 
 
 def _module_research_summary(db, user_id):
@@ -20511,6 +20600,31 @@ def _module_research_records_page(db, user_id, *, lineage_key="", sort_key="new"
         prior_max = max(prior_max, generation)
     for item in viewed:
         item.update(flags_by_id.get(int(item["id"]), {}))
+    if viewed:
+        record_ids = [int(item["id"]) for item in viewed]
+        placeholders = ",".join(["?"] * len(record_ids))
+        share_rows = db.execute(
+            f"""
+            SELECT mrs.id AS share_id, mrs.fusion_record_id AS share_fusion_record_id,
+                   mrs.user_id AS share_owner_user_id, mrs.snapshot_json AS share_snapshot_json
+            FROM module_research_shares mrs
+            JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+            WHERE mrs.fusion_record_id IN ({placeholders})
+              AND mrs.user_id = ?
+              AND cm.deleted_at IS NULL
+            """,
+            (*record_ids, int(user_id)),
+        ).fetchall()
+        shares_by_record = {}
+        shares = []
+        for row in share_rows:
+            share = _module_research_share_from_row(row)
+            if share:
+                shares.append(share)
+                shares_by_record.setdefault(int(share["fusion_record_id"]), share)
+        _attach_module_research_share_reactions(db, shares, viewer_user_id=user_id)
+        for item in viewed:
+            item["research_share"] = shares_by_record.get(int(item["id"]))
     return {
         "records": viewed,
         "page": page,
@@ -20522,6 +20636,70 @@ def _module_research_records_page(db, user_id, *, lineage_key="", sort_key="new"
         "next_page": page + 1,
         "lineage_key": lineage_key,
         "sort_key": sort_key,
+    }
+
+
+def _module_research_recent_shares(db, *, viewer_user_id=None, limit=MODULE_RESEARCH_RECENT_SHARE_LIMIT):
+    rows = _decorate_user_rows(
+        db,
+        db.execute(
+            """
+            SELECT mrs.id AS share_id,
+                   mrs.fusion_record_id AS share_fusion_record_id,
+                   mrs.user_id AS share_owner_user_id,
+                   mrs.snapshot_json AS share_snapshot_json,
+                   cm.id AS chat_message_id,
+                   cm.user_id,
+                   cm.username,
+                   cm.message,
+                   cm.created_at
+            FROM module_research_shares mrs
+            JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+            WHERE cm.deleted_at IS NULL
+            ORDER BY mrs.created_at DESC, mrs.id DESC
+            LIMIT ?
+            """,
+            (max(1, min(50, int(limit or MODULE_RESEARCH_RECENT_SHARE_LIMIT))),),
+        ).fetchall(),
+    )
+    items = []
+    shares = []
+    for row in rows:
+        share = _module_research_share_from_row(row)
+        if not share:
+            continue
+        shares.append(share)
+        created_ts = _chat_created_at_ts(row.get("created_at"))
+        items.append(
+            {
+                "id": int(row["chat_message_id"]),
+                "share": share,
+                "user_id": int(row["user_id"] or 0),
+                "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
+                "message": str(row.get("message") or "").strip(),
+                "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
+            }
+        )
+    _attach_module_research_share_reactions(db, shares, viewer_user_id=viewer_user_id)
+    return items
+
+
+def _module_research_own_share_reaction_summary(db, user_id):
+    row = db.execute(
+        """
+        SELECT SUM(CASE WHEN msr.reaction_type = 'interesting' THEN 1 ELSE 0 END) AS interesting_count,
+               SUM(CASE WHEN msr.reaction_type = 'replicate' THEN 1 ELSE 0 END) AS replicate_count
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        LEFT JOIN module_research_share_reactions msr ON msr.research_share_id = mrs.id
+        WHERE mrs.user_id = ?
+          AND cm.deleted_at IS NULL
+        """,
+        (int(user_id),),
+    ).fetchone()
+    return {
+        "interesting_count": int((row or {})["interesting_count"] or 0) if row else 0,
+        "replicate_count": int((row or {})["replicate_count"] or 0) if row else 0,
     }
 
 
@@ -42182,21 +42360,25 @@ def _world_timeline_items(db, *, limit=COMM_WORLD_TIMELINE_LIMIT, is_admin=False
     return items[: int(limit)]
 
 
-def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
+def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT, viewer_user_id=None):
     room_value = _chat_normalize_room_key(room_key, allow_world=False)
     if not room_value:
         return []
     rows = _decorate_user_rows(db, _chat_room_rows(db, room_value, limit=limit))
     items = []
+    research_shares = []
     for row in rows:
         created_ts = _chat_created_at_ts(row.get("created_at"))
+        research_share = _module_research_share_from_row(row)
+        if research_share:
+            research_shares.append(research_share)
         items.append(
             {
                 "id": int(row["id"]),
                 "user_id": (int(row["user_id"]) if row.get("user_id") else None),
                 "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
                 "message": str(row.get("message") or "").strip(),
-                "research_share": _module_research_share_from_row(row),
+                "research_share": research_share,
                 "time_jst": (_format_jst_ts(created_ts) if created_ts else str(row.get("created_at") or "-")),
                 "avatar_path": row.get("avatar_path") or DEFAULT_AVATAR_REL,
                 "avatar_url": row.get("avatar_url"),
@@ -42210,6 +42392,7 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT):
                 "presence_title": row.get("presence_title") or "いまは静かに待機中のロボ使い",
             }
         )
+    _attach_module_research_share_reactions(db, research_shares, viewer_user_id=viewer_user_id)
     return items
 
 
@@ -48618,7 +48801,7 @@ def modules_research():
     sort_key = str(request.args.get("sort") or "new").strip()
     summary = _module_research_summary(db, user_id)
     tab = str(request.args.get("tab") or "records").strip()
-    tab = tab if tab in {"records", "observations"} else "records"
+    tab = tab if tab in {"records", "observations", "recent"} else "records"
     observation_sort = str(request.args.get("observation_sort") or "recent").strip()
     page_data = _module_research_records_page(
         db,
@@ -48628,6 +48811,18 @@ def modules_research():
         page=page,
         per_page=20,
     )
+    if tab == "recent":
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["MODULE_RESEARCH_VIEW"],
+            user_id=user_id,
+            request_id=getattr(g, "request_id", None),
+            action_key="module_research_recent_view",
+            entity_type="module_research",
+            payload={"surface": "module_research_recent"},
+            ip=request.remote_addr,
+        )
+        db.commit()
     return render_template(
         "modules_research.html",
         user=user,
@@ -48635,6 +48830,8 @@ def modules_research():
         page_data=page_data,
         active_tab=tab,
         observation_atlas=_module_observation_atlas(db, user_id, sort_key=observation_sort),
+        recent_research_items=_module_research_recent_shares(db, viewer_user_id=user_id),
+        own_share_reaction_summary=_module_research_own_share_reaction_summary(db, user_id),
         lineage_options=_module_research_lineage_filter_options(db, user_id),
         share_room_settings=_chat_room_settings("global_room"),
         message=session.pop("message", None),
@@ -48805,19 +49002,111 @@ def module_research_share_detail(share_id):
         {
             "share_id": row["id"],
             "share_fusion_record_id": row["fusion_record_id"],
+            "share_owner_user_id": row["user_id"],
             "share_snapshot_json": row["snapshot_json"],
         }
     ) if row and not row["deleted_at"] else None
     if not share:
         abort(404)
+    _attach_module_research_share_reactions(db, [share], viewer_user_id=int(session["user_id"]))
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_RESEARCH_VIEW"],
+        user_id=int(session["user_id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="module_research_public_view",
+        entity_type="module_research_share",
+        entity_id=int(share_id),
+        payload={"surface": "module_research_public", "research_share_id": int(share_id)},
+        ip=request.remote_addr,
+    )
+    db.commit()
     user_label = str((row["display_name"] if "display_name" in row.keys() else "") or row["account_username"] or row["username"] or "研究員").strip()
     return render_template(
         "module_research_share.html",
         share=share,
+        reaction_types=MODULE_RESEARCH_REACTION_TYPES,
         message=str(row["message"] or "").strip(),
         user_label=user_label,
         shared_at=_format_jst_ts(_chat_created_at_ts(row["chat_created_at"])) if row["chat_created_at"] else "",
     )
+
+
+@app.route("/modules/research/shares/<int:share_id>/react", methods=["POST"])
+@login_required
+def module_research_share_react(share_id):
+    reaction_type = str(request.form.get("reaction_type") or "").strip()
+    if reaction_type not in MODULE_RESEARCH_REACTION_TYPES:
+        abort(400)
+    surface = str(request.form.get("surface") or "").strip()
+    if surface not in {"comms_room", "module_research_recent", "module_research_public"}:
+        surface = "module_research_public"
+    next_url = _relative_redirect_target(
+        request.form.get("next"),
+        url_for("module_research_share_detail", share_id=int(share_id)),
+    )
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute(
+        "SELECT id, is_banned FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not user or int(user["is_banned"] or 0) == 1:
+        abort(403)
+    share = db.execute(
+        """
+        SELECT mrs.id, mrs.user_id AS owner_user_id, cm.deleted_at
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        WHERE mrs.id = ?
+        LIMIT 1
+        """,
+        (int(share_id),),
+    ).fetchone()
+    if not share or share["deleted_at"]:
+        abort(404)
+    owner_user_id = int(share["owner_user_id"] or 0)
+    if owner_user_id == user_id:
+        abort(403)
+    existing = db.execute(
+        """
+        SELECT id
+        FROM module_research_share_reactions
+        WHERE research_share_id = ? AND user_id = ? AND reaction_type = ?
+        LIMIT 1
+        """,
+        (int(share_id), user_id, reaction_type),
+    ).fetchone()
+    action = "remove" if existing else "add"
+    if existing:
+        db.execute("DELETE FROM module_research_share_reactions WHERE id = ?", (int(existing["id"]),))
+    else:
+        db.execute(
+            """
+            INSERT OR IGNORE INTO module_research_share_reactions (research_share_id, user_id, reaction_type, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (int(share_id), user_id, reaction_type, int(time.time())),
+        )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_RESEARCH_REACT"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_research_react",
+        entity_type="module_research_share",
+        entity_id=int(share_id),
+        payload={
+            "research_share_id": int(share_id),
+            "reaction_type": reaction_type,
+            "action": action,
+            "owner_user_id": owner_user_id,
+            "surface": surface,
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    return redirect(next_url)
 
 
 @app.route("/modules/<int:module_instance_id>/lineage")
@@ -56117,7 +56406,7 @@ def comms_rooms():
         room_defs=COMM_ROOM_DEFS,
         selected_room_key=selected_room_key,
         selected_room=COMM_ROOM_DEF_MAP[selected_room_key],
-        room_items=_room_message_items(db, selected_room_key, limit=COMM_ROOM_TIMELINE_LIMIT),
+        room_items=_room_message_items(db, selected_room_key, limit=COMM_ROOM_TIMELINE_LIMIT, viewer_user_id=int(user["id"])),
         room_settings=_chat_room_settings(selected_room_key),
         auto_refresh_seconds=COMM_AUTO_REFRESH_SECONDS,
         room_activity_counts_by_key=room_activity_counts_by_key,
@@ -72253,6 +72542,89 @@ def _admin_part_mechanism_snapshot(db, *, window_days=7):
     }
 
 
+def _admin_module_research_reaction_snapshot(db, *, window_days=7):
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - max(1, int(window_days or 7)) * 86400
+    shared = db.execute(
+        """
+        SELECT COUNT(*) AS share_count, COUNT(DISTINCT mrs.user_id) AS share_user_count
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        WHERE mrs.created_at >= ?
+          AND cm.deleted_at IS NULL
+        """,
+        (cutoff_ts,),
+    ).fetchone()
+    reaction_rows = db.execute(
+        """
+        SELECT reaction_type, COUNT(*) AS reaction_count, COUNT(DISTINCT user_id) AS user_count
+        FROM module_research_share_reactions
+        WHERE reaction_type IN ('interesting', 'replicate')
+        GROUP BY reaction_type
+        """
+    ).fetchall()
+    reactions = {
+        key: {"label": label, "reaction_count": 0, "user_count": 0}
+        for key, label in MODULE_RESEARCH_REACTION_TYPES.items()
+    }
+    for row in reaction_rows:
+        reaction_type = str(row["reaction_type"] or "")
+        if reaction_type in reactions:
+            reactions[reaction_type]["reaction_count"] = int(row["reaction_count"] or 0)
+            reactions[reaction_type]["user_count"] = int(row["user_count"] or 0)
+    view_rows = db.execute(
+        """
+        SELECT CAST(json_extract(payload_json, '$.surface') AS TEXT) AS surface,
+               COUNT(DISTINCT user_id) AS user_count
+        FROM world_events_log
+        WHERE event_type = ?
+          AND created_at >= ?
+          AND CAST(json_extract(payload_json, '$.surface') AS TEXT) IN ('module_research_recent', 'module_research_public')
+        GROUP BY surface
+        """,
+        (AUDIT_EVENT_TYPES["MODULE_RESEARCH_VIEW"], cutoff_ts),
+    ).fetchall()
+    view_users = {"module_research_recent": 0, "module_research_public": 0}
+    for row in view_rows:
+        surface = str(row["surface"] or "")
+        if surface in view_users:
+            view_users[surface] = int(row["user_count"] or 0)
+    followup = db.execute(
+        """
+        SELECT COUNT(DISTINCT msr.user_id) AS user_count
+        FROM module_research_share_reactions msr
+        WHERE msr.reaction_type = 'replicate'
+          AND EXISTS (
+                SELECT 1
+                FROM module_fusion_records mfr
+                WHERE mfr.user_id = msr.user_id
+                  AND mfr.created_at >= msr.created_at
+                  AND mfr.created_at <= msr.created_at + 86400
+                LIMIT 1
+          )
+        """
+    ).fetchone()
+    self_reactions = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM module_research_share_reactions msr
+        JOIN module_research_shares mrs ON mrs.id = msr.research_share_id
+        WHERE msr.user_id = mrs.user_id
+        """
+    ).fetchone()
+    return {
+        "window_days": int(window_days or 7),
+        "share_count": int((shared or {})["share_count"] or 0) if shared else 0,
+        "share_user_count": int((shared or {})["share_user_count"] or 0) if shared else 0,
+        "recent_view_users": int(view_users["module_research_recent"]),
+        "public_view_users": int(view_users["module_research_public"]),
+        "interesting": reactions["interesting"],
+        "replicate": reactions["replicate"],
+        "replicate_24h_fusion_users": int((followup or {})["user_count"] or 0) if followup else 0,
+        "self_reaction_count": int((self_reactions or {})["c"] or 0) if self_reactions else 0,
+    }
+
+
 @app.route("/admin/metrics", methods=["GET", "POST"])
 @login_required
 def admin_metrics():
@@ -72292,6 +72664,7 @@ def admin_metrics():
     robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
     tactical_presets_snapshot = _admin_tactical_presets_snapshot(db, window_days=funnel_days)
     part_mechanism_snapshot = _admin_part_mechanism_snapshot(db, window_days=funnel_days)
+    module_research_reaction_snapshot = _admin_module_research_reaction_snapshot(db, window_days=funnel_days)
     layer6_research_snapshot = _admin_layer6_research_snapshot(db, week_key=week_key)
     analytics_counts = _analytics_exclusion_counts(db)
     daily_explore_rows = []
@@ -72338,6 +72711,7 @@ def admin_metrics():
         robot_tuning_snapshot=robot_tuning_snapshot,
         tactical_presets_snapshot=tactical_presets_snapshot,
         part_mechanism_snapshot=part_mechanism_snapshot,
+        module_research_reaction_snapshot=module_research_reaction_snapshot,
         analytics_counts=analytics_counts,
         core_obs=core_obs,
         selected_sample_size=int(sample_size or 500),

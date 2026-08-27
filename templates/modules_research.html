@@ -12,6 +12,7 @@
   <div class="home-inline-actions">
     <a class="battle-home-link{% if active_tab == 'records' %} active{% endif %}" href="{{ url_for('modules_research') }}">実験記録</a>
     <a class="battle-home-link{% if active_tab == 'observations' %} active{% endif %}" href="{{ url_for('modules_research', tab='observations') }}">観測帳</a>
+    <a class="battle-home-link{% if active_tab == 'recent' %} active{% endif %}" href="{{ url_for('modules_research', tab='recent') }}">最近の研究</a>
   </div>
 
   {% if active_tab == 'observations' %}
@@ -58,6 +59,48 @@
     <div class="robot-time">研究合成で結果系統が確認されると、ここに追加されます。</div>
   </section>
   {% endif %}
+  {% elif active_tab == 'recent' %}
+  <section class="card module-summary-card">
+    <div><b>最近の研究</b></div>
+    <div class="robot-time">共有された研究成果を新しい順に表示します。</div>
+  </section>
+
+  {% if recent_research_items %}
+  <div class="module-card-grid">
+    {% for item in recent_research_items %}
+    <article class="module-card">
+      <div class="robot-time">研究員 {{ item.user_label }} / {{ item.time_jst }} JST</div>
+      {% if item.message and item.message != '研究成果を共有しました' %}
+      <div class="comms-message-body">「{{ item.message }}」</div>
+      {% endif %}
+      <div class="module-card-title">{{ item.share.preview.title }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge active">{{ item.share.preview.lineage }}</span>
+        <span class="module-badge">{{ item.share.preview.generation }}</span>
+      </div>
+      {% if item.share.preview.inputs_line %}
+      <div class="robot-time">投入 {{ item.share.preview.inputs_line }}</div>
+      {% endif %}
+      <div class="module-card-meta">
+        {% for reaction_key, reaction in item.share.reactions.items() %}
+        <form method="post" action="{{ url_for('module_research_share_react', share_id=item.share.id) }}" class="inline-form">
+          <input type="hidden" name="reaction_type" value="{{ reaction_key }}" />
+          <input type="hidden" name="surface" value="module_research_recent" />
+          <input type="hidden" name="next" value="{{ url_for('modules_research', tab='recent') }}" />
+          <button type="submit" class="module-badge {{ 'active' if reaction.pressed else 'muted' }}" aria-pressed="{{ 'true' if reaction.pressed else 'false' }}" {% if not item.share.can_react %}disabled{% endif %}>{{ '✓ ' if reaction.pressed else '' }}{{ reaction.label }} {{ reaction.count }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      <p class="link"><a class="battle-home-link" href="{{ url_for('module_research_share_detail', share_id=item.share.id) }}">研究を見る</a></p>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <section class="card">
+    <div class="upgrade-cost">まだ共有された研究はありません。</div>
+    <div class="robot-time">最初の研究記録を残してみよう。</div>
+  </section>
+  {% endif %}
   {% else %}
   <section class="card module-summary-card">
     <div><b>合成実験</b></div>
@@ -65,6 +108,12 @@
       <span class="module-badge active">{{ summary.experiment_count }}回</span>
       <span class="module-badge">観測済み系統 {{ summary.observed_lineage_count }}種</span>
       <span class="module-badge">{{ summary.max_generation_label }}</span>
+      {% if own_share_reaction_summary.interesting_count %}
+      <span class="module-badge">気になる {{ own_share_reaction_summary.interesting_count }}</span>
+      {% endif %}
+      {% if own_share_reaction_summary.replicate_count %}
+      <span class="module-badge">追試したい {{ own_share_reaction_summary.replicate_count }}</span>
+      {% endif %}
     </div>
     <div class="robot-time">自分の合成結果として生成された系統だけを観測済みとして記録します。</div>
   </section>
@@ -115,6 +164,13 @@
       {% endif %}
       {% if record.snapshot.get('usage_labels') %}
       <div class="robot-time">向いている戦い: {{ record.snapshot.get('usage_labels')|join('・') }}</div>
+      {% endif %}
+      {% if record.research_share %}
+      <div class="module-card-meta">
+        <span class="module-badge ok">会議室共有済み</span>
+        <span class="module-badge">気になる {{ record.research_share.reactions.interesting.count }}</span>
+        <span class="module-badge">追試したい {{ record.research_share.reactions.replicate.count }}</span>
+      </div>
       {% endif %}
       <div class="home-inline-actions">
         <a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">系譜を見る</a>

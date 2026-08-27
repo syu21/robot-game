@@ -893,3 +893,13 @@
 - `module_research_notes` に本人専用メモを保存。メモは公開研究共有には含めない。
 - Phase 3の公開共有は共有された1実験だけを表示し、他人の観測帳は公開しない。
 - 合成アルゴリズム、世代計算、ステータス、戦闘性能、BATTLE CODEは変更なし。
+
+## 27. モジュール研究システム Phase 5 研究反応
+- 共有研究に `気になる` / `追試したい` のtoggleリアクションを追加。
+- `module_research_share_reactions` で `research_share_id + user_id + reaction_type` を一意化し、重複を防止する。
+- 会議室研究カード、公開研究詳細、`/modules/research?tab=recent` の最近の研究で同じPhase 3 snapshotとreaction数を表示する。
+- 自分自身の共有研究、削除済みchat message、未知reaction typeはserver-sideで拒否する。
+- リアクションはchat投稿を作らず、通常会議室投稿CTには影響しない。
+- 管理メトリクスに共有、閲覧、気になる、追試したい、追試反応後24h合成の運用確認を追加。
+- 人気順、ランキング、希少度、発現率、レシピコピー、自動追試、研究報酬は追加なし。
+- 合成アルゴリズム、世代計算、ステータス、戦闘性能、BATTLE CODEは変更なし。

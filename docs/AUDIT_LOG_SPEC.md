@@ -724,3 +724,18 @@ COMBAT SIGNAL v1:
   - `note_length`: 保存後メモ文字数
 - payloadにはメモ本文、内部確率、内部重み、乱数seed、レシピ推定を追加しない。
 - 観測帳閲覧、系統詳細閲覧、Phase 3共有詳細閲覧では新規auditを出さない。
+
+## 18. モジュール研究反応
+- 共有研究への軽量リアクションtoggle時に `audit.module.research.react` を記録する。
+- payload:
+  - `research_share_id`: `module_research_shares.id`
+  - `reaction_type`: `interesting` または `replicate`
+  - `action`: `add` または `remove`
+  - `owner_user_id`: 共有研究の投稿者
+  - `surface`: `comms_room` / `module_research_recent` / `module_research_public`
+- 最近の研究一覧と公開研究詳細の閲覧時に `audit.module.research.view` を記録する。
+- view payload:
+  - `surface`: `module_research_recent` または `module_research_public`
+  - `research_share_id`: 公開研究詳細のみ
+- payloadにはレシピ推定、内部確率、内部重み、乱数seed、研究メモ本文、観測帳内容を追加しない。
+- `/admin/metrics` は上記auditとreaction tableから共有件数、閲覧ユーザー、reaction数、追試反応後24h合成を集計する。

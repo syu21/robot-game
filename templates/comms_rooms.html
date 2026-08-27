@@ -72,6 +72,16 @@
         <div class="robot-time">投入 {{ item.research_share.preview.inputs_line }}</div>
         {% endif %}
         <a class="battle-home-link" href="{{ url_for('module_research_share_detail', share_id=item.research_share.id) }}">研究記録を見る</a>
+        <div class="module-card-meta">
+          {% for reaction_key, reaction in item.research_share.reactions.items() %}
+          <form method="post" action="{{ url_for('module_research_share_react', share_id=item.research_share.id) }}" class="inline-form">
+            <input type="hidden" name="reaction_type" value="{{ reaction_key }}" />
+            <input type="hidden" name="surface" value="comms_room" />
+            <input type="hidden" name="next" value="{{ url_for('comms_rooms', room=selected_room_key) }}" />
+            <button type="submit" class="module-badge {{ 'active' if reaction.pressed else 'muted' }}" aria-pressed="{{ 'true' if reaction.pressed else 'false' }}" {% if not item.research_share.can_react %}disabled{% endif %}>{{ '✓ ' if reaction.pressed else '' }}{{ reaction.label }} {{ reaction.count }}</button>
+          </form>
+          {% endfor %}
+        </div>
       </div>
       {% else %}
       <div class="comms-message-body">{{ item['message'] }}</div>

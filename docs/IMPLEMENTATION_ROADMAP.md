@@ -752,3 +752,15 @@
 - 非公開: 観測帳は本人だけ。Phase 3共有詳細は共有された1実験のsnapshotだけを表示する。
 - 非目標: 発現率、成功率、内部重み、最適レシピ、おすすめ合成、世界ランキング、観測報酬。
 - 非変更: 合成アルゴリズム、世代計算、ステータス、戦闘性能、BATTLE CODE。
+
+## Phase 4.9: モジュール研究システム Phase 5 研究反応
+
+- 目的: 共有された研究成果に他プレイヤーが軽く反応できる入口を作り、研究共有から追試意欲へのループを作る。
+- UI: 会議室研究カード、公開研究詳細、`/modules/research?tab=recent` に `気になる` / `追試したい` の小さなtoggleボタンを表示する。
+- DB: `module_research_share_reactions` に `interesting / replicate` のallowlist値だけ保存し、`UNIQUE(research_share_id, user_id, reaction_type)` を持つ。
+- 集計: 20件表示でもreaction countと押済み状態はshare IDsへ一括 `GROUP BY` 取得する。
+- 最近の研究: Phase 3の `module_research_shares.snapshot_json` を正本に、削除済みchat messageを除外して最新順のみ表示する。
+- 監査: `audit.module.research.react` でadd/remove、reaction_type、surface、owner_user_idを記録する。閲覧は `audit.module.research.view`。
+- 管理: `/admin/metrics` で共有、閲覧、リアクション、追試反応後24h合成を運用確認する。ランキング化しない。
+- 非目標: 人気順、世界初、世界最高、希少度、発現率、レシピコピー、自動追試、研究報酬、他人の観測帳公開。
+- 非変更: 合成アルゴリズム、世代計算、ステータス、戦闘性能、BATTLE CODE、通常会議室投稿CT。

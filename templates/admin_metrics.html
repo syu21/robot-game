@@ -46,6 +46,52 @@
   <section class="card admin-metrics-panel">
     <div class="admin-metrics-section-head">
       <div>
+        <div class="admin-metrics-section-title">モジュール研究反応</div>
+        <div class="admin-metrics-section-sub">直近{{ module_research_reaction_snapshot.window_days }}日の共有・閲覧と、現在の軽量リアクションを確認します。</div>
+      </div>
+    </div>
+    <div class="admin-metrics-note-grid">
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">共有</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.share_count }}件</div>
+        <div class="robot-time">{{ module_research_reaction_snapshot.share_user_count }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">最近の研究閲覧</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.recent_view_users }}人</div>
+        <div class="robot-time">観測帳やメモは含めない</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">公開研究詳細閲覧</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.public_view_users }}人</div>
+        <div class="robot-time">共有された1実験のみ</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">気になる</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.interesting.reaction_count }}件</div>
+        <div class="robot-time">{{ module_research_reaction_snapshot.interesting.user_count }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">追試したい</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.replicate.reaction_count }}件</div>
+        <div class="robot-time">{{ module_research_reaction_snapshot.replicate.user_count }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">追試反応後24h 合成</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.replicate_24h_fusion_users }}人</div>
+        <div class="robot-time">因果ではなく行動相関</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">自分への反応</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.self_reaction_count }}件</div>
+        <div class="robot-time">通常は0</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card admin-metrics-panel">
+    <div class="admin-metrics-section-head">
+      <div>
         <div class="admin-metrics-section-title">パーツ機構特性</div>
         <div class="admin-metrics-section-sub">R以上装備と直近{{ part_mechanism_snapshot.window_days }}日audit / 異常個体結果を参照します。</div>
       </div>

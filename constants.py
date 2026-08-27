@@ -237,6 +237,8 @@ AUDIT_EVENT_TYPES = {
     "MODULE_REROLL_EXPIRE": "audit.module.reroll.expire",
     "MODULE_REROLL_RESTORE": "audit.module.reroll.restore",
     "MODULE_RESEARCH_NOTE_UPDATE": "audit.module.research.note.update",
+    "MODULE_RESEARCH_REACT": "audit.module.research.react",
+    "MODULE_RESEARCH_VIEW": "audit.module.research.view",
     "FACTORY_ENSURE_DEFAULTS": "audit.factory.ensure_defaults",
     "FACTORY_CLAIM": "audit.factory.claim",
     "FACTORY_UPGRADE": "audit.factory.upgrade",

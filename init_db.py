@@ -1558,6 +1558,20 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_research_share_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            research_share_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            reaction_type TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(research_share_id, user_id, reaction_type),
+            FOREIGN KEY (research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -4624,6 +4638,8 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_room_created ON module_research_shares(room_key, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_shares_fusion_record ON module_research_shares(fusion_record_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_notes_user_lineage ON module_research_notes(user_id, lineage_key)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_share_type ON module_research_share_reactions(research_share_id, reaction_type)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_user_created ON module_research_share_reactions(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")

@@ -34,6 +34,16 @@
     {% if share.snapshot.result.usage_labels %}
     <div class="robot-time">向いている戦い: {{ share.snapshot.result.usage_labels|join('・') }}</div>
     {% endif %}
+    <div class="module-card-meta">
+      {% for reaction_key, reaction in share.reactions.items() %}
+      <form method="post" action="{{ url_for('module_research_share_react', share_id=share.id) }}" class="inline-form">
+        <input type="hidden" name="reaction_type" value="{{ reaction_key }}" />
+        <input type="hidden" name="surface" value="module_research_public" />
+        <input type="hidden" name="next" value="{{ url_for('module_research_share_detail', share_id=share.id) }}" />
+        <button type="submit" class="module-badge {{ 'active' if reaction.pressed else 'muted' }}" aria-pressed="{{ 'true' if reaction.pressed else 'false' }}" {% if not share.can_react %}disabled{% endif %}>{{ '✓ ' if reaction.pressed else '' }}{{ reaction.label }} {{ reaction.count }}</button>
+      </form>
+      {% endfor %}
+    </div>
   </section>
 
   <section class="card module-section">
