@@ -334,40 +334,6 @@
   {% endfor %}
 </div>
 {% endif %}
-{% if solo_research_home %}
-<section class="card module-summary-card">
-  <div class="home-explore-kicker">次の研究</div>
-  {% set next_task = solo_research_home.get('next_task') %}
-  {% set research_summary = solo_research_home.get('summary') or {} %}
-  <h2>{{ next_task['title'] if next_task else '研究課題ボード' }}</h2>
-  <div class="module-card-meta">
-    <span class="module-badge">パーツ図鑑 {{ research_summary.get('parts_percent', 0) }}%</span>
-    <span class="module-badge">完成シリーズ {{ research_summary.get('series_done', 0) }}</span>
-    <span class="module-badge">設計機 {{ research_summary.get('design_count', 0) }}</span>
-  </div>
-  {% if solo_research_home.get('next_series') %}
-  {% set next_series = solo_research_home.get('next_series') %}
-  <div class="robot-time">次のシリーズ: {{ next_series.label }} {{ next_series.done }} / {{ next_series.total }}</div>
-  {% endif %}
-  {% if next_task %}
-  <div class="upgrade-cost">{{ next_task['category_label'] }} / {{ next_task['progress_line'] }} / 報酬: 研究EXP {{ next_task['reward_exp'] }}</div>
-  <div class="robot-time">{{ next_task['description'] }}</div>
-  {% endif %}
-  <div class="module-card-grid">
-    {% for task in solo_research_home.get('tasks', []) %}
-    <div class="module-card {{ 'selected' if task.get('is_completed') else '' }}">
-      <div class="module-card-title">{{ task['category_label'] }}</div>
-      <div class="upgrade-cost">{{ task['title'] }}</div>
-      <div class="robot-time">{{ task['progress_line'] }} / 研究EXP {{ task['reward_exp'] }}</div>
-    </div>
-    {% endfor %}
-  </div>
-  {% if solo_research_home.get('recent_records') %}
-  <div class="robot-time">最近の自己記録: {{ solo_research_home['recent_records'][0]['label'] }}</div>
-  {% endif %}
-  <p class="link"><a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳を開く</a></p>
-</section>
-{% endif %}
 <div class="home-layout-grid priority-core">
   <div class="home-main-stack">
     <section class="panel home-current-robot {% if profile_rewards and profile_rewards.frame_key %}achievement-frame achievement-frame--{{ profile_rewards.frame_key|replace('_', '-') }}{% endif %}">
@@ -570,7 +536,7 @@
         </div>
       {% endif %}
     </section>
-    {% if (factory_base_home and factory_base_home['equipped']) or daily_research_card or anomaly_home or show_tower_entry %}
+    {% if (factory_base_home and factory_base_home['equipped']) or anomaly_home or show_tower_entry %}
     <div class="home-compact-tools" aria-label="研究所関連">
     {% if factory_base_home and factory_base_home['equipped'] %}
     <section class="panel home-base-panel">
@@ -600,39 +566,6 @@
             |
             <a class="battle-home-link" href="{{ url_for('base_ranking') }}">話題の基地</a>
           </p>
-        </div>
-        {% endif %}
-      </div>
-    </section>
-    {% endif %}
-    {% if daily_research_card %}
-    <section class="panel daily-research-home-panel">
-      <div class="card daily-research-home-card home-fold-card">
-        <div class="home-fold-summary">
-          <div>
-            <div class="home-explore-kicker">今日の研究指令</div>
-            <div><b>{% if home_daily_research_collapsed %}▶{% else %}▼{% endif %} {{ daily_research_card['title'] }}</b></div>
-          </div>
-          <div class="home-fold-actions">
-            <div class="home-explore-status">研究継続 {{ daily_research_card.get('streak', 0) }}日</div>
-            <form method="post" action="{{ url_for('home_daily_research_expand' if home_daily_research_collapsed else 'home_daily_research_collapse') }}" class="inline-form inline-form-top">
-              <input type="hidden" name="next" value="{{ request.path }}#home-daily-research-panel" />
-              <button type="submit" class="btn-secondary">{{ '開く' if home_daily_research_collapsed else 'ホームから隠す' }}</button>
-            </form>
-          </div>
-        </div>
-        {% if not home_daily_research_collapsed %}
-        <div class="daily-research-home-body home-fold-body" id="home-daily-research-panel">
-          {% for mission in daily_research_card.get('missions', []) %}
-          <div class="home-explore-context">
-            {% if mission['is_done'] %}✓ 完了{% else %}□{% endif %}
-            <b>{% if mission.get('is_recommended') %}おすすめ研究：{% endif %}{{ mission['title'] }}</b>
-            <span>{{ mission['progress_line'] }}</span>
-          </div>
-          {% endfor %}
-          <div class="home-inline-actions">
-            <p class="link"><a class="battle-home-link" href="{{ url_for('research_daily') }}">確認する</a></p>
-          </div>
         </div>
         {% endif %}
       </div>
@@ -872,8 +805,9 @@
           id="home-comms-pane-world"
           data-home-comms-pane="world"
           data-home-comms-hash="home-comms-world"
-          data-home-comms-source-url="{{ url_for('comms_world') }}"
+          data-home-comms-source-url="{{ url_for('home_comms_preview', tab='world') }}"
           data-home-comms-refresh-ms="{{ 18 * 1000 }}"
+          data-home-comms-loaded="1"
           aria-hidden="false"
         >
           <div class="home-comms-toolbar">
@@ -933,7 +867,7 @@
           id="home-comms-pane-rooms"
           data-home-comms-pane="rooms"
           data-home-comms-hash="home-comms-rooms-{{ home_comm_initial_room_key }}"
-          data-home-comms-source-url="{{ url_for('comms_rooms') }}"
+          data-home-comms-source-url="{{ url_for('home_comms_preview', tab='rooms', room=home_comm_initial_room_key) }}"
           aria-hidden="true"
           hidden
         >
@@ -956,8 +890,9 @@
             class="home-comms-room-pane{% if loop.first %} is-active{% endif %}"
             id="home-comms-room-pane-{{ room['key'] }}"
             data-home-comms-room-pane="{{ room['key'] }}"
-            data-home-comms-source-url="{{ url_for('comms_rooms', room=room['key']) }}"
+            data-home-comms-source-url="{{ url_for('home_comms_preview', tab='rooms', room=room['key']) }}"
             data-home-comms-refresh-ms="{{ 18 * 1000 }}"
+            data-home-comms-loaded="{% if room['key'] == home_comm_initial_room_key %}1{% else %}0{% endif %}"
             aria-hidden="{% if loop.first %}false{% else %}true{% endif %}"
             {% if not loop.first %}hidden{% endif %}
           >
@@ -989,7 +924,11 @@
                 <div class="comms-message-body">{{ item['message'] }}</div>
               </article>
               {% else %}
+              {% if room['key'] != home_comm_initial_room_key %}
+              <div class="home-mini-log-empty" data-home-comms-lazy-placeholder="1">タブを開くと最新の会議室ログを取得します。</div>
+              {% else %}
               <div class="home-mini-log-empty">まだこの部屋には投稿がありません。</div>
+              {% endif %}
               {% endfor %}
             </div>
             <div class="link"><a href="{{ url_for('comms_rooms', room=room['key']) }}">通信をもっと見る</a></div>
@@ -1002,7 +941,7 @@
           id="home-comms-pane-faction"
           data-home-comms-pane="faction"
           data-home-comms-hash="home-comms-faction"
-          data-home-comms-source-url="{{ url_for('comms_faction') }}"
+          data-home-comms-source-url="{{ url_for('home_comms_preview', tab='faction') }}"
           aria-hidden="true"
           hidden
         >
@@ -1018,7 +957,8 @@
           id="home-comms-pane-personal"
           data-home-comms-pane="personal"
           data-home-comms-hash="home-comms-personal"
-          data-home-comms-source-url="{{ url_for('comms_personal') }}"
+          data-home-comms-source-url="{{ url_for('home_comms_preview', tab='personal') }}"
+          data-home-comms-loaded="0"
           aria-hidden="true"
           hidden
         >
@@ -1038,7 +978,7 @@
               {% endfor %}
             </article>
             {% else %}
-            <div class="home-mini-log-empty">まだ個人ログに表示できる出来事がありません。</div>
+            <div class="home-mini-log-empty" data-home-comms-lazy-placeholder="1">タブを開くと最新の個人ログを取得します。</div>
             {% endfor %}
           </div>
           <div class="link"><a href="{{ url_for('comms_personal') }}">通信をもっと見る</a></div>
@@ -1101,46 +1041,89 @@
       </div>
     </div>
     {% endif %}
-    {% if home_appliance_campaign and home_appliance_campaign.get('enabled') %}
-    <div class="card home-insect-research-card home-appliance-campaign-card">
-      <div class="home-insect-research-head">
+    {% if solo_research_home or daily_research_card or (home_appliance_campaign and home_appliance_campaign.get('enabled')) %}
+    <section class="card home-research-hub-card" id="home-research-hub">
+      <div class="home-research-hub-head">
         <div>
-          <div class="home-explore-kicker">期間限定</div>
-          <div class="home-insect-research-title">家電研究キャンペーン</div>
+          <div class="home-explore-kicker">研究</div>
+          <h2>研究</h2>
         </div>
-        <a class="battle-home-link" href="{{ url_for('map_view') }}">出撃先を見る</a>
+        <a class="battle-home-link" href="{{ url_for('research_view') }}">研究手帳</a>
       </div>
-      {% if home_appliance_campaign.get('image_paths') %}
-      <div class="home-appliance-campaign-visuals" aria-label="家電シリーズ">
-        {% for image_path in home_appliance_campaign.get('image_paths', []) %}
-        <img src="{{ url_for('static', filename=image_path) }}" alt="家電シリーズ" loading="lazy" decoding="async" />
-        {% endfor %}
+      {% if solo_research_home %}
+      {% set solo_next_task = solo_research_home.get('next_task') %}
+      {% set solo_summary = solo_research_home.get('summary') or {} %}
+      <div class="home-research-hub-block">
+        <div class="home-research-hub-row">
+          <div>
+            <div class="home-research-hub-title">廃品調査</div>
+            {% if solo_next_task %}
+            <div class="upgrade-cost">{{ solo_next_task['title'] }} / {{ solo_next_task['progress_line'] }} / 研究EXP {{ solo_next_task['reward_exp'] }}</div>
+            <div class="robot-time">{{ solo_next_task['description'] }}</div>
+            {% else %}
+            <div class="upgrade-cost">次の研究課題を準備中</div>
+            {% endif %}
+          </div>
+          <a class="battle-home-link" href="{{ url_for('research_view') }}">詳細</a>
+        </div>
+        <div class="home-research-chip-row" aria-label="廃品調査進捗">
+          <span class="home-research-chip">パーツ図鑑 {{ solo_summary.get('parts_percent', 0) }}%</span>
+          <span class="home-research-chip">完成シリーズ {{ solo_summary.get('series_done', 0) }}</span>
+          <span class="home-research-chip">設計機 {{ solo_summary.get('design_count', 0) }}</span>
+          {% if solo_research_home.get('next_series') %}
+          {% set next_series = solo_research_home.get('next_series') %}
+          <span class="home-research-chip">{{ next_series.label }} {{ next_series.done }} / {{ next_series.total }}</span>
+          {% endif %}
+        </div>
       </div>
       {% endif %}
-      <div class="upgrade-cost">
-        新登場！家電シリーズ全{{ home_appliance_campaign.get('part_count', 32) }}パーツが通常探索で出現中！
-      </div>
-      <div class="home-appliance-motif-grid">
-        {% for motif in home_appliance_campaign.get('motifs', []) %}
-        <span>{{ motif }}</span>
-        {% endfor %}
-      </div>
-      <div class="home-insect-research-grid">
-        <div class="home-insect-research-stat">
-          <span>今週の家電パーツ入手数</span>
-          <b>{{ home_appliance_campaign.get('part_drops', 0) }}</b>
+      {% if daily_research_card %}
+      <div class="home-research-hub-block daily-research-home-card">
+        <div class="home-research-hub-row">
+          <div>
+            <div class="home-research-hub-title">今日の研究指令</div>
+            <div class="upgrade-cost">研究継続 {{ daily_research_card.get('streak', 0) }}日</div>
+          </div>
+          <a class="battle-home-link" href="{{ url_for('research_daily') }}">確認</a>
         </div>
-        <div class="home-insect-research-stat">
-          <span>対象</span>
-          <b>N家電</b>
-        </div>
-        <div class="home-insect-research-stat">
-          <span>入手先</span>
-          <b>通常探索</b>
+        <div class="home-research-chip-row" id="home-daily-research-panel" aria-label="今日の研究指令">
+          {% for mission in daily_research_card.get('missions', []) %}
+          {% set mission_label = ['基礎研究', '構成研究', '特別研究'][loop.index0] if loop.index0 < 3 else '研究' %}
+          <span class="home-research-chip {% if mission['is_done'] %}is-done{% endif %}">
+            {% if mission['is_done'] %}完了{% else %}進行中{% endif %}: {{ mission_label }} {{ mission['progress_line'] }}
+          </span>
+          {% endfor %}
         </div>
       </div>
-      <p class="link home-insect-research-link"><a href="{{ url_for('build') }}">家電ロボを組む</a></p>
-    </div>
+      {% endif %}
+      {% if home_appliance_campaign and home_appliance_campaign.get('enabled') %}
+      <div class="home-research-hub-block home-appliance-campaign-card">
+        <div class="home-research-hub-row">
+          <div>
+            <div class="home-explore-kicker">期間限定</div>
+            <div class="home-research-hub-title">家電研究キャンペーン</div>
+            <div class="upgrade-cost">家電シリーズ全{{ home_appliance_campaign.get('part_count', 32) }}パーツが通常探索で出現中</div>
+          </div>
+          <a class="battle-home-link" href="{{ url_for('map_view') }}">詳細</a>
+        </div>
+        <div class="home-insect-research-grid">
+          <div class="home-insect-research-stat">
+            <span>今週の家電パーツ入手数</span>
+            <b>{{ home_appliance_campaign.get('part_drops', 0) }}</b>
+          </div>
+          <div class="home-insect-research-stat">
+            <span>対象</span>
+            <b>N家電</b>
+          </div>
+          <div class="home-insect-research-stat">
+            <span>入手先</span>
+            <b>通常探索</b>
+          </div>
+        </div>
+        <p class="link home-insect-research-link"><a href="{{ url_for('build') }}">家電ロボを組む</a></p>
+      </div>
+      {% endif %}
+    </section>
     {% endif %}
     {% if has_any_robot %}
       <div class="home-explore-utility-form home-explore-utility-summary">

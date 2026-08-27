@@ -3402,6 +3402,41 @@ def _chat_room_recent_participant_count(db, room_key, *, window_minutes=COMM_ROO
     )
 
 
+def _chat_room_recent_participant_counts(db, room_keys, *, window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES, now_ts=None):
+    normalized_keys = []
+    for raw_key in room_keys or ():
+        key = _chat_normalize_room_key(raw_key, allow_world=False)
+        if key and key not in normalized_keys:
+            normalized_keys.append(key)
+    if not normalized_keys:
+        return {}
+    now_value = _now_ts() if now_ts is None else int(now_ts)
+    cutoff_text = time.strftime(
+        "%Y-%m-%d %H:%M:%S",
+        time.localtime(int(now_value) - max(60, int(window_minutes) * 60)),
+    )
+    placeholders = ", ".join("?" for _ in normalized_keys)
+    rows = db.execute(
+        f"""
+        SELECT COALESCE(room_key, ?) AS room_key, COUNT(DISTINCT user_id) AS c
+        FROM chat_messages
+        WHERE COALESCE(room_key, ?) IN ({placeholders})
+          AND deleted_at IS NULL
+          AND user_id IS NOT NULL
+          AND UPPER(COALESCE(username, '')) != 'SYSTEM'
+          AND created_at >= ?
+        GROUP BY COALESCE(room_key, ?)
+        """,
+        (COMM_WORLD_ROOM_KEY, COMM_WORLD_ROOM_KEY, *normalized_keys, cutoff_text, COMM_WORLD_ROOM_KEY),
+    ).fetchall()
+    counts = {key: 0 for key in normalized_keys}
+    for row in rows:
+        key = str(row["room_key"] or "").strip()
+        if key in counts:
+            counts[key] = int(row["c"] or 0)
+    return counts
+
+
 def _portal_online_endpoint():
     endpoint = (os.getenv("POCHI_PORTAL_ENDPOINT") or "").strip()
     if not endpoint:
@@ -50700,14 +50735,11 @@ def home():
 
     def _build_home_comms_cache():
         active_count = count_active_users(db, window_minutes=USER_PRESENCE_ACTIVE_WINDOW_MINUTES)
-        room_counts = {
-            room["key"]: _chat_room_recent_participant_count(
-                db,
-                room["key"],
-                window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
-            )
-            for room in COMM_ROOM_DEFS
-        }
+        room_counts = _chat_room_recent_participant_counts(
+            db,
+            [room["key"] for room in COMM_ROOM_DEFS],
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        )
         return {
             "home_active_user_line": _active_users_summary_line(
                 active_count,
@@ -50719,10 +50751,11 @@ def home():
                 limit=HOME_COMM_PREVIEW_LIMIT,
                 is_admin=bool(int(user["is_admin"] or 0) == 1),
             ),
-            "home_comm_room_items_by_key": {
-                room["key"]: _room_message_items(db, room["key"], limit=HOME_COMM_PREVIEW_LIMIT)
-                for room in COMM_ROOM_DEFS
-            },
+            "home_comm_initial_room_items": _room_message_items(
+                db,
+                home_comm_initial_room_key,
+                limit=HOME_COMM_PREVIEW_LIMIT,
+            ),
         }
 
     comms_cache, comms_cache_hit = _ttl_cache_get_or_set(
@@ -50740,12 +50773,9 @@ def home():
         for room in COMM_ROOM_DEFS
     }
     home_comm_world_items = comms_cache["home_comm_world_items"]
-    home_comm_room_items_by_key = comms_cache["home_comm_room_items_by_key"]
-    home_comm_personal_items = _personal_log_items(
-        db,
-        int(user["id"]),
-        limit=HOME_COMM_PREVIEW_LIMIT,
-    )
+    home_comm_room_items_by_key = {room["key"]: [] for room in COMM_ROOM_DEFS}
+    home_comm_room_items_by_key[home_comm_initial_room_key] = comms_cache["home_comm_initial_room_items"]
+    home_comm_personal_items = []
     _home_section_log("comms", section_started_at, extra=f"cache_hit={int(comms_cache_hit)}")
     section_started_at = time.perf_counter()
     ranking_cache_key = ("home.ranking", home_cache_scope, str(week_key), "weekly_explores")
@@ -56310,6 +56340,102 @@ def comms():
     return render_template("comms.html", sections=sections, message=session.pop("message", None))
 
 
+def _home_comms_preview_message_item(item):
+    return {
+        "kind": "message",
+        "user_label": str(item.get("user_label") or "").strip(),
+        "message": str(item.get("message") or "").strip(),
+        "time_jst": str(item.get("time_jst") or "").strip(),
+        "presence_label": str(item.get("presence_label") or "探索待機中").strip(),
+        "presence_state": str(item.get("presence_state") or "idle").strip(),
+    }
+
+
+def _home_comms_preview_personal_item(item):
+    return {
+        "kind": "personal",
+        "title": str(item.get("title") or "").strip(),
+        "text": str(item.get("text") or "").strip(),
+        "time_jst": str(item.get("time_jst") or "").strip(),
+        "accent": str(item.get("accent") or "default").strip(),
+        "meta_lines": [str(line) for line in item.get("meta_lines", [])[:2]],
+    }
+
+
+@app.route("/home/comms/preview")
+@login_required
+def home_comms_preview():
+    db = get_db()
+    user = db.execute("SELECT id, is_admin FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+    if not user:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    tab = str(request.args.get("tab") or "world").strip()
+    if tab == "rooms":
+        room_key = _chat_normalize_room_key(request.args.get("room"), allow_world=False) or COMM_ROOM_DEFS[0]["key"]
+        room_count = _chat_room_recent_participant_count(
+            db,
+            room_key,
+            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+        )
+        items = _room_message_items(
+            db,
+            room_key,
+            limit=HOME_COMM_PREVIEW_LIMIT,
+            viewer_user_id=int(user["id"]),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "tab": "rooms",
+                "room": room_key,
+                "items": [_home_comms_preview_message_item(item) for item in items],
+                "empty_text": "まだこの部屋には投稿がありません。",
+                "activity_line": _room_activity_summary_line(
+                    room_count,
+                    window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+                ),
+            }
+        )
+    if tab == "personal":
+        items = _personal_log_items(db, int(user["id"]), limit=HOME_COMM_PREVIEW_LIMIT)
+        return jsonify(
+            {
+                "ok": True,
+                "tab": "personal",
+                "items": [_home_comms_preview_personal_item(item) for item in items],
+                "empty_text": "まだ個人ログに表示できる出来事がありません。",
+            }
+        )
+    if tab == "world":
+        items = _home_world_timeline_items(
+            db,
+            limit=HOME_COMM_PREVIEW_LIMIT,
+            is_admin=bool(int(user["is_admin"] or 0) == 1),
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "tab": "world",
+                "items": [
+                    _home_comms_preview_message_item(item)
+                    for item in items
+                    if item.get("timeline_type") == "user"
+                ],
+                "empty_text": "まだ通信ログがありません。",
+            }
+        )
+    if tab == "faction":
+        return jsonify(
+            {
+                "ok": True,
+                "tab": "faction",
+                "items": [],
+                "empty_text": "陣営通信は次段階で開放します。いまは世界ログと会議室から交流できます。",
+            }
+        )
+    return jsonify({"ok": False, "error": "invalid_tab"}), 400
+
+
 @app.route("/comms/world", methods=["GET", "POST"])
 @login_required
 def comms_world():
@@ -56393,14 +56519,11 @@ def comms_rooms():
             room_key=selected_room_key,
             surface="comms_room",
         )
-    room_activity_counts_by_key = {
-        room["key"]: _chat_room_recent_participant_count(
-            db,
-            room["key"],
-            window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
-        )
-        for room in COMM_ROOM_DEFS
-    }
+    room_activity_counts_by_key = _chat_room_recent_participant_counts(
+        db,
+        [room["key"] for room in COMM_ROOM_DEFS],
+        window_minutes=COMM_ROOM_ACTIVITY_WINDOW_MINUTES,
+    )
     return render_template(
         "comms_rooms.html",
         room_defs=COMM_ROOM_DEFS,

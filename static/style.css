@@ -14714,6 +14714,52 @@ body#page-world .world-competition-grid {
   display: grid;
   gap: 10px;
 }
+.home-research-hub-card {
+  display: grid;
+  gap: 12px;
+}
+.home-research-hub-head,
+.home-research-hub-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.home-research-hub-head h2 {
+  margin: 2px 0 0;
+}
+.home-research-hub-block {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.38);
+}
+.home-research-hub-title {
+  color: #f8fafc;
+  font-size: 17px;
+  font-weight: 900;
+}
+.home-research-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.home-research-chip {
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #dbeafe;
+  background: rgba(14, 165, 233, 0.1);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+.home-research-chip.is-done {
+  border-color: rgba(163, 230, 53, 0.28);
+  color: #ecfccb;
+  background: rgba(77, 124, 15, 0.16);
+}
 .home-insect-research-card {
   border-color: rgba(250, 204, 21, 0.25);
   background: linear-gradient(135deg, rgba(69, 42, 8, 0.22), rgba(15, 23, 42, 0.94));
@@ -14793,6 +14839,11 @@ body#page-world .world-competition-grid {
   margin-bottom: 0;
 }
 @media (max-width: 720px) {
+  .home-research-hub-head,
+  .home-research-hub-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .home-insect-research-grid {
     grid-template-columns: 1fr;
   }

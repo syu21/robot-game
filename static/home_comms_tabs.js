@@ -93,6 +93,114 @@
     let activeRoom = defaultRoom;
     let resizeFrame = 0;
 
+    const textNode = (value) => document.createTextNode(String(value || ""));
+
+    const renderMessageItem = (item) => {
+      const article = document.createElement("article");
+      article.className = "card home-comms-item comms-message-card";
+
+      const head = document.createElement("div");
+      head.className = "comms-message-head";
+      const user = document.createElement("div");
+      user.className = "presence-user-line";
+      const meta = document.createElement("div");
+      meta.className = "user-signal-meta";
+      const name = document.createElement("div");
+      name.className = "feed-user user-signal-name";
+      name.appendChild(textNode(item.user_label || "unknown"));
+      const presence = document.createElement("div");
+      presence.className = "presence-mini-label";
+      presence.appendChild(textNode(item.presence_label || "探索待機中"));
+      meta.append(name, presence);
+      user.appendChild(meta);
+      const time = document.createElement("div");
+      time.className = "feed-time";
+      time.appendChild(textNode(item.time_jst || ""));
+      head.append(user, time);
+
+      const body = document.createElement("div");
+      body.className = "comms-message-body";
+      body.appendChild(textNode(item.message || ""));
+      article.append(head, body);
+      return article;
+    };
+
+    const renderPersonalItem = (item) => {
+      const article = document.createElement("article");
+      article.className = `card feed-card home-comms-item comms-personal-card feed-card-${item.accent || "default"}`;
+      const head = document.createElement("div");
+      head.className = "feed-kicker-row";
+      const title = document.createElement("div");
+      title.className = "feed-kicker";
+      title.appendChild(textNode(item.title || ""));
+      const time = document.createElement("div");
+      time.className = "feed-time";
+      time.appendChild(textNode(item.time_jst || ""));
+      head.append(title, time);
+      const body = document.createElement("div");
+      body.className = "feed-text";
+      body.appendChild(textNode(item.text || ""));
+      article.append(head, body);
+      (item.meta_lines || []).forEach((line) => {
+        const meta = document.createElement("div");
+        meta.className = "feed-meta";
+        meta.appendChild(textNode(line));
+        article.appendChild(meta);
+      });
+      return article;
+    };
+
+    const renderEmpty = (text) => {
+      const empty = document.createElement("div");
+      empty.className = "home-mini-log-empty";
+      empty.appendChild(textNode(text || "まだ表示できるログがありません。"));
+      return empty;
+    };
+
+    const loadPanePreview = async (pane) => {
+      if (!pane || pane.getAttribute("data-home-comms-loaded") === "1") {
+        return;
+      }
+      const url = pane.getAttribute("data-home-comms-source-url");
+      const list = pane.querySelector("[data-home-comms-scroll-list='1']");
+      if (!url || !list) {
+        pane.setAttribute("data-home-comms-loaded", "1");
+        return;
+      }
+      try {
+        const resp = await fetch(url, {
+          headers: { "Accept": "application/json" },
+          credentials: "same-origin",
+        });
+        if (!resp.ok) {
+          return;
+        }
+        const payload = await resp.json();
+        if (!payload || payload.ok !== true) {
+          return;
+        }
+        list.replaceChildren();
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (items.length <= 0) {
+          list.appendChild(renderEmpty(payload.empty_text));
+        } else {
+          items.forEach((item) => {
+            list.appendChild(item.kind === "personal" ? renderPersonalItem(item) : renderMessageItem(item));
+          });
+        }
+        if (payload.activity_line) {
+          const activity = pane.querySelector(".presence-mini-label");
+          if (activity) {
+            activity.textContent = payload.activity_line;
+          }
+        }
+        pane.setAttribute("data-home-comms-loaded", "1");
+        scheduleListResize();
+      } catch (_err) {
+        // Keep the static fallback/link available when preview fetch fails.
+      }
+    };
+
     const resizeScrollableLists = () => {
       const lists = Array.from(root.querySelectorAll("[data-home-comms-scroll-list='1']"));
       lists.forEach((list) => {
@@ -153,6 +261,8 @@
       if (opts.dispatch !== false) {
         dispatchChange();
       }
+      const activePane = roomPanes.find((pane) => pane.getAttribute("data-home-comms-room-pane") === activeRoom);
+      loadPanePreview(activePane);
     };
 
     const setTab = (tabKey, options) => {
@@ -179,6 +289,8 @@
       if (opts.dispatch !== false) {
         dispatchChange();
       }
+      const activePane = panes.find((pane) => pane.getAttribute("data-home-comms-pane") === activeTab);
+      loadPanePreview(activePane);
     };
 
     tabButtons.forEach((button) => {

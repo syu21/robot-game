@@ -324,9 +324,14 @@ class HomeNextActionTests(unittest.TestCase):
         html = self._new_client().get("/home").get_data(as_text=True)
 
         self.assertEqual(html.count("daily-research-home-card"), 1)
+        self.assertIn("home-research-hub", html)
+        self.assertIn("廃品調査", html)
         self.assertIn("今日の研究指令", html)
-        self.assertIn("▼", html)
-        self.assertIn("ホームから隠す", html)
+        self.assertIn("基礎研究", html)
+        self.assertIn("構成研究", html)
+        self.assertIn("特別研究", html)
+        self.assertNotIn("home-explore-kicker\">次の研究", html)
+        self.assertNotIn("ホームから隠す", html)
         self.assertNotIn("達成報酬：", html)
         self.assertNotIn("研究課題報酬を受け取る", html)
         self.assertNotIn("デイリー研究レポート", html)
@@ -345,7 +350,7 @@ class HomeNextActionTests(unittest.TestCase):
         html = client.get("/home").get_data(as_text=True)
         self.assertIn("daily-research-home-card", html)
         self.assertIn("今日の研究指令", html)
-        self.assertIn("開く", html)
+        self.assertIn("確認", html)
         self.assertNotIn("ホームから隠す", html)
 
     def test_home_daily_research_card_can_be_restored_from_visibility_controls(self):
@@ -355,7 +360,7 @@ class HomeNextActionTests(unittest.TestCase):
 
         hidden_html = client.get("/home").get_data(as_text=True)
         self.assertIn("daily-research-home-card", hidden_html)
-        self.assertIn("開く", hidden_html)
+        self.assertIn("今日の研究指令", hidden_html)
 
         resp = client.post("/home/daily-research/expand", data={"next": "/home"})
         self.assertEqual(resp.status_code, 302)
@@ -363,7 +368,8 @@ class HomeNextActionTests(unittest.TestCase):
 
         shown_html = client.get("/home").get_data(as_text=True)
         self.assertEqual(shown_html.count("daily-research-home-card"), 1)
-        self.assertIn("ホームから隠す", shown_html)
+        self.assertIn("確認", shown_html)
+        self.assertNotIn("ホームから隠す", shown_html)
 
     def test_home_orders_explore_before_folded_lab_sections(self):
         self._create_active_robot()
@@ -371,8 +377,8 @@ class HomeNextActionTests(unittest.TestCase):
 
         self.assertLess(html.index("NEXT ACTION"), html.index("出撃機体"))
         self.assertLess(html.index("出撃機体"), html.index("通常研究所"))
-        self.assertLess(html.index("通常研究所"), html.index("今日の研究指令"))
-        self.assertLess(html.index("今日の研究指令"), html.index("観測塔"))
+        self.assertLess(html.index("通常研究所"), html.index("観測塔"))
+        self.assertLess(html.index("出撃機体"), html.index("home-research-hub"))
 
     def test_home_folded_lab_sections_can_be_expanded_and_persist(self):
         self._create_active_robot()
@@ -1080,8 +1086,10 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("世界の動きや、他のロボ使いの声がここに流れます。", html)
         self.assertIn("あなたのロボの成長や出来事がここに残ります。", html)
         self.assertIn("フィードバック", html)
-        self.assertIn("初心者相談室のメッセージ", html)
-        self.assertIn("進化成功", html)
+        self.assertIn("タブを開くと最新の会議室ログを取得します。", html)
+        self.assertIn("タブを開くと最新の個人ログを取得します。", html)
+        self.assertNotIn("初心者相談室のメッセージ", html)
+        self.assertNotIn("進化成功", html)
         self.assertIn(
             f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で1人が活動中",
             html,
@@ -1091,11 +1099,26 @@ class HomeNextActionTests(unittest.TestCase):
             html,
         )
         self.assertIn(
-            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で活動中",
+            f"最近{game_app.USER_PRESENCE_ACTIVE_WINDOW_MINUTES}分で1人が活動中",
             html,
         )
-        self.assertIn('data-presence-state="active"', html)
+        self.assertNotIn('data-presence-state="active"', html)
         self.assertNotIn("?comm_tab=", html)
+
+        room_preview = client.get("/home/comms/preview?tab=rooms&room=beginner_room")
+        self.assertEqual(room_preview.status_code, 200)
+        room_payload = room_preview.get_json()
+        self.assertTrue(room_payload["ok"])
+        self.assertEqual(room_payload["room"], "beginner_room")
+        self.assertIn("初心者相談室のメッセージ", room_payload["items"][0]["message"])
+
+        personal_preview = client.get("/home/comms/preview?tab=personal")
+        self.assertEqual(personal_preview.status_code, 200)
+        personal_payload = personal_preview.get_json()
+        self.assertTrue(personal_payload["ok"])
+        self.assertTrue(
+            any("進化成功" in item["title"] for item in personal_payload["items"])
+        )
 
     def test_home_hides_area_feature_cards_and_links_to_map(self):
         self._create_active_robot()
