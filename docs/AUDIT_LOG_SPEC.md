@@ -739,3 +739,13 @@ COMBAT SIGNAL v1:
   - `research_share_id`: 公開研究詳細のみ
 - payloadにはレシピ推定、内部確率、内部重み、乱数seed、研究メモ本文、観測帳内容を追加しない。
 - `/admin/metrics` は上記auditとreaction tableから共有件数、閲覧ユーザー、reaction数、追試反応後24h合成を集計する。
+
+## 19. モジュール研究追試結果
+- 共有研究へ自分の合成記録を追試結果として関連付けた時に `audit.module.research.followup` を記録する。
+- payload:
+  - `parent_research_share_id`: 元研究の `module_research_shares.id`
+  - `child_research_share_id`: 追試結果として共有された `module_research_shares.id`
+  - `child_fusion_record_id`: 子側の `module_fusion_records.id`
+  - `surface`: `module_research_record`
+- payloadには `replication_success`、成功/失敗、再現率、レシピ一致、内部確率、内部重み、乱数seed、研究メモ本文、観測帳内容を追加しない。
+- `/admin/metrics` は追試登録数、追試登録ユーザー数、追試された元研究数、`追試反応 -> 追試共有` の行動相関を集計する。成功率として扱わない。

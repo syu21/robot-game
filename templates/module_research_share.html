@@ -20,7 +20,14 @@
       {% if share.snapshot.result.family_label_compact %}
       <span class="module-badge">{{ share.snapshot.result.family_label_compact }}</span>
       {% endif %}
+      {% if share.followup_count %}
+      <span class="module-badge">追試 {{ share.followup_count }}</span>
+      {% endif %}
     </div>
+    {% if followup_parent %}
+    <div class="robot-time">↳ {{ followup_parent.user_label }}さんの研究を参考にした追試</div>
+    <p class="link"><a class="battle-home-link" href="{{ url_for('module_research_share_detail', share_id=followup_parent.share.id) }}">元研究を見る</a></p>
+    {% endif %}
     <div class="module-stat-chips">
       {% for chip in share.snapshot.result.stat_chips %}
       <span class="module-stat-chip {{ chip.get('tone', 'neutral') }}">{{ chip.get('text') }}</span>
@@ -52,5 +59,28 @@
     <div class="robot-time">{{ input.display_name }} / {{ input.lineage_label }} / {{ input.generation_label }}</div>
     {% endfor %}
   </section>
+
+  {% if followup_children %}
+  <section class="card module-section">
+    <div><b>この研究を参考にした追試</b></div>
+    {% for item in followup_children %}
+    <article class="module-card">
+      <div class="robot-time">{{ item.user_label }} / {{ item.time_jst }} JST</div>
+      {% if item.message and item.message != '研究成果を共有しました' %}
+      <div class="comms-message-body">「{{ item.message }}」</div>
+      {% endif %}
+      <div class="module-card-title">{{ item.share.preview.title }}</div>
+      <div class="module-card-meta">
+        <span class="module-badge active">{{ item.share.preview.lineage }}</span>
+        <span class="module-badge">{{ item.share.preview.generation }}</span>
+      </div>
+      {% if item.share.preview.inputs_line %}
+      <div class="robot-time">投入 {{ item.share.preview.inputs_line }}</div>
+      {% endif %}
+      <p class="link"><a class="battle-home-link" href="{{ url_for('module_research_share_detail', share_id=item.share.id) }}">研究を見る</a></p>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
 </div>
 {% endblock %}

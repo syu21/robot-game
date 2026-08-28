@@ -67,7 +67,13 @@
         <div class="module-card-meta">
           <span class="module-badge active">{{ item.research_share.preview.lineage }}</span>
           <span class="module-badge">{{ item.research_share.preview.generation }}</span>
+          {% if item.research_share.followup_count %}
+          <span class="module-badge">追試 {{ item.research_share.followup_count }}</span>
+          {% endif %}
         </div>
+        {% if item.research_share.followup_parent %}
+        <div class="robot-time">↳ {{ item.research_share.followup_parent.user_label }}さんの研究を参考にした追試</div>
+        {% endif %}
         {% if item.research_share.preview.inputs_line %}
         <div class="robot-time">投入 {{ item.research_share.preview.inputs_line }}</div>
         {% endif %}

@@ -86,6 +86,16 @@
         <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.self_reaction_count }}件</div>
         <div class="robot-time">通常は0</div>
       </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">追試登録</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.followup_count }}件</div>
+        <div class="robot-time">{{ module_research_reaction_snapshot.followup_user_count }}人 / 元研究 {{ module_research_reaction_snapshot.followup_parent_share_count }}件</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">追試反応 → 追試共有</div>
+        <div class="admin-metrics-note-value">{{ module_research_reaction_snapshot.followup_from_replicate_users }} / {{ module_research_reaction_snapshot.replicate.user_count }}人</div>
+        <div class="robot-time">成功率ではなく行動相関</div>
+      </div>
     </div>
   </section>
 

@@ -112,6 +112,57 @@ class ModuleResearchReactionTests(unittest.TestCase):
             db.commit()
             return int(share_cur.lastrowid), int(chat_id), int(record_id)
 
+    def _fusion_record(self, *, user_id=None, title="追試研究", lineage_key="stable", lineage_label="安定"):
+        self._seq += 1
+        user_id = int(user_id or self.viewer_id)
+        now = int(time.time()) + self._seq
+        snapshot = {
+            "name": title,
+            "generation": 5,
+            "generation_label": "第5世代",
+            "primary_lineage_key": lineage_key,
+            "primary_lineage_label": lineage_label,
+            "family_label_compact": "重装",
+            "stat_chips": [{"text": "防御 +9", "tone": "positive"}],
+            "bonuses": {"def_bonus": 9},
+        }
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            cur = db.execute(
+                """
+                INSERT INTO module_fusion_records (
+                    user_id, result_module_instance_id, result_module_key, result_name, result_generation,
+                    result_primary_lineage_key, result_primary_lineage_label, result_snapshot_json,
+                    provenance_quality, provenance_version, request_id, created_at
+                )
+                VALUES (?, ?, 'synthesized_module', ?, 5, ?, ?, ?, 'full', 1, ?, ?)
+                """,
+                (
+                    user_id,
+                    71000 + self._seq,
+                    title,
+                    lineage_key,
+                    lineage_label,
+                    json.dumps(snapshot, ensure_ascii=False),
+                    f"followup-{self._seq}",
+                    now,
+                ),
+            )
+            record_id = int(cur.lastrowid)
+            db.execute(
+                """
+                INSERT INTO module_fusion_inputs (
+                    fusion_record_id, input_index, source_module_instance_id, source_module_key,
+                    source_name, source_generation, source_primary_lineage_key,
+                    source_primary_lineage_label, source_snapshot_json, created_at
+                )
+                VALUES (?, 1, ?, 'input_stable', '安定素材', 2, 'stable', '安定', ?, ?)
+                """,
+                (record_id, 72000 + self._seq, json.dumps({"name": "安定素材"}, ensure_ascii=False), now),
+            )
+            db.commit()
+            return record_id
+
     def test_reactions_toggle_and_allow_two_types_without_duplicates(self):
         share_id, _chat_id, _record_id = self._share()
         client = self._client(self.viewer_id, "viewer")
@@ -239,6 +290,107 @@ class ModuleResearchReactionTests(unittest.TestCase):
             snapshot = game_app._admin_module_research_reaction_snapshot(db, window_days=7)
         self.assertEqual(snapshot["interesting"]["reaction_count"], 0)
         self.assertEqual(snapshot["interesting"]["user_count"], 0)
+
+    def test_followup_share_links_parent_and_child_without_result_judgment(self):
+        parent_share_id, _chat_id, _record_id = self._share(title="元研究ヴォルト")
+        child_record_id = self._fusion_record(title="別系統の追試", lineage_key="heavy", lineage_label="重装")
+        client = self._client(self.viewer_id, "viewer")
+        client.post(
+            f"/modules/research/shares/{parent_share_id}/react",
+            data={"reaction_type": "replicate", "surface": "module_research_public"},
+        )
+        html = client.get("/modules/research").get_data(as_text=True)
+        self.assertIn("追試結果として共有", html)
+        self.assertIn("元研究ヴォルト 第4世代", html)
+
+        resp = client.post(
+            f"/modules/research/{child_record_id}/followup",
+            data={
+                "parent_research_share_id": str(parent_share_id),
+                "message": "同じ方向で試したら別系統になった",
+                "surface": "module_research_record",
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            relation = db.execute("SELECT * FROM module_research_followups").fetchone()
+            self.assertIsNotNone(relation)
+            child_share_id = int(relation["child_research_share_id"])
+            reaction_count = int(db.execute("SELECT COUNT(*) AS c FROM module_research_share_reactions").fetchone()["c"])
+            self.assertEqual(reaction_count, 1)
+            audit = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE event_type = ? ORDER BY id DESC LIMIT 1",
+                (game_app.AUDIT_EVENT_TYPES["MODULE_RESEARCH_FOLLOWUP"],),
+            ).fetchone()
+            payload = json.loads(audit["payload_json"])
+            self.assertEqual(payload["parent_research_share_id"], parent_share_id)
+            self.assertNotIn("replication_success", payload)
+            snapshot = game_app._admin_module_research_reaction_snapshot(db, window_days=7)
+            self.assertEqual(snapshot["followup_count"], 1)
+            self.assertEqual(snapshot["followup_user_count"], 1)
+            self.assertEqual(snapshot["followup_parent_share_count"], 1)
+            self.assertEqual(snapshot["followup_from_replicate_users"], 1)
+
+        parent_html = client.get(f"/modules/research/shares/{parent_share_id}").get_data(as_text=True)
+        self.assertIn("この研究を参考にした追試", parent_html)
+        self.assertIn("別系統の追試", parent_html)
+        self.assertNotIn("再現成功", parent_html)
+        self.assertNotIn("再現失敗", parent_html)
+
+        child_html = client.get(f"/modules/research/shares/{child_share_id}").get_data(as_text=True)
+        self.assertIn("ownerさんの研究を参考にした追試", child_html)
+        self.assertIn("元研究を見る", child_html)
+
+    def test_followup_reuses_existing_share_and_rejects_invalid_sources(self):
+        parent_share_id, parent_chat_id, _record_id = self._share(title="親研究")
+        child_record_id = self._fusion_record(title="共有済み追試")
+        viewer = self._client(self.viewer_id, "viewer")
+        viewer.post(
+            f"/modules/research/{child_record_id}/share",
+            data={"message": "先に通常共有"},
+        )
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            before_chat_count = int(db.execute("SELECT COUNT(*) AS c FROM chat_messages").fetchone()["c"])
+            db.execute(
+                """
+                INSERT INTO module_research_share_reactions (research_share_id, user_id, reaction_type, created_at)
+                VALUES (?, ?, 'replicate', ?)
+                """,
+                (parent_share_id, self.viewer_id, int(time.time())),
+            )
+            db.commit()
+
+        resp = viewer.post(
+            f"/modules/research/{child_record_id}/followup",
+            data={"parent_research_share_id": str(parent_share_id), "message": "二重投稿しない"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            after_chat_count = int(db.execute("SELECT COUNT(*) AS c FROM chat_messages").fetchone()["c"])
+            self.assertEqual(after_chat_count, before_chat_count)
+
+        other_record_id = self._fusion_record(user_id=self.owner_id, title="他人のchild")
+        self.assertEqual(
+            viewer.post(f"/modules/research/{other_record_id}/followup", data={"parent_research_share_id": str(parent_share_id)}).status_code,
+            404,
+        )
+        self.assertEqual(
+            self._client(self.owner_id, "owner").post(f"/modules/research/{other_record_id}/followup", data={"parent_research_share_id": str(parent_share_id)}).status_code,
+            403,
+        )
+        old_record_id = self._fusion_record(title="期限切れ候補")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE module_research_share_reactions SET created_at = ? WHERE research_share_id = ? AND user_id = ?", (int(time.time()) - 10 * 86400, parent_share_id, self.viewer_id))
+            db.execute("UPDATE chat_messages SET deleted_at = ? WHERE id = ?", (game_app.now_str(), parent_chat_id))
+            db.commit()
+        self.assertEqual(
+            viewer.post(f"/modules/research/{old_record_id}/followup", data={"parent_research_share_id": str(parent_share_id)}).status_code,
+            404,
+        )
 
 
 if __name__ == "__main__":

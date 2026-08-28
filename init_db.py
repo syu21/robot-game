@@ -1572,6 +1572,24 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS module_research_followups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_research_share_id INTEGER NOT NULL,
+            child_research_share_id INTEGER NOT NULL,
+            child_fusion_record_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(child_research_share_id),
+            UNIQUE(child_fusion_record_id),
+            FOREIGN KEY (parent_research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (child_research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (child_fusion_record_id) REFERENCES module_fusion_records(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -4640,6 +4658,9 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_notes_user_lineage ON module_research_notes(user_id, lineage_key)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_share_type ON module_research_share_reactions(research_share_id, reaction_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_user_created ON module_research_share_reactions(user_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_parent_created ON module_research_followups(parent_research_share_id, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_child_share ON module_research_followups(child_research_share_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_user_created ON module_research_followups(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_prizes_active_sort ON factory_prizes(is_active, sort_order)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_factory_prize_claims_user ON user_factory_prize_claims(user_id, claimed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_factory_cosmetics_type_sort ON factory_cosmetics(cosmetic_type, is_active, sort_order)")

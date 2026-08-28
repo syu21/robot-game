@@ -77,7 +77,13 @@
       <div class="module-card-meta">
         <span class="module-badge active">{{ item.share.preview.lineage }}</span>
         <span class="module-badge">{{ item.share.preview.generation }}</span>
+        {% if item.share.followup_count %}
+        <span class="module-badge">追試 {{ item.share.followup_count }}</span>
+        {% endif %}
       </div>
+      {% if item.share.followup_parent %}
+      <div class="robot-time">↳ {{ item.share.followup_parent.user_label }}さんの研究を参考にした追試</div>
+      {% endif %}
       {% if item.share.preview.inputs_line %}
       <div class="robot-time">投入 {{ item.share.preview.inputs_line }}</div>
       {% endif %}
@@ -170,7 +176,13 @@
         <span class="module-badge ok">会議室共有済み</span>
         <span class="module-badge">気になる {{ record.research_share.reactions.interesting.count }}</span>
         <span class="module-badge">追試したい {{ record.research_share.reactions.replicate.count }}</span>
+        {% if record.research_share.followup_count %}
+        <span class="module-badge">追試 {{ record.research_share.followup_count }}</span>
+        {% endif %}
       </div>
+      {% endif %}
+      {% if record.followup_registered %}
+      <div class="robot-time">✓ 追試済み</div>
       {% endif %}
       <div class="home-inline-actions">
         <a class="battle-home-link" href="{{ url_for('module_lineage', module_instance_id=record.result_module_instance_id) }}">系譜を見る</a>
@@ -194,6 +206,28 @@
           <form method="post" action="{{ url_for('modules_research_share', fusion_record_id=record.id) }}" class="post-form comms-room-form" novalidate>
             <textarea name="message" maxlength="{{ share_room_settings.max_chars }}" rows="2" placeholder="ひとこと（任意）"></textarea>
             <button type="submit">共有する</button>
+          </form>
+        </div>
+      </details>
+      {% endif %}
+      {% if record.followup_candidates %}
+      <details class="module-share-panel">
+        <summary class="battle-home-link">追試結果として共有</summary>
+        <div class="module-share-preview">
+          <div class="section-kicker">追試結果として共有</div>
+          <div class="robot-time">この研究を参考にして試した結果として記録します。結果が同じである必要はありません。</div>
+          <form method="post" action="{{ url_for('modules_research_followup_share', fusion_record_id=record.id) }}" class="post-form comms-room-form" novalidate>
+            <input type="hidden" name="surface" value="module_research_record" />
+            <input type="hidden" name="next" value="{{ url_for('modules_research') }}" />
+            <label>参考にした研究
+              <select name="parent_research_share_id" required>
+                {% for candidate in record.followup_candidates %}
+                <option value="{{ candidate.share.id }}">{{ candidate.user_label }} / {{ candidate.share.preview.title }} {{ candidate.share.preview.generation }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <textarea name="message" maxlength="{{ share_room_settings.max_chars }}" rows="2" placeholder="ひとこと（任意）"></textarea>
+            <button type="submit">{{ '追試として関連付ける' if record.already_shared else '追試として共有する' }}</button>
           </form>
         </div>
       </details>

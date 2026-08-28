@@ -371,6 +371,8 @@ MODULE_FUSION_PROVENANCE_VERSION = 1
 MODULE_LINEAGE_MAX_DEPTH = 8
 MODULE_RESEARCH_NOTE_MAX_CHARS = 280
 MODULE_RESEARCH_RECENT_SHARE_LIMIT = 20
+MODULE_RESEARCH_FOLLOWUP_CANDIDATE_DAYS = 7
+MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT = 5
 MODULE_RESEARCH_REACTION_TYPES = {
     "interesting": "気になる",
     "replicate": "追試したい",
@@ -14946,6 +14948,24 @@ def ensure_schema(db):
         )
         """
     )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS module_research_followups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_research_share_id INTEGER NOT NULL,
+            child_research_share_id INTEGER NOT NULL,
+            child_fusion_record_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(child_research_share_id),
+            UNIQUE(child_fusion_record_id),
+            FOREIGN KEY (parent_research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (child_research_share_id) REFERENCES module_research_shares(id),
+            FOREIGN KEY (child_fusion_record_id) REFERENCES module_fusion_records(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_generation ON module_fusion_records(user_id, result_generation DESC)")
@@ -14956,6 +14976,9 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_notes_user_lineage ON module_research_notes(user_id, lineage_key)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_share_type ON module_research_share_reactions(research_share_id, reaction_type)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_share_reactions_user_created ON module_research_share_reactions(user_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_parent_created ON module_research_followups(parent_research_share_id, created_at DESC)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_child_share ON module_research_followups(child_research_share_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_module_research_followups_user_created ON module_research_followups(user_id, created_at DESC)")
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS robot_loadout_presets (
@@ -20535,6 +20558,209 @@ def _attach_module_research_share_reactions(db, shares, *, viewer_user_id=None):
     return share_list
 
 
+def _module_research_share_by_record(db, user_id, fusion_record_id):
+    row = db.execute(
+        """
+        SELECT mrs.id AS share_id, mrs.fusion_record_id AS share_fusion_record_id,
+               mrs.user_id AS share_owner_user_id, mrs.snapshot_json AS share_snapshot_json
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        WHERE mrs.user_id = ?
+          AND mrs.fusion_record_id = ?
+          AND cm.deleted_at IS NULL
+        ORDER BY mrs.created_at DESC, mrs.id DESC
+        LIMIT 1
+        """,
+        (int(user_id), int(fusion_record_id)),
+    ).fetchone()
+    return _module_research_share_from_row(row) if row else None
+
+
+def _module_research_followup_count_map(db, share_ids):
+    ids = [int(share_id) for share_id in (share_ids or []) if int(share_id or 0) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    rows = db.execute(
+        f"""
+        SELECT mf.parent_research_share_id AS share_id, COUNT(*) AS c
+        FROM module_research_followups mf
+        JOIN module_research_shares child ON child.id = mf.child_research_share_id
+        JOIN chat_messages cm ON cm.id = child.chat_message_id
+        WHERE mf.parent_research_share_id IN ({placeholders})
+          AND cm.deleted_at IS NULL
+        GROUP BY mf.parent_research_share_id
+        """,
+        ids,
+    ).fetchall()
+    counts = {share_id: 0 for share_id in ids}
+    for row in rows:
+        counts[int(row["share_id"] or 0)] = int(row["c"] or 0)
+    return counts
+
+
+def _module_research_followup_parent_map(db, child_share_ids):
+    ids = [int(share_id) for share_id in (child_share_ids or []) if int(share_id or 0) > 0]
+    if not ids:
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    rows = _decorate_user_rows(
+        db,
+        db.execute(
+            f"""
+            SELECT mf.child_research_share_id,
+                   parent.id AS share_id,
+                   parent.fusion_record_id AS share_fusion_record_id,
+                   parent.user_id AS share_owner_user_id,
+                   parent.snapshot_json AS share_snapshot_json,
+                   cm.user_id,
+                   cm.username,
+                   cm.created_at
+            FROM module_research_followups mf
+            JOIN module_research_shares parent ON parent.id = mf.parent_research_share_id
+            JOIN chat_messages cm ON cm.id = parent.chat_message_id
+            WHERE mf.child_research_share_id IN ({placeholders})
+              AND cm.deleted_at IS NULL
+            """,
+            ids,
+        ).fetchall(),
+    )
+    parents = {}
+    for row in rows:
+        share = _module_research_share_from_row(row)
+        if share:
+            parents[int(row["child_research_share_id"])] = {
+                "share": share,
+                "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
+            }
+    return parents
+
+
+def _attach_module_research_followup_summaries(db, shares):
+    share_list = [share for share in (shares or []) if share]
+    if not share_list:
+        return share_list
+    share_ids = [int(share["id"]) for share in share_list]
+    counts = _module_research_followup_count_map(db, share_ids)
+    parents = _module_research_followup_parent_map(db, share_ids)
+    for share in share_list:
+        share["followup_count"] = int(counts.get(int(share["id"]), 0))
+        share["followup_parent"] = parents.get(int(share["id"]))
+    return share_list
+
+
+def _module_research_followup_candidates(db, user_id, *, limit=MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT):
+    cutoff_ts = int(time.time()) - int(MODULE_RESEARCH_FOLLOWUP_CANDIDATE_DAYS) * 86400
+    rows = _decorate_user_rows(
+        db,
+        db.execute(
+            """
+            SELECT mrs.id AS share_id,
+                   mrs.fusion_record_id AS share_fusion_record_id,
+                   mrs.user_id AS share_owner_user_id,
+                   mrs.snapshot_json AS share_snapshot_json,
+                   cm.user_id,
+                   cm.username,
+                   cm.created_at
+            FROM module_research_share_reactions msr
+            JOIN module_research_shares mrs ON mrs.id = msr.research_share_id
+            JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+            WHERE msr.user_id = ?
+              AND msr.reaction_type = 'replicate'
+              AND msr.created_at >= ?
+              AND mrs.user_id != ?
+              AND cm.deleted_at IS NULL
+            ORDER BY msr.created_at DESC, msr.id DESC
+            LIMIT ?
+            """,
+            (int(user_id), cutoff_ts, int(user_id), max(1, min(10, int(limit or MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT)))),
+        ).fetchall(),
+    )
+    items = []
+    seen = set()
+    for row in rows:
+        share = _module_research_share_from_row(row)
+        if not share or int(share["id"]) in seen:
+            continue
+        seen.add(int(share["id"]))
+        items.append(
+            {
+                "share": share,
+                "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
+            }
+        )
+    return items
+
+
+def _module_research_child_followups(db, parent_share_id, *, limit=MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT):
+    rows = _decorate_user_rows(
+        db,
+        db.execute(
+            """
+            SELECT child.id AS share_id,
+                   child.fusion_record_id AS share_fusion_record_id,
+                   child.user_id AS share_owner_user_id,
+                   child.snapshot_json AS share_snapshot_json,
+                   cm.id AS chat_message_id,
+                   cm.user_id,
+                   cm.username,
+                   cm.message,
+                   cm.created_at
+            FROM module_research_followups mf
+            JOIN module_research_shares child ON child.id = mf.child_research_share_id
+            JOIN chat_messages cm ON cm.id = child.chat_message_id
+            WHERE mf.parent_research_share_id = ?
+              AND cm.deleted_at IS NULL
+            ORDER BY mf.created_at DESC, mf.id DESC
+            LIMIT ?
+            """,
+            (int(parent_share_id), max(1, min(20, int(limit or MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT)))),
+        ).fetchall(),
+    )
+    items = []
+    for row in rows:
+        share = _module_research_share_from_row(row)
+        if not share:
+            continue
+        items.append(
+            {
+                "share": share,
+                "user_label": str(row.get("display_username") or row.get("username") or _feed_user_label(db, row.get("user_id"))).strip(),
+                "message": str(row.get("message") or "").strip(),
+                "time_jst": _format_jst_ts(_chat_created_at_ts(row.get("created_at"))) if row.get("created_at") else "",
+            }
+        )
+    return items
+
+
+def _module_research_followup_would_cycle(db, parent_share_id, child_share_id):
+    parent_id = int(parent_share_id or 0)
+    child_id = int(child_share_id or 0)
+    if parent_id <= 0 or child_id <= 0:
+        return True
+    current = parent_id
+    seen = set()
+    for _ in range(20):
+        if current == child_id:
+            return True
+        if current in seen:
+            return True
+        seen.add(current)
+        row = db.execute(
+            """
+            SELECT parent_research_share_id
+            FROM module_research_followups
+            WHERE child_research_share_id = ?
+            LIMIT 1
+            """,
+            (current,),
+        ).fetchone()
+        if not row:
+            return False
+        current = int(row["parent_research_share_id"] or 0)
+    return True
+
+
 def _module_research_summary(db, user_id):
     row = db.execute(
         """
@@ -20658,8 +20884,28 @@ def _module_research_records_page(db, user_id, *, lineage_key="", sort_key="new"
                 shares.append(share)
                 shares_by_record.setdefault(int(share["fusion_record_id"]), share)
         _attach_module_research_share_reactions(db, shares, viewer_user_id=user_id)
+        _attach_module_research_followup_summaries(db, shares)
+        shared_record_ids = {int(share["fusion_record_id"]) for share in shares}
+        child_rows = db.execute(
+            f"""
+            SELECT child_fusion_record_id
+            FROM module_research_followups
+            WHERE user_id = ?
+              AND child_fusion_record_id IN ({placeholders})
+            """,
+            (int(user_id), *record_ids),
+        ).fetchall()
+        followup_record_ids = {int(row["child_fusion_record_id"] or 0) for row in child_rows}
+        followup_candidates = _module_research_followup_candidates(db, user_id)
         for item in viewed:
             item["research_share"] = shares_by_record.get(int(item["id"]))
+            item["followup_registered"] = int(item["id"]) in followup_record_ids
+            item["followup_candidates"] = (
+                followup_candidates
+                if (not item.get("is_legacy")) and item.get("inputs") and int(item["id"]) not in followup_record_ids
+                else []
+            )
+            item["already_shared"] = int(item["id"]) in shared_record_ids
     return {
         "records": viewed,
         "page": page,
@@ -20716,6 +20962,7 @@ def _module_research_recent_shares(db, *, viewer_user_id=None, limit=MODULE_RESE
             }
         )
     _attach_module_research_share_reactions(db, shares, viewer_user_id=viewer_user_id)
+    _attach_module_research_followup_summaries(db, shares)
     return items
 
 
@@ -42428,6 +42675,7 @@ def _room_message_items(db, room_key, *, limit=COMM_ROOM_TIMELINE_LIMIT, viewer_
             }
         )
     _attach_module_research_share_reactions(db, research_shares, viewer_user_id=viewer_user_id)
+    _attach_module_research_followup_summaries(db, research_shares)
     return items
 
 
@@ -49017,6 +49265,169 @@ def modules_research_share(fusion_record_id):
     return redirect(url_for("comms_rooms", room=settings["key"]))
 
 
+def _create_module_research_share_from_source(db, user, fusion_record_id, share_source, *, message_text):
+    settings = _chat_room_settings("global_room")
+    message_id = _insert_chat_message(
+        db,
+        user_id=int(user["id"]),
+        username=session.get("username") or user["username"] or "unknown",
+        message=(str(message_text or "").strip() or "研究成果を共有しました"),
+        room_key=settings["key"],
+    )
+    now_ts = int(time.time())
+    cur = db.execute(
+        """
+        INSERT INTO module_research_shares (
+            chat_message_id, fusion_record_id, user_id, room_key,
+            snapshot_json, share_version, provenance_version, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        (
+            int(message_id),
+            int(fusion_record_id),
+            int(user["id"]),
+            settings["key"],
+            json.dumps(share_source["snapshot"], ensure_ascii=False, sort_keys=True),
+            int(share_source["record"].get("provenance_version") or 1),
+            now_ts,
+        ),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["CHAT_POST"],
+        user_id=int(user["id"]),
+        request_id=getattr(g, "request_id", None),
+        action_key="chat_post",
+        entity_type="chat_message",
+        entity_id=int(message_id),
+        payload={
+            "room_key": settings["key"],
+            "surface": "module_research_share",
+            "message_length": len(str(message_text or "").strip()),
+            "preview": str(message_text or "").strip()[:60],
+            "fusion_record_id": int(fusion_record_id),
+        },
+        ip=request.remote_addr,
+    )
+    return int(cur.lastrowid)
+
+
+@app.route("/modules/research/<int:fusion_record_id>/followup", methods=["POST"])
+@login_required
+def modules_research_followup_share(fusion_record_id):
+    db = get_db()
+    user_id = int(session["user_id"])
+    user = db.execute("SELECT id, username, is_banned FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for("login", next=request.path, reason="expired"))
+    if int(user["is_banned"] or 0) == 1:
+        abort(403)
+    parent_share_id = int(request.form.get("parent_research_share_id") or 0)
+    next_url = _relative_redirect_target(request.form.get("next"), url_for("modules_research"))
+    if parent_share_id <= 0:
+        abort(400)
+    existing_followup = db.execute(
+        """
+        SELECT 1
+        FROM module_research_followups
+        WHERE child_fusion_record_id = ?
+        LIMIT 1
+        """,
+        (int(fusion_record_id),),
+    ).fetchone()
+    if existing_followup:
+        abort(409)
+    share_source = _module_research_share_for_record(db, user_id, int(fusion_record_id))
+    if not share_source:
+        abort(404)
+    parent = db.execute(
+        """
+        SELECT mrs.id, mrs.user_id AS owner_user_id, cm.deleted_at
+        FROM module_research_shares mrs
+        JOIN chat_messages cm ON cm.id = mrs.chat_message_id
+        WHERE mrs.id = ?
+        LIMIT 1
+        """,
+        (parent_share_id,),
+    ).fetchone()
+    if not parent or parent["deleted_at"]:
+        abort(404)
+    if int(parent["owner_user_id"] or 0) == user_id:
+        abort(403)
+    cutoff_ts = int(time.time()) - int(MODULE_RESEARCH_FOLLOWUP_CANDIDATE_DAYS) * 86400
+    candidate = db.execute(
+        """
+        SELECT 1
+        FROM module_research_share_reactions
+        WHERE research_share_id = ?
+          AND user_id = ?
+          AND reaction_type = 'replicate'
+          AND created_at >= ?
+        LIMIT 1
+        """,
+        (parent_share_id, user_id, cutoff_ts),
+    ).fetchone()
+    if not candidate:
+        abort(403)
+    child_share = _module_research_share_by_record(db, user_id, int(fusion_record_id))
+    text = str(request.form.get("message") or "").strip()
+    settings = _chat_room_settings("global_room")
+    if len(text) > int(settings["max_chars"]):
+        session["message"] = f"{int(settings['max_chars'])}文字以内で入力してください。"
+        return redirect(next_url)
+    if child_share:
+        child_share_id = int(child_share["id"])
+    else:
+        remaining = _chat_room_cooldown_remaining(
+            db,
+            user_id=user_id,
+            room_key=settings["key"],
+            cooldown_seconds=int(settings["cooldown_seconds"]),
+        )
+        if remaining > 0:
+            session["message"] = f"連投はあと{int(remaining)}秒待ってください。"
+            return redirect(next_url)
+        child_share_id = _create_module_research_share_from_source(
+            db,
+            user,
+            int(fusion_record_id),
+            share_source,
+            message_text=text,
+        )
+    if _module_research_followup_would_cycle(db, parent_share_id, child_share_id):
+        abort(409)
+    db.execute(
+        """
+        INSERT INTO module_research_followups (
+            parent_research_share_id, child_research_share_id, child_fusion_record_id, user_id, created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (parent_share_id, child_share_id, int(fusion_record_id), user_id, int(time.time())),
+    )
+    audit_log(
+        db,
+        AUDIT_EVENT_TYPES["MODULE_RESEARCH_FOLLOWUP"],
+        user_id=user_id,
+        request_id=getattr(g, "request_id", None),
+        action_key="module_research_followup",
+        entity_type="module_research_share",
+        entity_id=int(child_share_id),
+        payload={
+            "parent_research_share_id": int(parent_share_id),
+            "child_research_share_id": int(child_share_id),
+            "child_fusion_record_id": int(fusion_record_id),
+            "surface": str(request.form.get("surface") or "module_research_record").strip()[:80],
+        },
+        ip=request.remote_addr,
+    )
+    db.commit()
+    session["message"] = "追試結果として共有しました。"
+    return redirect(url_for("module_research_share_detail", share_id=int(child_share_id)))
+
+
 @app.route("/modules/research/shares/<int:share_id>")
 @login_required
 def module_research_share_detail(share_id):
@@ -49044,6 +49455,13 @@ def module_research_share_detail(share_id):
     if not share:
         abort(404)
     _attach_module_research_share_reactions(db, [share], viewer_user_id=int(session["user_id"]))
+    _attach_module_research_followup_summaries(db, [share])
+    followup_parent = _module_research_followup_parent_map(db, [int(share_id)]).get(int(share_id))
+    followup_children = _module_research_child_followups(
+        db,
+        int(share_id),
+        limit=MODULE_RESEARCH_FOLLOWUP_PREVIEW_LIMIT,
+    )
     audit_log(
         db,
         AUDIT_EVENT_TYPES["MODULE_RESEARCH_VIEW"],
@@ -49061,6 +49479,8 @@ def module_research_share_detail(share_id):
         "module_research_share.html",
         share=share,
         reaction_types=MODULE_RESEARCH_REACTION_TYPES,
+        followup_parent=followup_parent,
+        followup_children=followup_children,
         message=str(row["message"] or "").strip(),
         user_label=user_label,
         shared_at=_format_jst_ts(_chat_created_at_ts(row["chat_created_at"])) if row["chat_created_at"] else "",
@@ -72739,6 +73159,32 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
         WHERE msr.user_id = mrs.user_id
         """
     ).fetchone()
+    followups = db.execute(
+        """
+        SELECT COUNT(*) AS followup_count,
+               COUNT(DISTINCT user_id) AS followup_user_count,
+               COUNT(DISTINCT parent_research_share_id) AS parent_share_count
+        FROM module_research_followups
+        WHERE created_at >= ?
+        """,
+        (cutoff_ts,),
+    ).fetchone()
+    followup_from_replicate = db.execute(
+        """
+        SELECT COUNT(DISTINCT mf.user_id) AS user_count
+        FROM module_research_followups mf
+        WHERE mf.created_at >= ?
+          AND EXISTS (
+                SELECT 1
+                FROM module_research_share_reactions msr
+                WHERE msr.user_id = mf.user_id
+                  AND msr.research_share_id = mf.parent_research_share_id
+                  AND msr.reaction_type = 'replicate'
+                LIMIT 1
+          )
+        """,
+        (cutoff_ts,),
+    ).fetchone()
     return {
         "window_days": int(window_days or 7),
         "share_count": int((shared or {})["share_count"] or 0) if shared else 0,
@@ -72749,6 +73195,10 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
         "replicate": reactions["replicate"],
         "replicate_24h_fusion_users": int((followup or {})["user_count"] or 0) if followup else 0,
         "self_reaction_count": int((self_reactions or {})["c"] or 0) if self_reactions else 0,
+        "followup_count": int((followups or {})["followup_count"] or 0) if followups else 0,
+        "followup_user_count": int((followups or {})["followup_user_count"] or 0) if followups else 0,
+        "followup_parent_share_count": int((followups or {})["parent_share_count"] or 0) if followups else 0,
+        "followup_from_replicate_users": int((followup_from_replicate or {})["user_count"] or 0) if followup_from_replicate else 0,
     }
 
 
