@@ -220,6 +220,26 @@ class ModuleResearchReactionTests(unittest.TestCase):
         self.assertIn("追試反応後24h 合成", admin_html)
         self.assertIn("自分への反応", admin_html)
 
+    def test_admin_metrics_reaction_counts_are_limited_to_recent_window(self):
+        share_id, _chat_id, _record_id = self._share()
+        old_ts = int(time.time()) - 10 * 86400
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                """
+                INSERT INTO module_research_share_reactions (research_share_id, user_id, reaction_type, created_at)
+                VALUES (?, ?, 'interesting', ?)
+                """,
+                (int(share_id), int(self.viewer_id), old_ts),
+            )
+            db.commit()
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            snapshot = game_app._admin_module_research_reaction_snapshot(db, window_days=7)
+        self.assertEqual(snapshot["interesting"]["reaction_count"], 0)
+        self.assertEqual(snapshot["interesting"]["user_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

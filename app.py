@@ -72683,8 +72683,10 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
         SELECT reaction_type, COUNT(*) AS reaction_count, COUNT(DISTINCT user_id) AS user_count
         FROM module_research_share_reactions
         WHERE reaction_type IN ('interesting', 'replicate')
+          AND created_at >= ?
         GROUP BY reaction_type
-        """
+        """,
+        (cutoff_ts,),
     ).fetchall()
     reactions = {
         key: {"label": label, "reaction_count": 0, "user_count": 0}
@@ -72717,6 +72719,7 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
         SELECT COUNT(DISTINCT msr.user_id) AS user_count
         FROM module_research_share_reactions msr
         WHERE msr.reaction_type = 'replicate'
+          AND msr.created_at >= ?
           AND EXISTS (
                 SELECT 1
                 FROM module_fusion_records mfr
@@ -72725,7 +72728,8 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
                   AND mfr.created_at <= msr.created_at + 86400
                 LIMIT 1
           )
-        """
+        """,
+        (cutoff_ts,),
     ).fetchone()
     self_reactions = db.execute(
         """
