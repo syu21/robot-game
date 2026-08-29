@@ -941,6 +941,7 @@ EXPLORE_COOLDOWN_SECONDS = int(os.getenv("EXPLORE_COOLDOWN_SECONDS", "40"))
 NEWBIE_BOOST_ENABLED = os.getenv("NEWBIE_BOOST_ENABLED", "1") == "1"
 NEWBIE_BOOST_WINDOW_HOURS = int(os.getenv("NEWBIE_BOOST_WINDOW_HOURS", "72"))
 NEWBIE_EXPLORE_CT_SECONDS = int(os.getenv("NEWBIE_EXPLORE_CT_SECONDS", "20"))
+ONBOARDING_SORTIE_SPRINT_START_AT = int(os.getenv("ONBOARDING_SORTIE_SPRINT_START_AT") or int(time.time()))
 TRIAL_MODE_DURATION_SECONDS = max(60, int(os.getenv("TRIAL_MODE_DURATION_SECONDS", "600")))
 TRIAL_MODE_MAX_EXPLORES = max(1, int(os.getenv("TRIAL_MODE_MAX_EXPLORES", "3")))
 TRIAL_MODE_CT_SECONDS = max(0, int(os.getenv("TRIAL_MODE_CT_SECONDS", "20")))
@@ -4601,6 +4602,9 @@ def _normalize_entry_source(value):
         "layer2_unlock_home",
         "first_robot_upgrade_result",
         "boss_recovery_normal",
+        "onboarding_sortie_sprint",
+        "onboarding_sortie_sprint_2",
+        "onboarding_sortie_sprint_3",
         "unknown",
     }
     return source if source in allowed else "unknown"
@@ -12698,12 +12702,12 @@ def _onboarding_first_three_progress_view(db, user_row):
         _count_user_completed_explores(db, int(user_row["id"])),
     )
     return {
-        "title": "最初の調査",
+        "title": "初期実戦試験",
         "completed": int(completed),
         "target": int(ONBOARDING_FIRST_THREE_TARGET),
-        "line": f"{completed} / {int(ONBOARDING_FIRST_THREE_TARGET)} 出撃完了",
-        "complete_title": "最初の調査完了！",
-        "complete_line": "ロボの育成準備が整いました。",
+        "line": f"{completed} / {int(ONBOARDING_FIRST_THREE_TARGET)}",
+        "complete_title": "初期実戦試験 COMPLETE",
+        "complete_line": "初期戦闘データの収集が完了しました。",
     }
 
 
@@ -14147,12 +14151,14 @@ def _refresh_battle_result_summary(db, user_id, user_row, summary):
     refreshed["show_market_after_battle"] = bool(_market_can_access(db, user_row))
     refreshed["next_explore_submission_id"] = _issue_explore_submission_id()
 
+    ct_policy = _explore_ct_policy_for_user(user_row, db=db, user_id=user_id)
     remain, _ = _explore_remaining_seconds_for_user(db, user_row, user_id)
     is_admin = bool(int(user_row["is_admin"] or 0) == 1)
     remain = 0 if is_admin else int(remain or 0)
     refreshed["explore_ct_remain"] = int(remain)
     refreshed["explore_ct_ready_at"] = 0 if is_admin else int(time.time() + max(0, remain))
     refreshed["explore_ct_is_admin"] = bool(is_admin)
+    refreshed["explore_ct_reason"] = str(ct_policy.get("reason") or "")
     if is_admin or remain <= 0:
         refreshed["explore_ct_button_label"] = "もう一度出撃"
         refreshed["explore_ct_status_label"] = "" if is_admin else "出撃可能"
@@ -43618,23 +43624,129 @@ def _is_newbie_boost_active(user_row, now_ts=None):
     return (now - created_at) < (NEWBIE_BOOST_WINDOW_HOURS * 3600)
 
 
-def _explore_ct_seconds_for_user(user_row, now_ts=None):
+def _initial_sortie_sprint_user_eligible(user_row):
+    if not user_row or not hasattr(user_row, "keys"):
+        return False
+    if int(user_row["is_admin"] or 0) == 1:
+        return False
+    if "analytics_excluded" in user_row.keys() and int(user_row["analytics_excluded"] or 0) == 1:
+        return False
+    created_at = int(user_row["created_at"] or 0) if "created_at" in user_row.keys() else 0
+    return created_at >= int(ONBOARDING_SORTIE_SPRINT_START_AT)
+
+
+def _initial_sortie_sprint_state(db, user_row, *, now_ts=None):
+    if not _initial_sortie_sprint_user_eligible(user_row):
+        return None
+    completed = min(
+        int(ONBOARDING_FIRST_THREE_TARGET),
+        _count_user_completed_explores(db, int(user_row["id"])),
+    )
+    if completed >= int(ONBOARDING_FIRST_THREE_TARGET):
+        return None
+    remaining = max(0, int(ONBOARDING_FIRST_THREE_TARGET) - int(completed))
+    next_no = int(completed) + 1
+    return {
+        "active": True,
+        "completed": int(completed),
+        "target": int(ONBOARDING_FIRST_THREE_TARGET),
+        "remaining": int(remaining),
+        "next_sortie_no": int(next_no),
+        "cta_label": "最終試験へ出撃" if next_no >= int(ONBOARDING_FIRST_THREE_TARGET) else f"第{next_no}試験へ出撃",
+    }
+
+
+def _onboarding_sortie_sprint_result_view(completed, *, area_key):
+    completed = max(0, min(int(completed or 0), int(ONBOARDING_FIRST_THREE_TARGET)))
+    target = int(ONBOARDING_FIRST_THREE_TARGET)
+    if completed >= target:
+        return {
+            "title": "初期実戦試験 COMPLETE",
+            "completed": target,
+            "target": target,
+            "line": "初期戦闘データの収集が完了しました。",
+            "subline": "通常出撃モードへ移行します。",
+            "complete": True,
+            "area_key": str(area_key or "layer_1"),
+        }
+    remaining = max(0, target - completed)
+    return {
+        "title": "初期実戦試験",
+        "completed": completed,
+        "target": target,
+        "line": "最終データを取得します。" if completed == 2 else "機体データ取得中。",
+        "subline": f"あと{remaining}回で初期試験完了。" if remaining == 1 else f"あと{remaining}回の出撃で初期試験完了。",
+        "complete": False,
+        "area_key": str(area_key or "layer_1"),
+        "entry_source": f"onboarding_sortie_sprint_{completed + 1}",
+        "cta_label": "最終試験へ出撃" if completed + 1 >= target else f"第{completed + 1}試験へ出撃",
+    }
+
+
+def _audit_onboarding_sortie_sprint_progress(db, user_id, *, completed, area_key, robot_instance_id=None, ct_seconds=0, ct_reason="", request_id=None, ip=None):
+    completed = max(0, min(int(completed or 0), int(ONBOARDING_FIRST_THREE_TARGET)))
+    event_type = (
+        AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_COMPLETE"]
+        if completed >= int(ONBOARDING_FIRST_THREE_TARGET)
+        else AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_PROGRESS"]
+    )
+    audit_log(
+        db,
+        event_type,
+        user_id=int(user_id),
+        request_id=request_id,
+        action_key="explore",
+        entity_type="user",
+        entity_id=int(user_id),
+        payload={
+            "user_id": int(user_id),
+            "completed_sorties": int(completed),
+            "required_sorties": int(ONBOARDING_FIRST_THREE_TARGET),
+            "area_key": str(area_key or ""),
+            "robot_instance_id": int(robot_instance_id) if robot_instance_id else None,
+            "ct_seconds": int(ct_seconds or 0),
+            "ct_reason": str(ct_reason or ""),
+        },
+        ip=ip,
+    )
+
+
+def _count_onboarding_part_drops(db, user_id):
+    row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["DROP"]),
+    ).fetchone()
+    return int((row["c"] if row else 0) or 0)
+
+
+def _explore_ct_policy_for_user(user_row, now_ts=None, *, db=None, user_id=None):
     if user_row and int(user_row["is_admin"] or 0) == 1:
-        return 0
-    if _is_paid_explore_boost_active(user_row, now_ts=now_ts):
-        return int(EXPLORE_BOOST_CT_SECONDS)
+        return {"seconds": 0, "reason": "admin"}
+    if db is not None and _initial_sortie_sprint_state(db, user_row, now_ts=now_ts):
+        return {"seconds": 0, "reason": "initial_sortie_sprint"}
     if _is_newbie_boost_active(user_row, now_ts=now_ts):
-        return int(NEWBIE_EXPLORE_CT_SECONDS)
-    return int(EXPLORE_COOLDOWN_SECONDS)
+        return {"seconds": int(NEWBIE_EXPLORE_CT_SECONDS), "reason": "new_user_boost"}
+    if _is_paid_explore_boost_active(user_row, now_ts=now_ts):
+        return {"seconds": int(EXPLORE_BOOST_CT_SECONDS), "reason": "paid_explore_boost"}
+    return {"seconds": int(EXPLORE_COOLDOWN_SECONDS), "reason": "normal"}
 
 
-def _remaining_cooldown_seconds(user_row, last_action_at, now_ts=None):
+def _explore_ct_seconds_for_user(user_row, now_ts=None, *, db=None, user_id=None):
+    return int(_explore_ct_policy_for_user(user_row, now_ts=now_ts, db=db, user_id=user_id).get("seconds") or 0)
+
+
+def _remaining_cooldown_seconds(user_row, last_action_at, now_ts=None, *, db=None, user_id=None):
     if user_row and int(user_row["is_admin"] or 0) == 1:
         return 0
     now = _now_ts() if now_ts is None else int(now_ts)
     last_ts = int(last_action_at or 0)
     elapsed = max(0, now - last_ts)
-    ct_seconds = int(_explore_ct_seconds_for_user(user_row, now_ts=now))
+    ct_seconds = int(_explore_ct_seconds_for_user(user_row, now_ts=now, db=db, user_id=user_id))
     return max(0, ct_seconds - elapsed)
 
 
@@ -43648,7 +43760,7 @@ def _explore_last_action_at(db, user_id):
 
 def _explore_remaining_seconds_for_user(db, user_row, user_id, now_ts=None):
     last_action_at = _explore_last_action_at(db, user_id)
-    remain = _remaining_cooldown_seconds(user_row, last_action_at, now_ts=now_ts)
+    remain = _remaining_cooldown_seconds(user_row, last_action_at, now_ts=now_ts, db=db, user_id=user_id)
     return int(remain), int(last_action_at)
 
 
@@ -51104,7 +51216,8 @@ def home():
         if daily_boost_result.get("handled"):
             user = db.execute("SELECT * FROM users WHERE id = ?", (int(user["id"]),)).fetchone()
     now = _now_ts()
-    explore_ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
+    explore_ct_policy = _explore_ct_policy_for_user(user, now_ts=now, db=db, user_id=user["id"])
+    explore_ct_seconds = int(explore_ct_policy.get("seconds") or 0)
     ct_remain, _ = _explore_remaining_seconds_for_user(db, user, user["id"], now_ts=now)
     ct_ready_at = int(now + max(0, int(ct_remain)))
     if int(user["is_admin"] or 0) == 1:
@@ -51331,6 +51444,7 @@ def home():
         or 0
     )
     onboarding_first_three_progress = _onboarding_first_three_progress_view(db, user)
+    initial_sortie_sprint_state = _initial_sortie_sprint_state(db, user, now_ts=now)
     layer1_boss_alert = _layer1_boss_alert_view(db, user)
     collab_unlock_progress = get_collab_unlock_progress(db, int(user["id"]))
     next_action_card = _home_next_action_card(
@@ -51551,6 +51665,23 @@ def home():
                 "entry_source": "next_action",
                 "show_map_link": False,
                 "context_line": "勝てばロボパーツを持ち帰れます。",
+            }
+        )
+    if home_primary_explore_cta and initial_sortie_sprint_state and int(initial_sortie_sprint_state.get("completed") or 0) > 0:
+        completed = int(initial_sortie_sprint_state.get("completed") or 0)
+        remaining = max(0, int(initial_sortie_sprint_state.get("target") or 3) - completed)
+        home_primary_explore_cta.update(
+            {
+                "title": f"初期実戦試験 {completed}/3",
+                "destination_label": _explore_area_label(str(user["last_explore_area_key"] or "").strip() or "layer_1"),
+                "helper_text": "あと1回で初期試験完了" if remaining == 1 else f"あと{remaining}回出撃して初期データを完成",
+                "button_label": initial_sortie_sprint_state.get("cta_label") or "第2試験へ出撃",
+                "button_current_label": initial_sortie_sprint_state.get("cta_label") or "第2試験へ出撃",
+                "area_key": str(user["last_explore_area_key"] or "").strip() or "layer_1",
+                "entry_source": f"onboarding_sortie_sprint_{completed + 1}",
+                "show_map_link": False,
+                "context_line": "",
+                "disabled": False,
             }
         )
     intro_npc_image = "images/ui/robonavi.png"
@@ -58342,7 +58473,10 @@ def explore():
         and home_view_context.get("home_session_id")
     ):
         entry_source = "next_action_first_explore"
-    ct_seconds = _explore_ct_seconds_for_user(user, now_ts=now)
+    initial_sortie_sprint_before = _initial_sortie_sprint_state(db, user, now_ts=now)
+    ct_policy = _explore_ct_policy_for_user(user, now_ts=now, db=db, user_id=user_id)
+    ct_seconds = int(ct_policy.get("seconds") or 0)
+    ct_reason = str(ct_policy.get("reason") or "normal")
     newbie_boost_active = _is_newbie_boost_active(user, now_ts=now)
     research_boost_result = _consume_research_boost_if_available(
         db,
@@ -58531,6 +58665,7 @@ def explore():
             "research_boost_already_consumed": bool(research_boost_result.get("already_consumed")),
             "paid_boost": bool(_is_paid_explore_boost_active(user, now_ts=now)),
             "ct_seconds": int(ct_seconds_effective),
+            "ct_reason": ct_reason,
             "base_ct_seconds": int(ct_seconds),
             "entry_source": entry_source,
             "previous_area_key": str(user["last_explore_area_key"] or "") if "last_explore_area_key" in user.keys() else "",
@@ -58553,6 +58688,26 @@ def explore():
         },
         ip=request.remote_addr,
     )
+    if initial_sortie_sprint_before and int(initial_sortie_sprint_before.get("completed") or 0) == 0:
+        _audit_once(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_START"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="explore",
+            entity_type="user",
+            entity_id=int(user_id),
+            payload={
+                "user_id": int(user_id),
+                "completed_sorties": 0,
+                "required_sorties": int(ONBOARDING_FIRST_THREE_TARGET),
+                "area_key": area_key,
+                "ct_seconds": int(ct_seconds_effective),
+                "ct_reason": ct_reason,
+                "entry_source": entry_source,
+            },
+            ip=request.remote_addr,
+        )
     if area_key == "layer_1":
         _audit_once(
             db,
@@ -61659,6 +61814,102 @@ def explore():
                 },
                 ip=request.remote_addr,
             )
+    initial_sortie_part_guarantee = None
+    current_part_drop_count = sum(len(b.get("drops", []) or []) for b in battle_results)
+    if (
+        initial_sortie_sprint_before
+        and int(initial_sortie_sprint_before.get("completed") or 0) == int(ONBOARDING_FIRST_THREE_TARGET) - 1
+        and active
+        and int(user["is_admin"] or 0) != 1
+        and int(current_part_drop_count) <= 0
+        and _count_onboarding_part_drops(db, user_id) <= 0
+    ):
+        guaranteed = _add_part_drop(
+            db,
+            user_id,
+            source="initial_sortie_sprint",
+            rarity="N",
+            plus=0,
+            as_instance=True,
+            announce_username=session.get("username"),
+            area_key="layer_1",
+        )
+        if guaranteed:
+            guaranteed["drop_type"] = "initial_sortie_sprint_guarantee"
+            guaranteed["guaranteed_part"] = True
+            if battle_results:
+                battle_results[-1].setdefault("drops", []).append(guaranteed)
+            else:
+                battle_results.append({"battle_no": 1, "drops": [guaranteed]})
+            if guaranteed.get("auto_sold"):
+                auto_sell_part_drop_count += 1
+                auto_sell_coin_total += int(guaranteed.get("auto_sell_price") or 0)
+            part_row_for_label = _get_part_by_key(db, guaranteed.get("part_key")) if guaranteed.get("part_key") else None
+            part_display_name = _part_display_name_ja(part_row_for_label) if part_row_for_label else guaranteed.get("part_key")
+            drop_labels.append(f"初期試験支給 {guaranteed['rarity']} {guaranteed['part_type']} {part_display_name} +{guaranteed['plus']}")
+            initial_sortie_part_guarantee = {
+                "label": "初期試験支給",
+                "line": "Nパーツを1個回収しました",
+                "part_instance_id": guaranteed.get("part_instance_id"),
+                "part_key": guaranteed.get("part_key"),
+                "part_type": guaranteed.get("part_type"),
+                "rarity": guaranteed.get("rarity"),
+            }
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["DROP"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="part_instance",
+                entity_id=guaranteed.get("part_instance_id"),
+                delta_count=1,
+                payload=_drop_audit_payload(area_key, 1, guaranteed),
+                ip=request.remote_addr,
+            )
+            if not guaranteed.get("auto_sold"):
+                audit_log(
+                    db,
+                    AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
+                    user_id=user_id,
+                    request_id=request_id,
+                    action_key="explore",
+                    entity_type="part_instance",
+                    entity_id=guaranteed.get("part_instance_id"),
+                    delta_count=1,
+                    payload={
+                        "reason": "initial_sortie_sprint_guarantee",
+                        "part_type": guaranteed.get("part_type"),
+                        "part_key": guaranteed.get("part_key"),
+                        "source": guaranteed.get("source"),
+                        "growth_tendency_key": guaranteed.get("growth_tendency_key"),
+                    },
+                    ip=request.remote_addr,
+                )
+            audit_log(
+                db,
+                AUDIT_EVENT_TYPES["ONBOARDING_PART_GUARANTEE"],
+                user_id=user_id,
+                request_id=request_id,
+                action_key="explore",
+                entity_type="part_instance",
+                entity_id=guaranteed.get("part_instance_id"),
+                payload={
+                    "user_id": int(user_id),
+                    "completed_sorties": int(ONBOARDING_FIRST_THREE_TARGET),
+                    "required_sorties": int(ONBOARDING_FIRST_THREE_TARGET),
+                    "area_key": area_key,
+                    "robot_instance_id": int(active["id"]),
+                    "ct_seconds": int(ct_seconds_effective),
+                    "ct_reason": ct_reason,
+                    "guaranteed_part": True,
+                    "part_instance_id": guaranteed.get("part_instance_id"),
+                    "part_key": guaranteed.get("part_key"),
+                    "part_type": guaranteed.get("part_type"),
+                    "rarity": guaranteed.get("rarity"),
+                },
+                ip=request.remote_addr,
+            )
     area_turn_limit = get_battle_turn_limit(area_key, is_boss=bool(area_boss_active))
     area_turn_limit_removed = area_turn_limit is None
     area_safety_turn_cap = int(HARD_BATTLE_TURN_CAP) if area_turn_limit_removed else None
@@ -61791,6 +62042,10 @@ def explore():
                 "after": int(research_boost_result.get("after") or 0),
                 "already_consumed": bool(research_boost_result.get("already_consumed")),
             },
+            "cooldown": {
+                "ct_seconds": int(ct_seconds_effective),
+                "ct_reason": ct_reason,
+            },
             "battles": battle_results,
             "rewards": {
                 "coins": int(reward_coin),
@@ -61885,6 +62140,19 @@ def explore():
         },
         ip=request.remote_addr,
     )
+    if initial_sortie_sprint_before:
+        sprint_completed_after = _count_user_completed_explores(db, int(user_id))
+        _audit_onboarding_sortie_sprint_progress(
+            db,
+            user_id,
+            completed=sprint_completed_after,
+            area_key=area_key,
+            robot_instance_id=(int(active["id"]) if active else None),
+            ct_seconds=int(ct_seconds_effective),
+            ct_reason=ct_reason,
+            request_id=request_id,
+            ip=request.remote_addr,
+        )
     world_bonus_notes.extend(_daily_research_update_lines())
     robot_tuning_result = None
     if active and battle_id:
@@ -62295,6 +62563,12 @@ def explore():
     else:
         battle_kind_label = "通常出撃"
     combat_signal_result_summary = _combat_signal_summary(combat_signal_summary_state)
+    initial_sortie_sprint_result = None
+    if initial_sortie_sprint_before:
+        initial_sortie_sprint_result = _onboarding_sortie_sprint_result_view(
+            _count_user_completed_explores(db, int(user_id)),
+            area_key=area_key,
+        )
 
     summary = {
         "outcome": outcome_display,
@@ -62401,6 +62675,7 @@ def explore():
         "explore_ct_remain": int(explore_ct_remain),
         "explore_ct_ready_at": int(explore_ct_ready_at),
         "explore_ct_is_admin": bool(explore_ct_is_admin),
+        "explore_ct_reason": ct_reason,
         "explore_ct_button_label": explore_ct_button_label,
         "explore_ct_status_label": explore_ct_status_label,
         "module_strategy": module_strategy_card,
@@ -62435,10 +62710,11 @@ def explore():
         ),
         "onboarding_first_three_progress": (
             {
-                "title": "最初の調査完了！",
+                "title": "初期実戦試験 COMPLETE",
                 "completed": int(ONBOARDING_FIRST_THREE_TARGET),
                 "target": int(ONBOARDING_FIRST_THREE_TARGET),
-                "line": "ロボの育成準備が整いました。",
+                "line": "初期戦闘データの収集が完了しました。",
+                "subline": "通常出撃モードへ移行します。",
                 "reward_coins": int(ONBOARDING_FIRST_THREE_REWARD_COINS)
                 if onboarding_first_three_reward_result and onboarding_first_three_reward_result.get("granted")
                 else 0,
@@ -62447,6 +62723,8 @@ def explore():
             if onboarding_first_three_reward_result and onboarding_first_three_reward_result.get("granted")
             else _onboarding_first_three_progress_view(db, user)
         ),
+        "initial_sortie_sprint": initial_sortie_sprint_result,
+        "initial_sortie_part_guarantee": initial_sortie_part_guarantee,
         "first_upgrade_guide": first_upgrade_guide_result,
         "layer1_boss_alert": layer1_boss_alert_status_after,
         "boss_retry": boss_retry_summary,

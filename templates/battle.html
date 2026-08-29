@@ -113,7 +113,32 @@
 	    <div class="upgrade-cost">{{ summary['layer2_first_explore_intro'].get('desc', '') }}</div>
 	  </div>
 	  {% endif %}
-	  {% if summary.get('layer1_first_win_result') %}
+  {% if summary.get('initial_sortie_sprint') %}
+  {% set sprint = summary.get('initial_sortie_sprint') %}
+  <div class="card notice battle-next-card-primary">
+    <div><b>{{ sprint.get('title', '初期実戦試験') }}</b></div>
+    <div class="upgrade-cost">{{ sprint.get('completed', 0) }} / {{ sprint.get('target', 3) }}</div>
+    <div class="upgrade-cost">{{ sprint.get('line', '') }}</div>
+    <div class="upgrade-cost">{{ sprint.get('subline', '') }}</div>
+    {% if summary.get('initial_sortie_part_guarantee') %}
+    <div class="notice">
+      <div><b>{{ summary['initial_sortie_part_guarantee'].get('label', '初期試験支給') }}</b></div>
+      <div>{{ summary['initial_sortie_part_guarantee'].get('line', 'Nパーツを1個回収しました') }}</div>
+    </div>
+    {% endif %}
+    {% if not sprint.get('complete') %}
+    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="{{ sprint.get('area_key') or explore_area_key }}" />
+      <input type="hidden" name="entry_source" value="{{ sprint.get('entry_source', 'onboarding_sortie_sprint') }}" />
+      {% if summary.get('next_explore_submission_id') %}
+      <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+      {% endif %}
+      <button type="submit" class="battle-next-cta js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="0" data-cta-ready-label="{{ sprint.get('cta_label', '第2試験へ出撃') }}">{{ sprint.get('cta_label', '第2試験へ出撃') }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+	  {% if summary.get('layer1_first_win_result') and not summary.get('initial_sortie_sprint') %}
   <div class="card notice battle-next-card-primary">
     <div><b>初勝利！</b></div>
     <div class="upgrade-cost">ロボの調査が進みました。</div>
@@ -467,15 +492,16 @@
     <div class="upgrade-cost">{{ summary['boss_retry_success'].get('desc', '') }}</div>
   </section>
   {% endif %}
-  {% if not summary.get('layer2_unlock_result') %}
+  {% if not summary.get('layer2_unlock_result') and not (summary.get('initial_sortie_sprint') and not summary.get('initial_sortie_sprint').get('complete')) %}
   <div class="battle-section-title battle-section-title-compact">次の行動</div>
   <div class="battle-next-grid">
     <section class="card battle-next-card battle-next-card-primary">
 	      {% set tutorial_next = summary.get('tutorial_layer1_next_action') %}
 	      {% set boss_retry = summary.get('boss_retry') %}
-	      {% set layer2_unlock = summary.get('layer2_unlock_result') %}
-	      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif layer2_unlock %}第2層へ進む{% elif summary.get('unlocked_layer') %}次の層へ進む{% else %}もう一度出撃{% endif %}</b></div>
-	      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif layer2_unlock %}新しく解放された第2層へ初出撃しよう。{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
+      {% set layer2_unlock = summary.get('layer2_unlock_result') %}
+      {% set sprint = summary.get('initial_sortie_sprint') %}
+	      <div><b>{% if boss_retry %}{{ boss_retry.get('title', 'ボス警報 継続中') }}{% elif tutorial_next %}{{ tutorial_next['title'] }}{% elif layer2_unlock %}第2層へ進む{% elif summary.get('unlocked_layer') %}次の層へ進む{% elif sprint and sprint.get('complete') %}入手したパーツを見る{% elif sprint %}{{ sprint.get('title', '初期実戦試験') }}{% else %}もう一度出撃{% endif %}</b></div>
+	      <div class="upgrade-cost">{% if boss_retry %}{{ boss_retry.get('desc', '') }}{% elif tutorial_next %}{{ tutorial_next['desc'] }}{% elif layer2_unlock %}新しく解放された第2層へ初出撃しよう。{% elif summary.get('unlocked_layer') %}新しく解放された層を見に行こう。{% elif sprint and sprint.get('complete') %}回収したパーツを確認しよう。{% elif sprint %}{{ sprint.get('subline', '') }}{% else %}同じ出撃先でもう1戦して、戦利品を積み上げよう。{% endif %}</div>
       {% if boss_retry %}
       {% set recovery_action = boss_retry.get('recommended_action') %}
       {% if boss_retry.get('failure') %}
@@ -583,6 +609,17 @@
 	      </form>
 	      {% elif summary.get('unlocked_layer') %}
 	      <a class="battle-home-link battle-next-cta" href="{{ url_for('map_view') }}">第{{ summary['unlocked_layer'] }}層へ向かう</a>
+      {% elif sprint and sprint.get('complete') %}
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('parts') }}">入手したパーツを見る</a>
+      {% elif sprint %}
+      <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
+        <input type="hidden" name="area_key" value="{{ sprint.get('area_key') or explore_area_key }}" />
+        <input type="hidden" name="entry_source" value="{{ sprint.get('entry_source', 'onboarding_sortie_sprint') }}" />
+        {% if summary.get('next_explore_submission_id') %}
+        <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+        {% endif %}
+        <button type="submit" id="explore-return-btn" class="js-explore-return-btn" data-ct-remain="0" data-ct-ready-at="0" data-ct-admin="0" data-cta-ready-label="{{ sprint.get('cta_label', '第2試験へ出撃') }}">{{ sprint.get('cta_label', '第2試験へ出撃') }}</button>
+      </form>
       {% else %}
       <form method="post" action="{{ url_for('explore') }}" id="explore-return-form">
         <input type="hidden" name="area_key" value="{{ explore_area_key }}" />

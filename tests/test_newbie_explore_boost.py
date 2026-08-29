@@ -112,6 +112,24 @@ class NewbieExploreBoostTests(unittest.TestCase):
                 )
             db.commit()
 
+    def _mark_initial_sprint_complete(self, user_id):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for i in range(3):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key)
+                    VALUES (?, ?, ?, ?, 'explore')
+                    """,
+                    (
+                        int(time.time()) - (30 - i),
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        '{"area_key":"layer_1","result":{"win":true}}',
+                        int(user_id),
+                    ),
+                )
+            db.commit()
+
     def _new_client(self, user_id, username):
         client = game_app.app.test_client()
         with client.session_transaction() as session:
@@ -120,6 +138,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         return client
 
     def test_newbie_boost_applies_20_seconds_cooldown(self):
+        self._mark_initial_sprint_complete(self.user_id)
         now = int(time.time())
         self._set_last_action_at(self.user_id, now - 10)
         client = self._new_client(self.user_id, "newbie_boost_user")
@@ -171,6 +190,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         self.assertNotIn("新規ブースト中: 探索CT短縮", expired_html)
 
     def test_explore_post_is_blocked_by_same_ct_even_when_state_inactive(self):
+        self._mark_initial_sprint_complete(self.user_id)
         now = int(time.time())
         with game_app.app.app_context():
             db = game_app.get_db()
@@ -193,6 +213,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
         self.assertRegex(resp.get_data(as_text=True), r"あと ?(9|10)秒")
 
     def test_consecutive_explore_post_second_request_is_blocked(self):
+        self._mark_initial_sprint_complete(self.user_id)
         client = self._new_client(self.user_id, "newbie_boost_user")
         with patch.object(game_app, "resolve_attack", side_effect=self._resolve_for_win), patch.object(
             game_app,
@@ -216,6 +237,93 @@ class NewbieExploreBoostTests(unittest.TestCase):
                 or 0
             )
         self.assertEqual(start_count, 1)
+
+    def test_initial_sortie_sprint_ignores_cooldown_until_three_completions(self):
+        now = int(time.time())
+        self._set_last_action_at(self.user_id, now - 1)
+        client = self._new_client(self.user_id, "newbie_boost_user")
+        with patch.object(game_app, "resolve_attack", side_effect=self._resolve_for_win), patch.object(
+            game_app,
+            "_has_area_boss_candidates",
+            return_value=False,
+        ):
+            first = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "next_action_first_explore"},
+                follow_redirects=False,
+            )
+            second = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint_2"},
+                follow_redirects=False,
+            )
+            third = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint_3"},
+                follow_redirects=False,
+            )
+        self.assertEqual(first.status_code, 200)
+        self.assertIn("第2試験へ出撃", first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200)
+        self.assertIn("最終試験へ出撃", second.get_data(as_text=True))
+        self.assertEqual(third.status_code, 200)
+        third_html = third.get_data(as_text=True)
+        self.assertIn("初期実戦試験 COMPLETE", third_html)
+        self.assertIn("通常出撃モードへ移行します。", third_html)
+
+        blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
+        self.assertEqual(blocked.status_code, 200)
+        self.assertRegex(blocked.get_data(as_text=True), r"あと ?\d+秒")
+
+    def test_initial_sortie_sprint_guarantees_one_n_part_on_third_if_no_prior_drop(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for i in range(2):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key)
+                    VALUES (?, ?, ?, ?, 'explore')
+                    """,
+                    (
+                        int(time.time()) - (20 - i),
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        '{"area_key":"layer_1","result":{"win":true}}',
+                        int(self.user_id),
+                    ),
+                )
+            db.commit()
+
+        client = self._new_client(self.user_id, "newbie_boost_user")
+        with patch.object(game_app, "resolve_attack", side_effect=self._resolve_for_win), patch.object(
+            game_app,
+            "_has_area_boss_candidates",
+            return_value=False,
+        ), patch.object(game_app, "_market_part_drop_chance", return_value=0.0), patch.object(
+            game_app,
+            "_dinosaur_debut_campaign_active",
+            return_value=False,
+        ):
+            resp = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint_3"},
+                follow_redirects=False,
+            )
+        self.assertEqual(resp.status_code, 200)
+        html = resp.get_data(as_text=True)
+        self.assertIn("初期試験支給", html)
+        self.assertIn("Nパーツを1個回収しました", html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            guarantee = db.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                """,
+                (int(self.user_id), game_app.AUDIT_EVENT_TYPES["ONBOARDING_PART_GUARANTEE"]),
+            ).fetchone()
+            self.assertEqual(int(guarantee["c"] or 0), 1)
 
 
 if __name__ == "__main__":

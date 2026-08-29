@@ -41,8 +41,27 @@ class BattleReturnCooldownTests(unittest.TestCase):
             sess["user_id"] = int(user_id)
             sess["username"] = username
 
+    def _mark_initial_sprint_complete(self, user_id):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for i in range(3):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key)
+                    VALUES (?, ?, ?, ?, 'explore')
+                    """,
+                    (
+                        int(time.time()) - (30 - i),
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        '{"area_key":"layer_1","result":{"win":true}}',
+                        int(user_id),
+                    ),
+                )
+            db.commit()
+
     def test_non_admin_sees_explore_return_cooldown(self):
         user_id = self._create_user("ct_user", is_admin=0)
+        self._mark_initial_sprint_complete(user_id)
         with game_app.app.test_client() as client:
             self._login(client, user_id, "ct_user")
             with mock.patch.object(game_app, "_has_area_boss_candidates", return_value=False):
