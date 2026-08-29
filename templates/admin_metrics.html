@@ -469,6 +469,16 @@
         <div class="robot-time">中央値 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.median_starts_to_first_encounter) }}回</div>
       </div>
       <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">初遭遇までの通常戦勝利数</div>
+        <div class="admin-metrics-note-value">平均 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.avg_normal_wins_to_first_encounter) }}勝</div>
+        <div class="robot-time">中央値 {{ '%.1f'|format(first_experience_snapshot.layer1_boss.median_normal_wins_to_first_encounter) }}勝</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">第1層ボス導線</div>
+        <div class="admin-metrics-note-value">大型反応 {{ first_experience_snapshot.layer1_boss.signal_users }}人 / 警報 {{ first_experience_snapshot.layer1_boss.alert_users }}人</div>
+        <div class="robot-time">10勝保証 {{ first_experience_snapshot.layer1_boss.guarantee_ready_users }}人 / 保証遭遇 {{ first_experience_snapshot.layer1_boss.guarantee_trigger_users }}人</div>
+      </div>
+      <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">10回以内遭遇率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.layer1_boss.within_10_count }}人 / {{ first_experience_snapshot.layer1_boss.encounter_count }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.layer1_boss.within_10_rate_pct) }}%</div>

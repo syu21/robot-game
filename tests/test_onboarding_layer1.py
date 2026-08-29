@@ -111,7 +111,29 @@ class Layer1OnboardingTests(unittest.TestCase):
     def test_layer1_boss_alert_progress_and_ready(self):
         with game_app.app.app_context():
             db = self._db()
-            for _ in range(9):
+            for _ in range(4):
+                game_app._advance_layer1_boss_alert_after_normal_win(
+                    db,
+                    self._user(),
+                    area_key="layer_1",
+                    is_boss=False,
+                    final_outcome="win",
+                )
+            self.assertIsNone(game_app._layer1_boss_alert_view(db, self._user()))
+            game_app._advance_layer1_boss_alert_after_normal_win(
+                db,
+                self._user(),
+                area_key="layer_1",
+                is_boss=False,
+                final_outcome="win",
+                request_id="req-signal",
+            )
+            view = game_app._layer1_boss_alert_view(db, self._user())
+            self.assertEqual(view["progress"], 5)
+            self.assertFalse(view["ready"])
+            self.assertEqual(view["state"], "signal_detected")
+            self.assertIn("巨大な反応を検出", view["line"])
+            for _ in range(3):
                 game_app._advance_layer1_boss_alert_after_normal_win(
                     db,
                     self._user(),
@@ -120,18 +142,32 @@ class Layer1OnboardingTests(unittest.TestCase):
                     final_outcome="win",
                 )
             view = game_app._layer1_boss_alert_view(db, self._user())
-            self.assertEqual(view["progress"], 9)
+            self.assertEqual(view["progress"], 8)
             self.assertFalse(view["ready"])
-            game_app._advance_layer1_boss_alert_after_normal_win(
-                db,
-                self._user(),
-                area_key="layer_1",
-                is_boss=False,
-                final_outcome="win",
-            )
+            self.assertEqual(view["state"], "boss_alert")
+            self.assertIn("第1層深部に大型反応", view["line"])
+            for _ in range(2):
+                game_app._advance_layer1_boss_alert_after_normal_win(
+                    db,
+                    self._user(),
+                    area_key="layer_1",
+                    is_boss=False,
+                    final_outcome="win",
+                )
             view = game_app._layer1_boss_alert_view(db, self._user())
             self.assertTrue(view["ready"])
-            self.assertIn("ボス警報発令", view["line"])
+            self.assertEqual(view["entry_source"], "layer1_boss_guarantee")
+            self.assertIn("ボス反応確定", view["line"])
+            event_types = [
+                row["event_type"]
+                for row in db.execute(
+                    "SELECT event_type FROM world_events_log WHERE user_id = ? ORDER BY id",
+                    (self.user_id,),
+                ).fetchall()
+            ]
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAYER1_BOSS_SIGNAL"], event_types)
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAYER1_BOSS_ALERT"], event_types)
+            self.assertIn(game_app.AUDIT_EVENT_TYPES["LAYER1_BOSS_GUARANTEE_READY"], event_types)
 
     def test_layer1_boss_alert_does_not_advance_on_loss_or_other_layer(self):
         with game_app.app.app_context():
@@ -139,7 +175,7 @@ class Layer1OnboardingTests(unittest.TestCase):
             game_app._advance_layer1_boss_alert_after_normal_win(db, self._user(), area_key="layer_1", is_boss=False, final_outcome="lose")
             game_app._advance_layer1_boss_alert_after_normal_win(db, self._user(), area_key="layer_2", is_boss=False, final_outcome="win")
             view = game_app._layer1_boss_alert_view(db, self._user())
-            self.assertEqual(view["progress"], 0)
+            self.assertIsNone(view)
 
     def test_ready_layer1_next_spawn_is_guaranteed_and_resets(self):
         with game_app.app.app_context():
@@ -155,8 +191,36 @@ class Layer1OnboardingTests(unittest.TestCase):
             result = game_app._area_boss_spawn_check(db, self.user_id, "layer_1", rng=FixedRng(1.0))
             row = db.execute("SELECT no_boss_streak FROM user_boss_progress WHERE user_id = ? AND area_key = 'layer_1'", (self.user_id,)).fetchone()
             self.assertTrue(result["spawn"])
-            self.assertEqual(result["encounter_source"], "alert_guarantee")
+            self.assertEqual(result["encounter_source"], "layer1_boss_guarantee")
+            self.assertFalse(result["boss_encountered_before"])
+            self.assertEqual(result["normal_win_count"], game_app.LAYER1_BOSS_GUARANTEE_THRESHOLD)
             self.assertEqual(int(row["no_boss_streak"]), 0)
+
+    def test_layer1_boss_guarantee_does_not_repeat_after_encounter(self):
+        with game_app.app.app_context():
+            db = self._db()
+            self._event(
+                game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                {
+                    "area_key": "layer_1",
+                    "encounter_source": "random",
+                    "boss_source": "normal",
+                },
+            )
+            db.execute(
+                """
+                INSERT INTO user_boss_progress (user_id, area_key, no_boss_streak, updated_at)
+                VALUES (?, 'layer_1', ?, ?)
+                ON CONFLICT(user_id, area_key) DO UPDATE SET no_boss_streak = excluded.no_boss_streak
+                """,
+                (self.user_id, game_app.LAYER1_BOSS_GUARANTEE_THRESHOLD, int(time.time())),
+            )
+            result = game_app._area_boss_spawn_check(db, self.user_id, "layer_1", rng=FixedRng(1.0))
+            self.assertFalse(result["spawn"])
+            self.assertFalse(result["pity_forced"])
+            self.assertTrue(result["boss_encountered_before"])
+            self.assertEqual(result["encounter_source"], "none")
+            self.assertIsNone(game_app._layer1_boss_alert_view(db, self._user()))
 
     def test_boss_defeat_stops_layer1_alert(self):
         with game_app.app.app_context():

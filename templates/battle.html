@@ -138,6 +138,27 @@
     {% endif %}
   </div>
   {% endif %}
+  {% if summary.get('layer1_boss_alert') and summary.get('layer1_boss_alert').get('ready') and not summary.get('initial_sortie_sprint') and not summary.get('layer2_unlock_result') %}
+  {% set l1alert = summary.get('layer1_boss_alert') %}
+  <div class="card notice battle-next-card-primary">
+    <div><b>{{ l1alert.get('line', '第1層ボス警報') }}</b></div>
+    <div class="upgrade-cost">{{ l1alert.get('desc', '') }}</div>
+    <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
+      <input type="hidden" name="area_key" value="{{ l1alert.get('area_key', 'layer_1') }}" />
+      <input type="hidden" name="entry_source" value="{{ l1alert.get('entry_source', 'layer1_boss_guarantee') }}" />
+      {% if summary.get('next_explore_submission_id') %}
+      <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
+      {% endif %}
+      <button type="submit" class="battle-next-cta js-explore-return-btn"
+        data-ct-remain="{{ summary.get('explore_ct_remain', 0) }}"
+        data-ct-ready-at="{{ summary.get('explore_ct_ready_at', 0) }}"
+        data-ct-admin="{{ 1 if summary.get('explore_ct_is_admin') else 0 }}"
+        data-cta-ready-label="{{ l1alert.get('cta_label', 'ボス反応地点へ出撃') }}"
+        {% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}disabled{% endif %}
+      >{% if (summary.get('explore_ct_remain') or 0) > 0 and not summary.get('explore_ct_is_admin') %}クールタイム中 あと{{ summary.get('explore_ct_remain') }}秒{% else %}{{ l1alert.get('cta_label', 'ボス反応地点へ出撃') }}{% endif %}</button>
+    </form>
+  </div>
+  {% endif %}
 	  {% if summary.get('layer1_first_win_result') and not summary.get('initial_sortie_sprint') %}
   <div class="card notice battle-next-card-primary">
     <div><b>初勝利！</b></div>

@@ -2957,7 +2957,10 @@ LAYER1_FIRST_CLEAR_REWARD_COINS = 100
 LAYER1_FIRST_CLEAR_DECOR_KEY = "layer1_clear_emblem_001"
 ONBOARDING_FIRST_THREE_TARGET = 3
 ONBOARDING_FIRST_THREE_REWARD_COINS = 100
-LAYER1_BOSS_ALERT_THRESHOLD = 10
+LAYER1_BOSS_SIGNAL_THRESHOLD = 5
+LAYER1_BOSS_ALERT_UI_THRESHOLD = 8
+LAYER1_BOSS_GUARANTEE_THRESHOLD = 10
+LAYER1_BOSS_ALERT_THRESHOLD = LAYER1_BOSS_GUARANTEE_THRESHOLD
 AREA_BOSS_KEYS = (
     "layer_1",
     "layer_2",
@@ -4605,6 +4608,9 @@ def _normalize_entry_source(value):
         "onboarding_sortie_sprint",
         "onboarding_sortie_sprint_2",
         "onboarding_sortie_sprint_3",
+        "layer1_boss_signal",
+        "layer1_boss_alert",
+        "layer1_boss_guarantee",
         "unknown",
     }
     return source if source in allowed else "unknown"
@@ -4625,6 +4631,7 @@ def _normalize_boss_source(value):
     aliases = {
         "random": "normal",
         "alert_guarantee": "guaranteed",
+        "layer1_boss_guarantee": "guaranteed",
         "active_alert": "guaranteed_retry",
         "tutorial_forced": "fixed",
         "tutorial_forced_boss": "fixed",
@@ -4778,9 +4785,15 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             "layer1_boss": {
                 "avg_starts_to_first_encounter": 0.0,
                 "median_starts_to_first_encounter": 0.0,
+                "avg_normal_wins_to_first_encounter": 0.0,
+                "median_normal_wins_to_first_encounter": 0.0,
                 "within_10_rate_pct": 0.0,
                 "within_10_count": 0,
                 "encounter_count": 0,
+                "signal_users": 0,
+                "alert_users": 0,
+                "guarantee_ready_users": 0,
+                "guarantee_trigger_users": 0,
                 "guarantee_users": 0,
                 "random_users": 0,
                 "source_rows": [],
@@ -4891,6 +4904,9 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "boss_recovery_normal": set(),
         "layer2_unlock_result": set(),
         "layer2_unlock_home": set(),
+        "layer1_boss_signal": set(),
+        "layer1_boss_alert": set(),
+        "layer1_boss_guarantee": set(),
         "unknown": set(),
     }
     home_next_action_view_users = set()
@@ -4906,6 +4922,11 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     home_previous_area_click_users = set()
     first_layer1_boss_encounter_ts_by_user = {}
     first_layer1_boss_encounter_source_by_user = {}
+    first_layer1_boss_normal_win_count_by_user = {}
+    layer1_boss_signal_users = set()
+    layer1_boss_alert_users = set()
+    layer1_boss_guarantee_ready_users = set()
+    layer1_boss_guarantee_trigger_users = set()
     layer1_boss_defeat_after_encounter_users = set()
     layer1_boss_retry_available_users = set()
     layer1_boss_retry_cta_view_users = set()
@@ -4983,7 +5004,17 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 if area_key == "layer_2" and uid not in layer2_first_explore_ts_by_user:
                     layer2_first_explore_ts_by_user[uid] = ts
                     layer2_first_explore_source_by_user[uid] = entry_source
-                if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home", "boss_recovery_normal"}:
+                if entry_source in {
+                    "next_action_first_explore",
+                    "next_action",
+                    "previous_area",
+                    "layer1_primary_cta",
+                    "layer2_unlock_home",
+                    "boss_recovery_normal",
+                    "layer1_boss_signal",
+                    "layer1_boss_alert",
+                    "layer1_boss_guarantee",
+                }:
                     home_direct_start_users.add(uid)
                 if area_key == "layer_1":
                     step_users["layer1_first_start"].add(uid)
@@ -5030,6 +5061,16 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                     step_users["boss_encounter"].add(uid)
                     first_layer1_boss_encounter_ts_by_user.setdefault(uid, ts)
                     first_layer1_boss_encounter_source_by_user.setdefault(uid, boss_source)
+                    if "normal_win_count" in payload:
+                        first_layer1_boss_normal_win_count_by_user.setdefault(uid, int(payload.get("normal_win_count") or 0))
+            if et == AUDIT_EVENT_TYPES.get("LAYER1_BOSS_SIGNAL") and area_key == "layer_1":
+                layer1_boss_signal_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("LAYER1_BOSS_ALERT") and area_key == "layer_1":
+                layer1_boss_alert_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("LAYER1_BOSS_GUARANTEE_READY") and area_key == "layer_1":
+                layer1_boss_guarantee_ready_users.add(uid)
+            if et == AUDIT_EVENT_TYPES.get("LAYER1_BOSS_GUARANTEE_TRIGGER") and area_key == "layer_1":
+                layer1_boss_guarantee_trigger_users.add(uid)
             if et == AUDIT_EVENT_TYPES["BOSS_DEFEAT"] and area_key == "layer_1":
                 step_users["boss_defeat"].add(uid)
                 if bool(payload.get("is_first_defeat")) or uid not in layer1_boss_defeat_ts_by_user:
@@ -5251,6 +5292,9 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "boss_recovery_normal": "ボス敗北リカバリーから通常戦",
         "layer2_unlock_result": "ボス撃破結果から第2層",
         "layer2_unlock_home": "基地NEXT ACTIONから第2層",
+        "layer1_boss_signal": "大型反応検出から出撃",
+        "layer1_boss_alert": "ボス警報から出撃",
+        "layer1_boss_guarantee": "10勝保証から出撃",
         "unknown": "不明",
     }
     entry_source_rows = [
@@ -5275,6 +5319,21 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 "count": sum(1 for source in first_layer1_boss_encounter_source_by_user.values() if source == key),
             }
         )
+    first_encounter_normal_win_counts = [
+        int(value)
+        for value in first_layer1_boss_normal_win_count_by_user.values()
+        if int(value) >= 0
+    ]
+    first_encounter_normal_win_counts.sort()
+    median_normal_wins = 0.0
+    if first_encounter_normal_win_counts:
+        mid = len(first_encounter_normal_win_counts) // 2
+        if len(first_encounter_normal_win_counts) % 2:
+            median_normal_wins = float(first_encounter_normal_win_counts[mid])
+        else:
+            median_normal_wins = (
+                first_encounter_normal_win_counts[mid - 1] + first_encounter_normal_win_counts[mid]
+            ) / 2.0
     defeat_elapsed_seconds = [
         int(layer1_boss_defeat_ts_by_user[uid]) - int(first_ts)
         for uid, first_ts in first_layer1_boss_encounter_ts_by_user.items()
@@ -5429,9 +5488,19 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 else 0.0
             ),
             "median_starts_to_first_encounter": float(median_starts),
+            "avg_normal_wins_to_first_encounter": (
+                float(sum(first_encounter_normal_win_counts)) / float(len(first_encounter_normal_win_counts))
+                if first_encounter_normal_win_counts
+                else 0.0
+            ),
+            "median_normal_wins_to_first_encounter": float(median_normal_wins),
             "within_10_rate_pct": (float(within_10_count) / float(max(1, len(first_encounter_start_counts)))) * 100.0,
             "within_10_count": int(within_10_count),
             "encounter_count": int(len(first_encounter_start_counts)),
+            "signal_users": int(len(layer1_boss_signal_users)),
+            "alert_users": int(len(layer1_boss_alert_users)),
+            "guarantee_ready_users": int(len(layer1_boss_guarantee_ready_users)),
+            "guarantee_trigger_users": int(len(layer1_boss_guarantee_trigger_users)),
             "source_rows": boss_source_rows,
             "source_total": int(sum(int(row["count"]) for row in boss_source_rows)),
             "guarantee_users": int(sum(int(row["count"]) for row in boss_source_rows if row["key"] in {"pity", "guaranteed"})),
@@ -12459,15 +12528,45 @@ def _layer1_tutorial_boss_spawn_rate(db, user_id, area_key):
     return float(LAYER1_TUTORIAL_BOSS_SPAWN_RATE)
 
 
+def _has_layer1_boss_encountered(db, user_id):
+    row = db.execute(
+        """
+        SELECT retry_first_encountered_at
+        FROM user_boss_progress
+        WHERE user_id = ? AND area_key = 'layer_1'
+        LIMIT 1
+        """,
+        (int(user_id),),
+    ).fetchone()
+    if row and int(row["retry_first_encountered_at"] or 0) > 0:
+        return True
+    event_row = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+          AND COALESCE(json_extract(payload_json, '$.area_key'), '') = 'layer_1'
+        LIMIT 1
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]),
+    ).fetchone()
+    return event_row is not None
+
+
 def _area_boss_spawn_check(db, user_id, area_key, rng=None, *, request_id=None, ip=None):
     if not _area_supports_boss_alert(area_key) or not _has_area_boss_candidates(db, area_key):
         return {"spawn": False, "probability": 0.0, "pity_forced": False, "streak_before": 0}
     roller = rng or random
     streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
     if str(area_key or "").strip() == "layer_1" and not _has_fixed_boss_defeat_in_area(db, int(user_id), "layer_1"):
+        boss_encountered_before = _has_layer1_boss_encountered(db, int(user_id))
         tutorial_spawn_p = _layer1_tutorial_boss_spawn_rate(db, user_id, area_key)
         spawn_p = float(tutorial_spawn_p if tutorial_spawn_p is not None else AREA_BOSS_SPAWN_RATES.get(area_key, 0.0))
-        guarantee_ready = int(streak_before) >= int(LAYER1_BOSS_ALERT_THRESHOLD)
+        guarantee_ready = (
+            not boss_encountered_before
+            and int(streak_before) >= int(LAYER1_BOSS_GUARANTEE_THRESHOLD)
+        )
         natural_spawn = bool(roller.random() < spawn_p) if not (app.config.get("TESTING") and rng is None) else False
         spawned = bool(guarantee_ready or natural_spawn)
         if spawned:
@@ -12486,7 +12585,9 @@ def _area_boss_spawn_check(db, user_id, area_key, rng=None, *, request_id=None, 
             "probability": float(spawn_p),
             "pity_forced": bool(guarantee_ready),
             "streak_before": int(streak_before),
-            "encounter_source": "alert_guarantee" if guarantee_ready else ("random" if natural_spawn else "none"),
+            "normal_win_count": int(streak_before),
+            "boss_encountered_before": bool(boss_encountered_before),
+            "encounter_source": "layer1_boss_guarantee" if guarantee_ready else ("random" if natural_spawn else "none"),
             "layer1_alert_ready": bool(guarantee_ready),
         }
     spawn_profile = _area_boss_spawn_profile(area_key, streak_before)
@@ -13377,23 +13478,42 @@ def _layer1_boss_alert_view(db, user_row):
         return None
     if _has_fixed_boss_defeat_in_area(db, int(user_row["id"]), "layer_1"):
         return None
+    if _has_layer1_boss_encountered(db, int(user_row["id"])):
+        return None
     progress = _ensure_user_boss_progress_row(db, int(user_row["id"]), "layer_1")
-    ready = int(progress) >= int(LAYER1_BOSS_ALERT_THRESHOLD)
+    progress = int(min(progress, LAYER1_BOSS_GUARANTEE_THRESHOLD))
+    if progress < int(LAYER1_BOSS_SIGNAL_THRESHOLD):
+        return None
+    if progress >= int(LAYER1_BOSS_GUARANTEE_THRESHOLD):
+        state = "guarantee_ready"
+        line = "⚠ ボス反応確定"
+        desc = "第1層深部に敵中枢機を確認。次の出撃で接触します。"
+        cta_label = "ボス反応地点へ出撃"
+        entry_source = "layer1_boss_guarantee"
+    elif progress >= int(LAYER1_BOSS_ALERT_UI_THRESHOLD):
+        state = "boss_alert"
+        line = "⚠ 第1層深部に大型反応"
+        desc = "敵中枢機の接近を確認。"
+        cta_label = "警戒出撃"
+        entry_source = "layer1_boss_alert"
+    else:
+        state = "signal_detected"
+        line = "巨大な反応を検出"
+        desc = "第1層深部から未知の信号を確認。"
+        cta_label = "出撃する"
+        entry_source = "layer1_boss_signal"
+    ready = progress >= int(LAYER1_BOSS_GUARANTEE_THRESHOLD)
     return {
         "title": "第1層ボス警報",
-        "progress": int(min(progress, LAYER1_BOSS_ALERT_THRESHOLD)),
-        "threshold": int(LAYER1_BOSS_ALERT_THRESHOLD),
+        "progress": int(progress),
+        "threshold": int(LAYER1_BOSS_GUARANTEE_THRESHOLD),
         "ready": bool(ready),
-        "line": (
-            "ボス警報発令"
-            if ready
-            else f"ボス警報 {int(min(progress, LAYER1_BOSS_ALERT_THRESHOLD))} / {int(LAYER1_BOSS_ALERT_THRESHOLD)}"
-        ),
-        "desc": (
-            "次の第1層出撃でボス出現"
-            if ready
-            else "第1層を調査するとボス警報が進みます。満了すると、次の出撃でボスが出現します。"
-        ),
+        "state": state,
+        "line": line,
+        "desc": desc,
+        "cta_label": cta_label,
+        "entry_source": entry_source,
+        "area_key": "layer_1",
     }
 
 
@@ -13408,8 +13528,11 @@ def _advance_layer1_boss_alert_after_normal_win(db, user_row, *, area_key, is_bo
         return None
     if _has_fixed_boss_defeat_in_area(db, int(user_row["id"]), "layer_1"):
         return None
+    boss_encountered_before = _has_layer1_boss_encountered(db, int(user_row["id"]))
+    if boss_encountered_before:
+        return None
     before = _ensure_user_boss_progress_row(db, int(user_row["id"]), "layer_1")
-    after = min(int(LAYER1_BOSS_ALERT_THRESHOLD), int(before) + 1)
+    after = min(int(LAYER1_BOSS_GUARANTEE_THRESHOLD), int(before) + 1)
     db.execute(
         """
         UPDATE user_boss_progress
@@ -13425,7 +13548,9 @@ def _advance_layer1_boss_alert_after_normal_win(db, user_row, *, area_key, is_bo
         "boss_key": LAYER_BOSS_KEY_BY_LAYER.get(1),
         "before": int(before),
         "after": int(after),
-        "threshold": int(LAYER1_BOSS_ALERT_THRESHOLD),
+        "normal_win_count": int(after),
+        "threshold": int(LAYER1_BOSS_GUARANTEE_THRESHOLD),
+        "boss_encountered_before": bool(boss_encountered_before),
         "source": "normal_win",
     }
     audit_log(
@@ -13439,7 +13564,25 @@ def _advance_layer1_boss_alert_after_normal_win(db, user_row, *, area_key, is_bo
         payload=payload,
         ip=ip,
     )
-    if int(before) < int(LAYER1_BOSS_ALERT_THRESHOLD) <= int(after):
+    milestone_events = [
+        (int(LAYER1_BOSS_SIGNAL_THRESHOLD), AUDIT_EVENT_TYPES.get("LAYER1_BOSS_SIGNAL")),
+        (int(LAYER1_BOSS_ALERT_UI_THRESHOLD), AUDIT_EVENT_TYPES.get("LAYER1_BOSS_ALERT")),
+        (int(LAYER1_BOSS_GUARANTEE_THRESHOLD), AUDIT_EVENT_TYPES.get("LAYER1_BOSS_GUARANTEE_READY")),
+    ]
+    for threshold, event_type in milestone_events:
+        if event_type and int(before) < threshold <= int(after):
+            audit_log(
+                db,
+                event_type,
+                user_id=int(user_row["id"]),
+                request_id=request_id,
+                action_key="explore",
+                entity_type="user_boss_progress",
+                entity_id=None,
+                payload={**payload, "threshold": int(threshold)},
+                ip=ip,
+            )
+    if int(before) < int(LAYER1_BOSS_GUARANTEE_THRESHOLD) <= int(after):
         audit_log(
             db,
             AUDIT_EVENT_TYPES["BOSS_ALERT_READY"],
@@ -51580,11 +51723,16 @@ def home():
         )
         recovery_action_key = str((recovery_action or {}).get("key") or "build")
         recovery_action_ready = bool(retry_ready or recovery_action_key in {"strengthen", "build"})
+        recovery_helper_text = "第1層ボスを再捕捉しました。機体を1か所調整して、もう一度挑戦できます。"
+        recovery_context_line = "機体を調整して第1層ボスへ"
+        if recovery_action_key == "normal_sortie":
+            recovery_helper_text = "第1層ボスを再捕捉しました。機体を1か所調整して、もう一度挑戦できます。"
+            recovery_context_line = "機体を調整して第1層ボスへ"
         home_primary_explore_cta.update(
             {
                 "title": "第1層ボス再攻略",
                 "destination_label": "第1層ボス",
-                "helper_text": "機体を整えて、もう一度挑戦しよう。",
+                "helper_text": recovery_helper_text,
                 "status_text": "再挑戦可能" if retry_ready else f"CT中: あと{int(ct_remain)}秒",
                 "button_label": (recovery_action or {}).get("cta_label") or "機体を調整する",
                 "button_current_label": (
@@ -51600,7 +51748,7 @@ def home():
                 "is_post": bool((recovery_action or {}).get("is_post", True)),
                 "disabled": not recovery_action_ready,
                 "show_map_link": False,
-                "context_line": (recovery_action or {}).get("desc") or "手持ちのパーツを見直して、機体を組み替えてみよう。",
+                "context_line": recovery_context_line,
                 "diagnosis_key": (recovery_action or {}).get("diagnosis_key") or "generic",
                 "first_boss_recovery": True,
                 "recommended_action": recovery_action_key,
@@ -51667,7 +51815,12 @@ def home():
                 "context_line": "勝てばロボパーツを持ち帰れます。",
             }
         )
-    if home_primary_explore_cta and initial_sortie_sprint_state and int(initial_sortie_sprint_state.get("completed") or 0) > 0:
+    if (
+        home_primary_explore_cta
+        and initial_sortie_sprint_state
+        and int(initial_sortie_sprint_state.get("completed") or 0) > 0
+        and not layer1_boss_retry_home_visible
+    ):
         completed = int(initial_sortie_sprint_state.get("completed") or 0)
         remaining = max(0, int(initial_sortie_sprint_state.get("target") or 3) - completed)
         home_primary_explore_cta.update(
@@ -51682,6 +51835,34 @@ def home():
                 "show_map_link": False,
                 "context_line": "",
                 "disabled": False,
+            }
+        )
+    elif (
+        home_primary_explore_cta
+        and layer1_boss_alert
+        and not layer1_boss_retry_home_visible
+        and not (next_action_card and next_action_card.get("layer2_unlock"))
+    ):
+        boss_alert_ready = bool(layer1_boss_alert.get("ready"))
+        boss_alert_ct_ready = bool(int(ct_remain or 0) <= 0 or int(user["is_admin"] or 0) == 1)
+        boss_alert_label = str(layer1_boss_alert.get("cta_label") or "第1層へ出撃")
+        home_primary_explore_cta.update(
+            {
+                "title": str(layer1_boss_alert.get("line") or "第1層ボス警報"),
+                "destination_label": "第1層",
+                "helper_text": str(layer1_boss_alert.get("desc") or ""),
+                "button_label": boss_alert_label,
+                "button_current_label": boss_alert_label if boss_alert_ct_ready else f"クールタイム中 あと{int(ct_remain)}秒",
+                "area_key": "layer_1",
+                "entry_source": str(layer1_boss_alert.get("entry_source") or "layer1_boss_alert"),
+                "show_map_link": False,
+                "context_line": "",
+                "disabled": not boss_alert_ct_ready,
+                "status_text": (
+                    "次の出撃でボス接触"
+                    if boss_alert_ready and boss_alert_ct_ready
+                    else ("出撃可能" if boss_alert_ct_ready else f"CT中: あと{int(ct_remain)}秒")
+                ),
             }
         )
     intro_npc_image = "images/ui/robonavi.png"
@@ -58526,7 +58707,15 @@ def explore():
             payload={"area_key": area_key, "entry_source": entry_source},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action", "next_action_first_explore", "layer2_unlock_home", "boss_recovery_normal"}:
+    if entry_source in {
+        "next_action",
+        "next_action_first_explore",
+        "layer2_unlock_home",
+        "boss_recovery_normal",
+        "layer1_boss_signal",
+        "layer1_boss_alert",
+        "layer1_boss_guarantee",
+    }:
         audit_log(
             db,
             AUDIT_EVENT_TYPES["HOME_NEXT_ACTION_CLICK"],
@@ -58565,7 +58754,17 @@ def explore():
             payload={"action": "previous_area", "area_key": area_key, "entry_source": entry_source, **home_view_context},
             ip=request.remote_addr,
         )
-    if entry_source in {"next_action_first_explore", "next_action", "previous_area", "layer1_primary_cta", "layer2_unlock_home", "boss_recovery_normal"}:
+    if entry_source in {
+        "next_action_first_explore",
+        "next_action",
+        "previous_area",
+        "layer1_primary_cta",
+        "layer2_unlock_home",
+        "boss_recovery_normal",
+        "layer1_boss_signal",
+        "layer1_boss_alert",
+        "layer1_boss_guarantee",
+    }:
         home_elapsed = home_view_context.get("seconds_from_home_view")
         if home_elapsed is not None and int(home_elapsed) <= 60:
             audit_log(
@@ -59461,9 +59660,11 @@ def explore():
                         )
                         layer1_boss_hint_line = (
                             "第1層ボス警報発令。調査反応を追跡して、ボスを捕捉しました。"
-                            if area_boss_encounter_source == "alert_guarantee"
+                            if area_boss_encounter_source in {"alert_guarantee", "layer1_boss_guarantee"}
                             else "第1層ボス反応。奥で大きな駆動音が響きます。"
                         )
+                        boss_encountered_before = bool(boss_roll.get("boss_encountered_before"))
+                        normal_win_count = int(boss_roll.get("normal_win_count") or area_boss_streak_before)
                         audit_log(
                             db,
                             AUDIT_EVENT_TYPES["BOSS_ATTEMPT"],
@@ -59487,6 +59688,8 @@ def explore():
                                 "encounter_source": area_boss_encounter_source,
                                 "boss_key": picked["key"] if "key" in picked.keys() else None,
                                 "boss_source": _normalize_boss_source(area_boss_encounter_source),
+                                "normal_win_count": int(normal_win_count),
+                                "boss_encountered_before": bool(boss_encountered_before),
                                 "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                                 "retry_state": layer1_retry_encounter_state.get("status"),
                             },
@@ -59517,18 +59720,20 @@ def explore():
                                 "spawn_probability": float(area_boss_spawn_p),
                                 "pity_forced": bool(area_boss_pity_forced),
                                 "streak_before": int(area_boss_streak_before),
+                                "normal_win_count": int(normal_win_count),
+                                "boss_encountered_before": bool(boss_encountered_before),
                                 "encounter_source": area_boss_encounter_source,
                                 "boss_source": _normalize_boss_source(area_boss_encounter_source),
                                 "boss_key": picked["key"] if "key" in picked.keys() else None,
                                 "explore_count": int(layer1_protection_explore_count) if area_key == "layer_1" else None,
                                 "pity_count": int(area_boss_streak_before),
-                                "is_first_encounter": bool(area_key == "layer_1" and int(layer1_protection_explore_count or 0) <= 0),
+                                "is_first_encounter": bool(area_key == "layer_1" and not boss_encountered_before),
                                 "retry_available": bool(layer1_retry_encounter_state.get("available")),
                                 "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                             },
                             ip=request.remote_addr,
                         )
-                        if area_boss_encounter_source == "alert_guarantee":
+                        if area_boss_encounter_source in {"alert_guarantee", "layer1_boss_guarantee"}:
                             audit_log(
                                 db,
                                 AUDIT_EVENT_TYPES["BOSS_ALERT_CONSUME"],
@@ -59543,8 +59748,30 @@ def explore():
                                     "boss_key": picked["key"] if "key" in picked.keys() else LAYER_BOSS_KEY_BY_LAYER.get(1),
                                     "before": int(area_boss_streak_before),
                                     "after": 0,
-                                    "threshold": int(LAYER1_BOSS_ALERT_THRESHOLD),
-                                    "source": "alert_guarantee",
+                                    "normal_win_count": int(normal_win_count),
+                                    "threshold": int(LAYER1_BOSS_GUARANTEE_THRESHOLD),
+                                    "boss_encountered_before": bool(boss_encountered_before),
+                                    "source": area_boss_encounter_source,
+                                },
+                                ip=request.remote_addr,
+                            )
+                        if area_boss_encounter_source == "layer1_boss_guarantee":
+                            audit_log(
+                                db,
+                                AUDIT_EVENT_TYPES["LAYER1_BOSS_GUARANTEE_TRIGGER"],
+                                user_id=user_id,
+                                request_id=request_id,
+                                action_key="explore",
+                                entity_type="user_boss_progress",
+                                entity_id=None,
+                                payload={
+                                    "user_id": int(user_id),
+                                    "area_key": "layer_1",
+                                    "normal_win_count": int(normal_win_count),
+                                    "threshold": int(LAYER1_BOSS_GUARANTEE_THRESHOLD),
+                                    "boss_encountered_before": bool(boss_encountered_before),
+                                    "source": "layer1_boss_guarantee",
+                                    "request_id": request_id,
                                 },
                                 ip=request.remote_addr,
                             )
