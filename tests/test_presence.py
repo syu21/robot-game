@@ -158,6 +158,26 @@ class PresenceTests(unittest.TestCase):
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]["state_label"], "実験室参加中")
 
+    def test_touch_presence_skips_short_interval_write(self):
+        now = datetime(2026, 4, 13, 12, 0, tzinfo=JST)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            touch_presence(db, self.user_id, "home", "home.view", path="/home", now=now, min_interval_seconds=30)
+            before_changes = db.total_changes
+            touch_presence(
+                db,
+                self.user_id,
+                "home",
+                "home.view",
+                path="/home",
+                now=now + timedelta(seconds=10),
+                min_interval_seconds=30,
+            )
+            row = db.execute("SELECT last_surface, last_path FROM user_presence WHERE user_id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(db.total_changes, before_changes)
+            self.assertEqual(row["last_surface"], "home")
+            self.assertEqual(row["last_path"], "/home")
+
     def test_recent_presence_filters_window_ban_and_admin(self):
         now = datetime(2026, 4, 13, 12, 0, tzinfo=JST)
         with game_app.app.app_context():

@@ -7,6 +7,7 @@ from services.robot_tuning import (
     allocate_tuning_points,
     apply_tuning_bonus,
     ensure_robot_tuning_schema,
+    get_tuning_state,
     get_or_create_tuning_state,
     grant_tuning_xp,
     reset_tuning_state,
@@ -79,6 +80,19 @@ class RobotTuningServiceTest(unittest.TestCase):
         self.assertFalse(second["granted"])
         self.assertEqual(second["reason"], "duplicate")
         self.assertEqual(xp_total, 1)
+
+    def test_get_or_create_tuning_state_does_not_write_when_existing(self):
+        get_or_create_tuning_state(self.db, 10, 1)
+        self.db.commit()
+        before_changes = self.db.total_changes
+        state = get_or_create_tuning_state(self.db, 10, 1)
+        self.assertIsNotNone(state)
+        self.assertEqual(self.db.total_changes, before_changes)
+
+    def test_get_tuning_state_is_read_only_when_missing(self):
+        before_changes = self.db.total_changes
+        self.assertIsNone(get_tuning_state(self.db, 99))
+        self.assertEqual(self.db.total_changes, before_changes)
 
     def test_layer6_win_is_eligible_for_tuning_xp(self):
         result = grant_tuning_xp(

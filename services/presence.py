@@ -214,11 +214,21 @@ def touch_presence(
     room_key=None,
     robot_instance_id=None,
     now=None,
+    min_interval_seconds=0,
 ):
     uid = int(user_id or 0)
     if uid <= 0:
         return None
-    timestamp = _iso_jst(_now_jst(now))
+    current = _now_jst(now)
+    existing = db.execute(
+        "SELECT last_active_at FROM user_presence WHERE user_id = ? LIMIT 1",
+        (uid,),
+    ).fetchone()
+    if existing and int(min_interval_seconds or 0) > 0:
+        last_active_at = _parse_presence_time(existing["last_active_at"])
+        if last_active_at and (current - last_active_at).total_seconds() < max(0, int(min_interval_seconds or 0)):
+            return existing["last_active_at"]
+    timestamp = _iso_jst(current)
     surface_key = str(surface or "").strip().lower()[:40]
     action = str(action_key or "").strip()[:80]
     clean_path = str(path or "").strip()[:240] or None

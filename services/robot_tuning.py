@@ -127,7 +127,17 @@ def tuning_area_weight_labels(area_key):
     return [TUNING_STAT_LABELS[key] for key, _ in sorted(weights.items(), key=lambda item: (-int(item[1]), item[0]))]
 
 
+def get_tuning_state(db, robot_instance_id):
+    return db.execute(
+        "SELECT * FROM robot_tuning_states WHERE robot_instance_id = ? LIMIT 1",
+        (int(robot_instance_id),),
+    ).fetchone()
+
+
 def get_or_create_tuning_state(db, robot_instance_id, user_id, now_ts=None):
+    state = get_tuning_state(db, robot_instance_id)
+    if state:
+        return state
     now = _now(now_ts)
     db.execute(
         """
@@ -137,10 +147,7 @@ def get_or_create_tuning_state(db, robot_instance_id, user_id, now_ts=None):
         """,
         (int(robot_instance_id), int(user_id), now, now),
     )
-    return db.execute(
-        "SELECT * FROM robot_tuning_states WHERE robot_instance_id = ? LIMIT 1",
-        (int(robot_instance_id),),
-    ).fetchone()
+    return get_tuning_state(db, robot_instance_id)
 
 
 def state_levels(state):

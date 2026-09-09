@@ -296,6 +296,7 @@ from services.robot_tuning import (
     allocate_tuning_points,
     apply_tuning_bonus,
     ensure_robot_tuning_schema,
+    get_tuning_state,
     get_or_create_tuning_state,
     grant_tuning_xp,
     mark_daily_cap_logged,
@@ -1000,6 +1001,9 @@ HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
 DB_BOOTSTRAP_LOCK = threading.Lock()
 DB_BOOTSTRAP_READY_KEYS = set()
+DB_WAL_READY_KEYS = set()
+SQLITE_TIMEOUT_SECONDS = float(os.getenv("SQLITE_TIMEOUT_SECONDS", "5.0"))
+SQLITE_BUSY_TIMEOUT_MS = max(1000, int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "5000")))
 MAINTENANCE_STATE_CACHE = {"expires_at": 0, "mode": "off"}
 MAINTENANCE_STATE_CACHE_LOCK = threading.Lock()
 CLIENT_ERROR_LOG_CACHE = {}
@@ -1010,6 +1014,8 @@ HOME_CACHE_RANKING_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_RANKING_TTL_SE
 HOME_CACHE_MVP_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_MVP_TTL_SECONDS", "60")))
 HOME_CACHE_COMMS_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_COMMS_TTL_SECONDS", "20")))
 HOME_CACHE_SHOWCASE_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_SHOWCASE_TTL_SECONDS", "60")))
+RECORDS_CACHE_TTL_SECONDS = max(5, int(os.getenv("RECORDS_CACHE_TTL_SECONDS", "60")))
+ADMIN_METRICS_CACHE_TTL_SECONDS = max(5, int(os.getenv("ADMIN_METRICS_CACHE_TTL_SECONDS", "30")))
 USER_PRESENCE_ACTIVE_WINDOW_MINUTES = max(
     1,
     int(os.getenv("USER_PRESENCE_ACTIVE_WINDOW_MINUTES", str(PORTAL_ONLINE_WINDOW_MINUTES))),
@@ -18969,10 +18975,27 @@ def _migrate_robot_builds(db):
     db.execute("ALTER TABLE robot_builds_new RENAME TO robot_builds")
 
 
+def _configure_sqlite_connection(db):
+    db.execute(f"PRAGMA busy_timeout={int(SQLITE_BUSY_TIMEOUT_MS)}")
+    db.execute("PRAGMA foreign_keys=ON")
+    db_key = os.path.abspath(DB_PATH)
+    if db_key not in DB_WAL_READY_KEYS:
+        with DB_BOOTSTRAP_LOCK:
+            if db_key not in DB_WAL_READY_KEYS:
+                db.execute("PRAGMA journal_mode=WAL")
+                DB_WAL_READY_KEYS.add(db_key)
+    return db
+
+
+def _request_is_read_only_get():
+    return bool(has_request_context() and request.method.upper() in {"GET", "HEAD"})
+
+
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH, factory=TimedSQLiteConnection)
+        g.db = sqlite3.connect(DB_PATH, timeout=float(SQLITE_TIMEOUT_SECONDS), factory=TimedSQLiteConnection)
         g.db.row_factory = sqlite3.Row
+        _configure_sqlite_connection(g.db)
         if not PART_OFFSET_CACHE:
             refresh_part_offset_cache(g.db)
     return g.db
@@ -27547,7 +27570,7 @@ def _clone_part_instance_for_user(db, source_part_instance_id, user_id, *, statu
     return int(cur.lastrowid)
 
 
-def _ensure_robot_instance_part_instances(db, robot_instance_id):
+def _ensure_robot_instance_part_instances(db, robot_instance_id, *, create_missing=True):
     row = db.execute(
         """
         SELECT *
@@ -27564,6 +27587,8 @@ def _ensure_robot_instance_part_instances(db, robot_instance_id):
         "l_arm": row["l_arm_part_instance_id"] if "l_arm_part_instance_id" in row.keys() else None,
         "legs": row["legs_part_instance_id"] if "legs_part_instance_id" in row.keys() else None,
     }
+    if not create_missing and not all(mapping.values()):
+        return mapping
     user_id = db.execute(
         "SELECT user_id FROM robot_instances WHERE id = ?",
         (robot_instance_id,),
@@ -27600,7 +27625,12 @@ def _ensure_robot_instance_part_instances(db, robot_instance_id):
 
 
 def _compute_robot_stats_for_instance(db, robot_instance_id):
-    mapping = _ensure_robot_instance_part_instances(db, robot_instance_id)
+    allow_incidental_writes = not _request_is_read_only_get()
+    mapping = _ensure_robot_instance_part_instances(
+        db,
+        robot_instance_id,
+        create_missing=allow_incidental_writes,
+    )
     if not mapping or not all(mapping.values()):
         return None
     owner_row = db.execute(
@@ -27641,7 +27671,10 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
     tuning_view = None
     tuning_bonus_rows = []
     if owner_row and _robot_tuning_open_for_viewer(db, user_id=owner_row["user_id"]):
-        tuning_state = get_or_create_tuning_state(db, int(robot_instance_id), int(owner_row["user_id"]))
+        if allow_incidental_writes:
+            tuning_state = get_or_create_tuning_state(db, int(robot_instance_id), int(owner_row["user_id"]))
+        else:
+            tuning_state = get_tuning_state(db, int(robot_instance_id))
         final_stats, tuning_bonus_rows = apply_tuning_bonus(base_final_stats, tuning_state)
         tuning_view = tuning_summary(tuning_state, base_stats=base_final_stats)
     computed_style = _robot_style_from_final_stats(final_stats)
@@ -27650,7 +27683,7 @@ def _compute_robot_stats_for_instance(db, robot_instance_id):
         (int(robot_instance_id),),
     ).fetchone()
     stored_style_key = _normalize_style_key(row["style_key"] if row and "style_key" in row.keys() else None)
-    if stored_style_key != computed_style["style_key"]:
+    if allow_incidental_writes and stored_style_key != computed_style["style_key"]:
         db.execute(
             "UPDATE robot_instances SET style_key = ? WHERE id = ?",
             (computed_style["style_key"], int(robot_instance_id)),
@@ -45540,6 +45573,7 @@ def touch_user_presence():
             path=request.path,
             room_key=(request.values.get("room_key") or request.values.get("room")),
             robot_instance_id=(int(user["active_robot_id"]) if user["active_robot_id"] else None),
+            min_interval_seconds=int(PRESENCE_TOUCH_INTERVAL_SECONDS),
         )
         db.commit()
         session["_presence_touch_at"] = now
@@ -56973,45 +57007,58 @@ def records_view():
     if not user:
         return redirect(url_for("login"))
     week_key = _world_week_key()
-    weekly_record_groups = (
-        _record_preview_rows(db, "weekly_explores", week_key=week_key, limit=3),
-        _record_preview_rows(db, "weekly_bosses", week_key=week_key, limit=3),
-        _record_preview_rows(db, "weekly_insect_parts", week_key=week_key, limit=3),
-        _record_preview_rows(db, "fastest", limit=3),
-        _record_preview_rows(db, "durable", limit=3),
-        _record_preview_rows(db, "burst", limit=3),
+    user_id = int(user["id"])
+    is_admin = bool(int(user["is_admin"] or 0) == 1)
+
+    def _build_records_context():
+        weekly_record_groups = (
+            _record_preview_rows(db, "weekly_explores", week_key=week_key, limit=3),
+            _record_preview_rows(db, "weekly_bosses", week_key=week_key, limit=3),
+            _record_preview_rows(db, "weekly_insect_parts", week_key=week_key, limit=3),
+            _record_preview_rows(db, "fastest", limit=3),
+            _record_preview_rows(db, "durable", limit=3),
+            _record_preview_rows(db, "burst", limit=3),
+        )
+        return {
+            "first_layer4_records": _first_explore_record_rows(
+                db,
+                [*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY],
+                user_row=user,
+            ),
+            "first_layer5_records": _first_explore_record_rows(
+                db,
+                [*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY],
+                user_row=user,
+            ),
+            "first_layer6_records": _first_explore_record_rows(
+                db,
+                [*LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY],
+                user_row=user,
+            ),
+            "layer6_records": _layer_record_snapshot(db, 6, week_key=week_key, limit=3),
+            "first_boss_records": _first_boss_record_rows(db, user_row=user),
+            "first_evolve_records": _first_evolve_record_rows(db),
+            "weekly_record_groups": weekly_record_groups,
+            "tower_records": _tower_records_snapshot(db, user_id),
+            "showcase_highlights": _record_showcase_highlights(db, user_id),
+            "boss_medal_summary": _boss_medal_summary(
+                db,
+                user_id,
+                include_unearned=True,
+                preview_limit=8,
+                user_row=user,
+            ),
+            "week_key": week_key,
+        }
+
+    context, _cache_hit = _ttl_cache_get_or_set(
+        ("records", _home_cache_scope_key(), user_id, is_admin, week_key),
+        RECORDS_CACHE_TTL_SECONDS,
+        _build_records_context,
     )
     return render_template(
         "records.html",
-        first_layer4_records=_first_explore_record_rows(
-            db,
-            [*LAYER4_SUBAREA_KEYS, LAYER4_FINAL_AREA_KEY],
-            user_row=user,
-        ),
-        first_layer5_records=_first_explore_record_rows(
-            db,
-            [*LAYER5_SUBAREA_KEYS, LAYER5_FINAL_AREA_KEY],
-            user_row=user,
-        ),
-        first_layer6_records=_first_explore_record_rows(
-            db,
-            [*LAYER6_SUBAREA_KEYS, LAYER6_FINAL_AREA_KEY],
-            user_row=user,
-        ),
-        layer6_records=_layer_record_snapshot(db, 6, week_key=week_key, limit=3),
-        first_boss_records=_first_boss_record_rows(db, user_row=user),
-        first_evolve_records=_first_evolve_record_rows(db),
-        weekly_record_groups=weekly_record_groups,
-        tower_records=_tower_records_snapshot(db, int(user["id"])),
-        showcase_highlights=_record_showcase_highlights(db, user["id"]),
-        boss_medal_summary=_boss_medal_summary(
-            db,
-            int(user["id"]),
-            include_unearned=True,
-            preview_limit=8,
-            user_row=user,
-        ),
-        week_key=week_key,
+        **context,
     )
 
 
@@ -73720,18 +73767,9 @@ def admin_metrics():
     if request.method == "POST":
         _collect_recent_daily_metrics(db, days=7)
         db.commit()
-    rows = db.execute(
-        """
-        SELECT day_key, dau_count, new_users, explore_count, boss_encounters, boss_defeats, fuse_count
-        FROM daily_metrics
-        ORDER BY day_key DESC
-        LIMIT 7
-        """
-    ).fetchall()
-    if len(rows) < 7:
-        _collect_recent_daily_metrics(db, days=7)
-        db.commit()
-        rows = db.execute(
+
+    def _build_admin_metrics_context():
+        metric_rows = db.execute(
             """
             SELECT day_key, dau_count, new_users, explore_count, boss_encounters, boss_defeats, fuse_count
             FROM daily_metrics
@@ -73739,63 +73777,62 @@ def admin_metrics():
             LIMIT 7
             """
         ).fetchall()
-    core_obs = _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300)
-    behavior_snapshot = _admin_metrics_behavior_snapshot(db, window_days=funnel_days)
-    first_experience_snapshot = _admin_first_experience_snapshot(db, window_days=funnel_days)
-    progression_snapshot = _admin_progression_snapshot(db)
-    robot_tuning_snapshot = _admin_robot_tuning_snapshot(db, window_days=funnel_days)
-    tactical_presets_snapshot = _admin_tactical_presets_snapshot(db, window_days=funnel_days)
-    part_mechanism_snapshot = _admin_part_mechanism_snapshot(db, window_days=funnel_days)
-    module_research_reaction_snapshot = _admin_module_research_reaction_snapshot(db, window_days=funnel_days)
-    layer6_research_snapshot = _admin_layer6_research_snapshot(db, week_key=week_key)
-    analytics_counts = _analytics_exclusion_counts(db)
-    daily_explore_rows = []
-    daily_explore_max = 0.0
-    for row in sorted(rows, key=lambda item: item["day_key"]):
-        dau_count = int(row["dau_count"] or 0)
-        explore_count = int(row["explore_count"] or 0)
-        audit_explore_count = _audit_explore_count_for_day(db, str(row["day_key"]))
-        explores_per_dau = (float(explore_count) / float(dau_count)) if dau_count else 0.0
-        daily_explore_max = max(daily_explore_max, explores_per_dau)
-        daily_explore_rows.append(
-            {
-                "day_key": str(row["day_key"]),
-                "dau_count": dau_count,
-                "explore_count": explore_count,
-                "audit_explore_count": int(audit_explore_count),
-                "explore_count_diff": int(audit_explore_count) - int(explore_count),
-                "explore_count_mismatch": bool(int(audit_explore_count) != int(explore_count)),
-                "explores_per_dau": float(explores_per_dau),
-            }
+        daily_explore_rows = []
+        daily_explore_max = 0.0
+        for row in sorted(metric_rows, key=lambda item: item["day_key"]):
+            dau_count = int(row["dau_count"] or 0)
+            explore_count = int(row["explore_count"] or 0)
+            audit_explore_count = _audit_explore_count_for_day(db, str(row["day_key"]))
+            explores_per_dau = (float(explore_count) / float(dau_count)) if dau_count else 0.0
+            daily_explore_max = max(daily_explore_max, explores_per_dau)
+            daily_explore_rows.append(
+                {
+                    "day_key": str(row["day_key"]),
+                    "dau_count": dau_count,
+                    "explore_count": explore_count,
+                    "audit_explore_count": int(audit_explore_count),
+                    "explore_count_diff": int(audit_explore_count) - int(explore_count),
+                    "explore_count_mismatch": bool(int(audit_explore_count) != int(explore_count)),
+                    "explores_per_dau": float(explores_per_dau),
+                }
+            )
+        for row in daily_explore_rows:
+            row["bar_pct"] = (
+                float(row["explores_per_dau"]) / float(daily_explore_max) * 100.0
+                if daily_explore_max > 0
+                else 0.0
+            )
+        anomaly_cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+        return {
+            "rows": metric_rows,
+            "daily_explore_rows": daily_explore_rows,
+            "measurement_health": _measurement_health_snapshot(db, rows=metric_rows, window_days=funnel_days),
+            "daily_research_summary": daily_research_admin_summary(db, get_day_key()),
+            "layer6_research_snapshot": _admin_layer6_research_snapshot(db, week_key=week_key),
+            "anomaly_cycle": _anomaly_cycle_view(anomaly_cycle),
+            "anomaly_summary": _admin_anomaly_summary(db, anomaly_cycle),
+            "core_obs": _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300),
+            "behavior_snapshot": _admin_metrics_behavior_snapshot(db, window_days=funnel_days),
+            "first_experience_snapshot": _admin_first_experience_snapshot(db, window_days=funnel_days),
+            "progression_snapshot": _admin_progression_snapshot(db),
+            "robot_tuning_snapshot": _admin_robot_tuning_snapshot(db, window_days=funnel_days),
+            "tactical_presets_snapshot": _admin_tactical_presets_snapshot(db, window_days=funnel_days),
+            "part_mechanism_snapshot": _admin_part_mechanism_snapshot(db, window_days=funnel_days),
+            "module_research_reaction_snapshot": _admin_module_research_reaction_snapshot(db, window_days=funnel_days),
+            "analytics_counts": _analytics_exclusion_counts(db),
+        }
+
+    if request.method == "POST":
+        admin_metrics_context = _build_admin_metrics_context()
+    else:
+        admin_metrics_context, _cache_hit = _ttl_cache_get_or_set(
+            ("admin_metrics", _home_cache_scope_key(), sample_size, core_days, funnel_days, week_key),
+            ADMIN_METRICS_CACHE_TTL_SECONDS,
+            _build_admin_metrics_context,
         )
-    for row in daily_explore_rows:
-        row["bar_pct"] = (
-            float(row["explores_per_dau"]) / float(daily_explore_max) * 100.0
-            if daily_explore_max > 0
-            else 0.0
-        )
-    measurement_health = _measurement_health_snapshot(db, rows=rows, window_days=funnel_days)
-    daily_research_summary = daily_research_admin_summary(db, get_day_key())
-    anomaly_cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
-    anomaly_summary = _admin_anomaly_summary(db, anomaly_cycle)
     return render_template(
         "admin_metrics.html",
-        rows=rows,
-        daily_explore_rows=daily_explore_rows,
-        measurement_health=measurement_health,
-        daily_research_summary=daily_research_summary,
-        layer6_research_snapshot=layer6_research_snapshot,
-        anomaly_cycle=_anomaly_cycle_view(anomaly_cycle),
-        anomaly_summary=anomaly_summary,
-        behavior_snapshot=behavior_snapshot,
-        first_experience_snapshot=first_experience_snapshot,
-        progression_snapshot=progression_snapshot,
-        robot_tuning_snapshot=robot_tuning_snapshot,
-        tactical_presets_snapshot=tactical_presets_snapshot,
-        part_mechanism_snapshot=part_mechanism_snapshot,
-        module_research_reaction_snapshot=module_research_reaction_snapshot,
-        analytics_counts=analytics_counts,
-        core_obs=core_obs,
+        **admin_metrics_context,
         selected_sample_size=int(sample_size or 500),
         selected_core_days=int(core_days or 14),
     )
