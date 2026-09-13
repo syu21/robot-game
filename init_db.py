@@ -2343,6 +2343,32 @@ def main():
     )
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS daily_event_metrics (
+            day_key TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            user_count INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (day_key, event_type)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_user_event_metrics (
+            day_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            first_at INTEGER NOT NULL DEFAULT 0,
+            last_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (day_key, user_id, event_type)
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS portal_online_delivery_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             online_count INTEGER NOT NULL,

@@ -3961,70 +3961,66 @@ def _collect_daily_metrics(db, day_key):
     start_ts, end_ts = _jst_day_key_to_bounds(day_key)
     user_filter = _analytics_user_filter_sql("u")
     dau_event_types = tuple(ADMIN_METRICS_DAU_EVENT_TYPES)
-    dau_count = db.execute(
+    tracked_event_types = tuple(
+        event_type
+        for event_type in dict.fromkeys(
+            (
+                *dau_event_types,
+                AUDIT_EVENT_TYPES["EXPLORE_START"],
+                AUDIT_EVENT_TYPES["EXPLORE_END"],
+                AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                AUDIT_EVENT_TYPES["FUSE"],
+                AUDIT_EVENT_TYPES.get("EXPLORE_FAILED"),
+            )
+        )
+        if event_type
+    )
+    event_rows = db.execute(
         f"""
-        SELECT COUNT(DISTINCT wel.user_id) AS c
+        SELECT
+            wel.event_type,
+            COUNT(*) AS event_count,
+            COUNT(DISTINCT wel.user_id) AS user_count
         FROM world_events_log wel
         JOIN users u ON u.id = wel.user_id
         WHERE wel.user_id IS NOT NULL
           AND wel.created_at >= ? AND wel.created_at < ?
-          AND wel.event_type IN ({",".join(["?"] * len(dau_event_types))})
+          AND wel.event_type IN ({",".join(["?"] * len(tracked_event_types))})
           AND {user_filter}
+        GROUP BY wel.event_type
         """,
-        (start_ts, end_ts, *dau_event_types),
-    ).fetchone()["c"]
+        (start_ts, end_ts, *tracked_event_types),
+    ).fetchall()
+    event_counts = {str(row["event_type"]): int(row["event_count"] or 0) for row in event_rows}
+    event_user_counts = {str(row["event_type"]): int(row["user_count"] or 0) for row in event_rows}
+    dau_users = set()
+    if event_rows:
+        dau_rows = db.execute(
+            f"""
+            SELECT DISTINCT wel.user_id
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.user_id IS NOT NULL
+              AND wel.created_at >= ? AND wel.created_at < ?
+              AND wel.event_type IN ({",".join(["?"] * len(dau_event_types))})
+              AND {user_filter}
+            """,
+            (start_ts, end_ts, *dau_event_types),
+        ).fetchall()
+        dau_users = {int(row["user_id"]) for row in dau_rows if row["user_id"] is not None}
     new_users = db.execute(
         f"SELECT COUNT(*) AS c FROM users u WHERE created_at >= ? AND created_at < ? AND {user_filter}",
         (start_ts, end_ts),
     ).fetchone()["c"]
-    explore_count = db.execute(
-        f"""
-        SELECT COUNT(*) AS c
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
-          AND {user_filter}
-        """,
-        (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts, end_ts),
-    ).fetchone()["c"]
-    boss_encounters = db.execute(
-        f"""
-        SELECT COUNT(*) AS c
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
-          AND {user_filter}
-        """,
-        (AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], start_ts, end_ts),
-    ).fetchone()["c"]
-    boss_defeats = db.execute(
-        f"""
-        SELECT COUNT(*) AS c
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
-          AND {user_filter}
-        """,
-        (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], start_ts, end_ts),
-    ).fetchone()["c"]
-    fuse_count = db.execute(
-        f"""
-        SELECT COUNT(*) AS c
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.event_type = ? AND wel.created_at >= ? AND wel.created_at < ?
-          AND {user_filter}
-        """,
-        (AUDIT_EVENT_TYPES["FUSE"], start_ts, end_ts),
-    ).fetchone()["c"]
     row = {
         "day_key": day_key,
-        "dau_count": int(dau_count or 0),
+        "dau_count": int(len(dau_users)),
         "new_users": int(new_users or 0),
-        "explore_count": int(explore_count or 0),
-        "boss_encounters": int(boss_encounters or 0),
-        "boss_defeats": int(boss_defeats or 0),
-        "fuse_count": int(fuse_count or 0),
+        "explore_count": int(event_counts.get(AUDIT_EVENT_TYPES["EXPLORE_END"], 0)),
+        "boss_encounters": int(event_counts.get(AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], 0)),
+        "boss_defeats": int(event_counts.get(AUDIT_EVENT_TYPES["BOSS_DEFEAT"], 0)),
+        "fuse_count": int(event_counts.get(AUDIT_EVENT_TYPES["FUSE"], 0)),
     }
     db.execute(
         """
@@ -4049,6 +4045,66 @@ def _collect_daily_metrics(db, day_key):
             row["fuse_count"],
         ),
     )
+    updated_at = int(time.time())
+    for event_type in tracked_event_types:
+        db.execute(
+            """
+            INSERT INTO daily_event_metrics
+            (day_key, event_type, event_count, user_count, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(day_key, event_type) DO UPDATE SET
+                event_count = excluded.event_count,
+                user_count = excluded.user_count,
+                updated_at = excluded.updated_at
+            """,
+            (
+                str(day_key),
+                str(event_type),
+                int(event_counts.get(event_type, 0)),
+                int(event_user_counts.get(event_type, 0)),
+                updated_at,
+            ),
+        )
+    user_event_rows = db.execute(
+        f"""
+        SELECT
+            wel.user_id,
+            wel.event_type,
+            COUNT(*) AS event_count,
+            MIN(wel.created_at) AS first_at,
+            MAX(wel.created_at) AS last_at
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.user_id IS NOT NULL
+          AND wel.created_at >= ? AND wel.created_at < ?
+          AND wel.event_type IN ({",".join(["?"] * len(tracked_event_types))})
+          AND {user_filter}
+        GROUP BY wel.user_id, wel.event_type
+        """,
+        (start_ts, end_ts, *tracked_event_types),
+    ).fetchall()
+    for event_row in user_event_rows:
+        db.execute(
+            """
+            INSERT INTO daily_user_event_metrics
+            (day_key, user_id, event_type, event_count, first_at, last_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(day_key, user_id, event_type) DO UPDATE SET
+                event_count = excluded.event_count,
+                first_at = excluded.first_at,
+                last_at = excluded.last_at,
+                updated_at = excluded.updated_at
+            """,
+            (
+                str(day_key),
+                int(event_row["user_id"]),
+                str(event_row["event_type"]),
+                int(event_row["event_count"] or 0),
+                int(event_row["first_at"] or 0),
+                int(event_row["last_at"] or 0),
+                updated_at,
+            ),
+        )
     return row
 
 
@@ -4062,7 +4118,43 @@ def _collect_recent_daily_metrics(db, days=7):
     return rows
 
 
+def _daily_event_metric_row(db, day_key, event_type):
+    return db.execute(
+        """
+        SELECT event_count, user_count
+        FROM daily_event_metrics
+        WHERE day_key = ? AND event_type = ?
+        LIMIT 1
+        """,
+        (str(day_key), str(event_type)),
+    ).fetchone()
+
+
+def _daily_event_metric_count(db, day_key, event_type, *, count_key="event_count", fallback_raw=True):
+    row = _daily_event_metric_row(db, day_key, event_type)
+    if row:
+        return int(row[count_key] or 0)
+    if not fallback_raw:
+        return 0
+    start_ts, end_ts = _jst_day_key_to_bounds(day_key)
+    raw = db.execute(
+        f"""
+        SELECT COUNT(*) AS event_count, COUNT(DISTINCT wel.user_id) AS user_count
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type = ?
+          AND wel.created_at >= ? AND wel.created_at < ?
+          AND {_analytics_user_filter_sql("u")}
+        """,
+        (str(event_type), int(start_ts), int(end_ts)),
+    ).fetchone()
+    return int((raw or {})[count_key] or 0) if raw else 0
+
+
 def _audit_explore_count_for_day(db, day_key):
+    aggregate_row = _daily_event_metric_row(db, day_key, AUDIT_EVENT_TYPES["EXPLORE_END"])
+    if aggregate_row:
+        return int(aggregate_row["event_count"] or 0)
     start_ts, end_ts = _jst_day_key_to_bounds(day_key)
     row = db.execute(
         f"""
@@ -4080,36 +4172,34 @@ def _audit_explore_count_for_day(db, day_key):
 
 def _measurement_health_snapshot(db, *, rows, window_days=7):
     now_ts = _now_ts()
-    start_ts = int(now_ts - max(1, int(window_days or 7)) * 86400)
+    window_days = max(1, int(window_days or 7))
+    today = datetime.fromtimestamp(now_ts, JST).date()
+    day_keys = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(window_days)]
+    today_key = today.strftime("%Y-%m-%d")
+    if today_key in day_keys:
+        _collect_daily_metrics(db, today_key)
+    placeholders = ",".join(["?"] * len(day_keys))
+    metric_rows = db.execute(
+        f"""
+        SELECT event_type, SUM(event_count) AS event_count
+        FROM daily_event_metrics
+        WHERE day_key IN ({placeholders})
+          AND event_type IN (?, ?, ?)
+        GROUP BY event_type
+        """,
+        (
+            *day_keys,
+            AUDIT_EVENT_TYPES["EXPLORE_START"],
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES.get("EXPLORE_FAILED"),
+        ),
+    ).fetchall()
+    metric_counts = {str(row["event_type"]): int(row["event_count"] or 0) for row in metric_rows}
+    start_count = int(metric_counts.get(AUDIT_EVENT_TYPES["EXPLORE_START"], 0))
+    end_count = int(metric_counts.get(AUDIT_EVENT_TYPES["EXPLORE_END"], 0))
+    failed_count = int(metric_counts.get(AUDIT_EVENT_TYPES.get("EXPLORE_FAILED"), 0))
+    start_ts = int(now_ts - window_days * 86400)
     user_filter = _analytics_user_filter_sql("u")
-    start_count = int(
-        db.execute(
-            f"""
-            SELECT COUNT(*) AS c
-            FROM world_events_log wel
-            JOIN users u ON u.id = wel.user_id
-            WHERE wel.event_type = ?
-              AND wel.created_at >= ?
-              AND {user_filter}
-            """,
-            (AUDIT_EVENT_TYPES["EXPLORE_START"], start_ts),
-        ).fetchone()["c"]
-        or 0
-    )
-    end_count = int(
-        db.execute(
-            f"""
-            SELECT COUNT(*) AS c
-            FROM world_events_log wel
-            JOIN users u ON u.id = wel.user_id
-            WHERE wel.event_type = ?
-              AND wel.created_at >= ?
-              AND {user_filter}
-            """,
-            (AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts),
-        ).fetchone()["c"]
-        or 0
-    )
     unknown_entry = int(
         db.execute(
             f"""
@@ -4137,20 +4227,6 @@ def _measurement_health_snapshot(db, *, rows, window_days=7):
               AND COALESCE(wel.request_id, '') = ''
             """,
             (AUDIT_EVENT_TYPES["EXPLORE_START"], AUDIT_EVENT_TYPES["EXPLORE_END"], start_ts),
-        ).fetchone()["c"]
-        or 0
-    )
-    failed_count = int(
-        db.execute(
-            f"""
-            SELECT COUNT(*) AS c
-            FROM world_events_log wel
-            JOIN users u ON u.id = wel.user_id
-            WHERE wel.event_type = ?
-              AND wel.created_at >= ?
-              AND {user_filter}
-            """,
-            (AUDIT_EVENT_TYPES.get("EXPLORE_FAILED"), start_ts),
         ).fetchone()["c"]
         or 0
     )
@@ -4307,19 +4383,35 @@ def _admin_behavior_events(db, since_ts):
         )
 
     tracked_event_types = tuple(ADMIN_METRICS_WORLD_EVENT_TO_STEP.keys())
-    audit_rows = db.execute(
+    since_day_key = _jst_day_key_from_ts(since_ts)
+    today_key = get_day_key()
+    _collect_daily_metrics(db, today_key)
+    aggregate_rows = db.execute(
         f"""
-        SELECT wel.id, wel.user_id, wel.created_at, wel.event_type
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.user_id IS NOT NULL
-          AND wel.created_at >= ?
-          AND wel.event_type IN ({",".join(["?"] * len(tracked_event_types))})
-          AND {user_filter}
-        ORDER BY wel.created_at ASC, wel.id ASC
+        SELECT user_id, event_type, last_at AS created_at
+        FROM daily_user_event_metrics
+        WHERE day_key >= ?
+          AND last_at >= ?
+          AND event_type IN ({",".join(["?"] * len(tracked_event_types))})
+        ORDER BY last_at ASC, user_id ASC, event_type ASC
         """,
-        (since_ts, *tracked_event_types),
+        (since_day_key, since_ts, *tracked_event_types),
     ).fetchall()
+    audit_rows = aggregate_rows
+    if not audit_rows:
+        audit_rows = db.execute(
+            f"""
+            SELECT wel.id, wel.user_id, wel.created_at, wel.event_type
+            FROM world_events_log wel
+            JOIN users u ON u.id = wel.user_id
+            WHERE wel.user_id IS NOT NULL
+              AND wel.created_at >= ?
+              AND wel.event_type IN ({",".join(["?"] * len(tracked_event_types))})
+              AND {user_filter}
+            ORDER BY wel.created_at ASC, wel.id ASC
+            """,
+            (since_ts, *tracked_event_types),
+        ).fetchall()
     for row in audit_rows:
         step_key = ADMIN_METRICS_WORLD_EVENT_TO_STEP.get(str(row["event_type"] or ""))
         if not step_key:
@@ -17912,6 +18004,32 @@ def ensure_schema(db):
             boss_encounters INTEGER NOT NULL DEFAULT 0,
             boss_defeats INTEGER NOT NULL DEFAULT 0,
             fuse_count INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_event_metrics (
+            day_key TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            user_count INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (day_key, event_type)
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_user_event_metrics (
+            day_key TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            first_at INTEGER NOT NULL DEFAULT 0,
+            last_at INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (day_key, user_id, event_type)
         )
         """
     )
@@ -73765,7 +73883,10 @@ def admin_metrics():
     funnel_days = request.args.get("funnel_days", type=int, default=7)
     week_key = _world_week_key()
     if request.method == "POST":
-        _collect_recent_daily_metrics(db, days=7)
+        _collect_recent_daily_metrics(db, days=max(7, int(funnel_days or 7)))
+        db.commit()
+    else:
+        _collect_daily_metrics(db, get_day_key())
         db.commit()
 
     def _build_admin_metrics_context():
@@ -73774,8 +73895,10 @@ def admin_metrics():
             SELECT day_key, dau_count, new_users, explore_count, boss_encounters, boss_defeats, fuse_count
             FROM daily_metrics
             ORDER BY day_key DESC
-            LIMIT 7
+            LIMIT ?
             """
+            ,
+            (max(7, int(funnel_days or 7)),),
         ).fetchall()
         daily_explore_rows = []
         daily_explore_max = 0.0
