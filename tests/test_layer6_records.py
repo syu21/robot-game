@@ -128,6 +128,74 @@ class Layer6RecordTests(unittest.TestCase):
             self.assertEqual(snapshot["stability"][0]["record_label"], "安定攻略 100%")
             self.assertEqual(snapshot["boss"][0]["record_label"], "第6層最終試験 初撃破")
 
+    def test_layer6_snapshot_can_bound_fastest_to_week_for_home_and_metrics(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "layer6_weekly_runner")
+            robot_id = self._create_robot(db, user_id, "WeeklyRunner")
+            self._insert_explore_end(db, user_id, robot_id, turns=1, request_id="old-fastest", ts_offset=-(14 * 86400))
+            self._insert_explore_end(db, user_id, robot_id, turns=5, request_id="week-fastest", ts_offset=0)
+            db.commit()
+
+            all_time = game_app._layer_record_snapshot(db, 6, week_key=self.week_key, limit=3)
+            weekly = game_app._layer_record_snapshot(db, 6, week_key=self.week_key, limit=3, bound_all_sections=True)
+
+            self.assertEqual(all_time["fastest"][0]["record_label"], "最短攻略 1ターン")
+            self.assertEqual(weekly["fastest"][0]["record_label"], "最短攻略 5ターン")
+
+    def test_admin_layer6_reached_state_matches_canonical_event_history_fixture(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            fixtures = [
+                ("layer4_only", 4, 0, 0, 0, False),
+                ("layer5_only", 5, 0, 0, 0, False),
+                ("layer6_state", 6, 0, 0, 0, True),
+                ("layer6_admin", 6, 1, 0, 0, True),
+                ("layer6_excluded", 6, 0, 1, 0, True),
+                ("layer6_banned", 6, 0, 0, 1, True),
+                ("layer6_no_robot", 6, 0, 0, 0, True),
+                ("layer6_null_area", 6, 0, 0, 0, True),
+                ("layer6_historical_state", 6, 0, 0, 0, True),
+            ]
+            for username, max_layer, is_admin, excluded, banned, has_layer6_event in fixtures:
+                uid = self._create_user(db, username, is_admin=is_admin, analytics_excluded=excluded, max_layer=max_layer)
+                db.execute("UPDATE users SET is_banned = ?, last_explore_area_key = NULL WHERE id = ?", (int(banned), uid))
+                if has_layer6_event:
+                    robot_id = 0 if username == "layer6_no_robot" else self._create_robot(db, uid, f"{username}Bot")
+                    self._insert_explore_end(
+                        db,
+                        uid,
+                        robot_id,
+                        area_key="layer_6_rebuild",
+                        request_id=f"history-{username}",
+                        ts_offset=-86400,
+                    )
+            db.commit()
+
+            user_filter = game_app._analytics_user_filter_sql("u")
+            before_row = db.execute(
+                f"""
+                SELECT COUNT(DISTINCT u.id) AS c
+                FROM users u
+                WHERE {user_filter}
+                  AND (
+                    COALESCE(u.max_unlocked_layer, 1) >= 6
+                    OR EXISTS (
+                      SELECT 1
+                      FROM world_events_log wel
+                      WHERE wel.user_id = u.id
+                        AND wel.event_type = ?
+                        AND wel.payload_json LIKE '%layer_6_%'
+                      LIMIT 1
+                    )
+                  )
+                """,
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],),
+            ).fetchone()
+            snapshot = game_app._admin_layer6_research_snapshot(db, week_key=self.week_key)
+
+        self.assertEqual(snapshot["reached_users"], int(before_row["c"] or 0))
+
     def test_layer6_records_exclude_admin_test_and_marked_users(self):
         with game_app.app.app_context():
             db = game_app.get_db()

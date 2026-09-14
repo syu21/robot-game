@@ -165,11 +165,11 @@ class DailyEventMetricsTests(unittest.TestCase):
                 with game_app.app.test_request_context("/home"):
                     game_app.g.request_id = "req-profiler-test"
                     game_app.session["user_id"] = 42
-                    with patch.object(game_app.app.logger, "info") as info_log:
+                    with patch.object(game_app.app.logger, "warning") as warning_log:
                         elapsed = game_app._home_section_log("unit", time.perf_counter())
             self.assertGreaterEqual(elapsed, 0)
-            self.assertEqual(info_log.call_count, 1)
-            log_args = info_log.call_args.args
+            self.assertEqual(warning_log.call_count, 1)
+            log_args = warning_log.call_args.args
             self.assertIn("perf.%s.section", log_args[0])
             self.assertIn("home", log_args)
             self.assertIn("unit", log_args)
@@ -209,6 +209,43 @@ class DailyEventMetricsTests(unittest.TestCase):
             game_app.PERF_DIAGNOSTICS = old_perf_diagnostics
             game_app.SQL_SLOW_PROFILE_ENABLED = old_sql_profile_enabled
             game_app.SQL_SLOW_PROFILE_MS = old_sql_profile_ms
+
+    def test_core_drop_observability_uses_days_window_for_sample(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "core_window_user", created_at=now - 30 * 86400)
+            self._insert_event(
+                db,
+                user_id,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                created_at=now - 60,
+                payload={"result": {"win": True, "battle_count": 2}, "rewards": {"cores": 1}},
+            )
+            self._insert_event(
+                db,
+                user_id,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                created_at=now - 120,
+                payload={"result": {"win": False, "battle_count": 3}, "rewards": {"cores": 0}},
+            )
+            self._insert_event(
+                db,
+                user_id,
+                game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                created_at=now - 30 * 86400,
+                payload={"result": {"win": True, "battle_count": 7}, "rewards": {"cores": 9}},
+            )
+            db.commit()
+
+            snapshot = game_app._core_drop_observability(db, sample_size=50, days=14, user_day_limit=20)
+
+        self.assertEqual(snapshot["sample_size"], 50)
+        self.assertEqual(snapshot["days"], 14)
+        self.assertEqual(snapshot["explores"], 2)
+        self.assertEqual(snapshot["wins"], 1)
+        self.assertEqual(snapshot["battles_total"], 5)
+        self.assertEqual(snapshot["core_total"], 1)
 
 
 if __name__ == "__main__":

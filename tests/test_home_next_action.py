@@ -191,7 +191,7 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertNotIn("NEW 第3層へ行く", html)
 
     def test_home_layer4_frontier_excludes_admin_and_limits_rows(self):
-        admin_id = self._create_user("frontier_admin", is_admin=1, max_layer=4)
+        admin_id = self._create_user("frontier_admin", is_admin=1, max_layer=5)
         self._insert_world_event(
             admin_id,
             game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
@@ -199,7 +199,7 @@ class HomeNextActionTests(unittest.TestCase):
         )
         created_ids = []
         for i in range(6):
-            uid = self._create_user(f"frontier_{i}", max_layer=4)
+            uid = self._create_user(f"frontier_{i}", max_layer=5)
             created_ids.append(uid)
             self._insert_world_event(
                 uid,
@@ -218,6 +218,76 @@ class HomeNextActionTests(unittest.TestCase):
         self.assertIn("第5層攻略レース", html)
         self.assertIn("第5層探索", html)
         self.assertNotIn("frontier_admin", html)
+
+    def test_layer4_frontier_state_matches_canonical_event_history_fixture(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            fixtures = [
+                ("layer4_only", 4, None, 0, 0, 0, False),
+                ("layer5_state", 5, "layer_5_reboot", 0, 0, 0, True),
+                ("layer6_state", 6, "layer_6_rebuild", 0, 0, 0, True),
+                ("frontier_admin_state", 5, "layer_5_reboot", 1, 0, 0, True),
+                ("frontier_excluded_state", 5, "layer_5_reboot", 0, 1, 0, True),
+                ("frontier_banned_state", 5, "layer_5_reboot", 0, 0, 1, True),
+                ("frontier_no_robot_state", 5, None, 0, 0, 0, True),
+                ("frontier_historical_state", 5, "layer_5_reboot", 0, 0, 0, True),
+            ]
+            for username, max_layer, last_area, is_admin, excluded, banned, has_layer5_event in fixtures:
+                db.execute(
+                    """
+                    INSERT INTO users (
+                        username, password_hash, created_at, is_admin, wins,
+                        max_unlocked_layer, last_seen_at, last_explore_area_key,
+                        analytics_excluded, is_banned
+                    )
+                    VALUES (?, 'x', ?, ?, 0, ?, ?, ?, ?, ?)
+                    """,
+                    (username, now, int(is_admin), int(max_layer), now, last_area, int(excluded), int(banned)),
+                )
+                uid = int(db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"])
+                if has_layer5_event:
+                    db.execute(
+                        """
+                        INSERT INTO world_events_log (created_at, event_type, payload_json, user_id)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            now - 86400,
+                            game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                            json.dumps({"area_key": "layer_5_reboot"}, ensure_ascii=False),
+                            uid,
+                        ),
+                    )
+            db.commit()
+
+            before_rows = db.execute(
+                """
+                SELECT DISTINCT u.username
+                FROM world_events_log wel
+                JOIN users u ON u.id = wel.user_id
+                WHERE wel.user_id IS NOT NULL
+                  AND COALESCE(u.is_admin, 0) = 0
+                  AND wel.event_type IN (?, ?, ?)
+                  AND COALESCE(
+                      json_extract(wel.payload_json, '$.area_key'),
+                      json_extract(wel.payload_json, '$.boss_area_key'),
+                      json_extract(wel.payload_json, '$.explore_area_key')
+                  ) IN (?, ?, ?)
+                """,
+                (
+                    game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                    game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"],
+                    game_app.AUDIT_EVENT_TYPES.get("BATTLE_END", "audit.battle.end"),
+                    "layer_5_reboot",
+                    "layer_5_fracture",
+                    "layer_5_final",
+                ),
+            ).fetchall()
+            before_names = {row["username"] for row in before_rows}
+            rows = game_app.get_layer4_frontier_users(db=db, limit=20)
+
+        self.assertEqual({row["username"] for row in rows}, before_names)
 
     def test_home_layer4_frontier_empty_state_and_optional_cards_hidden(self):
         html = self._new_client().get("/home").get_data(as_text=True)

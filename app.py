@@ -6126,6 +6126,7 @@ def _core_drop_observability(db, sample_size=500, days=14, user_day_limit=200):
     days = max(1, min(90, int(days or 14)))
     user_day_limit = max(20, min(1000, int(user_day_limit or 200)))
     user_filter = _analytics_user_filter_sql("u")
+    since_ts = int(time.time()) - days * 86400
 
     explore_rows = db.execute(
         f"""
@@ -6133,11 +6134,12 @@ def _core_drop_observability(db, sample_size=500, days=14, user_day_limit=200):
         FROM world_events_log wel
         JOIN users u ON u.id = wel.user_id
         WHERE wel.event_type = ?
+          AND wel.created_at >= ?
           AND {user_filter}
-        ORDER BY wel.id DESC
+        ORDER BY wel.created_at DESC, wel.id DESC
         LIMIT ?
         """,
-        (AUDIT_EVENT_TYPES["EXPLORE_END"], sample_size),
+        (AUDIT_EVENT_TYPES["EXPLORE_END"], since_ts, sample_size),
     ).fetchall()
 
     explores = len(explore_rows)
@@ -6172,7 +6174,6 @@ def _core_drop_observability(db, sample_size=500, days=14, user_day_limit=200):
         else 0.0
     )
 
-    since_ts = int(time.time()) - days * 86400
     user_day_rows = db.execute(
         f"""
         SELECT
@@ -6297,7 +6298,14 @@ def _log_perf_section(scope, section_key, started_at, *, extra=None):
     if not _section_profile_enabled(scope):
         return elapsed_ms
     message_extra = f" {extra}" if extra else ""
-    app.logger.info(
+    scope_key = str(scope or "").upper()
+    explicit_profile = _runtime_bool_env("SECTION_PROFILE")
+    if scope_key == "HOME":
+        explicit_profile = explicit_profile or _runtime_bool_env("HOME_SECTION_PROFILE")
+    elif scope_key == "METRICS":
+        explicit_profile = explicit_profile or _runtime_bool_env("METRICS_SECTION_PROFILE")
+    log_fn = app.logger.warning if explicit_profile else app.logger.info
+    log_fn(
         "perf.%s.section section=%s elapsed_ms=%.3f user_id=%s request_id=%s%s",
         str(scope or "").lower(),
         str(section_key),
@@ -39235,56 +39243,6 @@ def get_layer4_frontier_users(limit=5, db=None):
             "area_key": row["last_explore_area_key"] if row["last_explore_area_key"] in layer5_area_keys else "layer_5_reboot",
             "latest_activity_at": int(row["last_seen_at"] or 0),
         }
-    event_rows = db.execute(
-        """
-        SELECT u.id,
-               u.username,
-               u.display_name,
-               u.max_unlocked_layer,
-               u.last_explore_area_key,
-               u.last_seen_at,
-               wel.created_at,
-               COALESCE(
-                   json_extract(wel.payload_json, '$.area_key'),
-                   json_extract(wel.payload_json, '$.boss_area_key'),
-                   json_extract(wel.payload_json, '$.explore_area_key')
-               ) AS event_area_key
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.user_id IS NOT NULL
-          AND COALESCE(u.is_admin, 0) = 0
-          AND wel.event_type IN (?, ?, ?)
-          AND COALESCE(
-              json_extract(wel.payload_json, '$.area_key'),
-              json_extract(wel.payload_json, '$.boss_area_key'),
-              json_extract(wel.payload_json, '$.explore_area_key')
-          ) IN (?, ?, ?)
-        ORDER BY wel.created_at DESC, wel.id DESC
-        LIMIT 300
-        """,
-        (
-            AUDIT_EVENT_TYPES.get("EXPLORE_END", "audit.explore.end"),
-            AUDIT_EVENT_TYPES.get("BOSS_DEFEAT", "audit.boss.defeat"),
-            AUDIT_EVENT_TYPES.get("BATTLE_END", "audit.battle.end"),
-            *layer5_area_keys,
-        ),
-    ).fetchall()
-    for row in event_rows:
-        uid = int(row["id"])
-        latest_activity_at = max(int(row["created_at"] or 0), int(row["last_seen_at"] or 0))
-        if uid in candidate_ids:
-            candidate_ids[uid]["latest_activity_at"] = max(
-                int(candidate_ids[uid].get("latest_activity_at") or 0),
-                latest_activity_at,
-            )
-            if str(row["event_area_key"] or "") in layer5_area_keys:
-                candidate_ids[uid]["area_key"] = str(row["event_area_key"])
-            continue
-        candidate_ids[uid] = {
-            "user": row,
-            "area_key": str(row["event_area_key"] or "layer_5_reboot"),
-            "latest_activity_at": latest_activity_at,
-        }
     visuals_cache = {}
     rows = []
     for uid, entry in candidate_ids.items():
@@ -40824,10 +40782,10 @@ def _decorate_layer_record_rows(db, rows):
     return out
 
 
-def _layer_record_fastest_rows(db, layer_no, *, limit=3):
+def _layer_record_fastest_rows(db, layer_no, *, week_key=None, limit=3):
     events = [
         event
-        for event in _layer_record_event_rows(db, layer_no, normal_only=True, wins_only=True)
+        for event in _layer_record_event_rows(db, layer_no, week_key=week_key, normal_only=True, wins_only=True)
         if int(event.get("turns") or 0) > 0
     ]
     best_by_user = {}
@@ -40943,22 +40901,32 @@ def _layer_record_heat_rows(db, layer_no, *, week_key=None, limit=3):
     return _decorate_layer_record_rows(db, rows)
 
 
-def _layer_record_boss_rows(db, layer_no, *, limit=3):
+def _layer_record_boss_rows(db, layer_no, *, week_key=None, limit=3):
     if int(layer_no or 0) != 6:
         return []
+    where = [
+        "wel.event_type = ?",
+        "COALESCE(json_extract(wel.payload_json, '$.area_key'), '') = ?",
+        _analytics_user_filter_sql("u"),
+    ]
+    params = [AUDIT_EVENT_TYPES["BOSS_DEFEAT"], LAYER6_FINAL_AREA_KEY]
+    if week_key:
+        start_dt, end_dt = _world_week_bounds(str(week_key))
+        where.append("wel.created_at >= ?")
+        where.append("wel.created_at < ?")
+        params.extend([int(start_dt.timestamp()), int(end_dt.timestamp())])
+    params.append(int(limit))
     rows = db.execute(
         f"""
         SELECT wel.id, wel.user_id, wel.created_at, wel.payload_json,
                u.username, u.display_name
         FROM world_events_log wel
         JOIN users u ON u.id = wel.user_id
-        WHERE wel.event_type = ?
-          AND COALESCE(json_extract(wel.payload_json, '$.area_key'), '') = ?
-          AND {_analytics_user_filter_sql("u")}
+        WHERE {' AND '.join(where)}
         ORDER BY wel.created_at ASC, wel.id ASC
         LIMIT ?
         """,
-        (AUDIT_EVENT_TYPES["BOSS_DEFEAT"], LAYER6_FINAL_AREA_KEY, int(limit)),
+        params,
     ).fetchall()
     out = []
     for row in rows:
@@ -40992,11 +40960,12 @@ def _layer_record_spotlights(snapshot, *, limit=3):
     return list(combined.values())[: int(limit)]
 
 
-def _layer_record_snapshot(db, layer_no, *, week_key=None, limit=3):
-    fastest = _layer_record_fastest_rows(db, layer_no, limit=limit)
+def _layer_record_snapshot(db, layer_no, *, week_key=None, limit=3, bound_all_sections=False):
+    section_week_key = week_key if bound_all_sections else None
+    fastest = _layer_record_fastest_rows(db, layer_no, week_key=section_week_key, limit=limit)
     stability = _layer_record_stability_rows(db, layer_no, week_key=week_key, limit=limit)
     heat = _layer_record_heat_rows(db, layer_no, week_key=week_key, limit=limit)
-    boss = _layer_record_boss_rows(db, layer_no, limit=limit)
+    boss = _layer_record_boss_rows(db, layer_no, week_key=section_week_key, limit=limit)
     snapshot = {
         "layer_no": int(layer_no),
         "week_key": str(week_key or _world_week_key()),
@@ -41013,7 +40982,7 @@ def _layer_record_snapshot(db, layer_no, *, week_key=None, limit=3):
 def _home_layer6_research_brief(db, week_key):
     if not _release_flag_is_public(db, "layer6"):
         return {"enabled": False, "rows": []}
-    snapshot = _layer_record_snapshot(db, 6, week_key=week_key, limit=3)
+    snapshot = _layer_record_snapshot(db, 6, week_key=week_key, limit=3, bound_all_sections=True)
     rows = snapshot.get("spotlights") or []
     return {
         "enabled": bool(rows),
@@ -41047,19 +41016,8 @@ def _admin_layer6_research_snapshot(db, *, week_key=None):
         SELECT COUNT(DISTINCT u.id) AS c
         FROM users u
         WHERE {_analytics_user_filter_sql("u")}
-          AND (
-            COALESCE(u.max_unlocked_layer, 1) >= 6
-            OR EXISTS (
-              SELECT 1
-              FROM world_events_log wel
-              WHERE wel.user_id = u.id
-                AND wel.event_type = ?
-                AND wel.payload_json LIKE '%layer_6_%'
-              LIMIT 1
-            )
-          )
+          AND COALESCE(u.max_unlocked_layer, 1) >= 6
         """,
-        (AUDIT_EVENT_TYPES["EXPLORE_END"],),
     ).fetchone()
     boss_rows = db.execute(
         f"""
@@ -41079,7 +41037,7 @@ def _admin_layer6_research_snapshot(db, *, week_key=None):
     def _metric_int(row, key):
         return int(row[key] or 0) if row and key in row.keys() else 0
 
-    snapshot = _layer_record_snapshot(db, 6, week_key=wk, limit=3)
+    snapshot = _layer_record_snapshot(db, 6, week_key=wk, limit=3, bound_all_sections=True)
     record_users = {
         int(row.get("user_id") or 0)
         for key in ("fastest", "stability", "heat", "boss")
