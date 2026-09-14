@@ -996,6 +996,7 @@ PERF_DIAGNOSTICS = str(os.getenv("PERF_DIAGNOSTICS", "0")).strip().lower() in {"
 PERF_SLOW_REQUEST_MS = max(100, int(os.getenv("PERF_SLOW_REQUEST_MS", "500")))
 PERF_SLOW_SQL_MS = max(1, int(os.getenv("PERF_SLOW_SQL_MS", "50")))
 HOME_SECTION_LOG_ENABLED = str(os.getenv("HOME_SECTION_LOG_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+SECTION_PROFILE_SLOW_MS = max(1, int(os.getenv("SECTION_PROFILE_SLOW_MS", "100")))
 PERF_RECENT_EVENTS = deque(maxlen=max(10, int(os.getenv("PERF_RECENT_EVENT_LIMIT", "80"))))
 HOME_TTL_CACHE = {}
 HOME_TTL_CACHE_MISS = object()
@@ -1010,6 +1011,8 @@ CLIENT_ERROR_LOG_CACHE = {}
 CLIENT_ERROR_LOG_CACHE_LOCK = threading.Lock()
 CLIENT_ERROR_LOG_INTERVAL_SECONDS = max(5, int(os.getenv("CLIENT_ERROR_LOG_INTERVAL_SECONDS", "60")))
 HOME_SQL_SLOW_MS = max(10, int(os.getenv("HOME_SQL_SLOW_MS", "80")))
+SQL_SLOW_PROFILE_ENABLED = str(os.getenv("SQL_SLOW_PROFILE", "0")).strip().lower() in {"1", "true", "yes", "on"}
+SQL_SLOW_PROFILE_MS = max(1, int(os.getenv("SQL_SLOW_PROFILE_MS", "500")))
 HOME_CACHE_RANKING_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_RANKING_TTL_SECONDS", "60")))
 HOME_CACHE_MVP_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_MVP_TTL_SECONDS", "60")))
 HOME_CACHE_COMMS_TTL_SECONDS = max(5, int(os.getenv("HOME_CACHE_COMMS_TTL_SECONDS", "20")))
@@ -6260,20 +6263,58 @@ def _now_ts():
     return int(time.time())
 
 
-def _home_section_log(section_key, started_at, *, extra=None):
-    elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
-    if not (HOME_SECTION_LOG_ENABLED or PERF_DIAGNOSTICS):
+def _runtime_bool_env(name, default=False):
+    raw = os.getenv(str(name))
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _section_profile_enabled(scope):
+    scope_key = str(scope or "").upper()
+    if scope_key == "HOME":
+        return bool(
+            HOME_SECTION_LOG_ENABLED
+            or PERF_DIAGNOSTICS
+            or _runtime_bool_env("HOME_SECTION_PROFILE")
+            or _runtime_bool_env("SECTION_PROFILE")
+        )
+    if scope_key == "METRICS":
+        return bool(
+            PERF_DIAGNOSTICS
+            or _runtime_bool_env("METRICS_SECTION_PROFILE")
+            or _runtime_bool_env("SECTION_PROFILE")
+        )
+    return bool(PERF_DIAGNOSTICS or _runtime_bool_env("SECTION_PROFILE"))
+
+
+def _section_profile_elapsed_ms(started_at):
+    return float(time.perf_counter() - started_at) * 1000.0
+
+
+def _log_perf_section(scope, section_key, started_at, *, extra=None):
+    elapsed_ms = _section_profile_elapsed_ms(started_at)
+    if not _section_profile_enabled(scope):
         return elapsed_ms
     message_extra = f" {extra}" if extra else ""
     app.logger.info(
-        "home.section.%s elapsed_ms=%s path=%s request_id=%s%s",
-        section_key,
+        "perf.%s.section section=%s elapsed_ms=%.3f user_id=%s request_id=%s%s",
+        str(scope or "").lower(),
+        str(section_key),
         elapsed_ms,
-        (request.path if has_request_context() else ""),
+        (session.get("user_id") if has_request_context() else None),
         (getattr(g, "request_id", None) if has_request_context() else None),
         message_extra,
     )
     return elapsed_ms
+
+
+def _home_section_log(section_key, started_at, *, extra=None):
+    return _log_perf_section("home", section_key, started_at, extra=extra)
+
+
+def _metrics_section_log(section_key, started_at, *, extra=None):
+    return _log_perf_section("metrics", section_key, started_at, extra=extra)
 
 
 def _ttl_cache_get(cache_key):
@@ -6299,6 +6340,23 @@ def _ttl_cache_get_or_set(cache_key, ttl_seconds, builder):
     return _ttl_cache_set(cache_key, builder(), ttl_seconds), False
 
 
+def _sql_slow_profile_enabled():
+    return bool(PERF_DIAGNOSTICS or SQL_SLOW_PROFILE_ENABLED or _runtime_bool_env("SQL_SLOW_PROFILE"))
+
+
+def _sql_parameter_count(parameters):
+    if parameters is None:
+        return 0
+    if isinstance(parameters, dict):
+        return len(parameters)
+    if isinstance(parameters, (str, bytes)):
+        return 1
+    try:
+        return len(parameters)
+    except TypeError:
+        return 1
+
+
 class TimedSQLiteConnection(sqlite3.Connection):
     def execute(self, sql, parameters=(), /):
         started_at = time.perf_counter()
@@ -6313,9 +6371,24 @@ class TimedSQLiteConnection(sqlite3.Connection):
                 if PERF_DIAGNOSTICS and elapsed_ms_float >= float(PERF_SLOW_SQL_MS):
                     compact_sql = " ".join(str(sql or "").split())[:400]
                     slow_queries = list(getattr(g, "perf_slow_sql", []) or [])
-                    slow_queries.append({"elapsed_ms": round(elapsed_ms_float, 3), "sql": compact_sql})
+                    slow_queries.append(
+                        {
+                            "elapsed_ms": round(elapsed_ms_float, 3),
+                            "sql": compact_sql,
+                            "parameter_count": _sql_parameter_count(parameters),
+                        }
+                    )
                     slow_queries.sort(key=lambda item: float(item["elapsed_ms"]), reverse=True)
                     g.perf_slow_sql = slow_queries[:10]
+                if _sql_slow_profile_enabled() and elapsed_ms_float >= float(SQL_SLOW_PROFILE_MS):
+                    compact_sql = " ".join(str(sql or "").split())[:240]
+                    app.logger.warning(
+                        'perf.sql.slow elapsed_ms=%.3f parameter_count=%s request_id=%s sql="%s"',
+                        elapsed_ms_float,
+                        _sql_parameter_count(parameters),
+                        getattr(g, "request_id", None),
+                        compact_sql.replace('"', "'"),
+                    )
             if (
                 PERF_DIAGNOSTICS
                 and elapsed_ms >= int(HOME_SQL_SLOW_MS)
@@ -45767,9 +45840,10 @@ def log_slow_request(response):
         )
         for item in slow_sql:
             app.logger.info(
-                "perf.sql_slow route=%s elapsed_ms=%.3f request_id=%s sql=%s",
+                "perf.sql_slow route=%s elapsed_ms=%.3f parameter_count=%s request_id=%s sql=%s",
                 path,
                 float(item.get("elapsed_ms") or 0),
+                int(item.get("parameter_count") or 0),
                 getattr(g, "request_id", None),
                 item.get("sql"),
             )
@@ -73875,6 +73949,7 @@ def _admin_module_research_reaction_snapshot(db, *, window_days=7):
 @app.route("/admin/metrics", methods=["GET", "POST"])
 @login_required
 def admin_metrics():
+    metrics_started_at = time.perf_counter()
     if not _is_admin_user(session["user_id"]):
         return abort(403)
     db = get_db()
@@ -73882,14 +73957,23 @@ def admin_metrics():
     core_days = request.args.get("core_days", type=int, default=14)
     funnel_days = request.args.get("funnel_days", type=int, default=7)
     week_key = _world_week_key()
+    section_started_at = time.perf_counter()
     if request.method == "POST":
         _collect_recent_daily_metrics(db, days=max(7, int(funnel_days or 7)))
         db.commit()
     else:
         _collect_daily_metrics(db, get_day_key())
         db.commit()
+    _metrics_section_log("daily_collect", section_started_at)
 
     def _build_admin_metrics_context():
+        def _timed(section_key, builder):
+            section_started = time.perf_counter()
+            value = builder()
+            _metrics_section_log(section_key, section_started)
+            return value
+
+        section_started = time.perf_counter()
         metric_rows = db.execute(
             """
             SELECT day_key, dau_count, new_users, explore_count, boss_encounters, boss_defeats, fuse_count
@@ -73925,27 +74009,78 @@ def admin_metrics():
                 if daily_explore_max > 0
                 else 0.0
             )
-        anomaly_cycle = _ensure_current_anomaly_cycle(db, request_id=getattr(g, "request_id", None), ip=request.remote_addr)
+        _metrics_section_log("daily_summary", section_started)
+        anomaly_cycle = _timed(
+            "anomaly_cycle",
+            lambda: _ensure_current_anomaly_cycle(
+                db,
+                request_id=getattr(g, "request_id", None),
+                ip=request.remote_addr,
+            ),
+        )
+        measurement_health = _timed(
+            "measurement_health",
+            lambda: _measurement_health_snapshot(db, rows=metric_rows, window_days=funnel_days),
+        )
+        daily_research_summary = _timed(
+            "daily_research",
+            lambda: daily_research_admin_summary(db, get_day_key()),
+        )
+        layer6_research_snapshot = _timed(
+            "layer6",
+            lambda: _admin_layer6_research_snapshot(db, week_key=week_key),
+        )
+        anomaly_summary = _timed("anomaly", lambda: _admin_anomaly_summary(db, anomaly_cycle))
+        core_obs = _timed(
+            "evolution_core",
+            lambda: _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300),
+        )
+        behavior_snapshot = _timed(
+            "funnel",
+            lambda: _admin_metrics_behavior_snapshot(db, window_days=funnel_days),
+        )
+        first_experience_snapshot = _timed(
+            "new_user_funnel",
+            lambda: _admin_first_experience_snapshot(db, window_days=funnel_days),
+        )
+        progression_snapshot = _timed("progression", lambda: _admin_progression_snapshot(db))
+        robot_tuning_snapshot = _timed(
+            "tuning",
+            lambda: _admin_robot_tuning_snapshot(db, window_days=funnel_days),
+        )
+        tactical_presets_snapshot = _timed(
+            "tactical_sets",
+            lambda: _admin_tactical_presets_snapshot(db, window_days=funnel_days),
+        )
+        part_mechanism_snapshot = _timed(
+            "part_traits",
+            lambda: _admin_part_mechanism_snapshot(db, window_days=funnel_days),
+        )
+        module_research_reaction_snapshot = _timed(
+            "module_research",
+            lambda: _admin_module_research_reaction_snapshot(db, window_days=funnel_days),
+        )
+        analytics_counts = _timed("users", lambda: _analytics_exclusion_counts(db))
         return {
             "rows": metric_rows,
             "daily_explore_rows": daily_explore_rows,
-            "measurement_health": _measurement_health_snapshot(db, rows=metric_rows, window_days=funnel_days),
-            "daily_research_summary": daily_research_admin_summary(db, get_day_key()),
-            "layer6_research_snapshot": _admin_layer6_research_snapshot(db, week_key=week_key),
+            "measurement_health": measurement_health,
+            "daily_research_summary": daily_research_summary,
+            "layer6_research_snapshot": layer6_research_snapshot,
             "anomaly_cycle": _anomaly_cycle_view(anomaly_cycle),
-            "anomaly_summary": _admin_anomaly_summary(db, anomaly_cycle),
-            "core_obs": _core_drop_observability(db, sample_size=sample_size, days=core_days, user_day_limit=300),
-            "behavior_snapshot": _admin_metrics_behavior_snapshot(db, window_days=funnel_days),
-            "first_experience_snapshot": _admin_first_experience_snapshot(db, window_days=funnel_days),
-            "progression_snapshot": _admin_progression_snapshot(db),
-            "robot_tuning_snapshot": _admin_robot_tuning_snapshot(db, window_days=funnel_days),
-            "tactical_presets_snapshot": _admin_tactical_presets_snapshot(db, window_days=funnel_days),
-            "part_mechanism_snapshot": _admin_part_mechanism_snapshot(db, window_days=funnel_days),
-            "module_research_reaction_snapshot": _admin_module_research_reaction_snapshot(db, window_days=funnel_days),
-            "analytics_counts": _analytics_exclusion_counts(db),
+            "anomaly_summary": anomaly_summary,
+            "core_obs": core_obs,
+            "behavior_snapshot": behavior_snapshot,
+            "first_experience_snapshot": first_experience_snapshot,
+            "progression_snapshot": progression_snapshot,
+            "robot_tuning_snapshot": robot_tuning_snapshot,
+            "tactical_presets_snapshot": tactical_presets_snapshot,
+            "part_mechanism_snapshot": part_mechanism_snapshot,
+            "module_research_reaction_snapshot": module_research_reaction_snapshot,
+            "analytics_counts": analytics_counts,
         }
 
-    if request.method == "POST":
+    if request.method == "POST" or _section_profile_enabled("metrics"):
         admin_metrics_context = _build_admin_metrics_context()
     else:
         admin_metrics_context, _cache_hit = _ttl_cache_get_or_set(
@@ -73953,12 +74088,16 @@ def admin_metrics():
             ADMIN_METRICS_CACHE_TTL_SECONDS,
             _build_admin_metrics_context,
         )
-    return render_template(
+    section_started_at = time.perf_counter()
+    rendered = render_template(
         "admin_metrics.html",
         **admin_metrics_context,
         selected_sample_size=int(sample_size or 500),
         selected_core_days=int(core_days or 14),
     )
+    _metrics_section_log("render", section_started_at)
+    _metrics_section_log("total", metrics_started_at)
+    return rendered
 
 
 @app.route("/admin/anomaly")

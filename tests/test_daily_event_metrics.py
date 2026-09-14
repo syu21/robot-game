@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from werkzeug.security import generate_password_hash
 
@@ -137,6 +138,77 @@ class DailyEventMetricsTests(unittest.TestCase):
             [event["step_key"] for event in events if event["user_id"] == user_id],
             ["home_view", "explore_start", "explore_end"],
         )
+
+    def test_section_profiler_disabled_does_not_log(self):
+        old_home_enabled = game_app.HOME_SECTION_LOG_ENABLED
+        old_perf_diagnostics = game_app.PERF_DIAGNOSTICS
+        game_app.HOME_SECTION_LOG_ENABLED = False
+        game_app.PERF_DIAGNOSTICS = False
+        try:
+            with patch.dict(os.environ, {"HOME_SECTION_PROFILE": "", "SECTION_PROFILE": ""}, clear=False):
+                with game_app.app.test_request_context("/home"):
+                    with patch.object(game_app.app.logger, "info") as info_log:
+                        elapsed = game_app._home_section_log("unit", time.perf_counter())
+            self.assertGreaterEqual(elapsed, 0)
+            info_log.assert_not_called()
+        finally:
+            game_app.HOME_SECTION_LOG_ENABLED = old_home_enabled
+            game_app.PERF_DIAGNOSTICS = old_perf_diagnostics
+
+    def test_section_profiler_enabled_logs_request_id_without_changing_result(self):
+        old_home_enabled = game_app.HOME_SECTION_LOG_ENABLED
+        old_perf_diagnostics = game_app.PERF_DIAGNOSTICS
+        game_app.HOME_SECTION_LOG_ENABLED = False
+        game_app.PERF_DIAGNOSTICS = False
+        try:
+            with patch.dict(os.environ, {"HOME_SECTION_PROFILE": "1"}, clear=False):
+                with game_app.app.test_request_context("/home"):
+                    game_app.g.request_id = "req-profiler-test"
+                    game_app.session["user_id"] = 42
+                    with patch.object(game_app.app.logger, "info") as info_log:
+                        elapsed = game_app._home_section_log("unit", time.perf_counter())
+            self.assertGreaterEqual(elapsed, 0)
+            self.assertEqual(info_log.call_count, 1)
+            log_args = info_log.call_args.args
+            self.assertIn("perf.%s.section", log_args[0])
+            self.assertIn("home", log_args)
+            self.assertIn("unit", log_args)
+            self.assertIn("req-profiler-test", log_args)
+        finally:
+            game_app.HOME_SECTION_LOG_ENABLED = old_home_enabled
+            game_app.PERF_DIAGNOSTICS = old_perf_diagnostics
+
+    def test_slow_sql_profiler_does_not_log_parameter_values(self):
+        old_perf_diagnostics = game_app.PERF_DIAGNOSTICS
+        old_sql_profile_enabled = game_app.SQL_SLOW_PROFILE_ENABLED
+        old_sql_profile_ms = game_app.SQL_SLOW_PROFILE_MS
+        game_app.PERF_DIAGNOSTICS = False
+        game_app.SQL_SLOW_PROFILE_ENABLED = True
+        game_app.SQL_SLOW_PROFILE_MS = 0
+        try:
+            with game_app.app.test_request_context("/home"):
+                game_app.g.request_id = "req-sql-profiler-test"
+                with patch.object(game_app.app.logger, "warning") as warning_log:
+                    db = game_app.get_db()
+                    db.execute("SELECT ? AS token", ("super-secret-token",)).fetchone()
+            self.assertGreaterEqual(warning_log.call_count, 1)
+            rendered_logs = [
+                (call.args[0] % call.args[1:]) if len(call.args) > 1 else str(call.args[0])
+                for call in warning_log.call_args_list
+            ]
+            slow_sql_logs = [
+                line
+                for line in rendered_logs
+                if "perf.sql.slow" in line and "SELECT ? AS token" in line
+            ]
+            self.assertTrue(slow_sql_logs)
+            self.assertIn("parameter_count=1", slow_sql_logs[0])
+            self.assertIn("req-sql-profiler-test", slow_sql_logs[0])
+            self.assertNotIn("super-secret-token", "\n".join(slow_sql_logs))
+        finally:
+            game_app.PERF_DIAGNOSTICS = old_perf_diagnostics
+            game_app.SQL_SLOW_PROFILE_ENABLED = old_sql_profile_enabled
+            game_app.SQL_SLOW_PROFILE_MS = old_sql_profile_ms
 
 
 if __name__ == "__main__":
