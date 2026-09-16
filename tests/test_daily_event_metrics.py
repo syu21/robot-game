@@ -95,7 +95,7 @@ class DailyEventMetricsTests(unittest.TestCase):
         self.assertEqual(start_count, 1)
 
     def test_measurement_health_uses_historical_daily_event_metrics(self):
-        day_key = "2026-09-12"
+        day_key = (game_app.datetime.now(game_app.JST).date() - game_app.timedelta(days=1)).strftime("%Y-%m-%d")
         with game_app.app.app_context():
             db = game_app.get_db()
             db.execute(
@@ -246,6 +246,49 @@ class DailyEventMetricsTests(unittest.TestCase):
         self.assertEqual(snapshot["wins"], 1)
         self.assertEqual(snapshot["battles_total"], 5)
         self.assertEqual(snapshot["core_total"], 1)
+
+    def test_explore_battle_id_lookup_uses_result_cache(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "battle_cache_user", created_at=now)
+            battle_id = "battle-cache-test"
+            db.execute(
+                """
+                INSERT INTO battle_result_cache (id, user_id, area_key, area_label, summary_json, created_at)
+                VALUES (?, ?, 'layer_1', '第1層', ?, ?)
+                """,
+                (battle_id, user_id, json.dumps({"battle_id": battle_id}, ensure_ascii=False), now),
+            )
+            db.commit()
+
+            row = game_app._explore_end_row_for_battle_id(db, user_id, battle_id)
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["id"], battle_id)
+
+    def test_robot_history_progress_request_lookup_has_composite_index(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            index_names = {
+                row["name"]
+                for row in db.execute("PRAGMA index_list('world_events_log')").fetchall()
+            }
+            plan_rows = db.execute(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT 1
+                FROM world_events_log
+                WHERE event_type = 'audit.robot.history.progress'
+                  AND user_id = ?
+                  AND request_id = ?
+                LIMIT 1
+                """,
+                (1, "battle-index-test"),
+            ).fetchall()
+
+        self.assertIn("idx_world_events_event_user_request", index_names)
+        self.assertTrue(any("idx_world_events_event_user_request" in str(row[3]) for row in plan_rows))
 
 
 if __name__ == "__main__":

@@ -4676,6 +4676,7 @@ def main():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_world_events_event_user_request ON world_events_log(event_type, user_id, request_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_reroll_candidates_user_module_status ON module_reroll_candidates(user_id, module_id, status, expires_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_created ON module_fusion_records(user_id, created_at DESC, id DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_module_fusion_records_user_lineage ON module_fusion_records(user_id, result_primary_lineage_key, created_at DESC)")

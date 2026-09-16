@@ -5693,7 +5693,8 @@ def _admin_first_experience_snapshot(db, *, window_days=7):
 def _admin_progression_snapshot(db):
     user_rows = db.execute(
         """
-        SELECT id, username, display_name, is_admin, is_banned, analytics_excluded, created_at, last_seen_at, max_unlocked_layer
+        SELECT id, username, display_name, is_admin, is_banned, analytics_excluded,
+               created_at, last_seen_at, max_unlocked_layer, last_explore_area_key
         FROM users
         ORDER BY is_admin ASC, id ASC
         """
@@ -5711,87 +5712,16 @@ def _admin_progression_snapshot(db):
             "created_at": int(row["created_at"] or 0),
             "last_seen_at": int(row["last_seen_at"] or 0),
             "max_unlocked_layer_field": _user_max_unlocked_layer(row),
-            "max_unlocked_layer_log": 0,
-            "max_explore_layer": 0,
-            "furthest_area_key": None,
-            "furthest_area_layer": 0,
-            "furthest_area_ts": 0,
-            "latest_progress_at": 0,
+            "furthest_area_key": str(row["last_explore_area_key"] or "").strip() or None,
             "progress_event_count": 0,
-            "layer2_family_sorties": 0,
-            "fixed_boss_area_keys": set(),
         }
-
-    progress_rows = db.execute(
-        """
-        SELECT
-            user_id,
-            event_type,
-            COALESCE(CAST(json_extract(payload_json, '$.area_key') AS TEXT), '') AS area_key,
-            LOWER(COALESCE(CAST(json_extract(payload_json, '$.boss_kind') AS TEXT), 'fixed')) AS boss_kind,
-            MAX(CAST(COALESCE(json_extract(payload_json, '$.unlocked_layer'), 0) AS INTEGER)) AS max_unlocked_layer,
-            MAX(created_at) AS latest_created_at,
-            COUNT(*) AS event_count
-        FROM world_events_log
-        WHERE user_id IS NOT NULL
-          AND event_type IN (?, ?)
-        GROUP BY user_id, event_type, area_key, boss_kind
-        ORDER BY user_id ASC
-        """,
-        (AUDIT_EVENT_TYPES["EXPLORE_END"], AUDIT_EVENT_TYPES["BOSS_DEFEAT"]),
-    ).fetchall()
-
-    for row in progress_rows:
-        user_id = int(row["user_id"] or 0)
-        item = progression_rows_by_user.get(user_id)
-        if not item:
-            continue
-        latest_created_at = int(row["latest_created_at"] or 0)
-        event_count = int(row["event_count"] or 0)
-        event_type = str(row["event_type"] or "").strip()
-        area_key = str(row["area_key"] or "").strip()
-        item["latest_progress_at"] = max(int(item["latest_progress_at"]), latest_created_at)
-        item["progress_event_count"] += event_count
-        if area_key:
-            area_layer = _area_layer(area_key)
-            if area_layer > int(item["furthest_area_layer"]) or (
-                area_layer == int(item["furthest_area_layer"]) and latest_created_at >= int(item["furthest_area_ts"])
-            ):
-                item["furthest_area_key"] = area_key
-                item["furthest_area_layer"] = area_layer
-                item["furthest_area_ts"] = latest_created_at
-        if event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
-            if area_key:
-                item["max_explore_layer"] = max(int(item["max_explore_layer"]), _area_layer(area_key))
-                if area_key in LAYER2_FAMILY_AREA_KEYS:
-                    item["layer2_family_sorties"] += event_count
-            continue
-        if event_type == AUDIT_EVENT_TYPES["BOSS_DEFEAT"]:
-            item["max_unlocked_layer_log"] = max(int(item["max_unlocked_layer_log"]), int(row["max_unlocked_layer"] or 0))
-            if area_key and str(row["boss_kind"] or "fixed") == "fixed":
-                item["fixed_boss_area_keys"].add(area_key)
-
-    progression_boss_area_by_layer = {
-        1: "layer_1",
-        2: "layer_2",
-        3: "layer_3",
-        4: LAYER4_FINAL_AREA_KEY,
-        5: LAYER5_FINAL_AREA_KEY,
-        6: LAYER6_FINAL_AREA_KEY,
-        7: LAYER7_FINAL_AREA_KEY,
-    }
 
     listed_rows = []
     analysis_rows = []
     boss_block_counts = Counter()
     stop_counts = Counter()
     for item in progression_rows_by_user.values():
-        highest_layer = max(
-            1,
-            int(item["max_unlocked_layer_field"] or 1),
-            int(item["max_unlocked_layer_log"] or 0),
-            int(item["max_explore_layer"] or 0),
-        )
+        highest_layer = max(1, int(item["max_unlocked_layer_field"] or 1))
         highest_layer = max(1, min(MAX_UNLOCKABLE_LAYER, highest_layer))
         item["highest_layer"] = int(highest_layer)
         item["highest_layer_label"] = _layer_label(highest_layer)
@@ -5803,72 +5733,17 @@ def _admin_progression_snapshot(db):
         item["furthest_area_label"] = _boss_area_label(furthest_area_key) if furthest_area_key else item["highest_layer_label"]
         last_activity_at = max(
             int(item.get("last_seen_at") or 0),
-            int(item.get("latest_progress_at") or 0),
             int(item.get("created_at") or 0),
         )
         item["last_activity_at"] = int(last_activity_at)
         item["last_activity_text"] = _format_jst_ts(last_activity_at)
 
-        fixed_boss_area_keys = item["fixed_boss_area_keys"]
-        boss_blocker_layer = None
-        if highest_layer == 4:
-            trial_clears = sum(1 for key in LAYER4_SUBAREA_KEYS if key in fixed_boss_area_keys)
-            if LAYER4_FINAL_AREA_KEY in fixed_boss_area_keys:
-                boss_status = "第4層最終試験撃破済み"
-            elif trial_clears < len(LAYER4_SUBAREA_KEYS):
-                boss_status = f"第4層試験ボス {trial_clears}/{len(LAYER4_SUBAREA_KEYS)} 撃破"
-                boss_blocker_layer = 4
-            else:
-                boss_status = "第4層最終試験未撃破"
-                boss_blocker_layer = 4
-        elif highest_layer == 5:
-            trial_clears = sum(1 for key in LAYER5_SUBAREA_KEYS if key in fixed_boss_area_keys)
-            if LAYER5_FINAL_AREA_KEY in fixed_boss_area_keys:
-                boss_status = "第5層最終試験撃破済み"
-            elif trial_clears < len(LAYER5_SUBAREA_KEYS):
-                boss_status = f"第5層試験ボス {trial_clears}/{len(LAYER5_SUBAREA_KEYS)} 撃破"
-                boss_blocker_layer = 5
-            else:
-                boss_status = "第5層最終試験未撃破"
-                boss_blocker_layer = 5
-        elif highest_layer == 6:
-            trial_clears = sum(1 for key in LAYER6_SUBAREA_KEYS if key in fixed_boss_area_keys)
-            if LAYER6_FINAL_AREA_KEY in fixed_boss_area_keys:
-                boss_status = "第6層最終試験撃破済み"
-            elif trial_clears < len(LAYER6_SUBAREA_KEYS):
-                boss_status = f"第6層試験ボス {trial_clears}/{len(LAYER6_SUBAREA_KEYS)} 撃破"
-                boss_blocker_layer = 6
-            else:
-                boss_status = "第6層最終試験未撃破"
-                boss_blocker_layer = 6
-        elif highest_layer == 7:
-            trial_clears = sum(1 for key in LAYER7_SUBAREA_KEYS if key in fixed_boss_area_keys)
-            if LAYER7_FINAL_AREA_KEY in fixed_boss_area_keys:
-                boss_status = "第7層最終試験撃破済み"
-            elif trial_clears < len(LAYER7_SUBAREA_KEYS):
-                boss_status = f"第7層試験ボス {trial_clears}/{len(LAYER7_SUBAREA_KEYS)} 撃破"
-                boss_blocker_layer = 7
-            else:
-                boss_status = "第7層最終試験未撃破"
-                boss_blocker_layer = 7
+        if highest_layer >= MAX_UNLOCKABLE_LAYER:
+            boss_status = f"第{highest_layer}層到達済み"
+            boss_blocker_layer = None
         else:
-            boss_area_key = progression_boss_area_by_layer.get(highest_layer)
-            has_fixed_boss_clear = bool(boss_area_key and boss_area_key in fixed_boss_area_keys)
-            if (
-                highest_layer == 2
-                and has_fixed_boss_clear
-                and int(item["max_unlocked_layer_field"] or 1) < 3
-                and int(item["max_unlocked_layer_log"] or 0) < 3
-                and int(item["layer2_family_sorties"] or 0) < int(LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED)
-            ):
-                boss_status = (
-                    f"第2層ボス撃破済み / 周回 {int(item['layer2_family_sorties'])}/{int(LAYER3_UNLOCK_LAYER2_SORTIES_REQUIRED)}"
-                )
-            elif has_fixed_boss_clear:
-                boss_status = f"第{highest_layer}層ボス撃破済み"
-            else:
-                boss_status = f"第{highest_layer}層ボス未撃破"
-                boss_blocker_layer = int(highest_layer)
+            boss_status = f"第{highest_layer}層ボス未撃破"
+            boss_blocker_layer = int(highest_layer)
         item["boss_status"] = boss_status
         item["boss_blocker_layer"] = boss_blocker_layer
         suspicious_reasons = detect_suspicious_registration(item, {})
@@ -11053,15 +10928,13 @@ def _explore_end_row_for_battle_id(db, user_id, battle_id):
         return None
     return db.execute(
         """
-        SELECT id, payload_json
-        FROM world_events_log
-        WHERE user_id = ?
-          AND event_type = ?
-          AND json_extract(payload_json, '$.result.battle_id') = ?
-        ORDER BY id DESC
+        SELECT id, summary_json AS payload_json
+        FROM battle_result_cache
+        WHERE id = ?
+          AND user_id = ?
         LIMIT 1
         """,
-        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"], battle_key),
+        (battle_key, int(user_id)),
     ).fetchone()
 
 
@@ -18828,6 +18701,7 @@ def ensure_schema(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_user_created ON world_events_log(user_id, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_request ON world_events_log(request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_log_event_type_created ON world_events_log(event_type, created_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_event_user_request ON world_events_log(event_type, user_id, request_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_event_created_user ON world_events_log(event_type, created_at, user_id)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_world_events_user_event_created ON world_events_log(user_id, event_type, created_at)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_robot_instances_user_status_updated ON robot_instances(user_id, status, updated_at DESC)")
@@ -40996,20 +40870,22 @@ def _admin_layer6_research_snapshot(db, *, week_key=None):
     start_dt, end_dt = _world_week_bounds(wk)
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
+    start_day_key = _jst_day_key_from_ts(start_ts)
+    end_day_key = _jst_day_key_from_ts(end_ts)
     events = _layer_record_event_rows(db, 6, week_key=wk, normal_only=True, wins_only=False)
     win_events = [event for event in events if event.get("win")]
     turn_values = [int(event["turns"]) for event in events if int(event.get("turns") or 0) > 0]
     active_row = db.execute(
         f"""
-        SELECT COUNT(DISTINCT wel.user_id) AS c
-        FROM world_events_log wel
-        JOIN users u ON u.id = wel.user_id
-        WHERE wel.created_at >= ?
-          AND wel.created_at < ?
-          AND wel.user_id IS NOT NULL
-          AND {_analytics_user_filter_sql("u")}
+        SELECT COUNT(DISTINCT user_id) AS c
+        FROM daily_user_event_metrics
+        WHERE day_key >= ?
+          AND day_key < ?
+          AND last_at >= ?
+          AND first_at < ?
+          AND event_type IN ({",".join(["?"] * len(ADMIN_METRICS_DAU_EVENT_TYPES))})
         """,
-        (start_ts, end_ts),
+        (start_day_key, end_day_key, start_ts, end_ts, *ADMIN_METRICS_DAU_EVENT_TYPES),
     ).fetchone()
     reached_row = db.execute(
         f"""

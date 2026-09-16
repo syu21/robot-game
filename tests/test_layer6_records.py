@@ -196,6 +196,22 @@ class Layer6RecordTests(unittest.TestCase):
 
         self.assertEqual(snapshot["reached_users"], int(before_row["c"] or 0))
 
+    def test_admin_layer6_active_users_read_daily_user_aggregate(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "layer6_aggregate_active")
+            robot_id = self._create_robot(db, user_id, "AggregateBot")
+            self._insert_explore_end(db, user_id, robot_id, turns=6, request_id="agg-1", ts_offset=0)
+            self._insert_explore_end(db, user_id, robot_id, turns=7, request_id="agg-2", ts_offset=1)
+            db.commit()
+            game_app._collect_daily_metrics(db, game_app.get_day_key())
+            db.commit()
+
+            snapshot = game_app._admin_layer6_research_snapshot(db, week_key=self.week_key)
+
+        self.assertEqual(snapshot["sortie_count"], 2)
+        self.assertEqual(snapshot["avg_sorties_per_dau"], 2.0)
+
     def test_layer6_records_exclude_admin_test_and_marked_users(self):
         with game_app.app.app_context():
             db = game_app.get_db()

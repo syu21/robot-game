@@ -22,20 +22,25 @@ class AdminProgressDashboardTests(unittest.TestCase):
             db = game_app.get_db()
             now = int(time.time())
             users = [
-                ("progress_admin", 1, 1),
-                ("stuck_layer1", 0, 1),
-                ("stuck_layer2", 0, 2),
-                ("stuck_layer4", 0, 4),
-                ("cleared_layer5", 0, 5),
+                ("progress_admin", 1, 0, 0, 1, None),
+                ("stuck_layer1", 0, 0, 0, 1, "layer_1"),
+                ("stuck_layer2", 0, 0, 0, 2, "layer_2"),
+                ("stuck_layer4", 0, 0, 0, 4, "layer_4_haze"),
+                ("cleared_layer5", 0, 0, 0, 6, "layer_6_rebuild"),
+                ("excluded_progress", 0, 1, 0, 7, "layer_7_echo"),
+                ("banned_progress", 0, 0, 1, 7, "layer_7_echo"),
             ]
             self.user_ids = {}
-            for username, is_admin, max_layer in users:
+            for username, is_admin, analytics_excluded, is_banned, max_layer, last_area in users:
                 db.execute(
                     """
-                    INSERT INTO users (username, password_hash, created_at, is_admin, wins, max_unlocked_layer, last_seen_at)
-                    VALUES (?, ?, ?, ?, 0, ?, ?)
+                    INSERT INTO users (
+                        username, password_hash, created_at, is_admin, analytics_excluded,
+                        is_banned, wins, max_unlocked_layer, last_seen_at, last_explore_area_key
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                     """,
-                    (username, "x", now, is_admin, max_layer, now),
+                    (username, "x", now, is_admin, analytics_excluded, is_banned, max_layer, now, last_area),
                 )
                 self.user_ids[username] = int(
                     db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
@@ -114,31 +119,59 @@ class AdminProgressDashboardTests(unittest.TestCase):
 
         self.assertEqual(snapshot["total_users"], 4)
         self.assertEqual(snapshot["admin_only_count"], 1)
-        self.assertEqual(snapshot["deepest_layer"], 5)
-        self.assertEqual(snapshot["boss_blocker_total"], 3)
+        self.assertEqual(snapshot["deepest_layer"], 6)
+        self.assertEqual(snapshot["boss_blocker_total"], 4)
 
         reach_by_layer = {row["layer"]: int(row["count"]) for row in snapshot["layer_reach_rows"]}
         self.assertEqual(reach_by_layer[1], 4)
         self.assertEqual(reach_by_layer[2], 3)
         self.assertEqual(reach_by_layer[4], 2)
         self.assertEqual(reach_by_layer[5], 1)
+        self.assertEqual(reach_by_layer[6], 1)
 
         stop_by_layer = {row["layer"]: int(row["count"]) for row in snapshot["layer_stop_rows"]}
         self.assertEqual(stop_by_layer[1], 1)
         self.assertEqual(stop_by_layer[2], 1)
         self.assertEqual(stop_by_layer[4], 1)
-        self.assertEqual(stop_by_layer[5], 1)
+        self.assertEqual(stop_by_layer[6], 1)
 
         blockers = {row["layer"]: int(row["count"]) for row in snapshot["boss_block_rows"]}
         self.assertEqual(blockers[1], 1)
         self.assertEqual(blockers[2], 1)
         self.assertEqual(blockers[4], 1)
+        self.assertEqual(blockers[6], 1)
 
         rows_by_name = {row["username"]: row for row in snapshot["user_rows"]}
         self.assertEqual(rows_by_name["stuck_layer1"]["boss_status"], "第1層ボス未撃破")
         self.assertEqual(rows_by_name["stuck_layer2"]["boss_status"], "第2層ボス未撃破")
-        self.assertIn("第4層試験ボス", rows_by_name["stuck_layer4"]["boss_status"])
-        self.assertEqual(rows_by_name["cleared_layer5"]["boss_status"], "第5層最終試験撃破済み")
+        self.assertEqual(rows_by_name["stuck_layer4"]["boss_status"], "第4層ボス未撃破")
+        self.assertEqual(rows_by_name["cleared_layer5"]["boss_status"], "第6層ボス未撃破")
+
+    def test_progression_state_matches_canonical_event_history_fixture(self):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            snapshot = game_app._admin_progression_snapshot(db)
+            analysis_rows = [
+                row
+                for row in snapshot["user_rows"]
+                if not row["is_admin"]
+                and not row["is_banned"]
+                and not row.get("analytics_excluded")
+                and not game_app._is_test_user_row(row)
+            ]
+            expected_layers = {
+                "stuck_layer1": 1,
+                "stuck_layer2": 2,
+                "stuck_layer4": 4,
+                "cleared_layer5": 6,
+            }
+
+        self.assertEqual({row["username"]: row["highest_layer"] for row in analysis_rows}, expected_layers)
+        self.assertEqual(sum(1 for row in analysis_rows if row["highest_layer"] >= 1), 4)
+        self.assertEqual(sum(1 for row in analysis_rows if row["highest_layer"] >= 2), 3)
+        self.assertEqual(sum(1 for row in analysis_rows if row["highest_layer"] >= 3), 2)
+        self.assertEqual(sum(1 for row in analysis_rows if row["highest_layer"] >= 6), 1)
+        self.assertEqual(sum(1 for row in analysis_rows if row["boss_blocker_layer"]), 4)
 
 
 if __name__ == "__main__":
