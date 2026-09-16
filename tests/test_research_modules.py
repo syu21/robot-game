@@ -694,6 +694,8 @@ class ResearchModuleTests(unittest.TestCase):
         resp = self._run_explore("layer_2")
         html = resp.get_data(as_text=True)
         self.assertIn("今回の作戦", html)
+        self.assertIn("搭載戦闘OS", html)
+        self.assertIn("モジュール最終補正", html)
         self.assertIn("狙撃モジュール 完成型", html)
         self.assertIn("命中 +12", html)
         self.assertNotIn("None", html)
@@ -718,8 +720,21 @@ class ResearchModuleTests(unittest.TestCase):
         resp = self._run_explore("layer_2")
         html = resp.get_data(as_text=True)
         self.assertIn("今回の作戦", html)
+        self.assertIn("搭載戦闘OS", html)
+        self.assertIn("モジュール最終補正", html)
         self.assertIn("無装演算型《ブランク・コア》", html)
         self.assertNotIn("狙撃モジュール 完成型", html)
+
+    def test_battle_strategy_card_css_uses_dark_readable_colors(self):
+        with open(os.path.join(os.getcwd(), "static", "style.css"), encoding="utf-8") as fh:
+            css = fh.read()
+        self.assertIn(".module-strategy-card {", css)
+        self.assertIn("background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96));", css)
+        self.assertIn("color: #f8fafc;", css)
+        self.assertIn(".module-strategy-card .upgrade-cost", css)
+        self.assertIn(".module-strategy-card .robot-time", css)
+        self.assertIn("color: #e2e8f0;", css)
+        self.assertIn("opacity: 1;", css)
 
     def test_synthesized_module_strategy_card_uses_instance_bonus(self):
         with game_app.app.app_context():
