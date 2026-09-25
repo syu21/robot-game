@@ -128,8 +128,8 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             user = self._user()
             guide = game_app._start_onboarding_first_upgrade_guide(self._db(), user, source="battle_result")
             self.assertIsNotNone(guide)
-            self.assertEqual(guide["title"], "交換用パーツを探そう")
-            self.assertEqual(guide["cta_label"], "第1層へ出撃する")
+            self.assertEqual(guide["title"], "回収したパーツを確認できます")
+            self.assertEqual(guide["cta_label"], "所持パーツを見る")
 
     def test_home_next_action_without_exchangeable_part_sends_to_layer1(self):
         with game_app.app.app_context():
@@ -146,7 +146,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
                     total_explores=3,
                 )
         self.assertEqual(card["title"], "交換用パーツを探そう")
-        self.assertEqual(card["cta_label"], "第1層へ出撃する")
+        self.assertEqual(card["cta_label"], "所持パーツを見る")
         self.assertTrue(card["is_post"])
         self.assertEqual(card["area_key"], "layer_1")
         self.assertEqual(card["secondary_actions"], [])
@@ -156,7 +156,11 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             db = self._db()
             self._complete_explores(3)
             self._start_guide()
-            self._drop(db, "HEAD", plus=0)
+            better_id = self._drop(db, "HEAD", plus=0)
+            db.execute(
+                "UPDATE part_instances SET w_hp = 120, w_atk = 120, w_def = 120, w_spd = 120, w_acc = 120, w_cri = 120 WHERE id = ?",
+                (better_id,),
+            )
             db.commit()
             with game_app.app.test_request_context("/"):
                 card = game_app._home_next_action_card(
@@ -169,10 +173,58 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
                     total_explores=3,
                 )
         self.assertEqual(card["title"], "はじめての機体更新")
-        self.assertEqual(card["cta_label"], "機体を更新する")
-        self.assertIn("/build?guide=first_upgrade", card["cta_url"])
-        self.assertIn("mode=modify", card["cta_url"])
+        self.assertEqual(card["cta_label"], "機体を調整する")
+        self.assertIn("/onboarding/adjust", card["cta_url"])
         self.assertEqual(card["secondary_actions"][0]["label"], "そのまま出撃する")
+
+    def test_adjustment_view_shows_one_click_recommendation(self):
+        with game_app.app.app_context():
+            db = self._db()
+            self._complete_explores(3)
+            self._start_guide()
+            better_id = self._drop(db, "HEAD")
+            db.execute(
+                "UPDATE part_instances SET w_hp = 120, w_atk = 120, w_def = 120, w_spd = 120, w_acc = 120, w_cri = 120 WHERE id = ?",
+                (better_id,),
+            )
+            db.commit()
+        response = self._client().get("/onboarding/adjust?source=battle_result")
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("機体調整", body)
+        self.assertIn("このパーツに換装", body)
+        self.assertIn(f'value="{better_id}"', body)
+        self.assertIn('action="/build/confirm"', body)
+
+    def test_guarantee_is_skipped_when_natural_upgrade_exists(self):
+        with game_app.app.app_context():
+            db = self._db()
+            better_id = self._drop(db, "HEAD")
+            db.execute(
+                "UPDATE part_instances SET w_hp = 120, w_atk = 120, w_def = 120, w_spd = 120, w_acc = 120, w_cri = 120 WHERE id = ?",
+                (better_id,),
+            )
+            before = db.execute("SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ?", (self.user_id,)).fetchone()["c"]
+            result = game_app._grant_onboarding_upgrade_candidate(db, self._user())
+            after = db.execute("SELECT COUNT(*) AS c FROM part_instances WHERE user_id = ?", (self.user_id,)).fetchone()["c"]
+            self.assertFalse(result["granted"])
+            self.assertEqual(result["reason"], "natural_candidate")
+            self.assertEqual(int(after), int(before))
+
+    def test_guarantee_uses_overflow_when_inventory_is_full(self):
+        with game_app.app.app_context():
+            db = self._db()
+            db.execute("UPDATE users SET part_inventory_limit = 1 WHERE id = ?", (self.user_id,))
+            filler_id = self._drop(db, "HEAD")
+            db.execute(
+                "UPDATE part_instances SET w_hp = -120, w_atk = -120, w_def = -120, w_spd = -120, w_acc = -120, w_cri = -120 WHERE id = ?",
+                (filler_id,),
+            )
+            result = game_app._grant_onboarding_upgrade_candidate(db, self._user())
+            self.assertTrue(result["granted"])
+            self.assertEqual(result["part"]["storage_status"], "overflow")
+            row = db.execute("SELECT status FROM part_instances WHERE id = ?", (result["part"]["part_instance_id"],)).fetchone()
+            self.assertEqual(row["status"], "overflow")
 
     def test_parts_guide_shows_single_recommendation_when_better_part_exists(self):
         with game_app.app.app_context():
@@ -224,7 +276,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         response = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={better_id}")
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("はじめての機体更新", body)
+        self.assertIn("機体を強化できるパーツを回収しました", body)
         self.assertIn("変えない部位は、今のパーツのままでOKです。", body)
         self.assertIn("変更前：", body)
         self.assertIn("変更後：", body)
@@ -243,7 +295,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         invalid = client.get(f"/build?guide=first_upgrade&mode=modify&recommended_part_id={weak_id}")
         invalid_body = invalid.get_data(as_text=True)
         self.assertEqual(invalid.status_code, 200)
-        self.assertIn("はじめての機体更新", invalid_body)
+        self.assertIn("機体を強化できるパーツを回収しました", invalid_body)
         self.assertIn("今回の交換候補", invalid_body)
 
     def test_build_confirm_completes_first_upgrade_and_shows_result_cta(self):
@@ -286,9 +338,9 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         )
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("機体更新完了！", body)
-        self.assertIn("更新した機体で出撃する", body)
-        self.assertIn('name="entry_source" value="first_robot_upgrade_result"', body)
+        self.assertIn("機体調整 COMPLETE", body)
+        self.assertIn("新しい機体で出撃", body)
+        self.assertIn('name="entry_source" value="onboarding_post_adjustment"', body)
         with game_app.app.app_context():
             db = self._db()
             user = self._user()
@@ -407,7 +459,7 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("機体更新完了！", response.get_data(as_text=True))
+        self.assertIn("機体調整 COMPLETE", response.get_data(as_text=True))
         with game_app.app.app_context():
             db = self._db()
             after_count = int(
@@ -457,6 +509,10 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         self.assertEqual(
             game_app._normalize_entry_source("first_robot_upgrade_result"),
             "first_robot_upgrade_result",
+        )
+        self.assertEqual(
+            game_app._normalize_entry_source("onboarding_post_adjustment"),
+            "onboarding_post_adjustment",
         )
 
     def test_admin_test_and_analytics_excluded_are_not_targets(self):

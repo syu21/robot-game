@@ -385,7 +385,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
             )
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("初期試験支給", html)
+        self.assertIn("起動試験支給", html)
         self.assertIn("Nパーツを1個回収しました", html)
 
         with game_app.app.app_context():
@@ -399,6 +399,17 @@ class NewbieExploreBoostTests(unittest.TestCase):
                 (int(self.user_id), game_app.AUDIT_EVENT_TYPES["ONBOARDING_PART_GUARANTEE"]),
             ).fetchone()
             self.assertEqual(int(guarantee["c"] or 0), 1)
+            event = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id DESC LIMIT 1",
+                (int(self.user_id), game_app.AUDIT_EVENT_TYPES["ONBOARDING_PART_GUARANTEE"]),
+            ).fetchone()
+            payload = json.loads(event["payload_json"])
+            self.assertEqual(payload["drop_source"], "onboarding_guarantee")
+            self.assertEqual(payload["onboarding_sortie_index"], 3)
+            user = db.execute("SELECT * FROM users WHERE id = ?", (int(self.user_id),)).fetchone()
+            recommendation = game_app._first_upgrade_recommendation(db, user)
+            self.assertIsNotNone(recommendation)
+            self.assertTrue(recommendation["is_improvement"])
 
 
 if __name__ == "__main__":

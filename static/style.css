@@ -16122,3 +16122,27 @@ button.robo-fixed-nav-item {
     padding: 12px;
   }
 }
+
+.onboarding-adjust-page { max-width: 760px; margin: 0 auto; }
+.onboarding-adjust-card { background: #111b2d; border-color: #314766; }
+.onboarding-adjust-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.onboarding-adjust-comparison h2 { margin: 4px 0; font-size: 1.05rem; }
+.onboarding-adjust-arrow { color: #74d6ff; font-size: 1.4rem; text-align: center; }
+.onboarding-adjust-power {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid #314766;
+}
+.onboarding-adjust-form { margin-top: 18px; }
+@media (max-width: 560px) {
+  .onboarding-adjust-comparison { grid-template-columns: 1fr; }
+  .onboarding-adjust-arrow { transform: rotate(90deg); }
+}

@@ -214,7 +214,10 @@
 - `audit.explore.end` が3件未満の通常ユーザーは、登録時期に関係なく「起動試験」対象とする。failed、CT拒否、validation errorは進捗に含めない。
 - 起動試験中は共通CTポリシーが0秒を返す。3件目完了後は新規72h、課金ブースト、通常CTへ戻る。
 - Homeと戦闘結果のCTAは `entry_source=onboarding_sortie_sprint` に統一し、`audit.onboarding.sortie_cta_click` の `sortie_index / surface` で計測する。
-- 本対応では初回パーツ保証、おすすめ換装、初回ボス抑制を追加・変更しない。
+- 3回目の正常終了時、全所持パーツに現在装備より総合性能が高い候補がなければ、既存Nパーツ生成を使って保証候補を1個残す。
+- 通常ドロップで改善候補がある場合は追加保証しない。保証監査は `drop_source=onboarding_guarantee`, `onboarding_sortie_index=3` を持つ。
+- 所持上限時は自動売却せずoverflowへ保管し、結果画面から所持パーツ確認へ誘導する。
+- 初回ボス抑制は追加・変更しない。
 - 対象は非管理者、`analytics_excluded=0`、初回3出撃報酬未受取の通常プレイヤー。
 - 登録後から3回目の出撃完了まで、基地と結果画面に `最初の調査 n / 3 出撃完了` を短く表示する。
 - 3回完了時は `最初の調査完了！ ロボの育成準備が整いました。` を表示する。

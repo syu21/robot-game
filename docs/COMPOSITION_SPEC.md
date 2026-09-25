@@ -200,3 +200,6 @@
 - 確定時に状態遷移するのは変更部位だけ。旧パーツは `inventory` へ戻し、新パーツだけ `equipped` にする。
 - `guide=first_upgrade` で変更部位が0件の場合は保存せず、`変更するパーツを1つ選んでください。` を表示する。
 - 既存ロボ改造のため、新しい `robot_instances` や保存枠は消費しない。
+- 起動試験完了直後は `/onboarding/adjust` で、推奨パーツと現在装備の総合値・主な上昇能力を簡潔に比較する。
+- `このパーツに換装` は既存 `/build/confirm` の `mode=modify` を使う。他3部位、機体名、戦闘モード、装飾、表示位置を維持する。
+- 完了後の主CTAは第1層への `entry_source=onboarding_post_adjustment` とする。

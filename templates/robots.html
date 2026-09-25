@@ -14,7 +14,7 @@
 
 {% if build_result %}
 <div class="card">
-  <h2>{% if build_result.get('boss_retry') %}再挑戦準備完了{% elif build_result.get('first_upgrade') %}機体更新完了！{% else %}ロボ完成{% endif %}</h2>
+  <h2>{% if build_result.get('boss_retry') %}再挑戦準備完了{% elif build_result.get('first_upgrade') %}機体調整 COMPLETE{% else %}ロボ完成{% endif %}</h2>
   <div class="robot-part">{{ build_result['robot']['name'] or '無名ロボ' }}</div>
   {% if build_result['robot'].get('image_url') %}
     <img class="robot-thumb" src="{{ build_result['robot']['image_url'] }}" alt="{{ build_result['robot']['name'] }}" loading="lazy" />
@@ -23,7 +23,7 @@
   <div class="robot-part">設計番号: <b>{{ build_result['blueprint']['blueprint_code'] }}</b></div>
   {% endif %}
   {% if build_result.get('first_upgrade') %}
-  <div class="upgrade-cost">新しい構成を戦場で試してみよう。</div>
+  <div class="upgrade-cost">戦闘データを反映しました。ロボの性能が更新されています。</div>
   <div class="part-chip-row">
     {% for row in build_result['first_upgrade'].get('positive_rows', []) %}
       <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
@@ -31,8 +31,8 @@
   </div>
   <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
     <input type="hidden" name="area_key" value="layer_1" />
-    <input type="hidden" name="entry_source" value="first_robot_upgrade_result" />
-    <button type="submit" class="battle-home-link battle-next-cta">更新した機体で出撃する</button>
+    <input type="hidden" name="entry_source" value="onboarding_post_adjustment" />
+    <button type="submit" class="battle-home-link battle-next-cta">新しい機体で出撃</button>
   </form>
   {% endif %}
   {% if build_result.get('boss_retry') %}

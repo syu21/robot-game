@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-shell onboarding-adjust-page">
+  <div class="section-kicker">起動試験 COMPLETE</div>
+  <h1>機体調整</h1>
+  <p class="upgrade-cost">回収したパーツで、ロボを少し強くできます。</p>
+
+  {% if recommendation and active %}
+  <section class="card onboarding-adjust-card">
+    <div class="onboarding-adjust-comparison">
+      <div>
+        <div class="section-kicker">現在</div>
+        <h2>{{ recommendation.current_part_name }}</h2>
+      </div>
+      <div class="onboarding-adjust-arrow" aria-hidden="true">→</div>
+      <div>
+        <div class="section-kicker">おすすめ</div>
+        <h2>{{ recommendation.recommended_part_name }}</h2>
+        <div class="part-meta-line">{{ recommendation.recommended_part_type_label }} / {{ recommendation.recommended_part_rarity }}</div>
+      </div>
+    </div>
+    <div class="onboarding-adjust-power">
+      <span>総合値</span>
+      <strong>{{ recommendation.current_total|display_stat }} → {{ recommendation.recommended_total|display_stat }}</strong>
+    </div>
+    <div class="part-chip-row">
+      {% for row in recommendation.positive_rows[:2] %}
+      <span class="part-chip is-recommended">{{ row.label }} {{ row.delta_text }}</span>
+      {% endfor %}
+    </div>
+    <form method="post" action="{{ url_for('build_confirm') }}" class="onboarding-adjust-form">
+      <input type="hidden" name="mode" value="modify" />
+      <input type="hidden" name="base_robot_id" value="{{ active.id }}" />
+      <input type="hidden" name="frame_type" value="{{ recommendation.build_frame_type }}" />
+      <input type="hidden" name="build_mode" value="{{ recommendation.build_frame_type }}" />
+      <input type="hidden" name="guide" value="first_upgrade" />
+      <input type="hidden" name="guide_source" value="onboarding_adjustment" />
+      <input type="hidden" name="robot_name" value="{{ active.name }}" />
+      <input type="hidden" name="combat_mode" value="{{ active.combat_mode or 'normal' }}" />
+      {% if layout.get('decor_asset_id') %}<input type="hidden" name="decor_asset_id" value="{{ layout.decor_asset_id }}" />{% endif %}
+      {% for key in ['head_offset_x', 'head_offset_y', 'r_arm_offset_x', 'r_arm_offset_y', 'l_arm_offset_x', 'l_arm_offset_y', 'legs_offset_x', 'legs_offset_y', 'head_scale_percent', 'r_arm_scale_percent', 'l_arm_scale_percent', 'legs_scale_percent', 'head_rotate_degrees', 'r_arm_rotate_degrees', 'l_arm_rotate_degrees', 'legs_rotate_degrees', 'head_flip_x', 'r_arm_flip_x', 'l_arm_flip_x', 'legs_flip_x'] %}
+      <input type="hidden" name="{{ key }}" value="{{ layout.get(key, '') }}" />
+      {% endfor %}
+      {% if recommendation.recommended_slot == 'head' %}<input type="hidden" name="head_key" value="{{ recommendation.recommended_part_instance_id }}" />{% endif %}
+      {% if recommendation.recommended_slot == 'r_arm' %}<input type="hidden" name="r_arm_key" value="{{ recommendation.recommended_part_instance_id }}" />{% endif %}
+      {% if recommendation.recommended_slot == 'l_arm' %}<input type="hidden" name="l_arm_key" value="{{ recommendation.recommended_part_instance_id }}" />{% endif %}
+      {% if recommendation.recommended_slot == 'legs' %}<input type="hidden" name="legs_key" value="{{ recommendation.recommended_part_instance_id }}" />{% endif %}
+      <button type="submit" class="battle-next-cta">このパーツに換装</button>
+    </form>
+    <p class="link"><a href="{{ url_for('build', mode='modify', base_robot_id=active.id) }}">自分で選ぶ</a></p>
+  </section>
+  {% else %}
+  <section class="card onboarding-adjust-card">
+    <h2>所持パーツを確認</h2>
+    <p>保証パーツが保管されている場合は、所持へ戻してから機体を調整できます。</p>
+    <div class="home-inline-actions">
+      <a class="battle-home-link battle-next-cta" href="{{ url_for('parts') }}">所持パーツを見る</a>
+      <a class="battle-home-link" href="{{ url_for('build', mode='modify', base_robot_id=active.id if active else '') }}">ロボ編成へ</a>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

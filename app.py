@@ -4765,6 +4765,7 @@ def _normalize_entry_source(value):
         "layer2_unlock_result",
         "layer2_unlock_home",
         "first_robot_upgrade_result",
+        "onboarding_post_adjustment",
         "boss_recovery_normal",
         "onboarding_sortie_sprint",
         "layer1_boss_signal",
@@ -5195,6 +5196,8 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
                 start_count += 1
                 entry_source = _normalize_entry_source(payload.get("entry_source"))
+                if entry_source == "onboarding_post_adjustment":
+                    first_upgrade_after_explore_users.add(uid)
                 if entry_source in entry_source_users:
                     entry_source_users[entry_source].add(uid)
                 if area_key == "layer_2" and uid not in layer2_first_explore_ts_by_user:
@@ -5242,6 +5245,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 step_users["part_first_drop"].add(uid)
             if et == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
                 step_users["build_first_complete"].add(uid)
+            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_COMPLETE"):
                 first_upgrade_complete_users.add(uid)
                 first_upgrade_complete_ts_by_user.setdefault(uid, ts)
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
@@ -5508,6 +5512,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "layer2_unlock_result": "ボス撃破結果から第2層",
         "layer2_unlock_home": "基地NEXT ACTIONから第2層",
         "first_robot_upgrade_result": "初回機体更新後の結果画面",
+        "onboarding_post_adjustment": "初回機体調整後の出撃",
         "onboarding_sortie_sprint": "初回3出撃導線",
         "onboarding_sortie_sprint_2": "初回3出撃導線（2回目）",
         "onboarding_sortie_sprint_3": "初回3出撃導線（3回目）",
@@ -12988,7 +12993,7 @@ def _onboarding_first_three_progress_view(db, user_row):
         "completed": int(completed),
         "target": int(ONBOARDING_FIRST_THREE_TARGET),
         "line": f"{completed} / {int(ONBOARDING_FIRST_THREE_TARGET)}",
-        "complete_title": "初期実戦試験 COMPLETE",
+        "complete_title": "起動試験 COMPLETE",
         "complete_line": "初期戦闘データの収集が完了しました。",
     }
 
@@ -13110,24 +13115,16 @@ def _onboarding_first_upgrade_should_show(db, user_row):
 def _onboarding_first_upgrade_view(db, user_row, *, source):
     completed = _count_user_completed_explores(db, int(user_row["id"]))
     recommendation = _first_upgrade_recommendation(db, user_row)
+    if recommendation and not recommendation.get("is_improvement"):
+        recommendation = None
     source_key = str(source or "")
-    build_url = "/parts?onboarding=first_upgrade"
+    build_url = "/onboarding/adjust"
     if has_request_context():
-        build_url = url_for("parts", onboarding="first_upgrade", source=source_key or "home_next_action")
-        if recommendation:
-            build_url = url_for(
-                "build",
-                guide="first_upgrade",
-                mode="modify",
-                base_robot_id=int(user_row["active_robot_id"] or 0),
-                frame_type=recommendation.get("build_frame_type") or "normal",
-                recommended_part_id=int(recommendation["recommended_part_instance_id"]),
-                source=source_key or "home_next_action",
-            )
+        build_url = url_for("onboarding_adjust", source=source_key or "home_next_action")
     return {
         "guide_key": "first_upgrade",
         "kicker": "最初の育成",
-        "title": "はじめての機体更新" if recommendation else "交換用パーツを探そう",
+        "title": "機体を強化できるパーツを回収しました" if recommendation else "回収したパーツを確認できます",
         "desc": (
             "持ち帰ったパーツを1つ選んで、ロボを変えてみよう。"
             if recommendation
@@ -13146,8 +13143,8 @@ def _onboarding_first_upgrade_view(db, user_row, *, source):
             if recommendation
             else "もう少し出撃して、付け替えられるパーツを持ち帰ろう。"
         ),
-        "cta_label": "機体を更新する" if recommendation else "第1層へ出撃する",
-        "home_cta_label": "機体を更新する" if recommendation else "第1層へ出撃する",
+        "cta_label": "機体を調整する" if recommendation else "所持パーツを見る",
+        "home_cta_label": "機体を調整する" if recommendation else "所持パーツを見る",
         "skip_label": "このまま出撃する",
         "source": source_key,
         "explore_end_count": int(completed),
@@ -13420,6 +13417,7 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
             "recommended_part_type_label": label_by_type.get(part_type, _part_type_ui_label(part_type)),
             "recommended_slot": slot_by_type.get(part_type),
             "recommended_part_name": _part_display_name_ja(row),
+            "recommended_part_rarity": str(row.get("rarity") or "N").upper(),
             "current_part_instance_id": int(current_parts[part_type].get("id") or 0),
             "current_part_name": _part_display_name_ja(current_parts[part_type]),
             "current_total": round(current_power, 1),
@@ -13437,6 +13435,70 @@ def _first_upgrade_recommendation(db, user_row, *, requested_part_instance_id=No
         if best is None or sort_key > best[0]:
             best = (sort_key, recommendation)
     return best[1] if best else None
+
+
+def _grant_onboarding_upgrade_candidate(db, user_row, *, area_key="layer_1"):
+    """Create at most one N part when the first three sorties yielded no upgrade."""
+    if not user_row or not _onboarding_first_upgrade_normal_user(user_row):
+        return None
+    existing = _first_upgrade_recommendation(db, user_row)
+    if existing and existing.get("is_improvement"):
+        return {"granted": False, "recommendation": existing, "reason": "natural_candidate"}
+    granted_before = db.execute(
+        "SELECT 1 FROM world_events_log WHERE user_id = ? AND event_type = ? LIMIT 1",
+        (int(user_row["id"]), AUDIT_EVENT_TYPES["ONBOARDING_PART_GUARANTEE"]),
+    ).fetchone()
+    if granted_before:
+        return {"granted": False, "recommendation": existing, "reason": "already_granted"}
+
+    current_stat_obj = _compute_robot_stats_for_instance(db, int(user_row["active_robot_id"] or 0))
+    equipped_parts = [
+        dict(row)
+        for row in (current_stat_obj or {}).get("parts", [])
+        if _norm_part_type(row.get("part_type")) in {"HEAD", "RIGHT_ARM", "LEFT_ARM", "LEGS"}
+    ]
+    if not equipped_parts:
+        return None
+    current_part = min(equipped_parts, key=lambda row: float(_part_total_value(compute_part_stats(row))))
+    item = _add_part_drop(
+        db,
+        int(user_row["id"]),
+        part_type=_norm_part_type(current_part.get("part_type")),
+        part_key=current_part.get("key") or current_part.get("part_key"),
+        source="onboarding_guarantee",
+        rarity="N",
+        plus=0,
+        as_instance=True,
+        area_key=area_key,
+        overflow_when_full=True,
+    )
+    if not item:
+        return None
+    keep_id = int(item["part_instance_id"])
+    original_status = str(item.get("storage_status") or "inventory")
+    candidate = db.execute("SELECT * FROM part_instances WHERE id = ?", (keep_id,)).fetchone()
+    current_total = max(1.0, float(_part_total_value(compute_part_stats(current_part))))
+    candidate_total = max(1.0, float(_part_total_value(compute_part_stats(dict(candidate)))))
+    factor = max(1.0, (current_total * 1.04) / candidate_total)
+    if factor > 1.0:
+        db.execute(
+            """
+            UPDATE part_instances
+            SET w_hp = w_hp * ?, w_atk = w_atk * ?, w_def = w_def * ?,
+                w_spd = w_spd * ?, w_acc = w_acc * ?, w_cri = w_cri * ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (factor, factor, factor, factor, factor, factor, keep_id),
+        )
+    if original_status == "overflow":
+        db.execute("UPDATE part_instances SET status = 'inventory' WHERE id = ?", (keep_id,))
+    recommendation = _first_upgrade_recommendation(db, user_row, requested_part_instance_id=keep_id)
+    if original_status == "overflow":
+        db.execute("UPDATE part_instances SET status = 'overflow' WHERE id = ?", (keep_id,))
+    item["storage_status"] = original_status
+    item["auto_sold"] = False
+    return {"granted": True, "part": item, "recommendation": recommendation, "reason": "guaranteed"}
 
 
 def _first_upgrade_recommended_part_instance_id(db, user_row, items=None):
@@ -20064,6 +20126,7 @@ def _add_part_drop(
     area_key=None,
     campaign_key=None,
     campaign_label=None,
+    overflow_when_full=False,
 ):
     rarity_code = (rarity or "").upper()
     if part_type is None or part_key is None:
@@ -20102,8 +20165,8 @@ def _add_part_drop(
     create_as_instance = bool(as_instance or source == "battle_drop")
     if create_as_instance and part:
         inventory_full = _inventory_space_remaining(db, user_id) <= 0
-        auto_sold = bool(AUTO_SELL_ENABLED and inventory_full)
-        storage_status = "sold" if auto_sold else "inventory"
+        auto_sold = bool(AUTO_SELL_ENABLED and inventory_full and not overflow_when_full)
+        storage_status = "overflow" if inventory_full and overflow_when_full else ("sold" if auto_sold else "inventory")
         pi_id = _create_part_instance_from_master(
             db,
             user_id,
@@ -20210,6 +20273,8 @@ def _drop_audit_payload(area_key, battle_no, dropped_part):
         "battle_no": battle_no,
         "drop_type": row.get("drop_type"),
         "source": row.get("source"),
+        "drop_source": row.get("drop_source"),
+        "onboarding_sortie_index": row.get("onboarding_sortie_index"),
         "campaign_key": row.get("campaign_key"),
         "campaign_label": row.get("campaign_label"),
         "part_type": row.get("part_type"),
@@ -62293,25 +62358,14 @@ def explore():
                 ip=request.remote_addr,
             )
     initial_sortie_part_guarantee = None
-    current_part_drop_count = sum(len(b.get("drops", []) or []) for b in battle_results)
     if (
         initial_sortie_sprint_before
         and int(initial_sortie_sprint_before.get("completed") or 0) == int(ONBOARDING_FIRST_THREE_TARGET) - 1
         and active
         and int(user["is_admin"] or 0) != 1
-        and int(current_part_drop_count) <= 0
-        and _count_onboarding_part_drops(db, user_id) <= 0
     ):
-        guaranteed = _add_part_drop(
-            db,
-            user_id,
-            source="initial_sortie_sprint",
-            rarity="N",
-            plus=0,
-            as_instance=True,
-            announce_username=session.get("username"),
-            area_key="layer_1",
-        )
+        guarantee_result = _grant_onboarding_upgrade_candidate(db, user, area_key="layer_1")
+        guaranteed = (guarantee_result or {}).get("part") if (guarantee_result or {}).get("granted") else None
         if guaranteed:
             guaranteed["drop_type"] = "initial_sortie_sprint_guarantee"
             guaranteed["guaranteed_part"] = True
@@ -62319,20 +62373,21 @@ def explore():
                 battle_results[-1].setdefault("drops", []).append(guaranteed)
             else:
                 battle_results.append({"battle_no": 1, "drops": [guaranteed]})
-            if guaranteed.get("auto_sold"):
-                auto_sell_part_drop_count += 1
-                auto_sell_coin_total += int(guaranteed.get("auto_sell_price") or 0)
             part_row_for_label = _get_part_by_key(db, guaranteed.get("part_key")) if guaranteed.get("part_key") else None
             part_display_name = _part_display_name_ja(part_row_for_label) if part_row_for_label else guaranteed.get("part_key")
-            drop_labels.append(f"初期試験支給 {guaranteed['rarity']} {guaranteed['part_type']} {part_display_name} +{guaranteed['plus']}")
+            drop_labels.append(f"起動試験支給 {guaranteed['rarity']} {guaranteed['part_type']} {part_display_name} +{guaranteed['plus']}")
             initial_sortie_part_guarantee = {
-                "label": "初期試験支給",
+                "label": "起動試験支給",
                 "line": "Nパーツを1個回収しました",
                 "part_instance_id": guaranteed.get("part_instance_id"),
                 "part_key": guaranteed.get("part_key"),
                 "part_type": guaranteed.get("part_type"),
                 "rarity": guaranteed.get("rarity"),
+                "storage_status": guaranteed.get("storage_status"),
+                "overflow": guaranteed.get("storage_status") == "overflow",
             }
+            guaranteed["drop_source"] = "onboarding_guarantee"
+            guaranteed["onboarding_sortie_index"] = int(ONBOARDING_FIRST_THREE_TARGET)
             audit_log(
                 db,
                 AUDIT_EVENT_TYPES["DROP"],
@@ -62345,7 +62400,7 @@ def explore():
                 payload=_drop_audit_payload(area_key, 1, guaranteed),
                 ip=request.remote_addr,
             )
-            if not guaranteed.get("auto_sold"):
+            if guaranteed.get("storage_status") in {"inventory", "overflow"}:
                 audit_log(
                     db,
                     AUDIT_EVENT_TYPES["INVENTORY_DELTA"],
@@ -62357,6 +62412,8 @@ def explore():
                     delta_count=1,
                     payload={
                         "reason": "initial_sortie_sprint_guarantee",
+                        "drop_source": "onboarding_guarantee",
+                        "onboarding_sortie_index": int(ONBOARDING_FIRST_THREE_TARGET),
                         "part_type": guaranteed.get("part_type"),
                         "part_key": guaranteed.get("part_key"),
                         "source": guaranteed.get("source"),
@@ -62385,6 +62442,9 @@ def explore():
                     "part_key": guaranteed.get("part_key"),
                     "part_type": guaranteed.get("part_type"),
                     "rarity": guaranteed.get("rarity"),
+                    "drop_source": "onboarding_guarantee",
+                    "onboarding_sortie_index": int(ONBOARDING_FIRST_THREE_TARGET),
+                    "storage_status": guaranteed.get("storage_status"),
                 },
                 ip=request.remote_addr,
             )
@@ -63191,7 +63251,7 @@ def explore():
         ),
         "onboarding_first_three_progress": (
             {
-                "title": "初期実戦試験 COMPLETE",
+                "title": "起動試験 COMPLETE",
                 "completed": int(ONBOARDING_FIRST_THREE_TARGET),
                 "target": int(ONBOARDING_FIRST_THREE_TARGET),
                 "line": "初期戦闘データの収集が完了しました。",
@@ -64908,6 +64968,43 @@ def fusion():
         "SELECT * FROM user_robots WHERE user_id = ? ORDER BY obtained_at DESC", (user_id,)
     ).fetchall()
     return render_template("fusion.html", robots=robots, message=message)
+
+
+@app.route("/onboarding/adjust", methods=["GET"])
+@login_required
+def onboarding_adjust():
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (int(session["user_id"]),)).fetchone()
+    if not _onboarding_first_upgrade_should_show(db, user):
+        return redirect(url_for("parts"))
+    recommendation = _first_upgrade_recommendation(db, user)
+    if recommendation and not recommendation.get("is_improvement"):
+        recommendation = None
+    source = str(request.args.get("source") or "onboarding_adjustment")
+    _audit_onboarding_first_upgrade_shown(
+        db,
+        user,
+        source="adjustment_view",
+        recommended_part_instance_id=(recommendation or {}).get("recommended_part_instance_id"),
+        request_id=getattr(g, "request_id", None),
+        ip=request.remote_addr,
+    )
+    active = db.execute(
+        "SELECT * FROM robot_instances WHERE id = ? AND user_id = ? AND status != 'decomposed'",
+        (int(user["active_robot_id"]), int(user["id"])),
+    ).fetchone()
+    layout = db.execute(
+        "SELECT * FROM robot_instance_parts WHERE robot_instance_id = ?",
+        (int(user["active_robot_id"]),),
+    ).fetchone()
+    db.commit()
+    return render_template(
+        "onboarding_adjust.html",
+        recommendation=recommendation,
+        active=dict(active) if active else None,
+        layout=dict(layout) if layout else {},
+        source=source,
+    )
 
 
 @app.route("/build", methods=["GET", "POST"])

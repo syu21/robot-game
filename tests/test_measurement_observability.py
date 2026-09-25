@@ -146,7 +146,8 @@ class MeasurementObservabilityTests(unittest.TestCase):
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 4, {"area_key": "layer_1"}),
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 5, {"area_key": "layer_1"}),
                 (game_app.AUDIT_EVENT_TYPES["BUILD_CONFIRM"], 6, {"source": "player_build_confirm"}),
-                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 7, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["ONBOARDING_FIRST_UPGRADE_COMPLETE"], 7, {"source": "build_confirm"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 8, {"area_key": "layer_1", "entry_source": "onboarding_post_adjustment"}),
             ]
             for event_type, offset, payload in sequence:
                 self._insert_event(db, user_id, event_type, created_at=now - 100 + offset, payload=payload)
