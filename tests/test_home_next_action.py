@@ -944,7 +944,22 @@ class HomeNextActionTests(unittest.TestCase):
                 payload.get("entry_source") == "next_action"
                 and payload.get("home_session_id")
                 and payload.get("seconds_from_home_view") is not None
+                and payload.get("completed_sorties_before") == 0
+                and payload.get("onboarding_phase") == "first_3_sorties"
                 for payload in explore_start_payloads
+            )
+        )
+        explore_end_payloads = [
+            json.loads(row["payload_json"] or "{}")
+            for row in rows
+            if row["event_type"] == game_app.AUDIT_EVENT_TYPES["EXPLORE_END"]
+        ]
+        self.assertTrue(
+            any(
+                payload.get("entry_source") == "next_action"
+                and payload.get("sortie_index") == 1
+                and payload.get("onboarding_phase") == "first_3_sorties"
+                for payload in explore_end_payloads
             )
         )
 

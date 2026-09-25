@@ -343,9 +343,19 @@
         <div class="robot-time">{{ '%.1f'|format(measurement_health.unknown_entry_rate_pct) }}%</div>
       </div>
       <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">request_id対応</div>
+        <div class="admin-metrics-note-value">成功 {{ measurement_health.success_request_count }} / 失敗 {{ measurement_health.failed_request_count }}</div>
+        <div class="robot-time">未対応 {{ measurement_health.unmatched_request_count }}件</div>
+      </div>
+      <div class="admin-metrics-note-card">
         <div class="admin-metrics-note-label">request_id欠損</div>
         <div class="admin-metrics-note-value">{{ measurement_health.missing_request_id_count }}件</div>
         <div class="robot-time">failed {{ measurement_health.failed_count }}件</div>
+      </div>
+      <div class="admin-metrics-note-card">
+        <div class="admin-metrics-note-label">sortie_index</div>
+        <div class="admin-metrics-note-value">欠損 {{ measurement_health.sortie_index_missing_count }}件</div>
+        <div class="robot-time">重複 {{ measurement_health.sortie_index_duplicate_count }}件</div>
       </div>
     </div>
     {% if measurement_health.issues %}
@@ -381,22 +391,22 @@
         <div class="robot-time">CTA表示 {{ first_experience_snapshot.home_ready.cta_visible_users }}人 / クリック {{ first_experience_snapshot.home_ready.cta_click_users }}人</div>
       </div>
       <div class="admin-metrics-note-card">
-        <div class="admin-metrics-note-label">初勝利後再出撃率</div>
-        <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_10m.numerator }}人 / {{ first_experience_snapshot.retry_10m.denominator }}人</div>
-        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.retry_10m.rate_pct) }}% / 10分以内</div>
+        <div class="admin-metrics-note-label">初勝利後10分以内 次出撃完了率</div>
+        <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_complete_10m.numerator }}人 / {{ first_experience_snapshot.retry_complete_10m.denominator }}人</div>
+        <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.retry_complete_10m.rate_pct) }}% / 10分以内</div>
       </div>
       <div class="admin-metrics-note-card">
-        <div class="admin-metrics-note-label">結果画面再出撃クリック率</div>
+        <div class="admin-metrics-note-label">結果画面 再出撃CTAクリック率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.retry_click.numerator }}人 / {{ first_experience_snapshot.retry_click.denominator }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.retry_click.rate_pct) }}%</div>
       </div>
       <div class="admin-metrics-note-card">
-        <div class="admin-metrics-note-label">第2回出撃到達率</div>
+        <div class="admin-metrics-note-label">第2回出撃完了率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.second_start.numerator }}人 / {{ first_experience_snapshot.second_start.denominator }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.second_start.rate_pct) }}%</div>
       </div>
       <div class="admin-metrics-note-card">
-        <div class="admin-metrics-note-label">第3回出撃到達率</div>
+        <div class="admin-metrics-note-label">第3回出撃完了率</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.third_start.numerator }}人 / {{ first_experience_snapshot.third_start.denominator }}人</div>
         <div class="robot-time">{{ '%.1f'|format(first_experience_snapshot.third_start.rate_pct) }}%</div>
       </div>
@@ -416,7 +426,7 @@
         <div class="robot-time">3出撃完了→更新 {{ '%.1f'|format(first_experience_snapshot.first_upgrade.first_three_to_complete_rate_pct) }}%</div>
       </div>
       <div class="admin-metrics-note-card">
-        <div class="admin-metrics-note-label">更新後の再出撃</div>
+        <div class="admin-metrics-note-label">更新後の出撃完了</div>
         <div class="admin-metrics-note-value">{{ first_experience_snapshot.first_upgrade.after_explore_users }}人</div>
         <div class="robot-time">ボス再挑戦 {{ first_experience_snapshot.first_upgrade.after_boss_attempt_users }}人</div>
       </div>
@@ -604,7 +614,7 @@
           <div class="admin-metrics-bar-fill is-cyan" style="width: {{ '%.2f'|format(item.pct_of_registered) }}%"></div>
         </div>
         <div class="admin-metrics-bar-foot">
-          <span>登録者比 {{ '%.0f'|format(item.pct_of_registered) }}%</span>
+          <span>{% if item.uses_eligibility_denominator %}判定対象比{% else %}登録者比{% endif %} {{ '%.0f'|format(item.pct_of_registered) }}%</span>
           <span>前段階比 {{ '%.0f'|format(item.pct_of_previous) }}%</span>
         </div>
       </article>

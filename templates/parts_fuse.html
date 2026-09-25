@@ -37,6 +37,7 @@
     <div class="actions-grid">
       <form method="post" action="{{ url_for('explore') }}" class="action-card">
         <input type="hidden" name="area_key" value="layer_1" />
+        <input type="hidden" name="entry_source" value="area_select" />
         <button type="submit">出撃へ</button>
       </form>
       <a class="action-card" href="{{ url_for('parts') }}">

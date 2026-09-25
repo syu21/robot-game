@@ -31,6 +31,7 @@
     <div class="robot-part">連勝: {{ node['win_streak'] }}</div>
     <form method="post" action="{{ url_for('explore') }}">
       <input type="hidden" name="area_key" value="{{ node['key'] }}" />
+      <input type="hidden" name="entry_source" value="area_select" />
       <button type="submit">出撃</button>
     </form>
   </div>

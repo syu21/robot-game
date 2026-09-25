@@ -100,6 +100,8 @@
 - 初回勝利後から3出撃未満までは同じ主CTA位置で第1層再出撃を促す
 - `EXPLORE_START` は `entry_source`, `home_session_id`, `seconds_from_home_view`, `is_first_explore`, `explore_count_before` を記録する
 - `entry_source` が空の第1層初回POSTでも、直前ホーム表示がある場合だけ `next_action_first_explore` として安全に補完する
+- 初回3出撃ファネルの正本を成功した `audit.explore.end` に統一し、`sortie_index` は完了順、failedは完了回数外として扱う。これは計測基盤のみで、初回3出撃のCT 0秒・パーツ保証・おすすめ換装・ボス抑制は未実装
+- D1/D3は登録日コホートで判定日到達者だけを分母にし、request_id単位で start / success end / failed / unmatched を診断する
 - 戦闘結果直表示でも `BATTLE_RESULT_VIEW` を必ず記録し、結果表示率とretry率が分断されないようにする
 - DAU は実ユーザー操作イベントだけで集計し、管理者、BAN、集計除外、攻撃風登録名を除外する
 - ボス遭遇は `boss_source=normal/pity/guaranteed/guaranteed_retry/fixed/admin_test/unknown` で分類する

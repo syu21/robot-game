@@ -46,6 +46,10 @@
 COMBAT SIGNAL v1:
 - 専用audit eventは追加しない。
 - `audit.explore.end` / `audit.battle.result.view` 系payloadの `summary.combat_signal` に、発生した戦術、予兆/発動イベント、発動回数を含める。
+- `audit.explore.start` payload は `completed_sorties_before`, `onboarding_phase`, `entry_source` を含む。start時点の番号は未完了・失敗を含み得るため確定 `sortie_index` として扱わない。
+- `audit.explore.end` payload は成功完了順の `sortie_index`, `onboarding_phase`, `entry_source` を含む。`sortie_index=1..3` は `onboarding_phase=first_3_sorties`、4以降は `post_onboarding`。過去ログは `created_at, id` 順で同じ値を再構築する。
+- `audit.build.confirm` はプレイヤーが確定した操作のみを表し、payload の `source=player_build_confirm` を初回機体更新の正本にする。登録時のスターター自動生成は含めない。
+- `audit.explore.failed` は完了回数に含めない。管理画面では同一request_idを使って start後のsuccess end / failed / unmatchedを分類する。
 - `request_id` は探索操作の既存IDをそのまま使う。
 
 ### 4.2 経済/在庫

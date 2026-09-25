@@ -54,6 +54,7 @@
           <a class="battle-home-link" href="{{ url_for('home') }}">基地へ戻る</a>
           <form method="post" action="{{ url_for('explore') }}" class="collab-explore-form">
             <input type="hidden" name="area_key" value="layer_1">
+            <input type="hidden" name="entry_source" value="area_select">
             <button type="submit" class="battle-home-link collab-external-link">第1層へ出撃する</button>
           </form>
         </div>

@@ -4233,6 +4233,53 @@ def _measurement_health_snapshot(db, *, rows, window_days=7):
         ).fetchone()["c"]
         or 0
     )
+    lifecycle_rows = db.execute(
+        f"""
+        SELECT wel.user_id, wel.event_type, wel.request_id, wel.payload_json
+        FROM world_events_log wel
+        JOIN users u ON u.id = wel.user_id
+        WHERE wel.event_type IN (?, ?, ?)
+          AND wel.created_at >= ?
+          AND {user_filter}
+        """,
+        (
+            AUDIT_EVENT_TYPES["EXPLORE_START"],
+            AUDIT_EVENT_TYPES["EXPLORE_END"],
+            AUDIT_EVENT_TYPES["EXPLORE_FAILED"],
+            start_ts,
+        ),
+    ).fetchall()
+    request_sets = {"start": set(), "end": set(), "failed": set()}
+    sortie_indexes_by_user = {}
+    sortie_index_missing = 0
+    for event_row in lifecycle_rows:
+        event_type = str(event_row["event_type"] or "")
+        request_id = str(event_row["request_id"] or "").strip()
+        if request_id:
+            if event_type == AUDIT_EVENT_TYPES["EXPLORE_START"]:
+                request_sets["start"].add(request_id)
+            elif event_type == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+                request_sets["end"].add(request_id)
+            elif event_type == AUDIT_EVENT_TYPES["EXPLORE_FAILED"]:
+                request_sets["failed"].add(request_id)
+        if event_type != AUDIT_EVENT_TYPES["EXPLORE_END"]:
+            continue
+        try:
+            payload = json.loads(event_row["payload_json"] or "{}")
+        except Exception:
+            payload = {}
+        sortie_index = payload.get("sortie_index") if isinstance(payload, dict) else None
+        if not isinstance(sortie_index, int) or sortie_index <= 0:
+            sortie_index_missing += 1
+            continue
+        sortie_indexes_by_user.setdefault(int(event_row["user_id"]), []).append(int(sortie_index))
+    sortie_index_duplicates = sum(
+        len(indexes) - len(set(indexes))
+        for indexes in sortie_indexes_by_user.values()
+    )
+    successful_requests = request_sets["start"] & request_sets["end"]
+    failed_requests = request_sets["start"] & request_sets["failed"]
+    unmatched_requests = request_sets["start"] - request_sets["end"] - request_sets["failed"]
     daily_diffs = []
     for row in rows or []:
         day_key = str(row["day_key"])
@@ -4249,6 +4296,12 @@ def _measurement_health_snapshot(db, *, rows, window_days=7):
         issues.append(f"entry_source不明 {unknown_entry}/{start_count}")
     if missing_request > 0:
         issues.append(f"request_id欠損 {missing_request}")
+    if unmatched_requests:
+        issues.append(f"start未対応 {len(unmatched_requests)}")
+    if sortie_index_missing > 0:
+        issues.append(f"sortie_index欠損 {sortie_index_missing}")
+    if sortie_index_duplicates > 0:
+        issues.append(f"sortie_index重複 {sortie_index_duplicates}")
     status = "OK" if not issues else "要確認"
     return {
         "window_days": int(window_days or 7),
@@ -4263,6 +4316,11 @@ def _measurement_health_snapshot(db, *, rows, window_days=7):
         "unknown_entry_rate_pct": (float(unknown_entry) / float(max(1, start_count))) * 100.0,
         "missing_request_id_count": missing_request,
         "failed_count": failed_count,
+        "success_request_count": len(successful_requests),
+        "failed_request_count": len(failed_requests),
+        "unmatched_request_count": len(unmatched_requests),
+        "sortie_index_missing_count": int(sortie_index_missing),
+        "sortie_index_duplicate_count": int(sortie_index_duplicates),
     }
 
 
@@ -4717,6 +4775,23 @@ def _normalize_entry_source(value):
     return source if source in allowed else "unknown"
 
 
+def _onboarding_phase_for_sortie(sortie_index):
+    return "first_3_sorties" if int(sortie_index or 0) <= 3 else "post_onboarding"
+
+
+def _completed_sortie_events(events):
+    completed = [event for event in (events or []) if event["event_type"] == AUDIT_EVENT_TYPES["EXPLORE_END"]]
+    completed.sort(key=lambda event: (int(event["created_at"]), int(event.get("id") or 0)))
+    return [
+        {
+            **event,
+            "sortie_index": index,
+            "onboarding_phase": _onboarding_phase_for_sortie(index),
+        }
+        for index, event in enumerate(completed, start=1)
+    ]
+
+
 def _explore_start_count_for_user(db, user_id):
     return int(
         db.execute(
@@ -4823,22 +4898,18 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         empty_steps = [
             ("registered", "正常新規登録"),
             ("home_first_view", "基地初表示"),
-            ("layer1_first_start", "第1層初出撃"),
-            ("layer1_first_complete", "第1層探索完了"),
+            ("layer1_first_start", "第1回出撃開始"),
+            ("layer1_first_complete", "第1回出撃完了"),
             ("layer1_first_win", "第1層初勝利"),
-            ("battle_result_view", "戦利品結果表示"),
-            ("retry_click", "再出撃クリック"),
-            ("second_start", "第2回出撃"),
-            ("third_start", "第3回出撃"),
+            ("second_start", "第2回出撃完了"),
+            ("third_start", "第3回出撃完了"),
             ("first_three_complete", "初回3出撃完了"),
-            ("part_first_drop", "初パーツ入手"),
-            ("first_build_guide_view", "機体更新ガイド表示"),
-            ("first_build_guide_click", "機体更新ガイドクリック"),
-            ("build_first_complete", "初編成完了"),
+            ("build_first_complete", "初回機体更新"),
             ("post_build_explore_start", "更新後出撃"),
             ("boss_encounter", "第1層ボス遭遇"),
             ("boss_defeat", "第1層ボス撃破"),
             ("next_day_return", "翌日再訪"),
+            ("third_day_return", "3日後再訪"),
         ]
         return {
             "window_days": window_days,
@@ -4848,12 +4919,15 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 for key, label in empty_steps
             ],
             "retry_10m": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "retry_complete_10m": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "retry_same_day": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "retry_24h": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "retry_click": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "second_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "third_start": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
             "first_three_complete": {"numerator": 0, "denominator": 0, "rate_pct": 0.0},
+            "d1": {"returned": 0, "eligible": 0, "rate_pct": 0.0},
+            "d3": {"returned": 0, "eligible": 0, "rate_pct": 0.0},
             "first_upgrade": {
                 "shown_users": 0,
                 "click_users": 0,
@@ -4949,7 +5023,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     placeholders = ",".join("?" for _ in user_ids)
     event_rows = db.execute(
         f"""
-        SELECT user_id, event_type, created_at, payload_json
+        SELECT id, user_id, event_type, created_at, payload_json
         FROM world_events_log
         WHERE user_id IN ({placeholders})
           AND created_at >= ?
@@ -4965,6 +5039,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             payload = {}
         events_by_user.setdefault(int(row["user_id"]), []).append(
             {
+                "id": int(row["id"] or 0),
                 "event_type": str(row["event_type"] or ""),
                 "created_at": int(row["created_at"] or 0),
                 "payload": payload if isinstance(payload, dict) else {},
@@ -4987,9 +5062,11 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "boss_encounter": set(),
         "boss_defeat": set(),
         "next_day_return": set(),
+        "third_day_return": set(),
     }
     first_win_ts_by_user = {}
     first_retry_start_after_win = {}
+    first_retry_complete_after_win = {}
     first_retry_click_after_win = set()
     entry_source_users = {
         "home_next_action": set(),
@@ -5005,6 +5082,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "boss_recovery_normal": set(),
         "layer2_unlock_result": set(),
         "layer2_unlock_home": set(),
+        "first_robot_upgrade_result": set(),
+        "onboarding_sortie_sprint": set(),
+        "onboarding_sortie_sprint_2": set(),
+        "onboarding_sortie_sprint_3": set(),
         "layer1_boss_signal": set(),
         "layer1_boss_alert": set(),
         "layer1_boss_guarantee": set(),
@@ -5061,10 +5142,24 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     first_upgrade_complete_ts_by_user = {}
     first_upgrade_after_explore_users = set()
     first_upgrade_after_boss_attempt_users = set()
+    d1_eligible_users = set()
+    d3_eligible_users = set()
+    completed_sorties_by_user = {
+        uid: _completed_sortie_events(events_by_user.get(uid, []))
+        for uid in user_ids
+    }
     for user_row in user_rows:
         uid = int(user_row["id"])
         created_day = _jst_date_from_ts(int(user_row["created_at"] or 0))
         start_count = 0
+        completed_sorties = completed_sorties_by_user.get(uid, [])
+        if len(completed_sorties) >= 1:
+            step_users["layer1_first_complete"].add(uid)
+        if len(completed_sorties) >= 2:
+            step_users["second_start"].add(uid)
+        if len(completed_sorties) >= 3:
+            step_users["third_start"].add(uid)
+            step_users["first_three_complete"].add(uid)
         user_days = set()
         for event in events_by_user.get(uid, []):
             et = event["event_type"]
@@ -5122,13 +5217,9 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                     layer1_start_count_by_user[uid] = int(layer1_start_count_by_user.get(uid, 0)) + 1
                     if entry_source == "boss_retry":
                         layer1_boss_retry_executed_users.add(uid)
-                    if entry_source == "boss_recovery_normal":
-                        layer1_boss_recovery_normal_users.add(uid)
-                        layer1_boss_recovery_recommend_click_users.add(uid)
-                if start_count >= 2:
-                    step_users["second_start"].add(uid)
-                if start_count >= 3:
-                    step_users["third_start"].add(uid)
+                if entry_source == "boss_recovery_normal":
+                    layer1_boss_recovery_normal_users.add(uid)
+                    layer1_boss_recovery_recommend_click_users.add(uid)
                 first_win_ts = first_win_ts_by_user.get(uid)
                 if first_win_ts and ts > first_win_ts and uid not in first_retry_start_after_win:
                     first_retry_start_after_win[uid] = ts
@@ -5137,6 +5228,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 if win:
                     step_users["layer1_first_win"].add(uid)
                     first_win_ts_by_user.setdefault(uid, ts)
+            if et == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+                first_win_ts = first_win_ts_by_user.get(uid)
+                if first_win_ts and ts > first_win_ts and uid not in first_retry_complete_after_win:
+                    first_retry_complete_after_win[uid] = ts
             if et in {AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"]}:
                 step_users["battle_result_view"].add(uid)
             if et == AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"]:
@@ -5145,8 +5240,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                     first_retry_click_after_win.add(uid)
             if et in {AUDIT_EVENT_TYPES["DROP"], AUDIT_EVENT_TYPES["ONBOARDING_PART_FIRST_DROP"]}:
                 step_users["part_first_drop"].add(uid)
-            if et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
+            if et == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
                 step_users["build_first_complete"].add(uid)
+                first_upgrade_complete_users.add(uid)
+                first_upgrade_complete_ts_by_user.setdefault(uid, ts)
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
                     layer1_boss_retry_build_complete_users.add(uid)
             if et == AUDIT_EVENT_TYPES["FUSE"]:
@@ -5220,44 +5317,41 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 layer1_boss_retry_build_complete_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_BOSS_RETRY_SUCCESS") and area_key == "layer_1":
                 layer1_boss_retry_success_users.add(uid)
-            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
-                step_users["first_three_complete"].add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
                 first_upgrade_shown_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_CLICK"):
                 first_upgrade_click_users.add(uid)
-            if et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_COMPLETE"):
-                first_upgrade_complete_users.add(uid)
-                first_upgrade_complete_ts_by_user.setdefault(uid, ts)
             complete_ts = first_upgrade_complete_ts_by_user.get(uid)
             if complete_ts and ts > int(complete_ts):
-                if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
+                if et == AUDIT_EVENT_TYPES["EXPLORE_END"]:
                     first_upgrade_after_explore_users.add(uid)
                 if et in {AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], AUDIT_EVENT_TYPES["BOSS_ATTEMPT"]}:
                     first_upgrade_after_boss_attempt_users.add(uid)
-        if created_day + timedelta(days=1) <= today_jst and (created_day + timedelta(days=1)) in user_days:
-            step_users["next_day_return"].add(uid)
+        if created_day + timedelta(days=1) <= today_jst:
+            d1_eligible_users.add(uid)
+            if (created_day + timedelta(days=1)) in user_days:
+                step_users["next_day_return"].add(uid)
+        if created_day + timedelta(days=3) <= today_jst:
+            d3_eligible_users.add(uid)
+            if (created_day + timedelta(days=3)) in user_days:
+                step_users["third_day_return"].add(uid)
 
     registered_count = max(1, len(user_ids))
     step_defs = [
         ("registered", "正常新規登録"),
         ("home_first_view", "基地初表示"),
-        ("layer1_first_start", "第1層初出撃"),
-        ("layer1_first_complete", "第1層探索完了"),
+        ("layer1_first_start", "第1回出撃開始"),
+        ("layer1_first_complete", "第1回出撃完了"),
         ("layer1_first_win", "第1層初勝利"),
-        ("battle_result_view", "戦利品結果表示"),
-        ("retry_click", "再出撃クリック"),
-        ("second_start", "第2回出撃"),
-        ("third_start", "第3回出撃"),
+        ("second_start", "第2回出撃完了"),
+        ("third_start", "第3回出撃完了"),
         ("first_three_complete", "初回3出撃完了"),
-        ("part_first_drop", "初パーツ入手"),
-        ("first_build_guide_view", "機体更新ガイド表示"),
-        ("first_build_guide_click", "機体更新ガイドクリック"),
-        ("build_first_complete", "初編成完了"),
+        ("build_first_complete", "初回機体更新"),
         ("post_build_explore_start", "更新後出撃"),
         ("boss_encounter", "第1層ボス遭遇"),
         ("boss_defeat", "第1層ボス撃破"),
         ("next_day_return", "翌日再訪"),
+        ("third_day_return", "3日後再訪"),
     ]
     ordered_step_users = {key: set() for key, _label in step_defs}
     first_step_ts_by_user = {}
@@ -5280,27 +5374,31 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 found.append(ts)
             elif key == "layer1_first_start" and et in {AUDIT_EVENT_TYPES["EXPLORE_START"], AUDIT_EVENT_TYPES["EXPLORE_END"]} and area_key == "layer_1":
                 found.append(ts)
-            elif key == "layer1_first_complete" and et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1":
-                found.append(ts)
+            elif key == "layer1_first_complete" and et == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+                completed = completed_sorties_by_user.get(int(uid), [])
+                if completed and int(completed[0]["id"]) == int(event.get("id") or 0):
+                    found.append(ts)
             elif key == "layer1_first_win" and et == AUDIT_EVENT_TYPES["EXPLORE_END"] and area_key == "layer_1" and win:
                 found.append(ts)
             elif key == "battle_result_view" and et == AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"]:
                 found.append(ts)
             elif key == "retry_click" and et == AUDIT_EVENT_TYPES["EXPLORE_RETRY_CLICK"]:
                 found.append(ts)
-            elif key == "second_start" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_EXPLORE_SECOND_START"):
-                found.append(ts)
-            elif key == "third_start" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_EXPLORE_THIRD_START"):
-                found.append(ts)
-            elif key == "first_three_complete" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_THREE_COMPLETE"):
-                found.append(ts)
+            elif key == "second_start" and et == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+                completed = completed_sorties_by_user.get(int(uid), [])
+                if len(completed) >= 2 and int(completed[1]["id"]) == int(event.get("id") or 0):
+                    found.append(ts)
+            elif key in {"third_start", "first_three_complete"} and et == AUDIT_EVENT_TYPES["EXPLORE_END"]:
+                completed = completed_sorties_by_user.get(int(uid), [])
+                if len(completed) >= 3 and int(completed[2]["id"]) == int(event.get("id") or 0):
+                    found.append(ts)
             elif key == "part_first_drop" and et in {AUDIT_EVENT_TYPES["DROP"], AUDIT_EVENT_TYPES["ONBOARDING_PART_FIRST_DROP"]}:
                 found.append(ts)
             elif key == "first_build_guide_view" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_SHOWN"):
                 found.append(ts)
             elif key == "first_build_guide_click" and et == AUDIT_EVENT_TYPES.get("ONBOARDING_FIRST_UPGRADE_CLICK"):
                 found.append(ts)
-            elif key == "build_first_complete" and et in {AUDIT_EVENT_TYPES["BUILD_CONFIRM"], AUDIT_EVENT_TYPES["ONBOARDING_BUILD_FIRST_COMPLETE"]}:
+            elif key == "build_first_complete" and et == AUDIT_EVENT_TYPES["BUILD_CONFIRM"]:
                 found.append(ts)
             elif key == "boss_encounter" and et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
                 found.append(ts)
@@ -5310,9 +5408,13 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 created_day = _jst_date_from_ts(created_ts)
                 if _jst_date_from_ts(ts) == created_day + timedelta(days=1):
                     found.append(ts)
+            elif key == "third_day_return":
+                created_day = _jst_date_from_ts(created_ts)
+                if _jst_date_from_ts(ts) == created_day + timedelta(days=3):
+                    found.append(ts)
         if key == "post_build_explore_start":
             for event in events_by_user.get(int(uid), []):
-                if event["event_type"] == AUDIT_EVENT_TYPES["EXPLORE_START"] and build_complete_ts and int(event["created_at"]) > int(build_complete_ts):
+                if event["event_type"] == AUDIT_EVENT_TYPES["EXPLORE_END"] and build_complete_ts and int(event["created_at"]) > int(build_complete_ts):
                     found.append(int(event["created_at"]))
         return min(found) if found else None
 
@@ -5322,6 +5424,11 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         first_step_ts_by_user[uid] = {}
         for key, _label in step_defs:
             ts = _first_ts_for(uid, key)
+            if key == "layer1_first_win":
+                if ts is not None:
+                    ordered_step_users[key].add(uid)
+                    first_step_ts_by_user[uid][key] = int(ts)
+                continue
             if ts is None:
                 break
             if prev_ts is not None and int(ts) < int(prev_ts):
@@ -5334,23 +5441,30 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     prev_count = len(user_ids)
     for key, label in step_defs:
         count = len(ordered_step_users.get(key, set()))
+        denominator = registered_count
+        if key == "next_day_return":
+            denominator = max(1, len(d1_eligible_users))
+        elif key == "third_day_return":
+            denominator = max(1, len(d3_eligible_users))
         rows.append(
             {
                 "key": key,
                 "label": label,
                 "count": int(count),
-                "pct_of_registered": (float(count) / float(registered_count)) * 100.0,
+                "pct_of_registered": (float(count) / float(denominator)) * 100.0,
                 "pct_of_previous": min(100.0, (float(count) / float(max(1, prev_count))) * 100.0),
+                "denominator": int(denominator),
+                "uses_eligibility_denominator": key in {"next_day_return", "third_day_return"},
             }
         )
         prev_count = count
 
     first_win_users = set(first_win_ts_by_user.keys())
 
-    def _retry_metric(seconds=None, same_day=False):
+    def _retry_metric(retry_events, seconds=None, same_day=False):
         numerator = 0
         for uid, first_win_ts in first_win_ts_by_user.items():
-            retry_ts = first_retry_start_after_win.get(uid)
+            retry_ts = retry_events.get(uid)
             if not retry_ts:
                 continue
             if same_day:
@@ -5393,6 +5507,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "boss_recovery_normal": "ボス敗北リカバリーから通常戦",
         "layer2_unlock_result": "ボス撃破結果から第2層",
         "layer2_unlock_home": "基地NEXT ACTIONから第2層",
+        "first_robot_upgrade_result": "初回機体更新後の結果画面",
+        "onboarding_sortie_sprint": "初回3出撃導線",
+        "onboarding_sortie_sprint_2": "初回3出撃導線（2回目）",
+        "onboarding_sortie_sprint_3": "初回3出撃導線（3回目）",
         "layer1_boss_signal": "大型反応検出から出撃",
         "layer1_boss_alert": "ボス警報から出撃",
         "layer1_boss_guarantee": "10勝保証から出撃",
@@ -5514,9 +5632,10 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "action_basis_label": f"直近{window_days}日行動: 登録日に関係なく通過した初回導線",
         "registered_count": len(user_ids),
         "rows": rows,
-        "retry_10m": _retry_metric(seconds=600),
-        "retry_same_day": _retry_metric(same_day=True),
-        "retry_24h": _retry_metric(seconds=86400),
+        "retry_10m": _retry_metric(first_retry_start_after_win, seconds=600),
+        "retry_complete_10m": _retry_metric(first_retry_complete_after_win, seconds=600),
+        "retry_same_day": _retry_metric(first_retry_start_after_win, same_day=True),
+        "retry_24h": _retry_metric(first_retry_start_after_win, seconds=86400),
         "retry_click": {
             "numerator": len(first_retry_click_after_win),
             "denominator": len(first_win_users),
@@ -5536,6 +5655,16 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             "numerator": len(ordered_step_users["first_three_complete"]),
             "denominator": len(user_ids),
             "rate_pct": (float(len(ordered_step_users["first_three_complete"])) / float(registered_count)) * 100.0,
+        },
+        "d1": {
+            "returned": len(step_users["next_day_return"]),
+            "eligible": len(d1_eligible_users),
+            "rate_pct": (float(len(step_users["next_day_return"])) / float(max(1, len(d1_eligible_users)))) * 100.0,
+        },
+        "d3": {
+            "returned": len(step_users["third_day_return"]),
+            "eligible": len(d3_eligible_users),
+            "rate_pct": (float(len(step_users["third_day_return"])) / float(max(1, len(d3_eligible_users)))) * 100.0,
         },
         "first_upgrade": {
             "shown_users": int(len(first_upgrade_shown_users)),
@@ -45406,6 +45535,7 @@ def inject_quick_nav():
                 "ct_ready_at": server_now + int(ct_remain),
                 "server_now": server_now,
                 "area_key": area_key,
+                "entry_source": "previous_area",
                 "can_direct_explore": bool(area_key and user["active_robot_id"]),
                 "explore_submission_id": (_issue_explore_submission_id() if area_key and user["active_robot_id"] else ""),
                 "show_market": bool(_market_can_access(db, user)),
@@ -58719,6 +58849,7 @@ def explore():
     now = _now_ts()
     home_view_context = _home_recent_view_context(db, user_id, now)
     explore_start_count_before = _explore_start_count_for_user(db, user_id)
+    completed_sorties_before = _count_user_completed_explores(db, user_id)
     if (
         entry_source == "unknown"
         and not str(entry_source_raw or "").strip()
@@ -58945,6 +59076,8 @@ def explore():
             "seconds_from_home_view": home_view_context.get("seconds_from_home_view"),
             "is_first_explore": bool(explore_start_count_before == 0),
             "explore_count_before": int(explore_start_count_before),
+            "completed_sorties_before": int(completed_sorties_before),
+            "onboarding_phase": _onboarding_phase_for_sortie(int(completed_sorties_before) + 1),
             "is_first_layer2_explore": bool(is_first_layer2_explore) if area_key == "layer_2" else False,
             "layer2_explore_count_before": int(layer2_start_count_before) if area_key == "layer_2" else None,
             "seconds_from_layer_unlock": seconds_from_layer2_unlock,
@@ -62224,6 +62357,9 @@ def explore():
         delta_coins=int(reward_coin),
         payload={
             "area_key": area_key,
+            "entry_source": entry_source,
+            "sortie_index": int(completed_sorties_before) + 1,
+            "onboarding_phase": _onboarding_phase_for_sortie(int(completed_sorties_before) + 1),
             "week_key": _world_week_key(),
             "faction_war": {
                 "user_faction": user_faction,
@@ -65640,7 +65776,8 @@ def build_confirm():
                 "changed_part_types": list(changed_part_types_for_audit),
                 "changed_count": len(changed_part_types_for_audit),
                 "first_update_flow": bool(first_upgrade_flow_active),
-                "source": str(request.form.get("guide_source") or "build_confirm"),
+                "source": "player_build_confirm",
+                "guide_source": str(request.form.get("guide_source") or "build_confirm"),
                 "style": {
                     "current_key": style_state.get("current_key"),
                     "next_key": style_state.get("next_key"),

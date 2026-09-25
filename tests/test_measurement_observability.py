@@ -67,10 +67,9 @@ class MeasurementObservabilityTests(unittest.TestCase):
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 3, {"area_key": "layer_1", "result": {"win": True}}),
                 (game_app.AUDIT_EVENT_TYPES["BATTLE_RESULT_VIEW"], 4, {"area_key": "layer_1"}),
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 5, {"area_key": "layer_1", "entry_source": "battle_retry"}),
-                (game_app.AUDIT_EVENT_TYPES["ONBOARDING_EXPLORE_SECOND_START"], 6, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 6, {"area_key": "layer_1", "result": {"win": True}}),
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 7, {"area_key": "layer_1", "entry_source": "battle_retry"}),
-                (game_app.AUDIT_EVENT_TYPES["ONBOARDING_EXPLORE_THIRD_START"], 8, {"area_key": "layer_1"}),
-                (game_app.AUDIT_EVENT_TYPES["ONBOARDING_FIRST_THREE_COMPLETE"], 9, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 8, {"area_key": "layer_1", "result": {"win": True}}),
             ]
             for event_type, offset, payload in events:
                 self._insert_event(db, user_id, event_type, created_at=now + offset, payload=payload, request_id=f"req-{offset}")
@@ -82,6 +81,119 @@ class MeasurementObservabilityTests(unittest.TestCase):
         self.assertEqual(snapshot["second_start"]["numerator"], by_key["second_start"]["count"])
         self.assertEqual(snapshot["third_start"]["numerator"], by_key["third_start"]["count"])
         self.assertEqual(snapshot["first_three_complete"]["numerator"], by_key["first_three_complete"]["count"])
+
+    def test_completed_sortie_index_ignores_failed_and_is_per_user(self):
+        events_a = [
+            {"id": 1, "event_type": game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], "created_at": 10},
+            {"id": 2, "event_type": game_app.AUDIT_EVENT_TYPES["EXPLORE_FAILED"], "created_at": 20},
+            {"id": 3, "event_type": game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], "created_at": 30},
+            {"id": 4, "event_type": game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], "created_at": 40},
+        ]
+        events_b = [{"id": 5, "event_type": game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], "created_at": 25}]
+
+        sorties_a = game_app._completed_sortie_events(events_a)
+        sorties_b = game_app._completed_sortie_events(events_b)
+
+        self.assertEqual([row["sortie_index"] for row in sorties_a], [1, 2, 3])
+        self.assertEqual([row["onboarding_phase"] for row in sorties_a], ["first_3_sorties"] * 3)
+        self.assertEqual([row["sortie_index"] for row in sorties_b], [1])
+
+    def test_first_three_funnel_uses_completed_sorties_for_six_five_four_users(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            for index in range(8):
+                user_id = self._create_user(db, f"cohort_user_{index}", created_at=now - 60)
+                self._insert_event(db, user_id, game_app.AUDIT_EVENT_TYPES["HOME_VIEW"], created_at=now - 50)
+                completed = 3 if index < 4 else (2 if index < 5 else (1 if index < 6 else 0))
+                for sortie_index in range(completed):
+                    ts = now - 40 + sortie_index * 2
+                    self._insert_event(
+                        db,
+                        user_id,
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_START"],
+                        created_at=ts,
+                        payload={"area_key": "layer_1", "entry_source": "area_select"},
+                        request_id=f"start-{index}-{sortie_index}",
+                    )
+                    self._insert_event(
+                        db,
+                        user_id,
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        created_at=ts + 1,
+                        payload={"area_key": "layer_1", "result": {"win": True}},
+                        request_id=f"start-{index}-{sortie_index}",
+                    )
+            db.commit()
+            snapshot = game_app.build_new_user_onboarding_funnel(db, window_days=7)
+
+        self.assertEqual(snapshot["registered_count"], 8)
+        rows = {row["key"]: row for row in snapshot["rows"]}
+        self.assertEqual(rows["layer1_first_complete"]["count"], 6)
+        self.assertEqual(rows["second_start"]["count"], 5)
+        self.assertEqual(rows["third_start"]["count"], 4)
+        self.assertEqual(snapshot["first_three_complete"]["numerator"], 4)
+
+    def test_first_adjustment_uses_player_build_confirm_and_post_adjustment_completion(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "adjustment_metric_user", created_at=now - 100)
+            sequence = [
+                (game_app.AUDIT_EVENT_TYPES["HOME_VIEW"], 1, {}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 2, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 3, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 4, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 5, {"area_key": "layer_1"}),
+                (game_app.AUDIT_EVENT_TYPES["BUILD_CONFIRM"], 6, {"source": "player_build_confirm"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 7, {"area_key": "layer_1"}),
+            ]
+            for event_type, offset, payload in sequence:
+                self._insert_event(db, user_id, event_type, created_at=now - 100 + offset, payload=payload)
+            db.commit()
+            snapshot = game_app.build_new_user_onboarding_funnel(db, window_days=7)
+
+        self.assertEqual(snapshot["first_upgrade"]["complete_users"], 1)
+        self.assertEqual(snapshot["first_upgrade"]["after_explore_users"], 1)
+
+    def test_revisit_denominators_exclude_users_before_judgment_day(self):
+        now = int(time.time())
+        old_created = now - 4 * 86400
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            old_user = self._create_user(db, "revisit_old_user", created_at=old_created)
+            self._create_user(db, "revisit_new_user", created_at=now)
+            self._insert_event(
+                db,
+                old_user,
+                game_app.AUDIT_EVENT_TYPES["HOME_VIEW"],
+                created_at=old_created + 3 * 86400,
+            )
+            db.commit()
+            snapshot = game_app.build_new_user_onboarding_funnel(db, window_days=7)
+
+        self.assertEqual(snapshot["d1"]["eligible"], 1)
+        self.assertEqual(snapshot["d3"]["eligible"], 1)
+        self.assertEqual(snapshot["d3"]["returned"], 1)
+
+    def test_entry_source_allowlist_covers_normal_explore_routes(self):
+        sources = {
+            "next_action_first_explore",
+            "battle_retry",
+            "next_action",
+            "previous_area",
+            "layer1_primary_cta",
+            "area_select",
+            "boss_retry",
+            "boss_recovery_normal",
+            "layer2_unlock_result",
+            "layer2_unlock_home",
+            "first_robot_upgrade_result",
+            "layer1_boss_signal",
+            "layer1_boss_alert",
+            "layer1_boss_guarantee",
+        }
+        self.assertEqual({game_app._normalize_entry_source(source) for source in sources}, sources)
 
     def test_daily_metrics_audit_recalc_matches_explore_end(self):
         now = int(time.time())
@@ -147,6 +259,36 @@ class MeasurementObservabilityTests(unittest.TestCase):
         self.assertIsNotNone(failed)
         self.assertEqual(int(end_count), 0)
         self.assertEqual(json.loads(failed["payload_json"])["reason"], "validation")
+
+    def test_measurement_health_classifies_request_lifecycle_and_sortie_indexes(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user_id = self._create_user(db, "health_lifecycle_user", created_at=now - 60)
+            events = [
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], "req-success", {}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], "req-success", {"sortie_index": 1}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], "req-failed", {}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_FAILED"], "req-failed", {"reason": "exception"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], "req-unmatched", {}),
+            ]
+            for offset, (event_type, request_id, payload) in enumerate(events, start=1):
+                self._insert_event(
+                    db,
+                    user_id,
+                    event_type,
+                    created_at=now - 50 + offset,
+                    payload=payload,
+                    request_id=request_id,
+                )
+            db.commit()
+            snapshot = game_app._measurement_health_snapshot(db, rows=[], window_days=7)
+
+        self.assertEqual(snapshot["success_request_count"], 1)
+        self.assertEqual(snapshot["failed_request_count"], 1)
+        self.assertEqual(snapshot["unmatched_request_count"], 1)
+        self.assertEqual(snapshot["sortie_index_missing_count"], 0)
+        self.assertEqual(snapshot["sortie_index_duplicate_count"], 0)
 
 
 if __name__ == "__main__":
