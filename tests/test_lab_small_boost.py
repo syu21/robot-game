@@ -124,6 +124,25 @@ class LabSmallBoostTests(unittest.TestCase):
             )
             db.commit()
 
+    def _insert_completed_explores(self, count):
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            now = int(time.time())
+            for offset in range(int(count)):
+                db.execute(
+                    """
+                    INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key)
+                    VALUES (?, ?, ?, ?, 'explore')
+                    """,
+                    (
+                        now - int(count) + offset,
+                        game_app.AUDIT_EVENT_TYPES["EXPLORE_END"],
+                        '{"area_key":"layer_1","result":{"win":true}}',
+                        self.user_id,
+                    ),
+                )
+            db.commit()
+
     def test_home_grants_daily_login_stock_once_and_renders_controls(self):
         client = self._client()
 
@@ -179,6 +198,7 @@ class LabSmallBoostTests(unittest.TestCase):
             self.assertEqual(int(user["research_boost_charges"]), 3)
 
     def test_research_boost_toggle_disables_auto_use_and_preserves_stock(self):
+        self._insert_completed_explores(3)
         client = self._client()
         client.get("/home")
 
@@ -324,6 +344,7 @@ class LabSmallBoostTests(unittest.TestCase):
         self.assertIn("ロボらぼで育てた機体を公開中", html)
 
     def test_explore_consumes_research_boost_charge_and_skips_ct(self):
+        self._insert_completed_explores(3)
         client = self._client()
         with game_app.app.app_context():
             db = game_app.get_db()

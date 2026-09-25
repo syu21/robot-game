@@ -942,7 +942,6 @@ EXPLORE_COOLDOWN_SECONDS = int(os.getenv("EXPLORE_COOLDOWN_SECONDS", "40"))
 NEWBIE_BOOST_ENABLED = os.getenv("NEWBIE_BOOST_ENABLED", "1") == "1"
 NEWBIE_BOOST_WINDOW_HOURS = int(os.getenv("NEWBIE_BOOST_WINDOW_HOURS", "72"))
 NEWBIE_EXPLORE_CT_SECONDS = int(os.getenv("NEWBIE_EXPLORE_CT_SECONDS", "20"))
-ONBOARDING_SORTIE_SPRINT_START_AT = int(os.getenv("ONBOARDING_SORTIE_SPRINT_START_AT") or int(time.time()))
 TRIAL_MODE_DURATION_SECONDS = max(60, int(os.getenv("TRIAL_MODE_DURATION_SECONDS", "600")))
 TRIAL_MODE_MAX_EXPLORES = max(1, int(os.getenv("TRIAL_MODE_MAX_EXPLORES", "3")))
 TRIAL_MODE_CT_SECONDS = max(0, int(os.getenv("TRIAL_MODE_CT_SECONDS", "20")))
@@ -4750,6 +4749,9 @@ def _normalize_entry_source(value):
         "direct_or_unknown": "unknown",
         "other": "unknown",
         "retry_result": "battle_retry",
+        "onboarding_sortie_sprint_1": "onboarding_sortie_sprint",
+        "onboarding_sortie_sprint_2": "onboarding_sortie_sprint",
+        "onboarding_sortie_sprint_3": "onboarding_sortie_sprint",
     }
     source = aliases.get(source, source)
     allowed = {
@@ -4765,8 +4767,6 @@ def _normalize_entry_source(value):
         "first_robot_upgrade_result",
         "boss_recovery_normal",
         "onboarding_sortie_sprint",
-        "onboarding_sortie_sprint_2",
-        "onboarding_sortie_sprint_3",
         "layer1_boss_signal",
         "layer1_boss_alert",
         "layer1_boss_guarantee",
@@ -43961,16 +43961,32 @@ def _initial_sortie_sprint_user_eligible(user_row):
         return False
     if "analytics_excluded" in user_row.keys() and int(user_row["analytics_excluded"] or 0) == 1:
         return False
-    created_at = int(user_row["created_at"] or 0) if "created_at" in user_row.keys() else 0
-    return created_at >= int(ONBOARDING_SORTIE_SPRINT_START_AT)
+    return True
 
 
-def _initial_sortie_sprint_state(db, user_row, *, now_ts=None):
+def _completed_sorties_up_to(db, user_id, limit=ONBOARDING_FIRST_THREE_TARGET):
+    rows = db.execute(
+        """
+        SELECT id
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (int(user_id), AUDIT_EVENT_TYPES["EXPLORE_END"], max(1, int(limit))),
+    ).fetchall()
+    return len(rows)
+
+
+def _initial_sortie_sprint_state(db, user_row, *, now_ts=None, completed_count=None):
     if not _initial_sortie_sprint_user_eligible(user_row):
         return None
     completed = min(
         int(ONBOARDING_FIRST_THREE_TARGET),
-        _count_user_completed_explores(db, int(user_row["id"])),
+        _completed_sorties_up_to(db, int(user_row["id"]))
+        if completed_count is None
+        else max(0, int(completed_count)),
     )
     if completed >= int(ONBOARDING_FIRST_THREE_TARGET):
         return None
@@ -43991,24 +44007,24 @@ def _onboarding_sortie_sprint_result_view(completed, *, area_key):
     target = int(ONBOARDING_FIRST_THREE_TARGET)
     if completed >= target:
         return {
-            "title": "初期実戦試験 COMPLETE",
+            "title": "起動試験 COMPLETE",
             "completed": target,
             "target": target,
-            "line": "初期戦闘データの収集が完了しました。",
-            "subline": "通常出撃モードへ移行します。",
+            "line": "戦闘データの取得が完了しました。",
+            "subline": "ここから自由に機体を育てられます。",
             "complete": True,
             "area_key": str(area_key or "layer_1"),
         }
     remaining = max(0, target - completed)
     return {
-        "title": "初期実戦試験",
+        "title": "起動試験",
         "completed": completed,
         "target": target,
-        "line": "最終データを取得します。" if completed == 2 else "機体データ取得中。",
-        "subline": f"あと{remaining}回で初期試験完了。" if remaining == 1 else f"あと{remaining}回の出撃で初期試験完了。",
+        "line": "データ取得完了。" if completed > 0 else "3回出撃して、ロボの戦闘データを集めよう。",
+        "subline": "あと1回で起動試験完了。" if remaining == 1 else f"あと{remaining}回。",
         "complete": False,
         "area_key": str(area_key or "layer_1"),
-        "entry_source": f"onboarding_sortie_sprint_{completed + 1}",
+        "entry_source": "onboarding_sortie_sprint",
         "cta_label": "最終試験へ出撃" if completed + 1 >= target else f"第{completed + 1}試験へ出撃",
     }
 
@@ -51777,7 +51793,12 @@ def home():
         or 0
     )
     onboarding_first_three_progress = _onboarding_first_three_progress_view(db, user)
-    initial_sortie_sprint_state = _initial_sortie_sprint_state(db, user, now_ts=now)
+    initial_sortie_sprint_state = _initial_sortie_sprint_state(
+        db,
+        user,
+        now_ts=now,
+        completed_count=total_explores,
+    )
     layer1_boss_alert = _layer1_boss_alert_view(db, user)
     collab_unlock_progress = get_collab_unlock_progress(db, int(user["id"]))
     next_action_card = _home_next_action_card(
@@ -52008,25 +52029,29 @@ def home():
     if (
         home_primary_explore_cta
         and initial_sortie_sprint_state
-        and int(initial_sortie_sprint_state.get("completed") or 0) > 0
         and not layer1_boss_retry_home_visible
+        and not (next_action_card and next_action_card.get("layer2_unlock"))
     ):
         completed = int(initial_sortie_sprint_state.get("completed") or 0)
         remaining = max(0, int(initial_sortie_sprint_state.get("target") or 3) - completed)
-        home_primary_explore_cta.update(
-            {
-                "title": f"初期実戦試験 {completed}/3",
+        sprint_cta = {
+            "sortie_sprint": initial_sortie_sprint_state,
+            "surface": "home",
+        }
+        if completed > 0:
+            sprint_cta.update({
+                "title": "起動試験",
                 "destination_label": _explore_area_label(str(user["last_explore_area_key"] or "").strip() or "layer_1"),
-                "helper_text": "あと1回で初期試験完了" if remaining == 1 else f"あと{remaining}回出撃して初期データを完成",
+                "helper_text": "あと1回で起動試験完了。" if remaining == 1 else ("戦闘データを取得。あと2回。" if completed == 1 else "まずは3回出撃して、ロボの戦闘データを集めよう。"),
                 "button_label": initial_sortie_sprint_state.get("cta_label") or "第2試験へ出撃",
                 "button_current_label": initial_sortie_sprint_state.get("cta_label") or "第2試験へ出撃",
                 "area_key": str(user["last_explore_area_key"] or "").strip() or "layer_1",
-                "entry_source": f"onboarding_sortie_sprint_{completed + 1}",
+                "entry_source": "onboarding_sortie_sprint",
                 "show_map_link": False,
                 "context_line": "",
                 "disabled": False,
-            }
-        )
+            })
+        home_primary_explore_cta.update(sprint_cta)
     elif (
         home_primary_explore_cta
         and layer1_boss_alert
@@ -52426,6 +52451,7 @@ def home():
             first_win_banner=first_win_banner,
             total_explores=total_explores,
             onboarding_first_three_progress=onboarding_first_three_progress,
+            initial_sortie_sprint_state=initial_sortie_sprint_state,
             layer1_boss_alert=layer1_boss_alert,
             collab_unlock_progress=collab_unlock_progress,
             home_beginner_focus=home_beginner_focus,
@@ -58909,6 +58935,25 @@ def explore():
             request_id=request_id,
             action_key="explore_retry",
             payload={"area_key": area_key, "entry_source": entry_source},
+            ip=request.remote_addr,
+        )
+    if entry_source in {"onboarding_sortie_sprint", "next_action_first_explore"} and initial_sortie_sprint_before:
+        surface = str(request.form.get("surface") or "").strip().lower()
+        if surface not in {"home", "battle_result"}:
+            surface = "battle_result"
+        audit_log(
+            db,
+            AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_CTA_CLICK"],
+            user_id=user_id,
+            request_id=request_id,
+            action_key="onboarding_sortie_cta_click",
+            entity_type="explore",
+            payload={
+                "sortie_index": int(initial_sortie_sprint_before.get("next_sortie_no") or 1),
+                "surface": surface,
+                "area_key": area_key,
+                "entry_source": entry_source,
+            },
             ip=request.remote_addr,
         )
     if entry_source in {

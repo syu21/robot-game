@@ -3842,6 +3842,31 @@ body.battle-page .layer-boss-victory-sub {
   color: #bff7ff;
 }
 
+.sortie-sprint-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sortie-sprint-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.sortie-sprint-dots span {
+  width: 10px;
+  height: 10px;
+  border: 1px solid #7c91a8;
+  border-radius: 50%;
+  background: #152233;
+}
+
+.sortie-sprint-dots span.is-complete {
+  border-color: #58d6b5;
+  background: #58d6b5;
+}
+
 .home-explore-status {
   flex: 0 0 auto;
   padding: 6px 10px;

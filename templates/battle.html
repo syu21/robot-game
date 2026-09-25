@@ -130,6 +130,7 @@
     <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
       <input type="hidden" name="area_key" value="{{ sprint.get('area_key') or explore_area_key }}" />
       <input type="hidden" name="entry_source" value="{{ sprint.get('entry_source', 'onboarding_sortie_sprint') }}" />
+      <input type="hidden" name="surface" value="battle_result" />
       {% if summary.get('next_explore_submission_id') %}
       <input type="hidden" name="explore_submission_id" value="{{ summary.get('next_explore_submission_id') }}" />
       {% endif %}

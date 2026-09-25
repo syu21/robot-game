@@ -437,6 +437,7 @@ AUDIT_EVENT_TYPES = {
     "ONBOARDING_FIRST_THREE_COMPLETE": "audit.onboarding.first_three_complete",
     "ONBOARDING_FIRST_THREE_REWARD": "audit.onboarding.first_three_reward",
     "ONBOARDING_SORTIE_SPRINT_START": "audit.onboarding.sortie_sprint.start",
+    "ONBOARDING_SORTIE_CTA_CLICK": "audit.onboarding.sortie_cta_click",
     "ONBOARDING_SORTIE_SPRINT_PROGRESS": "audit.onboarding.sortie_sprint.progress",
     "ONBOARDING_SORTIE_SPRINT_COMPLETE": "audit.onboarding.sortie_sprint.complete",
     "ONBOARDING_PART_GUARANTEE": "audit.onboarding.part_guarantee",

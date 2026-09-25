@@ -34,13 +34,22 @@
   <div class="card next-action-card home-next-action-unified{% if first_sortie_focus %} first-sortie-focus-card{% endif %}">
     <div class="home-explore-card-head">
       <div>
-        <div class="home-explore-kicker">{{ '初回出撃' if first_sortie_focus else 'NEXT ACTION' }}</div>
+        <div class="home-explore-kicker">{{ '起動試験' if home_primary_explore_cta.get('sortie_sprint') else ('初回出撃' if first_sortie_focus else 'NEXT ACTION') }}</div>
         <div><b>{{ home_primary_explore_cta['title'] }}</b></div>
         <div class="home-next-action-destination">{{ home_primary_explore_cta['destination_label'] }}</div>
       </div>
       <div class="home-explore-status" data-home-ct-copy="1">{{ home_primary_explore_cta['status_text'] }}</div>
     </div>
     <div class="upgrade-cost">{{ home_primary_explore_cta['helper_text'] }}</div>
+    {% if home_primary_explore_cta.get('sortie_sprint') %}
+    {% set sprint = home_primary_explore_cta.get('sortie_sprint') %}
+    <div class="sortie-sprint-progress" aria-label="起動試験 {{ sprint.get('completed', 0) }} / {{ sprint.get('target', 3) }}">
+      <div class="sortie-sprint-dots" aria-hidden="true">
+        {% for no in range(1, sprint.get('target', 3) + 1) %}<span class="{% if no <= sprint.get('completed', 0) %}is-complete{% endif %}"></span>{% endfor %}
+      </div>
+      <b>{{ sprint.get('completed', 0) }} / {{ sprint.get('target', 3) }}</b>
+    </div>
+    {% endif %}
     {% if home_primary_explore_cta.get('context_line') %}
     <div class="robot-time">{{ home_primary_explore_cta.get('context_line') }}</div>
     {% endif %}

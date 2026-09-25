@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import time
@@ -155,6 +156,7 @@ class NewbieExploreBoostTests(unittest.TestCase):
                 (now - (73 * 3600), self.user_id),
             )
             db.commit()
+        self._mark_initial_sprint_complete(self.user_id)
         self._set_last_action_at(self.user_id, now - 10)
         client = self._new_client(self.user_id, "newbie_boost_user")
         resp = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
@@ -249,17 +251,17 @@ class NewbieExploreBoostTests(unittest.TestCase):
         ):
             first = client.post(
                 "/explore",
-                data={"area_key": "layer_1", "entry_source": "next_action_first_explore"},
+                data={"area_key": "layer_1", "entry_source": "next_action_first_explore", "surface": "home"},
                 follow_redirects=False,
             )
             second = client.post(
                 "/explore",
-                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint_2"},
+                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint", "surface": "battle_result"},
                 follow_redirects=False,
             )
             third = client.post(
                 "/explore",
-                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint_3"},
+                data={"area_key": "layer_1", "entry_source": "onboarding_sortie_sprint", "surface": "battle_result"},
                 follow_redirects=False,
             )
         self.assertEqual(first.status_code, 200)
@@ -268,12 +270,85 @@ class NewbieExploreBoostTests(unittest.TestCase):
         self.assertIn("最終試験へ出撃", second.get_data(as_text=True))
         self.assertEqual(third.status_code, 200)
         third_html = third.get_data(as_text=True)
-        self.assertIn("初期実戦試験 COMPLETE", third_html)
-        self.assertIn("通常出撃モードへ移行します。", third_html)
+        self.assertIn("起動試験 COMPLETE", third_html)
+        self.assertIn("ここから自由に機体を育てられます。", third_html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            clicks = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_CTA_CLICK"]),
+            ).fetchall()
+        self.assertEqual(len(clicks), 3)
+        click_payloads = [json.loads(row["payload_json"]) for row in clicks]
+        self.assertEqual([payload["sortie_index"] for payload in click_payloads], [1, 2, 3])
+        self.assertEqual([payload["surface"] for payload in click_payloads], ["home", "battle_result", "battle_result"])
+        self.assertEqual(click_payloads[0]["entry_source"], "next_action_first_explore")
+        self.assertTrue(all(payload["entry_source"] == "onboarding_sortie_sprint" for payload in click_payloads[1:]))
 
         blocked = client.post("/explore", data={"area_key": "layer_1"}, follow_redirects=True)
         self.assertEqual(blocked.status_code, 200)
         self.assertRegex(blocked.get_data(as_text=True), r"あと ?\d+秒")
+
+    def test_initial_sortie_home_progress_uses_historical_successful_completions(self):
+        now = int(time.time())
+        client = self._new_client(self.user_id, "newbie_boost_user")
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute("UPDATE users SET created_at = ? WHERE id = ?", (now - 864000, self.user_id))
+            db.commit()
+
+        zero_html = client.get("/home").get_data(as_text=True)
+        self.assertIn("起動試験", zero_html)
+        self.assertIn("0 / 3", zero_html)
+
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key) VALUES (?, ?, '{}', ?, 'explore')",
+                (now - 3, game_app.AUDIT_EVENT_TYPES["EXPLORE_FAILED"], self.user_id),
+            )
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(game_app._initial_sortie_sprint_state(db, user)["completed"], 0)
+
+            for completed in (1, 2):
+                db.execute(
+                    "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key) VALUES (?, ?, ?, ?, 'explore')",
+                    (now + completed, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"area_key":"layer_1"}', self.user_id),
+                )
+                db.commit()
+                html = client.get("/home").get_data(as_text=True)
+                self.assertIn(f"{completed} / 3", html)
+                user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+                self.assertEqual(game_app._explore_ct_policy_for_user(user, db=db)["seconds"], 0)
+
+            db.execute(
+                "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key) VALUES (?, ?, ?, ?, 'explore')",
+                (now + 3, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"area_key":"layer_1"}', self.user_id),
+            )
+            db.commit()
+
+        complete_html = client.get("/home").get_data(as_text=True)
+        self.assertNotIn('aria-label="起動試験', complete_html)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            self.assertEqual(game_app._explore_ct_policy_for_user(user, db=db)["seconds"], 40)
+
+    def test_paid_boost_resumes_after_initial_sortie_sprint(self):
+        now = int(time.time())
+        self._mark_initial_sprint_complete(self.user_id)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "UPDATE users SET created_at = ?, explore_boost_until = ? WHERE id = ?",
+                (now - 864000, now + 3600, self.user_id),
+            )
+            db.commit()
+            user = db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone()
+            policy = game_app._explore_ct_policy_for_user(user, now_ts=now, db=db)
+        self.assertEqual(policy, {"seconds": 20, "reason": "paid_explore_boost"})
 
     def test_initial_sortie_sprint_guarantees_one_n_part_on_third_if_no_prior_drop(self):
         with game_app.app.app_context():
