@@ -147,7 +147,9 @@ class MeasurementObservabilityTests(unittest.TestCase):
                 (game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], 5, {"area_key": "layer_1"}),
                 (game_app.AUDIT_EVENT_TYPES["BUILD_CONFIRM"], 6, {"source": "player_build_confirm"}),
                 (game_app.AUDIT_EVENT_TYPES["ONBOARDING_FIRST_UPGRADE_COMPLETE"], 7, {"source": "build_confirm"}),
-                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 8, {"area_key": "layer_1", "entry_source": "onboarding_post_adjustment"}),
+                (game_app.AUDIT_EVENT_TYPES["EXPLORE_START"], 8, {"area_key": "layer_1", "entry_source": "onboarding_first_boss"}),
+                (game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"], 9, {"area_key": "layer_1", "boss_source": "onboarding_first_boss"}),
+                (game_app.AUDIT_EVENT_TYPES["BOSS_DEFEAT"], 10, {"area_key": "layer_1"}),
             ]
             for event_type, offset, payload in sequence:
                 self._insert_event(db, user_id, event_type, created_at=now - 100 + offset, payload=payload)
@@ -156,6 +158,9 @@ class MeasurementObservabilityTests(unittest.TestCase):
 
         self.assertEqual(snapshot["first_upgrade"]["complete_users"], 1)
         self.assertEqual(snapshot["first_upgrade"]["after_explore_users"], 1)
+        self.assertEqual(snapshot["first_upgrade"]["first_boss_encounter_users"], 1)
+        self.assertEqual(snapshot["first_upgrade"]["first_boss_defeat_users"], 1)
+        self.assertEqual(snapshot["first_upgrade"]["first_boss_loss_users"], 0)
 
     def test_revisit_denominators_exclude_users_before_judgment_day(self):
         now = int(time.time())

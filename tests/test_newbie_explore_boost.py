@@ -411,6 +411,60 @@ class NewbieExploreBoostTests(unittest.TestCase):
             self.assertIsNotNone(recommendation)
             self.assertTrue(recommendation["is_improvement"])
 
+    def test_first_three_sorties_suppress_layer1_boss_only(self):
+        user = {"is_admin": 0}
+        for completed in (0, 1, 2):
+            state = {"active": True, "completed": completed, "target": 3}
+            self.assertTrue(game_app._onboarding_sortie_suppresses_layer1_boss(user, state, "layer_1"))
+        self.assertFalse(game_app._onboarding_sortie_suppresses_layer1_boss(user, None, "layer_1"))
+        self.assertFalse(game_app._onboarding_sortie_suppresses_layer1_boss(user, {"active": True}, "layer_2"))
+        self.assertFalse(game_app._onboarding_sortie_suppresses_layer1_boss({"is_admin": 1}, {"active": True}, "layer_1"))
+
+    def test_first_layer1_sortie_after_adjustment_forces_boss_once(self):
+        now = int(time.time())
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            db.execute(
+                "UPDATE users SET onboarding_first_three_reward_claimed = 1, first_upgrade_guide_started_at = ?, first_upgrade_guide_completed_at = ? WHERE id = ?",
+                (now - 2, now - 1, self.user_id),
+            )
+            for index in range(3):
+                db.execute(
+                    "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key) VALUES (?, ?, ?, ?, 'explore')",
+                    (now - 20 + index, game_app.AUDIT_EVENT_TYPES["EXPLORE_END"], '{"area_key":"layer_1","result":{"win":true}}', self.user_id),
+                )
+            for event_type in (
+                game_app.AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_COMPLETE"],
+                game_app.AUDIT_EVENT_TYPES["ONBOARDING_FIRST_UPGRADE_COMPLETE"],
+            ):
+                db.execute(
+                    "INSERT INTO world_events_log (created_at, event_type, payload_json, user_id, action_key) VALUES (?, ?, '{}', ?, 'onboarding')",
+                    (now - 1, event_type, self.user_id),
+                )
+            db.commit()
+
+        client = self._new_client(self.user_id, "newbie_boost_user")
+        with patch.object(game_app, "resolve_attack", side_effect=self._resolve_for_win), patch.object(
+            game_app, "_market_part_drop_chance", return_value=0.0
+        ), patch.object(game_app, "_dinosaur_debut_campaign_active", return_value=False):
+            response = client.post(
+                "/explore",
+                data={"area_key": "layer_1", "entry_source": "onboarding_first_boss", "explore_submission_id": "onboarding-first-boss-1"},
+                follow_redirects=False,
+            )
+        self.assertEqual(response.status_code, 200)
+        with game_app.app.app_context():
+            db = game_app.get_db()
+            rows = db.execute(
+                "SELECT payload_json FROM world_events_log WHERE user_id = ? AND event_type = ? ORDER BY id",
+                (self.user_id, game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"]),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            payload = json.loads(rows[0]["payload_json"])
+            self.assertEqual(payload["boss_source"], "onboarding_first_boss")
+            self.assertEqual(payload["entry_source"], "onboarding_first_boss")
+            self.assertFalse(game_app._onboarding_first_boss_ready(db, db.execute("SELECT * FROM users WHERE id = ?", (self.user_id,)).fetchone(), "layer_1"))
+
 
 if __name__ == "__main__":
     unittest.main()

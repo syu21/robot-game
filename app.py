@@ -4766,6 +4766,7 @@ def _normalize_entry_source(value):
         "layer2_unlock_home",
         "first_robot_upgrade_result",
         "onboarding_post_adjustment",
+        "onboarding_first_boss",
         "boss_recovery_normal",
         "onboarding_sortie_sprint",
         "layer1_boss_signal",
@@ -4812,10 +4813,11 @@ def _normalize_boss_source(value):
         "active_alert": "guaranteed_retry",
         "tutorial_forced": "fixed",
         "tutorial_forced_boss": "fixed",
+        "onboarding_first_boss": "onboarding_first_boss",
         "pity_forced": "pity",
     }
     source = aliases.get(source, source)
-    allowed = {"normal", "pity", "guaranteed", "guaranteed_retry", "fixed", "admin_test", "unknown"}
+    allowed = {"normal", "pity", "guaranteed", "guaranteed_retry", "fixed", "onboarding_first_boss", "admin_test", "unknown"}
     return source if source in allowed else "unknown"
 
 
@@ -5143,6 +5145,8 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
     first_upgrade_complete_ts_by_user = {}
     first_upgrade_after_explore_users = set()
     first_upgrade_after_boss_attempt_users = set()
+    onboarding_first_boss_encounter_users = set()
+    onboarding_first_boss_defeat_users = set()
     d1_eligible_users = set()
     d3_eligible_users = set()
     completed_sorties_by_user = {
@@ -5196,7 +5200,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             if et == AUDIT_EVENT_TYPES["EXPLORE_START"]:
                 start_count += 1
                 entry_source = _normalize_entry_source(payload.get("entry_source"))
-                if entry_source == "onboarding_post_adjustment":
+                if entry_source in {"onboarding_post_adjustment", "onboarding_first_boss"}:
                     first_upgrade_after_explore_users.add(uid)
                 if entry_source in entry_source_users:
                     entry_source_users[entry_source].add(uid)
@@ -5255,6 +5259,8 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                     layer1_boss_recovery_strengthen_complete_users.add(uid)
             if et == AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"] and area_key == "layer_1":
                 boss_source = _normalize_boss_source(payload.get("boss_source") or payload.get("encounter_source") or "unknown")
+                if boss_source == "onboarding_first_boss":
+                    onboarding_first_boss_encounter_users.add(uid)
                 if bool(payload.get("retry_available")):
                     layer1_boss_retry_available_users.add(uid)
                 if boss_source == "guaranteed_retry":
@@ -5282,6 +5288,8 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
                 if uid in first_layer1_boss_encounter_ts_by_user and ts >= int(first_layer1_boss_encounter_ts_by_user[uid]):
                     layer1_boss_defeat_after_encounter_users.add(uid)
                     layer1_boss_defeat_ts_by_user.setdefault(uid, ts)
+                if uid in onboarding_first_boss_encounter_users:
+                    onboarding_first_boss_defeat_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("LAYER_UNLOCK") and int(payload.get("unlocked_layer") or 0) == 2:
                 layer2_unlock_users.add(uid)
             if et == AUDIT_EVENT_TYPES.get("LAYER2_UNLOCK_CTA_VIEW"):
@@ -5513,6 +5521,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "layer2_unlock_home": "基地NEXT ACTIONから第2層",
         "first_robot_upgrade_result": "初回機体更新後の結果画面",
         "onboarding_post_adjustment": "初回機体調整後の出撃",
+        "onboarding_first_boss": "初回調整後の大型反応",
         "onboarding_sortie_sprint": "初回3出撃導線",
         "onboarding_sortie_sprint_2": "初回3出撃導線（2回目）",
         "onboarding_sortie_sprint_3": "初回3出撃導線（3回目）",
@@ -5531,6 +5540,7 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
         "guaranteed": "確定保証",
         "guaranteed_retry": "再挑戦保証",
         "fixed": "固定",
+        "onboarding_first_boss": "初回調整後",
         "admin_test": "管理者テスト",
         "unknown": "不明",
     }
@@ -5686,6 +5696,18 @@ def build_new_user_onboarding_funnel(db, *, window_days=7):
             ),
             "after_explore_users": int(len(first_upgrade_after_explore_users)),
             "after_boss_attempt_users": int(len(first_upgrade_after_boss_attempt_users)),
+            "first_boss_encounter_users": int(len(onboarding_first_boss_encounter_users)),
+            "first_boss_defeat_users": int(len(onboarding_first_boss_defeat_users)),
+            "first_boss_loss_users": int(len(onboarding_first_boss_encounter_users - onboarding_first_boss_defeat_users)),
+            "first_boss_encounter_from_adjustment_rate_pct": (
+                float(len(onboarding_first_boss_encounter_users)) / float(max(1, len(first_upgrade_complete_users))) * 100.0
+            ),
+            "first_boss_encounter_from_registered_rate_pct": (
+                float(len(onboarding_first_boss_encounter_users)) / float(registered_count) * 100.0
+            ),
+            "first_boss_defeat_rate_pct": (
+                float(len(onboarding_first_boss_defeat_users)) / float(max(1, len(onboarding_first_boss_encounter_users))) * 100.0
+            ),
         },
         "entry_source_rows": entry_source_rows,
         "home_ready": {
@@ -12740,6 +12762,39 @@ def _has_layer1_boss_encountered(db, user_id):
     return event_row is not None
 
 
+def _onboarding_first_boss_ready(db, user_row, area_key):
+    if str(area_key or "").strip() != "layer_1" or not _onboarding_first_upgrade_normal_user(user_row):
+        return False
+    if int(user_row["first_upgrade_guide_completed_at"] or 0) <= 0:
+        return False
+    if _has_layer1_boss_encountered(db, int(user_row["id"])):
+        return False
+    if _has_fixed_boss_defeat_in_area(db, int(user_row["id"]), "layer_1"):
+        return False
+    row = db.execute(
+        """
+        SELECT
+            EXISTS(
+                SELECT 1 FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                LIMIT 1
+            ) AS sprint_completed,
+            EXISTS(
+                SELECT 1 FROM world_events_log
+                WHERE user_id = ? AND event_type = ?
+                LIMIT 1
+            ) AS adjustment_completed
+        """,
+        (
+            int(user_row["id"]),
+            AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_COMPLETE"],
+            int(user_row["id"]),
+            AUDIT_EVENT_TYPES["ONBOARDING_FIRST_UPGRADE_COMPLETE"],
+        ),
+    ).fetchone()
+    return bool(row and int(row["sprint_completed"] or 0) == 1 and int(row["adjustment_completed"] or 0) == 1)
+
+
 def _area_boss_spawn_check(db, user_id, area_key, rng=None, *, request_id=None, ip=None):
     if not _area_supports_boss_alert(area_key) or not _has_area_boss_candidates(db, area_key):
         return {"spawn": False, "probability": 0.0, "pity_forced": False, "streak_before": 0}
@@ -13494,6 +13549,20 @@ def _grant_onboarding_upgrade_candidate(db, user_row, *, area_key="layer_1"):
     if original_status == "overflow":
         db.execute("UPDATE part_instances SET status = 'inventory' WHERE id = ?", (keep_id,))
     recommendation = _first_upgrade_recommendation(db, user_row, requested_part_instance_id=keep_id)
+    for _ in range(4):
+        if recommendation and recommendation.get("is_improvement"):
+            break
+        db.execute(
+            """
+            UPDATE part_instances
+            SET w_hp = w_hp * 1.04, w_atk = w_atk * 1.04, w_def = w_def * 1.04,
+                w_spd = w_spd * 1.04, w_acc = w_acc * 1.04, w_cri = w_cri * 1.04,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (keep_id,),
+        )
+        recommendation = _first_upgrade_recommendation(db, user_row, requested_part_instance_id=keep_id)
     if original_status == "overflow":
         db.execute("UPDATE part_instances SET status = 'overflow' WHERE id = ?", (keep_id,))
     item["storage_status"] = original_status
@@ -44067,6 +44136,34 @@ def _initial_sortie_sprint_state(db, user_row, *, now_ts=None, completed_count=N
     }
 
 
+def _onboarding_sortie_suppresses_layer1_boss(user_row, sprint_state, area_key):
+    return bool(
+        sprint_state
+        and str(area_key or "").strip() == "layer_1"
+        and user_row
+        and int(user_row["is_admin"] or 0) != 1
+    )
+
+
+def _onboarding_sortie_sprint_cohort_active(db, user_id, entry_source):
+    if str(entry_source or "").strip() in {"onboarding_sortie_sprint", "next_action_first_explore"}:
+        return True
+    row = db.execute(
+        """
+        SELECT 1
+        FROM world_events_log
+        WHERE user_id = ?
+          AND event_type = ?
+        LIMIT 1
+        """,
+        (
+            int(user_id),
+            AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_CTA_CLICK"],
+        ),
+    ).fetchone()
+    return row is not None
+
+
 def _onboarding_sortie_sprint_result_view(completed, *, area_key):
     completed = max(0, min(int(completed or 0), int(ONBOARDING_FIRST_THREE_TARGET)))
     target = int(ONBOARDING_FIRST_THREE_TARGET)
@@ -59419,6 +59516,19 @@ def explore():
     npc_analysis_line = None
     layer1_boss_hint_line = None
     layer1_boss_spawn_p = 0.0
+    onboarding_sortie_boss_suppressed = bool(
+        _onboarding_sortie_sprint_cohort_active(db, user_id, entry_source)
+        and _onboarding_sortie_suppresses_layer1_boss(
+            user,
+            initial_sortie_sprint_before,
+            area_key,
+        )
+    )
+    onboarding_first_boss_forced = bool(
+        not onboarding_sortie_boss_suppressed
+        and not boss_enter_requested
+        and _onboarding_first_boss_ready(db, user, area_key)
+    )
     tutorial_layer1_subject = is_layer1_protection_active(db, user) and area_key == "layer_1"
     tutorial_layer1_state_before = _tutorial_layer1_state(user)
     tutorial_layer1_snapshot_before = _tutorial_layer1_snapshot(user)
@@ -59428,6 +59538,7 @@ def explore():
         and int(user["tutorial_layer1_forced_boss_ready"] or 0) == 1
         and area_key == "layer_1"
         and not boss_enter_requested
+        and not onboarding_sortie_boss_suppressed
     )
     tutorial_layer1_first_boss = bool(
         tutorial_layer1_subject
@@ -59438,7 +59549,7 @@ def explore():
         and tutorial_layer1_state_before == TUTORIAL_LAYER1_STATE_BOSS_FAILED_ONCE
         and int(tutorial_layer1_snapshot_before.get("fuse_after_boss_fail_count") or 0) > 0
     )
-    tutorial_layer1_skip_random_boss = False
+    tutorial_layer1_skip_random_boss = bool(onboarding_sortie_boss_suppressed)
     tutorial_layer1_boss_softened = False
     layer1_protection_battle_assist = False
     layer1_protection_alert_guaranteed = False
@@ -59452,27 +59563,30 @@ def explore():
     last_enemy_trait_label = None
     last_enemy_trait_desc = None
     last_enemy_variant_label = None
-    if tutorial_layer1_forced_boss:
+    if tutorial_layer1_forced_boss or onboarding_first_boss_forced:
         area_boss_active = True
         total_fights = 1
         area_boss_enemy = _pick_layer_boss_enemy(db, area_key, weekly_env=weekly_env, rng=random)
         if area_boss_enemy is None:
             tutorial_layer1_forced_boss = False
-            _tutorial_layer1_transition(
-                db,
-                user_id,
-                forced_boss_ready=False,
-                request_id=request_id,
-                ip=request.remote_addr,
-                reason="forced_boss_missing",
-            )
+            onboarding_first_boss_forced = False
+            if tutorial_layer1_subject:
+                _tutorial_layer1_transition(
+                    db,
+                    user_id,
+                    forced_boss_ready=False,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                    reason="forced_boss_missing",
+                )
         else:
+            forced_boss_source = "onboarding_first_boss" if onboarding_first_boss_forced else "tutorial_forced"
             area_boss_kind = str(area_boss_enemy.get("_boss_kind") or "fixed")
             area_boss_template_id = (
                 int(area_boss_enemy.get("_npc_boss_template_id") or 0) if area_boss_kind == "npc" else None
             )
             area_boss_enemy_meta = _boss_type_meta(area_boss_enemy)
-            area_boss_encounter_source = "tutorial_forced"
+            area_boss_encounter_source = forced_boss_source
             area_boss_spawn_p = 1.0
             area_boss_streak_before = _ensure_user_boss_progress_row(db, user_id, area_key)
             layer1_retry_encounter_state = _boss_retry_mark_encounter(
@@ -59481,24 +59595,26 @@ def explore():
                 boss_key=(area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None),
                 now_ts=now,
             )
-            _tutorial_layer1_transition(
-                db,
-                user_id,
-                state=TUTORIAL_LAYER1_STATE_SAW_BOSS,
-                forced_boss_ready=False,
-                boss_seen=True,
-                now_ts=now,
-                request_id=request_id,
-                ip=request.remote_addr,
-                reason="forced_boss_encounter",
-                extra_payload={
-                    "is_forced_layer1_boss": True,
-                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
-                    "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
-                },
-            )
+            if tutorial_layer1_subject:
+                _tutorial_layer1_transition(
+                    db,
+                    user_id,
+                    state=TUTORIAL_LAYER1_STATE_SAW_BOSS,
+                    forced_boss_ready=False,
+                    boss_seen=True,
+                    now_ts=now,
+                    request_id=request_id,
+                    ip=request.remote_addr,
+                    reason="forced_boss_encounter",
+                    extra_payload={
+                        "is_forced_layer1_boss": True,
+                        "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                        "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
+                        "source": forced_boss_source,
+                    },
+                )
             forced_event = AUDIT_EVENT_TYPES.get("TUTORIAL_LAYER1_FORCED_BOSS")
-            if forced_event:
+            if forced_event and not onboarding_first_boss_forced:
                 audit_log(
                     db,
                     forced_event,
@@ -59546,14 +59662,16 @@ def explore():
                     "area_key": area_key,
                     "enemy_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
                     "is_forced_layer1_boss": True,
-                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                    "is_first_layer1_boss": bool(onboarding_first_boss_forced or tutorial_layer1_first_boss),
                     "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
                     "boss_kind": area_boss_kind,
                     "npc_boss_template_id": area_boss_template_id,
                     "attempts_before": None,
                     "attempts_after": None,
                     "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
-                    "boss_source": _normalize_boss_source("tutorial_forced"),
+                    "boss_source": _normalize_boss_source(forced_boss_source),
+                    "encounter_source": forced_boss_source,
+                    "entry_source": entry_source,
                     "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                     "retry_state": layer1_retry_encounter_state.get("status"),
                 },
@@ -59587,22 +59705,28 @@ def explore():
                     "spawn_probability": 1.0,
                     "pity_forced": False,
                     "streak_before": int(area_boss_streak_before),
-                    "encounter_source": "tutorial_forced",
-                    "boss_source": _normalize_boss_source("tutorial_forced"),
+                    "encounter_source": forced_boss_source,
+                    "boss_source": _normalize_boss_source(forced_boss_source),
+                    "source": forced_boss_source,
+                    "entry_source": entry_source,
                     "boss_key": area_boss_enemy["key"] if "key" in area_boss_enemy.keys() else None,
                     "explore_count": int(layer1_protection_explore_count),
                     "pity_count": int(area_boss_streak_before),
-                    "is_first_encounter": bool(tutorial_layer1_first_boss),
+                    "is_first_encounter": bool(onboarding_first_boss_forced or tutorial_layer1_first_boss),
                     "retry_available": bool(layer1_retry_encounter_state.get("available")),
                     "attempt_number": int(layer1_retry_encounter_state.get("attempt_count") or 1),
                     "is_forced_layer1_boss": True,
-                    "is_first_layer1_boss": bool(tutorial_layer1_first_boss),
+                    "is_first_layer1_boss": bool(onboarding_first_boss_forced or tutorial_layer1_first_boss),
                     "is_retry_after_fuse": bool(tutorial_layer1_retry_after_fuse),
                 },
                 ip=request.remote_addr,
             )
-            layer1_boss_hint_line = "第1層ボス反応。突破の手応えを試す時です。"
-    if (not area_boss_active) and boss_enter_requested and _area_supports_boss_alert(area_key):
+            layer1_boss_hint_line = (
+                "大型反応を捕捉。調整した機体の戦闘データを取得します。"
+                if onboarding_first_boss_forced
+                else "第1層ボス反応。突破の手応えを試す時です。"
+            )
+    if (not onboarding_sortie_boss_suppressed) and (not area_boss_active) and boss_enter_requested and _area_supports_boss_alert(area_key):
         if boss_retry_requested:
             area_boss_active = True
             total_fights = 1
@@ -59838,6 +59962,8 @@ def explore():
                 ip=request.remote_addr,
             )
     elif (
+        (not onboarding_sortie_boss_suppressed)
+        and
         tutorial_layer1_subject
         and (not tutorial_layer1_forced_boss)
         and (not active_alert)

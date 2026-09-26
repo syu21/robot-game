@@ -339,8 +339,9 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("機体調整 COMPLETE", body)
-        self.assertIn("新しい機体で出撃", body)
-        self.assertIn('name="entry_source" value="onboarding_post_adjustment"', body)
+        self.assertIn("大型反応を検出", body)
+        self.assertIn("大型反応へ出撃", body)
+        self.assertIn('name="entry_source" value="onboarding_first_boss"', body)
         with game_app.app.app_context():
             db = self._db()
             user = self._user()
@@ -514,6 +515,10 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             game_app._normalize_entry_source("onboarding_post_adjustment"),
             "onboarding_post_adjustment",
         )
+        self.assertEqual(
+            game_app._normalize_entry_source("onboarding_first_boss"),
+            "onboarding_first_boss",
+        )
 
     def test_admin_test_and_analytics_excluded_are_not_targets(self):
         with game_app.app.app_context():
@@ -532,6 +537,25 @@ class FirstUpgradeOnboardingTests(unittest.TestCase):
             )
             db.commit()
             self.assertFalse(game_app._onboarding_first_upgrade_should_show(db, self._user()))
+
+    def test_first_boss_requires_sprint_and_adjustment_audits(self):
+        with game_app.app.app_context():
+            db = self._db()
+            db.execute(
+                "UPDATE users SET first_upgrade_guide_started_at = ?, first_upgrade_guide_completed_at = ? WHERE id = ?",
+                (int(time.time()) - 1, int(time.time()), self.user_id),
+            )
+            db.commit()
+            self.assertFalse(game_app._onboarding_first_boss_ready(db, self._user(), "layer_1"))
+            self._event(game_app.AUDIT_EVENT_TYPES["ONBOARDING_SORTIE_SPRINT_COMPLETE"])
+            self._event(game_app.AUDIT_EVENT_TYPES["ONBOARDING_FIRST_UPGRADE_COMPLETE"])
+            self.assertTrue(game_app._onboarding_first_boss_ready(db, self._user(), "layer_1"))
+            self.assertFalse(game_app._onboarding_first_boss_ready(db, self._user(), "layer_2"))
+            self._event(
+                game_app.AUDIT_EVENT_TYPES["BOSS_ENCOUNTER"],
+                {"area_key": "layer_1", "boss_source": "onboarding_first_boss"},
+            )
+            self.assertFalse(game_app._onboarding_first_boss_ready(db, self._user(), "layer_1"))
 
 
 if __name__ == "__main__":

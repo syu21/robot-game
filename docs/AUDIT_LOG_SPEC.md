@@ -753,3 +753,9 @@ COMBAT SIGNAL v1:
   - `surface`: `module_research_record`
 - payloadには `replication_success`、成功/失敗、再現率、レシピ一致、内部確率、内部重み、乱数seed、研究メモ本文、観測帳内容を追加しない。
 - `/admin/metrics` は追試登録数、追試登録ユーザー数、追試された元研究数、`追試反応 -> 追試共有` の行動相関を集計する。成功率として扱わない。
+## 初回調整後ボス
+
+- 強制遭遇は既存 `audit.boss.encounter` / `audit.boss.attempt` を使用する。
+- payloadの `source`, `encounter_source`, `boss_source` は `onboarding_first_boss`、`entry_source` も同値とする。
+- `audit.boss.encounter` の成立を保証消費の正本とし、CTAクリックやvalidation/cooldown失敗では消費しない。
+- 起動試験中の抑制ではボス遭遇auditを作成しない。

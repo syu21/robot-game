@@ -29,10 +29,14 @@
       <span class="part-chip is-recommended">{{ row.get('label') }} {{ row.get('delta_text') }}</span>
     {% endfor %}
   </div>
+  <div class="first-boss-signal">
+    <div class="section-kicker">大型反応を検出</div>
+    <div>第1層で強力な反応を確認。調整した機体で戦闘データを取得してください。</div>
+  </div>
   <form method="post" action="{{ url_for('explore') }}" class="inline-form inline-form-top">
     <input type="hidden" name="area_key" value="layer_1" />
-    <input type="hidden" name="entry_source" value="onboarding_post_adjustment" />
-    <button type="submit" class="battle-home-link battle-next-cta">新しい機体で出撃</button>
+    <input type="hidden" name="entry_source" value="onboarding_first_boss" />
+    <button type="submit" class="battle-home-link battle-next-cta">大型反応へ出撃</button>
   </form>
   {% endif %}
   {% if build_result.get('boss_retry') %}
